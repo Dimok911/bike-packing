@@ -1,5 +1,5 @@
 const STORAGE_KEY = "bike-packing-prototype-state-v1";
-const APP_VERSION = "v313";
+const APP_VERSION = "v322";
 const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 const AUTH_EMAIL_KEY = "bike-packing-auth-email";
@@ -368,6 +368,7 @@ function init() {
   if (refs.appVersion) refs.appVersion.textContent = APP_VERSION;
   preventDoubleTapZoom();
   setupModalScrollLock();
+  setupTouchActionButtonFeedback();
   document.addEventListener("pointerdown", blurActiveEditableBeforeButtonAction, true);
 
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -548,6 +549,70 @@ function isEditableElement(element) {
   if (!element || element === document.body) return false;
   if (element.matches?.("input, textarea, select")) return true;
   return Boolean(element.isContentEditable);
+}
+
+function setupTouchActionButtonFeedback() {
+  let activeButton = null;
+  let startX = 0;
+  let startY = 0;
+  let feedbackTimer = null;
+  let moved = false;
+  const selector = ".edit-button, .copy-item-button, .remove-layout-button, .delete-item-button, .add-to-container-button, .collapse-button";
+
+  const clearFeedbackTimer = () => {
+    if (!feedbackTimer) return;
+    window.clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+  };
+
+  const clearActiveButton = () => {
+    clearFeedbackTimer();
+    activeButton?.classList.remove("touch-feedback-active");
+    activeButton = null;
+  };
+
+  const scheduleFeedback = () => {
+    clearFeedbackTimer();
+    feedbackTimer = window.setTimeout(() => {
+      feedbackTimer = null;
+      if (!moved) activeButton?.classList.add("touch-feedback-active");
+    }, 70);
+  };
+
+  document.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    const button = event.target.closest?.(selector);
+    if (!button || button.disabled) return;
+    clearActiveButton();
+    const touch = event.touches[0];
+    activeButton = button;
+    startX = touch.clientX;
+    startY = touch.clientY;
+    moved = false;
+    scheduleFeedback();
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchmove", (event) => {
+    if (!activeButton || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const distance = Math.hypot(touch.clientX - startX, touch.clientY - startY);
+    if (distance <= 8) return;
+    moved = true;
+    clearActiveButton();
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchend", () => {
+    if (!activeButton) return;
+    clearFeedbackTimer();
+    if (!moved) {
+      activeButton.classList.add("touch-feedback-active");
+      window.setTimeout(clearActiveButton, 130);
+      return;
+    }
+    clearActiveButton();
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchcancel", clearActiveButton, { passive: true, capture: true });
 }
 
 function setupModalScrollLock() {
@@ -2543,14 +2608,16 @@ function preserveSearchBlurViewport() {
 }
 
 function captureSearchBlurViewportLock() {
-  if (!shouldKeepScopedControlsStable() || getCurrentView() !== "packing" || !isFilterContextActive()) return null;
+  const view = getCurrentView();
+  if (!shouldKeepScopedControlsStable() || !["packing", "items"].includes(view) || !isFilterContextActive()) return null;
   const target = getFilterMatchElements()[filterMatchIndex];
   if (!target || target.offsetParent === null) return null;
   const rect = target.getBoundingClientRect();
   const stickyBottom = stickyViewportBottom();
   if (rect.bottom <= stickyBottom || rect.top >= window.innerHeight) return null;
-  const board = refs.packingView.querySelector(".board");
+  const board = view === "packing" ? refs.packingView.querySelector(".board") : null;
   return {
+    view,
     element: target,
     top: rect.top,
     boardLeft: board?.scrollLeft || 0,
@@ -2561,7 +2628,7 @@ function captureSearchBlurViewportLock() {
 function restoreSearchBlurViewportLock(lock) {
   updateCompactStickyControls();
   if (!lock.element?.isConnected) return;
-  const board = refs.packingView.querySelector(".board");
+  const board = lock.view === "packing" ? refs.packingView.querySelector(".board") : null;
   if (board) board.scrollLeft = lock.boardLeft;
   const rect = lock.element.getBoundingClientRect();
   window.scrollTo({
@@ -2954,6 +3021,96 @@ function renderRootPlacementBoard(containerId) {
   refs.rootPlacementBoard.querySelectorAll("[data-place-root-index]").forEach((button) => {
     button.addEventListener("click", () => placeRootContainerInActiveLayout(containerId, Number(button.dataset.placeRootIndex)));
   });
+  bindHorizontalTouchScroll(refs.rootPlacementBoard);
+}
+
+function bindHorizontalTouchScroll(board) {
+  if (!board || board.dataset.touchScrollBound === "true") return;
+  board.dataset.touchScrollBound = "true";
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let horizontalScroll = false;
+  let suppressClickUntil = 0;
+  let lastX = 0;
+  let lastTime = 0;
+  let velocityX = 0;
+  let momentumFrame = null;
+
+  const stopMomentum = () => {
+    if (!momentumFrame) return;
+    cancelAnimationFrame(momentumFrame);
+    momentumFrame = null;
+  };
+
+  const clampScrollLeft = (value) => {
+    const max = Math.max(0, board.scrollWidth - board.clientWidth);
+    return Math.max(0, Math.min(max, value));
+  };
+
+  const startMomentum = () => {
+    stopMomentum();
+    if (!horizontalScroll || Math.abs(velocityX) < 0.08) return;
+    let velocity = velocityX;
+    let previousTime = performance.now();
+    const step = (time) => {
+      const elapsed = Math.min(32, time - previousTime);
+      previousTime = time;
+      const nextLeft = clampScrollLeft(board.scrollLeft - velocity * elapsed);
+      const hitEdge = nextLeft === 0 || nextLeft >= Math.max(0, board.scrollWidth - board.clientWidth);
+      board.scrollLeft = nextLeft;
+      velocity *= Math.pow(0.94, elapsed / 16);
+      if (hitEdge) velocity *= 0.35;
+      if (Math.abs(velocity) < 0.015) {
+        momentumFrame = null;
+        return;
+      }
+      momentumFrame = requestAnimationFrame(step);
+    };
+    momentumFrame = requestAnimationFrame(step);
+  };
+
+  board.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    stopMomentum();
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startLeft = board.scrollLeft;
+    horizontalScroll = false;
+    lastX = touch.clientX;
+    lastTime = performance.now();
+    velocityX = 0;
+  }, { passive: true });
+
+  board.addEventListener("touchmove", (event) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (!horizontalScroll) {
+      if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
+      horizontalScroll = true;
+    }
+    if (event.cancelable) event.preventDefault();
+    const now = performance.now();
+    const elapsed = Math.max(1, now - lastTime);
+    velocityX = (touch.clientX - lastX) / elapsed;
+    lastX = touch.clientX;
+    lastTime = now;
+    board.scrollLeft = clampScrollLeft(startLeft - dx);
+    suppressClickUntil = Date.now() + 350;
+  }, { passive: false });
+
+  board.addEventListener("touchend", startMomentum, { passive: true });
+  board.addEventListener("touchcancel", stopMomentum, { passive: true });
+
+  board.addEventListener("click", (event) => {
+    if (Date.now() <= suppressClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
 }
 
 function renderRootPlacementSlot(containerId, slotIndex) {
@@ -3184,6 +3341,7 @@ function renderContainerPicker() {
   refs.containerPickerBoard.querySelectorAll("[data-pick-container]").forEach((button) => {
     button.addEventListener("click", () => selectItemContainer(button.dataset.pickContainer));
   });
+  bindHorizontalTouchScroll(refs.containerPickerBoard);
 }
 
 function renderContainerPickerColumn(containerId) {
@@ -4156,39 +4314,36 @@ function bindPackingEvents(root) {
       event.preventDefault();
       event.stopPropagation();
       if (isBlockedDropzone(zone)) return;
-      root.querySelectorAll(".dropzone.drag-over").forEach((activeZone) => {
-        if (activeZone !== zone) activeZone.classList.remove("drag-over");
-      });
-      zone.classList.add("drag-over");
+      markDropzoneDragOver(root, zone);
     });
     zone.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (isBlockedDropzone(zone)) {
-        zone.classList.remove("drag-over");
+        removeDropzoneDragOver(zone);
         if (placeholder.parentElement === zone) placeholder.remove();
         return;
       }
-      zone.classList.add("drag-over");
+      markDropzoneDragOver(root, zone);
       if (draggingContainerId) {
         const afterEntry = getEntryAfterPointer(zone, event.clientY);
         placePlaceholder(zone, placeholder, afterEntry);
         if (isOriginalContainerPosition(zone, placeholder)) {
-          zone.classList.remove("drag-over");
+          removeDropzoneDragOver(zone);
           placeholder.remove();
         }
       } else {
         const afterEntry = getEntryAfterPointer(zone, event.clientY);
         placePlaceholder(zone, placeholder, afterEntry);
         if (isOriginalItemPosition(zone, placeholder)) {
-          zone.classList.remove("drag-over");
+          removeDropzoneDragOver(zone);
           placeholder.remove();
         }
       }
     });
     zone.addEventListener("dragleave", (event) => {
       if (!event.relatedTarget || zone.contains(event.relatedTarget)) return;
-      zone.classList.remove("drag-over");
+      removeDropzoneDragOver(zone);
     });
     zone.addEventListener("drop", (event) => {
       event.preventDefault();
@@ -4839,10 +4994,9 @@ function bindPointerPackingDrag(root, placeholder) {
     };
 
     const clearZones = () => {
-      root.querySelectorAll(".dropzone.drag-over").forEach((zone) => zone.classList.remove("drag-over"));
+      clearDropzoneDragOvers(root);
       root.querySelectorAll(".item-card.group-target").forEach((card) => card.classList.remove("group-target"));
       root.querySelectorAll(".item-card.move-into-target").forEach((card) => card.classList.remove("move-into-target"));
-      root.querySelectorAll(".subcontainer.container-drop-target").forEach((container) => container.classList.remove("container-drop-target"));
       placeholder.remove();
       currentZone = null;
       groupTargetItemId = null;
@@ -4865,8 +5019,7 @@ function bindPointerPackingDrag(root, placeholder) {
           !isItemInsideContainer(targetItemId, id) &&
           isInsideGroupDropZone(targetCard, clientX, clientY)
         ) {
-          root.querySelectorAll(".dropzone.drag-over").forEach((activeZone) => activeZone.classList.remove("drag-over"));
-          root.querySelectorAll(".subcontainer.container-drop-target").forEach((container) => container.classList.remove("container-drop-target"));
+          clearDropzoneDragOvers(root);
           root.querySelectorAll(".item-card.move-into-target").forEach((card) => {
             if (card !== targetCard) card.classList.remove("move-into-target");
           });
@@ -4884,14 +5037,7 @@ function bindPointerPackingDrag(root, placeholder) {
       const packageTarget = getPackageDropTarget(target, kind, id, root);
       if (packageTarget) {
         root.querySelectorAll(".item-card.group-target, .item-card.move-into-target").forEach((card) => card.classList.remove("group-target", "move-into-target"));
-        root.querySelectorAll(".dropzone.drag-over").forEach((activeZone) => {
-          if (activeZone !== packageTarget.zone) activeZone.classList.remove("drag-over");
-        });
-        root.querySelectorAll(".subcontainer.container-drop-target").forEach((container) => {
-          if (container !== packageTarget.container) container.classList.remove("container-drop-target");
-        });
-        packageTarget.container.classList.add("container-drop-target");
-        packageTarget.zone.classList.add("drag-over");
+        markDropzoneDragOver(root, packageTarget.zone);
         currentZone = packageTarget.zone;
         groupTargetItemId = null;
         itemIntoDraggedContainerId = null;
@@ -4920,7 +5066,7 @@ function bindPointerPackingDrag(root, placeholder) {
           !targetCard.classList.contains("dragging");
         if (canGroupWithTarget) {
           if (canActivateGroupTarget(targetCard, targetItemId, clientX, clientY)) {
-            root.querySelectorAll(".dropzone.drag-over").forEach((activeZone) => activeZone.classList.remove("drag-over"));
+            clearDropzoneDragOvers(root);
             root.querySelectorAll(".item-card.group-target").forEach((card) => {
               if (card !== targetCard) card.classList.remove("group-target");
             });
@@ -4936,15 +5082,11 @@ function bindPointerPackingDrag(root, placeholder) {
       }
 
       root.querySelectorAll(".item-card.group-target, .item-card.move-into-target").forEach((card) => card.classList.remove("group-target", "move-into-target"));
-      root.querySelectorAll(".subcontainer.container-drop-target").forEach((container) => container.classList.remove("container-drop-target"));
       groupTargetItemId = null;
       itemIntoDraggedContainerId = null;
       packageTargetContainerId = null;
       packageTargetUsesPointer = false;
-      root.querySelectorAll(".dropzone.drag-over").forEach((activeZone) => {
-        if (activeZone !== zone) activeZone.classList.remove("drag-over");
-      });
-      zone.classList.add("drag-over");
+      markDropzoneDragOver(root, zone);
       currentZone = zone;
 
       if (kind === "container") {
@@ -5301,7 +5443,34 @@ function getPlaceholderOrderIndex(zone, placeholder) {
 
 function cleanupDropState(root, placeholder) {
   placeholder.remove();
-  root.querySelectorAll(".dropzone.drag-over").forEach((zone) => zone.classList.remove("drag-over"));
+  clearDropzoneDragOvers(root);
+}
+
+function getDropzoneSubcontainer(zone) {
+  const container = zone?.parentElement;
+  return container?.classList?.contains("subcontainer") ? container : null;
+}
+
+function removeDropzoneDragOver(zone) {
+  zone?.classList?.remove("drag-over");
+  getDropzoneSubcontainer(zone)?.classList.remove("container-drop-target");
+}
+
+function clearDropzoneDragOvers(root, exceptZone = null) {
+  root.querySelectorAll(".dropzone.drag-over").forEach((zone) => {
+    if (zone !== exceptZone) removeDropzoneDragOver(zone);
+  });
+  const exceptContainer = getDropzoneSubcontainer(exceptZone);
+  root.querySelectorAll(".subcontainer.container-drop-target").forEach((container) => {
+    if (container !== exceptContainer) container.classList.remove("container-drop-target");
+  });
+}
+
+function markDropzoneDragOver(root, zone) {
+  if (!zone) return;
+  clearDropzoneDragOvers(root, zone);
+  zone.classList.add("drag-over");
+  getDropzoneSubcontainer(zone)?.classList.add("container-drop-target");
 }
 
 function bindBoardScroll(board) {

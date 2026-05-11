@@ -996,6 +996,8 @@ button.filter-active {
   place-items: center;
   flex: 0 0 34px;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .add-to-container-button {
@@ -1011,13 +1013,12 @@ button.filter-active {
   box-shadow: none;
 }
 
-.add-to-container-button:hover,
-.add-to-container-button:focus-visible {
+.add-to-container-button:focus-visible,
+.add-to-container-button.touch-feedback-active {
   background: rgba(220, 236, 230, 0.62);
   color: rgba(31, 111, 91, 0.76);
 }
 
-.header-icon-button:hover,
 .header-icon-button:focus-visible {
   background: rgba(220, 236, 230, 0.85);
   color: rgba(31, 111, 91, 0.9);
@@ -1290,10 +1291,12 @@ button.filter-active {
   place-items: center;
   flex: 0 0 auto;
   box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.collapse-button:hover,
-.collapse-button:focus-visible {
+.collapse-button:focus-visible,
+.collapse-button.touch-feedback-active {
   background: rgba(220, 236, 230, 0.62);
   color: rgba(31, 111, 91, 0.76);
 }
@@ -1459,6 +1462,8 @@ button.filter-active {
   font-size: 16px;
   font-weight: 700;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .item-card-top .copy-item-button {
@@ -1469,10 +1474,10 @@ button.filter-active {
   order: 2;
 }
 
-.edit-button:hover,
 .edit-button:focus-visible,
-.copy-item-button:hover,
-.copy-item-button:focus-visible {
+.copy-item-button:focus-visible,
+.edit-button.touch-feedback-active,
+.copy-item-button.touch-feedback-active {
   background: rgba(220, 236, 230, 0.85);
   color: rgba(31, 111, 91, 0.9);
   border-color: rgba(31, 111, 91, 0.22);
@@ -1496,6 +1501,8 @@ button.filter-active {
   font-size: 20px;
   font-weight: 650;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .item-card-top .remove-layout-button,
@@ -1503,18 +1510,56 @@ button.filter-active {
   order: 3;
 }
 
-.remove-layout-button:hover,
 .remove-layout-button:focus-visible {
   background: rgba(220, 236, 230, 0.85);
   color: rgba(31, 111, 91, 0.9);
   border-color: rgba(31, 111, 91, 0.22);
 }
 
-.delete-item-button:hover,
-.delete-item-button:focus-visible {
+.delete-item-button:focus-visible,
+.delete-item-button.touch-feedback-active {
   background: rgba(253, 233, 221, 0.95);
   color: #b94d36;
   border-color: rgba(185, 77, 54, 0.32);
+}
+
+.remove-layout-button.touch-feedback-active {
+  background: rgba(220, 236, 230, 0.85);
+  color: rgba(31, 111, 91, 0.9);
+  border-color: rgba(31, 111, 91, 0.22);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .edit-button:hover,
+  .copy-item-button:hover {
+    background: rgba(220, 236, 230, 0.85);
+    color: rgba(31, 111, 91, 0.9);
+    border-color: rgba(31, 111, 91, 0.22);
+  }
+
+  .remove-layout-button:hover {
+    background: rgba(220, 236, 230, 0.85);
+    color: rgba(31, 111, 91, 0.9);
+    border-color: rgba(31, 111, 91, 0.22);
+  }
+
+  .delete-item-button:hover {
+    background: rgba(253, 233, 221, 0.95);
+    color: #b94d36;
+    border-color: rgba(185, 77, 54, 0.32);
+  }
+
+  .add-to-container-button:hover,
+  .collapse-button:hover {
+    background: rgba(220, 236, 230, 0.62);
+    color: rgba(31, 111, 91, 0.76);
+  }
+
+  .header-icon-button:hover {
+    background: rgba(220, 236, 230, 0.85);
+    color: rgba(31, 111, 91, 0.9);
+    border-color: rgba(31, 111, 91, 0.22);
+  }
 }
 
 .drag-ghost {
@@ -2129,6 +2174,23 @@ dialog::backdrop {
 }
 
 @media (max-width: 560px) {
+  dialog {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - 12px);
+    margin: 0 auto;
+  }
+
+  .dialog-card {
+    max-height: inherit;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   .dialog-two-columns {
     grid-template-columns: 1fr;
   }
@@ -2183,9 +2245,18 @@ dialog::backdrop {
   grid-auto-columns: auto minmax(210px, 270px);
   align-items: stretch;
   gap: 8px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   max-height: min(560px, 58vh);
   padding: 2px 2px 8px;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.root-placement-board > * {
+  touch-action: pan-x;
 }
 
 .root-placement-slot {
@@ -2267,6 +2338,14 @@ dialog::backdrop {
   overflow-y: auto;
   max-height: min(560px, 58vh);
   padding: 2px 2px 8px;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.container-picker-board * {
+  touch-action: pan-x pan-y;
 }
 
 .container-picker-column {
@@ -2458,10 +2537,24 @@ dialog::backdrop {
 
 .icon-button {
   width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-grid;
+  place-items: center;
   min-height: 36px;
   padding: 0;
+  border-radius: 10px;
   background: #eef1ed;
   color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #8ec9ef;
+  outline-offset: 2px;
 }
 
 .dialog-note {
