@@ -1,0 +1,9 @@
+{
+  "name": "Сборы в велопоход",
+  "short_name": "Велосборы",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#1f3a36",
+  "icons": []
+}

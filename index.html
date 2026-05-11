@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="theme-color" content="#1f3a36" />
+    <title>Сборы в велопоход</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="auth-gated">
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>Сборы в велопоход</h1>
+          <p id="syncStatus">Локальный прототип · данные сохраняются на этом устройстве</p>
+          <span id="appVersion" class="app-version"></span>
+        </div>
+        <div class="top-actions">
+          <button id="syncBtn" class="ghost auth-required">Синхр.</button>
+          <div class="top-menu-wrap">
+            <button id="menuBtn" class="ghost menu-button" type="button" aria-label="Меню" aria-expanded="false" aria-controls="topMenu">
+              <span aria-hidden="true"></span>
+            </button>
+            <div id="topMenu" class="top-menu" hidden>
+              <button id="authBtn" class="ghost menu-item" type="button">Войти</button>
+              <button id="collectionMenuBtn" class="ghost menu-item auth-required" type="button">Режим сбора</button>
+              <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
+              <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
+              <button id="exportBtn" class="ghost menu-item auth-required" type="button">Экспорт</button>
+              <button id="resetBtn" class="ghost menu-item danger auth-required" type="button">Сброс</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="auth-gate">
+        <h2>Войдите, чтобы открыть сборы</h2>
+        <p>Укладка, вес и места хранения будут доступны после входа по magic link.</p>
+        <button id="authGateBtn">Получить ссылку для входа</button>
+      </section>
+
+      <section class="controls auth-required">
+        <label>
+          Укладка
+          <select id="layoutSelect"></select>
+        </label>
+        <button id="newLayoutBtn" class="ghost">Новая укладка</button>
+        <div class="search-control-row" data-main-filter-control>
+          <label id="searchFilterLabel">
+            Поиск
+            <span class="search-field">
+              <input id="searchInput" type="search" placeholder="вещь, категория, место" />
+              <button id="clearSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+            </span>
+          </label>
+          <button id="filterContextBtn" class="ghost context-toggle" type="button" aria-label="Показывать контекст фильтра" aria-pressed="false" title="Показывать контекст фильтра">
+            <span class="context-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
+        </div>
+        <div id="locationFilterLabel" class="field-label" data-main-filter-control>
+          Место хранения
+          <span class="filter-field select-filter-field">
+            <select id="locationFilter"></select>
+            <button id="clearLocationFilterBtn" class="filter-clear" type="button" aria-label="Сбросить место хранения" hidden>×</button>
+          </span>
+        </div>
+        <div id="categoryFilterLabel" class="field-label" data-main-filter-control>
+          Категория
+          <span class="filter-field select-filter-field">
+            <button id="categoryFilter" class="filter-select-button" type="button">Все категории</button>
+            <button id="clearCategoryFilterBtn" class="filter-clear" type="button" aria-label="Сбросить категорию" hidden>×</button>
+          </span>
+        </div>
+        <div class="control-group collection-actions" data-main-filter-control>
+          <div class="collection-panel" aria-label="Режим сбора">
+            <button id="collectionModeBtn" class="ghost collection-primary">Режим сбора</button>
+            <button id="unpackedOnlyBtn" class="ghost collection-secondary">Только не собрано</button>
+            <button id="unpackAllBtn" class="ghost danger collection-danger">Всё разобрать</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="summary auth-required" id="summary"></section>
+
+      <div class="tabs-row auth-required">
+        <nav class="tabs" aria-label="Разделы">
+          <button class="tab active" data-view="packing">Укладка</button>
+          <button class="tab" data-view="items">Вещи</button>
+          <button class="tab" data-view="bags">Сумки</button>
+          <button class="tab" data-view="settings">Настройки</button>
+        </nav>
+        <div id="filterNav" class="filter-nav" hidden>
+          <button id="filterPrevBtn" class="ghost" type="button" aria-label="Предыдущее совпадение">↑</button>
+          <span id="filterNavStatus">0/0</span>
+          <button id="filterNextBtn" class="ghost" type="button" aria-label="Следующее совпадение">↓</button>
+        </div>
+        <button id="metaToggleBtn" class="ghost meta-toggle" type="button" aria-label="Скрыть метки" aria-pressed="true" title="Скрыть метки">
+          <span class="tag-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <section id="packingView" class="view auth-required"></section>
+      <section id="itemsView" class="view hidden auth-required"></section>
+      <section id="bagsView" class="view hidden auth-required"></section>
+      <section id="settingsView" class="view hidden auth-required"></section>
+      <div id="kanbanScrollbar" class="kanban-scrollbar auth-required" aria-label="Прокрутка канбана">
+        <div id="kanbanScrollTrack" class="kanban-scroll-track">
+          <div id="kanbanScrollThumb" class="kanban-scroll-thumb"></div>
+        </div>
+      </div>
+    </main>
+
+    <dialog id="itemDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2 id="dialogTitle">Вещь</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <label>
+          Название
+          <input id="itemName" />
+        </label>
+        <div class="item-measure-row">
+          <label>
+            Вес, г
+            <input id="itemWeight" type="number" min="0" step="1" inputmode="numeric" enterkeyhint="done" />
+          </label>
+          <div class="quantity-field field-label">
+            Количество
+            <div class="quantity-stepper">
+              <button id="itemQuantityMinus" class="ghost" type="button" aria-label="Уменьшить количество">−</button>
+              <input id="itemQuantity" type="number" min="1" step="1" inputmode="numeric" enterkeyhint="done" />
+              <button id="itemQuantityPlus" class="ghost" type="button" aria-label="Увеличить количество">+</button>
+            </div>
+          </div>
+          <div class="item-total-weight" aria-live="polite">
+            <span>Общий вес</span>
+            <strong id="itemTotalWeight">0 г</strong>
+          </div>
+        </div>
+        <label>
+          Где хранится
+          <select id="itemLocation"></select>
+        </label>
+        <div class="field-label">
+          Категории
+          <div id="itemCategoryList" class="category-picker"></div>
+        </div>
+        <div class="field-label">
+          Положить в
+          <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Вне укладки</button>
+          <input id="itemContainer" type="hidden" />
+        </div>
+        <label>
+          Заметка
+          <textarea id="itemNote" rows="3"></textarea>
+        </label>
+        <footer>
+          <button id="saveItemBtn" value="default">Сохранить</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="rootContainerDialog">
+      <form method="dialog" class="dialog-card root-container-dialog-card">
+        <header>
+          <h2 id="rootContainerDialogTitle">Сумка или место</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <label>
+          Название
+          <input id="rootContainerName" />
+        </label>
+        <div class="dialog-two-columns">
+          <label>
+            Вес, г
+            <input id="rootContainerWeight" type="number" min="0" step="1" inputmode="numeric" enterkeyhint="done" />
+          </label>
+          <label>
+            Объём, л
+            <input id="rootContainerVolume" type="text" inputmode="decimal" enterkeyhint="done" />
+          </label>
+          <label>
+            Цвет
+            <input id="rootContainerColor" type="text" placeholder="например: красная" />
+          </label>
+        </div>
+        <label>
+          Где хранится
+          <select id="rootContainerLocation"></select>
+        </label>
+        <div id="rootContainerPlacementField" class="field-label">
+          Добавить в
+          <button id="rootContainerPlacementBtn" class="container-picker-button" type="button">Выбрать место в укладке</button>
+        </div>
+        <label>
+          Заметки
+          <textarea id="rootContainerNote" rows="3"></textarea>
+        </label>
+        <footer>
+          <button id="saveRootContainerBtn" value="default">Сохранить</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="rootPlacementDialog">
+      <form method="dialog" class="dialog-card root-placement-dialog-card">
+        <header>
+          <h2 id="rootPlacementTitle">Добавить в укладку</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-subtitle">Выберите место в текущей укладке</p>
+        <div id="rootPlacementBoard" class="root-placement-board"></div>
+      </form>
+    </dialog>
+
+    <dialog id="containerPickerDialog">
+      <form method="dialog" class="dialog-card container-picker-dialog-card">
+        <header>
+          <h2>Выбрать место</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <button id="containerPickerNoneBtn" class="ghost container-picker-none" type="button">Вне укладки</button>
+        <div id="containerPickerBoard" class="container-picker-board"></div>
+      </form>
+    </dialog>
+
+    <dialog id="categoryFilterDialog">
+      <form method="dialog" class="dialog-card category-filter-dialog-card">
+        <header>
+          <h2>Категории</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div id="categoryFilterList" class="category-filter-list"></div>
+        <footer>
+          <button id="resetCategoryFilterBtn" class="ghost" type="button">Сбросить</button>
+          <button id="applyCategoryFilterBtn" value="default">Готово</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="addToContainerDialog">
+      <form method="dialog" class="dialog-card add-item-dialog-card">
+        <header>
+          <h2 id="addToContainerTitle">Добавить вещь</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="addToContainerPath" class="dialog-subtitle"></p>
+        <label>
+          Поиск
+          <span class="search-field add-item-search-field">
+            <input id="addToContainerSearch" type="search" placeholder="название вещи" />
+            <button id="clearAddToContainerSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+          </span>
+        </label>
+        <div class="add-list-row">
+          <input id="newSubcontainerName" type="text" placeholder="Новый список или пакет" />
+          <button id="createSubcontainerBtn" type="button">Добавить</button>
+        </div>
+        <div id="addToContainerResults" class="add-item-results"></div>
+      </form>
+    </dialog>
+
+    <dialog id="layoutRootDialog">
+      <form method="dialog" class="dialog-card add-item-dialog-card">
+        <header>
+          <h2>Добавить сумку или место</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-subtitle">В текущую укладку</p>
+        <label>
+          Поиск
+          <span class="search-field add-item-search-field">
+            <input id="layoutRootSearch" type="search" placeholder="название сумки или места" />
+            <button id="clearLayoutRootSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+          </span>
+        </label>
+        <div id="layoutRootResults" class="add-item-results"></div>
+      </form>
+    </dialog>
+
+    <dialog id="layoutDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2>Новая укладка</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <label>
+          Название
+          <input id="layoutName" placeholder="Например: Летний ПВД" />
+        </label>
+        <label>
+          Создать
+          <select id="layoutCreateMode">
+            <option value="empty">Пустую укладку</option>
+            <option value="copy">Копию существующей</option>
+          </select>
+        </label>
+        <label id="layoutCopyLabel">
+          Скопировать из
+          <select id="layoutCopyFrom"></select>
+        </label>
+        <footer>
+          <button id="saveLayoutBtn" value="default">Создать</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="confirmDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2 id="confirmTitle">Подтвердить</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="confirmText"></p>
+        <footer>
+          <button id="confirmCancelBtn" type="button" value="cancel" class="ghost">Отмена</button>
+          <button id="confirmOkBtn" type="button" value="default">Удалить</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="conflictDialog">
+      <form method="dialog" class="dialog-card conflict-dialog-card">
+        <header>
+          <h2>Конфликты изменений</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note">Некоторые элементы менялись и на этом устройстве, и на сервере. Выберите, какую версию оставить для каждого элемента.</p>
+        <div id="conflictList" class="conflict-list"></div>
+        <footer>
+          <button id="conflictServerBtn" value="server" class="ghost" type="button">Взять всё с сервера</button>
+          <button id="conflictApplyBtn" value="default" type="button">Применить выбор</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="authDialog">
+      <form id="authForm" class="dialog-card auth-dialog-card">
+        <header>
+          <h2>Вход по ссылке</h2>
+          <button type="button" class="icon-button" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
+        </header>
+        <p class="dialog-note">Введите email. Мы отправим magic link, а пароль вводить не нужно.</p>
+        <label>
+          Email
+          <input id="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required />
+        </label>
+        <p id="authDialogStatus" class="dialog-status" aria-live="polite"></p>
+        <footer>
+          <button type="button" class="ghost" onclick="this.closest('dialog').close()">Закрыть</button>
+          <button id="authSubmitBtn" type="submit">Отправить ссылку</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="historyDialog">
+      <form method="dialog" class="dialog-card history-dialog-card">
+        <header>
+          <h2>История версий</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note">Сервер хранит последние 20 версий. При восстановлении текущая версия тоже попадёт в историю.</p>
+        <p id="historyStatus" class="dialog-status" aria-live="polite"></p>
+        <div id="historyList" class="history-list"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
