@@ -8,7 +8,7 @@
 - `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
 - `src/utils` keeps small pure helpers for time, JSON, HTML escaping, language, weights, and byte formatting.
 - `src/state` has safe state shape, layout arrangement helpers, state diagnostics, repair helpers, and the first normalization helpers.
-- `src/sync` is starting with payload reporting helpers.
+- `src/sync` is starting with payload reporting and photo metadata helpers.
 
 ## Working Rule
 

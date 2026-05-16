@@ -100,6 +100,12 @@ import {
   annotatePayloadError,
   syncPayloadSizeReport
 } from "./src/sync/payload-report.js";
+import {
+  hasRemotePhotoUrl,
+  normalizePhotoStatus,
+  normalizePhotoUrlFields,
+  syncSafePhotoUrl
+} from "./src/sync/photos.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
@@ -2354,10 +2360,6 @@ function normalizeItemPhotos(item) {
   return item.photos;
 }
 
-function normalizePhotoStatus(value) {
-  return ["pending", "uploading", "synced", "error", "missing-local-file"].includes(value) ? value : "synced";
-}
-
 function saveState({ sync = true } = {}) {
   captureActiveLayoutArrangement();
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
@@ -2790,27 +2792,6 @@ function compactPhotoForSync(photo) {
   };
   if (!compact.url && !compact.thumbUrl && compact.status === "synced") compact.status = "pending";
   return compact;
-}
-
-function normalizePhotoUrlFields(photo) {
-  if (!photo || typeof photo !== "object") return photo;
-  const url = photo.url || photo.fileUrl || photo.file_url || photo.src || photo.href || photo.urls?.url || photo.urls?.file || photo.urls?.original || "";
-  const thumbUrl = photo.thumbUrl || photo.thumb_url || photo.thumbnailUrl || photo.thumbnail_url || photo.thumb || photo.urls?.thumb || photo.urls?.thumbnail || "";
-  if (url && !photo.url) photo.url = String(url);
-  if (thumbUrl && !photo.thumbUrl) photo.thumbUrl = String(thumbUrl);
-  return photo;
-}
-
-function hasRemotePhotoUrl(photo) {
-  normalizePhotoUrlFields(photo);
-  return Boolean(syncSafePhotoUrl(photo?.url) || syncSafePhotoUrl(photo?.thumbUrl));
-}
-
-function syncSafePhotoUrl(src) {
-  if (typeof src !== "string") return "";
-  const value = src.trim();
-  if (!value || /^(data|blob):/i.test(value)) return "";
-  return value.length <= 2048 ? value : "";
 }
 
 function compactRecordForEntitySync(record) {
