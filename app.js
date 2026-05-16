@@ -166,7 +166,7 @@ import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
 import { safeSetLocalStorage } from "./src/utils/storage.js";
-import { nowIso } from "./src/utils/time.js";
+import { nowIso, timeValue } from "./src/utils/time.js";
 import {
   formatVolume,
   formatWeight,
@@ -3111,12 +3111,6 @@ function mergeLocalCollapsedContainers(nextCollapsed, previousCollapsed) {
 
 function remoteUpdatedAt(record) {
   return record?.updatedAt || record?.updated_at || record?.updatedAtUtc || null;
-}
-
-function timeValue(value) {
-  if (!value) return 0;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? time : 0;
 }
 
 function serverChangedSinceLastSync(remoteTime) {
