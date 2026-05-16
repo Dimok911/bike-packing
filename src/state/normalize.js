@@ -1,5 +1,7 @@
 import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
 import { REQUIRED_CHARGE_CATEGORY, categories } from "../data/demo-data.js";
+import { normalizeItemPhotos } from "./item-photos.js";
+import { parseWeightInput } from "../utils/weight.js";
 
 export function defaultRootContainerLocation(targetState) {
   const list = Array.isArray(targetState.locations) ? targetState.locations : [];
@@ -36,6 +38,14 @@ export function normalizeItemQuantity(value) {
   const number = Number(value || 1);
   if (!Number.isFinite(number) || number < 1) return 1;
   return Math.round(number);
+}
+
+export function normalizeItemFields(targetState) {
+  Object.values(targetState.items || {}).forEach((item) => {
+    item.weight = parseWeightInput(item.weight);
+    item.quantity = normalizeItemQuantity(item.quantity);
+    normalizeItemPhotos(item);
+  });
 }
 
 export function applyDefaultCollapsedContainers(targetState) {

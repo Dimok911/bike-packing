@@ -116,6 +116,7 @@ import {
   defaultRootContainerLocation,
   itemCategories,
   migrateContainerOrder,
+  normalizeItemFields,
   normalizeItemQuantity,
   normalizeItemCategories
 } from "./src/state/normalize.js";
@@ -2213,14 +2214,6 @@ function stateStatsForDestructiveComparison(targetState) {
   } catch {
     return stateStats(targetState);
   }
-}
-
-function normalizeItemFields(targetState = state) {
-  Object.values(targetState.items || {}).forEach((item) => {
-    item.weight = parseWeightInput(item.weight);
-    item.quantity = normalizeItemQuantity(item.quantity);
-    normalizeItemPhotos(item);
-  });
 }
 
 function saveState({ sync = true } = {}) {
