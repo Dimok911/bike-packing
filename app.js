@@ -139,6 +139,16 @@ import {
   isTimeoutError
 } from "./src/sync/api-client.js";
 import {
+  formatHistoryDateTime,
+  groupHistoryRecords as groupHistoryRecordsForSync,
+  historyPayloadTitle,
+  historyRecordKey,
+  historyRecordState as historyRecordStateForSync,
+  pluralRu,
+  sortHistoryRecords,
+  summarizeHistoryPayload
+} from "./src/sync/history.js";
+import {
   hasRemotePhotoUrl,
   normalizePhotoStatus,
   normalizePhotoUrlFields
@@ -7504,16 +7514,6 @@ async function loadRemoteHistory(source = "private") {
   return sortHistoryRecords(records);
 }
 
-function sortHistoryRecords(records) {
-  return records
-    .filter((record) => record && typeof record === "object")
-    .sort((a, b) => {
-      const byDate = timeValue(b.createdAt || b.created_at) - timeValue(a.createdAt || a.created_at);
-      if (byDate) return byDate;
-      return Number(b.id || 0) - Number(a.id || 0);
-    });
-}
-
 function renderHistoryRecords(records) {
   if (!records.length) {
     refs.historyStatus.className = "dialog-status";
@@ -7560,24 +7560,12 @@ function renderHistoryRecords(records) {
 }
 
 function groupHistoryRecords(records) {
-  const groups = new Map();
-  records.forEach((record) => {
-    const payload = historyRecordState(record);
-    const title = historyPayloadTitle(payload, "Без названия");
-    const key = title || "Без названия";
-    if (!groups.has(key)) groups.set(key, { key, title: key, records: [] });
-    groups.get(key).records.push(record);
+  return groupHistoryRecordsForSync(records, {
+    source: activeHistorySource,
+    normalizePublishedStatePayload,
+    normalizeRemoteState,
+    fallbackTitle: "Без названия"
   });
-  return Array.from(groups.values());
-}
-
-function pluralRu(count, one, few, many) {
-  const value = Math.abs(Number(count) || 0);
-  const mod10 = value % 10;
-  const mod100 = value % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
 }
 
 function renderHistoryRecordArticle(record, index, records) {
@@ -7602,23 +7590,10 @@ function renderHistoryRecordArticle(record, index, records) {
 }
 
 function historyRecordState(record, source = activeHistorySource) {
-  const payload =
-    record?.payload ||
-    record?.state ||
-    record?.assembledState ||
-    record?.assembled_state ||
-    record?.serverPayload ||
-    record?.record?.payload ||
-    record?.record?.state ||
-    record?.record?.assembledState ||
-    record?.record?.assembled_state;
-  return source === "demo" || source === "shared"
-    ? normalizePublishedStatePayload(payload)
-    : normalizeRemoteState(payload);
-}
-
-function historyRecordKey(record, index = 0) {
-  return String(record?.id ?? record?.createdAt ?? record?.created_at ?? index);
+  return historyRecordStateForSync(record, source, {
+    normalizePublishedStatePayload,
+    normalizeRemoteState
+  });
 }
 
 function renderHistoryRecordComparison(record, index, records) {
@@ -7854,28 +7829,6 @@ function historySourceLabel(source = activeHistorySource) {
   return "Моя история";
 }
 
-function summarizeHistoryPayload(payload) {
-  if (!payload) return "версия не распознана";
-  const itemCount = Object.keys(payload.items || {}).length;
-  const containerCount = Object.keys(payload.containers || {}).length;
-  const layout = payload.layouts?.[payload.activeLayoutId];
-  const layoutName = layout?.name ? ` · ${layout.name}` : "";
-  return `${itemCount} вещей · ${containerCount} контейнеров${layoutName}`;
-}
-
-function formatHistoryDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 async function restoreHistoryRecord(recordId) {
   const record = historyRecords.find((item) => String(item.id) === String(recordId));
   const restoredState = historyRecordState(record);
@@ -7949,11 +7902,6 @@ function selectedHistoryPublishedTarget() {
   if (activeHistorySource !== "shared") return null;
   const sharedId = refs.historySharedSelect?.value || currentSharedLayouts()[0]?.id || "";
   return sharedId ? { type: "shared", sharedId } : null;
-}
-
-function historyPayloadTitle(payload, fallback = "") {
-  const layout = payload?.layouts?.[payload.activeLayoutId] || Object.values(payload?.layouts || {})[0];
-  return String(layout?.name || fallback || "").trim();
 }
 
 async function publishPublicHistoryRecord(record, payload) {
