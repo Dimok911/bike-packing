@@ -116,6 +116,7 @@ import {
   defaultRootContainerLocation,
   itemCategories,
   migrateContainerOrder,
+  normalizeContainerFields,
   normalizeItemFields,
   normalizeItemQuantity,
   normalizeItemCategories
@@ -1767,21 +1768,6 @@ function rememberCurrentPackingListRecord(record) {
 
 function normalizeSortMode(value) {
   return ["asc", "desc", "none"].includes(value) ? value : "asc";
-}
-
-function normalizeContainerFields(targetState = state) {
-  const fallbackLocation = defaultRootContainerLocation(targetState);
-  Object.values(targetState.containers || {}).forEach((container) => {
-    const weight = Number(container.weight || 0);
-    const volume = Number(container.volume || 0);
-    container.weight = Number.isFinite(weight) && weight > 0 ? Math.round(weight) : 0;
-    container.volume = Number.isFinite(volume) && volume > 0 ? Math.round(volume * 10) / 10 : 0;
-    const location = typeof container.location === "string" ? container.location.trim() : "";
-    container.location = location || fallbackLocation;
-    container.note = typeof container.note === "string" ? container.note : "";
-    container.color = normalizeContainerColor(container.color);
-    normalizeItemPhotos(container);
-  });
 }
 
 function normalizeLayoutFields(targetState = state) {
