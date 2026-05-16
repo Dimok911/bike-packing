@@ -71,7 +71,13 @@ import {
   demoSharedLayout
 } from "./src/data/demo-data.js";
 import { guessCategory, guessLocation } from "./src/data/guess.js";
+import { normalizeContainerColor } from "./src/state/container-fields.js";
 import { createBlankBikePackingState } from "./src/state/empty-state.js";
+import {
+  createEmptyLayoutArrangement,
+  createLayoutArrangementFromCurrentState,
+  uniqueLayoutIds
+} from "./src/state/layout-arrangement.js";
 import { formatBytes } from "./src/utils/bytes.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
@@ -1852,10 +1858,6 @@ function normalizeContainerFields(targetState = state) {
   });
 }
 
-function normalizeContainerColor(value) {
-  return String(value || "").trim();
-}
-
 function repairContainerMembershipFromItemLinks(targetState = state) {
   const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};
   const items = targetState.items && typeof targetState.items === "object" ? targetState.items : {};
@@ -1949,15 +1951,6 @@ function normalizeLayoutFields(targetState = state) {
     const fallback = firstWithContainers || Object.values(targetState.layouts)[0];
     targetState.activeLayoutId = fallback?.id || "layout-main";
   }
-}
-
-function createEmptyLayoutArrangement() {
-  return {
-    rootContainerIds: [],
-    containers: {},
-    items: {},
-    packedItems: {}
-  };
 }
 
 function normalizeLayoutArrangement(layout, targetState = state) {
@@ -2069,51 +2062,6 @@ function repairBareLayoutRootArrangement(layout, targetState = state) {
     repaired = true;
   });
   return repaired;
-}
-
-function uniqueLayoutIds(list) {
-  return list.filter((id, index) => typeof id === "string" && id && list.indexOf(id) === index);
-}
-
-function createLayoutArrangementFromCurrentState(targetState = state, rootIds = []) {
-  const arrangement = createEmptyLayoutArrangement();
-  const containers = targetState.containers || {};
-  const items = targetState.items || {};
-  const seenContainers = new Set();
-  const walk = (containerId, parentId = "") => {
-    const container = containers[containerId];
-    if (!container || seenContainers.has(containerId)) return;
-    seenContainers.add(containerId);
-    const linkedItemIds = Object.entries(items)
-      .filter(([, item]) => item?.containerId === containerId)
-      .map(([itemId]) => itemId);
-    const itemIds = uniqueLayoutIds([
-      ...(Array.isArray(container.itemIds) ? container.itemIds : []),
-      ...linkedItemIds
-    ]).filter((itemId) => items[itemId]);
-    const childIds = uniqueLayoutIds(Array.isArray(container.childIds) ? container.childIds : [])
-      .filter((childId) => containers[childId]);
-    const order = (Array.isArray(container.order) ? container.order : [])
-      .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
-      .filter((entry) => entry.type === "item" ? itemIds.includes(entry.id) : childIds.includes(entry.id))
-      .map((entry) => ({ type: entry.type, id: entry.id }));
-    arrangement.containers[containerId] = {
-      parentId,
-      itemIds,
-      childIds,
-      order
-    };
-    itemIds.forEach((itemId) => {
-      arrangement.items[itemId] = containerId;
-    });
-    childIds.forEach((childId) => walk(childId, containerId));
-  };
-  arrangement.rootContainerIds = uniqueLayoutIds(rootIds).filter((containerId) => containers[containerId]);
-  arrangement.rootContainerIds.forEach((containerId) => walk(containerId, ""));
-  Object.entries(targetState.packedItems || {}).forEach(([itemId, value]) => {
-    if (value && arrangement.items[itemId]) arrangement.packedItems[itemId] = true;
-  });
-  return arrangement;
 }
 
 function captureActiveLayoutArrangement(targetState = state) {
