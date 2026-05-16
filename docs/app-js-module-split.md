@@ -8,7 +8,7 @@
 - `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
 - `src/utils` keeps small pure helpers for time, JSON, HTML escaping, language, weights, and byte formatting.
 - `src/state` has safe state shape, layout arrangement helpers, state diagnostics, repair helpers, and the first normalization helpers.
-- `src/sync` has payload reporting, photo metadata helpers, and state serialization helpers.
+- `src/sync` has payload reporting, photo metadata helpers, state serialization helpers, and entity sync payload helpers.
 
 ## Working Rule
 
@@ -16,4 +16,4 @@ Each step should be small, behavior-preserving, and easy to revert. Core state h
 
 ## Next Slices
 
-The next useful slices are the rest of state normalization, entity sync, then public/demo copy logic. UI rendering and drag/drop should stay near the end because they have the stickiest dependencies.
+The next useful slices are the rest of state normalization, API client, then public/demo copy logic. UI rendering and drag/drop should stay near the end because they have the stickiest dependencies.

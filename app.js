@@ -50,8 +50,6 @@ import {
   API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
-  ITEM_SYNC_MAX_BATCH_BYTES,
-  ITEM_SYNC_MAX_BATCH_ITEMS,
   POINTER_DRAG_START_DISTANCE,
   TOUCH_DRAG_DELAY_MS,
   TOUCH_DRAG_CANCEL_DISTANCE,
@@ -101,20 +99,26 @@ import {
   syncPayloadSizeReport
 } from "./src/sync/payload-report.js";
 import {
+  ENTITY_SYNC_CONFIG,
+  buildChangedEntitySyncEntries as buildChangedEntitySyncEntriesForSync,
+  buildEntitySyncBody as buildEntitySyncBodyForSync,
+  hasLegacyPayloadChanges as hasLegacyPayloadChangesForSync,
+  isEntitySyncUnavailableError,
+  legacyComparableStateForSync as legacyComparableStateForSyncPayload,
+  splitEntitySyncEntries as splitEntitySyncEntriesForSync
+} from "./src/sync/entity-sync.js";
+import {
   hasRemotePhotoUrl,
   normalizePhotoStatus,
   normalizePhotoUrlFields
 } from "./src/sync/photos.js";
 import {
   cloneStateForSyncPayload,
-  compactContainerForEntitySync,
-  compactItemForEntitySync,
-  compactLayoutForEntitySync,
   stripContainerArrangementFields,
   stripItemPlacementFields
 } from "./src/sync/serialize.js";
 import { escapeHtml } from "./src/utils/html.js";
-import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
+import { clonePlain } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
 import { nowIso } from "./src/utils/time.js";
 import {
@@ -2745,147 +2749,45 @@ function cloneStateForSync(sourceState, { forSync = false } = {}) {
   });
 }
 
-const ENTITY_SYNC_CONFIG = {
-  item: {
-    mapKey: "items",
-    bodyKey: "items",
-    endpoint: "items",
-    compact: compactItemForEntitySync,
-    unavailable: () => itemEntitySyncUnavailable,
-    markUnavailable: () => { itemEntitySyncUnavailable = true; },
-    tableName: "bike_packing_items",
-    fallbackText: "failed to sync list items"
-  },
-  container: {
-    mapKey: "containers",
-    bodyKey: "containers",
-    endpoint: "containers",
-    compact: compactContainerForEntitySync,
-    unavailable: () => containerEntitySyncUnavailable,
-    markUnavailable: () => { containerEntitySyncUnavailable = true; },
-    tableName: "bike_packing_containers",
-    fallbackText: "failed to sync list containers"
-  },
-  layout: {
-    mapKey: "layouts",
-    bodyKey: "layouts",
-    endpoint: "layouts",
-    compact: compactLayoutForEntitySync,
-    unavailable: () => layoutEntitySyncUnavailable,
-    markUnavailable: () => { layoutEntitySyncUnavailable = true; },
-    tableName: "bike_packing_layouts",
-    fallbackText: "failed to sync list layouts"
-  }
-};
-
-function normalizedEntitySyncState(sourceState) {
-  return cloneStateForSync(sourceState || createEmptyUserState(), { forSync: true });
-}
-
 function buildChangedEntitySyncEntries(type, baseState, localState, { forceOverwrite = false } = {}) {
-  const config = ENTITY_SYNC_CONFIG[type];
-  if (!config) return [];
-  const normalizedBase = normalizedEntitySyncState(baseState);
-  const normalizedLocal = normalizedEntitySyncState(localState);
-  const baseRecords = normalizedBase?.[config.mapKey] && typeof normalizedBase[config.mapKey] === "object" ? normalizedBase[config.mapKey] : {};
-  const localRecords = normalizedLocal?.[config.mapKey] && typeof normalizedLocal[config.mapKey] === "object" ? normalizedLocal[config.mapKey] : {};
-  const changedAt = forceOverwrite ? nowIso() : (syncMeta.localUpdatedAt || nowIso());
-  const ids = new Set([...Object.keys(baseRecords), ...Object.keys(localRecords)]);
-  const entries = [];
-  ids.forEach((recordId) => {
-    const localPayload = config.compact(localRecords[recordId]);
-    const basePayload = config.compact(baseRecords[recordId]);
-    if (!localPayload && !basePayload) return;
-    if (!forceOverwrite && localPayload && basePayload && sameJson(localPayload, basePayload)) return;
-    const payload = localPayload || basePayload || { id: recordId };
-    entries.push({
-      id: recordId,
-      deleted: !localPayload,
-      clientUpdatedAt: forceOverwrite ? changedAt : (payload.updatedAt || payload.clientUpdatedAt || changedAt),
-      payload
-    });
+  return buildChangedEntitySyncEntriesForSync(type, baseState, localState, {
+    forceOverwrite,
+    ...entitySyncStateDeps()
   });
-  return entries;
-}
-
-function buildChangedItemSyncEntries(baseState, localState, { forceOverwrite = false } = {}) {
-  return buildChangedEntitySyncEntries("item", baseState, localState, { forceOverwrite });
 }
 
 function legacyComparableStateForSync(sourceState, entitySync = null) {
-  const cloned = cloneStateForSync(sourceState || createEmptyUserState(), { forSync: true });
-  if (!entitySync || entitySync.item?.safeForLegacyCompare !== false) delete cloned.items;
-  if (entitySync?.container?.safeForLegacyCompare !== false) delete cloned.containers;
-  if (entitySync?.layout?.safeForLegacyCompare !== false) delete cloned.layouts;
-  return cloned;
+  return legacyComparableStateForSyncPayload(sourceState, entitySync, entitySyncStateDeps());
 }
 
 function hasLegacyPayloadChanges(baseState, localState, entitySync = null) {
-  if (!baseState) return true;
-  return !sameJson(legacyComparableStateForSync(baseState, entitySync), legacyComparableStateForSync(localState, entitySync));
-}
-
-function isEntitySyncUnavailableError(error, type = "item") {
-  const config = ENTITY_SYNC_CONFIG[type] || ENTITY_SYNC_CONFIG.item;
-  const text = `${error?.message || ""} ${error?.data?.message || ""} ${error?.data?.error || ""} ${error?.data?.code || ""}`.toLowerCase();
-  return error?.status === 404 ||
-    error?.status === 405 ||
-    text.includes(config.tableName) ||
-    text.includes("no such table") ||
-    text.includes(config.fallbackText);
-}
-
-function isItemEntitySyncUnavailableError(error) {
-  return isEntitySyncUnavailableError(error, "item");
+  return hasLegacyPayloadChangesForSync(baseState, localState, entitySync, entitySyncStateDeps());
 }
 
 function buildEntitySyncBody(type, entries, { forceOverwrite = false } = {}) {
-  const config = ENTITY_SYNC_CONFIG[type] || ENTITY_SYNC_CONFIG.item;
-  const body = {
-    clientDeviceId: syncDevice.id,
-    clientDeviceName: syncDevice.name,
-    baseStateRevision: syncMeta.stateRevision ?? null,
-    stateRevision: syncMeta.stateRevision ?? null,
-    force: forceOverwrite,
-    forceOverwrite
-  };
-  body[config.bodyKey] = entries;
-  return body;
-}
-
-function buildItemSyncBody(entries, { forceOverwrite = false } = {}) {
-  return buildEntitySyncBody("item", entries, { forceOverwrite });
+  return buildEntitySyncBodyForSync(type, entries, {
+    forceOverwrite,
+    ...entitySyncBodyContext()
+  });
 }
 
 function splitEntitySyncEntries(type, entries) {
-  const batches = [];
-  let current = [];
-  let currentBytes = jsonUtf8ByteLength(buildEntitySyncBody(type, current));
-  entries.forEach((entry) => {
-    const singleBytes = jsonUtf8ByteLength(buildEntitySyncBody(type, [entry]));
-    if (!current.length) {
-      current.push(entry);
-      currentBytes = singleBytes;
-      return;
-    }
-    const nextBytes = jsonUtf8ByteLength(buildEntitySyncBody(type, [...current, entry]));
-    const tooManyItems = current.length >= ITEM_SYNC_MAX_BATCH_ITEMS;
-    const tooManyBytes = nextBytes > ITEM_SYNC_MAX_BATCH_BYTES && singleBytes <= ITEM_SYNC_MAX_BATCH_BYTES;
-    if (tooManyItems || tooManyBytes) {
-      batches.push(current);
-      current = [entry];
-      currentBytes = singleBytes;
-      return;
-    }
-    current.push(entry);
-    currentBytes = nextBytes;
-  });
-  if (current.length) batches.push(current);
-  return batches;
+  return splitEntitySyncEntriesForSync(type, entries, entitySyncBodyContext());
 }
 
-function splitItemSyncEntries(entries) {
-  return splitEntitySyncEntries("item", entries);
+function entitySyncStateDeps() {
+  return {
+    cloneStateForSync,
+    createEmptyUserState,
+    localUpdatedAt: syncMeta.localUpdatedAt
+  };
+}
+
+function entitySyncBodyContext() {
+  return {
+    syncDevice,
+    syncMeta
+  };
 }
 
 async function syncChangedEntityType(type, { baseState = null, forceOverwrite = false, listId = "" } = {}) {
@@ -2894,7 +2796,7 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
   if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true };
   const entries = buildChangedEntitySyncEntries(type, baseState, state, { forceOverwrite });
   if (!entries.length) return { type, attempted: false, skipped: false, entryCount: 0, safeForLegacyCompare: true };
-  if (config.unavailable() || personalListApiUnavailable) {
+  if (isEntitySyncTypeUnavailable(type) || personalListApiUnavailable) {
     return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, safeForLegacyCompare: false };
   }
   const targetListId = listId || await ensureCurrentPackingListId();
@@ -2941,11 +2843,24 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
     };
   } catch (error) {
     if (isEntitySyncUnavailableError(error, type) || isNetworkError(error)) {
-      config.markUnavailable();
+      markEntitySyncTypeUnavailable(type);
       return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, safeForLegacyCompare: false };
     }
     throw error;
   }
+}
+
+function isEntitySyncTypeUnavailable(type) {
+  if (type === "item") return itemEntitySyncUnavailable;
+  if (type === "container") return containerEntitySyncUnavailable;
+  if (type === "layout") return layoutEntitySyncUnavailable;
+  return true;
+}
+
+function markEntitySyncTypeUnavailable(type) {
+  if (type === "item") itemEntitySyncUnavailable = true;
+  else if (type === "container") containerEntitySyncUnavailable = true;
+  else if (type === "layout") layoutEntitySyncUnavailable = true;
 }
 
 async function syncChangedItemEntities({ baseState = null, forceOverwrite = false } = {}) {
