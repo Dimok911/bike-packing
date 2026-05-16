@@ -165,6 +165,7 @@ import {
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
+import { safeSetLocalStorage } from "./src/utils/storage.js";
 import { nowIso } from "./src/utils/time.js";
 import {
   formatVolume,
@@ -282,16 +283,6 @@ function loadUiLanguage() {
 
 function saveUiLanguage(language) {
   safeSetLocalStorage(LANGUAGE_KEY, normalizeUiLanguage(language));
-}
-
-function safeSetLocalStorage(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (error) {
-    console.warn("[bike-packing] localStorage write skipped", key, error);
-    return false;
-  }
 }
 
 function persistStateSnapshot(snapshot = state) {
