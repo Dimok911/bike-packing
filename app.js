@@ -1,5 +1,5 @@
 const STORAGE_KEY = "bike-packing-prototype-state-v1";
-const APP_VERSION = "v475";
+const APP_VERSION = "v483";
 const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -11,6 +11,8 @@ const DEVICE_META_KEY = "bike-packing-device-meta-v1";
 const UI_SETTINGS_KEY = "bike-packing-ui-settings-v1";
 const ACTIVE_LIST_ID_KEY = "bike-packing-active-list-id-v1";
 const ACTIVE_LAYOUT_CHOICE_KEY = "bike-packing-active-layout-choice-v1";
+const ACTIVE_LAYOUT_CHOICE_SOURCE_KEY = "bike-packing-active-layout-choice-source-v1";
+const ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY = "bike-packing-active-private-layout-choice-v1";
 const API_BASE = "https://api.vniipo-help.ru/letters-vniipo/api";
 const PHOTO_DB_NAME = "bike-packing-photo-cache-v1";
 const PHOTO_DB_VERSION = 1;
@@ -27,6 +29,14 @@ const DEMO_SHARED_LAYOUT_ID = "demo-default";
 const GUEST_DEMO_COPY_FLAG = "guestDemoCopy";
 const SHARED_ITEM_KEY_PREFIX = "shared-layout:";
 const SHARED_LAYOUTS_STORAGE_KEY = "bike-packing-shared-layouts-admin-draft-v1";
+const SESSION_MODE_GUEST = "guest";
+const SESSION_MODE_USER = "user";
+const SESSION_MODE_ADMIN = "admin";
+const VIEW_SCOPE_PRIVATE = "private";
+const VIEW_SCOPE_GUEST_LOCAL = "guest-local";
+const VIEW_SCOPE_DEMO = "demo";
+const VIEW_SCOPE_SHARED = "shared";
+const VIEW_SCOPE_ADMIN_PUBLIC_EDIT = "admin-public-edit";
 const STATE_SCOPE_PRIVATE = "private";
 const STATE_SCOPE_DEMO = "demo";
 const STATE_SCOPE_SHARED = "shared";
@@ -522,9 +532,13 @@ let editingItemId = null;
 let editingItemTitleId = null;
 let editingRootContainerId = null;
 let editingContainerId = null;
-let activeStateScope = STATE_SCOPE_PRIVATE;
-let activeReadonlyLayoutId = "";
-let activeSharedLayoutId = "";
+const modeState = {
+  viewScope: VIEW_SCOPE_PRIVATE,
+  stateScope: STATE_SCOPE_PRIVATE,
+  readonlyLayoutId: "",
+  sharedLayoutId: "",
+  adminPublishedEditLayoutId: ""
+};
 let linkedSharedListLayout = null;
 let sharedVirtualCollapsedContainers = {};
 let draggingItemId = null;
@@ -548,7 +562,6 @@ let publishedLayoutSaveTimer = null;
 let applyingRemoteState = false;
 let appUnlocked = true;
 let initialRemoteLoadPending = false;
-let activeAdminPublishedEditLayoutId = "";
 let syncVisualState = "local";
 let remoteRefreshTimer = null;
 let remoteRefreshInFlight = false;
@@ -2088,6 +2101,16 @@ function normalizeActiveLayoutChoice(choice) {
   return value;
 }
 
+function isPrivateLayoutChoice(choice) {
+  const normalized = normalizeActiveLayoutChoice(choice);
+  return Boolean(normalized && normalized !== DEMO_LAYOUT_SELECT_VALUE && !normalized.startsWith("shared:"));
+}
+
+function isPrivateUserLayoutId(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  return Boolean(layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG]);
+}
+
 function loadActiveLayoutChoice() {
   try {
     return normalizeActiveLayoutChoice(localStorage.getItem(ACTIVE_LAYOUT_CHOICE_KEY) || "");
@@ -2096,11 +2119,36 @@ function loadActiveLayoutChoice() {
   }
 }
 
+function loadActivePrivateLayoutChoice() {
+  try {
+    const choice = normalizeActiveLayoutChoice(localStorage.getItem(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY) || "");
+    return isPrivateLayoutChoice(choice) && isPrivateUserLayoutId(choice) ? choice : "";
+  } catch {
+    return "";
+  }
+}
+
+function isActiveLayoutChoiceExplicit() {
+  try {
+    return localStorage.getItem(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY) === "explicit";
+  } catch {
+    return false;
+  }
+}
+
 function saveActiveLayoutChoice(choice) {
   const normalized = normalizeActiveLayoutChoice(choice);
   try {
-    if (normalized) safeSetLocalStorage(ACTIVE_LAYOUT_CHOICE_KEY, normalized);
-    else localStorage.removeItem(ACTIVE_LAYOUT_CHOICE_KEY);
+    if (normalized) {
+      safeSetLocalStorage(ACTIVE_LAYOUT_CHOICE_KEY, normalized);
+      safeSetLocalStorage(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, "explicit");
+    } else {
+      localStorage.removeItem(ACTIVE_LAYOUT_CHOICE_KEY);
+      localStorage.removeItem(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY);
+    }
+    if (isPrivateLayoutChoice(normalized) && isPrivateUserLayoutId(normalized)) {
+      safeSetLocalStorage(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, normalized);
+    }
   } catch {
     // The last opened layout is only a UI preference.
   }
@@ -2122,7 +2170,19 @@ function rememberActiveLayoutChoice(choice = currentLayoutChoice()) {
 }
 
 async function restoreSavedLayoutChoice({ publicOnly = false } = {}) {
-  const choice = loadActiveLayoutChoice();
+  const explicitChoice = isActiveLayoutChoiceExplicit();
+  const activePrivateChoice = !publicOnly && isPrivateUserLayoutId(state.activeLayoutId)
+    ? state.activeLayoutId
+    : "";
+  const privateChoice = !publicOnly ? loadActivePrivateLayoutChoice() || activePrivateChoice : "";
+  let choice = loadActiveLayoutChoice();
+  const adminPublicChoice = !publicOnly && canOpenAdminPublishedEdit() && (
+    choice === DEMO_LAYOUT_SELECT_VALUE ||
+    String(choice || "").startsWith("shared:")
+  );
+  if (!adminPublicChoice && !publicOnly && choice === DEMO_LAYOUT_SELECT_VALUE && !explicitChoice && privateChoice) choice = privateChoice;
+  if (!publicOnly && isPrivateLayoutChoice(choice) && !isPrivateUserLayoutId(choice) && privateChoice) choice = privateChoice;
+  if (!choice) choice = privateChoice;
   if (!choice) return false;
   if (choice === DEMO_LAYOUT_SELECT_VALUE) {
     if (canOpenAdminPublishedEdit() && !publicOnly) await openAdminDemoLayout({ remember: false });
@@ -2136,8 +2196,18 @@ async function restoreSavedLayoutChoice({ publicOnly = false } = {}) {
     else await openSharedLayoutViewer(layoutId, { remember: false });
     return true;
   }
-  if (publicOnly || !canUsePrivateState() || !state.layouts?.[choice]) return false;
+  const savedLayout = state.layouts?.[choice];
+  if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminDemo) {
+    await openAdminDemoLayout({ remember: false });
+    return true;
+  }
+  if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminSharedSourceId) {
+    await openSharedLayoutForAdmin(savedLayout.adminSharedSourceId, { remember: false });
+    return true;
+  }
+  if (publicOnly || !canUsePrivateState() || !isPrivateUserLayoutId(choice)) return false;
   openPrivateLayout(choice, { remember: false });
+  saveActiveLayoutChoice(choice);
   return true;
 }
 
@@ -2417,40 +2487,40 @@ function captureActiveLayoutArrangement(targetState = state) {
 
 function withLayoutArrangementApplied(layoutId, callback) {
   const previousLayoutId = state.activeLayoutId;
-  const previousAdminLayoutId = activeAdminPublishedEditLayoutId;
+  const previousMode = snapshotModeState();
   const targetLayout = state.layouts?.[layoutId];
   if (!targetLayout) return callback?.();
   if (layoutId === previousLayoutId) return callback?.();
   captureActiveLayoutArrangement();
   state.activeLayoutId = layoutId;
-  if (isAdminEditablePublishedLayout(layoutId)) activeAdminPublishedEditLayoutId = layoutId;
+  if (isAdminEditablePublishedLayout(layoutId)) setTemporaryAdminEditLayout(layoutId);
   applyLayoutArrangement(layoutId);
   try {
     return callback?.();
   } finally {
     captureActiveLayoutArrangement();
     state.activeLayoutId = previousLayoutId;
-    activeAdminPublishedEditLayoutId = previousAdminLayoutId;
+    restoreModeState(previousMode);
     if (previousLayoutId && state.layouts?.[previousLayoutId]) applyLayoutArrangement(previousLayoutId);
   }
 }
 
 async function withLayoutArrangementAppliedAsync(layoutId, callback) {
   const previousLayoutId = state.activeLayoutId;
-  const previousAdminLayoutId = activeAdminPublishedEditLayoutId;
+  const previousMode = snapshotModeState();
   const targetLayout = state.layouts?.[layoutId];
   if (!targetLayout) return await callback?.();
   if (layoutId === previousLayoutId) return await callback?.();
   captureActiveLayoutArrangement();
   state.activeLayoutId = layoutId;
-  if (isAdminEditablePublishedLayout(layoutId)) activeAdminPublishedEditLayoutId = layoutId;
+  if (isAdminEditablePublishedLayout(layoutId)) setTemporaryAdminEditLayout(layoutId);
   applyLayoutArrangement(layoutId);
   try {
     return await callback?.();
   } finally {
     captureActiveLayoutArrangement();
     state.activeLayoutId = previousLayoutId;
-    activeAdminPublishedEditLayoutId = previousAdminLayoutId;
+    restoreModeState(previousMode);
     if (previousLayoutId && state.layouts?.[previousLayoutId]) applyLayoutArrangement(previousLayoutId);
   }
 }
@@ -2547,13 +2617,13 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
   }
   if (!layoutId || !state.layouts?.[layoutId] || layoutId === state.activeLayoutId) {
     if (canUsePrivateState()) setActivePrivateScope();
-    else setActiveLocalEditableScope();
+    else setActiveLocalEditableScope(layoutId);
     if (layoutId && state.layouts?.[layoutId] && remember) rememberActiveLayoutChoice(layoutId);
     render();
     return;
   }
   if (canUsePrivateState()) setActivePrivateScope();
-  else setActiveLocalEditableScope();
+  else setActiveLocalEditableScope(layoutId);
   captureActiveLayoutArrangement();
   state.activeLayoutId = layoutId;
   applyLayoutArrangement(layoutId);
@@ -2568,16 +2638,13 @@ function openPrivateLayout(layoutId, options = {}) {
     return;
   }
   if (canUsePrivateState()) setActivePrivateScope();
-  else setActiveLocalEditableScope();
+  else setActiveLocalEditableScope(layoutId);
   switchActiveLayout(layoutId, options);
 }
 
 function activateAdminPublishedLayout(layoutId, { remember = true } = {}) {
   if (!layoutId || !isAdminEditablePublishedLayout(layoutId)) return false;
-  activeStateScope = STATE_SCOPE_PRIVATE;
-  activeReadonlyLayoutId = "";
-  activeSharedLayoutId = "";
-  activeAdminPublishedEditLayoutId = layoutId;
+  if (!setViewScope(VIEW_SCOPE_ADMIN_PUBLIC_EDIT, { adminLayoutId: layoutId })) return false;
   state.activeLayoutId = layoutId;
   applyLayoutArrangement(layoutId);
   if (remember) {
@@ -2987,36 +3054,95 @@ function hasGuestDemoCopyLayout() {
   return Object.values(state.layouts || {}).some((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
 }
 
+function currentSessionMode() {
+  if (isAdminUser()) return SESSION_MODE_ADMIN;
+  if (currentUser || isForcedOffline()) return SESSION_MODE_USER;
+  return SESSION_MODE_GUEST;
+}
+
+function currentViewScope() {
+  return modeState.viewScope;
+}
+
+function isGuestSession() {
+  return currentSessionMode() === SESSION_MODE_GUEST;
+}
+
+function isAdminSession() {
+  return currentSessionMode() === SESSION_MODE_ADMIN;
+}
+
+function snapshotModeState() {
+  return { ...modeState };
+}
+
+function restoreModeState(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return;
+  Object.assign(modeState, {
+    viewScope: snapshot.viewScope || VIEW_SCOPE_PRIVATE,
+    stateScope: snapshot.stateScope || STATE_SCOPE_PRIVATE,
+    readonlyLayoutId: snapshot.readonlyLayoutId || "",
+    sharedLayoutId: snapshot.sharedLayoutId || "",
+    adminPublishedEditLayoutId: snapshot.adminPublishedEditLayoutId || ""
+  });
+}
+
+function setTemporaryAdminEditLayout(layoutId) {
+  if (!layoutId || !isAdminEditablePublishedLayout(layoutId)) return false;
+  modeState.adminPublishedEditLayoutId = layoutId;
+  return true;
+}
+
+function setViewScope(scope, { readonlyLayoutId = "", adminLayoutId = "" } = {}) {
+  if (scope === VIEW_SCOPE_ADMIN_PUBLIC_EDIT) {
+    if (!adminLayoutId || !isAdminEditablePublishedLayout(adminLayoutId)) return false;
+    modeState.viewScope = VIEW_SCOPE_ADMIN_PUBLIC_EDIT;
+    modeState.stateScope = STATE_SCOPE_PRIVATE;
+    modeState.readonlyLayoutId = "";
+    modeState.sharedLayoutId = "";
+    modeState.adminPublishedEditLayoutId = adminLayoutId;
+    return true;
+  }
+
+  if (scope === VIEW_SCOPE_DEMO || scope === VIEW_SCOPE_SHARED) {
+    const layoutId = readonlyLayoutId || (scope === VIEW_SCOPE_DEMO ? DEMO_SHARED_LAYOUT_ID : "");
+    if (!layoutId || !findSharedLayout(layoutId)) return false;
+    modeState.viewScope = scope;
+    modeState.stateScope = layoutId === DEMO_SHARED_LAYOUT_ID ? STATE_SCOPE_DEMO : STATE_SCOPE_SHARED;
+    modeState.readonlyLayoutId = layoutId;
+    modeState.sharedLayoutId = layoutId;
+    modeState.adminPublishedEditLayoutId = "";
+    if (layoutId === DEMO_SHARED_LAYOUT_ID) syncDemoStatePayloadForLanguage(uiLanguage);
+    return true;
+  }
+
+  modeState.viewScope = scope === VIEW_SCOPE_GUEST_LOCAL ? VIEW_SCOPE_GUEST_LOCAL : VIEW_SCOPE_PRIVATE;
+  modeState.stateScope = STATE_SCOPE_PRIVATE;
+  modeState.readonlyLayoutId = "";
+  modeState.sharedLayoutId = "";
+  modeState.adminPublishedEditLayoutId = "";
+  return true;
+}
+
 function canUseLocalEditableState(layoutId = state.activeLayoutId) {
   return canUsePrivateState() || isGuestDemoCopyLayout(layoutId);
 }
 
 function isPublicLayoutContext() {
-  return isReadOnlyStateScope() || isAdminEditablePublishedLayout();
+  return isReadOnlyStateScope() || currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT || isAdminEditablePublishedLayout();
 }
 
 function setActivePrivateScope() {
-  if (!canUsePrivateState() && !isGuestDemoCopyLayout()) {
-    activeStateScope = STATE_SCOPE_DEMO;
-    activeReadonlyLayoutId = DEMO_SHARED_LAYOUT_ID;
-    activeSharedLayoutId = DEMO_SHARED_LAYOUT_ID;
-    activeAdminPublishedEditLayoutId = "";
-    syncDemoStatePayloadForLanguage(uiLanguage);
-    return false;
-  }
-  activeStateScope = STATE_SCOPE_PRIVATE;
-  activeReadonlyLayoutId = "";
-  activeSharedLayoutId = "";
-  activeAdminPublishedEditLayoutId = "";
-  return true;
+  if (canUsePrivateState()) return setViewScope(VIEW_SCOPE_PRIVATE);
+  if (isGuestDemoCopyLayout()) return setViewScope(VIEW_SCOPE_GUEST_LOCAL);
+  setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
+  return false;
 }
 
-function setActiveLocalEditableScope() {
-  activeStateScope = STATE_SCOPE_PRIVATE;
-  activeReadonlyLayoutId = "";
-  activeSharedLayoutId = "";
-  activeAdminPublishedEditLayoutId = "";
-  return true;
+function setActiveLocalEditableScope(layoutId = state.activeLayoutId) {
+  return setViewScope(!canUsePrivateState() && isGuestDemoCopyLayout(layoutId)
+    ? VIEW_SCOPE_GUEST_LOCAL
+    : VIEW_SCOPE_PRIVATE);
 }
 
 function setActiveReadOnlyScope(layoutId) {
@@ -3024,20 +3150,15 @@ function setActiveReadOnlyScope(layoutId) {
     setActivePrivateScope();
     return false;
   }
-  activeStateScope = layoutId === DEMO_SHARED_LAYOUT_ID ? STATE_SCOPE_DEMO : STATE_SCOPE_SHARED;
-  activeReadonlyLayoutId = layoutId;
-  activeSharedLayoutId = layoutId;
-  activeAdminPublishedEditLayoutId = "";
-  if (layoutId === DEMO_SHARED_LAYOUT_ID) syncDemoStatePayloadForLanguage(uiLanguage);
-  return true;
+  return setViewScope(layoutId === DEMO_SHARED_LAYOUT_ID ? VIEW_SCOPE_DEMO : VIEW_SCOPE_SHARED, { readonlyLayoutId: layoutId });
 }
 
 function isReadOnlyStateScope() {
-  return activeStateScope !== STATE_SCOPE_PRIVATE && Boolean(activeReadonlyLayoutId);
+  return [VIEW_SCOPE_DEMO, VIEW_SCOPE_SHARED].includes(modeState.viewScope) && Boolean(modeState.readonlyLayoutId);
 }
 
 function activeReadOnlyLayoutId() {
-  return activeReadonlyLayoutId || activeSharedLayoutId;
+  return modeState.readonlyLayoutId || modeState.sharedLayoutId;
 }
 
 function isReadOnlyBikePackingContext(record = null) {
@@ -3047,7 +3168,7 @@ function isReadOnlyBikePackingContext(record = null) {
 }
 
 function canUsePrivateState() {
-  return Boolean(currentUser) || isForcedOffline();
+  return !isGuestSession();
 }
 
 function ensureGuestPublicScope() {
@@ -3140,8 +3261,8 @@ function schedulePublishedLayoutSave(layoutId, delay = 900) {
 }
 
 function getPublishedEditLayoutId() {
-  return isAdminEditablePublishedLayout(activeAdminPublishedEditLayoutId)
-    ? activeAdminPublishedEditLayoutId
+  return isAdminEditablePublishedLayout(modeState.adminPublishedEditLayoutId)
+    ? modeState.adminPublishedEditLayoutId
     : state.activeLayoutId;
 }
 
@@ -3627,7 +3748,7 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
 function pruneAdminPublishedDraftsForSync(cloned) {
   const layouts = cloned.layouts || {};
   const draftLayoutIds = Object.values(layouts)
-    .filter((layout) => layout?.adminDemo || layout?.adminSharedSourceId)
+    .filter((layout) => layout?.adminDemo || layout?.adminSharedSourceId || layout?.[GUEST_DEMO_COPY_FLAG])
     .map((layout) => layout.id)
     .filter(Boolean);
   const draftContainers = new Set();
@@ -3653,20 +3774,23 @@ function pruneAdminPublishedDraftsForSync(cloned) {
     (layout.rootContainerIds || []).forEach(collectRetainedContainer);
   });
 
+  const containersToDrop = new Set();
   draftContainers.forEach((containerId) => {
-    if (!retainedContainers.has(containerId)) delete cloned.containers[containerId];
+    if (!retainedContainers.has(containerId)) collectContainerTreeForDrop(cloned, containerId, containersToDrop);
   });
   Object.entries(cloned.containers || {}).forEach(([containerId, container]) => {
-    if (container?.publicCatalogLayoutId || container?.adminDemo || container?.adminSharedSourceId) {
-      delete cloned.containers[containerId];
-    }
+    if (isPublicSyncContainer(containerId, container)) collectContainerTreeForDrop(cloned, containerId, containersToDrop);
+  });
+  containersToDrop.forEach((containerId) => {
+    delete cloned.containers[containerId];
   });
   Object.entries(cloned.items || {}).forEach(([itemId, item]) => {
-    if (item?.publicCatalogLayoutId || item?.adminDemo || item?.adminSharedSourceId) {
+    if (
+      isPublicSyncItem(itemId, item) ||
+      (item?.containerId && (!cloned.containers?.[item.containerId] || containersToDrop.has(item.containerId)))
+    ) {
       delete cloned.items[itemId];
-      return;
     }
-    if (item?.containerId && !cloned.containers?.[item.containerId]) delete cloned.items[itemId];
   });
   Object.values(cloned.containers || {}).forEach((container) => {
     container.childIds = (container.childIds || []).filter((id) => cloned.containers?.[id]);
@@ -3711,6 +3835,26 @@ function pruneAdminPublishedDraftsForSync(cloned) {
   if (draftLayoutIds.includes(cloned.activeLayoutId)) {
     cloned.activeLayoutId = Object.values(layouts)[0]?.id || "";
   }
+}
+
+function isPublicSyncItem(itemId, item) {
+  return Boolean(
+    item?.publicCatalogLayoutId ||
+    item?.adminDemo ||
+    item?.adminSharedSourceId ||
+    String(itemId || item?.id || "").startsWith("guest-demo-item-") ||
+    isGeneratedCatalogSyncArtifact(itemId, item)
+  );
+}
+
+function isPublicSyncContainer(containerId, container) {
+  return Boolean(
+    container?.publicCatalogLayoutId ||
+    container?.adminDemo ||
+    container?.adminSharedSourceId ||
+    String(containerId || container?.id || "").startsWith("guest-demo-container-") ||
+    isGeneratedCatalogContainerSyncArtifact(containerId, container)
+  );
 }
 
 function cleanupGeneratedCatalogArtifacts(targetState = state, { forSync = false } = {}) {
@@ -4123,9 +4267,9 @@ function blockDestructiveLocalSave() {
   return true;
 }
 
-function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null) {
+function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, { allowDestructive = false } = {}) {
   if (blockRemoteIntegrityFailureIfNeeded(remoteState, integrityMeta, rawPayload)) return false;
-  if (blockDestructiveRemoteState(remoteState, "remote-apply")) {
+  if (!allowDestructive && blockDestructiveRemoteState(remoteState, "remote-apply")) {
     renderInitialLocalFallbackIfNeeded();
     return false;
   }
@@ -4232,9 +4376,9 @@ function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts) {
 function comparableValueForMerge(type, value) {
   if (!["item", "container", "layout"].includes(type) || !value || typeof value !== "object") return value;
   const comparable = { ...value };
-  delete comparable.updatedAt;
-  delete comparable.updatedByDeviceId;
-  delete comparable.updatedByDeviceName;
+  Object.keys(comparable).forEach((key) => {
+    if (isConflictMetaField(key)) delete comparable[key];
+  });
   if ((type === "item" || type === "container") && Array.isArray(comparable.photos)) {
     comparable.photos = comparable.photos.map(comparablePhotoForMerge).filter(Boolean);
   }
@@ -4527,14 +4671,19 @@ function isConflictMetaField(key) {
   return [
     "id",
     "createdAt",
+    "created_at",
     "createdByDeviceId",
     "createdByDeviceName",
     "updatedAt",
+    "updated_at",
     "updatedByDeviceId",
     "updatedByDeviceName",
     "clientUpdatedAt",
+    "client_updated_at",
     "sourceDeviceId",
-    "sourceDeviceName"
+    "sourceDeviceName",
+    "source_device_id",
+    "source_device_name"
   ].includes(key);
 }
 
@@ -4735,7 +4884,7 @@ function isAdminUser() {
 }
 
 function canOpenAdminPublishedEdit() {
-  return Boolean(currentUser);
+  return isAdminSession();
 }
 
 function updateSyncUi(message = "") {
@@ -5301,25 +5450,14 @@ async function checkAuthAndLoad({ syncDirtyNotify = false } = {}) {
   }
 
   setExplicitlySignedOut(false);
-  const shouldOpenAdminPublicEdit = canOpenAdminPublishedEdit() && isReadOnlyStateScope();
   appUnlocked = true;
-  if (shouldOpenAdminPublicEdit) {
-    const readonlyId = activeReadOnlyLayoutId();
-    if (readonlyId === DEMO_SHARED_LAYOUT_ID) {
-      await openAdminDemoLayout();
-      return;
-    }
-    if (readonlyId) {
-      await openSharedLayoutForAdmin(readonlyId);
-      return;
-    }
-  }
   updateSyncUi("Вход выполнен · загружаю данные...");
 
   try {
     if (syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi("Есть локальные изменения · проверяю даты...");
       await loadRemoteState({ notifyDirtySave: syncDirtyNotify });
+      await restoreSavedLayoutChoice();
       return;
     }
     await loadRemoteState();
@@ -6088,11 +6226,11 @@ async function defaultDemoState(language = uiLanguage) {
   return fallback;
 }
 
-async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false } = {}) {
+async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, remember = false } = {}) {
   const demoState = await defaultDemoState();
   setDemoStatePayloadForLanguage(uiLanguage, demoState);
   if (forcePublicScope) {
-    await createLocalDemoCopy({ forceNew: false, remember: true });
+    setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
     initialRemoteLoadPending = false;
     return true;
   }
@@ -6121,6 +6259,10 @@ function localPersonalStateForDemoFallback() {
 
 async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) {
   if (!currentUser) return;
+  if (forceOverwrite) {
+    syncMeta.localUpdatedAt = nowIso();
+    saveSyncMeta();
+  }
   if (!forceOverwrite && clearStaleDirtyFlagIfNoLocalChanges()) return;
   if (isReadOnlyBikePackingContext()) {
     syncMeta.dirty = false;
@@ -6139,7 +6281,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) 
       if (notify) showToast("Пустая локальная укладка не отправлена на сервер.", "error");
       return;
     }
-    if (blockDestructiveLocalSave()) {
+    if (!forceOverwrite && blockDestructiveLocalSave()) {
       if (notify) showToast("Локальная версия похожа на усечённую. Я не отправил её на сервер.", "error");
       return;
     }
@@ -6147,19 +6289,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) 
     const baseBeforeSave = loadBaseState();
     const entitySync = await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
     const hasLegacyChanges = hasLegacyPayloadChanges(baseBeforeSave, state, entitySync);
-    if (forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
-      syncMeta.dirty = false;
-      syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt || syncMeta.serverUpdatedAt;
-      syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || entitySync.serverUpdatedAt || new Date().toISOString();
-      syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-      rememberRemoteIntegrityMeta(entitySync.integrityMeta);
-      saveBaseState(serializeState({ forSync: true }));
-      saveSyncMeta();
-      updateSyncUi("Локальная версия отправлена по сущностям · полный payload не трогался");
-      if (notify) showToast("Локальная версия сохранена по сущностям. Полная перезапись списка пропущена.", "success");
-      return;
-    }
-    if (entitySync.attempted && !hasLegacyChanges) {
+    if (!forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
       syncMeta.dirty = false;
       syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt || syncMeta.serverUpdatedAt;
       syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || entitySync.serverUpdatedAt || new Date().toISOString();
@@ -6244,7 +6374,7 @@ async function handleRemoteSaveConflict(error, { notify = false } = {}) {
     }
     const resolution = await askConflictResolution(mergeResult.conflicts);
     if (resolution === "server") {
-      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload) && notify) showToast("Загружена серверная версия.", "success");
+      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true }) && notify) showToast("Загружена серверная версия.", "success");
       return;
     }
     if (resolution === "cancel") {
@@ -6285,7 +6415,7 @@ async function handleRemoteSaveConflict(error, { notify = false } = {}) {
     await saveRemoteState({ notify, forceOverwrite: true });
     return;
   }
-  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload) && notify) showToast("Загружена серверная версия.", "success");
+  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true }) && notify) showToast("Загружена серверная версия.", "success");
 }
 
 async function loadRemoteState({ notifyDirtySave = false } = {}) {
@@ -6358,11 +6488,11 @@ async function loadRemoteState({ notifyDirtySave = false } = {}) {
         return;
       }
       if (!syncMeta.dirty) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload);
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
         return;
       }
       if (isInitialRemotePull && !hasFreshLocalDirtyState) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload);
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
         return;
       }
       if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
@@ -6409,7 +6539,7 @@ async function loadRemoteState({ notifyDirtySave = false } = {}) {
       updateSyncUi("Есть конфликты изменений...");
       const resolution = await askConflictResolution(mergeResult.conflicts);
       if (resolution === "server") {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload);
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
         return;
       }
       if (resolution === "cancel") {
@@ -6545,8 +6675,8 @@ function removePublicLayoutDrafts({ exceptLayoutId = "" } = {}) {
   const drafts = Object.values(state.layouts || {})
     .filter((layout) => (layout?.adminDemo || layout?.adminSharedSourceId) && layout.id !== exceptLayoutId);
   drafts.forEach((layout) => removeLayoutTree(layout.id));
-  if (activeAdminPublishedEditLayoutId && !state.layouts?.[activeAdminPublishedEditLayoutId]) {
-    activeAdminPublishedEditLayoutId = "";
+  if (modeState.adminPublishedEditLayoutId && !state.layouts?.[modeState.adminPublishedEditLayoutId]) {
+    modeState.adminPublishedEditLayoutId = "";
   }
   return drafts.length > 0;
 }
@@ -6667,6 +6797,7 @@ function importDemoStateAsEditableLayout(demoState) {
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
   const stamp = Date.now();
+  const layoutId = `layout-admin-demo-${stamp}`;
   const containerMap = {};
   const changedAt = nowIso();
   const itemMap = {};
@@ -6684,6 +6815,8 @@ function importDemoStateAsEditableLayout(demoState) {
       childIds: [],
       itemIds: [],
       order: [],
+      adminDemo: true,
+      publicCatalogLayoutId: layoutId,
       ...currentCreateMeta(changedAt)
     };
     (container.childIds || []).forEach((id) => copyContainer(id, nextId));
@@ -6699,6 +6832,8 @@ function importDemoStateAsEditableLayout(demoState) {
       ...clone(item),
       id: nextId,
       containerId: nextContainerId,
+      adminDemo: true,
+      publicCatalogLayoutId: layoutId,
       ...currentCreateMeta(changedAt)
     };
   });
@@ -6717,7 +6852,6 @@ function importDemoStateAsEditableLayout(demoState) {
       return id ? { type: "item", id } : null;
     }).filter(Boolean);
   });
-  const layoutId = `layout-admin-demo-${stamp}`;
   state.layouts[layoutId] = {
     id: layoutId,
     name: sourceLayout.name || "Демо для всех",
@@ -7705,10 +7839,7 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   state.locations = mergeStringList(state.locations || [], source.locations || [], state.locations || []);
   state.categories = mergeStringList(state.categories || [], source.categories || [], state.categories || []);
   if (activate) {
-    activeStateScope = STATE_SCOPE_PRIVATE;
-    activeReadonlyLayoutId = "";
-    activeSharedLayoutId = "";
-    activeAdminPublishedEditLayoutId = "";
+    setActiveLocalEditableScope(layoutId);
     state.activeLayoutId = layoutId;
     applyLayoutArrangement(layoutId);
     if (remember) rememberActiveLayoutChoice(layoutId);
@@ -14231,7 +14362,7 @@ function saveNewLayout(event) {
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentEditMeta()
   };
-  if (!canUsePrivateState()) setActiveLocalEditableScope();
+  if (!canUsePrivateState()) setActiveLocalEditableScope(id);
   state.activeLayoutId = id;
   applyLayoutArrangement(id);
   rememberActiveLayoutChoice(id);
