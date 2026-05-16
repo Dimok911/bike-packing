@@ -95,6 +95,7 @@ import {
   migrateContainerOrder,
   normalizeItemCategories
 } from "./src/state/normalize.js";
+import { repairContainerMembershipFromItemLinks } from "./src/state/repair.js";
 import { formatBytes } from "./src/utils/bytes.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
@@ -1872,35 +1873,6 @@ function normalizeContainerFields(targetState = state) {
     container.note = typeof container.note === "string" ? container.note : "";
     container.color = normalizeContainerColor(container.color);
     normalizeItemPhotos(container);
-  });
-}
-
-function repairContainerMembershipFromItemLinks(targetState = state) {
-  const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};
-  const items = targetState.items && typeof targetState.items === "object" ? targetState.items : {};
-  Object.values(containers).forEach((container) => {
-    if (!container || typeof container !== "object") return;
-    container.childIds = uniqueLayoutIds(Array.isArray(container.childIds) ? container.childIds : []).filter((id) => containers[id]);
-    container.itemIds = uniqueLayoutIds(Array.isArray(container.itemIds) ? container.itemIds : []).filter((id) => items[id]);
-    if (container.parentId && !containers[container.parentId]) container.parentId = null;
-  });
-  Object.entries(containers).forEach(([containerId, container]) => {
-    container.itemIds.forEach((itemId) => {
-      const item = items[itemId];
-      if (!item || (item.containerId && containers[item.containerId])) return;
-      item.containerId = containerId;
-    });
-  });
-  Object.entries(items).forEach(([itemId, item]) => {
-    const containerId = item?.containerId;
-    if (!containerId || !containers[containerId]) return;
-    const container = containers[containerId];
-    if (!container.itemIds.includes(itemId)) container.itemIds.push(itemId);
-  });
-  Object.entries(containers).forEach(([containerId, container]) => {
-    const parentId = container?.parentId;
-    if (!parentId || !containers[parentId]) return;
-    if (!containers[parentId].childIds.includes(containerId)) containers[parentId].childIds.push(containerId);
   });
 }
 

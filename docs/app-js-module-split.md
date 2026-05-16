@@ -7,7 +7,7 @@
 - `src/config` keeps app constants and storage/API keys.
 - `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
 - `src/utils` keeps small pure helpers for time, JSON, HTML escaping, language, weights, and byte formatting.
-- `src/state` has safe state shape, layout arrangement helpers, state diagnostics, and the first normalization helpers.
+- `src/state` has safe state shape, layout arrangement helpers, state diagnostics, repair helpers, and the first normalization helpers.
 
 ## Working Rule
 
@@ -15,4 +15,4 @@ Each step should be small, behavior-preserving, and easy to revert. Core state h
 
 ## Next Slices
 
-The next useful slices are the rest of state normalization, layout repair, sync serialization, then public/demo copy logic. UI rendering and drag/drop should stay near the end because they have the stickiest dependencies.
+The next useful slices are the rest of state normalization, sync serialization, then public/demo copy logic. UI rendering and drag/drop should stay near the end because they have the stickiest dependencies.
