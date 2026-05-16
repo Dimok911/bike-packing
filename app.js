@@ -44,7 +44,6 @@ import {
   SHARED_LIST_QUERY_PARAM,
   LANGUAGE_KEY,
   DEFAULT_LANGUAGE,
-  SUPPORTED_LANGUAGES,
   ADMIN_EMAILS,
   ADMIN_USER_IDS,
   COLLAPSE_DEFAULTS_VERSION,
@@ -71,6 +70,18 @@ import {
   sharedLayouts,
   demoSharedLayout
 } from "./src/data/demo-data.js";
+import { createBlankBikePackingState } from "./src/state/empty-state.js";
+import { formatBytes } from "./src/utils/bytes.js";
+import { escapeHtml } from "./src/utils/html.js";
+import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
+import { normalizeUiLanguage } from "./src/utils/language.js";
+import { nowIso } from "./src/utils/time.js";
+import {
+  formatVolume,
+  formatWeight,
+  parseVolumeInput,
+  parseWeightInput
+} from "./src/utils/weight.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
 let uiLanguage = loadUiLanguage();
@@ -309,11 +320,6 @@ function isLocalDevOrigin() {
   return ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
 }
 
-function normalizeUiLanguage(value) {
-  const normalized = String(value || "").trim().toLowerCase().split("-")[0];
-  return SUPPORTED_LANGUAGES.includes(normalized) ? normalized : DEFAULT_LANGUAGE;
-}
-
 function loadUiLanguage() {
   try {
     return normalizeUiLanguage(localStorage.getItem(LANGUAGE_KEY) || DEFAULT_LANGUAGE);
@@ -359,10 +365,6 @@ function createSharedLayoutsByLanguage(layouts) {
     layout.language = "ru";
   });
   return { ru: ruLayouts, en: enLayouts };
-}
-
-function clonePlain(value) {
-  return JSON.parse(JSON.stringify(value));
 }
 
 function currentSharedLayouts(language = uiLanguage) {
@@ -1303,24 +1305,6 @@ function createEmptyUserState() {
       [bikePocketId]: true,
       [selfPocketId]: true
     },
-    collapseDefaultsVersion: COLLAPSE_DEFAULTS_VERSION,
-    showItemMeta: true,
-    showFilterContext: false,
-    collectionMode: false,
-    showOnlyUnpacked: false,
-    packedItems: {}
-  };
-}
-
-function createBlankBikePackingState() {
-  return {
-    locations: [],
-    categories: [],
-    containers: {},
-    items: {},
-    layouts: {},
-    activeLayoutId: "",
-    collapsedContainers: {},
     collapseDefaultsVersion: COLLAPSE_DEFAULTS_VERSION,
     showItemMeta: true,
     showFilterContext: false,
@@ -3019,10 +3003,6 @@ function saveLocalUiState() {
   saveState({ sync: false });
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 function currentEditMeta(when = nowIso()) {
   return {
     updatedAt: when,
@@ -3153,12 +3133,6 @@ function syncSafePhotoUrl(src) {
   return value.length <= 2048 ? value : "";
 }
 
-function jsonUtf8ByteLength(value) {
-  const json = typeof value === "string" ? value : JSON.stringify(value ?? null);
-  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(json).length;
-  return unescape(encodeURIComponent(json)).length;
-}
-
 function syncPayloadSizeReport(payload, bodyJson = "") {
   const containers = payload?.containers || {};
   const items = payload?.items || {};
@@ -3179,13 +3153,6 @@ function syncPayloadSizeReport(payload, bodyJson = "") {
     layouts: Object.keys(layouts).length,
     photos: photos.length
   };
-}
-
-function formatBytes(bytes) {
-  const value = Number(bytes || 0);
-  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} МБ`;
-  if (value >= 1024) return `${Math.round(value / 1024)} КБ`;
-  return `${value} Б`;
 }
 
 function payloadReportText(report) {
@@ -15668,12 +15635,6 @@ function rootContainerOwnWeight(containerId) {
   return container && !container.parentId ? Number(container.weight || 0) : 0;
 }
 
-function parseWeightInput(value) {
-  const number = Number(value || 0);
-  if (!Number.isFinite(number) || number < 0) return 0;
-  return Math.round(number);
-}
-
 function itemQuantity(item) {
   return normalizeItemQuantity(item?.quantity);
 }
@@ -15691,24 +15652,6 @@ function formatItemWeight(item) {
 function renderItemQuantityText(item) {
   const quantity = itemQuantity(item);
   return quantity > 1 ? `<span class="quantity-inline">${quantity} шт.</span>` : "";
-}
-
-function parseVolumeInput(value) {
-  const number = Number(String(value || "").replace(",", "."));
-  if (!Number.isFinite(number) || number < 0) return 0;
-  return Math.round(number * 10) / 10;
-}
-
-function formatVolume(liters) {
-  const number = Number(liters || 0);
-  if (!number) return "0 л";
-  return `${String(number).replace(".", ",")} л`;
-}
-
-function formatWeight(grams) {
-  if (!grams) return "0 г";
-  if (grams < 1000) return `${grams} г`;
-  return `${(grams / 1000).toFixed(1).replace(".", ",")} кг`;
 }
 
 function exportData() {
@@ -15868,14 +15811,6 @@ function resetData() {
       render();
     }
   });
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function highlight(value) {
