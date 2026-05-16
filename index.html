@@ -24,6 +24,15 @@
             </button>
             <div id="topMenu" class="top-menu" hidden>
               <button id="authBtn" class="ghost menu-item" type="button">Войти</button>
+              <button id="sharedLayoutsBtn" class="ghost menu-item" type="button">Shared укладки</button>
+              <button id="shareListBtn" class="ghost menu-item auth-required" type="button">Ссылка на список</button>
+              <label class="menu-select-label" for="languageSelect">
+                <span id="languageSelectLabel">Язык</span>
+                <select id="languageSelect">
+                  <option value="ru">Русский</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
               <button id="collectionMenuBtn" class="ghost menu-item auth-required" type="button">Режим сбора</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
@@ -151,16 +160,33 @@
           Категории
           <div id="itemCategoryList" class="category-picker"></div>
         </div>
-        <div class="field-label">
-          Положить в
-          <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Вне укладки</button>
+        <div class="field-label item-container-field">
+          <span id="itemContainerLabel">Положить в</span>
+          <div class="item-container-control">
+            <span id="itemContainerCurrent" class="item-container-current" hidden></span>
+            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Вне укладки</button>
+            <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в...</button>
+          </div>
           <input id="itemContainer" type="hidden" />
         </div>
         <label>
           Заметка
           <textarea id="itemNote" rows="3"></textarea>
         </label>
+        <div class="field-label item-photo-field">
+          Фото
+          <div id="itemPhotoPreview" class="item-photo-preview empty"></div>
+          <div class="item-photo-actions">
+            <label class="ghost item-photo-pick">
+              Выбрать фото
+              <input id="itemPhotoInput" type="file" accept="image/*" />
+            </label>
+            <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
+          </div>
+          <small id="itemPhotoStatus" class="item-photo-status"></small>
+        </div>
         <footer>
+          <button id="copySharedItemDialogBtn" class="ghost" type="button" hidden>Скопировать</button>
           <button id="saveItemBtn" value="default">Сохранить</button>
         </footer>
       </form>
@@ -194,14 +220,30 @@
           Где хранится
           <select id="rootContainerLocation"></select>
         </label>
-        <div id="rootContainerPlacementField" class="field-label">
-          Добавить в
-          <button id="rootContainerPlacementBtn" class="container-picker-button" type="button">Выбрать место в укладке</button>
+        <div id="rootContainerPlacementField" class="field-label item-container-field">
+          <span id="rootContainerPlacementLabel">Находится в</span>
+          <div class="item-container-control">
+            <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
+            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переставить</button>
+            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в...</button>
+          </div>
         </div>
         <label>
           Заметки
           <textarea id="rootContainerNote" rows="3"></textarea>
         </label>
+        <div class="field-label item-photo-field">
+          Фото
+          <div id="rootContainerPhotoPreview" class="item-photo-preview empty"></div>
+          <div class="item-photo-actions">
+            <label class="ghost item-photo-pick">
+              Выбрать фото
+              <input id="rootContainerPhotoInput" type="file" accept="image/*" />
+            </label>
+            <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
+          </div>
+          <small id="rootContainerPhotoStatus" class="item-photo-status"></small>
+        </div>
         <footer>
           <button id="saveRootContainerBtn" value="default">Сохранить</button>
         </footer>
@@ -222,9 +264,13 @@
     <dialog id="containerPickerDialog">
       <form method="dialog" class="dialog-card container-picker-dialog-card">
         <header>
-          <h2>Выбрать место</h2>
+          <h2 id="containerPickerTitle">Выбрать место</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
+        <label id="containerPickerLayoutField" class="field">
+          <span>Укладка</span>
+          <select id="containerPickerLayoutSelect"></select>
+        </label>
         <button id="containerPickerNoneBtn" class="ghost container-picker-none" type="button">Вне укладки</button>
         <div id="containerPickerBoard" class="container-picker-board"></div>
       </form>
@@ -366,8 +412,39 @@
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <p class="dialog-note">Сервер хранит последние 20 версий. При восстановлении текущая версия тоже попадёт в историю.</p>
+        <div id="historySourceControls" class="history-source-controls" hidden>
+          <div id="historySourceTabs" class="history-source-tabs" role="group" aria-label="Источник истории">
+            <button type="button" data-history-source="private">Моя</button>
+            <button type="button" data-history-source="demo">Демо</button>
+            <button type="button" data-history-source="shared">Shared</button>
+          </div>
+          <label id="historySharedField" class="history-shared-field">
+            <span>Shared укладка</span>
+            <select id="historySharedSelect"></select>
+          </label>
+        </div>
         <p id="historyStatus" class="dialog-status" aria-live="polite"></p>
         <div id="historyList" class="history-list"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="sharedLayoutsDialog">
+      <form method="dialog" class="dialog-card shared-layouts-dialog-card">
+        <header>
+          <h2>Shared укладки</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="shared-viewer-toolbar">
+          <label>
+            Копировать в
+            <select id="sharedCopyLayoutSelect"></select>
+          </label>
+          <button id="copySharedLayoutBtn" type="button">Скопировать всю укладку</button>
+        </div>
+        <div id="sharedLayoutsList" class="shared-layouts-list"></div>
         <footer>
           <button value="cancel" class="ghost">Закрыть</button>
         </footer>
