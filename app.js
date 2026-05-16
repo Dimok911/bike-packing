@@ -3953,7 +3953,7 @@ async function refreshCurrentPackingListId() {
   }
 }
 
-async function checkAuthAndLoad({ syncDirtyNotify = false } = {}) {
+async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice = true, preferredLayout = null } = {}) {
   if (isForcedOffline()) {
     if (isExplicitlySignedOut()) {
       await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыт demo/public режим");
@@ -3994,12 +3994,12 @@ async function checkAuthAndLoad({ syncDirtyNotify = false } = {}) {
   try {
     if (syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi("Есть локальные изменения · проверяю даты...");
-      await loadRemoteState({ notifyDirtySave: syncDirtyNotify });
-      await restoreSavedLayoutChoice({ privateOnly: true });
+      await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout });
+      if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
       return;
     }
-    await loadRemoteState();
-    await restoreSavedLayoutChoice({ privateOnly: true });
+    await loadRemoteState({ preferredLayout });
+    if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();
@@ -4013,10 +4013,13 @@ async function checkAuthAndLoad({ syncDirtyNotify = false } = {}) {
 
 function handleWindowReturn() {
   if (!currentUser && !isForcedOffline()) {
-    checkAuthAndLoad();
+    checkAuthAndLoad({
+      restoreLayoutChoice: false,
+      preferredLayout: preferredCurrentLayoutRef()
+    });
     return;
   }
-  checkRemoteStateFreshness({ notify: true });
+  checkRemoteStateFreshness({ notify: true, preferredLayout: preferredCurrentLayoutRef() });
 }
 
 async function handleAuthButton() {
@@ -5165,7 +5168,7 @@ function startRemoteStateWatcher() {
   remoteRefreshTimer = window.setInterval(() => checkRemoteStateFreshness(), REMOTE_REFRESH_INTERVAL_MS);
 }
 
-async function checkRemoteStateFreshness({ notify = false } = {}) {
+async function checkRemoteStateFreshness({ notify = false, preferredLayout = null } = {}) {
   if (isForcedOffline()) return;
   if (isPublicLayoutContext()) return;
   if (!currentUser || syncMeta.dirty || remoteRefreshInFlight) return;
@@ -5174,7 +5177,7 @@ async function checkRemoteStateFreshness({ notify = false } = {}) {
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
   try {
     remoteRefreshInFlight = true;
-    await loadRemoteState();
+    await loadRemoteState({ preferredLayout });
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;
