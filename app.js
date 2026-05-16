@@ -153,6 +153,7 @@ import {
   normalizePhotoStatus,
   normalizePhotoUrlFields,
   normalizeUploadedPhotoAssetUrls,
+  photoRemoteSrc,
   primaryItemPhoto,
   putCachedPhoto
 } from "./src/sync/photos.js";
@@ -10511,24 +10512,6 @@ function renderItemPhoto(item, { force = false } = {}) {
       ${statusText ? `<span>${escapeHtml(statusText)}</span>` : ""}
     </div>
   `;
-}
-
-function photoRemoteSrc(photo) {
-  normalizePhotoUrlFields(photo);
-  const src = photo?.thumbUrl || photo?.url || "";
-  return versionedPhotoUrl(src, photo?.updatedAt || photo?.id || "");
-}
-
-function versionedPhotoUrl(src, version) {
-  if (!src || !version || /^(blob|data):/i.test(src)) return src || "";
-  try {
-    const url = new URL(src, window.location.href);
-    url.searchParams.set("v", String(version));
-    return url.href;
-  } catch {
-    const separator = src.includes("?") ? "&" : "?";
-    return `${src}${separator}v=${encodeURIComponent(String(version))}`;
-  }
 }
 
 async function hydrateItemPhotos(root = document) {

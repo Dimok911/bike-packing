@@ -85,6 +85,24 @@ export function syncSafePhotoUrl(src) {
   return value.length <= 2048 ? value : "";
 }
 
+export function photoRemoteSrc(photo) {
+  normalizePhotoUrlFields(photo);
+  const src = photo?.thumbUrl || photo?.url || "";
+  return versionedPhotoUrl(src, photo?.updatedAt || photo?.id || "");
+}
+
+export function versionedPhotoUrl(src, version) {
+  if (!src || !version || /^(blob|data):/i.test(src)) return src || "";
+  try {
+    const url = new URL(src, window.location.href);
+    url.searchParams.set("v", String(version));
+    return url.href;
+  } catch {
+    const separator = src.includes("?") ? "&" : "?";
+    return `${src}${separator}v=${encodeURIComponent(String(version))}`;
+  }
+}
+
 export function openPhotoDb() {
   return new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) {
