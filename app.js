@@ -64,6 +64,14 @@ import {
   markLocalPublicCopyOrigin
 } from "./src/public/copy-public-to-private.js";
 import {
+  generatedCatalogString,
+  hasPublicOriginMarker,
+  isGeneratedCatalogContainerStateArtifact,
+  isGeneratedCatalogContainerSyncArtifact,
+  isGeneratedCatalogStateArtifact,
+  isGeneratedCatalogSyncArtifact
+} from "./src/public/generated-artifacts.js";
+import {
   createSharedLayoutsByLanguage,
   normalizeSharedGearName,
   sharedGearPhotos
@@ -2793,19 +2801,6 @@ function isPublicSyncContainer(containerId, container) {
   );
 }
 
-function hasPublicOriginMarker(record) {
-  if (!record || typeof record !== "object") return false;
-  const scope = generatedCatalogString(record.scope).toLowerCase();
-  const sourceType = generatedCatalogString(record.sourceType || record.source_type).toLowerCase();
-  const visibility = generatedCatalogString(record.visibility).toLowerCase();
-  const sourceListId = generatedCatalogString(record.sourceListId || record.source_list_id || record.listId || record.list_id).toLowerCase();
-  if (scope && scope !== "private") return true;
-  if (["demo", "shared", "public", "public-template", "curated-bikepacker"].includes(sourceType)) return true;
-  if (["public", "shared"].includes(visibility)) return true;
-  if (sourceListId.startsWith("public-demo") || sourceListId.startsWith("public-shared")) return true;
-  return Boolean(record.isDemo || record.adminDemo || record.adminShared || record.adminSharedSourceId);
-}
-
 function cleanupGeneratedCatalogArtifacts(targetState = state, { forSync = false } = {}) {
   const items = targetState?.items && typeof targetState.items === "object" ? targetState.items : {};
   const containers = targetState?.containers && typeof targetState.containers === "object" ? targetState.containers : {};
@@ -2852,79 +2847,6 @@ function collectContainerTreeForDrop(targetState, containerId, containerIdsToDro
   Object.entries(targetState.containers || {}).forEach(([childId, child]) => {
     if (child?.parentId === containerId) collectContainerTreeForDrop(targetState, childId, containerIdsToDrop);
   });
-}
-
-function isGeneratedCatalogSyncArtifact(itemId, item) {
-  if (!item || typeof item !== "object") return false;
-  const id = generatedCatalogString(itemId || item.id);
-  const sourceId = generatedCatalogString(item.sharedSourceId);
-  return Boolean(
-    hasPublicOriginMarker(item) ||
-    item.publicCatalogLayoutId ||
-    item.adminDemo ||
-    item.adminSharedSourceId ||
-    id.startsWith("demo-item-") ||
-    id.startsWith("admin-demo-item-") ||
-    id.startsWith("item-shared-") ||
-    id.includes("item-shared-item-shared-") ||
-    sourceId.startsWith("item-shared-") ||
-    sourceId.includes("item-shared-item-shared-")
-  );
-}
-
-function isGeneratedCatalogContainerSyncArtifact(containerId, container) {
-  if (!container || typeof container !== "object") return false;
-  const id = generatedCatalogString(containerId || container.id);
-  const sourceId = generatedCatalogString(container.sharedSourceId);
-  return Boolean(
-    hasPublicOriginMarker(container) ||
-    container.publicCatalogLayoutId ||
-    container.adminDemo ||
-    container.adminSharedSourceId ||
-    id.startsWith("demo-") ||
-    id.startsWith("admin-demo-container-") ||
-    id.startsWith("container-shared-") ||
-    id.includes("container-shared-container-shared-") ||
-    sourceId.startsWith("container-shared-") ||
-    sourceId.includes("container-shared-container-shared-")
-  );
-}
-
-function isGeneratedCatalogStateArtifact(itemId, item, targetState = state) {
-  if (!item || typeof item !== "object") return false;
-  const id = generatedCatalogString(itemId || item.id);
-  const sourceId = generatedCatalogString(item.sharedSourceId);
-  const containerId = generatedCatalogString(item.containerId);
-  const hasValidContainer = Boolean(containerId && targetState?.containers?.[containerId]);
-  if (hasValidContainer) return false;
-  return Boolean(
-    hasPublicOriginMarker(item) ||
-    id.startsWith("demo-item-") ||
-    id.startsWith("admin-demo-item-") ||
-    id.includes("item-shared-item-shared-") ||
-    sourceId.startsWith("item-shared-") ||
-    sourceId.includes("item-shared-item-shared-")
-  );
-}
-
-function isGeneratedCatalogContainerStateArtifact(containerId, container, targetState = state) {
-  if (!container || typeof container !== "object") return false;
-  const id = generatedCatalogString(containerId || container.id);
-  const sourceId = generatedCatalogString(container.sharedSourceId);
-  const parentId = generatedCatalogString(container.parentId);
-  const hasValidParent = Boolean(parentId && targetState?.containers?.[parentId]);
-  const isRecursiveSharedContainer = id.includes("container-shared-container-shared-") ||
-    sourceId.startsWith("container-shared-") ||
-    sourceId.includes("container-shared-container-shared-");
-  if (hasPublicOriginMarker(container)) return true;
-  if (container.publicCatalogLayoutId || container.adminDemo || container.adminSharedSourceId) return true;
-  if (id.startsWith("demo-") || id.startsWith("admin-demo-container-") || id.startsWith("container-shared-")) return true;
-  if (!isRecursiveSharedContainer) return false;
-  return !hasValidParent || id.includes("container-shared-container-shared-") || sourceId.startsWith("container-shared-");
-}
-
-function generatedCatalogString(value) {
-  return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
 function scrubMissingEntityReferences(targetState = state) {
