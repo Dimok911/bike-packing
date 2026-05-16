@@ -110,3 +110,7 @@ export function compactContainerForEntitySync(container) {
 export function compactLayoutForEntitySync(layout) {
   return compactRecordForEntitySync(layout);
 }
+
+export function remoteUpdatedAt(record) {
+  return record?.updatedAt || record?.updated_at || record?.updatedAtUtc || null;
+}

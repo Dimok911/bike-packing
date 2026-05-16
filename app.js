@@ -159,6 +159,7 @@ import {
 } from "./src/sync/photos.js";
 import {
   cloneStateForSyncPayload,
+  remoteUpdatedAt,
   stripContainerArrangementFields,
   stripItemPlacementFields
 } from "./src/sync/serialize.js";
@@ -3107,10 +3108,6 @@ function mergeLocalCollapsedContainers(nextCollapsed, previousCollapsed) {
     if (state.containers?.[containerId]) merged[containerId] = previousCollapsed[containerId];
   });
   return merged;
-}
-
-function remoteUpdatedAt(record) {
-  return record?.updatedAt || record?.updated_at || record?.updatedAtUtc || null;
 }
 
 function serverChangedSinceLastSync(remoteTime) {
