@@ -14,9 +14,6 @@ import {
   ACTIVE_LAYOUT_CHOICE_KEY,
   ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
   ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
-  ITEM_PHOTO_MAX_SIZE,
-  ITEM_PHOTO_THUMB_SIZE,
-  ITEM_PHOTO_QUALITY,
   DATA_SCOPE_KEY,
   DATA_ITEM_KEY,
   DEMO_LAYOUT_SELECT_VALUE,
@@ -145,6 +142,7 @@ import {
   summarizeHistoryPayload
 } from "./src/sync/history.js";
 import {
+  createItemPhotoFromFile,
   deleteCachedPhoto,
   getCachedPhoto,
   hasRemotePhotoUrl,
@@ -4153,76 +4151,6 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "" }) {
 
 async function apiFetch(path, options = {}) {
   return apiFetchRequest(path, options, { isForcedOffline });
-}
-
-async function createItemPhotoFromFile(file) {
-  if (!file || !file.type?.startsWith("image/")) {
-    throw new Error("Выберите файл изображения.");
-  }
-  const photoId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const full = await resizeImageFile(file, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY);
-  const thumb = await resizeImageFile(file, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY);
-  const createdAt = nowIso();
-  await putCachedPhoto({
-    id: photoId,
-    blob: full.blob,
-    thumbBlob: thumb.blob,
-    fileName: file.name || "item-photo.jpg",
-    type: full.blob.type || "image/jpeg",
-    size: full.blob.size,
-    width: full.width,
-    height: full.height,
-    createdAt,
-    updatedAt: createdAt
-  });
-  return {
-    id: photoId,
-    localId: photoId,
-    status: "pending",
-    url: "",
-    thumbUrl: "",
-    fileName: file.name || "",
-    type: full.blob.type || "image/jpeg",
-    size: full.blob.size,
-    width: full.width,
-    height: full.height,
-    createdAt,
-    updatedAt: createdAt,
-    error: ""
-  };
-}
-
-async function resizeImageFile(file, maxSize, quality) {
-  const bitmap = await loadImageBitmap(file);
-  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  context.drawImage(bitmap, 0, 0, width, height);
-  if (typeof bitmap.close === "function") bitmap.close();
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-  if (!blob) throw new Error("Не удалось подготовить фото.");
-  return { blob, width, height };
-}
-
-function loadImageBitmap(file) {
-  if ("createImageBitmap" in window) return createImageBitmap(file, { imageOrientation: "from-image" });
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Не удалось открыть фото."));
-    };
-    image.src = url;
-  });
 }
 
 function primaryItemPhoto(item) {
