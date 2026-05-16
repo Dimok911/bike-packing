@@ -78,6 +78,28 @@ export function normalizeLayoutFields(targetState) {
   }
 }
 
+export function repairPublishedLayoutArrangement(targetState) {
+  const layout = targetState.layouts?.[targetState.activeLayoutId] || Object.values(targetState.layouts || {})[0];
+  if (!layout) return;
+  const linkedItemCount = Object.values(targetState.items || {}).filter((item) => item?.containerId && targetState.containers?.[item.containerId]).length;
+  const linkedChildCount = Object.values(targetState.containers || {}).filter((container) => container?.parentId && targetState.containers?.[container.parentId]).length;
+  const arrangement = layout.arrangement;
+  const arrangedItemCount = arrangement?.items && typeof arrangement.items === "object" ? Object.keys(arrangement.items).length : 0;
+  const arrangedChildCount = arrangement?.containers && typeof arrangement.containers === "object"
+    ? Object.values(arrangement.containers).reduce((count, placement) => count + (Array.isArray(placement?.childIds) ? placement.childIds.length : 0), 0)
+    : 0;
+  const staleArrangement =
+    !arrangement ||
+    typeof arrangement !== "object" ||
+    (linkedItemCount > arrangedItemCount) ||
+    (linkedChildCount > arrangedChildCount && arrangedChildCount === 0);
+  if (!staleArrangement) return;
+  const rootContainerIds = Array.isArray(layout.rootContainerIds) && layout.rootContainerIds.length
+    ? layout.rootContainerIds
+    : Object.values(targetState.containers || {}).filter((container) => container && !container.parentId).map((container) => container.id).filter(Boolean);
+  layout.arrangement = createLayoutArrangementFromCurrentState(targetState, rootContainerIds);
+}
+
 export function normalizeLayoutArrangement(layout, targetState) {
   if (!layout || typeof layout !== "object") return createEmptyLayoutArrangement();
   const hadStoredArrangement = Boolean(
