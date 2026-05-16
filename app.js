@@ -5165,7 +5165,9 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
 
 function startRemoteStateWatcher() {
   if (remoteRefreshTimer) window.clearInterval(remoteRefreshTimer);
-  remoteRefreshTimer = window.setInterval(() => checkRemoteStateFreshness(), REMOTE_REFRESH_INTERVAL_MS);
+  remoteRefreshTimer = window.setInterval(() => {
+    checkRemoteStateFreshness({ preferredLayout: preferredCurrentLayoutRef() });
+  }, REMOTE_REFRESH_INTERVAL_MS);
 }
 
 async function checkRemoteStateFreshness({ notify = false, preferredLayout = null } = {}) {
@@ -5177,7 +5179,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
   try {
     remoteRefreshInFlight = true;
-    await loadRemoteState({ preferredLayout });
+    await loadRemoteState({ preferredLayout: preferredLayout || preferredCurrentLayoutRef() });
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;
