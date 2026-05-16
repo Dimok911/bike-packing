@@ -109,6 +109,7 @@ import {
   defaultRootContainerLocation,
   itemCategories,
   migrateContainerOrder,
+  normalizeItemQuantity,
   normalizeItemCategories
 } from "./src/state/normalize.js";
 import { repairContainerMembershipFromItemLinks } from "./src/state/repair.js";
@@ -13905,12 +13906,6 @@ function setRootContainerDialogPhotoStatus(message) {
 
 function readItemDialogQuantity() {
   return normalizeItemQuantity(refs.itemQuantity?.value);
-}
-
-function normalizeItemQuantity(value) {
-  const number = Number(value || 1);
-  if (!Number.isFinite(number) || number < 1) return 1;
-  return Math.round(number);
 }
 
 function normalizeItemQuantityInput() {

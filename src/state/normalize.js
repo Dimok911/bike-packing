@@ -32,6 +32,12 @@ export function itemCategories(item) {
   return item.category ? [item.category] : [];
 }
 
+export function normalizeItemQuantity(value) {
+  const number = Number(value || 1);
+  if (!Number.isFinite(number) || number < 1) return 1;
+  return Math.round(number);
+}
+
 export function applyDefaultCollapsedContainers(targetState) {
   const forceInitialDefaults = targetState.collapseDefaultsVersion !== COLLAPSE_DEFAULTS_VERSION;
   Object.values(targetState.containers || {}).forEach((container) => {
