@@ -71,6 +71,11 @@ import {
   markLocalPublicCopyOrigin
 } from "./src/public/copy-public-to-private.js";
 import {
+  createSharedLayoutsByLanguage,
+  normalizeSharedGearName,
+  sharedGearPhotos
+} from "./src/public/shared-layouts.js";
+import {
   activeReadOnlyLayoutIdFromScope,
   createReadOnlyBikePackingError,
   demoAdminIdForLanguage as demoAdminIdForLanguageFromScope,
@@ -283,21 +288,6 @@ function t(key, values = {}) {
   const dictionary = I18N[uiLanguage] || I18N[DEFAULT_LANGUAGE] || {};
   const fallback = I18N[DEFAULT_LANGUAGE]?.[key] || key;
   return String(dictionary[key] || fallback).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
-}
-
-function createSharedLayoutsByLanguage(layouts) {
-  const ruLayouts = layouts;
-  const enLayouts = clonePlain(layouts).map((layout) => ({
-    ...layout,
-    id: `${layout.id}-en`,
-    name: layout.name === "Bikepacking reference" ? "Bikepacking reference" : layout.name,
-    subtitle: "Shared layout",
-    language: "en"
-  }));
-  ruLayouts.forEach((layout) => {
-    layout.language = "ru";
-  });
-  return { ru: ruLayouts, en: enLayouts };
 }
 
 function currentSharedLayouts(language = uiLanguage) {
@@ -6415,10 +6405,6 @@ function mergeBuiltInSharedLayoutEntries(layout, sourceState) {
   return normalizePublishedStatePayload(merged) || merged;
 }
 
-function normalizeSharedGearName(name) {
-  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function uniquePublishedRecordId(records, preferredId) {
   if (!records?.[preferredId]) return preferredId;
   let index = 2;
@@ -7406,25 +7392,6 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
     touchContainer(containerId, changedAt);
   }
   return id;
-}
-
-function sharedGearPhotos(gear, changedAt = nowIso()) {
-  if (!gear.imageUrl) return [];
-  return [{
-    id: `shared-photo-${gear.id}`,
-    localId: "",
-    status: "synced",
-    url: gear.imageUrl,
-    thumbUrl: gear.imageUrl,
-    fileName: "",
-    type: "",
-    size: 0,
-    width: 0,
-    height: 0,
-    createdAt: changedAt,
-    updatedAt: changedAt,
-    error: ""
-  }];
 }
 
 async function openHistoryDialog() {
