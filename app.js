@@ -147,9 +147,13 @@ import {
   getCachedPhoto,
   hasRemotePhotoUrl,
   isPhotoStoredForList,
+  itemPhotoMetaSignature,
+  itemPhotoSignature,
+  normalizeItemPhotos,
   normalizePhotoStatus,
   normalizePhotoUrlFields,
   normalizeUploadedPhotoAssetUrls,
+  primaryItemPhoto,
   putCachedPhoto
 } from "./src/sync/photos.js";
 import {
@@ -2231,33 +2235,6 @@ function normalizeItemFields(targetState = state) {
   });
 }
 
-function normalizeItemPhotos(item) {
-  if (!item || typeof item !== "object") return [];
-  if (!Array.isArray(item.photos)) item.photos = [];
-  item.photos = item.photos
-    .filter((photo) => photo && typeof photo === "object")
-    .map((photo) => {
-      normalizePhotoUrlFields(photo);
-      return {
-        id: String(photo.id || photo.localId || `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`),
-        localId: photo.localId ? String(photo.localId) : "",
-        status: normalizePhotoStatus(photo.status),
-        url: typeof photo.url === "string" ? photo.url : "",
-        thumbUrl: typeof photo.thumbUrl === "string" ? photo.thumbUrl : "",
-        listId: typeof photo.listId === "string" || typeof photo.listId === "number" ? String(photo.listId) : "",
-        fileName: typeof photo.fileName === "string" ? photo.fileName : "",
-        type: typeof photo.type === "string" ? photo.type : "",
-        size: Number.isFinite(Number(photo.size)) ? Number(photo.size) : 0,
-        width: Number.isFinite(Number(photo.width)) ? Number(photo.width) : 0,
-        height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0,
-        createdAt: typeof photo.createdAt === "string" ? photo.createdAt : nowIso(),
-        updatedAt: typeof photo.updatedAt === "string" ? photo.updatedAt : nowIso(),
-        error: typeof photo.error === "string" ? photo.error : ""
-      };
-    });
-  return item.photos;
-}
-
 function saveState({ sync = true } = {}) {
   captureActiveLayoutArrangement();
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
@@ -4151,25 +4128,6 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "" }) {
 
 async function apiFetch(path, options = {}) {
   return apiFetchRequest(path, options, { isForcedOffline });
-}
-
-function primaryItemPhoto(item) {
-  const photos = normalizeItemPhotos(item);
-  return normalizePhotoUrlFields(photos[0]) || null;
-}
-
-function itemPhotoSignature(item) {
-  const photo = primaryItemPhoto(item);
-  if (!photo) return "";
-  return [
-    photo.id,
-    photo.localId,
-    photo.status,
-    photo.url,
-    photo.thumbUrl,
-    photo.updatedAt,
-    photo.error
-  ].join("|");
 }
 
 function getPhotoUploadScope(layoutId = null) {
@@ -13859,11 +13817,6 @@ function getItemDialogPhotoSnapshot() {
   if (itemDialogPhotoDraft?.remove) return "remove";
   if (itemDialogPhotoDraft?.photo) return `draft:${itemPhotoMetaSignature(itemDialogPhotoDraft.photo)}`;
   return editingItemId ? itemPhotoSignature(state.items[editingItemId]) : "";
-}
-
-function itemPhotoMetaSignature(photo) {
-  if (!photo) return "";
-  return [photo.id, photo.localId, photo.status, photo.url, photo.thumbUrl, photo.updatedAt].join("|");
 }
 
 async function handleItemPhotoInputChange(event) {
