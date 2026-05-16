@@ -11,6 +11,28 @@ export function hasPublicOriginMarker(record) {
   return Boolean(record.isDemo || record.adminDemo || record.adminShared || record.adminSharedSourceId);
 }
 
+export function isPublicSyncItem(itemId, item) {
+  return Boolean(
+    hasPublicOriginMarker(item) ||
+    item?.publicCatalogLayoutId ||
+    item?.adminDemo ||
+    item?.adminSharedSourceId ||
+    String(itemId || item?.id || "").startsWith("guest-demo-item-") ||
+    isGeneratedCatalogSyncArtifact(itemId, item)
+  );
+}
+
+export function isPublicSyncContainer(containerId, container) {
+  return Boolean(
+    hasPublicOriginMarker(container) ||
+    container?.publicCatalogLayoutId ||
+    container?.adminDemo ||
+    container?.adminSharedSourceId ||
+    String(containerId || container?.id || "").startsWith("guest-demo-container-") ||
+    isGeneratedCatalogContainerSyncArtifact(containerId, container)
+  );
+}
+
 export function isGeneratedCatalogSyncArtifact(itemId, item) {
   if (!item || typeof item !== "object") return false;
   const id = generatedCatalogString(itemId || item.id);

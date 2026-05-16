@@ -69,7 +69,9 @@ import {
   isGeneratedCatalogContainerStateArtifact,
   isGeneratedCatalogContainerSyncArtifact,
   isGeneratedCatalogStateArtifact,
-  isGeneratedCatalogSyncArtifact
+  isGeneratedCatalogSyncArtifact,
+  isPublicSyncContainer,
+  isPublicSyncItem
 } from "./src/public/generated-artifacts.js";
 import {
   createSharedLayoutsByLanguage,
@@ -2605,28 +2607,6 @@ function pruneAdminPublishedDraftsForSync(cloned) {
   if (draftLayoutIds.includes(cloned.activeLayoutId)) {
     cloned.activeLayoutId = Object.values(layouts)[0]?.id || "";
   }
-}
-
-function isPublicSyncItem(itemId, item) {
-  return Boolean(
-    hasPublicOriginMarker(item) ||
-    item?.publicCatalogLayoutId ||
-    item?.adminDemo ||
-    item?.adminSharedSourceId ||
-    String(itemId || item?.id || "").startsWith("guest-demo-item-") ||
-    isGeneratedCatalogSyncArtifact(itemId, item)
-  );
-}
-
-function isPublicSyncContainer(containerId, container) {
-  return Boolean(
-    hasPublicOriginMarker(container) ||
-    container?.publicCatalogLayoutId ||
-    container?.adminDemo ||
-    container?.adminSharedSourceId ||
-    String(containerId || container?.id || "").startsWith("guest-demo-container-") ||
-    isGeneratedCatalogContainerSyncArtifact(containerId, container)
-  );
 }
 
 function cleanupGeneratedCatalogArtifacts(targetState = state, { forSync = false } = {}) {
