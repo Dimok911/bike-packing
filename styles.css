@@ -2204,6 +2204,8 @@ dialog {
 #conflictDialog,
 #historyDialog {
   width: min(760px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
 }
 
 dialog::backdrop {
@@ -2223,7 +2225,15 @@ dialog::backdrop {
 
 .history-dialog-card {
   width: min(760px, calc(100vw - 24px));
-  max-height: min(760px, calc(100vh - 24px));
+  height: min(760px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto auto auto auto minmax(120px, 1fr) auto;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.history-dialog-card > * {
+  min-width: 0;
 }
 
 .shared-layouts-dialog-card {
@@ -3296,6 +3306,16 @@ dialog::backdrop {
   font-size: 16px;
 }
 
+.conflict-kind {
+  justify-self: start;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .conflict-card p {
   color: var(--muted);
   line-height: 1.35;
@@ -3433,16 +3453,90 @@ dialog::backdrop {
 }
 
 .history-list {
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.history-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbf8;
+  overflow: hidden;
+}
+
+.history-group + .history-group {
+  margin-top: 8px;
+}
+
+.history-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.history-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-group-summary::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+  opacity: 0.68;
+  flex: 0 0 auto;
+}
+
+.history-group[open] .history-group-summary::after {
+  transform: rotate(225deg);
+}
+
+.history-group-summary strong,
+.history-group-summary small {
+  display: block;
+}
+
+.history-group-summary > span,
+.history-record-main {
+  min-width: 0;
+}
+
+.history-group-summary small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.history-group-records {
   display: grid;
   gap: 8px;
-  max-height: min(58vh, 520px);
-  overflow: auto;
-  padding-right: 2px;
+  padding: 0 8px 8px;
+}
+
+.history-group[open] .history-group-records {
+  max-height: none;
+  overflow: visible;
 }
 
 .history-record {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   border: 1px solid var(--line);

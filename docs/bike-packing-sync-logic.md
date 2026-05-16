@@ -71,6 +71,8 @@ History restore is a deliberate server-side overwrite. The restored version may 
 
 For that reason, "the server version has fewer items" is not always an error. Once history restore succeeds, older cached clients must not be allowed to overwrite the restored server version with stale local state.
 
+The client should restore private history through the list history restore endpoint, sending only the current `baseStateRevision`. The API should read the restored payload from its own history table and return the newly assembled state.
+
 ## Old Browser Cache Protection
 
 A phone can keep an old service worker and old JavaScript. That old client may still have a dirty mixed local state.
@@ -79,6 +81,7 @@ The protection is layered:
 
 - the app version and asset URLs are bumped so new clients fetch new JavaScript;
 - the client refreshes local timestamps before deliberate force overwrite;
+- the client sends the last accepted `stateRevision` and marks full replacements with `fullReplace`;
 - the server rejects stale force overwrites when the incoming local timestamp is older than the current server version;
 - the server blocks generated demo/shared service entities in private payloads.
 
@@ -91,12 +94,34 @@ The API should reject stale forced full-payload overwrites for private lists.
 Recommended rule:
 
 - when a request has `force: true` or `forceOverwrite: true`;
+- require the request to include the last accepted `baseStateRevision`;
+- if `baseStateRevision` is older than the current server `stateRevision`, return `409`;
+- after the server list is above revision `1`, reject any private write that has no `baseStateRevision`, including entity sync;
+- reject entity sync that tries to revive an item/container/layout ID that exists only in an older revision;
 - compare request `sourceUpdatedAt` / `clientUpdatedAt` with the current server `updatedAt`;
 - if the request timestamp is older than the current server version and the payload hash differs, return `409`;
 - include the current server payload and `serverUpdatedAt` in the response, so the client can load the server version;
 - allow the request if the hashes are identical.
 
 This protects a restored server version from an old cached phone that still has a dirty local copy.
+
+## API-Side Full Restore Rule
+
+When a private list is restored from history or saved through a forced full-payload overwrite, the payload must become the exact canonical state.
+
+The strict version of this rule is a list-level revision/generation number: each private list has a current `stateRevision`, and every item/container/layout row belongs to exactly one revision. Reads only assemble rows from the current revision.
+
+If the API stores separate item/container/layout rows, it must reconcile those rows to the restored payload:
+
+- upsert rows that exist in the restored payload;
+- mark as deleted every item row that is absent from the restored payload;
+- mark as deleted every container row that is absent from the restored payload;
+- mark as deleted every layout row that is absent from the restored payload;
+- rebuild/return the assembled state only after this reconciliation.
+
+Without this rule, the list can look correct immediately after history restore, but old active entity rows can be assembled back into the list on the next sync/read.
+
+In other words: a full restore is not a patch. It is a replacement of the private list and all private entity rows belonging to that list.
 
 ## Expected Invariants
 

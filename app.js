@@ -1,523 +1,76 @@
-const STORAGE_KEY = "bike-packing-prototype-state-v1";
-const APP_VERSION = "v483";
-const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
-const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
-const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
-const RECOVERY_STATE_MAX = 12;
-const AUTH_EMAIL_KEY = "bike-packing-auth-email";
-const AUTH_SIGNED_OUT_KEY = "bike-packing-auth-signed-out";
-const FORCE_OFFLINE_KEY = "bike-packing-force-offline";
-const DEVICE_META_KEY = "bike-packing-device-meta-v1";
-const UI_SETTINGS_KEY = "bike-packing-ui-settings-v1";
-const ACTIVE_LIST_ID_KEY = "bike-packing-active-list-id-v1";
-const ACTIVE_LAYOUT_CHOICE_KEY = "bike-packing-active-layout-choice-v1";
-const ACTIVE_LAYOUT_CHOICE_SOURCE_KEY = "bike-packing-active-layout-choice-source-v1";
-const ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY = "bike-packing-active-private-layout-choice-v1";
-const API_BASE = "https://api.vniipo-help.ru/letters-vniipo/api";
-const PHOTO_DB_NAME = "bike-packing-photo-cache-v1";
-const PHOTO_DB_VERSION = 1;
-const PHOTO_STORE = "photos";
-const ITEM_PHOTO_MAX_SIZE = 1600;
-const ITEM_PHOTO_THUMB_SIZE = 520;
-const ITEM_PHOTO_QUALITY = 0.82;
-const DATA_SCOPE_KEY = "bike-packing";
-const DATA_ITEM_KEY = "state";
-const DEMO_ITEM_KEY = "demo-state";
-const PUBLIC_LEGACY_RECORD_SOURCE = "bike_packing_lists.public_legacy";
-const DEMO_LAYOUT_SELECT_VALUE = "demo:default";
-const DEMO_SHARED_LAYOUT_ID = "demo-default";
-const GUEST_DEMO_COPY_FLAG = "guestDemoCopy";
-const SHARED_ITEM_KEY_PREFIX = "shared-layout:";
-const SHARED_LAYOUTS_STORAGE_KEY = "bike-packing-shared-layouts-admin-draft-v1";
-const SESSION_MODE_GUEST = "guest";
-const SESSION_MODE_USER = "user";
-const SESSION_MODE_ADMIN = "admin";
-const VIEW_SCOPE_PRIVATE = "private";
-const VIEW_SCOPE_GUEST_LOCAL = "guest-local";
-const VIEW_SCOPE_DEMO = "demo";
-const VIEW_SCOPE_SHARED = "shared";
-const VIEW_SCOPE_ADMIN_PUBLIC_EDIT = "admin-public-edit";
-const STATE_SCOPE_PRIVATE = "private";
-const STATE_SCOPE_DEMO = "demo";
-const STATE_SCOPE_SHARED = "shared";
-const SHARED_LIST_QUERY_PARAM = "sharedList";
-const LANGUAGE_KEY = "bike-packing-language-v1";
-const DEFAULT_LANGUAGE = "ru";
-const SUPPORTED_LANGUAGES = ["ru", "en"];
-const ADMIN_EMAILS = ["dimok911@gmail.com"];
-const ADMIN_USER_IDS = ["04c69a90-72b5-4891-9607-1cb636c5af21"];
-const COLLAPSE_DEFAULTS_VERSION = 2;
-const API_TIMEOUT_MS = 7000;
-const LIST_API_TIMEOUT_MS = 30000;
-const LIST_SAVE_API_TIMEOUT_MS = 60000;
-const ITEM_SYNC_MAX_BATCH_BYTES = 180 * 1024;
-const ITEM_SYNC_MAX_BATCH_ITEMS = 20;
-const POINTER_DRAG_START_DISTANCE = 4;
-const TOUCH_DRAG_DELAY_MS = 260;
-const TOUCH_DRAG_CANCEL_DISTANCE = 10;
-const TOUCH_SCROLL_CANCEL_DISTANCE = 4;
-const NESTED_GROUP_HOVER_DELAY_MS = 360;
-const EDGE_SCROLL_ZONE = 42;
-const EDGE_SCROLL_MAX_SPEED = 10;
-const REMOTE_REFRESH_INTERVAL_MS = 30000;
-const SEARCH_RENDER_DEBOUNCE_MS = 350;
-
-const I18N = {
-  ru: {
-    "app.title": "Сборы в велопоход",
-    "app.initialStatus": "Локальный прототип · данные сохраняются на этом устройстве",
-    "menu.signIn": "Войти",
-    "menu.signOut": "Выйти",
-    "menu.sharedLayouts": "Shared укладки",
-    "menu.shareList": "Ссылка на список",
-    "menu.language": "Язык",
-    "menu.collectionOn": "Выключить сбор",
-    "menu.collectionOff": "Режим сбора",
-    "menu.online": "Включить онлайн",
-    "menu.offline": "Работать офлайн",
-    "buttons.sync": "Синхр.",
-    "buttons.newLayout": "Новая укладка",
-    "buttons.copyAll": "Скопировать всю",
-    "labels.layout": "Укладка",
-    "labels.search": "Поиск",
-    "labels.storage": "Место хранения",
-    "labels.category": "Категория",
-    "placeholders.search": "вещь, категория, место",
-    "filters.allPlaces": "Все места",
-    "filters.allCategories": "Все категории",
-    "tabs.packing": "Укладка",
-    "tabs.items": "Вещи",
-    "tabs.bags": "Сумки",
-    "tabs.settings": "Настройки",
-    "demo.layoutName": "Демо-укладка",
-    "demo.subtitle": "Демо для всех",
-    "shared.prefix": "Shared",
-    "shared.layout": "Shared укладка",
-    "shared.viewerText": "Вы смотрите укладку другого пользователя. Копирование добавит данные в ваши укладки, исходная shared-укладка не изменится.",
-    "shared.viewMetric": "просмотр чужой укладки",
-    "summary.totalWeight": "общий вес",
-    "summary.itemsShown": "вещей показано",
-    "summary.notPacked": "не дома и не на веле",
-    "summary.withoutWeight": "без веса",
-    "summary.bags": "сумок",
-    "empty.notFound": "Ничего не найдено",
-    "sync.forcedOffline": "Принудительно офлайн · API отключён",
-    "sync.localUnlocked": "Локально · можно работать, войдите для сохранения в аккаунт",
-    "sync.dirty": "Вход выполнен · есть несинхронизированные изменения",
-    "sync.synced": "Вход выполнен · синхронизировано"
-  },
-  en: {
-    "app.title": "Bikepacking List",
-    "app.initialStatus": "Local prototype · data is saved on this device",
-    "menu.signIn": "Sign in",
-    "menu.signOut": "Sign out",
-    "menu.sharedLayouts": "Shared layouts",
-    "menu.shareList": "Share list link",
-    "menu.language": "Language",
-    "menu.collectionOn": "Turn collection off",
-    "menu.collectionOff": "Collection mode",
-    "menu.online": "Go online",
-    "menu.offline": "Work offline",
-    "buttons.sync": "Sync",
-    "buttons.newLayout": "New layout",
-    "buttons.copyAll": "Copy all",
-    "labels.layout": "Layout",
-    "labels.search": "Search",
-    "labels.storage": "Storage place",
-    "labels.category": "Category",
-    "placeholders.search": "item, category, place",
-    "filters.allPlaces": "All places",
-    "filters.allCategories": "All categories",
-    "tabs.packing": "Packing",
-    "tabs.items": "Items",
-    "tabs.bags": "Bags",
-    "tabs.settings": "Settings",
-    "demo.layoutName": "Demo layout",
-    "demo.subtitle": "Demo for everyone",
-    "shared.prefix": "Shared",
-    "shared.layout": "Shared layout",
-    "shared.viewerText": "You are viewing another user's layout. Copying adds the data to your layouts; the original shared layout will not change.",
-    "shared.viewMetric": "viewing another layout",
-    "summary.totalWeight": "total weight",
-    "summary.itemsShown": "items shown",
-    "summary.notPacked": "not home and not on bike",
-    "summary.withoutWeight": "without weight",
-    "summary.bags": "bags",
-    "empty.notFound": "Nothing found",
-    "sync.forcedOffline": "Forced offline · API disabled",
-    "sync.localUnlocked": "Local · you can work here, sign in to save to your account",
-    "sync.dirty": "Signed in · unsynced changes",
-    "sync.synced": "Signed in · synced"
-  }
-};
-const REQUIRED_CHARGE_CATEGORY = "Требует заряда";
-
-const categories = [
-  "Сон",
-  "Одежда",
-  "Кухня",
-  "Еда",
-  "Вода",
-  "Ремонт",
-  "Медицина",
-  "Электроника",
-  "Документы",
-  "Гигиена",
-  "Навигация",
-  "Велозапчасти",
-  "Инструменты",
+import {
+  STORAGE_KEY,
+  APP_VERSION,
+  SYNC_META_KEY,
+  BASE_STATE_KEY,
+  RECOVERY_STATE_KEY,
+  RECOVERY_STATE_MAX,
+  AUTH_EMAIL_KEY,
+  AUTH_SIGNED_OUT_KEY,
+  FORCE_OFFLINE_KEY,
+  DEVICE_META_KEY,
+  UI_SETTINGS_KEY,
+  ACTIVE_LIST_ID_KEY,
+  ACTIVE_LAYOUT_CHOICE_KEY,
+  ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+  ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+  API_BASE,
+  PHOTO_DB_NAME,
+  PHOTO_DB_VERSION,
+  PHOTO_STORE,
+  ITEM_PHOTO_MAX_SIZE,
+  ITEM_PHOTO_THUMB_SIZE,
+  ITEM_PHOTO_QUALITY,
+  DATA_SCOPE_KEY,
+  DATA_ITEM_KEY,
+  DEMO_ITEM_KEY,
+  PUBLIC_LEGACY_RECORD_SOURCE,
+  DEMO_LAYOUT_SELECT_VALUE,
+  DEMO_SHARED_LAYOUT_ID,
+  GUEST_DEMO_COPY_FLAG,
+  SHARED_ITEM_KEY_PREFIX,
+  SHARED_LAYOUTS_STORAGE_KEY,
+  SESSION_MODE_GUEST,
+  SESSION_MODE_USER,
+  SESSION_MODE_ADMIN,
+  VIEW_SCOPE_PRIVATE,
+  VIEW_SCOPE_GUEST_LOCAL,
+  VIEW_SCOPE_DEMO,
+  VIEW_SCOPE_SHARED,
+  VIEW_SCOPE_ADMIN_PUBLIC_EDIT,
+  STATE_SCOPE_PRIVATE,
+  STATE_SCOPE_DEMO,
+  STATE_SCOPE_SHARED,
+  SHARED_LIST_QUERY_PARAM,
+  LANGUAGE_KEY,
+  DEFAULT_LANGUAGE,
+  SUPPORTED_LANGUAGES,
+  ADMIN_EMAILS,
+  ADMIN_USER_IDS,
+  COLLAPSE_DEFAULTS_VERSION,
+  API_TIMEOUT_MS,
+  LIST_API_TIMEOUT_MS,
+  LIST_SAVE_API_TIMEOUT_MS,
+  ITEM_SYNC_MAX_BATCH_BYTES,
+  ITEM_SYNC_MAX_BATCH_ITEMS,
+  POINTER_DRAG_START_DISTANCE,
+  TOUCH_DRAG_DELAY_MS,
+  TOUCH_DRAG_CANCEL_DISTANCE,
+  TOUCH_SCROLL_CANCEL_DISTANCE,
+  NESTED_GROUP_HOVER_DELAY_MS,
+  EDGE_SCROLL_ZONE,
+  EDGE_SCROLL_MAX_SPEED,
+  REMOTE_REFRESH_INTERVAL_MS,
+  SEARCH_RENDER_DEBOUNCE_MS
+} from "./src/config/constants.js";
+import { I18N } from "./src/data/i18n.js";
+import {
   REQUIRED_CHARGE_CATEGORY,
-  "Прочее"
-];
-
-const locations = ["Дом", "Дача", "Уже на велосипеде", "Надо купить", "Не знаю где"];
-
-const sharedLayouts = [
-  {
-    id: "bikepacking-reference-bags",
-    name: "Bikepacking reference",
-    subtitle: "Shared укладка",
-    roots: [
-      {
-        id: "rockgeist-52-hz-frame-bag",
-        name: "Frame Bag - Rockgeist 52 Hz",
-        description: "Waterproof XL frame bag, 11 L.",
-        weightGrams: 380,
-        volumeLiters: 11,
-        weightAlt: "14.1 oz",
-        photoKind: "frame",
-        items: []
-      },
-      {
-        id: "bad-boy-bar-bag",
-        name: "Handlebar Bag - The Bad Boy Bar Bag",
-        description: "Large custom front bag, about 40-50 L.",
-        weightGrams: 730,
-        volumeLiters: 45,
-        weightAlt: "1.6 lbs",
-        photoKind: "bar",
-        items: [
-          {
-            id: "padded-camera-insert",
-            name: "Padded Camera Insert",
-            description: "Padded insert for camera gear inside the hip pack.",
-            weightGrams: 50,
-            weightAlt: "1.8 oz",
-            photoKind: "camera"
-          },
-          {
-            id: "durston-wapta-30",
-            name: "Packable Backpack - Durston Wapta 30",
-            description: "Packable 30 L backpack for multi-day hikes.",
-            weightGrams: 405,
-            volumeLiters: 30,
-            weightAlt: "14.3 oz",
-            photoKind: "backpack"
-          }
-        ]
-      },
-      {
-        id: "revelate-terrapin-14",
-        name: "Seat Pack - Revelate Designs Terrapin 14L",
-        description: "Stable waterproof seat pack, 14 L.",
-        weightGrams: 560,
-        volumeLiters: 14,
-        weightAlt: "1.2 lbs",
-        photoKind: "seat",
-        items: []
-      },
-      {
-        id: "tailfin-flip-15",
-        name: "Top Tube Bag - Tailfin Flip 1.5 L",
-        description: "Rainproof electronics bag with quick access.",
-        weightGrams: 187,
-        volumeLiters: 1.5,
-        weightAlt: "6.6 oz",
-        photoKind: "top",
-        items: []
-      },
-      {
-        id: "revelate-feeder-bags",
-        name: "Feeder Bags - Revelate Designs",
-        description: "Stem bags with stretchy side pockets.",
-        weightGrams: 105,
-        weightAlt: "3.7 oz each",
-        photoKind: "feeder",
-        items: []
-      },
-      {
-        id: "rockgeist-big-dumpling",
-        name: "Hip Pack - Rockgeist Big Dumpling",
-        description: "Waterproof rolltop hip pack.",
-        weightGrams: 377,
-        weightAlt: "13.3 oz",
-        photoKind: "hip",
-        items: []
-      },
-      {
-        id: "shared-small-gear",
-        name: "Small gear",
-        description: "Навесное и мелкие элементы этой shared-укладки.",
-        weightGrams: 0,
-        weightAlt: "",
-        photoKind: "bag",
-        items: [
-          {
-            id: "oneup-composite-pedals",
-            name: "Pedals - OneUp Components Composite",
-            description: "Flat pedals for riding without clip-ins.",
-            weightGrams: 350,
-            weightAlt: "12.5 oz",
-            photoKind: "pedals"
-          },
-          {
-            id: "haute-twisted-t-rack",
-            name: "Handlebar Rack - Haute Twisted T-Rack",
-            description: "Support rack for a top-loading bar bag.",
-            weightGrams: 155,
-            weightAlt: "5.5 oz",
-            photoKind: "rack"
-          }
-        ]
-      }
-    ],
-    bags: [
-      {
-        id: "oneup-composite-pedals",
-        name: "Pedals - OneUp Components Composite",
-        description: "Flat pedals for riding without clip-ins.",
-        weightGrams: 350,
-        weightAlt: "12.5 oz",
-        copyType: "item",
-        photoKind: "pedals"
-      },
-      {
-        id: "rockgeist-52-hz-frame-bag",
-        name: "Frame Bag - Rockgeist 52 Hz",
-        description: "Waterproof XL frame bag, 11 L.",
-        weightGrams: 380,
-        volumeLiters: 11,
-        weightAlt: "14.1 oz",
-        photoKind: "frame"
-      },
-      {
-        id: "bad-boy-bar-bag",
-        name: "Handlebar Bag - The Bad Boy Bar Bag",
-        description: "Large custom front bag, about 40-50 L.",
-        weightGrams: 730,
-        volumeLiters: 45,
-        weightAlt: "1.6 lbs",
-        photoKind: "bar"
-      },
-      {
-        id: "haute-twisted-t-rack",
-        name: "Handlebar Rack - Haute Twisted T-Rack",
-        description: "Support rack for a top-loading bar bag.",
-        weightGrams: 155,
-        weightAlt: "5.5 oz",
-        copyType: "item",
-        photoKind: "rack"
-      },
-      {
-        id: "revelate-terrapin-14",
-        name: "Seat Pack - Revelate Designs Terrapin 14L",
-        description: "Stable waterproof seat pack, 14 L.",
-        weightGrams: 560,
-        volumeLiters: 14,
-        weightAlt: "1.2 lbs",
-        photoKind: "seat"
-      },
-      {
-        id: "tailfin-flip-15",
-        name: "Top Tube Bag - Tailfin Flip 1.5 L",
-        description: "Rainproof electronics bag with quick access.",
-        weightGrams: 187,
-        volumeLiters: 1.5,
-        weightAlt: "6.6 oz",
-        photoKind: "top"
-      },
-      {
-        id: "revelate-feeder-bags",
-        name: "Feeder Bags - Revelate Designs",
-        description: "Stem bags with stretchy side pockets.",
-        weightGrams: 105,
-        weightAlt: "3.7 oz each",
-        photoKind: "feeder"
-      },
-      {
-        id: "rockgeist-big-dumpling",
-        name: "Hip Pack - Rockgeist Big Dumpling",
-        description: "Waterproof rolltop hip pack.",
-        weightGrams: 377,
-        weightAlt: "13.3 oz",
-        photoKind: "hip"
-      },
-      {
-        id: "padded-camera-insert",
-        name: "Padded Camera Insert",
-        description: "Padded insert for camera gear inside the hip pack.",
-        weightGrams: 50,
-        weightAlt: "1.8 oz",
-        copyType: "item",
-        photoKind: "camera"
-      },
-      {
-        id: "durston-wapta-30",
-        name: "Packable Backpack - Durston Wapta 30",
-        description: "Packable 30 L backpack for multi-day hikes.",
-        weightGrams: 405,
-        volumeLiters: 30,
-        weightAlt: "14.3 oz",
-        photoKind: "backpack"
-      }
-    ]
-  }
-];
-
-const bikepackingReferenceExtraRoots = [
-  {
-    id: "shared-shelter-sleep",
-    name: "Shelter & sleep",
-    description: "Tent, quilt, sleeping pad and camp basics.",
-    weightGrams: 0,
-    photoKind: "bag",
-    items: [
-      sharedGearItem("durston-x-dome-1-plus", "Tent - Durston X-Dome 1+", 980, "2.2 lbs", "Phenomenal tent; packed in a 6L dry sack and stored in the handlebar bag."),
-      sharedGearItem("ee-enigma-10f-12c", "Quilt - Enlightened Equipment Enigma 10F/-12C", 628, "22.15 oz", "Excellent warmth-to-weight quilt, 950 down fill, stuffed into the seat pack."),
-      sharedGearItem("big-agnes-rapide-sl-insulated", "Pad - Big Agnes Rapide SL Insulated", 482, "17 oz", "Comfortable lightweight inflatable pad, stored in the seat pack."),
-      sharedGearItem("nemo-fillo-elite", "Pillow - Nemo Fillo Elite", 120, "4.2 oz", "Modified with memory foam for more cushion, stored in the seat pack."),
-      sharedGearItem("sea-to-summit-airlite-towel", "Towel - Sea to Summit Airlite", 48, "1.7 oz", "Tiny lightweight towel, stored in the front pocket of the handlebar bag."),
-      sharedGearItem("tentlab-deuce-2", "Camp Trowel - TheTentLab Deuce #2", 17, "0.6 oz", "Tiny titanium trowel, stored with toilet paper in a waterproof bag."),
-      sharedGearItem("universal-sink-plug", "Universal Sink Plug", 10, "0.3 oz", "Small laundry helper, stored with the toiletries bag."),
-      sharedGearItem("peak-design-packing-cube-xxs", "Toiletries Bag - Peak Design Packing Cube XXS", 200, "7.1 oz", "Small toiletries kit for basics, stored in the seat pack.")
-    ]
-  },
-  {
-    id: "shared-riding-clothing",
-    name: "Riding clothing",
-    description: "Clothes worn on the bike and packed layers.",
-    weightGrams: 0,
-    photoKind: "bag",
-    items: [
-      sharedGearItem("isobaa-merino-riding-shirt", "Riding Shirt - Isobaa Merino", 180, "6.3 oz", "Merino riding shirt for warm and wet conditions."),
-      sharedGearItem("ornot-lightweight-mission-shorts", "Riding Shorts - Ornot Lightweight Mission", 200, "7.1 oz", "Lightweight riding shorts."),
-      sharedGearItem("bedrock-cairn-evo-3d-pro", "Riding Footwear - Bedrock Cairn Evo 3D Pro", 500, "1.1 lbs", "Sandals for warm weather and river crossings."),
-      sharedGearItem("paka-active-brief", "Underwear - Paka Active 6\" Brief", 100, "3.5 oz each", "Alpaca underwear for cycling, carried as three pairs."),
-      sharedGearItem("gripgrab-supergel-gloves", "Riding Gloves - GripGrab SuperGel", 150, "5.3 oz", "Comfortable padded riding gloves."),
-      sharedGearItem("giro-manifest-spherical", "Helmet - Giro Manifest Spherical", 346, "12.2 oz", "Comfortable ventilated helmet for daily riding."),
-      sharedGearItem("ombraz-viale", "Sunglasses - Ombraz Viale", 22, "0.8 oz", "Armless sunglasses with comfortable lenses."),
-      sharedGearItem("bedrock-split-toe-socks", "Socks - Bedrock Split-Toe", 80, "2.8 oz", "Split-toe socks for sandals, stored in seat pack and handlebar pouch."),
-      sharedGearItem("merino-wool-buff", "Buff - Merino Wool", 50, "1.8 oz", "Dust, sun and warmth layer; doubles as a hat."),
-      sharedGearItem("ornot-lightweight-mission-trousers", "Trousers - Ornot Lightweight Mission", 250, "8.8 oz", "Technical trousers for evenings and days off."),
-      sharedGearItem("ee-torrid-puffy", "Puffy - Enlightened Equipment Torrid", 223, "7.86 oz", "Warm synthetic layer that still works when wet."),
-      sharedGearItem("montbell-versalite-rain-jacket", "Rain Jacket - Montbell Versalite", 182, "6.4 oz", "Tiny packable rain jacket with pit zips."),
-      sharedGearItem("waterproof-socks", "Waterproof Socks", 120, "4.2 oz", "Warm backup socks for cold wet conditions."),
-      sharedGearItem("senchi-designs-a90", "Midlayer - Senchi Designs A90", 125, "4.4 oz", "Very light warm midlayer, stored in the front pouch."),
-      sharedGearItem("defeet-duragloves", "Warm Gloves - DeFeet DuraGloves", 70, "2.5 oz", "Wool gloves that still help when soaked."),
-      sharedGearItem("isobaa-merino-long-sleeve", "Long Sleeved Top - Isobaa Merino", 180, "6.3 oz", "Spare long-sleeved merino top for evenings or days off.")
-    ]
-  },
-  {
-    id: "shared-electronics-media",
-    name: "Electronics & media",
-    description: "Navigation, cameras, storage, charging and small electronics.",
-    weightGrams: 0,
-    photoKind: "bag",
-    items: [
-      sharedGearItem("coros-dura-bike-computer", "Bike Computer - Coros Dura", 100, "3.5 oz", "Long-battery bike computer attached with an out-front mount."),
-      sharedGearItem("fuji-x100vi", "Camera 1 - Fuji X100VI", 521, "1.2 lbs", "Compact fixed-lens camera with spare batteries."),
-      sharedGearItem("dji-pocket-3", "Camera 2 - DJI Pocket 3", 195, "6.9 oz", "Small vlogging and gimbal camera."),
-      sharedGearItem("aoka-carbon-tripod", "Tripod - Aoka Carbon", 500, "1.1 lbs", "Light full-sized tripod, stored in the front handlebar pouch."),
-      sharedGearItem("dji-mini-5-pro", "Drone 1 - DJI Mini 5 Pro with RC2", 750, "1.7 lbs", "Drone and remote, with one spare battery."),
-      sharedGearItem("hoverair-pro-max", "Drone 2 - HOVERAir Pro Max", 257, "9.1 oz", "Fast-deploy follow-shot drone with spare battery."),
-      sharedGearItem("macbook-air-m4", "Laptop - MacBook Air M4", 1240, "2.7 lbs", "Light video-editing laptop in a padded handlebar-bag case."),
-      sharedGearItem("sandisk-extreme-memory-cards", "Memory Cards - Sandisk Extreme", 2, "0.1 oz", "Memory cards for cameras, plus spares stored with the laptop."),
-      sharedGearItem("samsung-t7-2tb", "SSD - Samsung T7 2TB", 57, "2 oz", "Backup storage for laptop and camera footage."),
-      sharedGearItem("dji-mic-3", "Microphone - DJI Mic 3", 221, "7.8 oz", "Audio kit for filming, stored in frame/top tube bags."),
-      sharedGearItem("soundcore-liberty-4", "Headphones 1 - Anker Soundcore Liberty 4", 60, "2.1 oz", "Noise-cancelling earbuds for wind and travel."),
-      sharedGearItem("shokz-openfit", "Headphones 2 - Shokz OpenFit", 60, "2.1 oz", "Open-ear headphones for quiet roads."),
-      sharedGearItem("iphone-17-pro", "Smartphone - iPhone 17 Pro", 206, "7.3 oz", "High-end phone in a Peak Design case."),
-      sharedGearItem("peak-design-out-front-phone-mount", "Phone Bar Mount - Peak Design Out Front", 93, "3.3 oz", "Magnetic handlebar mount for quick phone attachment."),
-      sharedGearItem("peak-design-mobile-tripod", "Mobile Tripod - Peak Design", 76, "2.7 oz", "Phone tripod for quick on-the-go shots."),
-      sharedGearItem("coros-vertix-2s", "Watch - Coros Vertix 2S", 70, "2.5 oz", "Smartwatch paired with the bike computer."),
-      sharedGearItem("inui-20000-power-banks", "Power Banks - INIU 20,000 mAh", 326, "11.5 oz each", "Two power banks for one to two weeks of charging."),
-      sharedGearItem("iniu-65w-wall-charger", "Wall Charger - INIU 65W PD", 115, "4.1 oz", "Fast USB wall charger with multiple ports."),
-      sharedGearItem("fenix-hm50r-v20", "Headtorch - Fenix HM50R V2.0", 78, "2.75 oz", "USB rechargeable headtorch with long battery life."),
-      sharedGearItem("kindle-paperwhite", "Ereader - Kindle Paperwhite", 211, "7.4 oz", "Backlit e-reader for tent reading."),
-      sharedGearItem("hummingbird-mk1", "Beard Trimmer - Hummingbird MK1", 118, "4.16 oz", "Tiny travel beard trimmer."),
-      sharedGearItem("cateye-wearable-x", "Red Light Blinkie - Cateye Wearable X", 20, "0.7 oz", "Small rear light for rare night riding.")
-    ]
-  },
-  {
-    id: "shared-cooking-water",
-    name: "Cooking, water & food",
-    description: "Water storage, stove kit and food basics.",
-    weightGrams: 0,
-    photoKind: "bag",
-    items: [
-      sharedGearItem("platypus-quickdraw", "Water Filter - Platypus QuickDraw", 63, "2.2 oz", "Fast-flow water filter, stored in the side pouch of the handlebar bag."),
-      sharedGearItem("water-storage-bottles", "Water Storage - Bottles", 106, "3.75 oz", "Four one-litre bottles around the bike."),
-      sharedGearItem("trail-designs-sidewinder-ti-tri", "Stove - Trail Designs Sidewinder Ti-Tri", 40, "1.4 oz", "Efficient alcohol stove and windscreen."),
-      sharedGearItem("trail-designs-kojin", "Burner - Trail Designs Kojin", 17, "0.6 oz", "Alcohol burner stored inside the pot."),
-      sharedGearItem("evernew-900ml-titanium-pot", "Pot - Evernew 900 ml Titanium", 115, "4.06 oz", "900 ml titanium pot stored in the food bag."),
-      sharedGearItem("home-made-pot-cosy", "Pot Cosy - Home Made", 50, "1.8 oz", "Simple pot cosy for camp cooking."),
-      sharedGearItem("snow-peak-titanium-spork", "Spork - Snow Peak Titanium", 16, "0.6 oz", "Two titanium sporks, one in hip pack and one in food bag."),
-      sharedGearItem("inside-pot-extras", "Inside the Pot - Extras", 90, "3.2 oz", "Dish brush, dish cloth, lighter and small pot of salt."),
-      sharedGearItem("cnoc-2l-water-bladder", "Water Bladder - CNOC 2L", 76, "2.7 oz", "Two-litre bladder used with the water filter."),
-      sharedGearItem("food", "Food", 0, "", "Food stored between frame bag and handlebar bag, with extra capacity in a 30L backpack.")
-    ]
-  },
-  {
-    id: "shared-tools-repair",
-    name: "Tools, repair & safety",
-    description: "Bike tools, repair kits, first aid and small safety items.",
-    weightGrams: 0,
-    photoKind: "bag",
-    items: [
-      sharedGearItem("topeak-ratchet-rocket-lite-dx", "Tool Kit - Topeak Ratchet Rocket Lite DX", 180, "6.3 oz", "Ratchet kit with bits and adjusters, stored in top tube bag."),
-      sharedGearItem("benchmade-bugout", "Pocket Knife - Benchmade Bugout", 52, "1.85 oz", "Small pocket knife for quick access."),
-      sharedGearItem("victorinox-handyman", "Swiss Army Knife - Victorinox Handyman", 155, "5.5 oz", "Favourite Victorinox with scissors, file, saw, pliers and can opener."),
-      sharedGearItem("abus-bordo-lite-6055", "Bike Lock - ABUS Bordo Lite 6055 (85 cm)", 500, "1.1 lbs", "Compact bike lock stored on the downtube."),
-      sharedGearItem("click-stand", "Bike Stand - Click-Stand", 75, "2.6 oz", "Light stand for keeping the bike upright."),
-      sharedGearItem("cycplus-as2-ultra", "E-Pump - CYCPLUS AS2 Ultra", 105, "3.7 oz", "Tiny electronic pump with pressure gauge."),
-      sharedGearItem("lezyne-pocket-drive-hv", "Backup Pump - Lezyne Pocket Drive HV", 89, "3.1 oz", "Light backup pump for expeditions."),
-      sharedGearItem("tubeless-repair-kit", "Tubeless Repair Kit", 100, "3.5 oz", "Tube, plugs, boot, sealant, valve core remover and tyre levers."),
-      sharedGearItem("chain-maintenance-kit", "Chain Maintenance Kit", 100, "3.5 oz", "Dry lube and rag for chain cleaning."),
-      sharedGearItem("sewing-kit", "Sewing Kit", 30, "1.1 oz", "Basic sewing kit plus curved upholstery needle."),
-      sharedGearItem("first-aid-kit", "First Aid Kit", 100, "3.5 oz", "Basic first aid kit in a waterproof bag."),
-      sharedGearItem("general-repair-kit", "General Repair Kit", 100, "3.5 oz", "Tape, cable ties, pad patches, buckles and spare bolts."),
-      sharedGearItem("pinion-lockring-tool", "Pinion Lockring Tool", 50, "1.8 oz", "Pinion-specific lockring tool for front chainring or sprocket."),
-      sharedGearItem("lezyne-multi-chain-pliers", "Lezyne Multi-Chain Pliers", 60, "2.1 oz", "Chain-breaker, disc rotor aligner and quick-link pliers.")
-    ]
-  }
-];
-
-bikepackingReferenceExtraRoots.forEach((root) => sharedLayouts[0].roots.push(root));
-sharedLayouts[0].bags.push(
-  ...bikepackingReferenceExtraRoots.flatMap((root) =>
-    root.items.map((item) => ({ ...item, copyType: "item" }))
-  )
-);
-
-function sharedGearItem(id, name, weightGrams, weightAlt, description) {
-  return {
-    id,
-    name,
-    description,
-    weightGrams,
-    weightAlt,
-    photoKind: "bag"
-  };
-}
-
-const demoSharedLayout = {
-  id: DEMO_SHARED_LAYOUT_ID,
-  name: "Демо-укладка",
-  subtitle: "Демо для всех",
-  roots: [],
-  statePayload: null,
-  statePayloadByLanguage: {}
-};
+  categories,
+  locations,
+  sharedLayouts,
+  demoSharedLayout
+} from "./src/data/demo-data.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
 let uiLanguage = loadUiLanguage();
@@ -571,6 +124,7 @@ let containerEntitySyncUnavailable = false;
 let layoutEntitySyncUnavailable = false;
 let historyRecords = [];
 let expandedHistoryRecordId = "";
+let expandedHistoryGroups = {};
 let historyComparisonState = null;
 let activeHistorySource = "private";
 let filterViewCollapseSignature = "";
@@ -606,6 +160,7 @@ const photoObjectUrls = new Map();
 let photoUploadInFlight = false;
 let currentPackingListId = loadActivePackingListId();
 let currentPackingListMeta = null;
+let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = {
   syncStatus: document.querySelector("#syncStatus"),
@@ -1118,11 +673,13 @@ function init() {
     if (!button) return;
     activeHistorySource = button.dataset.historySource || "private";
     expandedHistoryRecordId = "";
+    expandedHistoryGroups = {};
     historyComparisonState = null;
     refreshHistoryDialog();
   });
   refs.historySharedSelect?.addEventListener("change", () => {
     expandedHistoryRecordId = "";
+    expandedHistoryGroups = {};
     historyComparisonState = null;
     refreshHistoryDialog();
   });
@@ -2009,6 +1566,7 @@ function loadSyncMeta() {
       serverUpdatedAt: meta.serverUpdatedAt || null,
       localUpdatedAt: meta.localUpdatedAt || null,
       lastSyncedLocalUpdatedAt: meta.lastSyncedLocalUpdatedAt || null,
+      stateRevision: normalizeStateRevision(meta.stateRevision ?? meta.state_revision),
       payloadHash: meta.payloadHash || null,
       entityHash: meta.entityHash || null,
       itemCount: normalizeIntegrityCount(meta.itemCount),
@@ -2022,6 +1580,7 @@ function loadSyncMeta() {
       serverUpdatedAt: null,
       localUpdatedAt: null,
       lastSyncedLocalUpdatedAt: null,
+      stateRevision: null,
       payloadHash: null,
       entityHash: null,
       itemCount: null,
@@ -2167,9 +1726,99 @@ function currentLayoutChoice() {
 
 function rememberActiveLayoutChoice(choice = currentLayoutChoice()) {
   saveActiveLayoutChoice(choice);
+  if (isPrivateLayoutChoice(choice)) {
+    explicitLayoutChoice = { id: choice, at: Date.now() };
+  }
 }
 
-async function restoreSavedLayoutChoice({ publicOnly = false } = {}) {
+function rememberPrivateServerLayoutChoice() {
+  const layoutId = state.layouts?.[state.activeLayoutId] ? state.activeLayoutId : Object.values(state.layouts || {})[0]?.id || "";
+  if (!layoutId || !isPrivateUserLayoutId(layoutId)) return;
+  saveActiveLayoutChoice(layoutId);
+}
+
+function layoutArrangementScore(targetState, layout) {
+  if (!layout || typeof layout !== "object") return 0;
+  const containers = targetState?.containers || {};
+  const items = targetState?.items || {};
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : {};
+  const arrangedItems = arrangement.items && typeof arrangement.items === "object"
+    ? Object.entries(arrangement.items).filter(([itemId, containerId]) => items[itemId] && containers[containerId]).length
+    : 0;
+  const linkedItems = Object.values(arrangement.containers || {}).reduce((sum, placement) => {
+    return sum + uniqueLayoutIds(Array.isArray(placement?.itemIds) ? placement.itemIds : []).filter((itemId) => items[itemId]).length;
+  }, 0);
+  const nestedContainers = Object.values(arrangement.containers || {}).filter((placement) =>
+    placement?.parentId && containers[placement.parentId]
+  ).length;
+  const roots = uniqueLayoutIds([
+    ...(Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : []),
+    ...(Array.isArray(layout.rootContainerIds) ? layout.rootContainerIds : [])
+  ]).filter((containerId) => containers[containerId]).length;
+  return layoutArrangementContentScore(targetState, layout) + roots;
+}
+
+function layoutArrangementContentScore(targetState, layout) {
+  if (!layout || typeof layout !== "object") return 0;
+  const containers = targetState?.containers || {};
+  const items = targetState?.items || {};
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : {};
+  const arrangedItems = arrangement.items && typeof arrangement.items === "object"
+    ? Object.entries(arrangement.items).filter(([itemId, containerId]) => items[itemId] && containers[containerId]).length
+    : 0;
+  const linkedItems = Object.values(arrangement.containers || {}).reduce((sum, placement) => {
+    return sum + uniqueLayoutIds(Array.isArray(placement?.itemIds) ? placement.itemIds : []).filter((itemId) => items[itemId]).length;
+  }, 0);
+  const nestedContainers = Object.values(arrangement.containers || {}).filter((placement) =>
+    placement?.parentId && containers[placement.parentId]
+  ).length;
+  return Math.max(arrangedItems, linkedItems) + nestedContainers;
+}
+
+function isMeaningfulLayout(targetState, layout) {
+  return layoutArrangementContentScore(targetState, layout) > 0;
+}
+
+function bestMeaningfulLayoutId(targetState) {
+  return Object.values(targetState?.layouts || {})
+    .filter((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId)
+    .sort((a, b) => layoutArrangementScore(targetState, b) - layoutArrangementScore(targetState, a))[0]?.id || "";
+}
+
+function isRecentExplicitLayoutChoice(layoutId, maxAgeMs = 30000) {
+  return Boolean(layoutId && explicitLayoutChoice.id === layoutId && Date.now() - explicitLayoutChoice.at <= maxAgeMs);
+}
+
+function resolvePreferredLayoutId(targetState, preferredLayoutId = "", preferredLayoutName = "", { allowEmptyPreferred = false } = {}) {
+  const layouts = targetState?.layouts || {};
+  if (allowEmptyPreferred && preferredLayoutId && layouts[preferredLayoutId]) return preferredLayoutId;
+  if (preferredLayoutId && isMeaningfulLayout(targetState, layouts[preferredLayoutId])) return preferredLayoutId;
+  const normalizedName = String(preferredLayoutName || "").trim().toLowerCase();
+  if (normalizedName) {
+    const byName = Object.values(layouts).find((layout) =>
+      String(layout?.name || "").trim().toLowerCase() === normalizedName &&
+      isMeaningfulLayout(targetState, layout)
+    );
+    if (byName?.id) return byName.id;
+  }
+  const activeLayout = layouts[targetState?.activeLayoutId];
+  if (isMeaningfulLayout(targetState, activeLayout)) return activeLayout.id;
+  const bestLayoutId = bestMeaningfulLayoutId(targetState);
+  if (bestLayoutId) return bestLayoutId;
+  if (preferredLayoutId && layouts[preferredLayoutId]) return preferredLayoutId;
+  return "";
+}
+
+function preferredCurrentLayoutRef() {
+  const layout = state.layouts?.[state.activeLayoutId];
+  return {
+    id: state.activeLayoutId || "",
+    name: layout?.name || "",
+    allowEmpty: Boolean(state.activeLayoutId && state.layouts?.[state.activeLayoutId])
+  };
+}
+
+async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = false } = {}) {
   const explicitChoice = isActiveLayoutChoiceExplicit();
   const activePrivateChoice = !publicOnly && isPrivateUserLayoutId(state.activeLayoutId)
     ? state.activeLayoutId
@@ -2180,16 +1829,19 @@ async function restoreSavedLayoutChoice({ publicOnly = false } = {}) {
     choice === DEMO_LAYOUT_SELECT_VALUE ||
     String(choice || "").startsWith("shared:")
   );
-  if (!adminPublicChoice && !publicOnly && choice === DEMO_LAYOUT_SELECT_VALUE && !explicitChoice && privateChoice) choice = privateChoice;
+  if (privateOnly && adminPublicChoice) choice = privateChoice;
+  if (!privateOnly && !adminPublicChoice && !publicOnly && choice === DEMO_LAYOUT_SELECT_VALUE && !explicitChoice && privateChoice) choice = privateChoice;
   if (!publicOnly && isPrivateLayoutChoice(choice) && !isPrivateUserLayoutId(choice) && privateChoice) choice = privateChoice;
   if (!choice) choice = privateChoice;
   if (!choice) return false;
   if (choice === DEMO_LAYOUT_SELECT_VALUE) {
+    if (privateOnly) return false;
     if (canOpenAdminPublishedEdit() && !publicOnly) await openAdminDemoLayout({ remember: false });
     else await openDemoLayoutFromSelect({ remember: false });
     return true;
   }
   if (choice.startsWith("shared:")) {
+    if (privateOnly) return false;
     const layoutId = choice.slice("shared:".length);
     if (!findSharedLayout(layoutId)) return false;
     if (canOpenAdminPublishedEdit() && !publicOnly) await openSharedLayoutForAdmin(layoutId, { remember: false });
@@ -2393,6 +2045,7 @@ function normalizeLayoutArrangement(layout, targetState = state) {
   arrangement.rootContainerIds = uniqueRootIds;
   layout.rootContainerIds = uniqueRootIds;
   arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
+  repairBareLayoutRootArrangement(layout, targetState);
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     if (!containerIdSet.has(containerId) || !placement || typeof placement !== "object") {
       delete arrangement.containers[containerId];
@@ -2430,6 +2083,34 @@ function normalizeLayoutArrangement(layout, targetState = state) {
     }
   }
   return arrangement;
+}
+
+function repairBareLayoutRootArrangement(layout, targetState = state) {
+  const arrangement = layout?.arrangement;
+  if (!layout || !arrangement || typeof arrangement !== "object") return false;
+  let repaired = false;
+  (layout.rootContainerIds || []).forEach((rootId) => {
+    const currentScore = layoutArrangementContainerTreeScore(arrangement, rootId);
+    const sourceLayout = findBestSourceLayoutForContainerTree(rootId, { excludeLayoutId: layout.id, targetState });
+    const sourceArrangement = sourceLayout?.arrangement;
+    const sourceScore = layoutArrangementContainerTreeScore(sourceArrangement, rootId);
+    if (!sourceArrangement || sourceScore <= currentScore) return;
+    const snapshot = snapshotContainerTreeFromLayoutArrangement(rootId, { sourceLayoutId: sourceLayout.id, targetState });
+    if (!snapshot) return;
+    Object.entries(snapshot.containers).forEach(([containerId, container]) => {
+      arrangement.containers[containerId] = {
+        parentId: container.parentId || "",
+        itemIds: [...(container.itemIds || [])],
+        childIds: [...(container.childIds || [])],
+        order: (container.order || []).map((entry) => ({ type: entry.type, id: entry.id }))
+      };
+    });
+    Object.entries(snapshot.items).forEach(([itemId, item]) => {
+      if (item?.containerId) arrangement.items[itemId] = item.containerId;
+    });
+    repaired = true;
+  });
+  return repaired;
 }
 
 function uniqueLayoutIds(list) {
@@ -2627,8 +2308,11 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
   captureActiveLayoutArrangement();
   state.activeLayoutId = layoutId;
   applyLayoutArrangement(layoutId);
+  explicitLayoutChoice = { id: layoutId, at: Date.now() };
   if (remember) rememberActiveLayoutChoice(layoutId);
-  saveState();
+  if (!(state.layouts[layoutId]?.rootContainerIds || []).length) {
+    rootContainerUsageFilter = "all";
+  }
   render();
 }
 
@@ -2692,6 +2376,16 @@ function stateStats(targetState = state) {
     return Math.max(max, count);
   }, 0);
   const nestedContainers = Object.values(containers).filter((container) => container?.parentId && containers[container.parentId]).length;
+  const arrangedNestedContainers = Object.values(layouts).reduce((max, layout) => {
+    const layoutContainers = layout?.arrangement?.containers && typeof layout.arrangement.containers === "object"
+      ? layout.arrangement.containers
+      : {};
+    const count = Object.values(layoutContainers).filter((placement) =>
+      placement?.parentId && containers[placement.parentId]
+    ).length;
+    return Math.max(max, count);
+  }, 0);
+  const effectiveNestedContainers = Math.max(nestedContainers, arrangedNestedContainers);
   return {
     items: Object.keys(items).length,
     containers: Object.keys(containers).length,
@@ -2699,8 +2393,8 @@ function stateStats(targetState = state) {
     placedItems,
     linkedItems: containerLinkedItems.size,
     arrangedItems,
-    nestedContainers,
-    rootContainers: Object.keys(containers).length - nestedContainers
+    nestedContainers: effectiveNestedContainers,
+    rootContainers: Object.keys(containers).length - effectiveNestedContainers
   };
 }
 
@@ -2708,6 +2402,12 @@ function normalizeIntegrityCount(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
+}
+
+function normalizeStateRevision(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1 ? Math.round(number) : null;
 }
 
 function readIntegrityValue(source, keys) {
@@ -2726,6 +2426,7 @@ function stateIntegrityMetaFromResponse(...sources) {
     containerCount: null,
     layoutCount: null,
     payloadSize: null,
+    stateRevision: null,
     updatedAt: null
   };
   const candidates = [];
@@ -2743,6 +2444,7 @@ function stateIntegrityMetaFromResponse(...sources) {
     result.containerCount ??= normalizeIntegrityCount(readIntegrityValue(source, ["containerCount", "container_count"]));
     result.layoutCount ??= normalizeIntegrityCount(readIntegrityValue(source, ["layoutCount", "layout_count"]));
     result.payloadSize ??= normalizeIntegrityCount(readIntegrityValue(source, ["payloadSize", "payload_size"]));
+    result.stateRevision ??= normalizeStateRevision(readIntegrityValue(source, ["stateRevision", "state_revision", "revision"]));
     result.updatedAt ||= readIntegrityValue(source, ["updatedAt", "updated_at", "serverUpdatedAt", "server_updated_at"]);
   });
   return result;
@@ -2755,7 +2457,8 @@ function hasStateIntegrityMeta(meta) {
     meta.itemCount !== null ||
     meta.containerCount !== null ||
     meta.layoutCount !== null ||
-    meta.payloadSize !== null
+    meta.payloadSize !== null ||
+    meta.stateRevision !== null
   ));
 }
 
@@ -2770,6 +2473,7 @@ function rememberRemoteIntegrityMeta(...sources) {
   syncMeta.containerCount = meta.containerCount;
   syncMeta.layoutCount = meta.layoutCount;
   syncMeta.payloadSize = meta.payloadSize;
+  syncMeta.stateRevision = meta.stateRevision ?? syncMeta.stateRevision ?? null;
 }
 
 function integrityCountsMatchState(targetState, meta) {
@@ -2854,7 +2558,12 @@ function isDestructiveStateRegression(nextState, previousState) {
   const previousPlacedOrLinked = Math.max(previous.placedItems, previous.linkedItems, previous.arrangedItems);
   const nextPlacedOrLinked = Math.max(next.placedItems, next.linkedItems, next.arrangedItems);
   if (previousPlacedOrLinked >= 10 && nextPlacedOrLinked < Math.max(1, Math.floor(previousPlacedOrLinked * 0.5))) return true;
-  if (previous.nestedContainers >= 6 && next.nestedContainers < Math.max(1, Math.floor(previous.nestedContainers * 0.5))) return true;
+  const entityCountsShrank = next.items < previous.items || next.containers < previous.containers;
+  if (
+    entityCountsShrank &&
+    previous.nestedContainers >= 6 &&
+    next.nestedContainers < Math.max(1, Math.floor(previous.nestedContainers * 0.5))
+  ) return true;
   return false;
 }
 
@@ -3370,8 +3079,27 @@ function cloneStateForSync(sourceState, { forSync = false } = {}) {
     delete cloned.showOnlyUnpacked;
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync(cloned);
+    stripAppliedArrangementFieldsForSync(cloned);
+    stripLocalPublicCopyOriginsForSync(cloned);
   }
   return cloned;
+}
+
+function stripLocalPublicCopyOriginsForSync(cloned) {
+  Object.values(cloned.items || {}).forEach(stripLocalPublicCopyOrigin);
+  Object.values(cloned.containers || {}).forEach(stripLocalPublicCopyOrigin);
+}
+
+function stripLocalPublicCopyOrigin(record) {
+  if (!record || typeof record !== "object") return;
+  delete record._publicCopySourceKind;
+  delete record._publicCopySourceId;
+  delete record._publicCopySourceLayoutId;
+}
+
+function stripAppliedArrangementFieldsForSync(cloned) {
+  Object.values(cloned.items || {}).forEach((item) => stripItemPlacementFields(item));
+  Object.values(cloned.containers || {}).forEach((container) => stripContainerArrangementFields(container));
 }
 
 function prunePhotoPayloadForSync(cloned) {
@@ -3482,6 +3210,7 @@ function annotatePayloadError(error, report) {
 function compactRecordForEntitySync(record) {
   if (!record || typeof record !== "object") return null;
   const compact = JSON.parse(JSON.stringify(record));
+  stripLocalPublicCopyOrigin(compact);
   if (Array.isArray(compact.photos)) compact.photos = compact.photos.map(compactPhotoForSync).filter(Boolean);
   compact.id = String(compact.id || "").trim();
   return compact.id ? compact : null;
@@ -3616,6 +3345,8 @@ function buildEntitySyncBody(type, entries, { forceOverwrite = false } = {}) {
   const body = {
     clientDeviceId: syncDevice.id,
     clientDeviceName: syncDevice.name,
+    baseStateRevision: syncMeta.stateRevision ?? null,
+    stateRevision: syncMeta.stateRevision ?? null,
     force: forceOverwrite,
     forceOverwrite
   };
@@ -3839,6 +3570,7 @@ function pruneAdminPublishedDraftsForSync(cloned) {
 
 function isPublicSyncItem(itemId, item) {
   return Boolean(
+    hasPublicOriginMarker(item) ||
     item?.publicCatalogLayoutId ||
     item?.adminDemo ||
     item?.adminSharedSourceId ||
@@ -3849,12 +3581,26 @@ function isPublicSyncItem(itemId, item) {
 
 function isPublicSyncContainer(containerId, container) {
   return Boolean(
+    hasPublicOriginMarker(container) ||
     container?.publicCatalogLayoutId ||
     container?.adminDemo ||
     container?.adminSharedSourceId ||
     String(containerId || container?.id || "").startsWith("guest-demo-container-") ||
     isGeneratedCatalogContainerSyncArtifact(containerId, container)
   );
+}
+
+function hasPublicOriginMarker(record) {
+  if (!record || typeof record !== "object") return false;
+  const scope = generatedCatalogString(record.scope).toLowerCase();
+  const sourceType = generatedCatalogString(record.sourceType || record.source_type).toLowerCase();
+  const visibility = generatedCatalogString(record.visibility).toLowerCase();
+  const sourceListId = generatedCatalogString(record.sourceListId || record.source_list_id || record.listId || record.list_id).toLowerCase();
+  if (scope && scope !== "private") return true;
+  if (["demo", "shared", "public", "public-template", "curated-bikepacker"].includes(sourceType)) return true;
+  if (["public", "shared"].includes(visibility)) return true;
+  if (sourceListId.startsWith("public-demo") || sourceListId.startsWith("public-shared")) return true;
+  return Boolean(record.isDemo || record.adminDemo || record.adminShared || record.adminSharedSourceId);
 }
 
 function cleanupGeneratedCatalogArtifacts(targetState = state, { forSync = false } = {}) {
@@ -3910,9 +3656,11 @@ function isGeneratedCatalogSyncArtifact(itemId, item) {
   const id = generatedCatalogString(itemId || item.id);
   const sourceId = generatedCatalogString(item.sharedSourceId);
   return Boolean(
+    hasPublicOriginMarker(item) ||
     item.publicCatalogLayoutId ||
     item.adminDemo ||
     item.adminSharedSourceId ||
+    id.startsWith("demo-item-") ||
     id.startsWith("admin-demo-item-") ||
     id.startsWith("item-shared-") ||
     id.includes("item-shared-item-shared-") ||
@@ -3926,9 +3674,11 @@ function isGeneratedCatalogContainerSyncArtifact(containerId, container) {
   const id = generatedCatalogString(containerId || container.id);
   const sourceId = generatedCatalogString(container.sharedSourceId);
   return Boolean(
+    hasPublicOriginMarker(container) ||
     container.publicCatalogLayoutId ||
     container.adminDemo ||
     container.adminSharedSourceId ||
+    id.startsWith("demo-") ||
     id.startsWith("admin-demo-container-") ||
     id.startsWith("container-shared-") ||
     id.includes("container-shared-container-shared-") ||
@@ -3945,6 +3695,8 @@ function isGeneratedCatalogStateArtifact(itemId, item, targetState = state) {
   const hasValidContainer = Boolean(containerId && targetState?.containers?.[containerId]);
   if (hasValidContainer) return false;
   return Boolean(
+    hasPublicOriginMarker(item) ||
+    id.startsWith("demo-item-") ||
     id.startsWith("admin-demo-item-") ||
     id.includes("item-shared-item-shared-") ||
     sourceId.startsWith("item-shared-") ||
@@ -3961,8 +3713,9 @@ function isGeneratedCatalogContainerStateArtifact(containerId, container, target
   const isRecursiveSharedContainer = id.includes("container-shared-container-shared-") ||
     sourceId.startsWith("container-shared-") ||
     sourceId.includes("container-shared-container-shared-");
+  if (hasPublicOriginMarker(container)) return true;
   if (container.publicCatalogLayoutId || container.adminDemo || container.adminSharedSourceId) return true;
-  if (id.startsWith("admin-demo-container-") || id.startsWith("container-shared-")) return true;
+  if (id.startsWith("demo-") || id.startsWith("admin-demo-container-") || id.startsWith("container-shared-")) return true;
   if (!isRecursiveSharedContainer) return false;
   return !hasValidParent || id.includes("container-shared-container-shared-") || sourceId.startsWith("container-shared-");
 }
@@ -4254,6 +4007,13 @@ function repairContainerHierarchyRegressionFromReference(targetState, referenceS
   return true;
 }
 
+function repairRemoteStateFromLocalReferences(remoteState) {
+  if (!remoteState) return false;
+  const baseState = loadBaseState();
+  if (baseState && repairPlacementRegressionFromReference(remoteState, baseState)) return true;
+  return repairPlacementRegressionFromReference(remoteState, state);
+}
+
 function blockDestructiveLocalSave() {
   const baseState = loadBaseState();
   if (!isDestructiveStateRegression(state, baseState)) return false;
@@ -4263,17 +4023,86 @@ function blockDestructiveLocalSave() {
   saveSyncMeta();
   const localStats = stateStatsForDestructiveComparison(state);
   const baseStats = stateStatsForDestructiveComparison(baseState);
-  updateSyncUi(`Локальная версия выглядит усечённой: база items ${baseStats.items}, containers ${baseStats.containers}; сейчас items ${localStats.items}, containers ${localStats.containers}. На сервер не отправлено.`);
+  const basePlaced = Math.max(baseStats.placedItems, baseStats.linkedItems, baseStats.arrangedItems);
+  const localPlaced = Math.max(localStats.placedItems, localStats.linkedItems, localStats.arrangedItems);
+  updateSyncUi(`Локальная версия выглядит усечённой: база items ${baseStats.items}, containers ${baseStats.containers}, связей ${basePlaced}, вложенных контейнеров ${baseStats.nestedContainers}; сейчас items ${localStats.items}, containers ${localStats.containers}, связей ${localPlaced}, вложенных контейнеров ${localStats.nestedContainers}. На сервер не отправлено.`);
   return true;
 }
 
-function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, { allowDestructive = false } = {}) {
+function repairCollapsedActiveLayoutBeforeSave() {
+  const activeLayout = state.layouts?.[state.activeLayoutId];
+  if (!activeLayout) return false;
+  if (loadActiveLayoutChoice() === state.activeLayoutId) return false;
+  if (isRecentExplicitLayoutChoice(state.activeLayoutId)) return false;
+  if (layoutArrangementContentScore(state, activeLayout) > 0) return false;
+  const bestLayoutId = bestMeaningfulLayoutId(state);
+  if (!bestLayoutId || bestLayoutId === state.activeLayoutId) return false;
+  const stats = stateStatsForDestructiveComparison(state);
+  if (stats.items < 10 || stats.containers < 6) return false;
+  saveRecoverySnapshot("collapsed-active-layout-before-save", state);
+  state.activeLayoutId = bestLayoutId;
+  applyLayoutArrangement(bestLayoutId);
+  rememberActiveLayoutChoice(bestLayoutId);
+  syncMeta.dirty = true;
+  syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
+  saveSyncMeta();
+  renderPreservingPackingScroll();
+  updateSyncUi("Активная укладка была пустой · переключил на непустую укладку перед сохранением.");
+  return true;
+}
+
+function isCurrentLocalStateDestructiveRegression() {
+  return isDestructiveStateRegression(state, loadBaseState());
+}
+
+async function loadCurrentServerStateDirectly({ notify = false, preferredLayout = null } = {}) {
+  updateSyncUi("Загружаю текущую серверную версию...");
+  const data = await fetchRemoteStateRecord();
+  const record = data?.record || data?.list || data || null;
+  const remoteState = normalizeRemoteState(record?.payload || data?.payload || data?.state);
+  const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
+  const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
+  if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return false;
+  if (!remoteState) throw new Error("Сервер не вернул текущую версию укладки.");
+  const updatedAt = remoteUpdatedAt(record) || data?.serverUpdatedAt || remoteIntegrityMeta.updatedAt || nowIso();
+  const applied = applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, {
+    allowDestructive: true,
+    preferredLayout
+  });
+  if (applied && notify) showToast("Загружена текущая серверная версия.", "success");
+  return applied;
+}
+
+async function offerLoadServerForTruncatedLocalState({ notify = false, preferredLayout = null } = {}) {
+  if (!isCurrentLocalStateDestructiveRegression()) return false;
+  blockDestructiveLocalSave();
+  const confirmed = await askConfirmDialog({
+    title: "Локальная раскладка выглядит повреждённой",
+    text: "На этом устройстве потеряны связи вещей с сумками или вложенность контейнеров. Эту версию нельзя отправлять на сервер. Загрузить текущую серверную версию без обращения к истории?",
+    okText: "Взять с сервера",
+    cancelText: "Оставить локальную",
+    tone: "danger"
+  });
+  if (!confirmed) return true;
+  await loadCurrentServerStateDirectly({ notify, preferredLayout });
+  return true;
+}
+
+function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, { allowDestructive = false, preferredLayout = null } = {}) {
+  repairRemoteStateFromLocalReferences(remoteState);
+  const preferredLayoutId = resolvePreferredLayoutId(remoteState, preferredLayout?.id, preferredLayout?.name, {
+    allowEmptyPreferred: Boolean(preferredLayout?.allowEmpty)
+  });
+  if (preferredLayoutId) remoteState.activeLayoutId = preferredLayoutId;
   if (blockRemoteIntegrityFailureIfNeeded(remoteState, integrityMeta, rawPayload)) return false;
   if (!allowDestructive && blockDestructiveRemoteState(remoteState, "remote-apply")) {
     renderInitialLocalFallbackIfNeeded();
     return false;
   }
   replaceState(remoteState);
+  removePublicLayoutDrafts();
+  setActivePrivateScope();
+  rememberPrivateServerLayoutChoice();
   saveBaseState(serializeState({ forSync: true }));
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = updatedAt || null;
@@ -4350,6 +4179,18 @@ function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts) {
     const localChanged = baseHas ? !sameJson(localCompare, baseCompare) || !localHas : localHas;
     const remoteChanged = baseHas ? !sameJson(remoteCompare, baseCompare) || !remoteHas : remoteHas;
 
+    if (
+      remoteChanged &&
+      !remoteHas &&
+      isPlacementOnlyLocalChangeAgainstDeletedRemote(type, baseCompare, localCompare, {
+        baseHas,
+        localHas,
+        remoteHas
+      })
+    ) {
+      return;
+    }
+
     if (localChanged && remoteChanged && !sameJson(localCompare, remoteCompare)) {
       conflicts.push({
         type,
@@ -4373,16 +4214,57 @@ function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts) {
   return merged;
 }
 
+function isPlacementOnlyLocalChangeAgainstDeletedRemote(type, baseCompare, localCompare, flags = {}) {
+  if (!flags.baseHas || !flags.localHas || flags.remoteHas) return false;
+  if (!["item", "container"].includes(type)) return false;
+  const changedKeys = changedComparableKeys(baseCompare, localCompare);
+  if (!changedKeys.length) return true;
+  const placementKeys = type === "item"
+    ? new Set(["containerId"])
+    : new Set(["parentId", "itemIds", "childIds", "order"]);
+  return changedKeys.every((key) => placementKeys.has(key));
+}
+
+function changedComparableKeys(a, b) {
+  return Object.keys({ ...(a || {}), ...(b || {}) })
+    .filter((key) => !isConflictMetaField(key))
+    .filter((key) => !sameJson(a?.[key], b?.[key]));
+}
+
 function comparableValueForMerge(type, value) {
   if (!["item", "container", "layout"].includes(type) || !value || typeof value !== "object") return value;
   const comparable = { ...value };
   Object.keys(comparable).forEach((key) => {
     if (isConflictMetaField(key)) delete comparable[key];
   });
+  if (type === "item") stripItemPlacementFields(comparable);
+  if (type === "container") stripContainerArrangementFields(comparable);
   if ((type === "item" || type === "container") && Array.isArray(comparable.photos)) {
     comparable.photos = comparable.photos.map(comparablePhotoForMerge).filter(Boolean);
   }
   return comparable;
+}
+
+function normalizeComparableContainerForMerge(container) {
+  const itemSet = new Set(uniqueLayoutIds(Array.isArray(container.itemIds) ? container.itemIds : []));
+  const childSet = new Set(uniqueLayoutIds(Array.isArray(container.childIds) ? container.childIds : []));
+  container.itemIds = [...itemSet].sort();
+  container.childIds = [...childSet].sort();
+  container.order = normalizeComparableContainerOrder(container.order, itemSet, childSet);
+}
+
+function normalizeComparableContainerOrder(order, itemSet, childSet) {
+  const seen = new Set();
+  return (Array.isArray(order) ? order : [])
+    .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
+    .filter((entry) => entry.type === "item" ? itemSet.has(entry.id) : childSet.has(entry.id))
+    .map((entry) => ({ type: entry.type, id: entry.id }))
+    .filter((entry) => {
+      const key = `${entry.type}:${entry.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function comparablePhotoForMerge(photo) {
@@ -4505,18 +4387,19 @@ function askConflictResolution(conflicts) {
     return `
     <section class="conflict-card">
       <h3>${escapeHtml(conflict.label)}</h3>
+      <div class="conflict-kind">${escapeHtml(conflictKindLabel(conflict))}</div>
       <p>${escapeHtml(conflictSummary(conflict))}</p>
       ${renderConflictDetails(conflict)}
       <div class="conflict-choice">
         <label>
           <input type="radio" name="conflict-${index}" value="local"${defaultChoice === "local" ? " checked" : ""} />
           <span>Моё</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name))}</small>
+          <small>${escapeHtml(conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, "нет локально"))}</small>
         </label>
         <label>
           <input type="radio" name="conflict-${index}" value="remote"${defaultChoice === "remote" ? " checked" : ""} />
           <span>С сервера</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "другое устройство"))}</small>
+          <small>${escapeHtml(conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "сервер", "нет в серверной укладке"))}</small>
         </label>
       </div>
     </section>
@@ -4553,12 +4436,69 @@ function askConflictResolution(conflicts) {
 }
 
 function conflictDefaultChoice(conflict) {
-  if (!conflict?.remoteHas) return "local";
+  if (!conflict?.remoteHas) return conflict?.baseValue ? "remote" : "local";
   if (!conflict.localHas) return "remote";
   const localTime = conflictTimestamp(conflict.localValue);
   const remoteTime = conflictTimestamp(conflict.remoteValue);
   if (remoteTime && (!localTime || remoteTime > localTime + 1000)) return "remote";
   return "local";
+}
+
+function conflictKindLabel(conflict) {
+  const layoutText = conflictLayoutScopeText(conflict);
+  if (conflict.type === "item") {
+    if (isItemPlacementConflict(conflict)) return `Вещь в укладке${layoutText ? `: ${layoutText}` : ""}`;
+    return "Вещь";
+  }
+  if (conflict.type === "container") {
+    if (isContainerPlacementConflict(conflict)) return `Сумка/контейнер в укладке${layoutText ? `: ${layoutText}` : ""}`;
+    return "Сумка/контейнер";
+  }
+  if (conflict.type === "layout") return "Укладка";
+  if (conflict.type === "packed") return "Собранность вещи";
+  if (conflict.type === "setting") return "Настройка";
+  return "Конфликт";
+}
+
+function isItemPlacementConflict(conflict) {
+  return false;
+}
+
+function isContainerPlacementConflict(conflict) {
+  return false;
+}
+
+function conflictLayoutScopeText(conflict) {
+  const containerIds = [
+    conflict.localValue?.containerId,
+    conflict.remoteValue?.containerId,
+    conflict.baseValue?.containerId,
+    conflict.type === "container" ? conflict.id : "",
+    conflict.localValue?.parentId,
+    conflict.remoteValue?.parentId,
+    conflict.baseValue?.parentId
+  ].filter(Boolean);
+  const names = layoutNamesForConflictContainers(containerIds);
+  if (names.length) return names.slice(0, 2).join(", ") + (names.length > 2 ? "..." : "");
+  return state.layouts?.[state.activeLayoutId]?.name || "";
+}
+
+function layoutNamesForConflictContainers(containerIds = []) {
+  const ids = new Set(containerIds.filter(Boolean));
+  if (!ids.size) return [];
+  return Object.values(state.layouts || {})
+    .filter((layout) => layout && layoutContainsAnyConflictContainer(layout, ids))
+    .map((layout) => layout.name || layout.id)
+    .filter(Boolean);
+}
+
+function layoutContainsAnyConflictContainer(layout, ids) {
+  const roots = Array.isArray(layout.rootContainerIds) ? layout.rootContainerIds : [];
+  if (roots.some((id) => ids.has(id))) return true;
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : {};
+  const arrangementRoots = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
+  if (arrangementRoots.some((id) => ids.has(id))) return true;
+  return Object.keys(arrangement.containers || {}).some((id) => ids.has(id));
 }
 
 function conflictTimestamp(value) {
@@ -4590,8 +4530,8 @@ function conflictDetailRows(conflict) {
   if (!conflict.localHas || !conflict.remoteHas) {
     return [{
       label: "Статус",
-      local: conflict.localHas ? "есть" : "удалено",
-      remote: conflict.remoteHas ? "есть" : "удалено"
+      local: conflict.localHas ? "есть локально" : "нет локально",
+      remote: conflict.remoteHas ? "есть в серверной укладке" : "нет в серверной укладке"
     }];
   }
   const localValue = comparableValueForMerge(conflict.type, conflict.localValue);
@@ -4694,12 +4634,37 @@ function formatConflictFieldValue(value, key, conflict, format = "") {
   if (format === "list") return Array.isArray(value) ? value.filter(Boolean).join(", ") || "пусто" : String(value);
   if (format === "container") return formatConflictContainerValue(value);
   if (format === "photos") return Array.isArray(value) ? `${value.length} фото` : (value ? "есть" : "нет");
-  if (format === "count") return Array.isArray(value) ? `${value.length}` : formatCompactJson(value);
+  if (format === "count") return formatConflictCountValue(value, key, conflict);
   if (format === "arrangement") return formatArrangementConflictValue(value);
   if (format === "boolean") return value ? "да" : "нет";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "пусто";
   if (typeof value === "object") return formatCompactJson(value);
   return String(value);
+}
+
+function formatConflictCountValue(value, key, conflict) {
+  if (!Array.isArray(value)) return formatCompactJson(value);
+  if (conflict?.type === "container" && (key === "itemIds" || key === "childIds" || key === "order")) {
+    const names = value.map((entry) => conflictContainerEntryLabel(entry, key)).filter(Boolean);
+    if (!names.length) return "0";
+    return `${value.length}: ${names.slice(0, 4).join(" → ")}${names.length > 4 ? "…" : ""}`;
+  }
+  return `${value.length}`;
+}
+
+function conflictContainerEntryLabel(entry, key) {
+  if (key === "order" && entry && typeof entry === "object") {
+    const id = String(entry.id || "");
+    if (!id) return "";
+    return entry.type === "container"
+      ? (state.containers?.[id]?.name || id)
+      : (state.items?.[id]?.name || id);
+  }
+  const id = String(entry || "");
+  if (!id) return "";
+  return key === "childIds"
+    ? (state.containers?.[id]?.name || id)
+    : (state.items?.[id]?.name || id);
 }
 
 function formatConflictContainerValue(value) {
@@ -4723,16 +4688,16 @@ function formatCompactJson(value) {
 }
 
 function conflictSummary(conflict) {
-  const localText = conflictValueSummary(conflict, conflict.localValue, conflict.localHas);
-  const remoteText = conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas);
-  const localStamp = conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name);
-  const remoteStamp = conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "другое устройство");
+  const localText = conflictValueSummary(conflict, conflict.localValue, conflict.localHas, "нет локально");
+  const remoteText = conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, "нет в серверной укладке");
+  const localStamp = conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, "нет локально");
+  const remoteStamp = conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "сервер", "нет в серверной укладке");
   const difference = conflictDifferenceSummary(conflict);
   return `Моё: ${localText} (${localStamp}). Сервер: ${remoteText} (${remoteStamp}).${difference ? ` Разница: ${difference}.` : ""}`;
 }
 
-function conflictVersionStamp(value, exists, fallbackDevice) {
-  if (!exists) return "удалено";
+function conflictVersionStamp(value, exists, fallbackDevice, missingText = "нет") {
+  if (!exists) return missingText;
   const device = value?.updatedByDeviceName || fallbackDevice || "устройство";
   const time = formatShortDateTime(value?.updatedAt);
   return time ? `${device}, ${time}` : device;
@@ -4750,8 +4715,8 @@ function formatShortDateTime(value) {
   });
 }
 
-function conflictValueSummary(conflict, value, exists) {
-  if (!exists) return "удалено";
+function conflictValueSummary(conflict, value, exists, missingText = "нет") {
+  if (!exists) return missingText;
   if (conflict.type === "item") {
     return [value.name, value.location, itemCategories(value).join(", ")].filter(Boolean).join(" · ") || "изменено";
   }
@@ -4834,6 +4799,16 @@ function createNetworkError(message, cause = null, options = {}) {
   if (options.timeout) networkError.isTimeoutError = true;
   networkError.cause = cause;
   return networkError;
+}
+
+function apiErrorMessage(error) {
+  return String(
+    error?.data?.message ||
+    error?.data?.error ||
+    error?.data?.code ||
+    error?.message ||
+    "unknown error"
+  );
 }
 
 function unlockOfflineState(message = "Локально · можно работать, войдите для сохранения в аккаунт") {
@@ -4978,7 +4953,7 @@ async function apiFetch(path, options = {}) {
   }
   const data = await response.json().catch(() => null);
   if (!response.ok || data?.ok === false) {
-    const apiError = new Error(data?.error || data?.message || `HTTP ${response.status}`);
+    const apiError = new Error(data?.message || data?.error || data?.code || `HTTP ${response.status}`);
     apiError.status = response.status;
     apiError.data = data;
     apiError.path = path;
@@ -5457,11 +5432,11 @@ async function checkAuthAndLoad({ syncDirtyNotify = false } = {}) {
     if (syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi("Есть локальные изменения · проверяю даты...");
       await loadRemoteState({ notifyDirtySave: syncDirtyNotify });
-      await restoreSavedLayoutChoice();
+      await restoreSavedLayoutChoice({ privateOnly: true });
       return;
     }
     await loadRemoteState();
-    await restoreSavedLayoutChoice();
+    await restoreSavedLayoutChoice({ privateOnly: true });
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();
@@ -5733,11 +5708,13 @@ async function syncNow({ force = false } = {}) {
     return;
   }
   if (force && syncMeta.dirty) {
+    const preferredLayout = preferredCurrentLayoutRef();
+    if (await offerLoadServerForTruncatedLocalState({ notify: true, preferredLayout })) return;
     updateSyncUi("Есть локальные изменения · проверяю даты...");
-    await loadRemoteState({ notifyDirtySave: true });
+    await loadRemoteState({ notifyDirtySave: true, preferredLayout });
     return;
   }
-  await saveRemoteState({ notify: force });
+  await saveRemoteState({ notify: force, preferredLayout: force ? preferredCurrentLayoutRef() : null });
 }
 
 async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
@@ -5786,6 +5763,8 @@ function buildRemoteSaveBody({ forceOverwrite = false } = {}) {
     scopeKey: DATA_SCOPE_KEY,
     itemKey: DATA_ITEM_KEY,
     baseServerUpdatedAt: forceOverwrite ? null : (syncMeta.serverUpdatedAt || null),
+    baseStateRevision: syncMeta.stateRevision ?? null,
+    stateRevision: syncMeta.stateRevision ?? null,
     clientUpdatedAt: sourceUpdatedAt,
     clientDeviceId: syncDevice.id,
     clientDeviceName: syncDevice.name,
@@ -5794,6 +5773,7 @@ function buildRemoteSaveBody({ forceOverwrite = false } = {}) {
     sourceDeviceName: syncDevice.name,
     force: forceOverwrite,
     forceOverwrite,
+    fullReplace: forceOverwrite,
     payload
   };
 }
@@ -5803,11 +5783,14 @@ function buildListSaveBody({ forceOverwrite = false } = {}) {
   const payload = serializeState({ forSync: true });
   return {
     baseServerUpdatedAt: forceOverwrite ? null : (syncMeta.serverUpdatedAt || null),
+    baseStateRevision: syncMeta.stateRevision ?? null,
+    stateRevision: syncMeta.stateRevision ?? null,
     clientUpdatedAt: sourceUpdatedAt,
     clientDeviceId: syncDevice.id,
     clientDeviceName: syncDevice.name,
     force: forceOverwrite,
     forceOverwrite,
+    fullReplace: forceOverwrite,
     payload
   };
 }
@@ -5815,10 +5798,21 @@ function buildListSaveBody({ forceOverwrite = false } = {}) {
 function normalizeRemoteListRecord(data) {
   const list = data?.list || data?.record || data;
   const integrityMeta = stateIntegrityMetaFromResponse(data, list);
+  const payload =
+    list?.payload ||
+    list?.state ||
+    list?.assembledState ||
+    list?.assembled_state ||
+    data?.payload ||
+    data?.state ||
+    data?.assembledState ||
+    data?.assembled_state ||
+    data?.serverPayload ||
+    null;
   return {
     ...(list || {}),
     ...integrityMeta,
-    payload: list?.payload || data?.payload || null,
+    payload,
     updatedAt: remoteUpdatedAt(list) || integrityMeta.updatedAt || data?.updatedAt || data?.serverUpdatedAt || null
   };
 }
@@ -6232,6 +6226,7 @@ async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, remem
   if (forcePublicScope) {
     setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
     initialRemoteLoadPending = false;
+    renderPreservingPackingScroll();
     return true;
   }
   if (forcePublicScope || !syncMeta.dirty || !hadLocalStateAtStartup || isSuspiciousEmptyPackingState(state)) {
@@ -6257,7 +6252,7 @@ function localPersonalStateForDemoFallback() {
   return null;
 }
 
-async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) {
+async function saveRemoteState({ notify = false, forceOverwrite = false, preferredLayout = null } = {}) {
   if (!currentUser) return;
   if (forceOverwrite) {
     syncMeta.localUpdatedAt = nowIso();
@@ -6272,6 +6267,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) 
     if (notify) showToast(message, isDemoPublicTemplateMissing(uiLanguage) ? "warning" : "error");
     return;
   }
+  repairCollapsedActiveLayoutBeforeSave();
   try {
     await uploadPendingPhotos();
     if (isSuspiciousEmptyPackingState()) {
@@ -6328,7 +6324,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) 
         if (notify) showToast("Сервер не принял принудительное сохранение. Локальная версия не потеряна.", "error");
         return;
       }
-      await handleRemoteSaveConflict(error, { notify });
+      await handleRemoteSaveConflict(error, { notify, preferredLayout });
       return;
     }
     if (isTemporaryServerStorageError(error)) {
@@ -6351,7 +6347,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false } = {}) 
   }
 }
 
-async function handleRemoteSaveConflict(error, { notify = false } = {}) {
+async function handleRemoteSaveConflict(error, { notify = false, preferredLayout = null } = {}) {
   const record = error.data?.record || error.data?.currentRecord || null;
   const remoteState = normalizeRemoteState(record?.payload || error.data?.payload || error.data?.serverPayload);
   const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, error.data);
@@ -6374,7 +6370,7 @@ async function handleRemoteSaveConflict(error, { notify = false } = {}) {
     }
     const resolution = await askConflictResolution(mergeResult.conflicts);
     if (resolution === "server") {
-      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true }) && notify) showToast("Загружена серверная версия.", "success");
+      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
       return;
     }
     if (resolution === "cancel") {
@@ -6415,10 +6411,10 @@ async function handleRemoteSaveConflict(error, { notify = false } = {}) {
     await saveRemoteState({ notify, forceOverwrite: true });
     return;
   }
-  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true }) && notify) showToast("Загружена серверная версия.", "success");
+  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
 }
 
-async function loadRemoteState({ notifyDirtySave = false } = {}) {
+async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null } = {}) {
   if (!currentUser) return;
   if (isPublicLayoutContext()) {
     appUnlocked = true;
@@ -6483,16 +6479,16 @@ async function loadRemoteState({ notifyDirtySave = false } = {}) {
     const remoteJson = JSON.stringify(cloneStateForSync(remoteState, { forSync: true }));
     if (localJson !== remoteJson) {
       if (isSuspiciousEmptyPackingState() && isMeaningfulPackingState(remoteState)) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload);
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
         if (notifyDirtySave) showToast("Загружена восстановленная версия с сервера.", "success");
         return;
       }
       if (!syncMeta.dirty) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (isInitialRemotePull && !hasFreshLocalDirtyState) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
@@ -6526,7 +6522,7 @@ async function loadRemoteState({ notifyDirtySave = false } = {}) {
           cancelText: "Оставить локальную"
         });
         if (useServer) {
-          applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload);
+          applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
           return;
         }
         syncMeta.dirty = true;
@@ -6539,7 +6535,7 @@ async function loadRemoteState({ notifyDirtySave = false } = {}) {
       updateSyncUi("Есть конфликты изменений...");
       const resolution = await askConflictResolution(mergeResult.conflicts);
       if (resolution === "server") {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true });
+        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (resolution === "cancel") {
@@ -7622,12 +7618,14 @@ function chooseSharedCopyTargetLayoutId() {
   return layouts[index]?.id || layouts[0].id;
 }
 
-function copySharedRoot(rootId) {
+async function copySharedRoot(rootId) {
   const published = findSharedPublishedContainer(rootId);
   if (published) {
     const targetLayoutId = chooseSharedCopyTargetLayoutId() || selectedSharedTargetLayoutId();
     if (!targetLayoutId) return;
     const rootName = published.container.name;
+    const sourceSnapshot = snapshotContainerTree(rootId, { targetState: published.sourceState });
+    if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, rootName))) return;
     copyPublishedContainerToState(published.sourceState, rootId, { targetLayoutId });
     setActivePrivateScope();
     saveState();
@@ -7641,6 +7639,8 @@ function copySharedRoot(rootId) {
   if (!root) return;
   const targetLayoutId = chooseSharedCopyTargetLayoutId() || selectedSharedTargetLayoutId();
   if (!targetLayoutId) return;
+  const sourceSnapshot = legacySharedRootSnapshot(root);
+  if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, root.name))) return;
   copySharedRootToState(root, { targetLayoutId });
   setActivePrivateScope();
   saveState();
@@ -7650,11 +7650,13 @@ function copySharedRoot(rootId) {
   showToast(`«${root.name}» скопировано в выбранную укладку.`, "success");
 }
 
-function copySharedItem(itemId) {
+async function copySharedItem(itemId) {
   const published = findSharedPublishedItem(itemId);
   if (published) {
     const targetLayoutId = chooseSharedCopyTargetLayoutId();
     if (!targetLayoutId) return;
+    const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: published.item } };
+    if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, published.item.name))) return;
     const copiedItemId = copyPublishedItemToState(published.sourceState, itemId, { containerId: "" });
     setActivePrivateScope();
     saveState();
@@ -7669,6 +7671,8 @@ function copySharedItem(itemId) {
   if (!match) return;
   const targetLayoutId = chooseSharedCopyTargetLayoutId();
   if (!targetLayoutId) return;
+  const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: match.item } };
+  if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, match.item.name))) return;
   const copiedItemId = copySharedItemToState(match.item, { containerId: "" });
   setActivePrivateScope();
   saveState();
@@ -7680,45 +7684,90 @@ function copySharedItem(itemId) {
 }
 
 function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
-  const source = sourceState.containers?.[containerId];
-  if (!source) return "";
-  const id = preserveSource
-    ? `container-shared-${containerId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const sourceSnapshot = snapshotContainerTree(containerId, { targetState: sourceState });
+  if (!sourceSnapshot) return "";
+  const sourceLayoutId = sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
+  const containerMap = idMap?.containers || new Map();
+  const itemMap = idMap?.items || new Map();
+  const makeContainerId = (sourceId) => preserveSource
+    ? `container-shared-${sourceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  idMap?.containers?.set(containerId, id);
-  state.containers[id] = {
-    ...cloneIsolatedEntity(source),
-    id,
-    parentId,
-    childIds: [],
-    itemIds: [],
-    order: [],
-    ...currentCreateMeta(changedAt)
+  const makeItemId = (sourceId) => preserveSource
+    ? `item-shared-${sourceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const copyItem = (sourceItemId, nextContainerId) => {
+    const sourceItem = sourceSnapshot.items[sourceItemId] || sourceState.items?.[sourceItemId];
+    if (!sourceItem) return "";
+    if (itemMap.has(sourceItemId)) return itemMap.get(sourceItemId);
+    const nextId = makeItemId(sourceItemId);
+    itemMap.set(sourceItemId, nextId);
+    if (idMap?.items) idMap.items.set(sourceItemId, nextId);
+    state.items[nextId] = {
+      ...cloneIsolatedEntity(sourceItem),
+      id: nextId,
+      containerId: nextContainerId,
+      ...currentCreateMeta(changedAt)
+    };
+    markLocalPublicCopyOrigin(state.items[nextId], "item", sourceItemId, sourceLayoutId);
+    if (preserveSource) state.items[nextId].sharedSourceId = sourceItemId;
+    return nextId;
   };
-  if (preserveSource) state.containers[id].sharedSourceId = containerId;
-  state.collapsedContainers[id] = false;
 
-  const copyChild = (childId) => copyPublishedContainerToState(sourceState, childId, { parentId: id, changedAt, idMap, preserveSource });
-  const copyItem = (itemId) => copyPublishedItemToState(sourceState, itemId, { containerId: id, changedAt, idMap, preserveSource });
-  state.containers[id].childIds = (source.childIds || []).map(copyChild).filter(Boolean);
-  state.containers[id].itemIds = (source.itemIds || []).map(copyItem).filter(Boolean);
-  state.containers[id].order = (source.order || []).map((entry) => {
-    if (entry.type === "container") {
-      const nextId = idMap?.containers?.get(entry.id) ||
-        state.containers[id].childIds.find((candidate) => state.containers[candidate]?.sharedSourceId === entry.id);
-      return nextId ? { type: "container", id: nextId } : null;
+  const copyContainer = (sourceContainerId, nextParentId = null) => {
+    const sourceContainer = sourceSnapshot.containers[sourceContainerId] || sourceState.containers?.[sourceContainerId];
+    if (!sourceContainer) return "";
+    if (containerMap.has(sourceContainerId)) return containerMap.get(sourceContainerId);
+    const nextId = makeContainerId(sourceContainerId);
+    containerMap.set(sourceContainerId, nextId);
+    if (idMap?.containers) idMap.containers.set(sourceContainerId, nextId);
+    state.containers[nextId] = {
+      ...cloneIsolatedEntity(sourceContainer),
+      id: nextId,
+      parentId: nextParentId,
+      childIds: [],
+      itemIds: [],
+      order: [],
+      ...currentCreateMeta(changedAt)
+    };
+    markLocalPublicCopyOrigin(state.containers[nextId], "container", sourceContainerId, sourceLayoutId);
+    if (preserveSource) state.containers[nextId].sharedSourceId = sourceContainerId;
+    state.collapsedContainers[nextId] = false;
+
+    const copiedChildren = new Map();
+    const copiedItems = new Map();
+    state.containers[nextId].childIds = (sourceContainer.childIds || []).map((childId) => {
+      const copiedId = copyContainer(childId, nextId);
+      if (copiedId) copiedChildren.set(childId, copiedId);
+      return copiedId;
+    }).filter(Boolean);
+    state.containers[nextId].itemIds = (sourceContainer.itemIds || []).map((itemId) => {
+      const copiedId = copyItem(itemId, nextId);
+      if (copiedId) copiedItems.set(itemId, copiedId);
+      return copiedId;
+    }).filter(Boolean);
+    state.containers[nextId].order = (sourceContainer.order || []).map((entry) => {
+      if (entry?.type === "container") {
+        const copiedId = copiedChildren.get(entry.id) || containerMap.get(entry.id);
+        return copiedId ? { type: "container", id: copiedId } : null;
+      }
+      if (entry?.type === "item") {
+        const copiedId = copiedItems.get(entry.id) || itemMap.get(entry.id);
+        return copiedId ? { type: "item", id: copiedId } : null;
+      }
+      return null;
+    }).filter(Boolean);
+    if (!state.containers[nextId].order.length) {
+      state.containers[nextId].order = [
+        ...state.containers[nextId].itemIds.map((itemId) => ({ type: "item", id: itemId })),
+        ...state.containers[nextId].childIds.map((childId) => ({ type: "container", id: childId }))
+      ];
     }
-    const nextId = idMap?.items?.get(entry.id) ||
-      state.containers[id].itemIds.find((candidate) => state.items[candidate]?.sharedSourceId === entry.id);
-    return nextId ? { type: "item", id: nextId } : null;
-  }).filter(Boolean);
-  if (!state.containers[id].order.length) {
-    state.containers[id].order = [
-      ...state.containers[id].itemIds.map((itemId) => ({ type: "item", id: itemId })),
-      ...state.containers[id].childIds.map((childId) => ({ type: "container", id: childId }))
-    ];
-  }
+    return nextId;
+  };
 
+  const id = copyContainer(sourceSnapshot.rootId || containerId, parentId);
+  if (!id) return "";
   if (!parentId && targetLayoutId && state.layouts[targetLayoutId]) {
     const layout = state.layouts[targetLayoutId];
     layout.rootContainerIds = [...(layout.rootContainerIds || []), id];
@@ -7728,9 +7777,17 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
   return id;
 }
 
+function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId = "") {
+  if (!record || !sourceId) return;
+  record._publicCopySourceKind = kind;
+  record._publicCopySourceId = String(sourceId);
+  record._publicCopySourceLayoutId = sourceLayoutId ? String(sourceLayoutId) : "";
+}
+
 function copyPublishedItemToState(sourceState, itemId, { containerId = "", changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
   const source = sourceState.items?.[itemId];
   if (!source) return "";
+  const sourceLayoutId = sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
   const id = preserveSource
     ? `item-shared-${itemId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -7741,6 +7798,7 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     containerId,
     ...currentCreateMeta(changedAt)
   };
+  markLocalPublicCopyOrigin(state.items[id], "item", itemId, sourceLayoutId);
   if (preserveSource) state.items[id].sharedSourceId = itemId;
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
@@ -7751,11 +7809,112 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
   return id;
 }
 
+function legacySharedRootSnapshot(root) {
+  const containers = {};
+  const items = {};
+  if (!root?.id) return { rootId: "", containers, items };
+  containers[root.id] = {
+    id: root.id,
+    name: root.name,
+    childIds: [],
+    itemIds: (root.items || []).map((item) => item.id).filter(Boolean),
+    order: (root.items || []).map((item) => ({ type: "item", id: item.id })).filter((entry) => entry.id)
+  };
+  (root.items || []).forEach((item) => {
+    if (item?.id) items[item.id] = item;
+  });
+  return { rootId: root.id, containers, items };
+}
+
+function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
+  const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}).map(String));
+  const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}).map(String));
+  const result = { containerIds: [], itemIds: [] };
+  if (!sourceContainerIds.size && !sourceItemIds.size) return result;
+  withLayoutArrangementApplied(targetLayoutId, () => {
+    const targetLayout = state.layouts[targetLayoutId];
+    getActiveLayoutContainerIdSet(targetLayout).forEach((containerId) => {
+      const container = state.containers[containerId];
+      if (container?._publicCopySourceKind === "container" && sourceContainerIds.has(String(container._publicCopySourceId || ""))) {
+        result.containerIds.push(containerId);
+      }
+    });
+    currentAppliedLayoutItemIds(targetLayout).forEach((itemId) => {
+      const item = state.items[itemId];
+      if (item?._publicCopySourceKind === "item" && sourceItemIds.has(String(item._publicCopySourceId || ""))) {
+        result.itemIds.push(itemId);
+      }
+    });
+  });
+  if (sourceItemIds.size) {
+    Object.entries(state.items || {}).forEach(([itemId, item]) => {
+      if (item?._publicCopySourceKind === "item" && sourceItemIds.has(String(item._publicCopySourceId || ""))) {
+        result.itemIds.push(itemId);
+      }
+    });
+  }
+  return {
+    containerIds: [...new Set(result.containerIds)],
+    itemIds: [...new Set(result.itemIds)]
+  };
+}
+
+async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName = "") {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!targetLayout) return false;
+  const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot);
+  if (!duplicates.containerIds.length && !duplicates.itemIds.length) return true;
+  const duplicate = await askConfirmDialog({
+    title: "Уже скопировано в эту укладку",
+    text: `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`,
+    okText: "Дублировать",
+    cancelText: "Пропустить",
+    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID`,
+    tone: "safe"
+  });
+  if (duplicate) return true;
+  showToast("Копирование пропущено: такая demo/shared копия уже есть в целевой укладке.", "success");
+  return false;
+}
+
 function cloneIsolatedEntity(entity) {
   const cloned = clone(entity || {});
+  delete cloned.scope;
+  delete cloned.source;
+  delete cloned.origin;
+  delete cloned.sourceType;
+  delete cloned.source_type;
+  delete cloned.visibility;
+  delete cloned.sourceId;
+  delete cloned.source_id;
+  delete cloned.sourceScope;
+  delete cloned.source_scope;
+  delete cloned.sourceListId;
+  delete cloned.source_list_id;
+  delete cloned.listId;
+  delete cloned.list_id;
+  delete cloned.sourceItemId;
+  delete cloned.source_item_id;
+  delete cloned.sourceContainerId;
+  delete cloned.source_container_id;
+  delete cloned.sourceLayoutId;
+  delete cloned.source_layout_id;
   delete cloned.sharedSourceId;
+  delete cloned.sharedSourceItemId;
+  delete cloned.sharedSourceContainerId;
+  delete cloned.sharedSourceLayoutId;
+  delete cloned.publicSourceId;
+  delete cloned.publicSourceItemId;
+  delete cloned.publicSourceContainerId;
+  delete cloned.publicSourceLayoutId;
   delete cloned.publicCatalogLayoutId;
+  delete cloned.publicCatalogItemId;
+  delete cloned.publicCatalogContainerId;
+  delete cloned.templateId;
+  delete cloned.templateSourceId;
   delete cloned.adminDemo;
+  delete cloned.isDemo;
+  delete cloned.adminShared;
   delete cloned.adminSharedSourceId;
   return cloned;
 }
@@ -7776,55 +7935,10 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   if (!sourceLayout) return "";
   const stamp = Date.now();
   const changedAt = nowIso();
-  const containerMap = {};
-  const itemMap = {};
-
-  const copyContainer = (containerId, parentId = null) => {
-    if (containerMap[containerId]) return containerMap[containerId];
-    const container = source.containers?.[containerId];
-    if (!container) return "";
-    const nextId = `guest-demo-container-${stamp}-${containerId}`;
-    containerMap[containerId] = nextId;
-    state.containers[nextId] = {
-      ...cloneIsolatedEntity(container),
-      id: nextId,
-      parentId,
-      childIds: [],
-      itemIds: [],
-      order: [],
-      ...currentCreateMeta(changedAt)
-    };
-    (container.childIds || []).forEach((id) => copyContainer(id, nextId));
-    return nextId;
-  };
-
-  const rootContainerIds = (sourceLayout.rootContainerIds || []).map((id) => copyContainer(id, null)).filter(Boolean);
-  Object.values(source.items || {}).forEach((item) => {
-    const nextContainerId = item.containerId ? containerMap[item.containerId] : "";
-    const nextId = `guest-demo-item-${stamp}-${item.id}`;
-    itemMap[item.id] = nextId;
-    state.items[nextId] = {
-      ...cloneIsolatedEntity(item),
-      id: nextId,
-      containerId: nextContainerId,
-      ...currentCreateMeta(changedAt)
-    };
-  });
-  Object.entries(containerMap).forEach(([sourceId, nextId]) => {
-    const sourceContainer = source.containers[sourceId];
-    const targetContainer = state.containers[nextId];
-    if (!sourceContainer || !targetContainer) return;
-    targetContainer.childIds = (sourceContainer.childIds || []).map((id) => containerMap[id]).filter(Boolean);
-    targetContainer.itemIds = (sourceContainer.itemIds || []).map((id) => itemMap[id]).filter(Boolean);
-    targetContainer.order = (sourceContainer.order || []).map((entry) => {
-      if (entry.type === "container") {
-        const id = containerMap[entry.id];
-        return id ? { type: "container", id } : null;
-      }
-      const id = itemMap[entry.id];
-      return id ? { type: "item", id } : null;
-    }).filter(Boolean);
-  });
+  const idMap = { containers: new Map(), items: new Map() };
+  const rootContainerIds = (sourceLayout.rootContainerIds || [])
+    .map((id) => copyPublishedContainerToState(source, id, { targetLayoutId: "", changedAt, idMap }))
+    .filter(Boolean);
 
   const layoutId = `layout-guest-demo-${stamp}`;
   state.layouts[layoutId] = {
@@ -7832,7 +7946,7 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     name: demoCopyLayoutName(sourceLayout.name),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
-    [GUEST_DEMO_COPY_FLAG]: true,
+    [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),
     demoSourceLanguage: uiLanguage,
     ...currentCreateMeta(changedAt)
   };
@@ -8134,6 +8248,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
     photos: sharedGearPhotos(root, changedAt),
     ...currentCreateMeta(changedAt)
   };
+  markLocalPublicCopyOrigin(state.containers[id], "container", root.id, "legacy-shared");
   if (preserveSource) state.containers[id].sharedSourceId = root.id;
   (root.items || []).forEach((item) => copySharedItemToState(item, { containerId: id, changedAt, idMap, preserveSource }));
   state.collapsedContainers[id] = false;
@@ -8164,6 +8279,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
     photos: sharedGearPhotos(item, changedAt),
     ...currentCreateMeta(changedAt)
   };
+  markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared");
   if (preserveSource) state.items[id].sharedSourceId = item.id;
   if (!state.categories.includes("Прочее")) state.categories.push("Прочее");
   if (containerId && state.containers[containerId]) {
@@ -8205,6 +8321,7 @@ async function openHistoryDialog() {
   }
   if (!canOpenAdminPublishedEdit()) activeHistorySource = "private";
   expandedHistoryRecordId = "";
+  expandedHistoryGroups = {};
   historyComparisonState = null;
   renderHistorySourceControls();
   openModalDialog(refs.historyDialog);
@@ -8275,8 +8392,24 @@ async function loadRemoteHistory(source = "private") {
     if (!sharedId) throw new Error("Нет shared-укладок для истории.");
     path = `/bike-packing/admin/shared-layouts/${encodeURIComponent(sharedId)}/history`;
   } else {
-    const params = new URLSearchParams({ scopeKey: DATA_SCOPE_KEY, itemKey: DATA_ITEM_KEY });
-    path = `/bike-packing-data-history.json?${params.toString()}`;
+    const listId = await ensureCurrentPackingListId();
+    try {
+      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history`, {
+        timeoutMs: LIST_API_TIMEOUT_MS
+      });
+      const records = Array.isArray(data.records)
+        ? data.records
+        : Array.isArray(data.history)
+          ? data.history
+          : [];
+      return sortHistoryRecords(records).map((record) => ({
+        ...record,
+        listId: record.listId || record.list_id || listId,
+        source: record.source || "bike_packing_list_history"
+      }));
+    } catch (error) {
+      throw new Error(`Новая история списка недоступна: ${apiErrorMessage(error)}`);
+    }
   }
   const data = await apiFetch(path);
   const records = Array.isArray(data.records)
@@ -8284,6 +8417,10 @@ async function loadRemoteHistory(source = "private") {
     : Array.isArray(data.history)
       ? data.history
       : [];
+  return sortHistoryRecords(records);
+}
+
+function sortHistoryRecords(records) {
   return records
     .filter((record) => record && typeof record === "object")
     .sort((a, b) => {
@@ -8300,28 +8437,31 @@ function renderHistoryRecords(records) {
     refs.historyList.innerHTML = "";
     return;
   }
+  const groups = groupHistoryRecords(records);
   refs.historyStatus.className = "dialog-status success";
-  refs.historyStatus.textContent = `${historySourceLabel()} · найдено версий: ${records.length}`;
-  refs.historyList.innerHTML = records.map((record, index) => {
-    const recordKey = historyRecordKey(record, index);
-    const payload = historyRecordState(record);
-    const summary = summarizeHistoryPayload(payload);
-    const createdAt = formatHistoryDateTime(record.createdAt || record.created_at);
-    const sourceAt = formatHistoryDateTime(record.sourceUpdatedAt || record.source_updated_at);
-    const device = record.sourceDeviceName || record.source_device_name || "устройство не указано";
-    const expanded = expandedHistoryRecordId === recordKey;
+  refs.historyStatus.textContent = `${historySourceLabel()} · найдено версий: ${records.length} · укладок: ${groups.length}`;
+  refs.historyList.innerHTML = groups.map((group, groupIndex) => {
+    const expanded = expandedHistoryGroups[group.key] ?? groupIndex === 0;
+    const latestAt = formatHistoryDateTime(group.records[0]?.createdAt || group.records[0]?.created_at);
     return `
-      <article class="history-record${expanded ? " expanded" : ""}" data-history-record="${escapeHtml(recordKey)}">
-        <div class="history-record-main">
-          <strong>${escapeHtml(createdAt || "без даты")}</strong>
-          <p>${escapeHtml(summary)}</p>
-          <small>${escapeHtml(device)}${sourceAt ? ` · изменение: ${escapeHtml(sourceAt)}` : ""}</small>
+      <details class="history-group" data-history-group="${escapeHtml(group.key)}"${expanded ? " open" : ""}>
+        <summary class="history-group-summary">
+          <span>
+            <strong>${escapeHtml(group.title)}</strong>
+            <small>${group.records.length} ${pluralRu(group.records.length, "версия", "версии", "версий")}${latestAt ? ` · последняя ${escapeHtml(latestAt)}` : ""}</small>
+          </span>
+        </summary>
+        <div class="history-group-records">
+          ${group.records.map((record, index) => renderHistoryRecordArticle(record, index, group.records)).join("")}
         </div>
-        <button type="button" class="ghost" data-restore-history="${escapeHtml(String(record.id))}">${activeHistorySource === "private" ? "Восстановить" : "Опубликовать"}</button>
-        ${expanded ? renderHistoryRecordComparison(record, index, records) : ""}
-      </article>
+      </details>
     `;
   }).join("");
+  refs.historyList.querySelectorAll("[data-history-group]").forEach((groupElement) => {
+    groupElement.addEventListener("toggle", () => {
+      expandedHistoryGroups[groupElement.dataset.historyGroup || ""] = groupElement.open;
+    });
+  });
   refs.historyList.querySelectorAll("[data-history-record]").forEach((recordElement) => {
     recordElement.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -8335,8 +8475,59 @@ function renderHistoryRecords(records) {
   });
 }
 
+function groupHistoryRecords(records) {
+  const groups = new Map();
+  records.forEach((record) => {
+    const payload = historyRecordState(record);
+    const title = historyPayloadTitle(payload, "Без названия");
+    const key = title || "Без названия";
+    if (!groups.has(key)) groups.set(key, { key, title: key, records: [] });
+    groups.get(key).records.push(record);
+  });
+  return Array.from(groups.values());
+}
+
+function pluralRu(count, one, few, many) {
+  const value = Math.abs(Number(count) || 0);
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function renderHistoryRecordArticle(record, index, records) {
+  const recordKey = historyRecordKey(record, index);
+  const payload = historyRecordState(record);
+  const summary = summarizeHistoryPayload(payload);
+  const createdAt = formatHistoryDateTime(record.createdAt || record.created_at);
+  const sourceAt = formatHistoryDateTime(record.sourceUpdatedAt || record.source_updated_at);
+  const device = record.sourceDeviceName || record.source_device_name || "устройство не указано";
+  const expanded = expandedHistoryRecordId === recordKey;
+  return `
+    <article class="history-record${expanded ? " expanded" : ""}" data-history-record="${escapeHtml(recordKey)}">
+      <div class="history-record-main">
+        <strong>${escapeHtml(createdAt || "без даты")}</strong>
+        <p>${escapeHtml(summary)}</p>
+        <small>${escapeHtml(device)}${sourceAt ? ` · изменение: ${escapeHtml(sourceAt)}` : ""}</small>
+      </div>
+      <button type="button" class="ghost" data-restore-history="${escapeHtml(String(record.id))}">${activeHistorySource === "private" ? "Восстановить" : "Опубликовать"}</button>
+      ${expanded ? renderHistoryRecordComparison(record, index, records) : ""}
+    </article>
+  `;
+}
+
 function historyRecordState(record, source = activeHistorySource) {
-  const payload = record?.payload || record?.state || record?.record?.payload;
+  const payload =
+    record?.payload ||
+    record?.state ||
+    record?.assembledState ||
+    record?.assembled_state ||
+    record?.serverPayload ||
+    record?.record?.payload ||
+    record?.record?.state ||
+    record?.record?.assembledState ||
+    record?.record?.assembled_state;
   return source === "demo" || source === "shared"
     ? normalizePublishedStatePayload(payload)
     : normalizeRemoteState(payload);
@@ -8620,15 +8811,53 @@ async function restoreHistoryRecord(recordId) {
   });
   if (!confirmed) return;
   refs.historyDialog.close();
-  replaceState(restoredState);
-  syncMeta.dirty = true;
-  syncMeta.localUpdatedAt = nowIso();
-  saveSyncMeta();
-  appUnlocked = true;
-  renderPreservingPackingScroll();
   updateSyncUi("Восстанавливаю версию на сервере...");
-  await saveRemoteState({ notify: true, forceOverwrite: true });
-  showToast("Версия восстановлена.", "success");
+  try {
+    await restorePrivateHistoryRecordOnServer(record);
+    showToast("Версия восстановлена.", "success");
+  } catch (error) {
+    updateSyncUi(`Не удалось восстановить версию: ${error.message}`);
+    showToast(`Не удалось восстановить версию: ${error.message}`, "error");
+  }
+}
+
+async function restorePrivateHistoryRecordOnServer(record) {
+  const historyId = Number(record?.id || 0);
+  if (!Number.isFinite(historyId) || historyId <= 0) {
+    throw new Error("Не удалось определить ID версии из истории.");
+  }
+  const source = String(record?.source || "").trim();
+  if (source && source !== "bike_packing_list_history") {
+    throw new Error("Эта версия загружена из старой истории и не может быть восстановлена новой ручкой списка.");
+  }
+  const currentListId = await ensureCurrentPackingListId();
+  const historyListId = String(record?.listId || record?.list_id || "").trim();
+  const listId = historyListId || currentListId;
+  if (!listId) {
+    throw new Error("Не удалось определить список для восстановления версии.");
+  }
+  if (!syncMeta.stateRevision) {
+    const currentRecord = await fetchRemoteListDetailRecord(listId);
+    rememberRemoteIntegrityMeta(currentRecord);
+    saveSyncMeta();
+  }
+  const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history/${encodeURIComponent(historyId)}/restore`, {
+    method: "POST",
+    timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+    body: JSON.stringify({
+      baseStateRevision: syncMeta.stateRevision ?? null,
+      stateRevision: syncMeta.stateRevision ?? null
+    })
+  });
+  const recordData = normalizeRemoteListRecord(data);
+  rememberCurrentPackingListRecord(recordData);
+  const restoredState = normalizeRemoteState(recordData.payload);
+  if (!restoredState) throw new Error("Сервер вернул пустую или повреждённую версию.");
+  const integrityMeta = stateIntegrityMetaFromResponse(recordData, data);
+  const updatedAt = remoteUpdatedAt(recordData) || data?.serverUpdatedAt || integrityMeta.updatedAt || nowIso();
+  if (!applyRemoteState(restoredState, updatedAt, integrityMeta, recordData.payload, { allowDestructive: true })) {
+    throw new Error("Не удалось применить версию с сервера.");
+  }
 }
 
 function selectedHistoryPublishedTarget() {
@@ -9842,17 +10071,17 @@ function isContainerPickerTargetAllowed(containerId) {
   return !getDescendantContainerIds(containerPickerTargetContainerId).includes(containerId);
 }
 
-function selectContainerPickerTarget(containerId, targetIndex = null) {
+async function selectContainerPickerTarget(containerId, targetIndex = null) {
   if (containerPickerMode === "container") {
     selectRootContainerParent(containerId, targetIndex);
     return;
   }
   if (containerPickerMode === "item-copy") {
-    copyItemToContainerInLayout(editingItemId, containerId, containerPickerLayoutId);
+    await copyItemToContainerInLayout(editingItemId, containerId, containerPickerLayoutId);
     return;
   }
   if (containerPickerMode === "container-copy") {
-    copyContainerTreeToLayout(editingRootContainerId, containerPickerLayoutId, containerId);
+    await copyContainerTreeToLayout(editingRootContainerId, containerPickerLayoutId, containerId);
     return;
   }
   selectItemContainer(containerId);
@@ -9866,7 +10095,74 @@ function selectItemContainer(containerId) {
   refs.containerPickerDialog.close();
 }
 
-function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+  const source = state.items[itemId];
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!source || !targetLayout) return;
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic && layoutContainsItem(targetLayoutId, itemId)) {
+    const duplicate = await askConfirmDialog({
+      title: "Вещь уже есть в этой укладке",
+      text: `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`,
+      okText: "Дублировать",
+      cancelText: "Пропустить",
+      tone: "safe"
+    });
+    if (!duplicate) {
+      refs.containerPickerDialog.close();
+      showToast("Копирование пропущено: вещь уже есть в целевой укладке.", "success");
+      return;
+    }
+    duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+    return;
+  }
+  if (!targetIsPublic && linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
+  duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+}
+
+function layoutContainsItem(layoutId, itemId) {
+  let contains = false;
+  withLayoutArrangementApplied(layoutId, () => {
+    contains = currentAppliedLayoutItemIds(state.layouts[layoutId]).has(itemId);
+  });
+  return contains;
+}
+
+function currentAppliedLayoutItemIds(layout = state.layouts[state.activeLayoutId]) {
+  const ids = new Set();
+  getVisibleLayoutRootIds(layout).forEach((containerId) => {
+    getContainerItemIdsDeep(containerId).forEach((itemId) => ids.add(itemId));
+  });
+  return ids;
+}
+
+function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!state.items[itemId] || !targetLayout) return false;
+  const changedAt = nowIso();
+  let linked = false;
+  withLayoutArrangementApplied(targetLayoutId, () => {
+    const targetContainer = state.containers[targetContainerId];
+    if (!targetContainer || !getActiveLayoutContainerIdSet(targetLayout).has(targetContainerId)) return;
+    if (currentAppliedLayoutItemIds(targetLayout).has(itemId)) return;
+    targetContainer.itemIds = targetContainer.itemIds || [];
+    if (!targetContainer.itemIds.includes(itemId)) targetContainer.itemIds.push(itemId);
+    targetContainer.order = targetContainer.order || [];
+    if (!targetContainer.order.some((entry) => entry?.type === "item" && entry.id === itemId)) {
+      targetContainer.order.push({ type: "item", id: itemId });
+    }
+    state.items[itemId].containerId = targetContainerId;
+    touchLayout(targetLayoutId, changedAt);
+    linked = true;
+  });
+  if (!linked) return false;
+  saveState();
+  refs.containerPickerDialog.close();
+  showToast("Вещь добавлена в выбранную укладку без создания дубля.", "success");
+  return true;
+}
+
+function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
@@ -9909,20 +10205,22 @@ function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId =
   showToast("Вещь скопирована в выбранную укладку.", "success");
 }
 
-function snapshotContainerTree(containerId) {
-  const root = state.containers[containerId];
+function snapshotContainerTree(containerId, { sourceLayoutId = "", excludeLayoutId = "", targetState = state } = {}) {
+  const arrangementSnapshot = snapshotContainerTreeFromLayoutArrangement(containerId, { sourceLayoutId, excludeLayoutId, targetState });
+  if (arrangementSnapshot) return arrangementSnapshot;
+  const root = targetState.containers?.[containerId];
   if (!root) return null;
   const containers = {};
   const items = {};
   const visitedContainers = new Set();
   const copyItem = (itemId) => {
     if (items[itemId]) return;
-    const item = state.items[itemId];
+    const item = targetState.items?.[itemId];
     if (item) items[itemId] = clone(item);
   };
   const copyContainer = (id) => {
     if (visitedContainers.has(id)) return;
-    const container = state.containers[id];
+    const container = targetState.containers?.[id];
     if (!container) return;
     visitedContainers.add(id);
     containers[id] = clone(container);
@@ -9937,7 +10235,178 @@ function snapshotContainerTree(containerId) {
   return { rootId: containerId, containers, items };
 }
 
-function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "") {
+function snapshotContainerTreeFromLayoutArrangement(containerId, { sourceLayoutId = "", excludeLayoutId = "", targetState = state } = {}) {
+  const source = sourceLayoutId
+    ? targetState.layouts?.[sourceLayoutId]
+    : findBestSourceLayoutForContainerTree(containerId, { excludeLayoutId, targetState });
+  const arrangement = source?.arrangement;
+  if (!arrangement || typeof arrangement !== "object" || !arrangement.containers?.[containerId]) return null;
+  const containers = {};
+  const items = {};
+  const visitedContainers = new Set();
+  const copyItem = (itemId, parentId) => {
+    if (items[itemId]) return;
+    const item = targetState.items?.[itemId];
+    if (item) items[itemId] = { ...clone(item), containerId: parentId };
+  };
+  const copyContainer = (id, parentId = null) => {
+    if (visitedContainers.has(id)) return;
+    const container = targetState.containers?.[id];
+    const placement = arrangement.containers?.[id];
+    if (!container || !placement) return;
+    visitedContainers.add(id);
+    const itemIds = uniqueLayoutIds(Array.isArray(placement.itemIds) ? placement.itemIds : []).filter((itemId) => targetState.items?.[itemId]);
+    const childIds = uniqueLayoutIds(Array.isArray(placement.childIds) ? placement.childIds : []).filter((childId) => targetState.containers?.[childId]);
+    const itemSet = new Set(itemIds);
+    const childSet = new Set(childIds);
+    const order = (Array.isArray(placement.order) ? placement.order : [])
+      .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
+      .filter((entry) => entry.type === "item" ? itemSet.has(entry.id) : childSet.has(entry.id))
+      .map((entry) => ({ type: entry.type, id: entry.id }));
+    containers[id] = {
+      ...clone(container),
+      parentId,
+      childIds,
+      itemIds,
+      order: order.length ? order : [
+        ...itemIds.map((itemId) => ({ type: "item", id: itemId })),
+        ...childIds.map((childId) => ({ type: "container", id: childId }))
+      ]
+    };
+    itemIds.forEach((itemId) => copyItem(itemId, id));
+    childIds.forEach((childId) => copyContainer(childId, id));
+  };
+  copyContainer(containerId, null);
+  return containers[containerId] ? { rootId: containerId, containers, items } : null;
+}
+
+function findBestSourceLayoutForContainerTree(containerId, { excludeLayoutId = "", targetState = state } = {}) {
+  return Object.values(targetState.layouts || {})
+    .filter((layout) => layout?.id !== excludeLayoutId)
+    .map((layout) => ({
+      layout,
+      score: layoutArrangementContainerTreeScore(layout?.arrangement, containerId) +
+        ((layout?.arrangement?.rootContainerIds || layout?.rootContainerIds || []).includes(containerId) ? 1000 : 0)
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.layout || null;
+}
+
+function layoutArrangementContainerTreeScore(arrangement, containerId) {
+  if (!arrangement || typeof arrangement !== "object" || !arrangement.containers?.[containerId]) return 0;
+  const visited = new Set();
+  const walk = (id) => {
+    if (visited.has(id)) return 0;
+    const placement = arrangement.containers?.[id];
+    if (!placement) return 0;
+    visited.add(id);
+    const itemCount = Array.isArray(placement.itemIds) ? placement.itemIds.length : 0;
+    const childIds = Array.isArray(placement.childIds) ? placement.childIds : [];
+    return 1 + itemCount + childIds.reduce((sum, childId) => sum + walk(childId), 0);
+  };
+  return walk(containerId);
+}
+
+async function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "") {
+  const targetLayout = state.layouts[targetLayoutId];
+  const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: targetLayoutId });
+  if (!sourceSnapshot || !targetLayout) return;
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) {
+    const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
+    if (duplicates.containerIds.length || duplicates.itemIds.length) {
+      const duplicate = await askConfirmDialog({
+        title: "Такие элементы уже есть в укладке",
+        text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
+        okText: "Дублировать",
+        cancelText: "Пропустить",
+        highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`,
+        tone: "safe"
+      });
+      if (!duplicate) {
+        refs.containerPickerDialog.close();
+        showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
+        return;
+      }
+      duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
+      return;
+    }
+    if (linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
+  }
+  duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
+}
+
+function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
+  const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}));
+  const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}));
+  const result = { containerIds: [], itemIds: [] };
+  withLayoutArrangementApplied(layoutId, () => {
+    const targetContainerIds = getActiveLayoutContainerIdSet(state.layouts[layoutId]);
+    const targetItemIds = currentAppliedLayoutItemIds(state.layouts[layoutId]);
+    result.containerIds = [...sourceContainerIds].filter((id) => targetContainerIds.has(id));
+    result.itemIds = [...sourceItemIds].filter((id) => targetItemIds.has(id));
+  });
+  return result;
+}
+
+function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "") {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!sourceSnapshot || !targetLayout) return false;
+  const changedAt = nowIso();
+  let linked = false;
+  withLayoutArrangementApplied(targetLayoutId, () => {
+    const targetContainerSet = getActiveLayoutContainerIdSet(targetLayout);
+    if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return;
+    const applySourceContainer = (sourceContainerId, parentId = null) => {
+      const sourceContainer = sourceSnapshot.containers[sourceContainerId];
+      const targetContainer = state.containers[sourceContainerId];
+      if (!sourceContainer || !targetContainer) return "";
+      targetContainer.parentId = parentId || null;
+      targetContainer.childIds = (sourceContainer.childIds || []).filter((id) => state.containers[id]);
+      targetContainer.itemIds = (sourceContainer.itemIds || []).filter((id) => state.items[id]);
+      targetContainer.order = (sourceContainer.order || [])
+        .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
+        .filter((entry) => entry.type === "item" ? targetContainer.itemIds.includes(entry.id) : targetContainer.childIds.includes(entry.id))
+        .map((entry) => ({ type: entry.type, id: entry.id }));
+      if (!targetContainer.order.length) {
+        targetContainer.order = [
+          ...targetContainer.itemIds.map((id) => ({ type: "item", id })),
+          ...targetContainer.childIds.map((id) => ({ type: "container", id }))
+        ];
+      }
+      targetContainer.itemIds.forEach((itemId) => {
+        if (state.items[itemId]) state.items[itemId].containerId = sourceContainerId;
+      });
+      targetContainer.childIds.forEach((childId) => applySourceContainer(childId, sourceContainerId));
+      state.collapsedContainers[sourceContainerId] = false;
+      return sourceContainerId;
+    };
+    const rootId = applySourceContainer(sourceSnapshot.rootId, targetParentId || null);
+    if (!rootId) return;
+    if (targetParentId) {
+      const parent = state.containers[targetParentId];
+      parent.childIds = parent.childIds || [];
+      if (!parent.childIds.includes(rootId)) parent.childIds.push(rootId);
+      parent.order = parent.order || [];
+      if (!parent.order.some((entry) => entry?.type === "container" && entry.id === rootId)) {
+        parent.order.push({ type: "container", id: rootId });
+      }
+      state.collapsedContainers[targetParentId] = false;
+    } else {
+      targetLayout.rootContainerIds = uniqueLayoutIds([...(targetLayout.rootContainerIds || []), rootId]);
+    }
+    touchLayout(targetLayoutId, changedAt);
+    linked = true;
+  });
+  if (!linked) return false;
+  saveState();
+  if (refs.containerPickerDialog.open) refs.containerPickerDialog.close();
+  render();
+  showToast("Сумка или пакет добавлены в выбранную укладку без создания дублей.", "success");
+  return true;
+}
+
+function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "") {
   const targetLayout = state.layouts[targetLayoutId];
   const sourceSnapshot = snapshotContainerTree(containerId);
   if (!sourceSnapshot || !targetLayout) return;
@@ -13926,6 +14395,7 @@ function detachItemFromContainer(itemId, containerId, options = {}) {
   item.containerId = null;
   touchItem(itemId, changedAt);
   touchContainer(containerId, changedAt);
+  touchActiveLayout(changedAt);
   cleanupEmptyContainers(containerId);
   saveState();
   scheduleActivePublishedEditSave();
@@ -13990,6 +14460,7 @@ function deleteItemForever(itemId) {
     container.order = (container.order || []).filter((entry) => !(entry.type === "item" && entry.id === itemId));
     if (hadItem) markEdited(container, changedAt);
   });
+  touchLayoutsReferencingItem(itemId, changedAt);
   delete state.items[itemId];
   delete state.packedItems?.[itemId];
   if (oldContainerId) cleanupEmptyContainers(oldContainerId);
@@ -14033,7 +14504,34 @@ function copyItem(itemId, options = {}) {
   showToast(container ? "Вещь скопирована рядом с исходной." : "Вещь скопирована вне укладки.", "success");
 }
 
-function copyRootContainer(containerId) {
+async function copyRootContainer(containerId) {
+  const container = state.containers[containerId];
+  if (!container || container.parentId) return;
+  const layoutId = getPublishedEditLayoutId();
+  const layout = state.layouts[layoutId];
+  if (layout && !isAdminEditablePublishedLayout(layoutId)) {
+    const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: layoutId });
+    if (!(layout.rootContainerIds || []).includes(containerId)) {
+      if (sourceSnapshot && linkExistingContainerTreeToLayout(sourceSnapshot, layoutId, "")) return;
+      addRootContainerToActiveLayout(containerId);
+      showToast("Сумка добавлена в текущую укладку без создания дубля.", "success");
+      return;
+    }
+    const duplicate = await askConfirmDialog({
+      title: "Сумка уже есть в этой укладке",
+      text: `«${container.name || "Сумка"}» уже участвует в укладке «${layout.name || "Укладка"}». Создать отдельную копию верхнего уровня?`,
+      okText: "Дублировать",
+      cancelText: "Отмена",
+      tone: "safe"
+    });
+    if (!duplicate) return;
+    duplicateContainerTreeToLayout(containerId, layout.id, "");
+    return;
+  }
+  duplicateRootContainer(containerId, { addToLayoutId: layout?.id || "" });
+}
+
+function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
   const changedAt = nowIso();
@@ -14052,10 +14550,17 @@ function copyRootContainer(containerId) {
     ...currentEditMeta(changedAt)
   };
   markRecordActivePublicCatalog(state.containers[copyId]);
+  const targetLayout = state.layouts?.[addToLayoutId];
+  if (targetLayout && !(targetLayout.rootContainerIds || []).includes(copyId)) {
+    targetLayout.rootContainerIds = [...(targetLayout.rootContainerIds || []), copyId];
+    touchLayout(addToLayoutId, changedAt);
+  }
   saveState();
   scheduleActivePublishedEditSave();
   render();
-  showToast("Сумка или место скопированы пустыми вне укладки.", "success");
+  showToast(targetLayout
+    ? "Сумка или место продублированы в текущей укладке."
+    : "Сумка или место скопированы пустыми вне укладки.", "success");
 }
 
 function makeContainerCopyName(name) {
@@ -14164,6 +14669,21 @@ function makeItemCopyName(name) {
   let index = 2;
   while (names.has(`${baseName} ${index}`)) index += 1;
   return `${baseName} ${index}`;
+}
+
+function touchLayoutsReferencingItem(itemId, changedAt = nowIso()) {
+  Object.values(state.layouts || {}).forEach((layout) => {
+    const arrangement = layout?.arrangement;
+    const hasItem = Boolean(
+      arrangement?.items?.[itemId] ||
+      Object.values(arrangement?.containers || {}).some((placement) => {
+        if (!placement || typeof placement !== "object") return false;
+        if ((placement.itemIds || []).includes(itemId)) return true;
+        return (placement.order || []).some((entry) => entry?.type === "item" && entry.id === itemId);
+      })
+    );
+    if (hasItem) markEdited(layout, changedAt);
+  });
 }
 
 function cleanupEmptyContainers(containerId) {
@@ -14328,8 +14848,21 @@ function copySharedItemFromReadonlyDialog() {
   copySharedItem(itemId);
 }
 
+function uniqueLayoutName(baseName = "Новая укладка") {
+  const base = String(baseName || "Новая укладка").trim() || "Новая укладка";
+  const existing = new Set(Object.values(state.layouts || {}).map((layout) =>
+    String(layout?.name || "").trim().toLowerCase()
+  ));
+  if (!existing.has(base.toLowerCase())) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base} ${index}`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${base} ${Date.now()}`;
+}
+
 function openLayoutDialog() {
-  refs.layoutName.value = "Новая укладка";
+  refs.layoutName.value = uniqueLayoutName("Новая укладка");
   refs.layoutCreateMode.value = "empty";
   refs.layoutCopyFrom.value = state.activeLayoutId;
   updateLayoutCopyVisibility();
@@ -14362,11 +14895,9 @@ function saveNewLayout(event) {
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentEditMeta()
   };
-  if (!canUsePrivateState()) setActiveLocalEditableScope(id);
-  state.activeLayoutId = id;
-  applyLayoutArrangement(id);
-  rememberActiveLayoutChoice(id);
   saveState();
+  if (!canUsePrivateState()) setActiveLocalEditableScope(id);
+  switchActiveLayout(id);
   refs.layoutDialog.close();
   switchView("bags");
   render();
@@ -14885,7 +15416,10 @@ function getItemsForItemsView() {
 }
 
 function getItemsForActiveCatalog() {
-  return Object.values(state.items).filter((item) => isItemInActiveCatalog(item));
+  return Object.entries(state.items)
+    .filter(([itemId, item]) => isScopedCatalogLayout() || !isPublicSyncItem(itemId, item))
+    .map(([, item]) => item)
+    .filter((item) => isItemInActiveCatalog(item));
 }
 
 function itemCreatedTime(item) {
@@ -15020,12 +15554,14 @@ function getDescendantContainerIds(containerId) {
 
 function getRootContainers() {
   return Object.values(state.containers)
-    .filter((container) => !container.parentId)
+    .filter((container) => isScopedCatalogLayout() || !isPublicSyncContainer(container.id, container))
+    .filter(isRootContainerForEditor)
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
 
 function getRootContainersForSettings() {
   const roots = Object.values(state.containers).filter((container) => {
+    if (!isScopedCatalogLayout() && isPublicSyncContainer(container.id, container)) return false;
     if (!isRootContainerForEditor(container)) return false;
     if (!isRootContainerInActiveCatalog(container)) return false;
     if (rootContainerUsageFilter === "current" && !isRootContainerInActiveLayout(container.id)) return false;
@@ -15058,6 +15594,7 @@ function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } 
 
 function getRootContainerUsageCounts() {
   return Object.values(state.containers).filter((container) =>
+    (isScopedCatalogLayout() || !isPublicSyncContainer(container.id, container)) &&
     isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
   ).reduce(
     (counts, container) => {
@@ -15085,7 +15622,12 @@ function isRootContainerForEditor(container) {
 function isNestedContainerInAnyLayoutArrangement(containerId) {
   return Object.values(state.layouts || {}).some((layout) => {
     const placement = layout?.arrangement?.containers?.[containerId];
-    return Boolean(placement?.parentId && state.containers?.[placement.parentId]);
+    if (placement?.parentId && state.containers?.[placement.parentId]) return true;
+    return Object.values(layout?.arrangement?.containers || {}).some((parentPlacement) => {
+      if (!parentPlacement || typeof parentPlacement !== "object") return false;
+      if ((parentPlacement.childIds || []).includes(containerId)) return true;
+      return (parentPlacement.order || []).some((entry) => entry?.type === "container" && entry.id === containerId);
+    });
   });
 }
 
