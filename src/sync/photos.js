@@ -1,3 +1,9 @@
+import {
+  PHOTO_DB_NAME,
+  PHOTO_DB_VERSION,
+  PHOTO_STORE
+} from "../config/constants.js";
+
 export function normalizePhotoStatus(value) {
   return ["pending", "uploading", "synced", "error", "missing-local-file"].includes(value) ? value : "synced";
 }
@@ -21,4 +27,58 @@ export function syncSafePhotoUrl(src) {
   const value = src.trim();
   if (!value || /^(data|blob):/i.test(value)) return "";
   return value.length <= 2048 ? value : "";
+}
+
+export function openPhotoDb() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB недоступен"));
+      return;
+    }
+    const request = indexedDB.open(PHOTO_DB_NAME, PHOTO_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PHOTO_STORE)) {
+        db.createObjectStore(PHOTO_STORE, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Не удалось открыть хранилище фото"));
+  });
+}
+
+export async function photoDbStore(mode, callback) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PHOTO_STORE, mode);
+    const store = transaction.objectStore(PHOTO_STORE);
+    let request;
+    try {
+      request = callback(store);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Не удалось прочитать фото"));
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error || new Error("Ошибка хранилища фото"));
+    };
+  });
+}
+
+export function putCachedPhoto(record) {
+  return photoDbStore("readwrite", (store) => store.put(record));
+}
+
+export function getCachedPhoto(id) {
+  if (!id) return Promise.resolve(null);
+  return photoDbStore("readonly", (store) => store.get(id)).catch(() => null);
+}
+
+export function deleteCachedPhoto(id) {
+  if (!id) return Promise.resolve();
+  return photoDbStore("readwrite", (store) => store.delete(id)).catch(() => null);
 }
