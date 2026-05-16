@@ -1,6 +1,8 @@
 import {
   normalizePhotoStatus,
-  normalizePhotoUrlFields,
+  normalizePhotoUrlFields
+} from "../state/item-photos.js";
+import {
   syncSafePhotoUrl
 } from "./photos.js";
 

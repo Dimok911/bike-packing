@@ -7,8 +7,8 @@
 - `src/config` keeps app constants and storage/API keys.
 - `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
 - `src/utils` keeps small helpers for time, JSON, HTML escaping, language, storage, weights, and byte formatting.
-- `src/state` has safe state shape, layout arrangement helpers, state diagnostics, repair helpers, and the first normalization helpers.
-- `src/sync` has the API client helpers, history helpers, payload reporting, photo metadata/cache/prep helpers, state serialization helpers, and entity sync payload helpers.
+- `src/state` has safe state shape, layout arrangement helpers, item photo metadata, state diagnostics, repair helpers, and the first normalization helpers.
+- `src/sync` has the API client helpers, history helpers, payload reporting, photo cache/prep helpers, state serialization helpers, and entity sync payload helpers.
 - `src/public` has scope/read-only helpers, shared layout helpers, and the first public-to-private copy helpers.
 - `src/ui` is starting with DOM refs.
 

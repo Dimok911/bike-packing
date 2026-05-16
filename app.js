@@ -100,6 +100,13 @@ import {
 } from "./src/state/diagnostics.js";
 import { createBlankBikePackingState } from "./src/state/empty-state.js";
 import {
+  itemPhotoMetaSignature,
+  itemPhotoSignature,
+  normalizeItemPhotos,
+  normalizePhotoUrlFields,
+  primaryItemPhoto
+} from "./src/state/item-photos.js";
+import {
   createEmptyLayoutArrangement,
   createLayoutArrangementFromCurrentState,
   uniqueLayoutIds
@@ -149,14 +156,8 @@ import {
   getCachedPhoto,
   hasRemotePhotoUrl,
   isPhotoStoredForList,
-  itemPhotoMetaSignature,
-  itemPhotoSignature,
-  normalizeItemPhotos,
-  normalizePhotoStatus,
-  normalizePhotoUrlFields,
   normalizeUploadedPhotoAssetUrls,
   photoRemoteSrc,
-  primaryItemPhoto,
   putCachedPhoto
 } from "./src/sync/photos.js";
 import {
