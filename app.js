@@ -88,6 +88,13 @@ import {
   createLayoutArrangementFromCurrentState,
   uniqueLayoutIds
 } from "./src/state/layout-arrangement.js";
+import {
+  applyDefaultCollapsedContainers,
+  defaultRootContainerLocation,
+  itemCategories,
+  migrateContainerOrder,
+  normalizeItemCategories
+} from "./src/state/normalize.js";
 import { formatBytes } from "./src/utils/bytes.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, jsonUtf8ByteLength } from "./src/utils/json.js";
@@ -2374,76 +2381,6 @@ function normalizeItemPhotos(item) {
 
 function normalizePhotoStatus(value) {
   return ["pending", "uploading", "synced", "error", "missing-local-file"].includes(value) ? value : "synced";
-}
-
-function defaultRootContainerLocation(targetState = state) {
-  const list = Array.isArray(targetState.locations) ? targetState.locations : [];
-  return list.includes("Не знаю где") ? "Не знаю где" : (list[0] || "");
-}
-
-function normalizeItemCategories(targetState = state) {
-  targetState.categories = Array.isArray(targetState.categories) ? targetState.categories : [...categories];
-  if (!targetState.categories.includes(REQUIRED_CHARGE_CATEGORY)) {
-    targetState.categories.push(REQUIRED_CHARGE_CATEGORY);
-  }
-  Object.values(targetState.items || {}).forEach((item) => {
-    const values = Array.isArray(item.categories) ? item.categories : [];
-    const legacy = typeof item.category === "string" ? item.category : "";
-    const normalized = [...values, legacy]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .filter((value, index, list) => list.indexOf(value) === index);
-    item.categories = normalized.length ? normalized : [targetState.categories[0] || "Прочее"];
-    item.category = item.categories[0];
-    item.categories.forEach((category) => {
-      if (!targetState.categories.includes(category)) targetState.categories.push(category);
-    });
-  });
-}
-
-function itemCategories(item) {
-  if (!item) return [];
-  if (Array.isArray(item.categories) && item.categories.length) return item.categories;
-  return item.category ? [item.category] : [];
-}
-
-function applyDefaultCollapsedContainers(targetState = state) {
-  const forceInitialDefaults = targetState.collapseDefaultsVersion !== COLLAPSE_DEFAULTS_VERSION;
-  Object.values(targetState.containers || {}).forEach((container) => {
-    if (!container.parentId) return;
-    if (forceInitialDefaults || !(container.id in targetState.collapsedContainers)) {
-      targetState.collapsedContainers[container.id] = true;
-    }
-  });
-  targetState.collapseDefaultsVersion = COLLAPSE_DEFAULTS_VERSION;
-}
-
-function migrateContainerOrder(targetState = state) {
-  Object.values(targetState.containers || {}).forEach((container) => {
-    const existing = Array.isArray(container.order) ? container.order : [];
-    const seen = new Set();
-    const order = [];
-
-    existing.forEach((entry) => {
-      if (!entry || !entry.type || !entry.id) return;
-      const key = `${entry.type}:${entry.id}`;
-      if (seen.has(key)) return;
-      if (entry.type === "item" && !container.itemIds.includes(entry.id)) return;
-      if (entry.type === "container" && !container.childIds.includes(entry.id)) return;
-      seen.add(key);
-      order.push(entry);
-    });
-
-    container.itemIds.forEach((id) => {
-      const key = `item:${id}`;
-      if (!seen.has(key)) order.push({ type: "item", id });
-    });
-    container.childIds.forEach((id) => {
-      const key = `container:${id}`;
-      if (!seen.has(key)) order.push({ type: "container", id });
-    });
-    container.order = order;
-  });
 }
 
 function saveState({ sync = true } = {}) {
@@ -6989,7 +6926,7 @@ function sharedRootToPublishedContainer(root, id, changedAt) {
     weight: Number(root.weightGrams || 0),
     volume: Number(root.volumeLiters || 0),
     color: "",
-    location: defaultRootContainerLocation(),
+    location: defaultRootContainerLocation(state),
     note: root.description || "",
     photos: [],
     sharedSourceId: root.id,
@@ -7003,7 +6940,7 @@ function sharedItemToPublishedItem(item, id, containerId, changedAt) {
     name: item.name,
     weight: Number(item.weightGrams || 0),
     quantity: 1,
-    location: defaultRootContainerLocation(),
+    location: defaultRootContainerLocation(state),
     category: "Прочее",
     categories: ["Прочее"],
     containerId,
@@ -7978,7 +7915,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
     weight: Number(root.weightGrams || 0),
     volume: Number(root.volumeLiters || 0),
     color: "",
-    location: defaultRootContainerLocation(),
+    location: defaultRootContainerLocation(state),
     note: root.description || "",
     photos: sharedGearPhotos(root, changedAt),
     ...currentCreateMeta(changedAt)
@@ -8006,7 +7943,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
     name: item.name,
     weight: Number(item.weightGrams || 0),
     quantity: 1,
-    location: defaultRootContainerLocation(),
+    location: defaultRootContainerLocation(state),
     category: "Прочее",
     categories: ["Прочее"],
     containerId,
@@ -9520,7 +9457,7 @@ function getAvailableLocationFilterOptions() {
   if (getCurrentView() === "bags") {
     getRootContainers().filter(isRootContainerInActiveCatalog).forEach((container) => {
       if (matchesRootContainerFieldsFilter(container, { ignoreLocation: true })) {
-        available.add(container.location || defaultRootContainerLocation());
+        available.add(container.location || defaultRootContainerLocation(state));
       }
     });
     if (currentLocation) available.add(currentLocation);
@@ -10390,7 +10327,7 @@ function renderSummary() {
     const containers = getSummaryRootContainers();
     const totalWeight = containers.reduce((sum, container) => sum + Number(container.weight || 0), 0);
     const notHome = containers.filter((container) => {
-      const location = container.location || defaultRootContainerLocation();
+      const location = container.location || defaultRootContainerLocation(state);
       return location !== "Дом" && location !== "Уже на велосипеде";
     }).length;
     const unknownWeight = containers.filter((container) => !Number(container.weight || 0)).length;
@@ -10512,7 +10449,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
       weight: Number(root.weightGrams || 0),
       volume: Number(root.volumeLiters || 0),
       color: "",
-      location: defaultRootContainerLocation(),
+      location: defaultRootContainerLocation(state),
       note: root.description || "",
       photos: sharedGearPhotos(root, changedAt),
       createdAt: changedAt,
@@ -10526,7 +10463,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
         name: item.name,
         weight: Number(item.weightGrams || 0),
         quantity: 1,
-        location: defaultRootContainerLocation(),
+        location: defaultRootContainerLocation(state),
         category: "Прочее",
         categories: ["Прочее"],
         containerId,
@@ -10556,7 +10493,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
     activeLayoutId: virtualLayoutId,
     collapsedContainers: { ...sharedVirtualCollapsedContainers },
     packedItems: {},
-    locations: [defaultRootContainerLocation()],
+    locations: [defaultRootContainerLocation(state)],
     showItemMeta: true,
     categories: ["Прочее"]
   };
@@ -10647,7 +10584,7 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
     activeLayoutId: virtualLayoutId,
     collapsedContainers: { ...sharedVirtualCollapsedContainers },
     packedItems: {},
-    locations: [...(sourceState.locations || [defaultRootContainerLocation()])],
+    locations: [...(sourceState.locations || [defaultRootContainerLocation(state)])],
     showItemMeta: sourceState.showItemMeta !== false,
     categories: [...(sourceState.categories || ["Прочее"])],
     collectionMode: false,
@@ -11170,7 +11107,7 @@ function renderFilteredSubcontainer(containerId) {
 
 function renderContainerContents(containerId) {
   const container = state.containers[containerId];
-  migrateContainerOrder();
+  migrateContainerOrder(state);
   return container.order.map((entry) => {
     if (entry.type === "item") {
       const item = state.items[entry.id];
@@ -11185,7 +11122,7 @@ function renderContainerContents(containerId) {
 
 function renderFilteredContainerContents(containerId) {
   const container = state.containers[containerId];
-  migrateContainerOrder();
+  migrateContainerOrder(state);
   return container.order.map((entry) => {
     if (entry.type === "item") {
       const item = state.items[entry.id];
@@ -14479,7 +14416,7 @@ function openRootContainerDialog(containerId = null) {
   refs.rootContainerWeight.value = Number(container?.weight || 0);
   refs.rootContainerVolume.value = container?.volume ? String(container.volume).replace(".", ",") : "";
   if (refs.rootContainerColor) refs.rootContainerColor.value = container?.color || "";
-  fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation());
+  fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
   updateRootContainerPlacementButton();
   if (refs.rootContainerCopyToContainerBtn) refs.rootContainerCopyToContainerBtn.hidden = !containerId;
   refs.rootContainerNote.value = container?.note || "";
@@ -14492,7 +14429,7 @@ function openRootContainerDialog(containerId = null) {
 }
 
 function fillRootContainerLocationSelect(selected = "") {
-  const fallback = defaultRootContainerLocation();
+  const fallback = defaultRootContainerLocation(state);
   const options = state.locations.map((location) => [location, location]);
   fillSelect(refs.rootContainerLocation, options, selected || fallback);
 }
@@ -14542,7 +14479,7 @@ function openSharedReadonlyItemDialog(sourceItemId) {
   refs.itemWeight.value = Number(item.weightGrams || 0);
   refs.itemQuantity.value = 1;
   updateItemQuantityUi();
-  refs.itemLocation.value = defaultRootContainerLocation();
+  refs.itemLocation.value = defaultRootContainerLocation(state);
   renderItemCategoryPicker(["Прочее"], { fallbackDefault: true });
   refs.itemContainer.value = "";
   updateItemContainerPickerButton();
@@ -14879,7 +14816,7 @@ function getRootContainerDialogSnapshot() {
     weight: parseWeightInput(refs.rootContainerWeight.value),
     volume: parseVolumeInput(refs.rootContainerVolume.value),
     color: normalizeContainerColor(refs.rootContainerColor?.value),
-    location: refs.rootContainerLocation.value || defaultRootContainerLocation(),
+    location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
     note: refs.rootContainerNote.value.trim(),
     photo: getRootContainerDialogPhotoSnapshot(),
     parentId: editingRootContainerId && state.containers[editingRootContainerId]?.parentId
@@ -14950,7 +14887,7 @@ function saveRootContainerDialog(event) {
       weight: parseWeightInput(refs.rootContainerWeight.value),
       volume: parseVolumeInput(refs.rootContainerVolume.value),
       color: normalizeContainerColor(refs.rootContainerColor?.value),
-      location: refs.rootContainerLocation.value || defaultRootContainerLocation(),
+      location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
       note: refs.rootContainerNote.value.trim(),
       photos: rootContainerDialogPhotoDraft?.photo ? [rootContainerDialogPhotoDraft.photo] : [],
       ...currentCreateMeta(changedAt)
@@ -14966,7 +14903,7 @@ function saveRootContainerDialog(event) {
   container.weight = parseWeightInput(refs.rootContainerWeight.value);
   container.volume = parseVolumeInput(refs.rootContainerVolume.value);
   container.color = normalizeContainerColor(refs.rootContainerColor?.value);
-  container.location = refs.rootContainerLocation.value || defaultRootContainerLocation();
+  container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
   container.note = refs.rootContainerNote.value.trim();
   applyRootContainerDialogPhotoDraft(container, changedAt);
   markRecordActivePublicCatalog(container);
@@ -15316,7 +15253,7 @@ function getRootContainersForSettings() {
 function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } = {}) {
   const query = refs.searchInput.value.trim().toLowerCase();
   const location = refs.locationFilter.value;
-  const containerLocation = container.location || defaultRootContainerLocation();
+  const containerLocation = container.location || defaultRootContainerLocation(state);
   if (!ignoreLocation && location && containerLocation !== location) return false;
   if (!query) return true;
   return [
@@ -15435,7 +15372,7 @@ function exportData() {
 }
 
 function buildPrintableDocument() {
-  migrateContainerOrder();
+  migrateContainerOrder(state);
   const layout = state.layouts[state.activeLayoutId];
   const rootContainerIds = getVisibleLayoutRootIds(layout);
   const generatedAt = new Date().toLocaleString("ru-RU");
