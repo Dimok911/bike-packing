@@ -16,6 +16,14 @@ export function isPackingStateShape(targetState) {
   );
 }
 
+export function isSuspiciousEmptyPackingState(targetState) {
+  return Boolean(
+    targetState &&
+    !Object.keys(targetState.items || {}).length &&
+    !Object.keys(targetState.containers || {}).length
+  );
+}
+
 export function stateStats(targetState) {
   const containers = targetState?.containers && typeof targetState.containers === "object" ? targetState.containers : {};
   const items = targetState?.items && typeof targetState.items === "object" ? targetState.items : {};

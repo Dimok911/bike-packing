@@ -91,6 +91,7 @@ import {
   hasStateIntegrityMeta,
   isMeaningfulPackingState,
   isPackingStateShape,
+  isSuspiciousEmptyPackingState,
   normalizeIntegrityCount,
   normalizeStateRevision,
   remoteStateIntegrityError,
@@ -2210,14 +2211,6 @@ function stateStatsForDestructiveComparison(targetState) {
   } catch {
     return stateStats(targetState);
   }
-}
-
-function isSuspiciousEmptyPackingState(targetState = state) {
-  return Boolean(
-    targetState &&
-    !Object.keys(targetState.items || {}).length &&
-    !Object.keys(targetState.containers || {}).length
-  );
 }
 
 function normalizeItemFields(targetState = state) {
@@ -5245,7 +5238,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false, preferr
   repairCollapsedActiveLayoutBeforeSave();
   try {
     await uploadPendingPhotos();
-    if (isSuspiciousEmptyPackingState()) {
+    if (isSuspiciousEmptyPackingState(state)) {
       syncMeta.dirty = false;
       saveSyncMeta();
       updateSyncUi("Пустая локальная укладка не отправлена на сервер · загрузите восстановленную версию");
@@ -5422,7 +5415,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     );
     if (!remoteState) {
       if (hasLocalSavedState()) {
-        if (isSuspiciousEmptyPackingState()) {
+        if (isSuspiciousEmptyPackingState(state)) {
           appUnlocked = true;
           syncMeta.dirty = false;
           saveSyncMeta();
@@ -5453,7 +5446,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     const localJson = JSON.stringify(serializeState({ forSync: true }));
     const remoteJson = JSON.stringify(cloneStateForSync(remoteState, { forSync: true }));
     if (localJson !== remoteJson) {
-      if (isSuspiciousEmptyPackingState() && isMeaningfulPackingState(remoteState)) {
+      if (isSuspiciousEmptyPackingState(state) && isMeaningfulPackingState(remoteState)) {
         applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
         if (notifyDirtySave) showToast("Загружена восстановленная версия с сервера.", "success");
         return;
