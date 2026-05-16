@@ -1,4 +1,5 @@
 import {
+  API_BASE,
   PHOTO_DB_NAME,
   PHOTO_DB_VERSION,
   PHOTO_STORE
@@ -81,4 +82,28 @@ export function getCachedPhoto(id) {
 export function deleteCachedPhoto(id) {
   if (!id) return Promise.resolve();
   return photoDbStore("readwrite", (store) => store.delete(id)).catch(() => null);
+}
+
+export function isPhotoStoredForList(photo, listId) {
+  const normalizedListId = String(listId || "");
+  if (!normalizedListId) return true;
+  if (photo?.listId && String(photo.listId) === normalizedListId) return true;
+  const encoded = encodeURIComponent(normalizedListId);
+  return [photo?.url, photo?.thumbUrl].some((src) =>
+    typeof src === "string" && (src.includes(`/lists/${normalizedListId}/`) || src.includes(`/lists/${encoded}/`))
+  );
+}
+
+export function bikePackingPhotoAssetUrl(listId, photoId, variant) {
+  if (!listId || !photoId) return "";
+  return `${API_BASE}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoId)}/${variant}`;
+}
+
+export function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath) {
+  normalizePhotoUrlFields(photo);
+  const photoId = photo?.id || photo?.photoId;
+  if (!photo || !String(uploadPath || "").includes("/admin/") || !listId || !photoId) return photo;
+  photo.url = bikePackingPhotoAssetUrl(listId, photoId, "file");
+  photo.thumbUrl = bikePackingPhotoAssetUrl(listId, photoId, "thumb");
+  return photo;
 }

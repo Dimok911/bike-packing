@@ -14,7 +14,6 @@ import {
   ACTIVE_LAYOUT_CHOICE_KEY,
   ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
   ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
-  API_BASE,
   ITEM_PHOTO_MAX_SIZE,
   ITEM_PHOTO_THUMB_SIZE,
   ITEM_PHOTO_QUALITY,
@@ -149,8 +148,10 @@ import {
   deleteCachedPhoto,
   getCachedPhoto,
   hasRemotePhotoUrl,
+  isPhotoStoredForList,
   normalizePhotoStatus,
   normalizePhotoUrlFields,
+  normalizeUploadedPhotoAssetUrls,
   putCachedPhoto
 } from "./src/sync/photos.js";
 import {
@@ -4315,30 +4316,6 @@ function isPhotoUsableFromServer(photo, listId = "") {
   photo.status = "synced";
   photo.error = "";
   return true;
-}
-
-function isPhotoStoredForList(photo, listId) {
-  const normalizedListId = String(listId || "");
-  if (!normalizedListId) return true;
-  if (photo?.listId && String(photo.listId) === normalizedListId) return true;
-  const encoded = encodeURIComponent(normalizedListId);
-  return [photo?.url, photo?.thumbUrl].some((src) =>
-    typeof src === "string" && (src.includes(`/lists/${normalizedListId}/`) || src.includes(`/lists/${encoded}/`))
-  );
-}
-
-function bikePackingPhotoAssetUrl(listId, photoId, variant) {
-  if (!listId || !photoId) return "";
-  return `${API_BASE}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoId)}/${variant}`;
-}
-
-function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath) {
-  normalizePhotoUrlFields(photo);
-  const photoId = photo?.id || photo?.photoId;
-  if (!photo || !String(uploadPath || "").includes("/admin/") || !listId || !photoId) return photo;
-  photo.url = bikePackingPhotoAssetUrl(listId, photoId, "file");
-  photo.thumbUrl = bikePackingPhotoAssetUrl(listId, photoId, "thumb");
-  return photo;
 }
 
 function isViewingPublishedTarget(target) {
