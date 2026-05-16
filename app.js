@@ -44,7 +44,6 @@ import {
   ADMIN_EMAILS,
   ADMIN_USER_IDS,
   COLLAPSE_DEFAULTS_VERSION,
-  API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
   POINTER_DRAG_START_DISTANCE,
@@ -122,6 +121,13 @@ import {
   legacyComparableStateForSync as legacyComparableStateForSyncPayload,
   splitEntitySyncEntries as splitEntitySyncEntriesForSync
 } from "./src/sync/entity-sync.js";
+import {
+  apiErrorMessage,
+  apiFetchRequest,
+  isNetworkError,
+  isTemporaryServerStorageError,
+  isTimeoutError
+} from "./src/sync/api-client.js";
 import {
   hasRemotePhotoUrl,
   normalizePhotoStatus,
@@ -4029,37 +4035,6 @@ function describeChangedFields(localValue, remoteValue, fields) {
   return "служебные данные";
 }
 
-function isNetworkError(error) {
-  return Boolean(error?.isNetworkError);
-}
-
-function isTimeoutError(error) {
-  return Boolean(error?.isTimeoutError);
-}
-
-function isTemporaryServerStorageError(error) {
-  const message = `${error?.message || ""} ${error?.data?.error || ""} ${error?.data?.message || ""}`;
-  return /out of sort memory|sort buffer/i.test(message);
-}
-
-function createNetworkError(message, cause = null, options = {}) {
-  const networkError = new Error(message);
-  networkError.isNetworkError = true;
-  if (options.timeout) networkError.isTimeoutError = true;
-  networkError.cause = cause;
-  return networkError;
-}
-
-function apiErrorMessage(error) {
-  return String(
-    error?.data?.message ||
-    error?.data?.error ||
-    error?.data?.code ||
-    error?.message ||
-    "unknown error"
-  );
-}
-
 function unlockOfflineState(message = "Локально · можно работать, войдите для сохранения в аккаунт") {
   currentUser = null;
   appUnlocked = true;
@@ -4171,53 +4146,7 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "" }) {
 }
 
 async function apiFetch(path, options = {}) {
-  if (isForcedOffline()) {
-    throw createNetworkError("принудительный офлайн-режим");
-  }
-  if ("onLine" in navigator && !navigator.onLine) {
-    throw createNetworkError("нет соединения с сервером");
-  }
-  const { timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
-  const isFormDataBody = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-  let response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...fetchOptions,
-      credentials: "include",
-      cache: fetchOptions.cache || "no-store",
-      signal: controller.signal,
-      headers: {
-        ...(fetchOptions.body && !isFormDataBody ? { "Content-Type": "application/json" } : {}),
-        ...(fetchOptions.headers || {})
-      }
-    });
-  } catch (error) {
-    const timeout = error?.name === "AbortError";
-    const message = timeout ? "сервер не ответил вовремя" : "нет соединения с сервером";
-    throw createNetworkError(message, error, { timeout });
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-  const data = await response.json().catch(() => null);
-  if (!response.ok || data?.ok === false) {
-    const apiError = new Error(data?.message || data?.error || data?.code || `HTTP ${response.status}`);
-    apiError.status = response.status;
-    apiError.data = data;
-    apiError.path = path;
-    apiError.method = fetchOptions.method || "GET";
-    if (typeof console !== "undefined" && console.warn) {
-      console.warn("[bike-packing] API error", {
-        method: apiError.method,
-        path,
-        status: response.status,
-        response: data
-      });
-    }
-    throw apiError;
-  }
-  return data;
+  return apiFetchRequest(path, options, { isForcedOffline });
 }
 
 function openPhotoDb() {
