@@ -23,12 +23,9 @@ import {
   ITEM_PHOTO_QUALITY,
   DATA_SCOPE_KEY,
   DATA_ITEM_KEY,
-  DEMO_ITEM_KEY,
-  PUBLIC_LEGACY_RECORD_SOURCE,
   DEMO_LAYOUT_SELECT_VALUE,
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG,
-  SHARED_ITEM_KEY_PREFIX,
   SHARED_LAYOUTS_STORAGE_KEY,
   SESSION_MODE_GUEST,
   SESSION_MODE_USER,
@@ -69,6 +66,24 @@ import {
   demoSharedLayout
 } from "./src/data/demo-data.js";
 import { guessCategory, guessLocation } from "./src/data/guess.js";
+import {
+  activeReadOnlyLayoutIdFromScope,
+  createReadOnlyBikePackingError,
+  demoAdminIdForLanguage as demoAdminIdForLanguageFromScope,
+  demoAdminPathForLanguage as demoAdminPathForLanguageFromScope,
+  demoAdminStatePathForLanguage as demoAdminStatePathForLanguageFromScope,
+  demoItemKeyForLanguage as demoItemKeyForLanguageFromScope,
+  demoLanguageSuffix as demoLanguageSuffixFromScope,
+  demoPublicListIdForLanguage as demoPublicListIdForLanguageFromScope,
+  hasGuestDemoCopyLayoutRecord,
+  isGuestDemoCopyLayoutRecord,
+  isPublishedLayoutEditable,
+  isReadOnlyBikePackingError,
+  isReadOnlyBikePackingRecord,
+  isReadOnlyItemKey,
+  isReadOnlyScope,
+  sharedLayoutItemKey as sharedLayoutItemKeyFromScope
+} from "./src/public/scope.js";
 import { normalizeContainerColor } from "./src/state/container-fields.js";
 import {
   hasStateIntegrityMeta,
@@ -2427,17 +2442,15 @@ function clearStaleDirtyFlagIfNoLocalChanges() {
 }
 
 function isAdminEditablePublishedLayout(layoutId = state.activeLayoutId) {
-  const layout = state.layouts?.[layoutId];
-  return Boolean(layout?.adminDemo || layout?.adminSharedSourceId);
+  return isPublishedLayoutEditable(state.layouts?.[layoutId]);
 }
 
 function isGuestDemoCopyLayout(layoutId = state.activeLayoutId) {
-  const layout = state.layouts?.[layoutId];
-  return Boolean(layout?.[GUEST_DEMO_COPY_FLAG]);
+  return isGuestDemoCopyLayoutRecord(state.layouts?.[layoutId]);
 }
 
 function hasGuestDemoCopyLayout() {
-  return Object.values(state.layouts || {}).some((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
+  return hasGuestDemoCopyLayoutRecord(state.layouts);
 }
 
 function currentSessionMode() {
@@ -2540,11 +2553,11 @@ function setActiveReadOnlyScope(layoutId) {
 }
 
 function isReadOnlyStateScope() {
-  return [VIEW_SCOPE_DEMO, VIEW_SCOPE_SHARED].includes(modeState.viewScope) && Boolean(modeState.readonlyLayoutId);
+  return isReadOnlyScope(modeState);
 }
 
 function activeReadOnlyLayoutId() {
-  return modeState.readonlyLayoutId || modeState.sharedLayoutId;
+  return activeReadOnlyLayoutIdFromScope(modeState);
 }
 
 function isReadOnlyBikePackingContext(record = null) {
@@ -2567,72 +2580,32 @@ function ensureGuestPublicScope() {
   return setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
 }
 
-function isReadOnlyBikePackingRecord(record) {
-  if (!record || typeof record !== "object") return false;
-  const itemKey = String(record.itemKey || record.item_key || record.key || "").trim();
-  const visibility = String(record.visibility || record.listVisibility || record.list_visibility || "").trim().toLowerCase();
-  const source = String(record.source || record.recordSource || record.record_source || "").trim();
-  return isDemoItemKey(itemKey) ||
-    visibility === "public" ||
-    source === PUBLIC_LEGACY_RECORD_SOURCE;
-}
-
-function isReadOnlyItemKey(itemKey) {
-  return isDemoItemKey(itemKey);
-}
-
-function createReadOnlyBikePackingError() {
-  const error = new Error("Demo/public bike-packing is read-only; create a private copy before saving.");
-  error.code = "bike_packing_read_only";
-  error.readOnlyBikePacking = true;
-  return error;
-}
-
-function isReadOnlyBikePackingError(error) {
-  return Boolean(error?.readOnlyBikePacking || error?.code === "bike_packing_read_only");
-}
-
 function demoLanguageSuffix(language = uiLanguage) {
-  const normalized = normalizeUiLanguage(language);
-  return normalized === DEFAULT_LANGUAGE ? "" : normalized;
+  return demoLanguageSuffixFromScope(language);
 }
 
 function demoItemKeyForLanguage(language = uiLanguage) {
-  const suffix = demoLanguageSuffix(language);
-  return suffix ? `${DEMO_ITEM_KEY}:${suffix}` : DEMO_ITEM_KEY;
+  return demoItemKeyForLanguageFromScope(language);
 }
 
 function demoAdminIdForLanguage(language = uiLanguage) {
-  const suffix = demoLanguageSuffix(language);
-  return suffix || DEMO_ITEM_KEY;
+  return demoAdminIdForLanguageFromScope(language);
 }
 
 function demoPublicListIdForLanguage(language = uiLanguage) {
-  const suffix = demoLanguageSuffix(language);
-  return suffix ? `public-demo-state-${suffix}` : "public-demo-state";
+  return demoPublicListIdForLanguageFromScope(language);
 }
 
 function demoAdminPathForLanguage(suffix = "", language = uiLanguage) {
-  const adminId = demoAdminIdForLanguage(language);
-  if (adminId === DEMO_ITEM_KEY) return `/bike-packing/admin/demo-state${suffix}`;
-  return `/bike-packing/admin/demo-states/${encodeURIComponent(adminId)}${suffix}`;
+  return demoAdminPathForLanguageFromScope(suffix, language);
 }
 
 function demoAdminStatePathForLanguage(language = uiLanguage) {
-  const adminId = demoAdminIdForLanguage(language);
-  if (adminId === DEMO_ITEM_KEY) return "/bike-packing/admin/demo-state";
-  return demoAdminPathForLanguage("/state", language);
-}
-
-function isDemoItemKey(itemKey) {
-  const key = String(itemKey || "").trim();
-  return key === DEMO_ITEM_KEY ||
-    key.startsWith(`${DEMO_ITEM_KEY}:`) ||
-    key.startsWith(`${DEMO_ITEM_KEY}-`);
+  return demoAdminStatePathForLanguageFromScope(language);
 }
 
 function sharedLayoutItemKey(layoutId) {
-  return layoutId === DEMO_SHARED_LAYOUT_ID ? demoItemKeyForLanguage() : `${SHARED_ITEM_KEY_PREFIX}${layoutId}`;
+  return sharedLayoutItemKeyFromScope(layoutId, uiLanguage);
 }
 
 function schedulePublishedLayoutSave(layoutId, delay = 900) {

@@ -9,6 +9,7 @@
 - `src/utils` keeps small pure helpers for time, JSON, HTML escaping, language, weights, and byte formatting.
 - `src/state` has safe state shape, layout arrangement helpers, state diagnostics, repair helpers, and the first normalization helpers.
 - `src/sync` has payload reporting, photo metadata helpers, state serialization helpers, and entity sync payload helpers.
+- `src/public` is starting with scope, read-only, and demo/shared key helpers.
 
 ## Working Rule
 
