@@ -66,6 +66,11 @@ import {
 } from "./src/data/demo-data.js";
 import { guessCategory, guessLocation } from "./src/data/guess.js";
 import {
+  cloneIsolatedPublicEntity,
+  legacySharedRootSnapshot,
+  markLocalPublicCopyOrigin
+} from "./src/public/copy-public-to-private.js";
+import {
   activeReadOnlyLayoutIdFromScope,
   createReadOnlyBikePackingError,
   demoAdminIdForLanguage as demoAdminIdForLanguageFromScope,
@@ -6882,7 +6887,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     itemMap.set(sourceItemId, nextId);
     if (idMap?.items) idMap.items.set(sourceItemId, nextId);
     state.items[nextId] = {
-      ...cloneIsolatedEntity(sourceItem),
+      ...cloneIsolatedPublicEntity(sourceItem),
       id: nextId,
       containerId: nextContainerId,
       ...currentCreateMeta(changedAt)
@@ -6900,7 +6905,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     containerMap.set(sourceContainerId, nextId);
     if (idMap?.containers) idMap.containers.set(sourceContainerId, nextId);
     state.containers[nextId] = {
-      ...cloneIsolatedEntity(sourceContainer),
+      ...cloneIsolatedPublicEntity(sourceContainer),
       id: nextId,
       parentId: nextParentId,
       childIds: [],
@@ -6955,13 +6960,6 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
   return id;
 }
 
-function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId = "") {
-  if (!record || !sourceId) return;
-  record._publicCopySourceKind = kind;
-  record._publicCopySourceId = String(sourceId);
-  record._publicCopySourceLayoutId = sourceLayoutId ? String(sourceLayoutId) : "";
-}
-
 function copyPublishedItemToState(sourceState, itemId, { containerId = "", changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
   const source = sourceState.items?.[itemId];
   if (!source) return "";
@@ -6971,7 +6969,7 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   idMap?.items?.set(itemId, id);
   state.items[id] = {
-    ...cloneIsolatedEntity(source),
+    ...cloneIsolatedPublicEntity(source),
     id,
     containerId,
     ...currentCreateMeta(changedAt)
@@ -6985,23 +6983,6 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     touchContainer(containerId, changedAt);
   }
   return id;
-}
-
-function legacySharedRootSnapshot(root) {
-  const containers = {};
-  const items = {};
-  if (!root?.id) return { rootId: "", containers, items };
-  containers[root.id] = {
-    id: root.id,
-    name: root.name,
-    childIds: [],
-    itemIds: (root.items || []).map((item) => item.id).filter(Boolean),
-    order: (root.items || []).map((item) => ({ type: "item", id: item.id })).filter((entry) => entry.id)
-  };
-  (root.items || []).forEach((item) => {
-    if (item?.id) items[item.id] = item;
-  });
-  return { rootId: root.id, containers, items };
 }
 
 function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
@@ -7053,48 +7034,6 @@ async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourc
   if (duplicate) return true;
   showToast("Копирование пропущено: такая demo/shared копия уже есть в целевой укладке.", "success");
   return false;
-}
-
-function cloneIsolatedEntity(entity) {
-  const cloned = clone(entity || {});
-  delete cloned.scope;
-  delete cloned.source;
-  delete cloned.origin;
-  delete cloned.sourceType;
-  delete cloned.source_type;
-  delete cloned.visibility;
-  delete cloned.sourceId;
-  delete cloned.source_id;
-  delete cloned.sourceScope;
-  delete cloned.source_scope;
-  delete cloned.sourceListId;
-  delete cloned.source_list_id;
-  delete cloned.listId;
-  delete cloned.list_id;
-  delete cloned.sourceItemId;
-  delete cloned.source_item_id;
-  delete cloned.sourceContainerId;
-  delete cloned.source_container_id;
-  delete cloned.sourceLayoutId;
-  delete cloned.source_layout_id;
-  delete cloned.sharedSourceId;
-  delete cloned.sharedSourceItemId;
-  delete cloned.sharedSourceContainerId;
-  delete cloned.sharedSourceLayoutId;
-  delete cloned.publicSourceId;
-  delete cloned.publicSourceItemId;
-  delete cloned.publicSourceContainerId;
-  delete cloned.publicSourceLayoutId;
-  delete cloned.publicCatalogLayoutId;
-  delete cloned.publicCatalogItemId;
-  delete cloned.publicCatalogContainerId;
-  delete cloned.templateId;
-  delete cloned.templateSourceId;
-  delete cloned.adminDemo;
-  delete cloned.isDemo;
-  delete cloned.adminShared;
-  delete cloned.adminSharedSourceId;
-  return cloned;
 }
 
 function demoCopyActionText() {
@@ -9609,7 +9548,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     if (!item) return "";
     const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     state.items[nextId] = {
-      ...cloneIsolatedEntity(item),
+      ...cloneIsolatedPublicEntity(item),
       id: nextId,
       containerId: parentId,
       createdAt: changedAt,
@@ -9624,7 +9563,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     if (!container) return "";
     const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     state.containers[nextId] = {
-      ...cloneIsolatedEntity(container),
+      ...cloneIsolatedPublicEntity(container),
       id: nextId,
       name: isTop ? makeContainerCopyName(container.name) : container.name,
       parentId: parentId || null,
