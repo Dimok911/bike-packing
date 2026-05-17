@@ -205,6 +205,7 @@ import {
   normalizeItemQuantity,
   normalizeItemCategories
 } from "./src/state/normalize.js";
+import { makeCopyName, uniqueName } from "./src/state/names.js";
 import { repairContainerMembershipFromItemLinks } from "./src/state/repair.js";
 import {
   annotatePayloadError,
@@ -266,14 +267,22 @@ import {
   summarizeBackupLayouts
 } from "./src/backup/restore.js";
 import {
+  renderBackupAnalysis as renderBackupAnalysisUi,
+  renderBackupRules,
+  renderBackupSelectionSummary,
+  resetBackupImportUi,
+  selectedBackupLayoutIds as selectedBackupLayoutIdsFromUi
+} from "./src/ui/backup-dialog.js";
+import {
   GUEST_STORAGE_SCOPE,
   scopedLocalStorageKey as scopedStorageKey,
   userStorageScopeKey
 } from "./src/storage/scope.js";
 import { escapeHtml } from "./src/utils/html.js";
-import { clonePlain } from "./src/utils/json.js";
+import { clonePlain, snapshotsEqual } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
 import { safeSetLocalStorage } from "./src/utils/storage.js";
+import { capitalize, formatThingCount } from "./src/utils/text.js";
 import { nowIso, timeValue } from "./src/utils/time.js";
 import {
   formatVolume,
@@ -282,11 +291,17 @@ import {
   parseWeightInput
 } from "./src/utils/weight.js";
 import { createRefs } from "./src/ui/refs.js";
+import { highlightSearchText } from "./src/ui/search-highlight.js";
 import {
   formatItemWeight,
   renderItemQuantityText
 } from "./src/ui/item-format.js";
 import { buildPrintableDocument } from "./src/ui/print.js";
+import {
+  confirmMessageHtml,
+  isDestructiveConfirmAction
+} from "./src/ui/confirm-dialog.js";
+import { normalizeSortMode } from "./src/ui/sort-mode.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
 let uiLanguage = loadUiLanguage();
@@ -2001,10 +2016,6 @@ function rememberCurrentPackingListRecord(record) {
   if (id) saveActivePackingListId(id);
   currentPackingListMeta = normalized;
   return normalized;
-}
-
-function normalizeSortMode(value) {
-  return ["asc", "desc", "none"].includes(value) ? value : "asc";
 }
 
 function captureActiveLayoutArrangement(targetState = state) {
@@ -8816,7 +8827,7 @@ function renderAddToContainerResults() {
         data-add-existing-item="${item.id}"
         ${alreadyHere ? "disabled" : ""}
       >
-        <strong>${highlightText(item.name, query)}</strong>
+        <strong>${highlightSearchText(item.name, query)}</strong>
       </button>
     `;
   }).join("") || `<div class="empty">Ничего не найдено</div>`;
@@ -8863,7 +8874,7 @@ function renderLayoutRootResults() {
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   refs.layoutRootResults.innerHTML = roots.map((container) => `
     <button class="add-item-result" type="button" data-add-layout-root="${container.id}">
-      <strong>${highlightText(container.name, query)}</strong>
+      <strong>${highlightSearchText(container.name, query)}</strong>
       <small>${formatWeight(Number(container.weight || 0))}${container.volume ? ` · ${String(container.volume).replace(".", ",")} л` : ""}</small>
     </button>
   `).join("") || `<div class="empty">Все подходящие сумки и места уже в укладке</div>`;
@@ -9214,15 +9225,6 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   scheduleActivePublishedEditSave();
   if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
   if (renderAfter) render();
-}
-
-function highlightText(value, rawQuery) {
-  const text = String(value || "");
-  const query = String(rawQuery || "").trim();
-  if (!query) return escapeHtml(text);
-  const index = text.toLowerCase().indexOf(query.toLowerCase());
-  if (index < 0) return escapeHtml(text);
-  return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + query.length))}</mark>${escapeHtml(text.slice(index + query.length))}`;
 }
 
 function addExistingItemToContainer(itemId) {
@@ -13400,11 +13402,9 @@ function bindSettingsPointerDrag() {
 }
 
 function askConfirmDialog({ title, text, okText, cancelText = "Отмена", highlightText = "", highlightCount = "", tone = "" }) {
-  const isDestructiveAction = tone === "danger" || /удал|сброс|разобрать|выйти/i.test(okText);
+  const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
   refs.confirmTitle.textContent = title;
-  refs.confirmText.innerHTML = highlightText
-    ? `${escapeHtml(text)}<span class="confirm-highlight confirm-${tone || "safe"}">${highlightCount ? `<strong class="confirm-highlight-count">${escapeHtml(highlightCount)}</strong>` : ""}${escapeHtml(highlightText)}</span>`
-    : escapeHtml(text);
+  refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightCount, tone });
   refs.confirmCancelBtn.textContent = cancelText;
   refs.confirmOkBtn.textContent = okText;
   refs.confirmCancelBtn.classList.remove("danger-action");
@@ -13509,13 +13509,6 @@ function openConfirmDialog({ title, text, okText, highlightText = "", highlightC
     if (!confirmed) return;
     onConfirm();
   });
-}
-
-function formatThingCount(count) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${count} вещи`;
-  return `${count} вещей`;
 }
 
 function renderRootContainersEditor() {
@@ -13854,10 +13847,6 @@ function renameDictionaryEntry(type, oldValue, rawNewValue) {
   editingDictionaryEntry = null;
   saveState();
   render();
-}
-
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
@@ -14254,12 +14243,10 @@ function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
 }
 
 function makeContainerCopyName(name) {
-  const baseName = `${name} копия`;
-  const names = new Set(Object.values(state.containers).filter((container) => !container.parentId).map((container) => container.name));
-  if (!names.has(baseName)) return baseName;
-  let index = 2;
-  while (names.has(`${baseName} ${index}`)) index += 1;
-  return `${baseName} ${index}`;
+  const names = Object.values(state.containers)
+    .filter((container) => !container.parentId)
+    .map((container) => container.name);
+  return makeCopyName(name, names);
 }
 
 function confirmDeleteRootContainer(containerId) {
@@ -14419,12 +14406,7 @@ function removeContainerTree(containerId) {
 }
 
 function makeItemCopyName(name) {
-  const baseName = `${name} копия`;
-  const names = new Set(Object.values(state.items).map((item) => item.name));
-  if (!names.has(baseName)) return baseName;
-  let index = 2;
-  while (names.has(`${baseName} ${index}`)) index += 1;
-  return `${baseName} ${index}`;
+  return makeCopyName(name, Object.values(state.items).map((item) => item.name));
 }
 
 function touchLayoutsReferencingItem(itemId, changedAt = nowIso()) {
@@ -14608,16 +14590,10 @@ function copySharedItemFromReadonlyDialog() {
 }
 
 function uniqueLayoutName(baseName = "Новая укладка", { exceptLayoutId = "" } = {}) {
-  const base = String(baseName || "Новая укладка").trim() || "Новая укладка";
-  const existing = new Set(Object.values(state.layouts || [])
+  const existingNames = Object.values(state.layouts || [])
     .filter((layout) => layout?.id !== exceptLayoutId)
-    .map((layout) => String(layout?.name || "").trim().toLowerCase()));
-  if (!existing.has(base.toLowerCase())) return base;
-  for (let index = 2; index < 1000; index += 1) {
-    const candidate = `${base} ${index}`;
-    if (!existing.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${base} ${Date.now()}`;
+    .map((layout) => layout?.name);
+  return uniqueName(baseName, existingNames, { fallback: "Новая укладка" });
 }
 
 function openLayoutDialog() {
@@ -14979,10 +14955,6 @@ function getRootContainerDialogSnapshot() {
 
 function getDialogCheckedCategories() {
   return [...refs.itemCategoryList.querySelectorAll("input:checked")].map((input) => input.value);
-}
-
-function snapshotsEqual(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function updateItemDialogSaveState() {
@@ -15450,29 +15422,10 @@ function itemTotalWeight(item) {
 function openBackupDialog() {
   backupImportState = null;
   if (refs.backupFileInput) refs.backupFileInput.value = "";
-  renderBackupRulesText();
+  renderBackupRules(refs.backupRules);
   setBackupStatus("");
-  if (refs.backupAnalysis) refs.backupAnalysis.innerHTML = "";
-  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = true;
-  if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = true;
+  resetBackupImportUi(refs);
   openModalDialog(refs.backupDialog);
-}
-
-function renderBackupRulesText() {
-  if (!refs.backupRules) return;
-  refs.backupRules.innerHTML = `
-    <section class="backup-rule-section">
-      <h3>Создать архив</h3>
-      <p>Архив скачивается ZIP-файлом и содержит полное состояние: укладки, вещи, сумки/контейнеры, настройки и фото. У администратора дополнительно попадают demo/shared-укладки.</p>
-      <p>Такой архив можно загрузить в другом аккаунте, чтобы перенести данные. Файл не привязан к email, поэтому храните его как приватный экспорт данных.</p>
-    </section>
-    <section class="backup-rule-section warning">
-      <h3>Загрузить из архива</h3>
-      <p><strong>Полное восстановление:</strong> всё текущее состояние пользователя будет потеряно и заменено данными из архива.</p>
-      <p><strong>Отдельные укладки:</strong> укладки с совпадающим именем заменяются, новые создаются, недостающие вещи/сумки/фото добавляются.</p>
-      <p>После восстановления данные становятся данными аккаунта, в который вы сейчас вошли.</p>
-    </section>
-  `;
 }
 
 function setBackupStatus(message, type = "") {
@@ -15563,9 +15516,7 @@ async function handleBackupFileSelected(event) {
     setBackupStatus(`Архив прочитан: ${Object.keys(backupState.layouts || {}).length} укладок, ${photoFiles.size} фото.`, "success");
   } catch (error) {
     backupImportState = null;
-    if (refs.backupAnalysis) refs.backupAnalysis.innerHTML = "";
-    if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = true;
-    if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = true;
+    resetBackupImportUi(refs);
     setBackupStatus(`Не удалось прочитать архив: ${error.message}`, "error");
   }
 }
@@ -15575,9 +15526,7 @@ function backupLayoutRows() {
 }
 
 function selectedBackupLayoutIds() {
-  return new Set([...refs.backupAnalysis.querySelectorAll("[data-backup-layout-id]:checked")]
-    .map((input) => input.dataset.backupLayoutId)
-    .filter(Boolean));
+  return selectedBackupLayoutIdsFromUi(refs.backupAnalysis);
 }
 
 function summarizeSelectedBackupLayouts(layoutIds = new Set()) {
@@ -15597,28 +15546,11 @@ function renderBackupAnalysis() {
   if (!backupImportState || !refs.backupAnalysis) return;
   const rows = backupLayoutRows();
   backupImportState.selectedLayoutIds = new Set(rows.map((row) => row.layout.id));
-  refs.backupAnalysis.innerHTML = `
-    <div class="backup-summary">
-      В архиве: ${Object.keys(backupImportState.state.layouts || {}).length} укладок, ${Object.keys(backupImportState.state.items || {}).length} вещей, ${Object.keys(backupImportState.state.containers || {}).length} сумок/мест, ${backupImportState.photoFiles.size} фото.
-    </div>
-    <div class="backup-layout-list">
-      ${rows.map(({ layout, mode }) => `
-        <label class="backup-layout-row ${mode}">
-          <input type="checkbox" data-backup-layout-id="${escapeHtml(layout.id)}" checked />
-          <span>
-            <strong>${escapeHtml(layout.name || "Укладка без названия")}</strong>
-            <small>${mode === "replace"
-              ? "У пользователя уже есть укладка с таким же именем: она будет заменена."
-              : "Такой укладки нет: она будет создана."}</small>
-          </span>
-          <span class="backup-badge ${mode}">${mode === "replace" ? "замена" : "создание"}</span>
-        </label>
-      `).join("")}
-    </div>
-    <div id="backupSelectionSummary" class="backup-summary"></div>
-  `;
-  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = rows.length === 0;
-  if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = false;
+  renderBackupAnalysisUi(refs, {
+    backupState: backupImportState.state,
+    rows,
+    photoCount: backupImportState.photoFiles.size
+  });
   updateBackupSelectionSummary();
 }
 
@@ -15631,14 +15563,10 @@ function updateBackupSelectionSummary() {
   if (!backupImportState) return;
   backupImportState.selectedLayoutIds = selectedBackupLayoutIds();
   const summary = summarizeSelectedBackupLayouts(backupImportState.selectedLayoutIds);
-  const target = document.querySelector("#backupSelectionSummary");
-  if (target) {
-    target.innerHTML = `
-      Выбрано: ${backupImportState.selectedLayoutIds.size}. Будет заменено укладок: ${summary.replace}; создано укладок: ${summary.create}.<br />
-      Новые вещи: ${summary.newItems.length}; новые сумки/места: ${summary.newContainers.length}; фото из архива к проверке/загрузке: ${summary.photos.length}.
-    `;
-  }
-  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.disabled = backupImportState.selectedLayoutIds.size === 0;
+  renderBackupSelectionSummary(refs, {
+    selectedCount: backupImportState.selectedLayoutIds.size,
+    summary
+  });
 }
 
 async function resolveExistingBackupPhotos(photoFiles) {
@@ -15850,24 +15778,5 @@ function resetData() {
 }
 
 function highlight(value) {
-  const text = String(value);
-  const query = refs.searchInput.value.trim();
-  if (!query) return escapeHtml(text);
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  let index = 0;
-  let html = "";
-
-  while (index < text.length) {
-    const found = lowerText.indexOf(lowerQuery, index);
-    if (found === -1) {
-      html += escapeHtml(text.slice(index));
-      break;
-    }
-    html += escapeHtml(text.slice(index, found));
-    html += `<mark>${escapeHtml(text.slice(found, found + query.length))}</mark>`;
-    index = found + query.length;
-  }
-
-  return html;
+  return highlightSearchText(value, refs.searchInput.value);
 }
