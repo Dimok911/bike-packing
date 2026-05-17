@@ -1,0 +1,15 @@
+{
+  "name": "bike-packing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build && node scripts/build-dist-assets.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "node --check app.js && node --check sw.js && node --check src/state/layout-ops.js && node --check src/state/layout-selectors.js && node --check src/state/metrics.js && node --check src/state/record-derived.js && node --check src/ui/item-format.js && node --check src/ui/print.js"
+  },
+  "devDependencies": {
+    "vite": "^8.0.13"
+  }
+}

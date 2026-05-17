@@ -1,16 +1,22 @@
 # App JS Module Split
 
-`app.js` is being split gradually into plain ES modules. The goal is to make data bugs easier to isolate without changing the app stack or adding a build step.
+`app.js` is being split gradually into plain ES modules. The goal is to make data bugs easier to isolate while keeping runtime code simple.
+
+The deploy path now uses Vite/Rollup:
+
+- `npm install` once to install the local build tooling.
+- `npm run build` writes the deployable site to `dist/`.
+- Upload the contents of `dist/` to hosting. The generated `sw.js` precaches the hashed Vite assets from that build.
 
 ## Current Direction
 
 - `src/config` keeps app constants and storage/API keys.
 - `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
 - `src/utils` keeps small helpers for time, JSON, HTML escaping, language, storage, weights, and byte formatting.
-- `src/state` has safe state shape, layout arrangement/normalization helpers, item photo metadata, state diagnostics, repair/cleanup helpers, and field normalization.
+- `src/state` has safe state shape, layout arrangement/normalization/operation/selector helpers, item/container metrics, record-derived helpers, item photo metadata, state diagnostics, repair/cleanup helpers, and field normalization.
 - `src/sync` has the API client helpers, history helpers, payload reporting, photo cache/prep helpers, state serialization helpers, and entity sync payload helpers.
 - `src/public` has scope/read-only helpers, shared layout helpers, public artifact checks, and the first public-to-private copy helpers.
-- `src/ui` is starting with DOM refs.
+- `src/ui` has DOM refs and standalone UI render/export helpers such as item formatting and printable HTML generation.
 
 ## Working Rule
 

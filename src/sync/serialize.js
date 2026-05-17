@@ -3,6 +3,7 @@ import {
   normalizePhotoUrlFields
 } from "../state/item-photos.js";
 import {
+  normalizeRemotePhotoUrl,
   syncSafePhotoUrl
 } from "./photos.js";
 
@@ -22,7 +23,6 @@ export function cloneStateForSyncPayload(sourceState, {
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
     stripAppliedArrangementFieldsForSync(cloned);
-    stripLocalPublicCopyOriginsForSync(cloned);
   }
   return cloned;
 }
@@ -58,8 +58,8 @@ export function compactPhotoForSync(photo) {
   normalizePhotoUrlFields(photo);
   const id = String(photo.id || photo.photoId || "").trim();
   if (!id) return null;
-  const url = syncSafePhotoUrl(photo.url);
-  const thumbUrl = syncSafePhotoUrl(photo.thumbUrl);
+  const url = normalizeRemotePhotoUrl(photo.url);
+  const thumbUrl = normalizeRemotePhotoUrl(photo.thumbUrl);
   const compact = {
     id,
     status: normalizePhotoStatus(photo.status),
@@ -77,7 +77,6 @@ export function compactPhotoForSync(photo) {
 export function compactRecordForEntitySync(record) {
   if (!record || typeof record !== "object") return null;
   const compact = JSON.parse(JSON.stringify(record));
-  stripLocalPublicCopyOrigin(compact);
   if (Array.isArray(compact.photos)) compact.photos = compact.photos.map(compactPhotoForSync).filter(Boolean);
   compact.id = String(compact.id || "").trim();
   return compact.id ? compact : null;

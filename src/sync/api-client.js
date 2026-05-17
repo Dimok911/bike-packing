@@ -41,7 +41,7 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
   if ("onLine" in navigator && !navigator.onLine) {
     throw createNetworkError("нет соединения с сервером");
   }
-  const { timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
+  const { timeoutMs = API_TIMEOUT_MS, silentErrors = false, ...fetchOptions } = options;
   const isFormDataBody = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -71,7 +71,7 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
     apiError.data = data;
     apiError.path = path;
     apiError.method = fetchOptions.method || "GET";
-    if (typeof console !== "undefined" && console.warn) {
+    if (!silentErrors && typeof console !== "undefined" && console.warn) {
       console.warn("[bike-packing] API error", {
         method: apiError.method,
         path,

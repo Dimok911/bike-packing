@@ -62,10 +62,13 @@ export function buildChangedEntitySyncEntries(type, baseState, localState, {
     if (!localPayload && !basePayload) return;
     if (!forceOverwrite && localPayload && basePayload && sameJson(localPayload, basePayload)) return;
     const payload = localPayload || basePayload || { id: recordId };
+    const clientUpdatedAt = forceOverwrite
+      ? changedAt
+      : newestIsoTimestamp(changedAt, payload.updatedAt, payload.clientUpdatedAt) || changedAt;
     entries.push({
       id: recordId,
       deleted: !localPayload,
-      clientUpdatedAt: forceOverwrite ? changedAt : (payload.updatedAt || payload.clientUpdatedAt || changedAt),
+      clientUpdatedAt,
       payload
     });
   });
@@ -157,4 +160,23 @@ export function splitItemSyncEntries(entries, options = {}) {
 
 function sameJson(a, b) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function newestIsoTimestamp(...values) {
+  let best = "";
+  let bestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text) continue;
+    const time = Date.parse(text);
+    if (!Number.isFinite(time)) {
+      if (!best) best = text;
+      continue;
+    }
+    if (time > bestTime) {
+      best = text;
+      bestTime = time;
+    }
+  }
+  return best;
 }

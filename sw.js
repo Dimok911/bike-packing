@@ -1,9 +1,9 @@
-const CACHE_NAME = "bike-packing-prototype-v515";
+const CACHE_NAME = "bike-packing-prototype-v543";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=514",
-  "./app.js?v=515",
+  "./styles.css?v=543",
+  "./app.js?v=543",
   "./manifest.webmanifest"
 ];
 
@@ -46,24 +46,17 @@ self.addEventListener("fetch", (event) => {
 
 async function serveAppShell(request) {
   const cached = await caches.match(request) || await caches.match("./index.html") || await caches.match("./");
-  const network = fetch(request).then(async (response) => {
+  try {
+    const response = await fetch(request);
     if (response && response.ok) {
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response.clone());
       await cache.put("./index.html", response.clone());
     }
     return response;
-  });
-
-  if (cached) {
-    network.catch(() => null);
-    return cached;
-  }
-
-  try {
-    return await network;
   } catch {
-    return new Response("Приложение пока не сохранено для офлайн-доступа.", {
+    if (cached) return cached;
+    return new Response("The app is not cached for offline use yet.", {
       status: 503,
       headers: { "Content-Type": "text/plain; charset=utf-8" }
     });

@@ -1,5 +1,7 @@
 # build output
 /API
+dist/
+node_modules/
 
 # standalone backend repo
 bikepacking-api/

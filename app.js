@@ -129,6 +129,39 @@ import {
   snapshotContainerTreeFromLayoutArrangement
 } from "./src/state/layout-normalize.js";
 import {
+  containerWeight as containerWeightForState,
+  itemQuantity as itemQuantityForState,
+  itemTotalWeight as itemTotalWeightForState,
+  rootContainerOwnWeight as rootContainerOwnWeightForState
+} from "./src/state/metrics.js";
+import {
+  containerCreatedTime as containerCreatedTimeForState,
+  containerPath as containerPathForState,
+  itemCreatedTime as itemCreatedTimeForState
+} from "./src/state/record-derived.js";
+import {
+  addItemToLayoutArrangement as addItemToLayoutArrangementForState,
+  cleanupEmptyContainersInLayoutArrangement,
+  ensureLayoutContainerPlacement as ensureLayoutContainerPlacementForState,
+  getItemContainerIdInLayout as getItemContainerIdInLayoutForState,
+  getLayoutDescendantContainerIds as getLayoutDescendantContainerIdsForState,
+  getLayoutContainerIdSet as getLayoutContainerIdSetForState,
+  getLayoutItemIdSet as getLayoutItemIdSetForState,
+  moveContainerInLayoutArrangement as moveContainerInLayoutArrangementForState,
+  moveItemInLayoutArrangement as moveItemInLayoutArrangementForState,
+  removeItemFromLayoutArrangement
+} from "./src/state/layout-ops.js";
+import {
+  getDescendantContainerIds as getDescendantContainerIdsForState,
+  getVisibleLayoutRootIds as getVisibleLayoutRootIdsForState,
+  isItemInCatalog as isItemInCatalogForState,
+  isItemInLayout as isItemInLayoutForState,
+  isNestedContainerInAnyLayoutArrangement as isNestedContainerInAnyLayoutArrangementForState,
+  isRootContainerForEditor as isRootContainerForEditorForState,
+  isRootContainerInCatalog as isRootContainerInCatalogForState,
+  isRootContainerInLayout as isRootContainerInLayoutForState
+} from "./src/state/layout-selectors.js";
+import {
   applyDefaultCollapsedContainers,
   defaultRootContainerLocation,
   itemCategories,
@@ -197,6 +230,11 @@ import {
   parseWeightInput
 } from "./src/utils/weight.js";
 import { createRefs } from "./src/ui/refs.js";
+import {
+  formatItemWeight,
+  renderItemQuantityText
+} from "./src/ui/item-format.js";
+import { buildPrintableDocument } from "./src/ui/print.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
 let uiLanguage = loadUiLanguage();
@@ -228,7 +266,10 @@ let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
 let selectedCategoryFilters = [];
 let addToContainerTargetId = null;
+let addToContainerTargetLayoutId = "";
 let recentlyAddedItemId = null;
+let recentlyAddedContainerId = "";
+let recentlyAddedLayoutId = "";
 let pendingPackingScroll = null;
 let lastPackingScrollSnapshot = null;
 let lastItemTitleTap = { id: "", time: 0 };
@@ -237,6 +278,9 @@ let syncMeta = loadSyncMeta();
 let syncDevice = loadSyncDevice();
 let currentUser = null;
 let syncTimer = null;
+let syncInFlight = false;
+let syncQueued = false;
+let syncQueuedForce = false;
 let publishedLayoutSaveTimer = null;
 let applyingRemoteState = false;
 let appUnlocked = true;
@@ -414,7 +458,7 @@ function applyStaticTranslations() {
   const authGateTitle = document.querySelector(".auth-gate h2");
   const authGateText = document.querySelector(".auth-gate p");
   const languageLabel = document.querySelector("#languageSelectLabel");
-  const layoutLabel = document.querySelector(".controls label");
+  const layoutLabel = document.querySelector(".layout-select-control");
   const searchLabel = document.querySelector("#searchFilterLabel");
   const locationLabel = document.querySelector("#locationFilterLabel");
   const categoryLabel = document.querySelector("#categoryFilterLabel");
@@ -434,6 +478,7 @@ function applyStaticTranslations() {
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
+  if (refs.deleteLayoutBtn) refs.deleteLayoutBtn.textContent = t("buttons.deleteLayout");
   if (searchLabel?.firstChild) searchLabel.firstChild.textContent = `${t("labels.search")}\n            `;
   refs.searchInput.placeholder = t("placeholders.search");
   if (locationLabel?.firstChild) locationLabel.firstChild.textContent = `${t("labels.storage")}\n          `;
@@ -519,6 +564,7 @@ function init() {
   refs.createSubcontainerBtn.addEventListener("click", createSubcontainerFromAddDialog);
   refs.addToContainerDialog.addEventListener("close", () => {
     addToContainerTargetId = null;
+    addToContainerTargetLayoutId = "";
     refs.addToContainerSearch.value = "";
     refs.newSubcontainerName.value = "";
   });
@@ -530,6 +576,7 @@ function init() {
   });
   refs.rootContainerPlacementBtn.addEventListener("click", openRootContainerPlacementAction);
   refs.rootContainerCopyToContainerBtn?.addEventListener("click", openRootContainerCopyPickerDialog);
+  refs.rootContainerRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingContainerFromActiveLayout);
   refs.itemContainerPickerBtn.addEventListener("click", openItemContainerPickerDialog);
   refs.itemCopyToContainerBtn?.addEventListener("click", openItemCopyContainerPickerDialog);
   refs.containerPickerLayoutSelect?.addEventListener("change", () => {
@@ -603,6 +650,7 @@ function init() {
     }
     openLayoutDialog();
   });
+  refs.deleteLayoutBtn?.addEventListener("click", confirmDeleteActiveLayout);
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
   refs.authBtn.addEventListener("click", handleAuthButton);
@@ -660,10 +708,10 @@ function init() {
     currentUser = null;
     appUnlocked = true;
     if (isExplicitlySignedOut() || !hadUser) {
-      enterSignedOutPublicMode("Офлайн · личные списки скрыты, открыт demo/public режим").catch(() => {
+      enterSignedOutPublicMode("Офлайн · личные списки скрыты, открыта локальная копия демо").catch(() => {
         setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
         render();
-        updateSyncUi("Офлайн · личные списки скрыты, открыт demo/public режим");
+        updateSyncUi("Офлайн · личные списки скрыты, открыт demo/public шаблон");
       });
       return;
     }
@@ -704,10 +752,10 @@ function init() {
   if (sharedListId) {
     openSharedListFromLink(sharedListId);
   } else if (isForcedOffline()) {
-    if (signedOut) enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыт demo/public режим");
+    if (signedOut) enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
     else unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
   } else if (offlineNow) {
-    enterSignedOutPublicMode("Офлайн · вход не подтверждён, открыт demo/public режим");
+    enterSignedOutPublicMode("Офлайн · вход не подтверждён, открыта локальная копия демо");
   } else {
     checkAuthAndLoad();
   }
@@ -2044,6 +2092,7 @@ function stateStatsForDestructiveComparison(targetState) {
 
 function saveState({ sync = true } = {}) {
   captureActiveLayoutArrangement();
+  sanitizePrivateCopiedPublicOrigins(state);
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     persistStateSnapshot(state);
@@ -3719,7 +3768,14 @@ function isEntityInPhotoUploadScope(entity, entityType, scope) {
   return scope.itemIds.has(entity.id);
 }
 
-function getUploadablePhotoEntries({ layoutId = null, listId = "" } = {}) {
+function keepRemoteOnlyPhotoReference(photo) {
+  if (!hasRemotePhotoUrl(photo) || photo.localId) return false;
+  photo.status = "synced";
+  photo.error = "";
+  return true;
+}
+
+function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOnlyReferences = true } = {}) {
   const scope = getPhotoUploadScope(layoutId);
   const entries = [];
   Object.values(state.items || {}).forEach((item) => {
@@ -3727,6 +3783,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "" } = {}) {
     normalizeItemPhotos(item).forEach((photo) => {
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
+      if (needsListReupload && allowRemoteOnlyReferences && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
@@ -3738,6 +3795,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "" } = {}) {
     normalizeItemPhotos(container).forEach((photo) => {
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
+      if (needsListReupload && allowRemoteOnlyReferences && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
@@ -3753,14 +3811,26 @@ function getUnsyncedPhotoEntries({ layoutId = null, listId = "" } = {}) {
   Object.values(state.items || {}).forEach((item) => {
     if (!isEntityInPhotoUploadScope(item, "item", scope)) return;
     normalizeItemPhotos(item).forEach((photo) => {
-      if (hasRemotePhotoUrl(photo)) return;
+      if (hasRemotePhotoUrl(photo)) {
+        if (listId && !isPhotoStoredForList(photo, listId)) {
+          photo.error = photo.error || "Фото не загружено в public-укладку.";
+          entries.push({ entity: item, entityType: "item", photo });
+        }
+        return;
+      }
       if (photo.localId || photo.status !== "synced") entries.push({ entity: item, entityType: "item", photo });
     });
   });
   Object.values(state.containers || {}).forEach((container) => {
     if (!isEntityInPhotoUploadScope(container, "container", scope)) return;
     normalizeItemPhotos(container).forEach((photo) => {
-      if (hasRemotePhotoUrl(photo)) return;
+      if (hasRemotePhotoUrl(photo)) {
+        if (listId && !isPhotoStoredForList(photo, listId)) {
+          photo.error = photo.error || "Фото не загружено в public-укладку.";
+          entries.push({ entity: container, entityType: "container", photo });
+        }
+        return;
+      }
       if (photo.localId || photo.status !== "synced") entries.push({ entity: container, entityType: "container", photo });
     });
   });
@@ -3824,7 +3894,11 @@ async function uploadEntityPhoto(listId, entity, photo, entityType = "item") {
 
 async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
   if (photoUploadInFlight || !currentUser || isForcedOffline()) return false;
-  const uploadEntries = entries || getUploadablePhotoEntries({ layoutId, listId: publicListIdForPublishedTarget(target) });
+  const uploadEntries = entries || getUploadablePhotoEntries({
+    layoutId,
+    listId: publicListIdForPublishedTarget(target),
+    allowRemoteOnlyReferences: false
+  });
   if (!uploadEntries.length) return false;
   const path = target.type === "demo"
     ? demoAdminPathForLanguage("/photos", target.language || uiLanguage)
@@ -3902,10 +3976,12 @@ async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item")
   if (isReadOnlyBikePackingContext()) return;
   try {
     const listId = await ensureCurrentPackingListId();
+    if (hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId)) return;
     if (!currentPackingListMeta && listId) await fetchRemoteListDetailRecord(listId).catch(() => null);
     if (isReadOnlyBikePackingContext()) return;
     await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photo.id)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      silentErrors: true
     });
   } catch {
     // Deletion of orphaned remote files is best-effort; state sync is the source of truth for the item.
@@ -3956,7 +4032,7 @@ async function refreshCurrentPackingListId() {
 async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice = true, preferredLayout = null } = {}) {
   if (isForcedOffline()) {
     if (isExplicitlySignedOut()) {
-      await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыт demo/public режим");
+      await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
       return;
     }
     unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
@@ -3969,11 +4045,11 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   } catch (error) {
     currentUser = null;
     if (isNetworkError(error)) {
-      await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыт demo/public режим");
+      await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыта локальная копия демо");
       return;
     }
     appUnlocked = true;
-    await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+    await loadGuestPublishedDemoOnStartup({ preferLocalCopy: true, remember: true });
     updateSyncUi();
     return;
   }
@@ -3982,7 +4058,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
   if (!currentUser) {
     appUnlocked = true;
-    await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+    await loadGuestPublishedDemoOnStartup({ preferLocalCopy: true, remember: true });
     updateSyncUi();
     return;
   }
@@ -4044,7 +4120,7 @@ async function handleAuthButton() {
     currentUser = null;
     appUnlocked = true;
     setExplicitlySignedOut(true);
-    await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта demo/public укладка");
+    await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
     showToast("Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их.", "success");
     return;
   }
@@ -4173,13 +4249,34 @@ async function submitAuthDialog(event) {
   }
 }
 
-function scheduleRemoteSave(delay = 900) {
+function scheduleRemoteSave(delay = 0) {
   if (isForcedOffline() || !currentUser || applyingRemoteState) return;
   if (syncTimer) window.clearTimeout(syncTimer);
   syncTimer = window.setTimeout(() => syncNow(), delay);
 }
 
-async function syncNow({ force = false } = {}) {
+async function syncNow(options = {}) {
+  const force = Boolean(options.force);
+  if (syncInFlight) {
+    syncQueued = true;
+    syncQueuedForce = syncQueuedForce || force;
+    return;
+  }
+  syncInFlight = true;
+  try {
+    await runSyncNow({ force });
+  } finally {
+    syncInFlight = false;
+    if (syncQueued) {
+      const nextForce = syncQueuedForce;
+      syncQueued = false;
+      syncQueuedForce = false;
+      await syncNow({ force: nextForce });
+    }
+  }
+}
+
+async function runSyncNow({ force = false } = {}) {
   if (syncTimer) {
     window.clearTimeout(syncTimer);
     syncTimer = null;
@@ -4786,9 +4883,15 @@ async function defaultDemoState(language = uiLanguage) {
   return fallback;
 }
 
-async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, remember = false } = {}) {
+async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, preferLocalCopy = false, remember = false } = {}) {
   const demoState = await defaultDemoState();
   setDemoStatePayloadForLanguage(uiLanguage, demoState);
+  if (preferLocalCopy && !canUsePrivateState()) {
+    await createLocalDemoCopy({ forceNew: false, remember });
+    initialRemoteLoadPending = false;
+    renderPreservingPackingScroll();
+    return true;
+  }
   if (forcePublicScope) {
     setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
     initialRemoteLoadPending = false;
@@ -4808,7 +4911,7 @@ async function enterSignedOutPublicMode(message = "") {
   appUnlocked = true;
   saveActivePackingListId("");
   currentPackingListMeta = null;
-  await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+  await loadGuestPublishedDemoOnStartup({ preferLocalCopy: true, remember: true });
   switchView("packing");
   render();
   updateSyncUi(message || currentPublicTemplateStatusMessage());
@@ -5009,6 +5112,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     const hasFreshLocalDirtyState = syncMeta.dirty && hasLocalSavedState() && Boolean(localTime) && (!serverTime || localTime > serverTime);
     const shouldPreferLocalDirtyState = syncMeta.dirty && hasLocalSavedState() && (
       hasFreshLocalDirtyState ||
+      isInitialRemotePull ||
       (!isInitialRemotePull && !syncMeta.serverUpdatedAt)
     );
     if (!remoteState) {
@@ -5050,10 +5154,6 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         return;
       }
       if (!syncMeta.dirty) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
-        return;
-      }
-      if (isInitialRemotePull && !hasFreshLocalDirtyState) {
         applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
@@ -5516,7 +5616,11 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю shared-укладку...");
   const publicListId = publicListIdForPublishedTarget(target);
   const publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
-    const uploadablePhotos = getUploadablePhotoEntries({ layoutId, listId: publicListId });
+    const uploadablePhotos = getUploadablePhotoEntries({
+      layoutId,
+      listId: publicListId,
+      allowRemoteOnlyReferences: false
+    });
     if (uploadablePhotos.length) {
       updateSyncUi(target.type === "demo" ? "Загружаю фото демо-укладки..." : "Загружаю фото shared-укладки...");
       await uploadPublishedLayoutPhotos(layoutId, target, uploadablePhotos);
@@ -5899,21 +6003,87 @@ function bindSharedLayoutEvents(root = document) {
     button.addEventListener("click", () => copySharedLayout(button.dataset.copySharedLayout));
   });
   root.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
-    button.addEventListener("click", () => copySharedRoot(button.dataset.copySharedRoot));
+    button.addEventListener("click", (event) => {
+      if (isReadonlyTemplateView()) {
+        handleReadonlyTemplateAction(event);
+        return;
+      }
+      copySharedRoot(button.dataset.copySharedRoot);
+    });
   });
   root.querySelectorAll("[data-copy-shared-item]").forEach((button) => {
-    button.addEventListener("click", () => copySharedItem(button.dataset.copySharedItem));
+    button.addEventListener("click", (event) => {
+      if (isReadonlyTemplateView()) {
+        handleReadonlyTemplateAction(event);
+        return;
+      }
+      copySharedItem(button.dataset.copySharedItem);
+    });
+  });
+}
+
+function isReadonlyTemplateView() {
+  return Boolean(isSharedLayoutView() && !canOpenAdminPublishedEdit());
+}
+
+function readonlyTemplateMessage() {
+  return activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID
+    ? "Это демо-шаблон. Чтобы добавлять, редактировать и удалять, создайте свою укладку на основе шаблона."
+    : "Это shared-шаблон. Чтобы добавлять, редактировать и удалять, создайте свою укладку на основе шаблона.";
+}
+
+function confirmCreateLayoutFromReadonlyTemplate() {
+  const layout = currentSharedLayout();
+  openConfirmDialog({
+    title: "Это шаблон",
+    text: readonlyTemplateMessage(),
+    highlightText: layout?.name ? `Будет создана отдельная укладка «${layout.name}». Исходный шаблон не изменится.` : "",
+    okText: "Создать укладку",
+    onConfirm: () => copySharedLayout(activeReadOnlyLayoutId())
+  });
+}
+
+function handleReadonlyTemplateAction(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  confirmCreateLayoutFromReadonlyTemplate();
+}
+
+function markReadonlyTemplateActionButtons(root = document) {
+  const selector = [
+    "[data-copy-layout-item]",
+    "[data-copy-item]",
+    "[data-edit-item]",
+    "[data-copy-root]",
+    "[data-edit-root]",
+    "[data-delete-root]",
+    "[data-add-to-container]",
+    "[data-edit-container]",
+    "[data-remove-from-layout]",
+    "[data-delete-item]",
+    "[data-copy-shared-root]",
+    "[data-copy-shared-item]"
+  ].join(",");
+  root.querySelectorAll(selector).forEach((button) => {
+    button.classList.add("template-action-disabled");
+    button.setAttribute("aria-disabled", "true");
+    button.title = "Это шаблон. Создайте свою укладку на основе шаблона.";
   });
 }
 
 function bindSharedVirtualEvents(root = document) {
   const demoSource = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
-  if (!demoSource) addSharedReadOnlyCopyButtons(root);
+  const readonlyTemplate = isReadonlyTemplateView();
+  if (!readonlyTemplate) addSharedReadOnlyCopyButtons(root);
   bindSharedLayoutEvents(root);
   root.querySelectorAll("[data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (readonlyTemplate) {
+        confirmCreateLayoutFromReadonlyTemplate();
+        return;
+      }
       const virtualId = button.dataset.copyLayoutItem || button.dataset.copyItem || button.dataset.editItem;
       const sourceId = originalSharedId(virtualId, "shared-virtual-item-");
       if (!sourceId) return;
@@ -5926,6 +6096,10 @@ function bindSharedVirtualEvents(root = document) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (readonlyTemplate) {
+        confirmCreateLayoutFromReadonlyTemplate();
+        return;
+      }
       const virtualId = button.dataset.copyRoot || button.dataset.editRoot || button.dataset.deleteRoot ||
         button.dataset.addToContainer || button.dataset.editContainer;
       const sourceId = originalSharedId(virtualId, "shared-virtual-container-");
@@ -5942,6 +6116,10 @@ function bindSharedVirtualEvents(root = document) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (readonlyTemplate) {
+        confirmCreateLayoutFromReadonlyTemplate();
+        return;
+      }
       if (canOpenAdminPublishedEdit() && button.dataset.deleteItem) {
         const sourceId = originalSharedId(button.dataset.deleteItem, "shared-virtual-item-");
         if (sourceId) editSharedSourceAsAdmin("item", sourceId, "delete");
@@ -5975,24 +6153,21 @@ function bindSharedVirtualEvents(root = document) {
     button.addEventListener("click", () => copySharedLayout(activeReadOnlyLayoutId()));
   });
   if (!canOpenAdminPublishedEdit()) {
-    if (demoSource) {
-      root.querySelectorAll("[data-copy-layout-item], [data-copy-item], [data-copy-root]").forEach((button) => {
+    if (readonlyTemplate) markReadonlyTemplateActionButtons(root);
+    root.querySelectorAll("[data-edit-item]").forEach((button) => {
+      if (readonlyTemplate) {
+        button.setAttribute("aria-label", "Создать укладку на основе шаблона");
+      } else {
+        button.title = "Открыть и скопировать";
+        button.setAttribute("aria-label", "Открыть и скопировать");
+      }
+    });
+    if (!readonlyTemplate) {
+      root.querySelectorAll("[data-edit-root], [data-edit-container], [data-add-to-container], [data-remove-from-layout], [data-delete-item], [data-delete-root]").forEach((button) => {
         button.hidden = true;
         button.setAttribute("aria-hidden", "true");
       });
     }
-    root.querySelectorAll("[data-edit-item]").forEach((button) => {
-      button.title = "Открыть и скопировать";
-      button.setAttribute("aria-label", "Открыть и скопировать");
-      if (demoSource) {
-        button.hidden = true;
-        button.setAttribute("aria-hidden", "true");
-      }
-    });
-    root.querySelectorAll("[data-edit-root], [data-edit-container], [data-add-to-container], [data-remove-from-layout], [data-delete-item], [data-delete-root]").forEach((button) => {
-      button.hidden = true;
-      button.setAttribute("aria-hidden", "true");
-    });
   }
   root.querySelectorAll("input, textarea, select").forEach((element) => {
     if (element.closest(".controls")) return;
@@ -6366,9 +6541,219 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
   return id;
 }
 
+const PRIVATE_COPY_PUBLIC_ORIGIN_FIELDS = [
+  "scope",
+  "entityScope",
+  "sourceScope",
+  "source",
+  "origin",
+  "sourceType",
+  "source_type",
+  "originType",
+  "visibility",
+  "sourceId",
+  "source_id",
+  "sourceEntityId",
+  "sourceListId",
+  "source_list_id",
+  "originListId",
+  "origin_list_id",
+  "publicListId",
+  "listId",
+  "list_id",
+  "sourceItemId",
+  "source_item_id",
+  "sourceContainerId",
+  "source_container_id",
+  "sourceLayoutId",
+  "source_layout_id",
+  "sharedSourceId",
+  "sharedSourceItemId",
+  "sharedSourceContainerId",
+  "sharedSourceLayoutId",
+  "publicSourceId",
+  "publicSourceItemId",
+  "publicSourceContainerId",
+  "publicSourceLayoutId",
+  "publicCatalogLayoutId",
+  "publicCatalogItemId",
+  "publicCatalogContainerId",
+  "templateId",
+  "templateSourceId",
+  "adminDemo",
+  "isAdminDemo",
+  "demo",
+  "isDemo",
+  "adminShared",
+  "isAdminShared",
+  "adminSharedSourceId",
+  "isPublicCatalog",
+  "publicCatalog"
+];
+
+function isExternalBikePackingSourceId(value) {
+  const id = String(value || "").trim().toLowerCase();
+  return Boolean(id && (
+    id.startsWith("public-demo-state") ||
+    id.startsWith("public-shared-layout-") ||
+    id.startsWith("admin-demo-") ||
+    id.startsWith("demo-") ||
+    id.startsWith("admin-shared-") ||
+    id.startsWith("shared-") ||
+    id.startsWith("shared-virtual-") ||
+    id.includes("public-demo") ||
+    id.includes("public-shared") ||
+    id.includes("item-shared-item-shared") ||
+    id.includes("container-shared-container-shared") ||
+    id.includes("shared-item-shared") ||
+    id.includes("shared-container-shared")
+  ));
+}
+
+function hasPrivateSyncBlockedPublicOrigin(record, fallbackId = "") {
+  if (!record || typeof record !== "object") return false;
+  if (isExternalBikePackingSourceId(record.id || fallbackId)) return true;
+  const scope = String(record.scope || record.entityScope || record.sourceScope || "").trim().toLowerCase();
+  if (scope && scope !== "private" && scope !== "user" && scope !== "personal") return true;
+  const sourceType = String(record.sourceType || record.source_type || record.originType || "").trim().toLowerCase();
+  if (["demo", "shared", "public", "public-template", "curated-bikepacker"].includes(sourceType)) return true;
+  const visibility = String(record.visibility || "").trim().toLowerCase();
+  if (visibility === "public" || visibility === "shared") return true;
+  if ([
+    record.adminDemo,
+    record.isAdminDemo,
+    record.demo,
+    record.isDemo,
+    record.adminShared,
+    record.isAdminShared,
+    record.isPublicCatalog,
+    record.publicCatalog
+  ].some((value) => value === true)) return true;
+  const markerKeys = [
+    "adminDemoId",
+    "adminDemoItemId",
+    "adminDemoContainerId",
+    "adminDemoLayoutId",
+    "adminSharedSourceId",
+    "publicCatalogLayoutId",
+    "sharedSourceId",
+    "sharedSourceItemId",
+    "sharedSourceContainerId",
+    "sharedSourceLayoutId"
+  ];
+  if (markerKeys.some((key) => String(record[key] || "").trim())) return true;
+  return ["listId", "list_id", "sourceListId", "source_list_id", "originListId", "origin_list_id", "publicListId", "sourceId", "source_id", "sourceEntityId"]
+    .some((key) => isExternalBikePackingSourceId(record[key]));
+}
+
+function stripPublicOriginForPrivateCopy(record) {
+  if (!record || typeof record !== "object") return false;
+  let changed = false;
+  PRIVATE_COPY_PUBLIC_ORIGIN_FIELDS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      delete record[key];
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function publicCopySourceIdFromRecord(record, kind, fallbackId = "") {
+  if (!record || typeof record !== "object") return "";
+  if (record._publicCopySourceKind === kind && record._publicCopySourceId) {
+    return String(record._publicCopySourceId);
+  }
+  const virtualPrefix = kind === "container" ? "shared-virtual-container-" : "shared-virtual-item-";
+  const sourceId = String(
+    record.sharedSourceId ||
+    originalSharedId(record.id || fallbackId, virtualPrefix) ||
+    fallbackId ||
+    ""
+  ).trim();
+  if (!sourceId) return "";
+  return hasPrivateSyncBlockedPublicOrigin(record, record.id || fallbackId) || isExternalBikePackingSourceId(sourceId)
+    ? sourceId
+    : "";
+}
+
+function markPrivateCopyOriginFromSource(target, source, kind, fallbackId = "") {
+  const sourceId = publicCopySourceIdFromRecord(source, kind, fallbackId);
+  if (!sourceId) return false;
+  markLocalPublicCopyOrigin(target, kind, sourceId, source?._publicCopySourceLayoutId || source?.publicCatalogLayoutId || "");
+  return true;
+}
+
+function publicCopySnapshotFromSourceSnapshot(sourceSnapshot) {
+  const containers = {};
+  const items = {};
+  Object.entries(sourceSnapshot?.containers || {}).forEach(([id, container]) => {
+    const sourceId = publicCopySourceIdFromRecord(container, "container", id) || id;
+    containers[sourceId] = container;
+  });
+  Object.entries(sourceSnapshot?.items || {}).forEach(([id, item]) => {
+    const sourceId = publicCopySourceIdFromRecord(item, "item", id) || id;
+    items[sourceId] = item;
+  });
+  const rootId = publicCopySourceIdFromRecord(sourceSnapshot?.containers?.[sourceSnapshot?.rootId], "container", sourceSnapshot?.rootId) ||
+    sourceSnapshot?.rootId ||
+    "";
+  return { rootId, containers, items };
+}
+
+function publicCopyComparableText(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function publicCopyPhotoKey(record) {
+  const photo = Array.isArray(record?.photos) ? record.photos.find((entry) => entry?.id || entry?.url || entry?.thumbUrl) : null;
+  if (!photo) return "";
+  return publicCopyComparableText(photo.id || photo.photoId || photo.url || photo.thumbUrl).replace(/[?#].*$/, "");
+}
+
+function publicCopyItemFingerprint(item) {
+  if (!item) return "";
+  const categories = itemCategories(item).map(publicCopyComparableText).sort().join("|");
+  return [
+    publicCopyComparableText(item.name),
+    Number(item.weight || 0),
+    itemQuantity(item),
+    publicCopyComparableText(item.location),
+    categories,
+    publicCopyPhotoKey(item)
+  ].join("\u001f");
+}
+
+function sanitizePrivateCopiedPublicOrigins(targetState = state) {
+  const layouts = Object.values(targetState.layouts || {}).filter((layout) =>
+    layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG]
+  );
+  if (!layouts.length) return 0;
+  const containerIds = new Set();
+  const itemIds = new Set();
+  layouts.forEach((layout) => {
+    const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : null;
+    [...(layout.rootContainerIds || []), ...(arrangement?.rootContainerIds || [])].forEach((id) => containerIds.add(id));
+    Object.keys(arrangement?.containers || {}).forEach((id) => containerIds.add(id));
+    Object.keys(arrangement?.items || {}).forEach((id) => itemIds.add(id));
+  });
+  let changed = 0;
+  containerIds.forEach((id) => {
+    const container = targetState.containers?.[id];
+    if (!container || isExternalBikePackingSourceId(id) || !hasPrivateSyncBlockedPublicOrigin(container, id)) return;
+    if (stripPublicOriginForPrivateCopy(container)) changed += 1;
+  });
+  itemIds.forEach((id) => {
+    const item = targetState.items?.[id];
+    if (!item || isExternalBikePackingSourceId(id) || !hasPrivateSyncBlockedPublicOrigin(item, id)) return;
+    if (stripPublicOriginForPrivateCopy(item)) changed += 1;
+  });
+  return changed;
+}
+
 function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
   const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}).map(String));
   const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}).map(String));
+  const sourceItemFingerprints = new Set(Object.values(sourceSnapshot?.items || {}).map(publicCopyItemFingerprint).filter(Boolean));
   const result = { containerIds: [], itemIds: [] };
   if (!sourceContainerIds.size && !sourceItemIds.size) return result;
   withLayoutArrangementApplied(targetLayoutId, () => {
@@ -6388,7 +6773,14 @@ function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
   });
   if (sourceItemIds.size) {
     Object.entries(state.items || {}).forEach(([itemId, item]) => {
-      if (item?._publicCopySourceKind === "item" && sourceItemIds.has(String(item._publicCopySourceId || ""))) {
+      if (sourceItemIds.has(String(itemId)) || hasPrivateSyncBlockedPublicOrigin(item, itemId)) return;
+      const copiedFromSameSource =
+        item?._publicCopySourceKind === "item" &&
+        sourceItemIds.has(String(item._publicCopySourceId || ""));
+      const looksLikeSamePublicItem =
+        sourceItemFingerprints.size &&
+        sourceItemFingerprints.has(publicCopyItemFingerprint(item));
+      if (copiedFromSameSource || looksLikeSamePublicItem) {
         result.itemIds.push(itemId);
       }
     });
@@ -6424,7 +6816,7 @@ function demoCopyActionText() {
 function demoCopyLayoutName(sourceName = "") {
   const fallback = uiLanguage === "en" ? "Demo copy" : "\u041c\u043e\u044f \u0434\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
   const baseName = String(sourceName || fallback).trim();
-  return baseName || fallback;
+  return uniqueLayoutName(baseName || fallback);
 }
 
 function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remember = true } = {}) {
@@ -6494,9 +6886,10 @@ function copySharedLayout(layoutId) {
   const nextLayoutId = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   state.layouts[nextLayoutId] = {
     id: nextLayoutId,
-    name: sourceLayout?.name || layout.name,
+    name: uniqueLayoutName(sourceLayout?.name || layout.name),
     rootContainerIds: rootIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
+    ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentCreateMeta(changedAt)
   };
   state.activeLayoutId = nextLayoutId;
@@ -7528,10 +7921,10 @@ function renderFilters() {
         ? `shared:${activeLayout.adminSharedSourceId}`
     : state.activeLayoutId;
   const layoutOptions = [
-    [DEMO_LAYOUT_SELECT_VALUE, t("demo.layoutName"), "demo"],
+    [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo"],
     ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"]),
-    ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
-    ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("shared.prefix")}: ${layout.name}`, "shared"])
+    ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
+    ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared"])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
   refs.layoutSelect.classList.toggle("layout-select-demo", selectedLayoutValue === DEMO_LAYOUT_SELECT_VALUE);
@@ -7539,6 +7932,13 @@ function renderFilters() {
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
+  if (refs.deleteLayoutBtn) {
+    const canDeleteLayout = canDeleteActiveLayout();
+    const hideDeleteLayout = isReadOnlyStateScope() || isSharedLayoutView();
+    refs.deleteLayoutBtn.hidden = hideDeleteLayout;
+    refs.deleteLayoutBtn.disabled = !canDeleteLayout;
+    refs.deleteLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideDeleteLayout);
+  }
   fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), state.activeLayoutId);
   selectedCategoryFilters = selectedCategoryFilters.filter((category) => state.categories.includes(category));
   const locationOptions = getAvailableLocationFilterOptions();
@@ -7766,6 +8166,7 @@ function applyCategoryFilterDialog(event) {
 function openAddToContainerDialog(containerId) {
   if (!state.containers[containerId]) return;
   addToContainerTargetId = containerId;
+  addToContainerTargetLayoutId = resolveEditableLayoutIdForContainer(containerId);
   refs.addToContainerTitle.textContent = "Добавить";
   refs.addToContainerPath.textContent = containerPath(containerId);
   refs.addToContainerSearch.value = "";
@@ -7776,21 +8177,33 @@ function openAddToContainerDialog(containerId) {
   requestAnimationFrame(() => refs.addToContainerSearch.focus({ preventScroll: true }));
 }
 
+function resolveEditableLayoutIdForContainer(containerId) {
+  const candidateIds = uniqueLayoutIds([
+    getPublishedEditLayoutId(),
+    state.activeLayoutId
+  ]);
+  return candidateIds.find((layoutId) => {
+    const layout = state.layouts?.[layoutId];
+    return layout && getLayoutContainerIdSet(layout).has(containerId);
+  }) || getPublishedEditLayoutId() || state.activeLayoutId;
+}
+
 function renderAddToContainerResults() {
   const containerId = addToContainerTargetId;
-  if (!containerId || !state.containers[containerId]) {
+  const layout = state.layouts?.[addToContainerTargetLayoutId || state.activeLayoutId];
+  if (!containerId || !layout || !state.containers[containerId]) {
     refs.addToContainerResults.innerHTML = "";
     return;
   }
   const query = refs.addToContainerSearch.value.trim().toLowerCase();
   refs.clearAddToContainerSearchBtn.hidden = !query;
   const items = getItemsForActiveCatalog()
-    .filter((item) => !isItemInActiveLayout(item))
+    .filter((item) => !getItemContainerIdInLayout(layout, item.id))
     .filter((item) => matchesAddToContainerSearch(item, query))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"))
     .slice(0, 60);
   refs.addToContainerResults.innerHTML = items.map((item) => {
-    const alreadyHere = item.containerId === containerId;
+    const alreadyHere = getItemContainerIdInLayout(layout, item.id) === containerId;
     return `
       <button
         class="add-item-result ${alreadyHere ? "already-here" : ""}"
@@ -7890,12 +8303,88 @@ function updateRootContainerPlacementButton() {
     refs.rootContainerPlacementCurrent.textContent = currentText || "Вне укладки";
     refs.rootContainerPlacementCurrent.classList.toggle("active", active);
   }
-  refs.rootContainerPlacementBtn.textContent = isPackage ? "Переложить" : "Переставить";
+  refs.rootContainerPlacementBtn.textContent = isPackage ? "Перелож." : "Перестав.";
   refs.rootContainerPlacementBtn.classList.remove("active");
   refs.rootContainerPlacementBtn.classList.add("repack-button");
   refs.rootContainerPlacementBtn.setAttribute("aria-label", isPackage
     ? `Переложить из ${currentText || "текущего места"}`
     : `Переставить: ${currentText}`);
+}
+
+function updateRootContainerRemoveFromLayoutButton() {
+  if (!refs.rootContainerRemoveFromLayoutBtn) return;
+  const canRemove = canRemoveContainerFromActiveLayout(editingRootContainerId);
+  refs.rootContainerRemoveFromLayoutBtn.hidden = !canRemove;
+  refs.rootContainerRemoveFromLayoutBtn.disabled = !canRemove;
+}
+
+function canRemoveContainerFromActiveLayout(containerId) {
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  return Boolean(
+    containerId &&
+    layout &&
+    !isReadOnlyStateScope() &&
+    !isSharedLayoutView() &&
+    getLayoutContainerIdSet(layout).has(containerId)
+  );
+}
+
+function confirmRemoveEditingContainerFromActiveLayout(event) {
+  event?.preventDefault();
+  const containerId = editingRootContainerId;
+  const container = state.containers?.[containerId];
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  if (!container || !layout || !canRemoveContainerFromActiveLayout(containerId)) return;
+  const itemCount = getLayoutSubtreeItemCount(layout, containerId);
+  const isRoot = getLayoutContainerRootStatus(layout, containerId);
+  openConfirmDialog({
+    title: "Удалить из укладки?",
+    text: `«${container.name}» будет убран из текущей укладки.`,
+    highlightText: itemCount
+      ? `${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут вынуты из укладки и станут вне укладки. Вложенные пакеты внутри будут удалены.`
+      : isRoot
+        ? "Эта сумка/место уже пустая, поэтому из текущей укладки уйдёт только пустая заготовка."
+        : "Этот пакет уже пустой, поэтому из текущей укладки уйдёт только пустой пакет.",
+    tone: itemCount ? "danger" : "safe",
+    okText: "Удалить",
+    onConfirm: () => removeContainerFromLayoutWithAnimation(containerId)
+  });
+}
+
+function removeContainerFromLayoutWithAnimation(containerId) {
+  const element = findContainerElementInPacking(containerId);
+  refs.rootContainerDialog?.close("cancel");
+  if (!element) {
+    removeRootContainerFromActiveLayout(containerId);
+    return;
+  }
+  element.classList.add("removing-from-layout");
+  window.setTimeout(() => removeRootContainerFromActiveLayout(containerId), 260);
+}
+
+function findContainerElementInPacking(containerId) {
+  const escapedId = cssEscape(containerId);
+  return refs.packingView?.querySelector(`[data-subcontainer-id="${escapedId}"]`) ||
+    refs.packingView?.querySelector(`[data-root-container-id="${escapedId}"]`);
+}
+
+function getLayoutContainerRootStatus(layout, containerId) {
+  const arrangement = normalizeLayoutArrangement(layout, state);
+  return (arrangement.rootContainerIds || []).includes(containerId);
+}
+
+function getLayoutSubtreeItemCount(layout, containerId) {
+  const arrangement = normalizeLayoutArrangement(layout, state);
+  const visited = new Set();
+  const count = (id) => {
+    if (!id || visited.has(id)) return 0;
+    visited.add(id);
+    const placement = arrangement.containers?.[id];
+    if (!placement) return 0;
+    const own = (placement.itemIds || []).filter((itemId) => state.items?.[itemId]).length;
+    return own + (placement.childIds || []).reduce((sum, childId) => sum + count(childId), 0);
+  };
+  return count(containerId);
 }
 
 function getRootContainerDialogParentId() {
@@ -8075,6 +8564,7 @@ function placeRootContainerInActiveLayout(containerId, slotIndex) {
   rootContainerDialogPendingRootIds = rootIds;
   refs.rootPlacementDialog.close();
   updateRootContainerPlacementButton();
+  updateRootContainerRemoveFromLayoutButton();
   updateRootContainerDialogSaveState();
   showToast("Место выбрано. Нажмите «Сохранить».", "success");
 }
@@ -8132,27 +8622,49 @@ function highlightText(value, rawQuery) {
 
 function addExistingItemToContainer(itemId) {
   const containerId = addToContainerTargetId;
-  if (!state.items[itemId] || !state.containers[containerId]) return;
-  refs.addToContainerDialog.close();
+  const layoutId = addToContainerTargetLayoutId || state.activeLayoutId;
+  const changedAt = nowIso();
+  if (!placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
+    showToast("Не удалось добавить вещь в эту укладку.", "error");
+    return;
+  }
   state.collapsedContainers[containerId] = false;
   saveLocalUiState();
-  recentlyAddedItemId = itemId;
-  moveItem(itemId, containerId, null, { captureScroll: false });
+  markRecentlyAddedItem(itemId, layoutId);
+  saveState();
+  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+  refs.addToContainerDialog.close();
+  render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
+}
+
+function markRecentlyAddedItem(itemId, layoutId = state.activeLayoutId) {
+  recentlyAddedItemId = itemId || null;
+  recentlyAddedContainerId = "";
+  recentlyAddedLayoutId = layoutId || "";
+}
+
+function markRecentlyAddedContainer(containerId, layoutId = state.activeLayoutId) {
+  recentlyAddedContainerId = containerId || "";
+  recentlyAddedItemId = null;
+  recentlyAddedLayoutId = layoutId || "";
 }
 
 function createSubcontainerFromAddDialog(event) {
   event.preventDefault();
   const parentId = addToContainerTargetId;
+  const layoutId = addToContainerTargetLayoutId || state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
   const parent = state.containers[parentId];
+  const parentPlacement = ensureLayoutContainerPlacement(layout, parentId);
   const name = refs.newSubcontainerName.value.trim();
-  if (!parent || !name) return;
+  if (!parent || !layout || !parentPlacement || !name) return;
   const changedAt = nowIso();
   const id = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   state.containers[id] = {
     id,
     name,
-    parentId,
+    parentId: null,
     childIds: [],
     itemIds: [],
     order: [],
@@ -8160,16 +8672,24 @@ function createSubcontainerFromAddDialog(event) {
     ...currentCreateMeta(changedAt)
   };
   markRecordActivePublicCatalog(state.containers[id]);
-  parent.childIds = parent.childIds || [];
-  parent.childIds.push(id);
-  parent.order = parent.order || [];
-  parent.order.push({ type: "container", id });
+  layout.arrangement.containers[id] = {
+    parentId,
+    itemIds: [],
+    childIds: [],
+    order: []
+  };
+  parentPlacement.childIds = parentPlacement.childIds || [];
+  if (!parentPlacement.childIds.includes(id)) parentPlacement.childIds.push(id);
+  parentPlacement.order = parentPlacement.order || [];
+  parentPlacement.order.push({ type: "container", id });
+  normalizeLayoutArrangement(layout, state);
   state.collapsedContainers[parentId] = false;
   state.collapsedContainers[id] = false;
-  touchContainer(parentId, changedAt);
+  touchLayout(layoutId, changedAt);
   saveLocalUiState();
+  if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
   saveState();
-  scheduleActivePublishedEditSave();
+  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => {
@@ -8179,12 +8699,28 @@ function createSubcontainerFromAddDialog(event) {
 }
 
 function focusRecentlyAddedItem(itemId) {
+  if (recentlyAddedLayoutId && recentlyAddedLayoutId !== state.activeLayoutId) return;
   const card = refs.packingView.querySelector(`[data-item-id="${cssEscape(itemId)}"]`);
   if (!card) return;
   card.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
   window.setTimeout(() => {
     if (recentlyAddedItemId === itemId) {
       recentlyAddedItemId = null;
+      recentlyAddedLayoutId = "";
+      card.classList.remove("just-added");
+    }
+  }, 1700);
+}
+
+function focusRecentlyAddedContainer(containerId) {
+  if (recentlyAddedLayoutId && recentlyAddedLayoutId !== state.activeLayoutId) return;
+  const card = refs.packingView.querySelector(`[data-root-container-id="${cssEscape(containerId)}"], [data-subcontainer-id="${cssEscape(containerId)}"]`);
+  if (!card) return;
+  card.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  window.setTimeout(() => {
+    if (recentlyAddedContainerId === containerId) {
+      recentlyAddedContainerId = "";
+      recentlyAddedLayoutId = "";
       card.classList.remove("just-added");
     }
   }, 1700);
@@ -8512,11 +9048,25 @@ function selectItemContainer(containerId) {
   refs.containerPickerDialog.close();
 }
 
+function closeSourceEditorAfterCopy(kind, sourceId) {
+  if (kind === "item" && editingItemId === sourceId && refs.dialog?.open) {
+    refs.dialog.close("copy");
+  }
+  if (kind === "container" && editingRootContainerId === sourceId && refs.rootContainerDialog?.open) {
+    refs.rootContainerDialog.close("copy");
+  }
+}
+
 async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
+  const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
+  if (!targetIsPublic && sourceIsPublicCopy) {
+    if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, source.name))) return;
+  }
   if (!targetIsPublic && layoutContainsItem(targetLayoutId, itemId)) {
     const duplicate = await askConfirmDialog({
       title: "Вещь уже есть в этой укладке",
@@ -8533,19 +9083,37 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
     duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
     return;
   }
-  if (!targetIsPublic && linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
+  if (
+    !targetIsPublic &&
+    !hasPrivateSyncBlockedPublicOrigin(source, itemId) &&
+    linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)
+  ) return;
   duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
 }
 
 function layoutContainsItem(layoutId, itemId) {
-  let contains = false;
-  withLayoutArrangementApplied(layoutId, () => {
-    contains = currentAppliedLayoutItemIds(state.layouts[layoutId]).has(itemId);
-  });
-  return contains;
+  return getLayoutItemIdSet(state.layouts?.[layoutId]).has(itemId);
+}
+
+function ensureWritableTargetLayoutContext(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout || isAdminEditablePublishedLayout(layoutId)) return false;
+  if (state.activeLayoutId !== layoutId || isPublicLayoutContext()) {
+    switchActiveLayout(layoutId);
+    return true;
+  }
+  if (canUsePrivateState()) setActivePrivateScope();
+  else setActiveLocalEditableScope(layoutId);
+  return true;
 }
 
 function currentAppliedLayoutItemIds(layout = state.layouts[state.activeLayoutId]) {
+  const arrangement = layout?.arrangement;
+  if (arrangement && typeof arrangement === "object") {
+    return new Set(Object.keys(arrangement.items || {}).filter((itemId) =>
+      state.items?.[itemId] && state.containers?.[arrangement.items[itemId]]
+    ));
+  }
   const ids = new Set();
   getVisibleLayoutRootIds(layout).forEach((containerId) => {
     getContainerItemIdsDeep(containerId).forEach((itemId) => ids.add(itemId));
@@ -8556,25 +9124,16 @@ function currentAppliedLayoutItemIds(layout = state.layouts[state.activeLayoutId
 function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!state.items[itemId] || !targetLayout) return false;
+  ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
-  let linked = false;
-  withLayoutArrangementApplied(targetLayoutId, () => {
-    const targetContainer = state.containers[targetContainerId];
-    if (!targetContainer || !getActiveLayoutContainerIdSet(targetLayout).has(targetContainerId)) return;
-    if (currentAppliedLayoutItemIds(targetLayout).has(itemId)) return;
-    targetContainer.itemIds = targetContainer.itemIds || [];
-    if (!targetContainer.itemIds.includes(itemId)) targetContainer.itemIds.push(itemId);
-    targetContainer.order = targetContainer.order || [];
-    if (!targetContainer.order.some((entry) => entry?.type === "item" && entry.id === itemId)) {
-      targetContainer.order.push({ type: "item", id: itemId });
-    }
-    state.items[itemId].containerId = targetContainerId;
-    touchLayout(targetLayoutId, changedAt);
-    linked = true;
-  });
-  if (!linked) return false;
+  if (getLayoutItemIdSet(targetLayout).has(itemId)) return false;
+  if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
+  markRecentlyAddedItem(itemId, targetLayoutId);
   saveState();
   refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("item", itemId);
+  render();
+  requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
   showToast("Вещь добавлена в выбранную укладку без создания дубля.", "success");
   return true;
 }
@@ -8586,39 +9145,36 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
   const sourceSnapshot = clone(source);
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  let copied = false;
-  withLayoutArrangementApplied(targetLayoutId, () => {
-    const targetContainer = state.containers[targetContainerId];
-    if (!targetContainer || !getActiveLayoutContainerIdSet(targetLayout).has(targetContainerId)) return;
-    const copyId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    state.items[copyId] = {
-      ...clone(sourceSnapshot),
-      id: copyId,
-      name: makeItemCopyName(sourceSnapshot.name),
-      containerId: targetContainerId,
-      photos: [],
-      createdAt: changedAt,
-      ...currentEditMeta(changedAt)
-    };
-    if (targetIsPublic) {
-      state.items[copyId].publicCatalogLayoutId = targetLayoutId;
-    } else {
-      delete state.items[copyId].publicCatalogLayoutId;
-      delete state.items[copyId].adminDemo;
-      delete state.items[copyId].adminSharedSourceId;
-    }
-    targetContainer.itemIds = targetContainer.itemIds || [];
-    if (!targetContainer.itemIds.includes(copyId)) targetContainer.itemIds.push(copyId);
-    targetContainer.order = targetContainer.order || [];
-    targetContainer.order.push({ type: "item", id: copyId });
-    touchItem(copyId, changedAt);
-    touchContainer(targetContainerId, changedAt);
-    copied = true;
-  });
-  if (!copied) return;
+  if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
+  const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
+    Boolean(publicCopySourceIdFromRecord(sourceSnapshot, "item", itemId));
+  const copyId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  state.items[copyId] = {
+    ...cloneIsolatedPublicEntity(sourceSnapshot),
+    id: copyId,
+    name: sourceIsPublicCopy ? sourceSnapshot.name : makeItemCopyName(sourceSnapshot.name),
+    containerId: "",
+    photos: Array.isArray(sourceSnapshot.photos) ? clone(sourceSnapshot.photos) : [],
+    createdAt: changedAt,
+    ...currentEditMeta(changedAt)
+  };
+  markPrivateCopyOriginFromSource(state.items[copyId], sourceSnapshot, "item", itemId);
+  if (targetIsPublic) {
+    state.items[copyId].publicCatalogLayoutId = targetLayoutId;
+  } else {
+    stripPublicOriginForPrivateCopy(state.items[copyId]);
+  }
+  if (!placeExistingItemInLayout(copyId, targetContainerId, targetLayoutId, { changedAt })) {
+    delete state.items[copyId];
+    return;
+  }
+  markRecentlyAddedItem(copyId, targetLayoutId);
   saveState();
   if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
   refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("item", itemId);
+  render();
+  requestAnimationFrame(() => focusRecentlyAddedItem(copyId));
   showToast("Вещь скопирована в выбранную укладку.", "success");
 }
 
@@ -8657,7 +9213,11 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: targetLayoutId });
   if (!sourceSnapshot || !targetLayout) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
+  const sourceIsPublicCopy = snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
+    snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
   if (!targetIsPublic) {
+    if (sourceIsPublicCopy && !(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, state.containers?.[containerId]?.name))) return;
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (duplicates.containerIds.length || duplicates.itemIds.length) {
       const duplicate = await askConfirmDialog({
@@ -8676,9 +9236,25 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
       duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
       return;
     }
-    if (linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
+    if (!snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) && linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
   }
   duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
+}
+
+function snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) {
+  return Object.entries(sourceSnapshot?.containers || {}).some(([id, container]) =>
+    hasPrivateSyncBlockedPublicOrigin(container, id)
+  ) || Object.entries(sourceSnapshot?.items || {}).some(([id, item]) =>
+    hasPrivateSyncBlockedPublicOrigin(item, id)
+  );
+}
+
+function snapshotHasLocalPublicCopyOrigin(sourceSnapshot) {
+  return Object.entries(sourceSnapshot?.containers || {}).some(([id, container]) =>
+    Boolean(publicCopySourceIdFromRecord(container, "container", id))
+  ) || Object.entries(sourceSnapshot?.items || {}).some(([id, item]) =>
+    Boolean(publicCopySourceIdFromRecord(item, "item", id))
+  );
 }
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
@@ -8697,6 +9273,7 @@ function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
 function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "") {
   const targetLayout = state.layouts[targetLayoutId];
   if (!sourceSnapshot || !targetLayout) return false;
+  ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
   let linked = false;
   withLayoutArrangementApplied(targetLayoutId, () => {
@@ -8744,9 +9321,12 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
     linked = true;
   });
   if (!linked) return false;
+  markRecentlyAddedContainer(sourceSnapshot.rootId, targetLayoutId);
   saveState();
   if (refs.containerPickerDialog.open) refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
+  requestAnimationFrame(() => focusRecentlyAddedContainer(sourceSnapshot.rootId));
   showToast("Сумка или пакет добавлены в выбранную укладку без создания дублей.", "success");
   return true;
 }
@@ -8757,14 +9337,15 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
   if (!sourceSnapshot || !targetLayout) return;
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
+  const sourceIsPublicCopy = snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
+    snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
   const mapRecordToTarget = (record) => {
     if (!record) return;
     if (targetIsPublic) {
       record.publicCatalogLayoutId = targetLayoutId;
     } else {
-      delete record.publicCatalogLayoutId;
-      delete record.adminDemo;
-      delete record.adminSharedSourceId;
+      stripPublicOriginForPrivateCopy(record);
     }
   };
   let copied = false;
@@ -8782,6 +9363,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
       createdAt: changedAt,
       ...currentEditMeta(changedAt)
     };
+    markPrivateCopyOriginFromSource(state.items[nextId], item, "item", itemId);
     mapRecordToTarget(state.items[nextId]);
     delete state.packedItems?.[nextId];
     return nextId;
@@ -8793,7 +9375,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     state.containers[nextId] = {
       ...cloneIsolatedPublicEntity(container),
       id: nextId,
-      name: isTop ? makeContainerCopyName(container.name) : container.name,
+      name: isTop && !sourceIsPublicCopy ? makeContainerCopyName(container.name) : container.name,
       parentId: parentId || null,
       childIds: [],
       itemIds: [],
@@ -8802,6 +9384,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
       createdAt: changedAt,
       ...currentEditMeta(changedAt)
     };
+    markPrivateCopyOriginFromSource(state.containers[nextId], container, "container", sourceContainerId);
     mapRecordToTarget(state.containers[nextId]);
     state.collapsedContainers[nextId] = false;
     const copiedItems = new Map();
@@ -8851,10 +9434,13 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     copied = true;
   });
   if (!copied) return;
+  markRecentlyAddedContainer(nextRootId, targetLayoutId);
   saveState();
   if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
   refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("container", containerId);
   render();
+  requestAnimationFrame(() => focusRecentlyAddedContainer(nextRootId));
   showToast("Сумка или пакет скопированы в выбранную укладку.", "success");
 }
 
@@ -8865,6 +9451,7 @@ function selectRootContainerParent(parentId, targetIndex = null) {
   rootContainerDialogPendingParentId = parentId;
   rootContainerDialogPendingParentIndex = Number.isFinite(targetIndex) ? targetIndex : null;
   updateRootContainerPlacementButton();
+  updateRootContainerRemoveFromLayoutButton();
   updateRootContainerDialogSaveState();
   refs.containerPickerDialog.close();
   showToast("Место выбрано. Нажмите «Сохранить».", "success");
@@ -9397,8 +9984,8 @@ function renderSharedModeBanner(layout = currentSharedLayout(), { compact = fals
   const buttonText = demoSource ? demoCopyActionText() : t("buttons.copyAll");
   const viewerText = demoSource
     ? (uiLanguage === "en"
-      ? "Original demo source is read-only."
-      : "\u0418\u0441\u0445\u043e\u0434\u043d\u0430\u044f \u0434\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430 \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.")
+      ? "Original demo template is read-only."
+      : "\u0418\u0441\u0445\u043e\u0434\u043d\u044b\u0439 \u0434\u0435\u043c\u043e-\u0448\u0430\u0431\u043b\u043e\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.")
     : t("shared.viewerText");
   return `
     <div class="shared-mode-banner ${compact ? "shared-mode-banner-compact" : ""}">
@@ -9632,8 +10219,9 @@ function renderContainer(containerId) {
   const hasNestedContainers = descendantIds.length > 0;
   const allNestedCollapsed = hasNestedContainers && descendantIds.every((id) => state.collapsedContainers[id]);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   return `
-    <article class="container-card ${packed ? "packed-container" : ""}" data-root-container-id="${container.id}">
+    <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
           <h2>${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}</h2>
@@ -9679,8 +10267,9 @@ function renderFilteredContainer(containerId) {
   const container = state.containers[containerId];
   const total = containerWeight(containerId);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   return `
-    <article class="container-card ${packed ? "packed-container" : ""}" data-root-container-id="${container.id}">
+    <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
           <h2>${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${highlight(container.name)}</h2>
@@ -9718,12 +10307,13 @@ function renderSubcontainer(containerId) {
       )
     : Boolean(state.collapsedContainers[containerId]);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   const iconClass = collapsed ? "chevron-down" : "chevron-up";
   const title = editingContainerId === container.id
     ? `<input class="container-title-input" data-container-title-input="${container.id}" value="${escapeHtml(container.name)}" />`
     : `<strong data-container-title-text="${container.id}">${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}</strong>`;
   return `
-    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""}" data-subcontainer-id="${container.id}">
+    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}">
       <div class="subcontainer-title">
         <div class="subcontainer-title-main">
           <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${collapsed ? "Развернуть" : "Свернуть"}">
@@ -9749,6 +10339,7 @@ function renderFilteredSubcontainer(containerId) {
   const container = state.containers[containerId];
   const result = getContainerFilterResult(containerId);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   const defaultCollapsed = !(result.hasMatchingItems || result.hasVisibleChildContainers);
   const collapsed = getFilterViewCollapsed(containerId, defaultCollapsed);
   const iconClass = collapsed ? "chevron-down" : "chevron-up";
@@ -9756,7 +10347,7 @@ function renderFilteredSubcontainer(containerId) {
     ? `<input class="container-title-input" data-container-title-input="${container.id}" value="${escapeHtml(container.name)}" />`
     : `<strong data-container-title-text="${container.id}">${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${highlight(container.name)}</strong>`;
   return `
-    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""}" data-subcontainer-id="${container.id}">
+    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}">
       <div class="subcontainer-title">
         <div class="subcontainer-title-main">
           <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${collapsed ? "Развернуть" : "Свернуть"}">
@@ -9898,7 +10489,7 @@ function getContainerFilterResult(containerId) {
 }
 
 function isItemRemovedFromActiveLayout(item) {
-  return !item?.containerId;
+  return !item?.id || !getItemContainerIdInLayout(getPublishedWorkLayout(), item.id);
 }
 
 function isItemPacked(itemId) {
@@ -9960,11 +10551,12 @@ function renderItemCard(item) {
   const packed = isItemPacked(item.id);
   const collection = Boolean(state.collectionMode);
   const filterMatch = isFilterContextActive() && matchesFilters(item);
+  const justAdded = recentlyAddedItemId === item.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   const title = editingItemTitleId === item.id
     ? `<input class="item-title-input" data-item-title-input="${item.id}" value="${escapeHtml(item.name)}" />`
     : `<strong class="item-title" data-item-drag="${item.id}">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
   return `
-    <article class="item-card ${packed ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${recentlyAddedItemId === item.id ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
+    <article class="item-card ${packed ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top ${collection ? "with-pack-toggle" : ""}">
         ${collection ? `
           <button
@@ -11255,9 +11847,10 @@ function moveContainerIntoContainerTop(containerId, targetContainerId) {
 
 function isOriginalItemPosition(zone, placeholder) {
   if (!draggingItemId) return false;
-  const item = state.items[draggingItemId];
-  if (!item || item.containerId !== zone.dataset.containerId) return false;
-  const order = state.containers[item.containerId].order || [];
+  const layout = state.layouts?.[state.activeLayoutId];
+  const containerId = getItemContainerIdInLayout(layout, draggingItemId);
+  if (!state.items[draggingItemId] || containerId !== zone.dataset.containerId) return false;
+  const order = layout?.arrangement?.containers?.[containerId]?.order || [];
   const originalIndex = order.findIndex((entry) => entry.type === "item" && entry.id === draggingItemId);
   const targetIndex = getPlaceholderItemIndex(zone, placeholder);
   return targetIndex === originalIndex;
@@ -11265,9 +11858,10 @@ function isOriginalItemPosition(zone, placeholder) {
 
 function isOriginalContainerPosition(zone, placeholder) {
   if (!draggingContainerId) return false;
-  const container = state.containers[draggingContainerId];
-  if (!container || container.parentId !== zone.dataset.containerId) return false;
-  const order = state.containers[container.parentId].order || [];
+  const layout = state.layouts?.[state.activeLayoutId];
+  const placement = layout?.arrangement?.containers?.[draggingContainerId];
+  if (!state.containers[draggingContainerId] || placement?.parentId !== zone.dataset.containerId) return false;
+  const order = layout?.arrangement?.containers?.[placement.parentId]?.order || [];
   const originalIndex = order.findIndex((entry) => entry.type === "container" && entry.id === draggingContainerId);
   const targetIndex = getPlaceholderContainerIndex(zone, placeholder);
   return targetIndex === originalIndex;
@@ -11820,8 +12414,9 @@ function bindLayoutEditor() {
   layoutPlaceholder.className = "drop-placeholder";
 
   document.querySelector("#renameLayoutBtn").addEventListener("click", () => {
-    const name = nameInput.value.trim();
-    if (!name) return;
+    const requestedName = nameInput.value.trim();
+    if (!requestedName) return;
+    const name = uniqueLayoutName(requestedName, { exceptLayoutId: state.activeLayoutId });
     state.layouts[state.activeLayoutId].name = name;
     touchActiveLayout();
     saveState();
@@ -12583,62 +13178,28 @@ function capitalize(value) {
 }
 
 function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
-  const item = state.items[itemId];
-  if (!item || !state.containers[targetContainerId]) return;
+  const layoutId = state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
+  if (!state.items[itemId] || !layout || !state.containers[targetContainerId]) return;
   if (options.captureScroll !== false) capturePackingScroll();
   const changedAt = nowIso();
-  const oldContainerId = item.containerId;
-  const oldContainer = oldContainerId ? state.containers[oldContainerId] : null;
-  if (oldContainer) {
-    oldContainer.itemIds = oldContainer.itemIds.filter((id) => id !== itemId);
-    oldContainer.order = (oldContainer.order || []).filter((entry) => !(entry.type === "item" && entry.id === itemId));
-  }
-  const targetItems = state.containers[targetContainerId].itemIds;
-  if (!targetItems.includes(itemId)) targetItems.push(itemId);
-  const targetOrder = state.containers[targetContainerId].order || [];
-  state.containers[targetContainerId].order = targetOrder;
-  const index = targetIndex === null ? targetOrder.length : Math.max(0, Math.min(targetIndex, targetOrder.length));
-  targetOrder.splice(index, 0, { type: "item", id: itemId });
-  item.containerId = targetContainerId;
-  touchItem(itemId, changedAt);
-  touchContainer(targetContainerId, changedAt);
-  if (oldContainerId && oldContainerId !== targetContainerId) touchContainer(oldContainerId, changedAt);
-  touchActiveLayout(changedAt);
-  if (oldContainerId && oldContainerId !== targetContainerId) cleanupEmptyContainers(oldContainerId);
+  if (!moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex)) return;
+  touchLayout(layoutId, changedAt);
+  applyLayoutArrangement(layoutId);
   saveState();
   scheduleActivePublishedEditSave();
   render();
 }
 
 function moveContainer(containerId, targetParentId, targetIndex = null) {
-  const container = state.containers[containerId];
-  const targetParent = state.containers[targetParentId];
-  if (!container || !targetParent) return;
-  if (containerId === targetParentId) return;
-  if (getDescendantContainerIds(containerId).includes(targetParentId)) return;
+  const layoutId = state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
+  if (!layout || !state.containers[containerId] || !state.containers[targetParentId]) return;
   capturePackingScroll();
   const changedAt = nowIso();
-
-  const oldParentId = container.parentId;
-  if (oldParentId) {
-    const oldParent = state.containers[container.parentId];
-    oldParent.childIds = oldParent.childIds.filter((id) => id !== containerId);
-    oldParent.order = (oldParent.order || []).filter((entry) => !(entry.type === "container" && entry.id === containerId));
-  }
-
-  targetParent.childIds.push(containerId);
-  const targetOrder = targetParent.order || [];
-  targetParent.order = targetOrder;
-  const index = targetIndex === null
-    ? targetOrder.length
-    : Math.max(0, Math.min(targetIndex, targetOrder.length));
-  targetOrder.splice(index, 0, { type: "container", id: containerId });
-  container.parentId = targetParentId;
-  touchContainer(containerId, changedAt);
-  touchContainer(targetParentId, changedAt);
-  if (oldParentId && oldParentId !== targetParentId) touchContainer(oldParentId, changedAt);
-  touchActiveLayout(changedAt);
-  if (oldParentId && oldParentId !== targetParentId) cleanupEmptyContainers(oldParentId);
+  if (!moveContainerInLayoutArrangement(layout, containerId, targetParentId, targetIndex)) return;
+  touchLayout(layoutId, changedAt);
+  applyLayoutArrangement(layoutId);
   saveState();
   scheduleActivePublishedEditSave();
   render();
@@ -12646,36 +13207,28 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
 
 function createGroupFromItems(itemId, targetItemId) {
   if (itemId === targetItemId) return;
+  const layoutId = state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
   const item = state.items[itemId];
   const targetItem = state.items[targetItemId];
-  if (!item || !targetItem) return;
-
-  const sourceParent = state.containers[item.containerId];
-  const targetParent = state.containers[targetItem.containerId];
-  if (!sourceParent || !targetParent) return;
+  const sourceContainerId = getItemContainerIdInLayout(layout, itemId);
+  const targetContainerId = getItemContainerIdInLayout(layout, targetItemId);
+  const targetParent = ensureLayoutContainerPlacement(layout, targetContainerId);
+  if (!layout || !item || !targetItem || !sourceContainerId || !targetContainerId || !targetParent) return;
   capturePackingScroll();
   const changedAt = nowIso();
 
   const targetIndex = (targetParent.order || []).findIndex((entry) => entry.type === "item" && entry.id === targetItemId);
-  const sourceIndexInTarget = sourceParent.id === targetParent.id
+  const sourceIndexInTarget = sourceContainerId === targetContainerId
     ? (targetParent.order || []).findIndex((entry) => entry.type === "item" && entry.id === itemId)
     : -1;
   const insertIndex = Math.max(0, targetIndex - (sourceIndexInTarget >= 0 && sourceIndexInTarget < targetIndex ? 1 : 0));
   const groupId = `container-${Date.now()}`;
 
-  const removeItemRef = (container, removedId) => {
-    container.itemIds = container.itemIds.filter((id) => id !== removedId);
-    container.order = (container.order || []).filter((entry) => !(entry.type === "item" && entry.id === removedId));
-  };
-
-  removeItemRef(sourceParent, itemId);
-  removeItemRef(targetParent, targetItemId);
-  if (sourceParent.id !== targetParent.id) removeItemRef(targetParent, itemId);
-
   state.containers[groupId] = {
     id: groupId,
     name: "Новый пакет",
-    parentId: targetParent.id,
+    parentId: null,
     childIds: [],
     itemIds: [targetItemId, itemId],
     order: [
@@ -12686,19 +13239,30 @@ function createGroupFromItems(itemId, targetItemId) {
   };
   markRecordActivePublicCatalog(state.containers[groupId]);
 
+  removeItemFromLayoutArrangement(layout, itemId);
+  removeItemFromLayoutArrangement(layout, targetItemId);
+  layout.arrangement.containers[groupId] = {
+    parentId: targetContainerId,
+    itemIds: [targetItemId, itemId],
+    childIds: [],
+    order: [
+      { type: "item", id: targetItemId },
+      { type: "item", id: itemId }
+    ]
+  };
+  layout.arrangement.items[targetItemId] = groupId;
+  layout.arrangement.items[itemId] = groupId;
+  targetParent.childIds = Array.isArray(targetParent.childIds) ? targetParent.childIds.filter((id) => id !== groupId) : [];
   targetParent.childIds.push(groupId);
-  targetParent.order = targetParent.order || [];
+  targetParent.order = Array.isArray(targetParent.order)
+    ? targetParent.order.filter((entry) => !(entry?.type === "container" && entry.id === groupId))
+    : [];
   targetParent.order.splice(Math.min(insertIndex, targetParent.order.length), 0, { type: "container", id: groupId });
-  targetItem.containerId = groupId;
-  item.containerId = groupId;
-  touchItem(itemId, changedAt);
-  touchItem(targetItemId, changedAt);
-  touchContainer(targetParent.id, changedAt);
-  if (sourceParent.id !== targetParent.id) touchContainer(sourceParent.id, changedAt);
-  touchActiveLayout(changedAt);
+  touchLayout(layoutId, changedAt);
   state.collapsedContainers[groupId] = false;
   editingContainerId = groupId;
-  if (sourceParent.id !== targetParent.id) cleanupEmptyContainers(sourceParent.id);
+  if (sourceContainerId !== targetContainerId) cleanupEmptyContainersInLayoutArrangement(layout, sourceContainerId);
+  applyLayoutArrangement(layoutId);
   saveState();
   scheduleActivePublishedEditSave();
   render();
@@ -12706,9 +13270,70 @@ function createGroupFromItems(itemId, targetItemId) {
 
 function removeItemFromActiveLayout(itemId) {
   const item = state.items[itemId];
-  if (!item || !item.containerId) return;
-  detachItemFromContainer(itemId, item.containerId);
+  const layout = state.layouts?.[state.activeLayoutId];
+  const containerId = getItemContainerIdInLayout(layout, itemId);
+  if (!item || !layout || !containerId) return;
+  capturePackingScroll();
+  const changedAt = nowIso();
+  if (!removeItemFromLayoutArrangement(layout, itemId)) return;
+  cleanupEmptyContainersInLayoutArrangement(layout, containerId);
+  touchActiveLayout(changedAt);
+  applyLayoutArrangement(state.activeLayoutId);
+  saveState();
+  scheduleActivePublishedEditSave();
   render();
+}
+
+function getItemContainerIdInLayout(layout, itemId) {
+  return getItemContainerIdInLayoutForState(state, layout, itemId);
+}
+
+function getLayoutContainerIdSet(layout = state.layouts?.[state.activeLayoutId]) {
+  return getLayoutContainerIdSetForState(state, layout);
+}
+
+function getLayoutItemIdSet(layout = state.layouts?.[state.activeLayoutId]) {
+  return getLayoutItemIdSetForState(state, layout);
+}
+
+function ensureLayoutContainerPlacement(layout, containerId) {
+  return ensureLayoutContainerPlacementForState(state, layout, containerId);
+}
+
+function addItemToLayoutArrangement(layout, itemId, containerId, targetIndex = null) {
+  return addItemToLayoutArrangementForState(state, layout, itemId, containerId, targetIndex);
+}
+
+function placeExistingItemInLayout(itemId, containerId, layoutId = state.activeLayoutId, { changedAt = nowIso(), targetIndex = null } = {}) {
+  const layout = state.layouts?.[layoutId];
+  if (!state.items?.[itemId] || !layout || !state.containers?.[containerId]) return false;
+  const previousArrangement = clone(layout.arrangement || createEmptyLayoutArrangement());
+  const previousRootContainerIds = [...(layout.rootContainerIds || [])];
+  const rollback = () => {
+    layout.arrangement = previousArrangement;
+    layout.rootContainerIds = previousRootContainerIds;
+    if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+    return false;
+  };
+  if (!addItemToLayoutArrangement(layout, itemId, containerId, targetIndex)) return rollback();
+  normalizeLayoutArrangement(layout, state);
+  if (getItemContainerIdInLayout(layout, itemId) !== containerId) return rollback();
+  touchLayout(layoutId, changedAt);
+  if (layoutId === state.activeLayoutId) {
+    applyLayoutArrangement(layoutId);
+    const activeItemContainerId = state.items?.[itemId]?.containerId || "";
+    const activeContainerHasItem = Boolean(state.containers?.[containerId]?.itemIds?.includes(itemId));
+    if (activeItemContainerId !== containerId || !activeContainerHasItem) return rollback();
+  }
+  return true;
+}
+
+function moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex = null) {
+  return moveItemInLayoutArrangementForState(state, layout, itemId, targetContainerId, targetIndex);
+}
+
+function moveContainerInLayoutArrangement(layout, containerId, targetParentId, targetIndex = null) {
+  return moveContainerInLayoutArrangementForState(state, layout, containerId, targetParentId, targetIndex);
 }
 
 function detachItemFromContainer(itemId, containerId, options = {}) {
@@ -12723,6 +13348,8 @@ function detachItemFromContainer(itemId, containerId, options = {}) {
   touchItem(itemId, changedAt);
   touchContainer(containerId, changedAt);
   touchActiveLayout(changedAt);
+  removeItemFromLayoutArrangement(state.layouts?.[state.activeLayoutId], itemId);
+  delete state.packedItems?.[itemId];
   cleanupEmptyContainers(containerId);
   saveState();
   scheduleActivePublishedEditSave();
@@ -12730,7 +13357,8 @@ function detachItemFromContainer(itemId, containerId, options = {}) {
 
 function confirmRemoveItemFromActiveLayout(itemId) {
   const item = state.items[itemId];
-  if (!item || !item.containerId) return;
+  const layout = state.layouts?.[state.activeLayoutId];
+  if (!item || !getItemContainerIdInLayout(layout, itemId)) return;
   openConfirmDialog({
     title: "Убрать вещь из укладки?",
     text: `«${item.name}» исчезнет из текущей укладки, но останется во вкладке «Вещи» как незадействованная.`,
@@ -12744,7 +13372,7 @@ function confirmRemoveItemFromActiveLayout(itemId) {
 function confirmDeleteItem(itemId) {
   const item = state.items[itemId];
   if (!item) return;
-  const placements = describeItemLayoutPlacements(item);
+  const placements = describeVisibleItemLayoutPlacements(item);
   const placementText = placements.length
     ? `Сейчас используется:\n${placements.map((placement) => `- ${placement}`).join("\n")}`
     : "Сейчас вещь вне укладок.";
@@ -12755,6 +13383,23 @@ function confirmDeleteItem(itemId) {
     okText: "Удалить",
     tone: placements.length ? "danger" : "safe",
     onConfirm: () => deleteItemForever(itemId)
+  });
+}
+
+function describeVisibleItemLayoutPlacements(item) {
+  if (!item?.id) return [];
+  return Object.values(state.layouts).flatMap((layout) => {
+    normalizeLayoutArrangement(layout, state);
+    const containerId = getItemContainerIdInLayout(layout, item.id);
+    if (!containerId || !state.containers[containerId]) return [];
+    const rootId = getVisibleLayoutRootIds(layout).find((id) =>
+      id === containerId || getLayoutDescendantContainerIdsForState(layout, id).includes(containerId)
+    );
+    const root = rootId ? state.containers[rootId] : null;
+    if (!root) return [];
+    const path = containerPath(containerId);
+    const place = rootId === containerId ? "" : `, \u043c\u0435\u0441\u0442\u043e \u00ab${path}\u00bb`;
+    return [`${layout.name}: \u0441\u0442\u043e\u043b\u0431\u0435\u0446 \u00ab${root.name}\u00bb${place}`];
   });
 }
 
@@ -12788,6 +13433,9 @@ function deleteItemForever(itemId) {
     if (hadItem) markEdited(container, changedAt);
   });
   touchLayoutsReferencingItem(itemId, changedAt);
+  Object.values(state.layouts || {}).forEach((layout) => {
+    removeItemFromLayoutArrangement(layout, itemId);
+  });
   delete state.items[itemId];
   delete state.packedItems?.[itemId];
   if (oldContainerId) cleanupEmptyContainers(oldContainerId);
@@ -12801,28 +13449,27 @@ function copyItem(itemId, options = {}) {
   if (!item) return;
   const keepPlacement = Boolean(options.keepPlacement);
   const changedAt = nowIso();
+  const layoutId = state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
+  const containerId = keepPlacement ? getItemContainerIdInLayout(layout, itemId) : "";
+  const placement = containerId ? ensureLayoutContainerPlacement(layout, containerId) : null;
+  const container = placement;
   const id = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const container = keepPlacement && item.containerId ? state.containers[item.containerId] : null;
   state.items[id] = {
     ...item,
     id,
     name: makeItemCopyName(item.name),
-    containerId: container ? item.containerId : "",
+    containerId: "",
     photos: [],
     createdAt: changedAt,
     ...currentEditMeta(changedAt)
   };
   markRecordActivePublicCatalog(state.items[id]);
-  if (!container) {
-    state.items[id].containerId = "";
-  } else {
-    const itemIndex = (container.itemIds || []).indexOf(itemId);
-    container.itemIds = container.itemIds || [];
-    container.itemIds.splice(itemIndex >= 0 ? itemIndex + 1 : container.itemIds.length, 0, id);
-    container.order = container.order || [];
-    const orderIndex = container.order.findIndex((entry) => entry.type === "item" && entry.id === itemId);
-    container.order.splice(orderIndex >= 0 ? orderIndex + 1 : container.order.length, 0, { type: "item", id });
-    touchContainer(container.id, changedAt);
+  if (placement) {
+    const orderIndex = (placement.order || []).findIndex((entry) => entry.type === "item" && entry.id === itemId);
+    addItemToLayoutArrangement(layout, id, containerId, orderIndex >= 0 ? orderIndex + 1 : null);
+    touchLayout(layoutId, changedAt);
+    applyLayoutArrangement(layoutId);
   }
   delete state.packedItems?.[id];
   saveState();
@@ -12948,15 +13595,81 @@ function removeRootContainerFromActiveLayout(containerId) {
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   const container = state.containers[containerId];
-  if (!layout || !container || container.parentId) return;
+  if (!layout || !container) return;
   const changedAt = nowIso();
-  markRecordActivePublicCatalog(container);
-  clearRootContainerContents(containerId, changedAt);
-  layout.rootContainerIds = (layout.rootContainerIds || []).filter((id) => id !== containerId);
+  if (!removeContainerFromLayoutOnly(layout, containerId, changedAt)) return;
   touchLayout(layoutId, changedAt);
+  applyLayoutArrangement(layoutId);
+  if (editingRootContainerId === containerId) refs.rootContainerDialog.close("cancel");
   saveState();
   scheduleActivePublishedEditSave();
   render();
+}
+
+function removeContainerFromLayoutOnly(layout, containerId, changedAt = nowIso()) {
+  if (!layout || !state.containers?.[containerId]) return false;
+  const arrangement = normalizeLayoutArrangement(layout, state);
+  const placement = arrangement.containers?.[containerId];
+  if (!placement && !(arrangement.rootContainerIds || []).includes(containerId)) return false;
+  const removedContainerIds = new Set();
+  const collect = (id) => {
+    if (!id || removedContainerIds.has(id)) return;
+    removedContainerIds.add(id);
+    (arrangement.containers?.[id]?.childIds || []).forEach(collect);
+  };
+  collect(containerId);
+  const isRoot = (arrangement.rootContainerIds || []).includes(containerId);
+  const parentId = placement?.parentId || "";
+  if (isRoot) {
+    arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => id !== containerId);
+    layout.rootContainerIds = [...arrangement.rootContainerIds];
+    markRecordActivePublicCatalog(state.containers[containerId]);
+    markEdited(state.containers[containerId], changedAt);
+  } else if (parentId && arrangement.containers?.[parentId]) {
+    const parent = arrangement.containers[parentId];
+    parent.childIds = (parent.childIds || []).filter((id) => id !== containerId);
+    parent.order = (parent.order || []).filter((entry) => !(entry?.type === "container" && entry.id === containerId));
+  }
+  Object.entries(arrangement.items || {}).forEach(([itemId, itemContainerId]) => {
+    if (!removedContainerIds.has(itemContainerId)) return;
+    delete arrangement.items[itemId];
+    delete arrangement.packedItems?.[itemId];
+    if (state.items?.[itemId]) {
+      markRecordActivePublicCatalog(state.items[itemId]);
+      markEdited(state.items[itemId], changedAt);
+    }
+  });
+  removedContainerIds.forEach((id) => {
+    delete arrangement.containers[id];
+    delete state.collapsedContainers?.[id];
+    if (id === containerId && isRoot) return;
+    deleteUnusedLayoutContainerEntity(id, layout.id);
+  });
+  if (parentId) cleanupEmptyContainersInLayoutArrangement(layout, parentId);
+  return true;
+}
+
+function deleteUnusedLayoutContainerEntity(containerId, removedFromLayoutId = "") {
+  if (!containerId || !state.containers?.[containerId]) return;
+  const usedElsewhere = Object.values(state.layouts || {}).some((layout) => {
+    if (!layout || layout.id === removedFromLayoutId) return false;
+    const arrangement = layout.arrangement;
+    if (!arrangement || typeof arrangement !== "object") return false;
+    if ((arrangement.rootContainerIds || layout.rootContainerIds || []).includes(containerId)) return true;
+    return Boolean(arrangement.containers?.[containerId]);
+  });
+  if (!usedElsewhere) deleteContainerEntityRecord(containerId);
+}
+
+function deleteContainerEntityRecord(containerId) {
+  const container = state.containers?.[containerId];
+  if (!container) return;
+  normalizeItemPhotos(container).forEach((photo) => {
+    if (photo.localId || photo.id) deleteCachedPhoto(photo.localId || photo.id);
+    if (photo.url || photo.thumbUrl) deleteRemotePhotoIfPossible(containerId, photo, "container");
+  });
+  delete state.collapsedContainers?.[containerId];
+  delete state.containers[containerId];
 }
 
 function clearRootContainerContents(containerId, changedAt = nowIso()) {
@@ -13073,6 +13786,7 @@ function openRootContainerDialog(containerId = null) {
   if (refs.rootContainerColor) refs.rootContainerColor.value = container?.color || "";
   fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
   updateRootContainerPlacementButton();
+  updateRootContainerRemoveFromLayoutButton();
   if (refs.rootContainerCopyToContainerBtn) refs.rootContainerCopyToContainerBtn.hidden = !containerId;
   refs.rootContainerNote.value = container?.note || "";
   rootContainerDialogPhotoDraft = null;
@@ -13111,7 +13825,9 @@ function openItemDialog(itemId = null) {
   updateItemQuantityUi();
   refs.itemLocation.value = item.location;
   renderItemCategoryPicker(itemId ? itemCategories(item) : [], { fallbackDefault: Boolean(itemId) });
-  refs.itemContainer.value = item.containerId || "";
+  refs.itemContainer.value = itemId
+    ? getItemContainerIdInLayout(state.layouts?.[itemDialogTargetLayoutId], itemId)
+    : "";
   updateItemContainerPickerButton();
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = !itemId;
   refs.itemNote.value = item.note || "";
@@ -13175,11 +13891,11 @@ function copySharedItemFromReadonlyDialog() {
   copySharedItem(itemId);
 }
 
-function uniqueLayoutName(baseName = "Новая укладка") {
+function uniqueLayoutName(baseName = "Новая укладка", { exceptLayoutId = "" } = {}) {
   const base = String(baseName || "Новая укладка").trim() || "Новая укладка";
-  const existing = new Set(Object.values(state.layouts || {}).map((layout) =>
-    String(layout?.name || "").trim().toLowerCase()
-  ));
+  const existing = new Set(Object.values(state.layouts || [])
+    .filter((layout) => layout?.id !== exceptLayoutId)
+    .map((layout) => String(layout?.name || "").trim().toLowerCase()));
   if (!existing.has(base.toLowerCase())) return base;
   for (let index = 2; index < 1000; index += 1) {
     const candidate = `${base} ${index}`;
@@ -13208,8 +13924,9 @@ function saveNewLayout(event) {
   captureActiveLayoutArrangement();
   const shouldCopy = refs.layoutCreateMode.value === "copy";
   const source = state.layouts[refs.layoutCopyFrom.value] || state.layouts[state.activeLayoutId];
-  const name = refs.layoutName.value.trim();
-  if (!name) return;
+  const requestedName = refs.layoutName.value.trim();
+  if (!requestedName) return;
+  const name = uniqueLayoutName(requestedName);
   const id = `layout-${Date.now()}`;
   const arrangement = shouldCopy
     ? clone(source.arrangement || createLayoutArrangementFromCurrentState(state, source.rootContainerIds || []))
@@ -13228,6 +13945,75 @@ function saveNewLayout(event) {
   refs.layoutDialog.close();
   switchView("bags");
   render();
+}
+
+function userEditableLayouts() {
+  return Object.values(state.layouts || {}).filter((layout) =>
+    layout &&
+    canUseLocalEditableState(layout.id) &&
+    !layout.adminDemo &&
+    !layout.adminSharedSourceId
+  );
+}
+
+function canDeleteActiveLayout() {
+  const layout = state.layouts?.[state.activeLayoutId];
+  return Boolean(
+    layout &&
+    userEditableLayouts().some((entry) => entry.id === layout.id) &&
+    !isReadOnlyStateScope() &&
+    !isSharedLayoutView()
+  );
+}
+
+function confirmDeleteActiveLayout() {
+  const layout = state.layouts?.[state.activeLayoutId];
+  if (!canDeleteActiveLayout() || !layout) {
+    showToast("Эту укладку нельзя удалить.", "error");
+    return;
+  }
+  const containerCount = getLayoutContainerIdSet(layout).size;
+  const itemCount = getLayoutItemIdSet(layout).size;
+  const isLastLayout = userEditableLayouts().length <= 1;
+  openConfirmDialog({
+    title: "Удалить укладку?",
+    text: `«${layout.name}» будет удалена из списка укладок.`,
+    highlightText: `${containerCount} сумок/контейнеров, ${formatThingCount(itemCount)} исчезнут только из этой укладки.\nСами вещи и сумки останутся во вкладках «Вещи» и «Сумки».${isLastLayout ? "\nЭто последняя укладка, вместо неё будет создана пустая." : ""}`,
+    okText: "Удалить",
+    tone: "danger",
+    onConfirm: () => deleteActiveLayout()
+  });
+}
+
+function deleteActiveLayout() {
+  const layoutId = state.activeLayoutId;
+  const layout = state.layouts?.[layoutId];
+  if (!canDeleteActiveLayout() || !layout) return;
+  captureActiveLayoutArrangement();
+  const remainingLayouts = userEditableLayouts().filter((entry) => entry.id !== layoutId);
+  let nextLayoutId = remainingLayouts[0]?.id || "";
+  if (!nextLayoutId) {
+    const changedAt = nowIso();
+    nextLayoutId = `layout-${Date.now()}`;
+    const arrangement = createEmptyLayoutArrangement();
+    state.layouts[nextLayoutId] = {
+      id: nextLayoutId,
+      name: uniqueLayoutName("Новая укладка"),
+      rootContainerIds: [],
+      arrangement,
+      ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
+      ...currentCreateMeta(changedAt)
+    };
+  }
+  delete state.layouts[layoutId];
+  state.activeLayoutId = nextLayoutId;
+  if (canUsePrivateState()) setActivePrivateScope();
+  else setActiveLocalEditableScope(nextLayoutId);
+  applyLayoutArrangement(nextLayoutId);
+  rememberActiveLayoutChoice(nextLayoutId);
+  saveState();
+  render();
+  showToast("Укладка удалена.", "success");
 }
 
 function handleRootContainerFormSubmit(event) {
@@ -13566,13 +14352,15 @@ function saveDialogItem(event) {
   const name = refs.itemName.value.trim();
   if (!name) return;
   const containerId = refs.itemContainer.value;
+  const layoutId = itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  const layout = state.layouts?.[layoutId];
   capturePackingScroll();
   const changedAt = nowIso();
   const selectedCategories = getDialogSelectedCategories();
 
   if (editingItemId) {
     const item = state.items[editingItemId];
-    const previousContainerId = item.containerId || "";
+    const previousContainerId = getItemContainerIdInLayout(layout, editingItemId);
     item.name = name;
     item.weight = parseWeightInput(refs.itemWeight.value);
     item.quantity = readItemDialogQuantity();
@@ -13586,12 +14374,21 @@ function saveDialogItem(event) {
     if (previousContainerId !== containerId) {
       refs.dialog.close();
       if (containerId) {
-        moveItem(editingItemId, containerId, null, { captureScroll: false });
-        scheduleActivePublishedEditSave();
+        if (!placeExistingItemInLayout(editingItemId, containerId, layoutId, { changedAt })) {
+          showToast("Не удалось добавить вещь в эту укладку.", "error");
+          return;
+        }
+        saveState();
+        if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+        render();
         return;
       }
-      detachItemFromContainer(editingItemId, previousContainerId, { captureScroll: false, changedAt });
-      scheduleActivePublishedEditSave();
+      removeItemFromLayoutArrangement(layout, editingItemId);
+      cleanupEmptyContainersInLayoutArrangement(layout, previousContainerId);
+      touchLayout(layoutId, changedAt);
+      if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+      saveState();
+      if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
       render();
       return;
     }
@@ -13605,22 +14402,23 @@ function saveDialogItem(event) {
       location: refs.itemLocation.value,
       category: selectedCategories[0],
       categories: selectedCategories,
-      containerId,
+      containerId: "",
       note: refs.itemNote.value.trim(),
       photos: itemDialogPhotoDraft?.photo ? [itemDialogPhotoDraft.photo] : [],
       ...currentEditMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.items[id]);
-    if (containerId && state.containers[containerId]) {
-      state.containers[containerId].itemIds.push(id);
-      state.containers[containerId].order = state.containers[containerId].order || [];
-      state.containers[containerId].order.push({ type: "item", id });
-      touchContainer(containerId, changedAt);
+    if (containerId && state.containers[containerId] && layout) {
+      if (!placeExistingItemInLayout(id, containerId, layoutId, { changedAt })) {
+        delete state.items[id];
+        showToast("Не удалось добавить вещь в эту укладку.", "error");
+        return;
+      }
     }
   }
 
   saveState();
-  scheduleActivePublishedEditSave();
+  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
   refs.dialog.close();
   render();
 }
@@ -13667,41 +14465,31 @@ function applyRootContainerDialogPhotoDraft(container, changedAt = nowIso()) {
 
 function applyRootContainerDialogParent(changedAt = nowIso()) {
   if (rootContainerDialogPendingParentId === undefined || !editingRootContainerId) return false;
+  const layoutId = getPublishedEditLayoutId();
+  const layout = state.layouts?.[layoutId];
   const container = state.containers[editingRootContainerId];
   const targetParent = state.containers[rootContainerDialogPendingParentId];
-  if (!container || !container.parentId || !targetParent) return false;
+  const placement = layout?.arrangement?.containers?.[editingRootContainerId];
+  if (!layout || !container || !placement?.parentId || !targetParent) return false;
   if (container.id === targetParent.id) return false;
-  if (getDescendantContainerIds(container.id).includes(targetParent.id)) return false;
-  const oldParentId = container.parentId;
   const requestedIndex = rootContainerDialogPendingParentIndex;
-  if (oldParentId === targetParent.id && requestedIndex === null) return false;
-  const oldParent = state.containers[oldParentId];
+  if (placement.parentId === targetParent.id && requestedIndex === null) return false;
   const insertIndex = normalizeContainerParentInsertIndex(container.id, targetParent.id, requestedIndex);
-  if (oldParent) {
-    oldParent.childIds = (oldParent.childIds || []).filter((id) => id !== container.id);
-    oldParent.order = (oldParent.order || []).filter((entry) => !(entry.type === "container" && entry.id === container.id));
-    touchContainer(oldParent.id, changedAt);
-  }
-  targetParent.childIds = targetParent.childIds || [];
-  if (!targetParent.childIds.includes(container.id)) targetParent.childIds.push(container.id);
-  targetParent.order = (targetParent.order || []).filter((entry) => !(entry.type === "container" && entry.id === container.id));
-  const index = insertIndex === null ? targetParent.order.length : Math.max(0, Math.min(insertIndex, targetParent.order.length));
-  targetParent.order.splice(index, 0, { type: "container", id: container.id });
-  container.parentId = targetParent.id;
+  if (!moveContainerInLayoutArrangement(layout, container.id, targetParent.id, insertIndex)) return false;
   state.collapsedContainers[targetParent.id] = false;
-  touchContainer(container.id, changedAt);
-  touchContainer(targetParent.id, changedAt);
-  if (oldParentId && oldParentId !== targetParent.id) cleanupEmptyContainers(oldParentId);
+  touchLayout(layoutId, changedAt);
+  applyLayoutArrangement(layoutId);
   return true;
 }
 
 function normalizeContainerParentInsertIndex(containerId, targetParentId, requestedIndex) {
   if (!Number.isFinite(requestedIndex)) return null;
-  const container = state.containers[containerId];
-  const targetParent = state.containers[targetParentId];
-  if (!container || !targetParent) return requestedIndex;
-  const currentIndex = (targetParent.order || []).findIndex((entry) => entry.type === "container" && entry.id === containerId);
-  if (container.parentId === targetParentId && currentIndex >= 0 && currentIndex < requestedIndex) return requestedIndex - 1;
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  const placement = layout?.arrangement?.containers?.[containerId];
+  const targetPlacement = layout?.arrangement?.containers?.[targetParentId];
+  if (!placement || !targetPlacement) return requestedIndex;
+  const currentIndex = (targetPlacement.order || []).findIndex((entry) => entry.type === "container" && entry.id === containerId);
+  if (placement.parentId === targetParentId && currentIndex >= 0 && currentIndex < requestedIndex) return requestedIndex - 1;
   return requestedIndex;
 }
 
@@ -13739,11 +14527,7 @@ function getItemsForActiveCatalog() {
 }
 
 function itemCreatedTime(item) {
-  const created = timeValue(item?.createdAt || item?.created_at);
-  if (created) return created;
-  const idTime = Number(String(item?.id || "").match(/^item-(\d+)/)?.[1] || 0);
-  if (idTime) return idTime;
-  return timeValue(item?.updatedAt || item?.updated_at);
+  return itemCreatedTimeForState(item);
 }
 
 function getItemsUsageCounts() {
@@ -13767,17 +14551,12 @@ function isScopedCatalogLayout(layoutId = getPublishedEditLayoutId()) {
   return isAdminEditablePublishedLayout(layoutId);
 }
 
-function getActiveCatalogContainerIdSet() {
-  return getActiveLayoutContainerIdSet(getPublishedWorkLayout());
-}
-
 function isItemInActiveCatalog(item) {
-  if (!isScopedCatalogLayout()) return true;
-  if (!item) return false;
   const layoutId = getPublishedEditLayoutId();
-  if (item.publicCatalogLayoutId === layoutId) return true;
-  if (item.containerId && getActiveCatalogContainerIdSet().has(item.containerId)) return true;
-  return Boolean(item.containerId && state.containers[item.containerId]?.publicCatalogLayoutId === layoutId);
+  return isItemInCatalogForState(state, getPublishedWorkLayout(layoutId), item, {
+    scoped: isScopedCatalogLayout(layoutId),
+    catalogLayoutId: layoutId
+  });
 }
 
 function markRecordActivePublicCatalog(record) {
@@ -13794,29 +14573,16 @@ function isItemWithoutWeight(item) {
 }
 
 function isItemInActiveLayout(item) {
-  if (!item?.containerId) return false;
-  const layout = getPublishedWorkLayout();
-  if (!layout) return false;
-  return getActiveLayoutContainerIdSet(layout).has(item.containerId);
+  return isItemInLayoutForState(state, getPublishedWorkLayout(), item);
 }
 
 function getActiveLayoutContainerIdSet(layout = state.layouts[state.activeLayoutId]) {
-  const ids = new Set();
-  getVisibleLayoutRootIds(layout).forEach((rootId) => {
-    ids.add(rootId);
-    getDescendantContainerIds(rootId).forEach((id) => ids.add(id));
-  });
-  return ids;
+  return getLayoutContainerIdSet(layout);
 }
 
 function getVisibleLayoutRootIds(layout = getPublishedWorkLayout()) {
-  const rootIds = Array.isArray(layout?.rootContainerIds) ? layout.rootContainerIds : [];
-  if (!layout || isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout.id)) return rootIds;
-  return rootIds.filter((containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container) return false;
-    return !isGeneratedCatalogContainerSyncArtifact(containerId, container) &&
-      !isGeneratedCatalogContainerStateArtifact(containerId, container, state);
+  return getVisibleLayoutRootIdsForState(state, layout, {
+    includeGenerated: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id)
   });
 }
 
@@ -13863,9 +14629,7 @@ function getAllContainers() {
 }
 
 function getDescendantContainerIds(containerId) {
-  const container = state.containers[containerId];
-  if (!container) return [];
-  return container.childIds.flatMap((childId) => [childId, ...getDescendantContainerIds(childId)]);
+  return getDescendantContainerIdsForState(state, containerId);
 }
 
 function getRootContainers() {
@@ -13924,87 +14688,55 @@ function getRootContainerUsageCounts() {
 }
 
 function isRootContainerInActiveLayout(containerId) {
-  const layout = getPublishedWorkLayout();
-  return Boolean(layout?.rootContainerIds?.includes(containerId));
+  return isRootContainerInLayoutForState(getPublishedWorkLayout(), containerId);
 }
 
 function isRootContainerForEditor(container) {
-  if (!container?.id) return false;
-  if (isRootContainerInActiveLayout(container.id)) return true;
-  if (isNestedContainerInAnyLayoutArrangement(container.id)) return false;
-  return !container.parentId;
+  return isRootContainerForEditorForState(state, getPublishedWorkLayout(), container);
 }
 
 function isNestedContainerInAnyLayoutArrangement(containerId) {
-  return Object.values(state.layouts || {}).some((layout) => {
-    const placement = layout?.arrangement?.containers?.[containerId];
-    if (placement?.parentId && state.containers?.[placement.parentId]) return true;
-    return Object.values(layout?.arrangement?.containers || {}).some((parentPlacement) => {
-      if (!parentPlacement || typeof parentPlacement !== "object") return false;
-      if ((parentPlacement.childIds || []).includes(containerId)) return true;
-      return (parentPlacement.order || []).some((entry) => entry?.type === "container" && entry.id === containerId);
-    });
-  });
+  return isNestedContainerInAnyLayoutArrangementForState(state, containerId);
 }
 
 function isRootContainerInActiveCatalog(container) {
-  if (!isScopedCatalogLayout()) return true;
-  if (!container) return false;
-  return isRootContainerInActiveLayout(container.id) || container.publicCatalogLayoutId === getPublishedEditLayoutId();
+  const layoutId = getPublishedEditLayoutId();
+  return isRootContainerInCatalogForState(state, getPublishedWorkLayout(layoutId), container, {
+    scoped: isScopedCatalogLayout(layoutId),
+    catalogLayoutId: layoutId
+  });
 }
 
 function containerCreatedTime(container) {
-  const created = timeValue(container?.createdAt || container?.created_at);
-  if (created) return created;
-  const idTime = Number(String(container?.id || "").match(/^container-(\d+)/)?.[1] || 0);
-  if (idTime) return idTime;
-  return timeValue(container?.updatedAt || container?.updated_at);
+  return containerCreatedTimeForState(container);
 }
 
 function containerPath(containerId) {
-  const names = [];
-  let current = state.containers[containerId];
-  while (current) {
-    names.unshift(current.name);
-    current = current.parentId ? state.containers[current.parentId] : null;
-  }
-  return names.join(" / ");
+  return containerPathForState(state, containerId);
 }
 
 function containerWeight(containerId) {
-  const container = state.containers[containerId];
-  const ownContainerWeight = Number(container.weight || 0);
-  const own = container.itemIds.reduce((sum, id) => sum + itemTotalWeight(state.items[id]), 0);
-  const children = container.childIds.reduce((sum, id) => sum + containerWeight(id), 0);
-  return ownContainerWeight + own + children;
+  return containerWeightForState(state, containerId);
 }
 
 function rootContainerOwnWeight(containerId) {
-  const container = state.containers[containerId];
-  return container && !container.parentId ? Number(container.weight || 0) : 0;
+  return rootContainerOwnWeightForState(state, containerId);
 }
 
 function itemQuantity(item) {
-  return normalizeItemQuantity(item?.quantity);
+  return itemQuantityForState(item);
 }
 
 function itemTotalWeight(item) {
-  return Number(item?.weight || 0) * itemQuantity(item);
-}
-
-function formatItemWeight(item) {
-  const quantity = itemQuantity(item);
-  const total = itemTotalWeight(item);
-  return quantity > 1 ? `${formatWeight(total)} (${quantity} шт.)` : formatWeight(total);
-}
-
-function renderItemQuantityText(item) {
-  const quantity = itemQuantity(item);
-  return quantity > 1 ? `<span class="quantity-inline">${quantity} шт.</span>` : "";
+  return itemTotalWeightForState(item);
 }
 
 function exportData() {
-  const html = buildPrintableDocument();
+  const layout = state.layouts[state.activeLayoutId];
+  const html = buildPrintableDocument(state, {
+    layoutId: state.activeLayoutId,
+    includeGeneratedRoots: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id)
+  });
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -14013,133 +14745,6 @@ function exportData() {
   a.target = "_blank";
   a.click();
   URL.revokeObjectURL(url);
-}
-
-function buildPrintableDocument() {
-  migrateContainerOrder(state);
-  const layout = state.layouts[state.activeLayoutId];
-  const rootContainerIds = getVisibleLayoutRootIds(layout);
-  const generatedAt = new Date().toLocaleString("ru-RU");
-  const totalWeight = rootContainerIds.reduce((sum, id) => sum + containerWeight(id), 0);
-  const itemCount = rootContainerIds.reduce((sum, id) => sum + countItemsInContainer(id), 0);
-  const missingCount = rootContainerIds.reduce((sum, id) => sum + countItemsByLocation(id, ["Надо купить", "Не знаю где"]), 0);
-
-  return `<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(layout.name)} — велопоход</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: #1d2522;
-      background: #f6f4ee;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 13px;
-      line-height: 1.35;
-    }
-    main { max-width: 1180px; margin: 0 auto; padding: 28px; }
-    header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #1f6f5b; padding-bottom: 18px; margin-bottom: 18px; }
-    h1 { margin: 0 0 6px; font-size: 30px; }
-    h2 { margin: 0; font-size: 20px; }
-    h3 { margin: 0; font-size: 15px; }
-    .muted { color: #62706b; }
-    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
-    .metric { background: #fff; border: 1px solid #d8ddd7; border-radius: 8px; padding: 10px; }
-    .metric strong { display: block; font-size: 22px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
-    .bag { break-inside: avoid; background: #fff; border: 1px solid #cfd8d2; border-radius: 8px; overflow: hidden; }
-    .bag-title { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; background: #e3f1ec; border-bottom: 1px solid #c7ddd5; }
-    .content { padding: 10px 12px; }
-    .item, .box { break-inside: avoid; margin: 0 0 8px; }
-    .item { border: 1px solid #d8ddd7; border-radius: 8px; padding: 8px; background: #fff; }
-    .box { border: 1px solid #b9d3ca; border-left: 5px solid #1f6f5b; border-radius: 8px; background: #eef7f3; }
-    .box-title { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; background: #e3f1ec; border-bottom: 1px solid #c7ddd5; font-weight: 800; }
-    .box-content { padding: 8px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-    .pill { display: inline-block; border-radius: 999px; padding: 2px 7px; background: #dcece6; color: #1f6f5b; font-weight: 700; font-size: 11px; }
-    .warn { background: #fde9dd; color: #b75d2a; }
-    .print-note { margin-top: 18px; color: #62706b; font-size: 12px; }
-    @media print {
-      body { background: #fff; }
-      main { max-width: none; padding: 0; }
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .bag, .item, .box, .metric { box-shadow: none; }
-    }
-    @page { margin: 14mm; }
-  </style>
-</head>
-<body>
-  <main>
-    <header>
-      <div>
-        <h1>Сборы в велопоход</h1>
-        <div class="muted">Укладка: ${escapeHtml(layout.name)}</div>
-      </div>
-      <div class="muted">Сформировано: ${escapeHtml(generatedAt)}</div>
-    </header>
-    <section class="metrics">
-      <div class="metric"><strong>${escapeHtml(formatWeight(totalWeight))}</strong><span>общий вес</span></div>
-      <div class="metric"><strong>${itemCount}</strong><span>вещей в укладке</span></div>
-      <div class="metric"><strong>${missingCount}</strong><span>надо купить / не знаю где</span></div>
-    </section>
-    <section class="grid">
-      ${rootContainerIds.map((id) => renderPrintableContainer(id, true)).join("")}
-    </section>
-    <p class="print-note">Подсказка: в окне печати можно выбрать «Сохранить как PDF».</p>
-  </main>
-</body>
-</html>`;
-}
-
-function renderPrintableContainer(containerId, root = false) {
-  const container = state.containers[containerId];
-  if (!container) return "";
-  const entries = (container.order || []).map((entry) => {
-    if (entry.type === "item") return renderPrintableItem(entry.id);
-    if (entry.type === "container") return renderPrintableContainer(entry.id, false);
-    return "";
-  }).join("");
-  const tag = root ? "article" : "section";
-  const className = root ? "bag" : "box";
-  const titleClass = root ? "bag-title" : "box-title";
-  const contentClass = root ? "content" : "box-content";
-  return `<${tag} class="${className}">
-    <div class="${titleClass}">
-      <h2>${escapeHtml(container.name)}</h2>
-      <strong>${escapeHtml(formatWeight(containerWeight(containerId)))}</strong>
-    </div>
-    <div class="${contentClass}">${entries}</div>
-  </${tag}>`;
-}
-
-function renderPrintableItem(itemId) {
-  const item = state.items[itemId];
-  if (!item) return "";
-  const warn = item.location === "Надо купить" || item.location === "Не знаю где";
-  return `<div class="item">
-    <h3>${escapeHtml(item.name)}</h3>
-    <div class="meta">
-      <span class="pill">${escapeHtml(formatItemWeight(item))}</span>
-      ${itemCategories(item).map((category) => `<span class="pill">${escapeHtml(category)}</span>`).join("")}
-      <span class="pill ${warn ? "warn" : ""}">${escapeHtml(item.location)}</span>
-    </div>
-    ${item.note ? `<div class="muted">${escapeHtml(item.note)}</div>` : ""}
-  </div>`;
-}
-
-function countItemsInContainer(containerId) {
-  const container = state.containers[containerId];
-  if (!container) return 0;
-  return container.itemIds.length + container.childIds.reduce((sum, id) => sum + countItemsInContainer(id), 0);
-}
-
-function countItemsByLocation(containerId, locations) {
-  const container = state.containers[containerId];
-  if (!container) return 0;
-  const own = container.itemIds.filter((id) => locations.includes(state.items[id]?.location)).length;
-  return own + container.childIds.reduce((sum, id) => sum + countItemsByLocation(id, locations), 0);
 }
 
 function resetData() {

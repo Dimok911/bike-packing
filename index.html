@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=514" />
+    <link rel="stylesheet" href="./styles.css?v=531" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -50,11 +50,14 @@
       </section>
 
       <section class="controls auth-required">
-        <label>
+        <label class="layout-select-control">
           Укладка
           <select id="layoutSelect"></select>
         </label>
-        <button id="newLayoutBtn" class="ghost">Новая укладка</button>
+        <div class="layout-actions">
+          <button id="newLayoutBtn" class="ghost" type="button">Новая</button>
+          <button id="deleteLayoutBtn" class="ghost danger" type="button">Удалить</button>
+        </div>
         <div class="search-control-row" data-main-filter-control>
           <label id="searchFilterLabel">
             Поиск
@@ -222,10 +225,11 @@
         </label>
         <div id="rootContainerPlacementField" class="field-label item-container-field">
           <span id="rootContainerPlacementLabel">Находится в</span>
-          <div class="item-container-control">
+          <div class="item-container-control root-container-placement-control">
             <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
             <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переставить</button>
-            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в...</button>
+            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Копия</button>
+            <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Удалить</button>
           </div>
         </div>
         <label>
@@ -453,6 +457,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=515" type="module"></script>
+    <script src="./app.js?v=540" type="module"></script>
   </body>
 </html>

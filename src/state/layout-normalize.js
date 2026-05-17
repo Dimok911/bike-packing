@@ -143,27 +143,28 @@ export function normalizeLayoutArrangement(layout, targetState) {
   arrangement.rootContainerIds = uniqueRootIds;
   layout.rootContainerIds = uniqueRootIds;
   arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
-  repairBareLayoutRootArrangement(layout, targetState);
+  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
+  Object.entries(arrangement.items).forEach(([itemId, containerId]) => {
+    if (!itemIdSet.has(itemId) || !containerIdSet.has(containerId)) delete arrangement.items[itemId];
+  });
+  if (!hadStoredArrangement) repairBareLayoutRootArrangement(layout, targetState);
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     if (!containerIdSet.has(containerId) || !placement || typeof placement !== "object") {
       delete arrangement.containers[containerId];
       return;
     }
     placement.parentId = placement.parentId && containerIdSet.has(placement.parentId) ? placement.parentId : "";
-    placement.itemIds = uniqueLayoutIds(Array.isArray(placement.itemIds) ? placement.itemIds : []).filter((id) => itemIdSet.has(id));
+    placement.itemIds = uniqueLayoutIds(Array.isArray(placement.itemIds) ? placement.itemIds : [])
+      .filter((id) => itemIdSet.has(id) && arrangement.items[id] === containerId);
     placement.childIds = uniqueLayoutIds(Array.isArray(placement.childIds) ? placement.childIds : []).filter((id) => containerIdSet.has(id));
     placement.order = (Array.isArray(placement.order) ? placement.order : [])
       .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
       .filter((entry) => entry.type === "item" ? placement.itemIds.includes(entry.id) : placement.childIds.includes(entry.id))
       .filter((entry, index, list) => list.findIndex((item) => item.type === entry.type && item.id === entry.id) === index);
   });
-  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
-  Object.entries(arrangement.items).forEach(([itemId, containerId]) => {
-    if (!itemIdSet.has(itemId) || !containerIdSet.has(containerId)) delete arrangement.items[itemId];
-  });
   arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
   Object.keys(arrangement.packedItems).forEach((itemId) => {
-    if (!itemIdSet.has(itemId)) delete arrangement.packedItems[itemId];
+    if (!itemIdSet.has(itemId) || !arrangement.items[itemId]) delete arrangement.packedItems[itemId];
   });
   const placedItems = Math.max(
     Object.values(items).filter((item) => item?.containerId && containerIdSet.has(item.containerId)).length,

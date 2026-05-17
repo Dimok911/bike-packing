@@ -25,7 +25,30 @@ export function syncSafePhotoUrl(src) {
 export function photoRemoteSrc(photo) {
   normalizePhotoUrlFields(photo);
   const src = photo?.thumbUrl || photo?.url || "";
-  return versionedPhotoUrl(src, photo?.updatedAt || photo?.id || "");
+  return versionedPhotoUrl(normalizeRemotePhotoUrl(src), photo?.updatedAt || photo?.id || "");
+}
+
+export function normalizeRemotePhotoUrl(src) {
+  const value = syncSafePhotoUrl(src);
+  if (!value) return "";
+  try {
+    const apiUrl = new URL(API_BASE);
+    const url = new URL(value, API_BASE);
+    const apiMarker = "/letters-vniipo/api/";
+    const apiIndex = url.pathname.indexOf(apiMarker);
+    if (apiIndex >= 0) {
+      const suffix = url.pathname.slice(apiIndex + apiMarker.length);
+      return `${apiUrl.origin}${apiUrl.pathname.replace(/\/+$/, "")}/${suffix}${url.search}${url.hash}`;
+    }
+    const listMarker = "/bike-packing/lists/";
+    const listIndex = url.pathname.indexOf(listMarker);
+    if (listIndex >= 0) {
+      return `${apiUrl.origin}${apiUrl.pathname.replace(/\/+$/, "")}${url.pathname.slice(listIndex)}${url.search}${url.hash}`;
+    }
+    return value;
+  } catch {
+    return value;
+  }
 }
 
 export function versionedPhotoUrl(src, version) {
