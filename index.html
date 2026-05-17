@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=531" />
+    <link rel="stylesheet" href="./styles.css?v=570" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -18,13 +18,13 @@
         </div>
         <div class="top-actions">
           <button id="syncBtn" class="ghost auth-required">Синхр.</button>
+          <span id="syncUserEmail" class="sync-user-email auth-required" hidden></span>
           <div class="top-menu-wrap">
             <button id="menuBtn" class="ghost menu-button" type="button" aria-label="Меню" aria-expanded="false" aria-controls="topMenu">
               <span aria-hidden="true"></span>
             </button>
             <div id="topMenu" class="top-menu" hidden>
               <button id="authBtn" class="ghost menu-item" type="button">Войти</button>
-              <button id="sharedLayoutsBtn" class="ghost menu-item" type="button">Shared укладки</button>
               <button id="shareListBtn" class="ghost menu-item auth-required" type="button">Ссылка на список</button>
               <label class="menu-select-label" for="languageSelect">
                 <span id="languageSelectLabel">Язык</span>
@@ -36,8 +36,9 @@
               <button id="collectionMenuBtn" class="ghost menu-item auth-required" type="button">Режим сбора</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
-              <button id="exportBtn" class="ghost menu-item auth-required" type="button">Экспорт</button>
-              <button id="resetBtn" class="ghost menu-item danger auth-required" type="button">Сброс</button>
+              <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
+              <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать</button>
+              <button id="signOutBtn" class="ghost menu-item danger" type="button" hidden>Выйти</button>
             </div>
           </div>
         </div>
@@ -384,8 +385,8 @@
         <p class="dialog-note">Некоторые элементы менялись и на этом устройстве, и на сервере. Выберите, какую версию оставить для каждого элемента.</p>
         <div id="conflictList" class="conflict-list"></div>
         <footer>
-          <button id="conflictServerBtn" value="server" class="ghost" type="button">Взять всё с сервера</button>
           <button id="conflictApplyBtn" value="default" type="button">Применить выбор</button>
+          <button id="conflictServerBtn" value="server" class="ghost" type="button">Взять всё с сервера</button>
         </footer>
       </form>
     </dialog>
@@ -435,6 +436,33 @@
       </form>
     </dialog>
 
+    <dialog id="backupDialog">
+      <form method="dialog" class="dialog-card backup-dialog-card">
+        <header>
+          <h2>Бэкапы</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="backup-mode-grid">
+          <button id="backupCreateBtn" type="button">Создать архив</button>
+          <label class="ghost backup-file-pick">
+            Загрузить из архива
+            <input id="backupFileInput" type="file" accept=".zip,.bikepacking-backup,application/zip" />
+          </label>
+        </div>
+        <div id="backupRules" class="backup-rules">
+          <p><strong>Полное восстановление:</strong> всё текущее состояние пользователя будет потеряно и заменено данными из архива.</p>
+          <p><strong>Восстановление отдельных укладок:</strong> заменяются только укладки с совпадающим именем, новые создаются, недостающие вещи/сумки/фото добавляются.</p>
+        </div>
+        <p id="backupStatus" class="dialog-status" aria-live="polite"></p>
+        <div id="backupAnalysis" class="backup-analysis"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+          <button id="backupRestoreSelectedBtn" type="button" class="ghost" hidden>Восстановить выбранные</button>
+          <button id="backupRestoreFullBtn" type="button" class="danger-action" hidden>Восстановить всё</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="sharedLayoutsDialog">
       <form method="dialog" class="dialog-card shared-layouts-dialog-card">
         <header>
@@ -457,6 +485,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=540" type="module"></script>
+    <script src="./app.js?v=570" type="module"></script>
   </body>
 </html>

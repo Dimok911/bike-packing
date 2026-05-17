@@ -1,6 +1,8 @@
 # build output
 /API
 dist/
+ftp-upload/
+www/
 node_modules/
 
 # standalone backend repo

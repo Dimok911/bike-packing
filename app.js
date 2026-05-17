@@ -32,8 +32,10 @@ import {
   STATE_SCOPE_DEMO,
   STATE_SCOPE_SHARED,
   SHARED_LIST_QUERY_PARAM,
+  SHARED_LAYOUT_QUERY_PARAM,
   LANGUAGE_KEY,
   DEFAULT_LANGUAGE,
+  SUPPORTED_LANGUAGES,
   ADMIN_EMAILS,
   ADMIN_USER_IDS,
   COLLAPSE_DEFAULTS_VERSION,
@@ -60,8 +62,16 @@ import {
 import { guessCategory, guessLocation } from "./src/data/guess.js";
 import {
   cloneIsolatedPublicEntity,
+  hasPrivateSyncBlockedPublicOrigin,
   legacySharedRootSnapshot,
-  markLocalPublicCopyOrigin
+  markLocalPublicCopyOrigin,
+  markPrivateCopyOriginFromSource,
+  publicCopySnapshotFromSourceSnapshot,
+  publicCopySourceIdFromRecord,
+  sanitizePrivateCopiedPublicOrigins,
+  snapshotHasLocalPublicCopyOrigin,
+  snapshotHasPrivateSyncBlockedPublicOrigin,
+  stripPublicOriginForPrivateCopy
 } from "./src/public/copy-public-to-private.js";
 import {
   generatedCatalogString,
@@ -74,10 +84,34 @@ import {
   isPublicSyncItem
 } from "./src/public/generated-artifacts.js";
 import {
+  ensureGuestDemoPreviewPayload,
+  isStartupGuestDemoPreview as isStartupGuestDemoPreviewState,
+  readableGuestDemoLayoutName,
+  shouldKeepReadonlyDemoAfterAuthCheck,
+  shouldImportGuestLayoutBeforeRemote,
+  shouldRenderGuestDemoPreviewDuringAuthCheck
+} from "./src/public/guest-demo-startup.js";
+import {
   createSharedLayoutsByLanguage,
   normalizeSharedGearName,
   sharedGearPhotos
 } from "./src/public/shared-layouts.js";
+import {
+  buildSharedListUrlFromHref,
+  sharedLayoutIdFromUrl,
+  sharedListIdFromUrl
+} from "./src/public/shared-link-url.js";
+import {
+  SHARED_CONTAINER_COPY_PICKER_MODE,
+  SHARED_ITEM_COPY_PICKER_MODE,
+  TEMPLATE_COPY_ICON_HTML,
+  TEMPLATE_COPY_TITLE,
+  collapsedDefaultsForTemplateContainers,
+  isContainerPickerContainerCopyMode as isContainerPickerContainerCopyModeValue,
+  isContainerPickerCopyMode as isContainerPickerCopyModeValue,
+  isContainerPickerItemCopyMode as isContainerPickerItemCopyModeValue,
+  shouldShowTemplateAddButton
+} from "./src/public/template-copy.js";
 import {
   activeReadOnlyLayoutIdFromScope,
   createReadOnlyBikePackingError,
@@ -218,6 +252,24 @@ import {
   stripContainerArrangementFields,
   stripItemPlacementFields
 } from "./src/sync/serialize.js";
+import {
+  backupDownloadName,
+  buildBackupManifest,
+  buildBackupPhotoEntries,
+  createBackupZip,
+  readBackupArchiveFile
+} from "./src/backup/archive.js";
+import {
+  addBackupDictionaryValues,
+  backupLayoutRows as buildBackupLayoutRows,
+  mergeBackupRecordWithExisting,
+  summarizeBackupLayouts
+} from "./src/backup/restore.js";
+import {
+  GUEST_STORAGE_SCOPE,
+  scopedLocalStorageKey as scopedStorageKey,
+  userStorageScopeKey
+} from "./src/storage/scope.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
@@ -241,9 +293,15 @@ let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
 applyPublicTemplateLanguage();
 
+let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 let applyingLayoutArrangement = false;
-const hadLocalStateAtStartup = hasLocalSavedState();
+let hadLocalStateAtStartup = hasLocalSavedState();
+const startupSyncMeta = loadSyncMeta();
+let hadRemoteBaselineAtStartup = hasStoredLocalValue(BASE_STATE_KEY) ||
+  Boolean(startupSyncMeta.serverUpdatedAt || startupSyncMeta.stateRevision || startupSyncMeta.payloadHash);
 const state = loadState();
+let startupLocalStateWasFallback = hadLocalStateAtStartup && !hadRemoteBaselineAtStartup && isGeneratedStartupFallbackState(state);
+let hadAuthoritativeLocalStateAtStartup = hadLocalStateAtStartup && !startupLocalStateWasFallback;
 const uiSettings = loadUiSettings();
 let editingItemId = null;
 let editingItemTitleId = null;
@@ -274,7 +332,7 @@ let pendingPackingScroll = null;
 let lastPackingScrollSnapshot = null;
 let lastItemTitleTap = { id: "", time: 0 };
 let lastRootContainerTitleTap = { id: "", time: 0 };
-let syncMeta = loadSyncMeta();
+let syncMeta = startupSyncMeta;
 let syncDevice = loadSyncDevice();
 let currentUser = null;
 let syncTimer = null;
@@ -326,6 +384,10 @@ let itemDialogPhotoObjectUrl = "";
 let rootContainerDialogPhotoDraft = null;
 let rootContainerDialogPhotoObjectUrl = "";
 let sharedDialogCopyItemId = "";
+let backupImportState = null;
+let pendingGuestLocalLayoutCandidate = null;
+let sharedPickerSourceItemId = "";
+let sharedPickerSourceContainerId = "";
 const photoObjectUrls = new Map();
 let photoUploadInFlight = false;
 let currentPackingListId = loadActivePackingListId();
@@ -352,8 +414,90 @@ function saveUiLanguage(language) {
   safeSetLocalStorage(LANGUAGE_KEY, normalizeUiLanguage(language));
 }
 
+function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
+  return scopedStorageKey(key, scope);
+}
+
+function applyLoadedStateToCurrentScope(nextState) {
+  Object.keys(state).forEach((key) => delete state[key]);
+  Object.assign(state, nextState);
+  normalizeContainerFields(state);
+  normalizeItemFields(state);
+  cleanupGeneratedCatalogArtifacts(state);
+  repairContainerMembershipFromItemLinks(state);
+  normalizeLayoutFields(state);
+  normalizeItemCategories(state);
+  migrateContainerOrder(state);
+  applyLayoutArrangement(state.activeLayoutId, state);
+  applyDefaultCollapsedContainers(state);
+}
+
+function activateLocalStorageScope(scopeKey) {
+  const nextScope = scopeKey || GUEST_STORAGE_SCOPE;
+  if (nextScope === localStorageScopeKey) return false;
+  const previousScope = localStorageScopeKey;
+  if (shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope) && !pendingGuestLocalLayoutCandidate) {
+    pendingGuestLocalLayoutCandidate = guestLocalLayoutCandidate(state);
+  }
+  localStorageScopeKey = nextScope;
+  const scopedSyncMeta = loadSyncMeta();
+  const scopedHadLocalState = hasLocalSavedState();
+  const scopedHadRemoteBaseline = hasStoredLocalValue(BASE_STATE_KEY) ||
+    Boolean(scopedSyncMeta.serverUpdatedAt || scopedSyncMeta.stateRevision || scopedSyncMeta.payloadHash);
+  const nextState = loadState();
+  hadLocalStateAtStartup = scopedHadLocalState;
+  hadRemoteBaselineAtStartup = scopedHadRemoteBaseline;
+  startupLocalStateWasFallback = scopedHadLocalState && !scopedHadRemoteBaseline && isGeneratedStartupFallbackState(nextState);
+  hadAuthoritativeLocalStateAtStartup = scopedHadLocalState && !startupLocalStateWasFallback;
+  syncMeta = scopedSyncMeta;
+  currentPackingListId = loadActivePackingListId();
+  currentPackingListMeta = null;
+  applyLoadedStateToCurrentScope(nextState);
+  explicitLayoutChoice = { id: "", at: 0 };
+  return true;
+}
+
+function activateLocalStorageScopeForCurrentUser() {
+  return activateLocalStorageScope(currentUser ? userStorageScopeKey(currentUser) : GUEST_STORAGE_SCOPE);
+}
+
+function clearLocalStorageScope(scopeKey, keys = []) {
+  keys.forEach((key) => {
+    try {
+      localStorage.removeItem(scopedLocalStorageKey(key, scopeKey));
+    } catch {
+      // Scoped storage cleanup is best-effort.
+    }
+  });
+}
+
+function resetGuestDemoScopeToCanonical() {
+  clearLocalStorageScope(GUEST_STORAGE_SCOPE, [
+    STORAGE_KEY,
+    BASE_STATE_KEY,
+    SYNC_META_KEY,
+    RECOVERY_STATE_KEY,
+    ACTIVE_LIST_ID_KEY,
+    ACTIVE_LAYOUT_CHOICE_KEY,
+    ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+    ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY
+  ]);
+  localStorageScopeKey = GUEST_STORAGE_SCOPE;
+  hadLocalStateAtStartup = false;
+  hadRemoteBaselineAtStartup = false;
+  startupLocalStateWasFallback = false;
+  hadAuthoritativeLocalStateAtStartup = false;
+  syncMeta = loadSyncMeta();
+  currentPackingListId = "";
+  currentPackingListMeta = null;
+  pendingGuestLocalLayoutCandidate = null;
+  explicitLayoutChoice = { id: "", at: 0 };
+  applyLoadedStateToCurrentScope(createEmptyUserState());
+  setActivePrivateScope();
+}
+
 function persistStateSnapshot(snapshot = state) {
-  return safeSetLocalStorage(STORAGE_KEY, JSON.stringify(snapshot));
+  return safeSetLocalStorage(scopedLocalStorageKey(STORAGE_KEY), JSON.stringify(snapshot));
 }
 
 function t(key, values = {}) {
@@ -473,6 +617,7 @@ function applyStaticTranslations() {
   if (refs.syncBtn) refs.syncBtn.textContent = t("buttons.sync");
   if (refs.sharedLayoutsBtn) refs.sharedLayoutsBtn.textContent = t("menu.sharedLayouts");
   if (refs.shareListBtn) refs.shareListBtn.textContent = t("menu.shareList");
+  document.querySelector("#exportBtn")?.replaceChildren(document.createTextNode(t("menu.print")));
   if (languageLabel) languageLabel.textContent = t("menu.language");
   if (layoutLabel?.firstChild) layoutLabel.firstChild.textContent = `${t("labels.layout")}\n          `;
   refs.newLayoutBtn.textContent = isSharedLayoutView()
@@ -584,7 +729,7 @@ function init() {
     renderContainerPicker();
   });
   refs.containerPickerNoneBtn.addEventListener("click", () => {
-    if (containerPickerMode === "container-copy") {
+    if (isContainerPickerContainerCopyMode()) {
       selectContainerPickerTarget("");
       return;
     }
@@ -654,8 +799,9 @@ function init() {
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
   refs.authBtn.addEventListener("click", handleAuthButton);
+  document.querySelector("#signOutBtn")?.addEventListener("click", handleAuthButton);
   refs.authGateBtn.addEventListener("click", handleAuthButton);
-  refs.sharedLayoutsBtn.addEventListener("click", openSharedLayoutsDialog);
+  refs.sharedLayoutsBtn?.addEventListener("click", openSharedLayoutsDialog);
   refs.shareListBtn?.addEventListener("click", shareCurrentPackingListByLink);
   refs.languageSelect?.addEventListener("change", (event) => {
     setUiLanguage(event.target.value).catch((error) => updateSyncUi(`Language switch failed: ${error.message}`));
@@ -669,6 +815,12 @@ function init() {
     if (event.target.closest("button")) closeTopMenu();
   });
   refs.historyBtn.addEventListener("click", openHistoryDialog);
+  refs.backupBtn?.addEventListener("click", openBackupDialog);
+  refs.backupCreateBtn?.addEventListener("click", createBackupArchive);
+  refs.backupFileInput?.addEventListener("change", handleBackupFileSelected);
+  refs.backupAnalysis?.addEventListener("change", handleBackupSelectionChange);
+  refs.backupRestoreSelectedBtn?.addEventListener("click", restoreSelectedBackupLayouts);
+  refs.backupRestoreFullBtn?.addEventListener("click", restoreFullBackup);
   refs.historySourceTabs?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-history-source]");
     if (!button) return;
@@ -731,8 +883,8 @@ function init() {
     updateCompactStickyControls();
     scheduleFilterNavigationRefresh();
   }, { passive: true });
-  document.querySelector("#exportBtn").addEventListener("click", exportData);
-  document.querySelector("#resetBtn").addEventListener("click", resetData);
+  document.querySelector("#exportBtn")?.addEventListener("click", exportData);
+  document.querySelector("#resetBtn")?.addEventListener("click", resetData);
 
   appUnlocked = true;
   const sharedListId = sharedListIdFromLocation();
@@ -746,11 +898,12 @@ function init() {
     updateSyncUi();
   } else {
     initialRemoteLoadPending = true;
+    renderGuestPublicDemoPreviewDuringAuthCheck();
     updateSyncUi("Проверяю вход...");
   }
   startRemoteStateWatcher();
   if (sharedListId) {
-    openSharedListFromLink(sharedListId);
+    openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
   } else if (isForcedOffline()) {
     if (signedOut) enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
     else unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
@@ -1340,7 +1493,7 @@ function createDemoSeedState() {
 }
 
 function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
   if (!saved) {
     const initial = createEmptyUserState();
     normalizeContainerFields(initial);
@@ -1395,12 +1548,20 @@ function loadState() {
 }
 
 function hasLocalSavedState() {
-  return Boolean(localStorage.getItem(STORAGE_KEY));
+  return Boolean(localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY)));
+}
+
+function hasStoredLocalValue(key) {
+  try {
+    return Boolean(localStorage.getItem(scopedLocalStorageKey(key)));
+  } catch {
+    return false;
+  }
 }
 
 function loadBaseState() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(BASE_STATE_KEY));
+    const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(BASE_STATE_KEY)));
     return normalizeRemoteState(parsed);
   } catch {
     return null;
@@ -1408,12 +1569,12 @@ function loadBaseState() {
 }
 
 function saveBaseState(nextState = state) {
-  safeSetLocalStorage(BASE_STATE_KEY, JSON.stringify(nextState));
+  safeSetLocalStorage(scopedLocalStorageKey(BASE_STATE_KEY), JSON.stringify(nextState));
 }
 
 function loadRecoverySnapshots() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(RECOVERY_STATE_KEY));
+    const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(RECOVERY_STATE_KEY)));
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -1431,7 +1592,7 @@ function saveRecoverySnapshot(reason, snapshot = state) {
     };
     const snapshots = loadRecoverySnapshots();
     snapshots.unshift(entry);
-    safeSetLocalStorage(RECOVERY_STATE_KEY, JSON.stringify(snapshots.slice(0, RECOVERY_STATE_MAX)));
+    safeSetLocalStorage(scopedLocalStorageKey(RECOVERY_STATE_KEY), JSON.stringify(snapshots.slice(0, RECOVERY_STATE_MAX)));
   } catch {
     // Recovery snapshots are best-effort and must never interrupt the app.
   }
@@ -1516,7 +1677,7 @@ function guessDeviceName() {
 
 function loadSyncMeta() {
   try {
-    const meta = JSON.parse(localStorage.getItem(SYNC_META_KEY)) || {};
+    const meta = JSON.parse(localStorage.getItem(scopedLocalStorageKey(SYNC_META_KEY))) || {};
     return {
       dirty: Boolean(meta.dirty),
       serverUpdatedAt: meta.serverUpdatedAt || null,
@@ -1525,6 +1686,9 @@ function loadSyncMeta() {
       stateRevision: normalizeStateRevision(meta.stateRevision ?? meta.state_revision),
       payloadHash: meta.payloadHash || null,
       entityHash: meta.entityHash || null,
+      accountKey: meta.accountKey || null,
+      accountEmail: meta.accountEmail || null,
+      accountId: meta.accountId || null,
       itemCount: normalizeIntegrityCount(meta.itemCount),
       containerCount: normalizeIntegrityCount(meta.containerCount),
       layoutCount: normalizeIntegrityCount(meta.layoutCount),
@@ -1539,6 +1703,9 @@ function loadSyncMeta() {
       stateRevision: null,
       payloadHash: null,
       entityHash: null,
+      accountKey: null,
+      accountEmail: null,
+      accountId: null,
       itemCount: null,
       containerCount: null,
       layoutCount: null,
@@ -1548,7 +1715,7 @@ function loadSyncMeta() {
 }
 
 function saveSyncMeta() {
-  safeSetLocalStorage(SYNC_META_KEY, JSON.stringify(syncMeta));
+  safeSetLocalStorage(scopedLocalStorageKey(SYNC_META_KEY), JSON.stringify(syncMeta));
 }
 
 function loadUiSettings() {
@@ -1579,9 +1746,10 @@ function saveUiSettings() {
 
 function loadActivePackingListId() {
   try {
-    const listId = localStorage.getItem(ACTIVE_LIST_ID_KEY) || "";
+    const key = scopedLocalStorageKey(ACTIVE_LIST_ID_KEY);
+    const listId = localStorage.getItem(key) || "";
     if (isPublicTemplateListId(listId)) {
-      localStorage.removeItem(ACTIVE_LIST_ID_KEY);
+      localStorage.removeItem(key);
       return "";
     }
     return listId;
@@ -1601,8 +1769,9 @@ function saveActivePackingListId(listId) {
   currentPackingListId = isPublicTemplateListId(listId) ? "" : String(listId || "");
   if (!currentPackingListId) currentPackingListMeta = null;
   try {
-    if (currentPackingListId) safeSetLocalStorage(ACTIVE_LIST_ID_KEY, currentPackingListId);
-    else localStorage.removeItem(ACTIVE_LIST_ID_KEY);
+    const key = scopedLocalStorageKey(ACTIVE_LIST_ID_KEY);
+    if (currentPackingListId) safeSetLocalStorage(key, currentPackingListId);
+    else localStorage.removeItem(key);
   } catch {
     // Active list id is a convenience cache; sync can still work through the legacy endpoint.
   }
@@ -1628,7 +1797,7 @@ function isPrivateUserLayoutId(layoutId) {
 
 function loadActiveLayoutChoice() {
   try {
-    return normalizeActiveLayoutChoice(localStorage.getItem(ACTIVE_LAYOUT_CHOICE_KEY) || "");
+    return normalizeActiveLayoutChoice(localStorage.getItem(scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_KEY)) || "");
   } catch {
     return "";
   }
@@ -1636,7 +1805,7 @@ function loadActiveLayoutChoice() {
 
 function loadActivePrivateLayoutChoice() {
   try {
-    const choice = normalizeActiveLayoutChoice(localStorage.getItem(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY) || "");
+    const choice = normalizeActiveLayoutChoice(localStorage.getItem(scopedLocalStorageKey(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY)) || "");
     return isPrivateLayoutChoice(choice) && isPrivateUserLayoutId(choice) ? choice : "";
   } catch {
     return "";
@@ -1645,7 +1814,7 @@ function loadActivePrivateLayoutChoice() {
 
 function isActiveLayoutChoiceExplicit() {
   try {
-    return localStorage.getItem(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY) === "explicit";
+    return localStorage.getItem(scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY)) === "explicit";
   } catch {
     return false;
   }
@@ -1654,15 +1823,18 @@ function isActiveLayoutChoiceExplicit() {
 function saveActiveLayoutChoice(choice) {
   const normalized = normalizeActiveLayoutChoice(choice);
   try {
+    const choiceKey = scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_KEY);
+    const sourceKey = scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY);
+    const privateChoiceKey = scopedLocalStorageKey(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY);
     if (normalized) {
-      safeSetLocalStorage(ACTIVE_LAYOUT_CHOICE_KEY, normalized);
-      safeSetLocalStorage(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, "explicit");
+      safeSetLocalStorage(choiceKey, normalized);
+      safeSetLocalStorage(sourceKey, "explicit");
     } else {
-      localStorage.removeItem(ACTIVE_LAYOUT_CHOICE_KEY);
-      localStorage.removeItem(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY);
+      localStorage.removeItem(choiceKey);
+      localStorage.removeItem(sourceKey);
     }
     if (isPrivateLayoutChoice(normalized) && isPrivateUserLayoutId(normalized)) {
-      safeSetLocalStorage(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, normalized);
+      safeSetLocalStorage(privateChoiceKey, normalized);
     }
   } catch {
     // The last opened layout is only a UI preference.
@@ -2092,7 +2264,7 @@ function stateStatsForDestructiveComparison(targetState) {
 
 function saveState({ sync = true } = {}) {
   captureActiveLayoutArrangement();
-  sanitizePrivateCopiedPublicOrigins(state);
+  sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     persistStateSnapshot(state);
@@ -2152,6 +2324,84 @@ function isAdminEditablePublishedLayout(layoutId = state.activeLayoutId) {
 
 function isGuestDemoCopyLayout(layoutId = state.activeLayoutId) {
   return isGuestDemoCopyLayoutRecord(state.layouts?.[layoutId]);
+}
+
+function isDefaultDemoSeedLayoutRecord(layout) {
+  if (!layout || layout.adminDemo || layout.adminSharedSourceId || layout?.[GUEST_DEMO_COPY_FLAG]) return false;
+  const rootIds = layout.rootContainerIds || [];
+  return layout.id === "layout-main" &&
+    rootIds.length > 0 &&
+    rootIds.every((id) => String(id || "").startsWith("demo-"));
+}
+
+function isGeneratedStartupFallbackState(targetState = state) {
+  const personalLayouts = Object.values(targetState?.layouts || {}).filter((layout) =>
+    layout && !layout.adminDemo && !layout.adminSharedSourceId
+  );
+  if (personalLayouts.length > 0 &&
+    personalLayouts.every((layout) => isGuestDemoCopyLayoutRecord(layout) || isDefaultDemoSeedLayoutRecord(layout))) {
+    return true;
+  }
+  const items = Object.entries(targetState?.items || {});
+  const containers = Object.entries(targetState?.containers || {});
+  if (!items.length && !containers.length) return false;
+  const generatedItems = items.filter(([itemId, item]) => isGeneratedCatalogSyncArtifact(itemId, item)).length;
+  const generatedContainers = containers.filter(([containerId, container]) => isGeneratedCatalogContainerSyncArtifact(containerId, container)).length;
+  const generatedCount = generatedItems + generatedContainers;
+  const totalCount = items.length + containers.length;
+  return totalCount > 0 && generatedCount / totalCount >= 0.8;
+}
+
+function canLocalStateOverrideRemote() {
+  return hasLocalSavedState() &&
+    hadAuthoritativeLocalStateAtStartup &&
+    !isForeignLocalSyncState() &&
+    !isGeneratedStartupFallbackState(state);
+}
+
+function canSeedEmptyRemoteFromLocal() {
+  return hasLocalSavedState() && !isForeignLocalSyncState() && isMeaningfulPackingState(state);
+}
+
+function guestLocalLayoutCandidate(sourceState = state) {
+  if (!isMeaningfulPackingState(sourceState)) return null;
+  try {
+    if (sameJson(cloneStateForSync(sourceState, { forSync: true }), cloneStateForSync(createEmptyUserState(), { forSync: true }))) {
+      return null;
+    }
+  } catch {
+    // If normalization fails, continue with the shape checks below.
+  }
+  const personalLayouts = Object.values(sourceState.layouts || {}).filter((layout) =>
+    layout && !layout.adminDemo && !layout.adminSharedSourceId
+  );
+  if (!personalLayouts.length) return null;
+  const activeLayout = personalLayouts.find((layout) => layout.id === sourceState.activeLayoutId);
+  const meaningfulLayout = personalLayouts.find((layout) => (layout.rootContainerIds || []).some((id) => sourceState.containers?.[id]));
+  const layout = activeLayout || meaningfulLayout || personalLayouts[0];
+  if (!layout || !(layout.rootContainerIds || []).some((id) => sourceState.containers?.[id])) return null;
+  return {
+    sourceState: clone(sourceState),
+    layoutId: layout.id,
+    layoutName: String(layout.name || "Гостевая укладка").trim() || "Гостевая укладка"
+  };
+}
+
+function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, sourceState = state) {
+  return previousScope === GUEST_STORAGE_SCOPE &&
+    nextScope !== GUEST_STORAGE_SCOPE &&
+    !isSharedListLinkRoute() &&
+    !syncMetaAccountKey(syncMeta) &&
+    (currentViewScope() === VIEW_SCOPE_GUEST_LOCAL || hasGuestDemoCopyLayoutRecord(sourceState.layouts));
+}
+
+function consumeGuestLocalLayoutCandidate() {
+  const candidate = pendingGuestLocalLayoutCandidate;
+  pendingGuestLocalLayoutCandidate = null;
+  if (candidate) {
+    candidate.layoutName = readableGuestDemoLayoutName(candidate.layoutName, "Гостевая укладка");
+  }
+  return candidate;
 }
 
 function hasGuestDemoCopyLayout() {
@@ -2280,9 +2530,64 @@ function ensureGuestPublicScope() {
   if (isGuestDemoCopyLayout()) return false;
   if (isReadOnlyStateScope()) return false;
   if (!demoStatePayloadForLanguage(uiLanguage)) {
-    setDemoStatePayloadForLanguage(uiLanguage, createEmptyPublicTemplateState(uiLanguage));
+    setDemoStatePayloadForLanguage(
+      uiLanguage,
+      normalizeUiLanguage(uiLanguage) === DEFAULT_LANGUAGE
+        ? createDemoSeedState()
+        : createEmptyPublicTemplateState(uiLanguage)
+    );
   }
   return setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
+}
+
+function renderGuestPublicDemoPreviewDuringAuthCheck(message = "") {
+  if (!shouldRenderGuestDemoPreviewDuringAuthCheck({
+    currentUser,
+    forcedOffline: isForcedOffline(),
+    sharedListRoute: isSharedListLinkRoute(),
+    hadAuthoritativeLocalStateAtStartup
+  })) return false;
+  ensureGuestDemoPreviewPayload({
+    language: uiLanguage,
+    getPayload: demoStatePayloadForLanguage,
+    setPayload: setDemoStatePayloadForLanguage,
+    createPayload: createDemoSeedState
+  });
+  setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
+  renderPreservingPackingScroll();
+  updateSyncUi(message || currentPublicTemplateStatusMessage());
+  return true;
+}
+
+function isStartupGuestDemoPreview() {
+  return isStartupGuestDemoPreviewState({
+    initialRemoteLoadPending,
+    currentUser,
+    readOnlyStateScope: isReadOnlyStateScope(),
+    activeReadOnlyLayoutId: activeReadOnlyLayoutId()
+  });
+}
+
+function shouldKeepCurrentReadonlyDemoAfterAuthCheck() {
+  return shouldKeepReadonlyDemoAfterAuthCheck({
+    initialRemoteLoadPending,
+    currentUser,
+    readOnlyStateScope: isReadOnlyStateScope(),
+    activeReadOnlyLayoutId: activeReadOnlyLayoutId()
+  });
+}
+
+function readOnlyDemoPayloadNeedsLoad(language = uiLanguage) {
+  return activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID &&
+    !isMeaningfulPackingState(demoStatePayloadForLanguage(language));
+}
+
+async function ensureReadOnlyDemoPayloadLoaded({ renderAfter = false } = {}) {
+  if (!readOnlyDemoPayloadNeedsLoad()) return false;
+  await defaultDemoState(uiLanguage);
+  setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
+  if (renderAfter) renderPreservingPackingScroll();
+  return true;
 }
 
 function demoLanguageSuffix(language = uiLanguage) {
@@ -2660,6 +2965,17 @@ function pruneAdminPublishedDraftsForSync(cloned) {
   }
 }
 
+function collectContainerTreeForDrop(targetState, containerId, containerIdsToDrop) {
+  if (!containerId || containerIdsToDrop.has(containerId)) return;
+  const container = targetState?.containers?.[containerId];
+  if (!container) return;
+  containerIdsToDrop.add(containerId);
+  (container.childIds || []).forEach((childId) => collectContainerTreeForDrop(targetState, childId, containerIdsToDrop));
+  Object.entries(targetState.containers || {}).forEach(([childId, child]) => {
+    if (child?.parentId === containerId) collectContainerTreeForDrop(targetState, childId, containerIdsToDrop);
+  });
+}
+
 function normalizeRemoteState(payload) {
   if (!payload || typeof payload !== "object") return null;
   const normalized = JSON.parse(JSON.stringify(payload));
@@ -2965,6 +3281,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   syncMeta.localUpdatedAt = updatedAt || null;
   syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
   rememberRemoteIntegrityMeta(integrityMeta);
+  rememberCurrentSyncAccount();
   saveSyncMeta();
   appUnlocked = true;
   initialRemoteLoadPending = false;
@@ -3676,6 +3993,39 @@ function currentUserId() {
   return String(currentUser?.id || currentUser?.userId || currentUser?.user_id || currentUser?.sub || "").trim().toLowerCase();
 }
 
+function currentUserSyncKey() {
+  const userId = currentUserId();
+  const email = currentUserEmail();
+  return userId ? `id:${userId}` : (email ? `email:${email}` : "");
+}
+
+function syncMetaAccountKey(meta = syncMeta) {
+  const key = String(meta?.accountKey || "").trim().toLowerCase();
+  if (key) return key;
+  const userId = String(meta?.accountId || "").trim().toLowerCase();
+  const email = String(meta?.accountEmail || "").trim().toLowerCase();
+  return userId ? `id:${userId}` : (email ? `email:${email}` : "");
+}
+
+function syncMetaBelongsToCurrentUser(meta = syncMeta) {
+  const currentKey = currentUserSyncKey();
+  if (!currentKey) return true;
+  const metaKey = syncMetaAccountKey(meta);
+  if (!metaKey) return false;
+  return metaKey === currentKey;
+}
+
+function isForeignLocalSyncState() {
+  return syncMetaBelongsToCurrentUser(syncMeta) === false;
+}
+
+function rememberCurrentSyncAccount() {
+  if (!currentUser) return;
+  syncMeta.accountKey = currentUserSyncKey() || null;
+  syncMeta.accountEmail = currentUserEmail() || null;
+  syncMeta.accountId = currentUserId() || null;
+}
+
 function isAdminUser() {
   if (!currentUser) return false;
   const email = currentUserEmail();
@@ -3692,14 +4042,33 @@ function updateSyncUi(message = "") {
   const unlocked = loggedIn || appUnlocked;
   const forcedOffline = isForcedOffline();
   const privateStateAvailable = canUseLocalEditableState() && !isReadOnlyStateScope();
-  if (!privateStateAvailable && unlocked) ensureGuestPublicScope();
+  if (!privateStateAvailable && unlocked && !initialRemoteLoadPending) ensureGuestPublicScope();
   document.body.classList.toggle("auth-gated", !unlocked);
-  refs.authBtn.textContent = loggedIn ? t("menu.signOut") : t("menu.signIn");
+  document.body.classList.toggle("admin-session", canOpenAdminPublishedEdit());
+  document.body.classList.toggle("readonly-template", isReadonlyTemplateView());
+  refs.authBtn.textContent = t("menu.signIn");
+  refs.authBtn.hidden = loggedIn;
+  refs.authBtn.classList.remove("danger");
+  const signOutBtn = document.querySelector("#signOutBtn");
+  if (signOutBtn) {
+    signOutBtn.textContent = t("menu.signOut");
+    signOutBtn.hidden = !loggedIn;
+  }
   refs.forceOfflineBtn.textContent = forcedOffline ? t("menu.online") : t("menu.offline");
   refs.forceOfflineBtn.classList.toggle("active", forcedOffline);
   refs.collectionMenuBtn.textContent = state.collectionMode ? t("menu.collectionOn") : t("menu.collectionOff");
   refs.collectionMenuBtn.classList.toggle("active", state.collectionMode);
-  refs.syncBtn.disabled = !loggedIn && !appUnlocked;
+  if (refs.syncUserEmail) {
+    const email = loggedIn ? currentUserEmail() : "";
+    const accountLabel = email || t("auth.notSignedIn");
+    refs.syncUserEmail.hidden = !unlocked;
+    refs.syncUserEmail.textContent = accountLabel;
+    refs.syncUserEmail.title = accountLabel;
+    refs.syncUserEmail.classList.toggle("admin-user-email", canOpenAdminPublishedEdit());
+    refs.syncUserEmail.classList.toggle("guest-user-email", !loggedIn);
+  }
+  refs.syncBtn.hidden = !loggedIn;
+  refs.syncBtn.disabled = !loggedIn || !appUnlocked;
   updateSyncVisualState({ loggedIn, unlocked, message });
   if (message) {
     refs.syncStatus.textContent = message;
@@ -3744,6 +4113,21 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "" }) {
   document.body.classList.toggle("sync-synced", syncVisualState === "synced");
   document.body.classList.toggle("sync-error", syncVisualState === "error");
   refs.syncBtn.dataset.syncState = syncVisualState;
+  const help = syncVisualHelp(syncVisualState);
+  refs.syncBtn.title = help;
+  refs.syncBtn.setAttribute("aria-label", help);
+}
+
+function syncVisualHelp(stateName = syncVisualState) {
+  const labels = {
+    synced: "Зелёная точка: синхронизировано.",
+    dirty: "Оранжевая точка: есть локальные изменения, нужна синхронизация.",
+    syncing: "Зелёная мигающая точка: идёт загрузка или сохранение.",
+    offline: "Жёлтая точка: офлайн или локальный режим.",
+    error: "Красная точка: ошибка синхронизации или сервер недоступен.",
+    local: "Серая точка: локальное состояние без активной синхронизации."
+  };
+  return `${labels[stateName] || labels.local} Нажмите, чтобы проверить сервер и сохранить изменения.`;
 }
 
 async function apiFetch(path, options = {}) {
@@ -4030,6 +4414,7 @@ async function refreshCurrentPackingListId() {
 }
 
 async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice = true, preferredLayout = null } = {}) {
+  if (isSharedListLinkRoute()) return;
   if (isForcedOffline()) {
     if (isExplicitlySignedOut()) {
       await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
@@ -4044,6 +4429,12 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
     authData = await apiFetch("/auth/me");
   } catch (error) {
     currentUser = null;
+    if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
+      appUnlocked = true;
+      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+      updateSyncUi(currentPublicTemplateStatusMessage());
+      return;
+    }
     if (isNetworkError(error)) {
       await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыта локальная копия демо");
       return;
@@ -4058,6 +4449,12 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
   if (!currentUser) {
     appUnlocked = true;
+    activateLocalStorageScope(GUEST_STORAGE_SCOPE);
+    if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
+      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+      updateSyncUi(currentPublicTemplateStatusMessage());
+      return;
+    }
     await loadGuestPublishedDemoOnStartup({ preferLocalCopy: true, remember: true });
     updateSyncUi();
     return;
@@ -4065,6 +4462,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
 
   setExplicitlySignedOut(false);
   appUnlocked = true;
+  activateLocalStorageScopeForCurrentUser();
   updateSyncUi("Вход выполнен · загружаю данные...");
 
   try {
@@ -4088,6 +4486,10 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
 }
 
 function handleWindowReturn() {
+  if (isSharedListLinkRoute()) {
+    if (currentUser) updateSyncUi();
+    return;
+  }
   if (!currentUser && !isForcedOffline()) {
     checkAuthAndLoad({
       restoreLayoutChoice: false,
@@ -4120,6 +4522,8 @@ async function handleAuthButton() {
     currentUser = null;
     appUnlocked = true;
     setExplicitlySignedOut(true);
+    activateLocalStorageScope(GUEST_STORAGE_SCOPE);
+    resetGuestDemoScopeToCanonical();
     await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
     showToast("Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их.", "success");
     return;
@@ -4458,6 +4862,35 @@ function buildListSaveBody({ forceOverwrite = false } = {}) {
   };
 }
 
+function rememberConflictRemoteMeta(record, meta, updatedAt = "") {
+  rememberRemoteIntegrityMeta(record || meta || {});
+  if (updatedAt) syncMeta.serverUpdatedAt = updatedAt;
+  saveSyncMeta();
+}
+
+async function ensurePrivateStateForSharedCopy() {
+  if (!currentUser || isForcedOffline() || canLocalStateOverrideRemote()) return true;
+  try {
+    const data = await fetchRemoteStateRecord();
+    const record = data?.record || data?.list || data || null;
+    const remoteState = normalizeRemoteState(record?.payload || data?.payload || data?.serverPayload || data?.state);
+    const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
+    const rawPayload = record?.payload || data?.payload || data?.serverPayload || data?.state || null;
+    if (remoteState && isMeaningfulPackingState(remoteState)) {
+      applyRemoteState(remoteState, remoteUpdatedAt(record) || data?.serverUpdatedAt || null, remoteIntegrityMeta, rawPayload, {
+        allowDestructive: true
+      });
+    } else {
+      rememberRemoteIntegrityMeta(record || remoteIntegrityMeta || {}, data);
+      rememberCurrentSyncAccount();
+      saveSyncMeta();
+    }
+  } catch (error) {
+    updateSyncUi(`Не удалось загрузить личное состояние перед копированием: ${error.message}`);
+  }
+  return true;
+}
+
 function normalizeRemoteListRecord(data) {
   const list = data?.list || data?.record || data;
   const integrityMeta = stateIntegrityMetaFromResponse(data, list);
@@ -4513,20 +4946,41 @@ async function fetchRemoteListDetailRecord(listId) {
 }
 
 function sharedListIdFromLocation() {
-  try {
-    const url = new URL(location.href);
-    return String(url.searchParams.get(SHARED_LIST_QUERY_PARAM) || url.searchParams.get("shared") || "").trim();
-  } catch {
-    return "";
-  }
+  return sharedListIdFromUrl(location.href, { listParam: SHARED_LIST_QUERY_PARAM });
 }
 
-function buildSharedListUrl(listId) {
-  const url = new URL(location.href);
-  url.search = "";
-  url.hash = "";
-  url.searchParams.set(SHARED_LIST_QUERY_PARAM, listId);
-  return url.toString();
+function sharedLayoutIdFromLocation() {
+  return sharedLayoutIdFromUrl(location.href, { layoutParam: SHARED_LAYOUT_QUERY_PARAM });
+}
+
+function isSharedListLinkRoute() {
+  return Boolean(sharedListIdFromLocation());
+}
+
+function buildSharedListUrl(listId, layoutId = "") {
+  return buildSharedListUrlFromHref(location.href, {
+    listParam: SHARED_LIST_QUERY_PARAM,
+    layoutParam: SHARED_LAYOUT_QUERY_PARAM,
+    listId,
+    layoutId
+  });
+}
+
+function activateSharedPayloadLayout(payload, layoutId = "") {
+  const normalized = normalizePublishedStatePayload(payload);
+  if (!normalized) return null;
+  const requestedLayoutId = String(layoutId || "").trim();
+  if (!requestedLayoutId) return normalized;
+  if (!normalized.layouts?.[requestedLayoutId]) {
+    throw new Error("Укладка из ссылки не найдена в shared-списке.");
+  }
+  normalized.activeLayoutId = requestedLayoutId;
+  applyLayoutArrangement(requestedLayoutId, normalized);
+  return normalized;
+}
+
+function sharedPayloadActiveLayout(payload) {
+  return payload?.layouts?.[payload.activeLayoutId] || Object.values(payload?.layouts || {})[0] || null;
 }
 
 function listRecordVisibility(record) {
@@ -4547,19 +5001,23 @@ async function fetchSharedListLinkRecord(listId) {
   return record;
 }
 
-async function openSharedListFromLink(listId) {
+async function openSharedListFromLink(listId, layoutId = "") {
   const normalizedListId = String(listId || "").trim();
   if (!normalizedListId) return false;
   appUnlocked = true;
   updateSyncUi("Открываю shared-список по ссылке...");
   try {
     const record = await fetchSharedListLinkRecord(normalizedListId);
-    const payload = normalizePublishedStatePayload(record.payload);
+    const payload = activateSharedPayloadLayout(record.payload, layoutId);
     assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record.payload);
     if (!payload) throw new Error("Сервер вернул пустую или повреждённую укладку.");
+    const recordId = remoteRecordId(record, normalizedListId);
+    const activeLayout = sharedPayloadActiveLayout(payload);
+    const activeLayoutId = activeLayout?.id || payload.activeLayoutId || "";
     linkedSharedListLayout = {
-      id: `list-${remoteRecordId(record, normalizedListId)}`,
-      listId: remoteRecordId(record, normalizedListId),
+      id: `linked-list-${recordId}${activeLayoutId ? `-${activeLayoutId}` : ""}`,
+      listId: recordId,
+      requestedLayoutId: activeLayoutId,
       name: record.title || "Shared список",
       subtitle: "Доступ по ссылке",
       roots: [],
@@ -4567,12 +5025,15 @@ async function openSharedListFromLink(listId) {
       listRecord: record,
       linkedSharedList: true
     };
+    linkedSharedListLayout.name = activeLayout?.name || linkedSharedListLayout.name;
+    await hydrateAuthForSharedLink();
     setActiveReadOnlyScope(linkedSharedListLayout.id);
     switchView("packing");
     render();
     updateSyncUi(`Shared список · ${linkedSharedListLayout.name}`);
     return true;
   } catch (error) {
+    await hydrateAuthForSharedLink();
     setActivePrivateScope();
     render();
     updateSyncUi(`Не удалось открыть shared-список: ${error.message}`);
@@ -4604,17 +5065,20 @@ async function shareCurrentPackingListByLink() {
     if (!currentPackingListMeta && listId) await fetchRemoteListDetailRecord(listId).catch(() => null);
     const body = buildListSaveBody({ forceOverwrite: true });
     body.visibility = "shared";
+    body.title = state.layouts?.[state.activeLayoutId]?.name || currentPackingListMeta?.title || "Bikepacking layout";
     body.title = currentPackingListMeta?.title || state.layouts?.[state.activeLayoutId]?.name || "Велоукладка";
     body.description = currentPackingListMeta?.description || "";
+    body.title = state.layouts?.[state.activeLayoutId]?.name || currentPackingListMeta?.title || body.title || "Bikepacking layout";
     const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}`, {
       method: "PUT",
       timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
       body: JSON.stringify(body)
     });
     rememberCurrentPackingListRecord(data);
-    const link = buildSharedListUrl(listId);
+    const sharedLayoutId = state.activeLayoutId;
+    const link = buildSharedListUrl(listId, sharedLayoutId);
     await copySharedListLink(link);
-    updateSyncUi("Список открыт по ссылке · ссылка скопирована");
+    updateSyncUi("Ссылка на список создана и скопирована");
     showToast("Ссылка на список скопирована.", "success");
   } catch (error) {
     updateSyncUi(`Не удалось создать shared-ссылку: ${error.message}`);
@@ -4832,15 +5296,16 @@ async function loadPublishedDemoState(language = uiLanguage) {
       return demoState;
     }
   } catch {
-    try {
-      const demoState = await fetchStateRecordByItemKey(demoItemKeyForLanguage(normalized));
-      if (isSafePublishedDemoState(demoState)) {
-        setDemoPublicTemplateMissing(normalized, false);
-        return demoState;
-      }
-    } catch {
-      // Missing localized demo is a normal isolated state until admin publishes it.
+    // Missing localized demo is a normal isolated state until admin publishes it.
+  }
+  try {
+    const demoState = await fetchStateRecordByItemKey(demoItemKeyForLanguage(normalized));
+    if (isSafePublishedDemoState(demoState)) {
+      setDemoPublicTemplateMissing(normalized, false);
+      return demoState;
     }
+  } catch {
+    // Missing localized demo is a normal isolated state until admin publishes it.
   }
   setDemoPublicTemplateMissing(normalized, true);
   return null;
@@ -4848,6 +5313,7 @@ async function loadPublishedDemoState(language = uiLanguage) {
 
 function isSafePublishedDemoState(demoState) {
   if (!isPackingStateShape(demoState)) return false;
+  if (!isMeaningfulPackingState(demoState)) return false;
   const stats = stateStats(demoState);
   if (stats.items > 80 || stats.containers > 60 || stats.layouts > 3 || stats.rootContainers > 10) return false;
   const activeLayout = demoState.layouts?.[demoState.activeLayoutId] || Object.values(demoState.layouts || {})[0];
@@ -4898,7 +5364,7 @@ async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, prefe
     renderPreservingPackingScroll();
     return true;
   }
-  if (forcePublicScope || !syncMeta.dirty || !hadLocalStateAtStartup || isSuspiciousEmptyPackingState(state)) {
+  if (forcePublicScope || !syncMeta.dirty || !hadAuthoritativeLocalStateAtStartup || isSuspiciousEmptyPackingState(state)) {
     setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
   }
   initialRemoteLoadPending = false;
@@ -4909,6 +5375,7 @@ async function loadGuestPublishedDemoOnStartup({ forcePublicScope = false, prefe
 async function enterSignedOutPublicMode(message = "") {
   currentUser = null;
   appUnlocked = true;
+  activateLocalStorageScope(GUEST_STORAGE_SCOPE);
   saveActivePackingListId("");
   currentPackingListMeta = null;
   await loadGuestPublishedDemoOnStartup({ preferLocalCopy: true, remember: true });
@@ -4921,7 +5388,7 @@ function localPersonalStateForDemoFallback() {
   return null;
 }
 
-async function saveRemoteState({ notify = false, forceOverwrite = false, preferredLayout = null } = {}) {
+async function saveRemoteState({ notify = false, forceOverwrite = false, preferredLayout = null, preferServerOnConflict = false, retryForceConflict = true } = {}) {
   if (!currentUser) return;
   if (forceOverwrite) {
     syncMeta.localUpdatedAt = nowIso();
@@ -4960,6 +5427,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false, preferr
       syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || entitySync.serverUpdatedAt || new Date().toISOString();
       syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
       rememberRemoteIntegrityMeta(entitySync.integrityMeta);
+      rememberCurrentSyncAccount();
       saveBaseState(serializeState({ forSync: true }));
       saveSyncMeta();
       updateSyncUi();
@@ -4972,6 +5440,7 @@ async function saveRemoteState({ notify = false, forceOverwrite = false, preferr
     syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
     rememberRemoteIntegrityMeta(data.record || data.list || data, data);
+    rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     updateSyncUi();
@@ -4989,11 +5458,31 @@ async function saveRemoteState({ notify = false, forceOverwrite = false, preferr
     saveSyncMeta();
     if (error.status === 409) {
       if (forceOverwrite) {
+        if (retryForceConflict) {
+          const conflictRecord = error.data?.record || error.data?.currentRecord || error.data || null;
+          const conflictMeta = stateIntegrityMetaFromResponse(conflictRecord, error.data);
+          const conflictUpdatedAt = remoteUpdatedAt(conflictRecord) || error.data?.serverUpdatedAt || "";
+          if (conflictMeta?.stateRevision != null || conflictUpdatedAt) {
+            rememberConflictRemoteMeta(conflictRecord, conflictMeta, conflictUpdatedAt);
+            await saveRemoteState({
+              notify,
+              forceOverwrite: true,
+              preferredLayout,
+              preferServerOnConflict,
+              retryForceConflict: false
+            });
+            return;
+          }
+        }
         updateSyncUi("Сервер всё ещё отклоняет принудительное сохранение · локальная версия оставлена");
         if (notify) showToast("Сервер не принял принудительное сохранение. Локальная версия не потеряна.", "error");
         return;
       }
-      await handleRemoteSaveConflict(error, { notify, preferredLayout });
+      await handleRemoteSaveConflict(error, {
+        notify,
+        preferredLayout,
+        preferServerWithoutPrompt: preferServerOnConflict || !canLocalStateOverrideRemote()
+      });
       return;
     }
     if (isTemporaryServerStorageError(error)) {
@@ -5016,17 +5505,28 @@ async function saveRemoteState({ notify = false, forceOverwrite = false, preferr
   }
 }
 
-async function handleRemoteSaveConflict(error, { notify = false, preferredLayout = null } = {}) {
+async function handleRemoteSaveConflict(error, { notify = false, preferredLayout = null, preferServerWithoutPrompt = false } = {}) {
   const record = error.data?.record || error.data?.currentRecord || null;
   const remoteState = normalizeRemoteState(record?.payload || error.data?.payload || error.data?.serverPayload);
   const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, error.data);
   const updatedAt = remoteUpdatedAt(record) || error.data?.serverUpdatedAt || null;
+  rememberConflictRemoteMeta(record, remoteIntegrityMeta, updatedAt);
   appUnlocked = true;
   updateSyncUi("Сервер изменился · нужно выбрать версию...");
   const remoteRawPayload = record?.payload || error.data?.payload || error.data?.serverPayload || null;
   if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
   if (!remoteState) {
     if (notify) showToast("Сервер сообщил о конфликте. Локальные изменения не отправлены.", "error");
+    return;
+  }
+  if (preferServerWithoutPrompt || !canLocalStateOverrideRemote()) {
+    const guestCandidate = consumeGuestLocalLayoutCandidate();
+    if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
+      const message = "Загружена серверная версия · временная локальная копия не отправлена";
+      updateSyncUi(message);
+      if (notify) showToast(message, "warning");
+      if (guestCandidate) await offerSaveGuestLocalLayout(guestCandidate);
+    }
     return;
   }
   const baseState = loadBaseState();
@@ -5083,8 +5583,109 @@ async function handleRemoteSaveConflict(error, { notify = false, preferredLayout
   if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
 }
 
+function findLayoutByNormalizedName(name) {
+  const normalized = String(name || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return Object.values(state.layouts || {}).find((layout) =>
+    layout && !layout.adminDemo && !layout.adminSharedSourceId &&
+    String(layout.name || "").trim().toLowerCase() === normalized
+  ) || null;
+}
+
+async function offerSaveGuestLocalLayout(candidate, { confirm = true } = {}) {
+  if (!candidate?.sourceState || !candidate.layoutId || !currentUser) return false;
+  const confirmed = !confirm || await askConfirmDialog({
+    title: "Сохранить гостевую укладку?",
+    text: `Вы вошли в аккаунт, где уже есть данные. Сохранить укладку «${candidate.layoutName}», которую вы редактировали до входа?`,
+    okText: "Сохранить",
+    cancelText: "Не сохранять"
+  });
+  if (!confirmed) return false;
+
+  const existing = findLayoutByNormalizedName(candidate.layoutName);
+  let replaceLayoutId = "";
+  if (existing) {
+    const replace = await askConfirmDialog({
+      title: "Такая укладка уже есть",
+      text: `В аккаунте уже есть укладка «${existing.name}». Заменить её гостевой версией или создать отдельную новую укладку?`,
+      okText: "Заменить",
+      cancelText: "Создать новую",
+      tone: "warning"
+    });
+    if (replace) replaceLayoutId = existing.id;
+  }
+
+  const importedLayoutId = importGuestLocalLayout(candidate, { replaceLayoutId });
+  if (!importedLayoutId) {
+    updateSyncUi("Гостевая укладка уже была перенесена или в ней нет данных для импорта");
+    return false;
+  }
+  renderPreservingPackingScroll();
+  updateSyncUi("Гостевая укладка добавлена в аккаунт · сохраняю на сервер...");
+  const saved = await saveGuestImportToRemote();
+  if (!saved) {
+    updateSyncUi("Гостевая укладка перенесена в аккаунт · сохраню на сервер автоматически при следующей проверке");
+    showToast("Гостевая укладка перенесена в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически.", "warning");
+    scheduleRemoteSave();
+    return false;
+  }
+  showToast(replaceLayoutId ? "Гостевая укладка заменила существующую." : "Гостевая укладка сохранена в аккаунт.", "success");
+  return true;
+}
+
+async function saveGuestImportToRemote() {
+  await saveRemoteState({ notify: false, forceOverwrite: true });
+  if (!syncMeta.dirty) return true;
+  updateSyncUi("Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз...");
+  await saveRemoteState({ notify: false, forceOverwrite: false });
+  return !syncMeta.dirty;
+}
+
+function importGuestLocalLayout(candidate, { replaceLayoutId = "" } = {}) {
+  const source = candidate.sourceState;
+  const sourceLayout = source.layouts?.[candidate.layoutId];
+  if (!sourceLayout) return "";
+  saveRecoverySnapshot("before-guest-layout-import", state);
+  const changedAt = nowIso();
+  addBackupDictionaryValues(state, source);
+  const idMap = { containers: new Map(), items: new Map() };
+  const rootContainerIds = (sourceLayout.rootContainerIds || [])
+    .map((id) => copyPublishedContainerToState(source, id, { targetLayoutId: "", changedAt, idMap }))
+    .filter(Boolean);
+  if (!rootContainerIds.length) return "";
+  const layoutId = replaceLayoutId || `layout-guest-import-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const name = replaceLayoutId
+    ? (state.layouts?.[replaceLayoutId]?.name || readableGuestDemoLayoutName(candidate.layoutName, "Гостевая укладка"))
+    : uniqueLayoutName(candidate.layoutName || "Гостевая укладка");
+  const safeName = readableGuestDemoLayoutName(name, "Гостевая укладка");
+  delete state.layouts[layoutId];
+  state.layouts[layoutId] = {
+    ...clone(sourceLayout),
+    id: layoutId,
+    name: safeName,
+    rootContainerIds,
+    arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
+    ...currentCreateMeta(changedAt)
+  };
+  delete state.layouts[layoutId][GUEST_DEMO_COPY_FLAG];
+  delete state.layouts[layoutId].demoSourceLanguage;
+  state.activeLayoutId = layoutId;
+  applyLayoutArrangement(layoutId);
+  setActivePrivateScope();
+  rememberActiveLayoutChoice(layoutId);
+  normalizeContainerFields(state);
+  normalizeItemFields(state);
+  repairContainerMembershipFromItemLinks(state);
+  normalizeLayoutFields(state);
+  normalizeItemCategories(state);
+  migrateContainerOrder(state);
+  saveState();
+  return layoutId;
+}
+
 async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null } = {}) {
   if (!currentUser) return;
+  if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) {
     appUnlocked = true;
     renderInitialLocalFallbackIfNeeded();
@@ -5109,14 +5710,29 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     const serverTime = timeValue(serverTimeText);
     const localTime = timeValue(syncMeta.localUpdatedAt);
     const isInitialRemotePull = initialRemoteLoadPending;
-    const hasFreshLocalDirtyState = syncMeta.dirty && hasLocalSavedState() && Boolean(localTime) && (!serverTime || localTime > serverTime);
-    const shouldPreferLocalDirtyState = syncMeta.dirty && hasLocalSavedState() && (
+    const hasSavedLocalStateNow = hasLocalSavedState();
+    const localStateCanOverrideRemote = canLocalStateOverrideRemote();
+    const localStateIsNonAuthoritative = hasSavedLocalStateNow && !localStateCanOverrideRemote;
+    const hasFreshLocalDirtyState = syncMeta.dirty && localStateCanOverrideRemote && Boolean(localTime) && (!serverTime || localTime > serverTime);
+    const shouldPreferLocalDirtyState = syncMeta.dirty && localStateCanOverrideRemote && (
       hasFreshLocalDirtyState ||
       isInitialRemotePull ||
       (!isInitialRemotePull && !syncMeta.serverUpdatedAt)
     );
     if (!remoteState) {
-      if (hasLocalSavedState()) {
+      if (pendingGuestLocalLayoutCandidate && !localStateCanOverrideRemote) {
+        const guestCandidate = consumeGuestLocalLayoutCandidate();
+        replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
+        syncMeta.dirty = false;
+        saveSyncMeta();
+        initialRemoteLoadPending = false;
+        appUnlocked = true;
+        renderPreservingPackingScroll();
+        updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
+        await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
+        return;
+      }
+      if (canSeedEmptyRemoteFromLocal()) {
         if (isSuspiciousEmptyPackingState(state)) {
           appUnlocked = true;
           syncMeta.dirty = false;
@@ -5131,7 +5747,19 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         syncMeta.dirty = true;
         syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
         saveSyncMeta();
-        await saveRemoteState({ notify: notifyDirtySave });
+        await saveRemoteState({ notify: notifyDirtySave, preferServerOnConflict: !localStateCanOverrideRemote });
+        return;
+      }
+      const guestCandidate = consumeGuestLocalLayoutCandidate();
+      if (guestCandidate) {
+        replaceState(createEmptyUserState());
+        syncMeta.dirty = false;
+        saveSyncMeta();
+        initialRemoteLoadPending = false;
+        appUnlocked = true;
+        renderPreservingPackingScroll();
+        updateSyncUi("На сервере пока пусто · можно сохранить гостевую укладку в аккаунт");
+        await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
         return;
       }
       replaceState(createEmptyUserState());
@@ -5141,7 +5769,25 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       renderPreservingPackingScroll();
       appUnlocked = true;
       updateSyncUi("На сервере пока пусто · отправляю локальные данные...");
-      await saveRemoteState();
+      await saveRemoteState({ preferServerOnConflict: true });
+      return;
+    }
+
+    const remoteStateMeaningful = isMeaningfulPackingState(remoteState);
+    if (shouldImportGuestLayoutBeforeRemote({
+      candidate: pendingGuestLocalLayoutCandidate,
+      remoteStateMeaningful,
+      localStateCanOverrideRemote
+    })) {
+      const guestCandidate = consumeGuestLocalLayoutCandidate();
+      replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
+      syncMeta.dirty = false;
+      saveSyncMeta();
+      initialRemoteLoadPending = false;
+      appUnlocked = true;
+      renderPreservingPackingScroll();
+      updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
+      await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
       return;
     }
 
@@ -5151,6 +5797,13 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       if (isSuspiciousEmptyPackingState(state) && isMeaningfulPackingState(remoteState)) {
         applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
         if (notifyDirtySave) showToast("Загружена восстановленная версия с сервера.", "success");
+        return;
+      }
+      if ((isInitialRemotePull || localStateIsNonAuthoritative) && !localStateCanOverrideRemote && isMeaningfulPackingState(remoteState)) {
+        const guestCandidate = consumeGuestLocalLayoutCandidate();
+        if (applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && guestCandidate) {
+          await offerSaveGuestLocalLayout(guestCandidate);
+        }
         return;
       }
       if (!syncMeta.dirty) {
@@ -5230,6 +5883,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
     rememberRemoteIntegrityMeta(remoteIntegrityMeta);
+    rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     appUnlocked = true;
@@ -5266,12 +5920,14 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
 function startRemoteStateWatcher() {
   if (remoteRefreshTimer) window.clearInterval(remoteRefreshTimer);
   remoteRefreshTimer = window.setInterval(() => {
+    if (isSharedListLinkRoute()) return;
     checkRemoteStateFreshness({ preferredLayout: preferredCurrentLayoutRef() });
   }, REMOTE_REFRESH_INTERVAL_MS);
 }
 
 async function checkRemoteStateFreshness({ notify = false, preferredLayout = null } = {}) {
   if (isForcedOffline()) return;
+  if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) return;
   if (!currentUser || syncMeta.dirty || remoteRefreshInFlight) return;
   if (document.hidden) return;
@@ -5850,6 +6506,22 @@ async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
 async function loadSharedLayoutPayload(layoutId) {
   const layout = findSharedLayout(layoutId);
   if (!layout) return false;
+  if (layout.linkedSharedList) {
+    const fallback = Boolean(sharedLayoutStatePayload(layout));
+    if (!layout.listId) return fallback;
+    try {
+      const record = await fetchSharedListLinkRecord(layout.listId);
+      const payload = activateSharedPayloadLayout(record.payload, layout.requestedLayoutId);
+      assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record.payload);
+      if (!payload) return fallback;
+      layout.statePayload = payload;
+      layout.listRecord = record;
+      layout.name = sharedPayloadActiveLayout(payload)?.name || record.title || layout.name;
+      return true;
+    } catch {
+      return fallback;
+    }
+  }
   const remoteState = await fetchStateRecordByItemKey(sharedLayoutItemKey(layoutId));
   if (!isPackingStateShape(remoteState)) return false;
   layout.statePayload = remoteState;
@@ -6003,27 +6675,19 @@ function bindSharedLayoutEvents(root = document) {
     button.addEventListener("click", () => copySharedLayout(button.dataset.copySharedLayout));
   });
   root.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      if (isReadonlyTemplateView()) {
-        handleReadonlyTemplateAction(event);
-        return;
-      }
-      copySharedRoot(button.dataset.copySharedRoot);
-    });
+    button.addEventListener("click", () => copySharedRoot(button.dataset.copySharedRoot));
   });
   root.querySelectorAll("[data-copy-shared-item]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      if (isReadonlyTemplateView()) {
-        handleReadonlyTemplateAction(event);
-        return;
-      }
-      copySharedItem(button.dataset.copySharedItem);
-    });
+    button.addEventListener("click", () => copySharedItem(button.dataset.copySharedItem));
   });
 }
 
 function isReadonlyTemplateView() {
   return Boolean(isSharedLayoutView() && !canOpenAdminPublishedEdit());
+}
+
+function canRenderAddButtonInCurrentTemplate() {
+  return shouldShowTemplateAddButton(isReadonlyTemplateView());
 }
 
 function readonlyTemplateMessage() {
@@ -6050,19 +6714,26 @@ function handleReadonlyTemplateAction(event) {
 }
 
 function markReadonlyTemplateActionButtons(root = document) {
+  root.querySelectorAll("[data-add-to-container], [data-delete-root], [data-remove-from-layout], [data-delete-item]").forEach((button) => {
+    button.hidden = true;
+    button.setAttribute("aria-hidden", "true");
+  });
+  root.querySelectorAll("[data-edit-item], [data-copy-layout-item], [data-copy-item], [data-edit-root], [data-edit-container], [data-copy-root]").forEach((button) => {
+    button.classList.remove("template-action-disabled");
+    button.removeAttribute("aria-disabled");
+    button.title = TEMPLATE_COPY_TITLE;
+    button.setAttribute("aria-label", TEMPLATE_COPY_TITLE);
+    button.innerHTML = TEMPLATE_COPY_ICON_HTML;
+  });
+  return;
   const selector = [
-    "[data-copy-layout-item]",
-    "[data-copy-item]",
     "[data-edit-item]",
-    "[data-copy-root]",
     "[data-edit-root]",
     "[data-delete-root]",
     "[data-add-to-container]",
     "[data-edit-container]",
     "[data-remove-from-layout]",
-    "[data-delete-item]",
-    "[data-copy-shared-root]",
-    "[data-copy-shared-item]"
+    "[data-delete-item]"
   ].join(",");
   root.querySelectorAll(selector).forEach((button) => {
     button.classList.add("template-action-disabled");
@@ -6074,19 +6745,19 @@ function markReadonlyTemplateActionButtons(root = document) {
 function bindSharedVirtualEvents(root = document) {
   const demoSource = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
   const readonlyTemplate = isReadonlyTemplateView();
-  if (!readonlyTemplate) addSharedReadOnlyCopyButtons(root);
+  if (!canOpenAdminPublishedEdit() && !readonlyTemplate) addSharedReadOnlyCopyButtons(root);
   bindSharedLayoutEvents(root);
   root.querySelectorAll("[data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (readonlyTemplate) {
-        confirmCreateLayoutFromReadonlyTemplate();
-        return;
-      }
       const virtualId = button.dataset.copyLayoutItem || button.dataset.copyItem || button.dataset.editItem;
       const sourceId = originalSharedId(virtualId, "shared-virtual-item-");
       if (!sourceId) return;
+      if (readonlyTemplate) {
+        openSharedItemCopyPicker(sourceId);
+        return;
+      }
       if (button.dataset.editItem && canOpenAdminPublishedEdit()) editSharedSourceAsAdmin("item", sourceId);
       else if (!canOpenAdminPublishedEdit()) openSharedReadonlyItemDialog(sourceId);
       else copySharedItem(sourceId);
@@ -6096,14 +6767,14 @@ function bindSharedVirtualEvents(root = document) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (readonlyTemplate) {
-        confirmCreateLayoutFromReadonlyTemplate();
-        return;
-      }
       const virtualId = button.dataset.copyRoot || button.dataset.editRoot || button.dataset.deleteRoot ||
         button.dataset.addToContainer || button.dataset.editContainer;
       const sourceId = originalSharedId(virtualId, "shared-virtual-container-");
       if (!sourceId) return;
+      if (readonlyTemplate) {
+        openSharedContainerCopyPicker(sourceId);
+        return;
+      }
       if (canOpenAdminPublishedEdit() && (button.dataset.editRoot || button.dataset.editContainer || button.dataset.addToContainer || button.dataset.deleteRoot)) {
         const action = button.dataset.addToContainer ? "add" : button.dataset.deleteRoot ? "delete" : "edit";
         editSharedSourceAsAdmin("container", sourceId, action);
@@ -6357,10 +7028,30 @@ function chooseSharedCopyTargetLayoutId() {
   return layouts[index]?.id || layouts[0].id;
 }
 
+function ensureSharedCopyTargetLayoutId() {
+  const existing = chooseSharedCopyTargetLayoutId() || selectedSharedTargetLayoutId();
+  if (existing) return existing;
+  const changedAt = nowIso();
+  const layoutId = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const arrangement = createEmptyLayoutArrangement();
+  state.layouts[layoutId] = {
+    id: layoutId,
+    name: uniqueLayoutName("Новая укладка"),
+    rootContainerIds: [],
+    arrangement,
+    ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
+    ...currentCreateMeta(changedAt)
+  };
+  state.activeLayoutId = layoutId;
+  rememberActiveLayoutChoice(layoutId);
+  return layoutId;
+}
+
 async function copySharedRoot(rootId) {
   const published = findSharedPublishedContainer(rootId);
   if (published) {
-    const targetLayoutId = chooseSharedCopyTargetLayoutId() || selectedSharedTargetLayoutId();
+    await ensurePrivateStateForSharedCopy();
+    const targetLayoutId = ensureSharedCopyTargetLayoutId();
     if (!targetLayoutId) return;
     const rootName = published.container.name;
     const sourceSnapshot = snapshotContainerTree(rootId, { targetState: published.sourceState });
@@ -6376,7 +7067,8 @@ async function copySharedRoot(rootId) {
   }
   const root = findSharedRoot(rootId);
   if (!root) return;
-  const targetLayoutId = chooseSharedCopyTargetLayoutId() || selectedSharedTargetLayoutId();
+  await ensurePrivateStateForSharedCopy();
+  const targetLayoutId = ensureSharedCopyTargetLayoutId();
   if (!targetLayoutId) return;
   const sourceSnapshot = legacySharedRootSnapshot(root);
   if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, root.name))) return;
@@ -6392,7 +7084,8 @@ async function copySharedRoot(rootId) {
 async function copySharedItem(itemId) {
   const published = findSharedPublishedItem(itemId);
   if (published) {
-    const targetLayoutId = chooseSharedCopyTargetLayoutId();
+    await ensurePrivateStateForSharedCopy();
+    const targetLayoutId = ensureSharedCopyTargetLayoutId();
     if (!targetLayoutId) return;
     const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: published.item } };
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, published.item.name))) return;
@@ -6408,7 +7101,8 @@ async function copySharedItem(itemId) {
   }
   const match = findSharedItem(itemId);
   if (!match) return;
-  const targetLayoutId = chooseSharedCopyTargetLayoutId();
+  await ensurePrivateStateForSharedCopy();
+  const targetLayoutId = ensureSharedCopyTargetLayoutId();
   if (!targetLayoutId) return;
   const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: match.item } };
   if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, match.item.name))) return;
@@ -6420,6 +7114,61 @@ async function copySharedItem(itemId) {
   renderSharedLayouts();
   openItemDialog(copiedItemId);
   showToast(`«${match.item.name}» скопировано в вещи.`, "success");
+}
+
+async function copySharedItemToLayoutContainer(itemId, targetContainerId, targetLayoutId) {
+  if (!itemId || !targetContainerId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
+  await ensurePrivateStateForSharedCopy();
+  const published = findSharedPublishedItem(itemId);
+  const match = published ? null : findSharedItem(itemId);
+  const sourceName = published?.item?.name || match?.item?.name || "";
+  const sourceSnapshot = published
+    ? { rootId: "", containers: {}, items: { [itemId]: published.item } }
+    : { rootId: "", containers: {}, items: { [itemId]: match?.item } };
+  if (!sourceName || !(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName))) return;
+  const copiedItemId = published
+    ? copyPublishedItemToState(published.sourceState, itemId, { containerId: "" })
+    : copySharedItemToState(match.item, { containerId: "" });
+  if (!copiedItemId) return;
+  if (!placeExistingItemInLayout(copiedItemId, targetContainerId, targetLayoutId, { changedAt: nowIso() })) {
+    delete state.items[copiedItemId];
+    return;
+  }
+  markRecentlyAddedItem(copiedItemId, targetLayoutId);
+  setActivePrivateScope();
+  saveState();
+  switchActiveLayout(targetLayoutId);
+  refs.containerPickerDialog.close();
+  render();
+  renderSharedLayouts();
+  requestAnimationFrame(() => focusRecentlyAddedItem(copiedItemId));
+  showToast(`"${sourceName}" \u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u0443\u044e \u0441\u0443\u043c\u043a\u0443.`, "success");
+}
+
+async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId) {
+  if (!rootId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
+  await ensurePrivateStateForSharedCopy();
+  const published = findSharedPublishedContainer(rootId);
+  const root = published ? null : findSharedRoot(rootId);
+  const sourceName = published?.container?.name || root?.name || "";
+  const sourceSnapshot = published
+    ? snapshotContainerTree(rootId, { targetState: published.sourceState })
+    : root ? legacySharedRootSnapshot(root) : null;
+  if (!sourceName || !(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName))) return;
+  const changedAt = nowIso();
+  const copiedRootId = published
+    ? copyPublishedContainerToState(published.sourceState, rootId, { targetLayoutId: "", parentId: targetParentId || null, changedAt })
+    : copySharedRootToState(root, { targetLayoutId: "", parentId: targetParentId || null, changedAt });
+  if (!copiedRootId) return;
+  if (!placeExistingContainerInLayout(copiedRootId, targetParentId, targetLayoutId, { changedAt })) return;
+  setActivePrivateScope();
+  saveState();
+  switchActiveLayout(targetLayoutId);
+  refs.containerPickerDialog.close();
+  render();
+  renderSharedLayouts();
+  requestAnimationFrame(() => focusRecentlyAddedContainer(copiedRootId));
+  showToast(`"${sourceName}" \u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u0443\u044e \u0443\u043a\u043b\u0430\u0434\u043a\u0443.`, "success");
 }
 
 function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
@@ -6450,6 +7199,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     };
     markLocalPublicCopyOrigin(state.items[nextId], "item", sourceItemId, sourceLayoutId);
     if (preserveSource) state.items[nextId].sharedSourceId = sourceItemId;
+    else stripPublicOriginForPrivateCopy(state.items[nextId]);
     return nextId;
   };
 
@@ -6471,6 +7221,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     };
     markLocalPublicCopyOrigin(state.containers[nextId], "container", sourceContainerId, sourceLayoutId);
     if (preserveSource) state.containers[nextId].sharedSourceId = sourceContainerId;
+    else stripPublicOriginForPrivateCopy(state.containers[nextId]);
     state.collapsedContainers[nextId] = false;
 
     const copiedChildren = new Map();
@@ -6532,6 +7283,7 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
   };
   markLocalPublicCopyOrigin(state.items[id], "item", itemId, sourceLayoutId);
   if (preserveSource) state.items[id].sharedSourceId = itemId;
+  else stripPublicOriginForPrivateCopy(state.items[id]);
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
     container.itemIds.push(id);
@@ -6539,165 +7291,6 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     touchContainer(containerId, changedAt);
   }
   return id;
-}
-
-const PRIVATE_COPY_PUBLIC_ORIGIN_FIELDS = [
-  "scope",
-  "entityScope",
-  "sourceScope",
-  "source",
-  "origin",
-  "sourceType",
-  "source_type",
-  "originType",
-  "visibility",
-  "sourceId",
-  "source_id",
-  "sourceEntityId",
-  "sourceListId",
-  "source_list_id",
-  "originListId",
-  "origin_list_id",
-  "publicListId",
-  "listId",
-  "list_id",
-  "sourceItemId",
-  "source_item_id",
-  "sourceContainerId",
-  "source_container_id",
-  "sourceLayoutId",
-  "source_layout_id",
-  "sharedSourceId",
-  "sharedSourceItemId",
-  "sharedSourceContainerId",
-  "sharedSourceLayoutId",
-  "publicSourceId",
-  "publicSourceItemId",
-  "publicSourceContainerId",
-  "publicSourceLayoutId",
-  "publicCatalogLayoutId",
-  "publicCatalogItemId",
-  "publicCatalogContainerId",
-  "templateId",
-  "templateSourceId",
-  "adminDemo",
-  "isAdminDemo",
-  "demo",
-  "isDemo",
-  "adminShared",
-  "isAdminShared",
-  "adminSharedSourceId",
-  "isPublicCatalog",
-  "publicCatalog"
-];
-
-function isExternalBikePackingSourceId(value) {
-  const id = String(value || "").trim().toLowerCase();
-  return Boolean(id && (
-    id.startsWith("public-demo-state") ||
-    id.startsWith("public-shared-layout-") ||
-    id.startsWith("admin-demo-") ||
-    id.startsWith("demo-") ||
-    id.startsWith("admin-shared-") ||
-    id.startsWith("shared-") ||
-    id.startsWith("shared-virtual-") ||
-    id.includes("public-demo") ||
-    id.includes("public-shared") ||
-    id.includes("item-shared-item-shared") ||
-    id.includes("container-shared-container-shared") ||
-    id.includes("shared-item-shared") ||
-    id.includes("shared-container-shared")
-  ));
-}
-
-function hasPrivateSyncBlockedPublicOrigin(record, fallbackId = "") {
-  if (!record || typeof record !== "object") return false;
-  if (isExternalBikePackingSourceId(record.id || fallbackId)) return true;
-  const scope = String(record.scope || record.entityScope || record.sourceScope || "").trim().toLowerCase();
-  if (scope && scope !== "private" && scope !== "user" && scope !== "personal") return true;
-  const sourceType = String(record.sourceType || record.source_type || record.originType || "").trim().toLowerCase();
-  if (["demo", "shared", "public", "public-template", "curated-bikepacker"].includes(sourceType)) return true;
-  const visibility = String(record.visibility || "").trim().toLowerCase();
-  if (visibility === "public" || visibility === "shared") return true;
-  if ([
-    record.adminDemo,
-    record.isAdminDemo,
-    record.demo,
-    record.isDemo,
-    record.adminShared,
-    record.isAdminShared,
-    record.isPublicCatalog,
-    record.publicCatalog
-  ].some((value) => value === true)) return true;
-  const markerKeys = [
-    "adminDemoId",
-    "adminDemoItemId",
-    "adminDemoContainerId",
-    "adminDemoLayoutId",
-    "adminSharedSourceId",
-    "publicCatalogLayoutId",
-    "sharedSourceId",
-    "sharedSourceItemId",
-    "sharedSourceContainerId",
-    "sharedSourceLayoutId"
-  ];
-  if (markerKeys.some((key) => String(record[key] || "").trim())) return true;
-  return ["listId", "list_id", "sourceListId", "source_list_id", "originListId", "origin_list_id", "publicListId", "sourceId", "source_id", "sourceEntityId"]
-    .some((key) => isExternalBikePackingSourceId(record[key]));
-}
-
-function stripPublicOriginForPrivateCopy(record) {
-  if (!record || typeof record !== "object") return false;
-  let changed = false;
-  PRIVATE_COPY_PUBLIC_ORIGIN_FIELDS.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(record, key)) {
-      delete record[key];
-      changed = true;
-    }
-  });
-  return changed;
-}
-
-function publicCopySourceIdFromRecord(record, kind, fallbackId = "") {
-  if (!record || typeof record !== "object") return "";
-  if (record._publicCopySourceKind === kind && record._publicCopySourceId) {
-    return String(record._publicCopySourceId);
-  }
-  const virtualPrefix = kind === "container" ? "shared-virtual-container-" : "shared-virtual-item-";
-  const sourceId = String(
-    record.sharedSourceId ||
-    originalSharedId(record.id || fallbackId, virtualPrefix) ||
-    fallbackId ||
-    ""
-  ).trim();
-  if (!sourceId) return "";
-  return hasPrivateSyncBlockedPublicOrigin(record, record.id || fallbackId) || isExternalBikePackingSourceId(sourceId)
-    ? sourceId
-    : "";
-}
-
-function markPrivateCopyOriginFromSource(target, source, kind, fallbackId = "") {
-  const sourceId = publicCopySourceIdFromRecord(source, kind, fallbackId);
-  if (!sourceId) return false;
-  markLocalPublicCopyOrigin(target, kind, sourceId, source?._publicCopySourceLayoutId || source?.publicCatalogLayoutId || "");
-  return true;
-}
-
-function publicCopySnapshotFromSourceSnapshot(sourceSnapshot) {
-  const containers = {};
-  const items = {};
-  Object.entries(sourceSnapshot?.containers || {}).forEach(([id, container]) => {
-    const sourceId = publicCopySourceIdFromRecord(container, "container", id) || id;
-    containers[sourceId] = container;
-  });
-  Object.entries(sourceSnapshot?.items || {}).forEach(([id, item]) => {
-    const sourceId = publicCopySourceIdFromRecord(item, "item", id) || id;
-    items[sourceId] = item;
-  });
-  const rootId = publicCopySourceIdFromRecord(sourceSnapshot?.containers?.[sourceSnapshot?.rootId], "container", sourceSnapshot?.rootId) ||
-    sourceSnapshot?.rootId ||
-    "";
-  return { rootId, containers, items };
 }
 
 function publicCopyComparableText(value) {
@@ -6721,33 +7314,6 @@ function publicCopyItemFingerprint(item) {
     categories,
     publicCopyPhotoKey(item)
   ].join("\u001f");
-}
-
-function sanitizePrivateCopiedPublicOrigins(targetState = state) {
-  const layouts = Object.values(targetState.layouts || {}).filter((layout) =>
-    layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG]
-  );
-  if (!layouts.length) return 0;
-  const containerIds = new Set();
-  const itemIds = new Set();
-  layouts.forEach((layout) => {
-    const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : null;
-    [...(layout.rootContainerIds || []), ...(arrangement?.rootContainerIds || [])].forEach((id) => containerIds.add(id));
-    Object.keys(arrangement?.containers || {}).forEach((id) => containerIds.add(id));
-    Object.keys(arrangement?.items || {}).forEach((id) => itemIds.add(id));
-  });
-  let changed = 0;
-  containerIds.forEach((id) => {
-    const container = targetState.containers?.[id];
-    if (!container || isExternalBikePackingSourceId(id) || !hasPrivateSyncBlockedPublicOrigin(container, id)) return;
-    if (stripPublicOriginForPrivateCopy(container)) changed += 1;
-  });
-  itemIds.forEach((id) => {
-    const item = targetState.items?.[id];
-    if (!item || isExternalBikePackingSourceId(id) || !hasPrivateSyncBlockedPublicOrigin(item, id)) return;
-    if (stripPublicOriginForPrivateCopy(item)) changed += 1;
-  });
-  return changed;
 }
 
 function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
@@ -6815,7 +7381,7 @@ function demoCopyActionText() {
 
 function demoCopyLayoutName(sourceName = "") {
   const fallback = uiLanguage === "en" ? "Demo copy" : "\u041c\u043e\u044f \u0434\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
-  const baseName = String(sourceName || fallback).trim();
+  const baseName = readableGuestDemoLayoutName(sourceName, fallback);
   return uniqueLayoutName(baseName || fallback);
 }
 
@@ -6868,7 +7434,41 @@ async function createLocalDemoCopy({ forceNew = false, remember = true } = {}) {
   return layoutId;
 }
 
-function copySharedLayout(layoutId) {
+function sharedLayoutPublicSourceId(layout, sourceLayout = null) {
+  return String(sourceLayout?.id || layout?.requestedLayoutId || layout?.id || "").trim();
+}
+
+function findCopiedSharedLayout(layout, sourceLayout = null) {
+  const sourceId = sharedLayoutPublicSourceId(layout, sourceLayout);
+  if (!sourceId) return null;
+  return Object.values(state.layouts || {}).find((entry) =>
+    entry &&
+    !entry.adminDemo &&
+    !entry.adminSharedSourceId &&
+    entry._publicCopySourceKind === "layout" &&
+    String(entry._publicCopySourceId || "") === sourceId
+  ) || null;
+}
+
+async function confirmRepeatedSharedLayoutCopy(existingLayout, sourceName = "") {
+  if (!existingLayout) return true;
+  const openExisting = await askConfirmDialog({
+    title: "Укладка уже скопирована",
+    text: `«${sourceName || existingLayout.name || "Укладка"}» уже есть в ваших укладках как «${existingLayout.name || "Укладка"}». Открыть существующую вместо создания ещё одной копии?`,
+    okText: "Открыть существующую",
+    cancelText: "Создать копию",
+    tone: "safe"
+  });
+  if (!openExisting) return true;
+  openPrivateLayout(existingLayout.id, { remember: true });
+  if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
+  switchView("packing");
+  render();
+  showToast("Открыта уже скопированная укладка.", "success");
+  return false;
+}
+
+async function copySharedLayout(layoutId) {
   const layout = findSharedLayout(layoutId);
   if (!layout) return;
   if (layout.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()) {
@@ -6877,9 +7477,11 @@ function copySharedLayout(layoutId) {
     });
     return;
   }
+  await ensurePrivateStateForSharedCopy();
   const changedAt = nowIso();
   const sourceState = sharedLayoutStatePayload(layout);
   const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
+  if (!(await confirmRepeatedSharedLayoutCopy(findCopiedSharedLayout(layout, sourceLayout), sourceLayout?.name || layout.name))) return;
   const rootIds = sourceState
     ? (sourceLayout?.rootContainerIds || []).map((id) => copyPublishedContainerToState(sourceState, id, { targetLayoutId: "", changedAt }))
     : sharedLayoutRoots(layout).map((root) => copySharedRootToState(root, { targetLayoutId: "", changedAt }));
@@ -6892,6 +7494,7 @@ function copySharedLayout(layoutId) {
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentCreateMeta(changedAt)
   };
+  markLocalPublicCopyOrigin(state.layouts[nextLayoutId], "layout", sharedLayoutPublicSourceId(layout, sourceLayout), sourceState?.activeLayoutId || layout.id);
   state.activeLayoutId = nextLayoutId;
   applyLayoutArrangement(nextLayoutId);
   setActivePrivateScope();
@@ -7119,7 +7722,7 @@ function editSharedSourceAsAdmin(type, sourceId, action = "edit") {
   return true;
 }
 
-function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayoutId(), changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
+function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayoutId(), parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
   const id = preserveSource
     ? `container-shared-${root.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -7141,6 +7744,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
   };
   markLocalPublicCopyOrigin(state.containers[id], "container", root.id, "legacy-shared");
   if (preserveSource) state.containers[id].sharedSourceId = root.id;
+  else stripPublicOriginForPrivateCopy(state.containers[id]);
   (root.items || []).forEach((item) => copySharedItemToState(item, { containerId: id, changedAt, idMap, preserveSource }));
   state.collapsedContainers[id] = false;
   if (targetLayoutId && state.layouts[targetLayoutId]) {
@@ -7172,6 +7776,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
   };
   markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared");
   if (preserveSource) state.items[id].sharedSourceId = item.id;
+  else stripPublicOriginForPrivateCopy(state.items[id]);
   if (!state.categories.includes("Прочее")) state.categories.push("Прочее");
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
@@ -8664,7 +9269,7 @@ function createSubcontainerFromAddDialog(event) {
   state.containers[id] = {
     id,
     name,
-    parentId: null,
+    parentId,
     childIds: [],
     itemIds: [],
     order: [],
@@ -8792,6 +9397,18 @@ function getDialogSelectedCategories() {
   return checked.length ? checked : [state.categories[0] || "Прочее"];
 }
 
+function isContainerPickerCopyMode() {
+  return isContainerPickerCopyModeValue(containerPickerMode);
+}
+
+function isContainerPickerItemCopyMode() {
+  return isContainerPickerItemCopyModeValue(containerPickerMode);
+}
+
+function isContainerPickerContainerCopyMode() {
+  return isContainerPickerContainerCopyModeValue(containerPickerMode);
+}
+
 function openItemContainerPickerDialog(event) {
   event?.preventDefault();
   containerPickerMode = "item";
@@ -8831,6 +9448,34 @@ function openRootContainerCopyPickerDialog(event) {
   openModalDialog(refs.containerPickerDialog);
 }
 
+function firstPrivateLayoutId() {
+  return Object.values(state.layouts || {}).find((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId)?.id || "";
+}
+
+async function openSharedItemCopyPicker(sourceId) {
+  if (!sourceId) return;
+  await ensurePrivateStateForSharedCopy();
+  sharedPickerSourceItemId = sourceId;
+  sharedPickerSourceContainerId = "";
+  containerPickerMode = SHARED_ITEM_COPY_PICKER_MODE;
+  containerPickerTargetContainerId = "";
+  containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  renderContainerPicker();
+  openModalDialog(refs.containerPickerDialog);
+}
+
+async function openSharedContainerCopyPicker(sourceId) {
+  if (!sourceId) return;
+  await ensurePrivateStateForSharedCopy();
+  sharedPickerSourceItemId = "";
+  sharedPickerSourceContainerId = sourceId;
+  containerPickerMode = SHARED_CONTAINER_COPY_PICKER_MODE;
+  containerPickerTargetContainerId = "";
+  containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  renderContainerPicker();
+  openModalDialog(refs.containerPickerDialog);
+}
+
 function renderContainerPicker() {
   const layoutOptions = getContainerPickerLayoutOptions();
   if (!layoutOptions.some((layout) => layout.id === containerPickerLayoutId)) {
@@ -8846,9 +9491,9 @@ function renderContainerPicker() {
   });
   refs.containerPickerBoard.innerHTML = boardHtml ||
     `<div class="empty">В текущей укладке нет верхних элементов</div>`;
-  refs.containerPickerNoneBtn.hidden = containerPickerMode === "container" || containerPickerMode === "item-copy";
+  refs.containerPickerNoneBtn.hidden = containerPickerMode === "container" || isContainerPickerItemCopyMode();
   refs.containerPickerNoneBtn.classList.toggle("active", containerPickerMode === "item" && !refs.itemContainer.value);
-  refs.containerPickerNoneBtn.textContent = containerPickerMode === "container-copy"
+  refs.containerPickerNoneBtn.textContent = isContainerPickerContainerCopyMode()
     ? "В корень укладки"
     : refs.itemContainer.value ? "Убрать из укладки" : "Вне укладки";
   refs.containerPickerBoard.querySelectorAll("[data-pick-container]").forEach((button) => {
@@ -8864,7 +9509,7 @@ function renderContainerPicker() {
 
 function getContainerPickerLayoutOptions() {
   const currentLayout = getPublishedWorkLayout();
-  const copyMode = containerPickerMode === "item-copy" || containerPickerMode === "container-copy";
+  const copyMode = isContainerPickerCopyMode();
   if (!copyMode) {
     return currentLayout ? [currentLayout] : [];
   }
@@ -8876,7 +9521,7 @@ function getContainerPickerLayoutOptions() {
 
 function renderContainerPickerLayoutSelect(layoutOptions) {
   if (!refs.containerPickerLayoutField || !refs.containerPickerLayoutSelect) return;
-  const visible = (containerPickerMode === "item-copy" || containerPickerMode === "container-copy") && layoutOptions.length > 1;
+  const visible = isContainerPickerCopyMode() && layoutOptions.length > 1;
   refs.containerPickerLayoutField.hidden = !visible;
   if (!visible) return;
   fillSelect(
@@ -8888,6 +9533,14 @@ function renderContainerPickerLayoutSelect(layoutOptions) {
 
 function updateContainerPickerTitle() {
   if (!refs.containerPickerTitle) return;
+  if (containerPickerMode === SHARED_ITEM_COPY_PICKER_MODE) {
+    refs.containerPickerTitle.textContent = "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0432\u0435\u0449\u044c \u0438\u0437 \u0448\u0430\u0431\u043b\u043e\u043d\u0430";
+    return;
+  }
+  if (containerPickerMode === SHARED_CONTAINER_COPY_PICKER_MODE) {
+    refs.containerPickerTitle.textContent = "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0441\u0443\u043c\u043a\u0443 \u0438\u0437 \u0448\u0430\u0431\u043b\u043e\u043d\u0430";
+    return;
+  }
   if (containerPickerMode === "item-copy") {
     refs.containerPickerTitle.textContent = "Скопировать в место";
     return;
@@ -8971,7 +9624,7 @@ function renderContainerPickerCurrentSlot(level, compact = false) {
 }
 
 function isContainerPickerCurrentTarget(containerId) {
-  return (containerPickerMode === "container" || containerPickerMode === "container-copy") &&
+  return (containerPickerMode === "container" || isContainerPickerContainerCopyMode()) &&
     containerId === containerPickerTargetContainerId;
 }
 
@@ -9009,7 +9662,7 @@ function isContainerPickerCurrentPositionSlot(parentId, orderIndex) {
 }
 
 function getContainerPickerSelectedId() {
-  if (containerPickerMode === "item-copy" || containerPickerMode === "container-copy") return "";
+  if (isContainerPickerCopyMode()) return "";
   return containerPickerMode === "container" ? getRootContainerDialogParentId() : refs.itemContainer.value;
 }
 
@@ -9018,7 +9671,7 @@ function getContainerPickerSelectedIndex() {
 }
 
 function isContainerPickerTargetAllowed(containerId) {
-  if (containerPickerMode !== "container" && containerPickerMode !== "container-copy") return true;
+  if (containerPickerMode !== "container" && !isContainerPickerContainerCopyMode()) return true;
   if (!containerPickerTargetContainerId) return true;
   if (containerId === containerPickerTargetContainerId) return false;
   return !getDescendantContainerIds(containerPickerTargetContainerId).includes(containerId);
@@ -9035,6 +9688,14 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
   }
   if (containerPickerMode === "container-copy") {
     await copyContainerTreeToLayout(editingRootContainerId, containerPickerLayoutId, containerId);
+    return;
+  }
+  if (containerPickerMode === SHARED_ITEM_COPY_PICKER_MODE) {
+    await copySharedItemToLayoutContainer(sharedPickerSourceItemId, containerId, containerPickerLayoutId);
+    return;
+  }
+  if (containerPickerMode === SHARED_CONTAINER_COPY_PICKER_MODE) {
+    await copySharedRootToLayoutContainer(sharedPickerSourceContainerId, containerId, containerPickerLayoutId);
     return;
   }
   selectItemContainer(containerId);
@@ -9054,6 +9715,21 @@ function closeSourceEditorAfterCopy(kind, sourceId) {
   }
   if (kind === "container" && editingRootContainerId === sourceId && refs.rootContainerDialog?.open) {
     refs.rootContainerDialog.close("copy");
+  }
+}
+
+async function hydrateAuthForSharedLink() {
+  if (currentUser || isForcedOffline()) return;
+  try {
+    const authData = await apiFetch("/auth/me", { silentErrors: true });
+    currentUser = authData.user || authData.me || authData.account || null;
+    if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
+    if (currentUser) {
+      setExplicitlySignedOut(false);
+      activateLocalStorageScopeForCurrentUser();
+    }
+  } catch {
+    currentUser = null;
   }
 }
 
@@ -9239,22 +9915,6 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     if (!snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) && linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
   }
   duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
-}
-
-function snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) {
-  return Object.entries(sourceSnapshot?.containers || {}).some(([id, container]) =>
-    hasPrivateSyncBlockedPublicOrigin(container, id)
-  ) || Object.entries(sourceSnapshot?.items || {}).some(([id, item]) =>
-    hasPrivateSyncBlockedPublicOrigin(item, id)
-  );
-}
-
-function snapshotHasLocalPublicCopyOrigin(sourceSnapshot) {
-  return Object.entries(sourceSnapshot?.containers || {}).some(([id, container]) =>
-    Boolean(publicCopySourceIdFromRecord(container, "container", id))
-  ) || Object.entries(sourceSnapshot?.items || {}).some(([id, item]) =>
-    Boolean(publicCopySourceIdFromRecord(item, "item", id))
-  );
 }
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
@@ -9671,6 +10331,12 @@ function sharedLayoutStatePayload(layout = currentSharedLayout()) {
   return normalizePublishedStatePayload(layout?.statePayload);
 }
 
+function sharedVirtualCollapsedState(layout, containers, rootContainerIds = []) {
+  if (layout?.id === DEMO_SHARED_LAYOUT_ID) return {};
+  if (!layout?.linkedSharedList) return { ...sharedVirtualCollapsedContainers };
+  return collapsedDefaultsForTemplateContainers(containers, sharedVirtualCollapsedContainers, rootContainerIds);
+}
+
 function sharedVirtualLayoutId(layoutId) {
   return `shared-virtual-layout-${layoutId}`;
 }
@@ -9751,7 +10417,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
       }
     },
     activeLayoutId: virtualLayoutId,
-    collapsedContainers: { ...sharedVirtualCollapsedContainers },
+    collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
     locations: [defaultRootContainerLocation(state)],
     showItemMeta: true,
@@ -9842,7 +10508,7 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
       }
     },
     activeLayoutId: virtualLayoutId,
-    collapsedContainers: { ...sharedVirtualCollapsedContainers },
+    collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
     locations: [...(sourceState.locations || [defaultRootContainerLocation(state)])],
     showItemMeta: sourceState.showItemMeta !== false,
@@ -10218,21 +10884,30 @@ function renderContainer(containerId) {
   const descendantIds = getDescendantContainerIds(containerId);
   const hasNestedContainers = descendantIds.length > 0;
   const allNestedCollapsed = hasNestedContainers && descendantIds.every((id) => state.collapsedContainers[id]);
+  const rootCollapsed = isReadOnlyStateScope() && Boolean(state.collapsedContainers[containerId]);
+  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
   const packed = state.collectionMode && isContainerPacked(containerId);
   const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
   return `
     <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
+          ${isReadOnlyStateScope() ? `
+            <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "\u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c" : "\u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c"}">
+              <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
+            </button>
+          ` : ""}
           <h2>${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}</h2>
         </div>
         <div class="container-tools">
+          ${isReadonlyTemplateView() ? "" : `
           <button
             class="header-icon-button add-to-container-button"
             data-add-to-container="${container.id}"
             aria-label="Добавить вещь"
             title="Добавить вещь"
           >+</button>
+          `}
           <button
             class="header-icon-button"
             data-edit-container="${container.id}"
@@ -10255,9 +10930,9 @@ function renderContainer(containerId) {
           <span>${formatWeight(total)}</span>
         </div>
       </header>
-      ${renderItemPhoto(container)}
+      ${rootCollapsed ? "" : renderItemPhoto(container)}
       <div class="dropzone" data-container-id="${container.id}">
-        ${renderContainerContents(container.id)}
+        ${rootCollapsed ? "" : renderContainerContents(container.id)}
       </div>
     </article>
   `;
@@ -10266,21 +10941,29 @@ function renderContainer(containerId) {
 function renderFilteredContainer(containerId) {
   const container = state.containers[containerId];
   const total = containerWeight(containerId);
+  const rootCollapsed = isReadOnlyStateScope() && Boolean(state.collapsedContainers[containerId]);
+  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
   const packed = state.collectionMode && isContainerPacked(containerId);
   const justAdded = recentlyAddedContainerId === container.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
+  const rootCollapseButton = isReadOnlyStateScope()
+    ? `<button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "\u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c" : "\u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c"}"><span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span></button>`
+    : "";
   return `
     <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
+          ${rootCollapseButton}
           <h2>${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${highlight(container.name)}</h2>
         </div>
         <div class="container-tools">
+          ${isReadonlyTemplateView() ? "" : `
           <button
             class="header-icon-button add-to-container-button"
             data-add-to-container="${container.id}"
             aria-label="Добавить вещь"
             title="Добавить вещь"
           >+</button>
+          `}
           <button
             class="header-icon-button"
             data-edit-container="${container.id}"
@@ -10290,9 +10973,9 @@ function renderFilteredContainer(containerId) {
           <span>${formatWeight(total)}</span>
         </div>
       </header>
-      ${renderItemPhoto(container)}
+      ${rootCollapsed ? "" : renderItemPhoto(container)}
       <div class="dropzone" data-container-id="${container.id}">
-        ${renderFilteredContainerContents(container.id)}
+        ${rootCollapsed ? "" : renderFilteredContainerContents(container.id)}
       </div>
     </article>
   `;
@@ -13328,6 +14011,39 @@ function placeExistingItemInLayout(itemId, containerId, layoutId = state.activeL
   return true;
 }
 
+function placeExistingContainerInLayout(containerId, parentId, layoutId = state.activeLayoutId, { changedAt = nowIso(), targetIndex = null } = {}) {
+  const layout = state.layouts?.[layoutId];
+  if (!state.containers?.[containerId] || !layout) return false;
+  if (parentId && !state.containers?.[parentId]) return false;
+  const previousArrangement = clone(layout.arrangement || createEmptyLayoutArrangement());
+  const previousRootContainerIds = [...(layout.rootContainerIds || [])];
+  const previousParentId = state.containers[containerId].parentId || null;
+  const rollback = () => {
+    layout.arrangement = previousArrangement;
+    layout.rootContainerIds = previousRootContainerIds;
+    state.containers[containerId].parentId = previousParentId;
+    if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+    return false;
+  };
+  state.containers[containerId].parentId = parentId || null;
+  if (!ensureLayoutContainerPlacement(layout, containerId)) return rollback();
+  if (parentId) {
+    if (!moveContainerInLayoutArrangement(layout, containerId, parentId, targetIndex)) return rollback();
+    state.collapsedContainers[parentId] = false;
+  } else {
+    const arrangement = layout.arrangement || createEmptyLayoutArrangement();
+    arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => id !== containerId);
+    arrangement.rootContainerIds.push(containerId);
+    if (arrangement.containers?.[containerId]) arrangement.containers[containerId].parentId = "";
+    layout.rootContainerIds = [...arrangement.rootContainerIds];
+  }
+  normalizeLayoutArrangement(layout, state);
+  touchLayout(layoutId, changedAt);
+  if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+  markRecentlyAddedContainer(containerId, layoutId);
+  return true;
+}
+
 function moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex = null) {
   return moveItemInLayoutArrangementForState(state, layout, itemId, targetContainerId, targetIndex);
 }
@@ -14731,6 +15447,372 @@ function itemTotalWeight(item) {
   return itemTotalWeightForState(item);
 }
 
+function openBackupDialog() {
+  backupImportState = null;
+  if (refs.backupFileInput) refs.backupFileInput.value = "";
+  renderBackupRulesText();
+  setBackupStatus("");
+  if (refs.backupAnalysis) refs.backupAnalysis.innerHTML = "";
+  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = true;
+  if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = true;
+  openModalDialog(refs.backupDialog);
+}
+
+function renderBackupRulesText() {
+  if (!refs.backupRules) return;
+  refs.backupRules.innerHTML = `
+    <section class="backup-rule-section">
+      <h3>Создать архив</h3>
+      <p>Архив скачивается ZIP-файлом и содержит полное состояние: укладки, вещи, сумки/контейнеры, настройки и фото. У администратора дополнительно попадают demo/shared-укладки.</p>
+      <p>Такой архив можно загрузить в другом аккаунте, чтобы перенести данные. Файл не привязан к email, поэтому храните его как приватный экспорт данных.</p>
+    </section>
+    <section class="backup-rule-section warning">
+      <h3>Загрузить из архива</h3>
+      <p><strong>Полное восстановление:</strong> всё текущее состояние пользователя будет потеряно и заменено данными из архива.</p>
+      <p><strong>Отдельные укладки:</strong> укладки с совпадающим именем заменяются, новые создаются, недостающие вещи/сумки/фото добавляются.</p>
+      <p>После восстановления данные становятся данными аккаунта, в который вы сейчас вошли.</p>
+    </section>
+  `;
+}
+
+function setBackupStatus(message, type = "") {
+  if (!refs.backupStatus) return;
+  refs.backupStatus.className = `dialog-status ${type}`.trim();
+  refs.backupStatus.textContent = message || "";
+}
+
+async function fetchBackupPhotoBlob(photo, variant = "file") {
+  const localId = photo.localId || photo.id;
+  const cached = localId ? await getCachedPhoto(localId) : null;
+  if (cached) {
+    if (variant === "thumb" && cached.thumbBlob) return cached.thumbBlob;
+    if (cached.blob) return cached.blob;
+  }
+  const src = variant === "thumb" ? (photo.thumbUrl || photo.url) : (photo.url || photo.thumbUrl);
+  if (!src) return null;
+  const response = await fetch(src, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error(`Фото ${photo.id || ""}: HTTP ${response.status}`);
+  return await response.blob();
+}
+
+function buildCurrentBackupManifest(snapshot, photos) {
+  const admin = canOpenAdminPublishedEdit()
+    ? {
+        demoStates: SUPPORTED_LANGUAGES.map((language) => ({
+          language,
+          payload: demoStatePayloadForLanguage(language)
+        })).filter((entry) => entry.payload),
+        sharedLayouts: SUPPORTED_LANGUAGES.map((language) => ({
+          language,
+          layouts: clone(currentSharedLayouts(language))
+        }))
+      }
+    : null;
+  return buildBackupManifest({
+    state: snapshot,
+    photos,
+    appVersion: APP_VERSION,
+    language: uiLanguage,
+    admin,
+    now: nowIso()
+  });
+}
+
+async function createBackupArchive() {
+  try {
+    setBackupStatus("Собираю данные и подтягиваю фото...");
+    captureActiveLayoutArrangement();
+    const snapshot = clone(state);
+    const adminPhotoSnapshots = canOpenAdminPublishedEdit()
+      ? SUPPORTED_LANGUAGES.map((language) => demoStatePayloadForLanguage(language)).filter(Boolean)
+      : [];
+    const { entries: photoEntries, photos, missing } = await buildBackupPhotoEntries(snapshot, {
+      extraSnapshots: adminPhotoSnapshots,
+      normalizePhotos: normalizeItemPhotos,
+      fetchPhotoBlob: fetchBackupPhotoBlob
+    });
+    const manifest = buildCurrentBackupManifest(snapshot, photos);
+    const zip = await createBackupZip(manifest, photoEntries);
+    const url = URL.createObjectURL(zip);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = backupDownloadName();
+    a.click();
+    URL.revokeObjectURL(url);
+    setBackupStatus(
+      missing.length
+        ? `Архив создан, но ${missing.length} фото не удалось подтянуть. Проверьте старые/недоступные фото.`
+        : `Архив создан: ${Object.keys(snapshot.layouts || {}).length} укладок, ${photos.length} фото.`,
+      missing.length ? "error" : "success"
+    );
+  } catch (error) {
+    setBackupStatus(`Не удалось создать архив: ${error.message}`, "error");
+  }
+}
+
+async function handleBackupFileSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    setBackupStatus("Читаю архив...");
+    const { manifest, photoFiles } = await readBackupArchiveFile(file);
+    const backupState = normalizeRemoteState(manifest.data?.state || manifest.state);
+    if (!backupState) throw new Error("В архиве нет корректного состояния.");
+    backupImportState = { manifest, state: backupState, photoFiles, selectedLayoutIds: new Set() };
+    renderBackupAnalysis();
+    setBackupStatus(`Архив прочитан: ${Object.keys(backupState.layouts || {}).length} укладок, ${photoFiles.size} фото.`, "success");
+  } catch (error) {
+    backupImportState = null;
+    if (refs.backupAnalysis) refs.backupAnalysis.innerHTML = "";
+    if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = true;
+    if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = true;
+    setBackupStatus(`Не удалось прочитать архив: ${error.message}`, "error");
+  }
+}
+
+function backupLayoutRows() {
+  return backupImportState ? buildBackupLayoutRows(backupImportState.state, state) : [];
+}
+
+function selectedBackupLayoutIds() {
+  return new Set([...refs.backupAnalysis.querySelectorAll("[data-backup-layout-id]:checked")]
+    .map((input) => input.dataset.backupLayoutId)
+    .filter(Boolean));
+}
+
+function summarizeSelectedBackupLayouts(layoutIds = new Set()) {
+  if (!backupImportState) return { replace: 0, create: 0, newItems: [], newContainers: [], photos: [] };
+  return summarizeBackupLayouts({
+    backupState: backupImportState.state,
+    currentState: state,
+    photoFiles: backupImportState.photoFiles,
+    layoutIds,
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState,
+    normalizePhotos: normalizeItemPhotos
+  });
+}
+
+function renderBackupAnalysis() {
+  if (!backupImportState || !refs.backupAnalysis) return;
+  const rows = backupLayoutRows();
+  backupImportState.selectedLayoutIds = new Set(rows.map((row) => row.layout.id));
+  refs.backupAnalysis.innerHTML = `
+    <div class="backup-summary">
+      В архиве: ${Object.keys(backupImportState.state.layouts || {}).length} укладок, ${Object.keys(backupImportState.state.items || {}).length} вещей, ${Object.keys(backupImportState.state.containers || {}).length} сумок/мест, ${backupImportState.photoFiles.size} фото.
+    </div>
+    <div class="backup-layout-list">
+      ${rows.map(({ layout, mode }) => `
+        <label class="backup-layout-row ${mode}">
+          <input type="checkbox" data-backup-layout-id="${escapeHtml(layout.id)}" checked />
+          <span>
+            <strong>${escapeHtml(layout.name || "Укладка без названия")}</strong>
+            <small>${mode === "replace"
+              ? "У пользователя уже есть укладка с таким же именем: она будет заменена."
+              : "Такой укладки нет: она будет создана."}</small>
+          </span>
+          <span class="backup-badge ${mode}">${mode === "replace" ? "замена" : "создание"}</span>
+        </label>
+      `).join("")}
+    </div>
+    <div id="backupSelectionSummary" class="backup-summary"></div>
+  `;
+  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.hidden = rows.length === 0;
+  if (refs.backupRestoreFullBtn) refs.backupRestoreFullBtn.hidden = false;
+  updateBackupSelectionSummary();
+}
+
+function handleBackupSelectionChange(event) {
+  if (!event.target.closest("[data-backup-layout-id]")) return;
+  updateBackupSelectionSummary();
+}
+
+function updateBackupSelectionSummary() {
+  if (!backupImportState) return;
+  backupImportState.selectedLayoutIds = selectedBackupLayoutIds();
+  const summary = summarizeSelectedBackupLayouts(backupImportState.selectedLayoutIds);
+  const target = document.querySelector("#backupSelectionSummary");
+  if (target) {
+    target.innerHTML = `
+      Выбрано: ${backupImportState.selectedLayoutIds.size}. Будет заменено укладок: ${summary.replace}; создано укладок: ${summary.create}.<br />
+      Новые вещи: ${summary.newItems.length}; новые сумки/места: ${summary.newContainers.length}; фото из архива к проверке/загрузке: ${summary.photos.length}.
+    `;
+  }
+  if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.disabled = backupImportState.selectedLayoutIds.size === 0;
+}
+
+async function resolveExistingBackupPhotos(photoFiles) {
+  if (!photoFiles?.size || !currentUser || isForcedOffline()) return new Map();
+  try {
+    const listId = await ensureCurrentPackingListId();
+    const hashes = [...photoFiles.values()].map((entry) => entry.meta?.sha256).filter(Boolean);
+    if (!hashes.length) return new Map();
+    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/resolve`, {
+      method: "POST",
+      timeoutMs: LIST_API_TIMEOUT_MS,
+      body: JSON.stringify({ hashes })
+    });
+    const result = new Map();
+    Object.entries(data.photosByHash || {}).forEach(([hash, photo]) => {
+      if (hash && photo?.id) result.set(hash, photo);
+    });
+    return result;
+  } catch {
+    return new Map();
+  }
+}
+
+async function prepareBackupPhotosForState(targetState, photoIds = null) {
+  if (!backupImportState?.photoFiles?.size) return { reused: 0, queued: 0, missing: 0 };
+  const wanted = photoIds ? new Set([...photoIds].filter(Boolean)) : null;
+  const relevantFiles = new Map([...backupImportState.photoFiles.entries()].filter(([id]) => !wanted || wanted.has(id)));
+  const resolved = await resolveExistingBackupPhotos(relevantFiles);
+  let reused = 0;
+  let queued = 0;
+  let missing = 0;
+  const rewrite = async (photo) => {
+    const originalId = String(photo.id || photo.localId || "").trim();
+    if (!originalId || (wanted && !wanted.has(originalId))) return;
+    const file = backupImportState.photoFiles.get(originalId);
+    if (!file) {
+      missing += 1;
+      return;
+    }
+    const existing = file.meta?.sha256 ? resolved.get(file.meta.sha256) : null;
+    if (existing?.id) {
+      Object.assign(photo, {
+        id: existing.id,
+        localId: "",
+        status: "synced",
+        url: existing.url || "",
+        thumbUrl: existing.thumbUrl || "",
+        listId: currentPackingListId || existing.listId || "",
+        updatedAt: existing.updatedAt || nowIso(),
+        error: ""
+      });
+      reused += 1;
+      return;
+    }
+    await putCachedPhoto({
+      id: originalId,
+      blob: file.blob,
+      thumbBlob: file.thumbBlob || file.blob,
+      fileName: file.meta?.fileName || `${originalId}.jpg`,
+      type: file.blob.type || file.meta?.type || "image/jpeg",
+      size: file.blob.size,
+      width: file.meta?.width || photo.width || 0,
+      height: file.meta?.height || photo.height || 0,
+      createdAt: photo.createdAt || nowIso(),
+      updatedAt: nowIso()
+    });
+    Object.assign(photo, {
+      id: originalId,
+      localId: originalId,
+      status: "pending",
+      url: "",
+      thumbUrl: "",
+      error: ""
+    });
+    queued += 1;
+  };
+  for (const entity of [...Object.values(targetState.items || {}), ...Object.values(targetState.containers || {})]) {
+    for (const photo of normalizeItemPhotos(entity)) {
+      await rewrite(photo);
+    }
+  }
+  return { reused, queued, missing };
+}
+
+async function restoreSelectedBackupLayouts() {
+  if (!backupImportState) return;
+  const selectedIds = selectedBackupLayoutIds();
+  if (!selectedIds.size) return;
+  const summary = summarizeSelectedBackupLayouts(selectedIds);
+  const confirmed = await askConfirmDialog({
+    title: "Восстановить выбранные укладки?",
+    text: "При восстановлении отдельных укладок заменяются только укладки с совпадающим именем, новые создаются, недостающие вещи/сумки/фото добавляются.",
+    highlightText: `Будет заменено: ${summary.replace}; создано: ${summary.create}; новые вещи: ${summary.newItems.length}; новые сумки/места: ${summary.newContainers.length}; фото к проверке: ${summary.photos.length}.`,
+    okText: "Восстановить выбранные",
+    tone: "warning"
+  });
+  if (!confirmed) return;
+  try {
+    setBackupStatus("Восстанавливаю выбранные укладки...");
+    saveRecoverySnapshot("before-backup-layout-restore", state);
+    const source = backupImportState.state;
+    const selectedRows = backupLayoutRows().filter((row) => selectedIds.has(row.layout.id));
+    const importedPhotoIds = new Set();
+    const changedAt = nowIso();
+    addBackupDictionaryValues(state, source);
+    selectedRows.forEach(({ layout, existing }) => {
+      const targetLayoutId = existing?.id || (!state.layouts?.[layout.id] ? layout.id : `layout-backup-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      if (existing?.id) delete state.layouts[existing.id];
+      getLayoutContainerIdSetForState(source, layout).forEach((containerId) => {
+        const result = mergeBackupRecordWithExisting(state.containers, source.containers?.[containerId], { normalizePhotos: normalizeItemPhotos });
+        result.photoIds.forEach((id) => importedPhotoIds.add(id));
+        if (result.created) markEdited(state.containers[containerId], changedAt);
+      });
+      getLayoutItemIdSetForState(source, layout).forEach((itemId) => {
+        const result = mergeBackupRecordWithExisting(state.items, source.items?.[itemId], { normalizePhotos: normalizeItemPhotos });
+        result.photoIds.forEach((id) => importedPhotoIds.add(id));
+        if (result.created) markEdited(state.items[itemId], changedAt);
+      });
+      state.layouts[targetLayoutId] = {
+        ...clone(layout),
+        id: targetLayoutId,
+        updatedAt: changedAt
+      };
+      state.activeLayoutId = targetLayoutId;
+    });
+    await prepareBackupPhotosForState(state, importedPhotoIds);
+    normalizeContainerFields(state);
+    normalizeItemFields(state);
+    repairContainerMembershipFromItemLinks(state);
+    normalizeLayoutFields(state);
+    normalizeItemCategories(state);
+    migrateContainerOrder(state);
+    applyLayoutArrangement(state.activeLayoutId, state);
+    saveState();
+    render();
+    await uploadPendingPhotos({ markDirty: true }).catch(() => null);
+    await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
+    setBackupStatus("Выбранные укладки восстановлены.", "success");
+    showToast("Выбранные укладки восстановлены.", "success");
+  } catch (error) {
+    setBackupStatus(`Не удалось восстановить укладки: ${error.message}`, "error");
+  }
+}
+
+async function restoreFullBackup() {
+  if (!backupImportState) return;
+  const stats = stateStats(backupImportState.state);
+  const confirmed = await askConfirmDialog({
+    title: "Восстановить всё из архива?",
+    text: "При полном восстановлении всё текущее состояние пользователя будет потеряно и заменено данными из архива.",
+    highlightText: `Будет восстановлено: ${stats.layouts} укладок, ${stats.items} вещей, ${stats.containers} сумок/мест. Текущее состояние будет потеряно.`,
+    okText: "Восстановить всё",
+    tone: "danger"
+  });
+  if (!confirmed) return;
+  try {
+    setBackupStatus("Восстанавливаю полное состояние...");
+    const nextState = normalizeRemoteState(backupImportState.state);
+    if (!nextState) throw new Error("Состояние из архива повреждено.");
+    await prepareBackupPhotosForState(nextState);
+    replaceState(nextState, { preserveLocalUi: false });
+    syncMeta.dirty = true;
+    syncMeta.localUpdatedAt = nowIso();
+    saveSyncMeta();
+    render();
+    await uploadPendingPhotos({ markDirty: true }).catch(() => null);
+    await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
+    setBackupStatus("Полное состояние восстановлено.", "success");
+    showToast("Полное состояние восстановлено.", "success");
+  } catch (error) {
+    setBackupStatus(`Не удалось восстановить состояние: ${error.message}`, "error");
+  }
+}
+
 function exportData() {
   const layout = state.layouts[state.activeLayoutId];
   const html = buildPrintableDocument(state, {
@@ -14755,7 +15837,7 @@ function resetData() {
     okText: "Сбросить",
     onConfirm: () => {
       saveRecoverySnapshot("before-reset", state);
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(scopedLocalStorageKey(STORAGE_KEY));
       Object.assign(state, createEmptyUserState());
       normalizeItemFields(state);
       repairContainerMembershipFromItemLinks(state);

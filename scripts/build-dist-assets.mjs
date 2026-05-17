@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = path.join(rootDir, "dist");
+const outputArg = process.argv[2] || process.env.BIKE_PACKING_DIST_DIR || "dist";
+const distDir = path.resolve(rootDir, outputArg);
 
 async function copyIfExists(source, target) {
   try {
