@@ -355,6 +355,7 @@ let syncInFlight = false;
 let syncQueued = false;
 let syncQueuedForce = false;
 let publishedLayoutSaveTimer = null;
+let publishedLayoutSaveLayoutId = "";
 let applyingRemoteState = false;
 let appUnlocked = true;
 let initialRemoteLoadPending = false;
@@ -525,6 +526,164 @@ function currentSharedLayouts(language = uiLanguage) {
   return sharedLayoutsByLanguage[normalizeUiLanguage(language)] || sharedLayoutsByLanguage[DEFAULT_LANGUAGE] || [];
 }
 
+function demoLayoutChoiceForLanguage(language = uiLanguage) {
+  const normalized = normalizeUiLanguage(language);
+  return normalized === DEFAULT_LANGUAGE ? DEMO_LAYOUT_SELECT_VALUE : `demo:${normalized}`;
+}
+
+function isDemoLayoutChoice(choice) {
+  const value = String(choice || "").trim();
+  if (value === DEMO_LAYOUT_SELECT_VALUE) return true;
+  if (!value.startsWith("demo:")) return false;
+  const language = value.slice("demo:".length);
+  return Boolean(language && SUPPORTED_LANGUAGES.includes(normalizeUiLanguage(language)));
+}
+
+function demoLanguageFromLayoutChoice(choice) {
+  const value = String(choice || "").trim();
+  if (!value.startsWith("demo:")) return DEFAULT_LANGUAGE;
+  const language = value.slice("demo:".length);
+  if (!language || language === "default") return DEFAULT_LANGUAGE;
+  return normalizeUiLanguage(language);
+}
+
+function languageOptionLabel(language) {
+  return normalizeUiLanguage(language).toUpperCase();
+}
+
+function allSharedLayoutsByAdminOrder() {
+  const result = [];
+  const seen = new Set();
+  const languageOrder = [
+    normalizeUiLanguage(uiLanguage),
+    ...SUPPORTED_LANGUAGES.map(normalizeUiLanguage).filter((language) => language !== normalizeUiLanguage(uiLanguage))
+  ];
+  languageOrder.forEach((language) => {
+    currentSharedLayouts(language).forEach((layout) => {
+      if (!layout?.id || seen.has(layout.id)) return;
+      seen.add(layout.id);
+      if (!layout.language) layout.language = language;
+      result.push(layout);
+    });
+  });
+  return result;
+}
+
+function adminPublicLayoutOptions() {
+  return [
+    ...SUPPORTED_LANGUAGES.map((language) => [
+      demoLayoutChoiceForLanguage(language),
+      `${t("template.prefix")}: ${t("demo.layoutName")} (${languageOptionLabel(language)})`,
+      "demo"
+    ]),
+    ...(linkedSharedListLayout ? [[
+      `shared:${linkedSharedListLayout.id}`,
+      `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`,
+      "shared"
+    ]] : []),
+    ...allSharedLayoutsByAdminOrder().map((layout) => [
+      `shared:${layout.id}`,
+      `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
+      "shared"
+    ])
+  ];
+}
+
+function publicLayoutChoiceForLayout(layout) {
+  if (!layout) return "";
+  if (layout.adminDemo) return demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage);
+  if (layout.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
+  return "";
+}
+
+function copyPickerLayoutLabel(layout) {
+  if (!layout) return "Укладка";
+  if (layout.adminDemo) {
+    return `${layout.name || t("demo.layoutName")} (${languageOptionLabel(layout.adminDemoLanguage || uiLanguage)})`;
+  }
+  if (layout.adminSharedSourceId) {
+    const sharedLayout = findSharedLayout(layout.adminSharedSourceId);
+    const language = layout.language || sharedLayout?.language || uiLanguage;
+    return `${layout.name || sharedLayout?.name || t("shared.prefix")} (${languageOptionLabel(language)})`;
+  }
+  return layout.name || "Укладка";
+}
+
+function orderAdminPublicDraftsLikeMainSelect(layouts) {
+  const optionOrder = new Map();
+  adminPublicLayoutOptions().forEach(([value], index) => optionOrder.set(value, index));
+  return [...layouts].sort((a, b) => {
+    const aOrder = optionOrder.get(publicLayoutChoiceForLayout(a)) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = optionOrder.get(publicLayoutChoiceForLayout(b)) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return String(a.name || "").localeCompare(String(b.name || ""), "ru");
+  });
+}
+
+function normalizeDictionaryValues(values, fallbackValues = []) {
+  const result = [];
+  [...(Array.isArray(values) ? values : []), ...(Array.isArray(fallbackValues) ? fallbackValues : [])].forEach((value) => {
+    if (typeof value !== "string") return;
+    const normalized = value.trim();
+    if (normalized && !result.includes(normalized)) result.push(normalized);
+  });
+  return result;
+}
+
+function ensureLayoutDictionaries(layout, sourceState = null) {
+  if (!layout) return null;
+  if (!Array.isArray(layout.locations) || !layout.locations.length) {
+    layout.locations = normalizeDictionaryValues(sourceState?.locations, state.locations || locations);
+  }
+  if (!Array.isArray(layout.categories) || !layout.categories.length) {
+    layout.categories = normalizeDictionaryValues(sourceState?.categories, state.categories || categories);
+  }
+  return layout;
+}
+
+function activeDictionaryOwner() {
+  const layout = state.layouts?.[state.activeLayoutId];
+  return isPublishedLayoutEditable(layout) ? ensureLayoutDictionaries(layout) : state;
+}
+
+function activeLocations() {
+  return normalizeDictionaryValues(activeDictionaryOwner()?.locations, locations);
+}
+
+function activeCategories() {
+  return normalizeDictionaryValues(activeDictionaryOwner()?.categories, categories);
+}
+
+function activeDictionaryList(type) {
+  return type === "location" ? activeLocations() : activeCategories();
+}
+
+function dictionaryEditScope(owner = activeDictionaryOwner()) {
+  const layout = owner !== state ? state.layouts?.[state.activeLayoutId] : null;
+  if (!layout) {
+    return {
+      owner: state,
+      items: Object.values(state.items || {}),
+      containers: Object.values(state.containers || {})
+    };
+  }
+  const itemIds = getLayoutItemIdSetForState(state, layout);
+  const containerIds = getLayoutContainerIdSetForState(state, layout);
+  return {
+    owner,
+    layout,
+    items: [...itemIds].map((id) => state.items?.[id]).filter(Boolean),
+    containers: [...containerIds].map((id) => state.containers?.[id]).filter(Boolean)
+  };
+}
+
+function saveDictionaryOwner(owner = activeDictionaryOwner()) {
+  editingDictionaryEntry = null;
+  saveState();
+  if (owner !== state) scheduleActivePublishedEditSave();
+  render();
+}
+
 function applyPublicTemplateLanguage() {
   demoSharedLayout.name = t("demo.layoutName");
   demoSharedLayout.subtitle = t("demo.subtitle");
@@ -677,10 +836,11 @@ function init() {
     event.currentTarget?.blur?.();
     await flushActivePublishedEditSave();
     const value = event.target.value;
-    if (value === DEMO_LAYOUT_SELECT_VALUE) {
+    if (isDemoLayoutChoice(value)) {
+      const language = demoLanguageFromLayoutChoice(value);
       if (await confirmPublicLayoutTransition("demo")) {
-        if (canOpenAdminPublishedEdit()) await openAdminDemoLayout();
-        else await openDemoLayoutFromSelect();
+        if (canOpenAdminPublishedEdit()) await openAdminDemoLayout({ language });
+        else await openDemoLayoutFromSelect({ language });
       } else {
         renderFilters();
       }
@@ -1795,14 +1955,14 @@ function saveActivePackingListId(listId) {
 function normalizeActiveLayoutChoice(choice) {
   const value = String(choice || "").trim();
   if (!value) return "";
-  if (value === DEMO_LAYOUT_SELECT_VALUE) return value;
+  if (isDemoLayoutChoice(value)) return demoLayoutChoiceForLanguage(demoLanguageFromLayoutChoice(value));
   if (value.startsWith("shared:")) return value.slice("shared:".length) ? value : "";
   return value;
 }
 
 function isPrivateLayoutChoice(choice) {
   const normalized = normalizeActiveLayoutChoice(choice);
-  return Boolean(normalized && normalized !== DEMO_LAYOUT_SELECT_VALUE && !normalized.startsWith("shared:"));
+  return Boolean(normalized && !isDemoLayoutChoice(normalized) && !normalized.startsWith("shared:"));
 }
 
 function isPrivateUserLayoutId(layoutId) {
@@ -1862,7 +2022,7 @@ function currentLayoutChoice() {
     return readonlyId === DEMO_SHARED_LAYOUT_ID ? DEMO_LAYOUT_SELECT_VALUE : `shared:${readonlyId}`;
   }
   const layout = state.layouts?.[state.activeLayoutId];
-  if (layout?.adminDemo) return DEMO_LAYOUT_SELECT_VALUE;
+  if (layout?.adminDemo) return demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage);
   if (layout?.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
   return state.activeLayoutId || "";
 }
@@ -1874,9 +2034,15 @@ function rememberActiveLayoutChoice(choice = currentLayoutChoice()) {
   }
 }
 
-function rememberPrivateServerLayoutChoice() {
-  const layoutId = state.layouts?.[state.activeLayoutId] ? state.activeLayoutId : Object.values(state.layouts || {})[0]?.id || "";
+function rememberPrivateServerLayoutChoice({ preferStored = true } = {}) {
+  const storedLayoutId = preferStored ? loadActivePrivateLayoutChoice() : "";
+  const layoutId = storedLayoutId ||
+    (state.layouts?.[state.activeLayoutId] ? state.activeLayoutId : Object.values(state.layouts || {})[0]?.id || "");
   if (!layoutId || !isPrivateUserLayoutId(layoutId)) return;
+  if (storedLayoutId && state.activeLayoutId !== storedLayoutId) {
+    state.activeLayoutId = storedLayoutId;
+    applyLayoutArrangement(storedLayoutId);
+  }
   saveActiveLayoutChoice(layoutId);
 }
 
@@ -1969,18 +2135,19 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
   const privateChoice = !publicOnly ? loadActivePrivateLayoutChoice() || activePrivateChoice : "";
   let choice = loadActiveLayoutChoice();
   const adminPublicChoice = !publicOnly && canOpenAdminPublishedEdit() && (
-    choice === DEMO_LAYOUT_SELECT_VALUE ||
+    isDemoLayoutChoice(choice) ||
     String(choice || "").startsWith("shared:")
   );
   if (privateOnly && adminPublicChoice) choice = privateChoice;
-  if (!privateOnly && !adminPublicChoice && !publicOnly && choice === DEMO_LAYOUT_SELECT_VALUE && !explicitChoice && privateChoice) choice = privateChoice;
+  if (!privateOnly && !adminPublicChoice && !publicOnly && isDemoLayoutChoice(choice) && !explicitChoice && privateChoice) choice = privateChoice;
   if (!publicOnly && isPrivateLayoutChoice(choice) && !isPrivateUserLayoutId(choice) && privateChoice) choice = privateChoice;
   if (!choice) choice = privateChoice;
   if (!choice) return false;
-  if (choice === DEMO_LAYOUT_SELECT_VALUE) {
+  if (isDemoLayoutChoice(choice)) {
+    const language = demoLanguageFromLayoutChoice(choice);
     if (privateOnly) return false;
-    if (canOpenAdminPublishedEdit() && !publicOnly) await openAdminDemoLayout({ remember: false });
-    else await openDemoLayoutFromSelect({ remember: false });
+    if (canOpenAdminPublishedEdit() && !publicOnly) await openAdminDemoLayout({ remember: false, language });
+    else await openDemoLayoutFromSelect({ remember: false, language });
     return true;
   }
   if (choice.startsWith("shared:")) {
@@ -1993,7 +2160,7 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
   }
   const savedLayout = state.layouts?.[choice];
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminDemo) {
-    await openAdminDemoLayout({ remember: false });
+    await openAdminDemoLayout({ remember: false, language: savedLayout.adminDemoLanguage || uiLanguage });
     return true;
   }
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminSharedSourceId) {
@@ -2064,6 +2231,13 @@ async function withLayoutArrangementAppliedAsync(layoutId, callback) {
     restoreModeState(previousMode);
     if (previousLayoutId && state.layouts?.[previousLayoutId]) applyLayoutArrangement(previousLayoutId);
   }
+}
+
+function persistActiveLayoutSelection({ sync = false } = {}) {
+  if (!state.layouts?.[state.activeLayoutId]) return;
+  if (isReadOnlyStateScope() || isAdminEditablePublishedLayout(state.activeLayoutId)) return;
+  if (!canUseLocalEditableState(state.activeLayoutId)) return;
+  saveState({ sync });
 }
 
 function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state) {
@@ -2159,7 +2333,10 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
   if (!layoutId || !state.layouts?.[layoutId] || layoutId === state.activeLayoutId) {
     if (canUsePrivateState()) setActivePrivateScope();
     else setActiveLocalEditableScope(layoutId);
-    if (layoutId && state.layouts?.[layoutId] && remember) rememberActiveLayoutChoice(layoutId);
+    if (layoutId && state.layouts?.[layoutId]) {
+      if (remember) rememberActiveLayoutChoice(layoutId);
+      persistActiveLayoutSelection({ sync: remember });
+    }
     render();
     return;
   }
@@ -2170,6 +2347,7 @@ function switchActiveLayout(layoutId, { remember = true } = {}) {
   applyLayoutArrangement(layoutId);
   explicitLayoutChoice = { id: layoutId, at: Date.now() };
   if (remember) rememberActiveLayoutChoice(layoutId);
+  persistActiveLayoutSelection({ sync: remember });
   if (!(state.layouts[layoutId]?.rootContainerIds || []).length) {
     rootContainerUsageFilter = "all";
   }
@@ -2193,7 +2371,7 @@ function activateAdminPublishedLayout(layoutId, { remember = true } = {}) {
   applyLayoutArrangement(layoutId);
   if (remember) {
     const layout = state.layouts?.[layoutId];
-    if (layout?.adminDemo) rememberActiveLayoutChoice(DEMO_LAYOUT_SELECT_VALUE);
+    if (layout?.adminDemo) rememberActiveLayoutChoice(demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage));
     else if (layout?.adminSharedSourceId) rememberActiveLayoutChoice(`shared:${layout.adminSharedSourceId}`);
   }
   saveState({ sync: false });
@@ -2374,6 +2552,28 @@ function canSeedEmptyRemoteFromLocal() {
   return hasLocalSavedState() && !isForeignLocalSyncState() && isMeaningfulPackingState(state);
 }
 
+function recordWasEditedAfterCreate(record) {
+  if (!record || typeof record !== "object") return false;
+  const created = timeValue(record.createdAt);
+  const updated = timeValue(record.updatedAt);
+  return Boolean(created && updated && updated > created);
+}
+
+function guestLayoutHasUserContentEdits(sourceState, layout) {
+  if (!layout) return false;
+  if (!layout?.[GUEST_DEMO_COPY_FLAG]) return true;
+  if (recordWasEditedAfterCreate(layout)) return true;
+  const containerIds = getLayoutContainerIdSetForState(sourceState, layout);
+  const itemIds = getLayoutItemIdSetForState(sourceState, layout);
+  for (const containerId of containerIds) {
+    if (recordWasEditedAfterCreate(sourceState.containers?.[containerId])) return true;
+  }
+  for (const itemId of itemIds) {
+    if (recordWasEditedAfterCreate(sourceState.items?.[itemId])) return true;
+  }
+  return false;
+}
+
 function guestLocalLayoutCandidate(sourceState = state) {
   if (!isMeaningfulPackingState(sourceState)) return null;
   try {
@@ -2387,9 +2587,11 @@ function guestLocalLayoutCandidate(sourceState = state) {
     layout && !layout.adminDemo && !layout.adminSharedSourceId
   );
   if (!personalLayouts.length) return null;
-  const activeLayout = personalLayouts.find((layout) => layout.id === sourceState.activeLayoutId);
-  const meaningfulLayout = personalLayouts.find((layout) => (layout.rootContainerIds || []).some((id) => sourceState.containers?.[id]));
-  const layout = activeLayout || meaningfulLayout || personalLayouts[0];
+  const editedLayouts = personalLayouts.filter((layout) => guestLayoutHasUserContentEdits(sourceState, layout));
+  if (!editedLayouts.length) return null;
+  const activeLayout = editedLayouts.find((layout) => layout.id === sourceState.activeLayoutId);
+  const meaningfulLayout = editedLayouts.find((layout) => (layout.rootContainerIds || []).some((id) => sourceState.containers?.[id]));
+  const layout = activeLayout || meaningfulLayout || editedLayouts[0];
   if (!layout || !(layout.rootContainerIds || []).some((id) => sourceState.containers?.[id])) return null;
   return {
     sourceState: clone(sourceState),
@@ -2631,10 +2833,22 @@ function sharedLayoutItemKey(layoutId) {
 
 function schedulePublishedLayoutSave(layoutId, delay = 900) {
   if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId)) return;
-  if (publishedLayoutSaveTimer) window.clearTimeout(publishedLayoutSaveTimer);
-  publishedLayoutSaveTimer = window.setTimeout(() => {
+  if (publishedLayoutSaveTimer && publishedLayoutSaveLayoutId && publishedLayoutSaveLayoutId !== layoutId) {
+    const previousLayoutId = publishedLayoutSaveLayoutId;
+    window.clearTimeout(publishedLayoutSaveTimer);
     publishedLayoutSaveTimer = null;
-    savePublishedLayoutRecord(layoutId).catch((error) => {
+    publishedLayoutSaveLayoutId = "";
+    savePublishedLayoutRecord(previousLayoutId).catch((error) => {
+      updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
+    });
+  }
+  if (publishedLayoutSaveTimer) window.clearTimeout(publishedLayoutSaveTimer);
+  publishedLayoutSaveLayoutId = layoutId;
+  publishedLayoutSaveTimer = window.setTimeout(() => {
+    const targetLayoutId = publishedLayoutSaveLayoutId || layoutId;
+    publishedLayoutSaveTimer = null;
+    publishedLayoutSaveLayoutId = "";
+    savePublishedLayoutRecord(targetLayoutId).catch((error) => {
       updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
     });
   }, delay);
@@ -2657,10 +2871,11 @@ function scheduleActivePublishedEditSave(delay = 500) {
 }
 
 async function flushActivePublishedEditSave() {
-  const layoutId = getPublishedEditLayoutId();
+  const layoutId = publishedLayoutSaveLayoutId || getPublishedEditLayoutId();
   if (!publishedLayoutSaveTimer || !isAdminEditablePublishedLayout(layoutId) || !canOpenAdminPublishedEdit()) return;
   window.clearTimeout(publishedLayoutSaveTimer);
   publishedLayoutSaveTimer = null;
+  publishedLayoutSaveLayoutId = "";
   try {
     await savePublishedLayoutRecord(layoutId);
   } catch (error) {
@@ -3285,7 +3500,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   replaceState(remoteState);
   removePublicLayoutDrafts();
   setActivePrivateScope();
-  rememberPrivateServerLayoutChoice();
+  rememberPrivateServerLayoutChoice({ preferStored: !preferredLayoutId });
   saveBaseState(serializeState({ forSync: true }));
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = updatedAt || null;
@@ -3566,7 +3781,7 @@ function conflictTargetMap(targetState, type) {
 }
 
 function askConflictResolution(conflicts) {
-  refs.conflictList.innerHTML = conflicts.map((conflict, index) => {
+  refs.conflictList.innerHTML = `${renderConflictSyncContext()}${conflicts.map((conflict, index) => {
     const defaultChoice = conflictDefaultChoice(conflict);
     return `
     <section class="conflict-card">
@@ -3588,7 +3803,7 @@ function askConflictResolution(conflicts) {
       </div>
     </section>
   `;
-  }).join("");
+  }).join("")}`;
   refs.conflictDialog.returnValue = "";
   return new Promise((resolve) => {
     const cleanup = () => {
@@ -3617,6 +3832,30 @@ function askConflictResolution(conflicts) {
     refs.conflictDialog.addEventListener("close", handleClose);
     openModalDialog(refs.conflictDialog);
   });
+}
+
+function renderConflictSyncContext() {
+  const rows = [
+    ["Время браузера сейчас", formatFullDateTime(new Date())],
+    ["Локальная версия", formatFullDateTime(syncMeta.localUpdatedAt) || "нет"],
+    ["Известная серверная версия", formatFullDateTime(syncMeta.serverUpdatedAt) || "нет"],
+    ["Последняя успешная синхронизация", formatFullDateTime(syncMeta.lastSyncedLocalUpdatedAt) || "нет"],
+    ["Устройство", syncDevice?.name || "это устройство"]
+  ];
+  return `
+    <section class="conflict-card conflict-context">
+      <h3>Контекст синхронизации</h3>
+      <div class="conflict-diff" aria-label="Контекст синхронизации">
+        ${rows.map(([label, value]) => `
+          <div class="conflict-diff-row">
+            <span>${escapeHtml(label)}</span>
+            <span>${escapeHtml(value)}</span>
+            <span></span>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
 }
 
 function conflictDefaultChoice(conflict) {
@@ -3897,6 +4136,22 @@ function formatShortDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function formatFullDateTime(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const text = date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short"
+  });
+  return `${text} (${date.toISOString()})`;
 }
 
 function conflictValueSummary(conflict, value, exists, missingText = "нет") {
@@ -4741,7 +4996,7 @@ async function runSyncNow({ force = false } = {}) {
       return;
     }
   }
-  if (publishedLayoutSaveTimer && isAdminEditablePublishedLayout(getPublishedEditLayoutId())) {
+  if (publishedLayoutSaveTimer && isAdminEditablePublishedLayout(publishedLayoutSaveLayoutId || getPublishedEditLayoutId())) {
     await flushActivePublishedEditSave();
     if (force) showToast("Public-укладка опубликована.", "success");
     return;
@@ -4749,6 +5004,7 @@ async function runSyncNow({ force = false } = {}) {
   if (publishedLayoutSaveTimer) {
     window.clearTimeout(publishedLayoutSaveTimer);
     publishedLayoutSaveTimer = null;
+    publishedLayoutSaveLayoutId = "";
   }
   if (isReadOnlyBikePackingContext()) {
     syncMeta.dirty = false;
@@ -5958,36 +6214,39 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   }
 }
 
-async function openAdminDemoLayout({ remember = true } = {}) {
+async function openAdminDemoLayout({ remember = true, language = uiLanguage } = {}) {
   if (!canOpenAdminPublishedEdit()) {
     showToast("Демо может редактировать только админ.", "error");
     return;
   }
-  removePublicLayoutDrafts();
-  const existing = Object.values(state.layouts || {}).find((layout) => layout.adminDemo);
-  if (false && existing) {
+  const normalizedLanguage = normalizeUiLanguage(language);
+  const layoutChoice = demoLayoutChoiceForLanguage(normalizedLanguage);
+  const existing = Object.values(state.layouts || {}).find((layout) =>
+    layout.adminDemo && normalizeUiLanguage(layout.adminDemoLanguage || DEFAULT_LANGUAGE) === normalizedLanguage
+  );
+  if (existing) {
     repairAdminDemoLayout(existing);
     if (!isLayoutMeaningful(existing.id)) {
       removeLayoutTree(existing.id);
-      const demoState = await defaultDemoState();
-      importDemoStateAsEditableLayout(demoState);
-      if (remember) rememberActiveLayoutChoice(DEMO_LAYOUT_SELECT_VALUE);
+      const demoState = await defaultDemoState(normalizedLanguage);
+      importDemoStateAsEditableLayout(demoState, { language: normalizedLanguage });
+      activateAdminPublishedLayout(state.activeLayoutId, { remember: false });
+      if (remember) rememberActiveLayoutChoice(layoutChoice);
       updateSyncUi();
       showToast("Пустая локальная демо-укладка пересобрана.", "success");
       return;
     }
-    setActivePrivateScope();
-    switchActiveLayout(existing.id, { remember: false });
-    if (remember) rememberActiveLayoutChoice(DEMO_LAYOUT_SELECT_VALUE);
-    switchView("packing");
+    activateAdminPublishedLayout(existing.id, { remember: false });
+    if (remember) rememberActiveLayoutChoice(layoutChoice);
     showToast("Открыта локальная демо-укладка для правки.", "success");
     return;
   }
   try {
     updateSyncUi("Загружаю демо-укладку для правки...");
-    const demoState = await defaultDemoState();
-    importDemoStateAsEditableLayout(demoState);
-    if (remember) rememberActiveLayoutChoice(DEMO_LAYOUT_SELECT_VALUE);
+    const demoState = await defaultDemoState(normalizedLanguage);
+    importDemoStateAsEditableLayout(demoState, { language: normalizedLanguage });
+    activateAdminPublishedLayout(state.activeLayoutId, { remember: false });
+    if (remember) rememberActiveLayoutChoice(layoutChoice);
     updateSyncUi();
     showToast("Демо-укладка добавлена как обычная укладка. Правьте её и опубликуйте из меню.", "success");
   } catch (error) {
@@ -6031,17 +6290,18 @@ function clearActiveAdminDemoStateOnStartup() {
   return removed;
 }
 
-async function openDemoLayoutFromSelect({ remember = true } = {}) {
+async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage } = {}) {
   if (canOpenAdminPublishedEdit()) {
-    await openAdminDemoLayout({ remember });
+    await openAdminDemoLayout({ remember, language });
     return;
   }
+  const normalizedLanguage = normalizeUiLanguage(language);
   setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
-  if (remember) rememberActiveLayoutChoice(DEMO_LAYOUT_SELECT_VALUE);
+  if (remember) rememberActiveLayoutChoice(demoLayoutChoiceForLanguage(normalizedLanguage));
   switchView("packing");
   render();
   try {
-    setDemoStatePayloadForLanguage(uiLanguage, await defaultDemoState(uiLanguage));
+    setDemoStatePayloadForLanguage(normalizedLanguage, await defaultDemoState(normalizedLanguage));
     render();
     updateSyncUi("Демо-укладка · просмотр");
   } catch (error) {
@@ -6123,10 +6383,11 @@ function repairActiveEmptyAdminDemoDraft() {
   return true;
 }
 
-function importDemoStateAsEditableLayout(demoState) {
+function importDemoStateAsEditableLayout(demoState, { language = uiLanguage } = {}) {
   const source = normalizePublishedStatePayload(demoState) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
+  const normalizedLanguage = normalizeUiLanguage(language);
   const stamp = Date.now();
   const layoutId = `layout-admin-demo-${stamp}`;
   const containerMap = {};
@@ -6189,12 +6450,12 @@ function importDemoStateAsEditableLayout(demoState) {
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     adminDemo: true,
-    adminDemoLanguage: uiLanguage,
+    adminDemoLanguage: normalizedLanguage,
+    locations: normalizeDictionaryValues(source.locations, state.locations || locations),
+    categories: normalizeDictionaryValues(source.categories, state.categories || categories),
     ...currentCreateMeta(changedAt)
   };
   state.activeLayoutId = layoutId;
-  state.locations = mergeStringList(state.locations || [], source.locations || [], state.locations || []);
-  state.categories = mergeStringList(state.categories || [], source.categories || [], state.categories || []);
   applyLayoutArrangement(layoutId);
   setActivePrivateScope();
   saveState({ sync: false });
@@ -6255,7 +6516,7 @@ async function publishActiveLayoutAsDemo() {
   try {
     updateSyncUi("Публикую демо-укладку...");
     layout.adminDemo = true;
-    layout.adminDemoLanguage = uiLanguage;
+    layout.adminDemoLanguage = layout.adminDemoLanguage || uiLanguage;
     touchLayout(layout.id);
     saveState();
     await savePublishedLayoutRecord(layout.id);
@@ -6417,8 +6678,8 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
   delete demoLayout.sharedSourceId;
   delete demoLayout.publicCatalogLayoutId;
   const demoState = {
-    locations: [...(state.locations || locations)],
-    categories: [...(state.categories || categories)],
+    locations: [...(isPublishedLayoutEditable(layout) ? activeLocations() : (state.locations || locations))],
+    categories: [...(isPublishedLayoutEditable(layout) ? activeCategories() : (state.categories || categories))],
     containers,
     items,
     layouts: { "layout-main": demoLayout },
@@ -6506,7 +6767,6 @@ async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
   } catch {
     // Built-in shared templates remain editable if the public endpoint is unavailable.
   }
-  removePublicLayoutDrafts();
   const editableLayout = materializeSharedLayoutForAdmin(layoutId);
   if (!editableLayout) return;
   activateAdminPublishedLayout(editableLayout.id, { remember: false });
@@ -6640,7 +6900,6 @@ async function openAdminSharedLayoutFromSelect(layoutId) {
   } catch {
     // Built-in shared layout remains editable until the first admin sync publishes it.
   }
-  removePublicLayoutDrafts();
   const editableLayout = materializeSharedLayoutForAdmin(layoutId);
   if (!editableLayout) return;
   switchView("packing");
@@ -6956,11 +7215,11 @@ function sharedRootWeight(root) {
 function findSharedLayout(layoutId) {
   if (layoutId === DEMO_SHARED_LAYOUT_ID) return demoSharedLayout;
   if (linkedSharedListLayout?.id === layoutId) return linkedSharedListLayout;
-  return currentSharedLayouts().find((layout) => layout.id === layoutId) || null;
+  return allSharedLayoutsByAdminOrder().find((layout) => layout.id === layoutId) || null;
 }
 
 function publicSharedLayouts() {
-  return [demoSharedLayout, ...(linkedSharedListLayout ? [linkedSharedListLayout] : []), ...currentSharedLayouts()];
+  return [demoSharedLayout, ...(linkedSharedListLayout ? [linkedSharedListLayout] : []), ...allSharedLayoutsByAdminOrder()];
 }
 
 function findSharedPublishedContainer(containerId) {
@@ -7540,6 +7799,8 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
       rootContainerIds: rootIds,
       arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
       adminSharedSourceId: layout.id,
+      locations: normalizeDictionaryValues(sourceState?.locations, state.locations || locations),
+      categories: normalizeDictionaryValues(sourceState?.categories, state.categories || categories),
       ...currentCreateMeta(changedAt)
     };
     state.layouts[nextLayoutId] = editableLayout;
@@ -7556,6 +7817,7 @@ function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
   const sourceState = sharedLayoutStatePayload(layout);
   const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
   if (!sourceState || !sourceLayout || !editableLayout) return false;
+  ensureLayoutDictionaries(editableLayout, sourceState);
   const changedAt = nowIso();
   const layoutContainerIds = new Set();
   const collectContainer = (containerId) => {
@@ -7636,6 +7898,7 @@ function syncPublishedEntityPhotos(target, source) {
 
 function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
   if (!layout || !editableLayout || !Array.isArray(layout.roots) || !layout.roots.length) return false;
+  ensureLayoutDictionaries(editableLayout);
   const changedAt = nowIso();
   const layoutContainerIds = new Set();
   const collectContainer = (containerId) => {
@@ -7788,7 +8051,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
   markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared");
   if (preserveSource) state.items[id].sharedSourceId = item.id;
   else stripPublicOriginForPrivateCopy(state.items[id]);
-  if (!state.categories.includes("Прочее")) state.categories.push("Прочее");
+  if (!preserveSource && !state.categories.includes("Прочее")) state.categories.push("Прочее");
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
     container.itemIds.push(id);
@@ -8532,18 +8795,23 @@ function renderFilters() {
   const selectedLayoutValue = isReadOnlyStateScope()
     ? (readonlyLayoutId === DEMO_SHARED_LAYOUT_ID ? DEMO_LAYOUT_SELECT_VALUE : `shared:${readonlyLayoutId}`)
     : activeLayout?.adminDemo
-      ? DEMO_LAYOUT_SELECT_VALUE
+      ? demoLayoutChoiceForLanguage(activeLayout.adminDemoLanguage || uiLanguage)
       : activeLayout?.adminSharedSourceId
         ? `shared:${activeLayout.adminSharedSourceId}`
     : state.activeLayoutId;
+  const publicOptions = canOpenAdminPublishedEdit()
+    ? adminPublicLayoutOptions()
+    : [
+      [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo"],
+      ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
+      ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared"])
+    ];
   const layoutOptions = [
-    [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo"],
-    ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"]),
-    ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
-    ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared"])
+    ...publicOptions,
+    ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
-  refs.layoutSelect.classList.toggle("layout-select-demo", selectedLayoutValue === DEMO_LAYOUT_SELECT_VALUE);
+  refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue));
   refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:"));
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
@@ -8556,11 +8824,11 @@ function renderFilters() {
     refs.deleteLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideDeleteLayout);
   }
   fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), state.activeLayoutId);
-  selectedCategoryFilters = selectedCategoryFilters.filter((category) => state.categories.includes(category));
+  selectedCategoryFilters = selectedCategoryFilters.filter((category) => activeCategories().includes(category));
   const locationOptions = getAvailableLocationFilterOptions();
   fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, loc])], refs.locationFilter.value);
   updateCategoryFilterButton();
-  fillSelect(refs.itemLocation, state.locations.map((loc) => [loc, loc]));
+  fillSelect(refs.itemLocation, activeLocations().map((loc) => [loc, loc]));
   renderItemCategoryPicker();
   refs.clearSearchBtn.hidden = !refs.searchInput.value.trim();
   const locationFilterActive = Boolean(refs.locationFilter.value);
@@ -8755,7 +9023,7 @@ function updateCategoryFilterButton() {
 function openCategoryFilterDialog() {
   const selectedSet = new Set(selectedCategoryFilters);
   const availableSet = new Set(getAvailableCategoryFilterOptions());
-  const categoriesToShow = state.categories.filter((category) => selectedSet.has(category) || availableSet.has(category));
+  const categoriesToShow = activeCategories().filter((category) => selectedSet.has(category) || availableSet.has(category));
   refs.categoryFilterList.innerHTML = categoriesToShow.map((category) => {
     const id = `filter-category-${cssSafeId(category)}`;
     return `
@@ -9349,7 +9617,7 @@ function getAvailableLocationFilterOptions() {
       }
     });
     if (currentLocation) available.add(currentLocation);
-    return state.locations.filter((location) => available.has(location));
+    return activeLocations().filter((location) => available.has(location));
   }
   getFilterOptionItems().forEach((item) => {
     if (matchesItemFieldsFilter(item, { ignoreLocation: true }) && matchesCollectionFilter(item)) {
@@ -9357,7 +9625,7 @@ function getAvailableLocationFilterOptions() {
     }
   });
   if (currentLocation) available.add(currentLocation);
-  return state.locations.filter((location) => available.has(location));
+  return activeLocations().filter((location) => available.has(location));
 }
 
 function getAvailableCategoryFilterOptions() {
@@ -9368,7 +9636,7 @@ function getAvailableCategoryFilterOptions() {
     }
   });
   selectedCategoryFilters.forEach((category) => available.add(category));
-  return state.categories.filter((category) => available.has(category));
+  return activeCategories().filter((category) => available.has(category));
 }
 
 function fillSelect(select, entries, selected = "") {
@@ -9382,8 +9650,9 @@ function fillSelect(select, entries, selected = "") {
 
 function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
   const selectedSet = new Set(selected || getDialogSelectedCategories());
-  if (fallbackDefault && !selectedSet.size && state.categories[0]) selectedSet.add(state.categories[0]);
-  refs.itemCategoryList.innerHTML = state.categories.map((category) => {
+  const categoryOptions = activeCategories();
+  if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
+  refs.itemCategoryList.innerHTML = categoryOptions.map((category) => {
     const id = `item-category-${cssSafeId(category)}`;
     return `
       <label class="category-option" for="${id}">
@@ -9396,7 +9665,7 @@ function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = 
 
 function getDialogSelectedCategories() {
   const checked = [...refs.itemCategoryList.querySelectorAll("input:checked")].map((input) => input.value);
-  return checked.length ? checked : [state.categories[0] || "Прочее"];
+  return checked.length ? checked : [activeCategories()[0] || "Прочее"];
 }
 
 function isContainerPickerCopyMode() {
@@ -9516,9 +9785,13 @@ function getContainerPickerLayoutOptions() {
     return currentLayout ? [currentLayout] : [];
   }
   const activePublishedLayoutId = getPublishedEditLayoutId();
-  return Object.values(state.layouts || {})
-    .filter((layout) => (!layout.adminDemo && !layout.adminSharedSourceId) || layout.id === activePublishedLayoutId)
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
+  const includeAdminPublishedTargets = canOpenAdminPublishedEdit() && isAdminEditablePublishedLayout(activePublishedLayoutId);
+  const allLayouts = Object.values(state.layouts || {});
+  const publicDrafts = includeAdminPublishedTargets
+    ? orderAdminPublicDraftsLikeMainSelect(allLayouts.filter((layout) => isPublishedLayoutEditable(layout)))
+    : allLayouts.filter((layout) => layout.id === activePublishedLayoutId && isPublishedLayoutEditable(layout));
+  const personalLayouts = allLayouts.filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId);
+  return [...publicDrafts, ...personalLayouts];
 }
 
 function renderContainerPickerLayoutSelect(layoutOptions) {
@@ -9528,7 +9801,7 @@ function renderContainerPickerLayoutSelect(layoutOptions) {
   if (!visible) return;
   fillSelect(
     refs.containerPickerLayoutSelect,
-    layoutOptions.map((layout) => [layout.id, layout.name || "Укладка"]),
+    layoutOptions.map((layout) => [layout.id, copyPickerLayoutLabel(layout)]),
     containerPickerLayoutId
   );
 }
@@ -13018,14 +13291,15 @@ function renderSettings() {
     renderSharedSettingsView();
     return;
   }
+  const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
     <div class="settings-grid">
-      ${renderDictionary("Места хранения", "location", state.locations)}
-      ${renderDictionary("Категории", "category", state.categories)}
+      ${renderDictionary("Места хранения", "location", activeLocations())}
+      ${renderDictionary("Категории", "category", activeCategories())}
     </div>
   `;
-  bindDictionary("location");
-  bindDictionary("category");
+  bindDictionary("location", dictionaryOwner);
+  bindDictionary("category", dictionaryOwner);
 }
 
 function renderSharedSettingsView() {
@@ -13718,17 +13992,18 @@ function renderDictionaryEntry(type, value) {
   `;
 }
 
-function bindDictionary(type) {
+function bindDictionary(type, owner = activeDictionaryOwner()) {
   const listName = type === "location" ? "locations" : "categories";
+  const scope = dictionaryEditScope(owner);
   const input = document.querySelector(`#${type}Input`);
   document.querySelector(`#${type}Add`).addEventListener("click", () => {
     const value = input.value.trim();
-    if (!value || state[listName].includes(value)) return;
-    state[listName].push(value);
+    owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
+    if (!value || owner[listName].includes(value)) return;
+    owner[listName].push(value);
     editingDictionaryEntry = null;
     input.value = "";
-    saveState();
-    render();
+    saveDictionaryOwner(owner);
   });
   document.querySelectorAll(`[data-edit-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {
@@ -13746,7 +14021,7 @@ function bindDictionary(type) {
     button.addEventListener("click", () => {
       const oldValue = button.dataset[`save${capitalize(type)}`];
       const editInput = button.closest(".dictionary-chip")?.querySelector(`[data-dictionary-edit-input="${type}"]`);
-      renameDictionaryEntry(type, oldValue, editInput?.value || "");
+      renameDictionaryEntry(type, oldValue, editInput?.value || "", owner);
     });
   });
   document.querySelectorAll(`[data-dictionary-edit-input="${type}"]`).forEach((editInput) => {
@@ -13755,7 +14030,7 @@ function bindDictionary(type) {
     editInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value);
+        renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value, owner);
       }
       if (event.key === "Escape") {
         event.preventDefault();
@@ -13767,12 +14042,13 @@ function bindDictionary(type) {
   document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
-      if (state[listName].length <= 1) return;
-      const affectedCount = Object.values(state.items).filter((item) => {
+      owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
+      if (owner[listName].length <= 1) return;
+      const affectedCount = scope.items.filter((item) => {
         if (type === "location") return item.location === value;
         return itemCategories(item).includes(value);
       }).length;
-      const fallback = state[listName].find((item) => item !== value);
+      const fallback = owner[listName].find((item) => item !== value);
       const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
       const subject = type === "location" ? "место хранения" : "категорию";
       openConfirmDialog({
@@ -13785,8 +14061,8 @@ function bindDictionary(type) {
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
           const changedAt = nowIso();
-          state[listName] = state[listName].filter((item) => item !== value);
-          Object.values(state.items).forEach((item) => {
+          owner[listName] = owner[listName].filter((item) => item !== value);
+          scope.items.forEach((item) => {
             if (type === "location" && item.location === value) {
               item.location = fallback;
               markEdited(item, changedAt);
@@ -13798,16 +14074,23 @@ function bindDictionary(type) {
               markEdited(item, changedAt);
             }
           });
-          saveState();
-          render();
+          if (type === "location") {
+            scope.containers.forEach((container) => {
+              if (container.location !== value) return;
+              container.location = fallback;
+              touchContainer(container.id, changedAt);
+            });
+          }
+          saveDictionaryOwner(owner);
         }
       });
     });
   });
 }
 
-function renameDictionaryEntry(type, oldValue, rawNewValue) {
+function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictionaryOwner()) {
   const listName = type === "location" ? "locations" : "categories";
+  const scope = dictionaryEditScope(owner);
   const newValue = String(rawNewValue || "").trim();
   if (!oldValue || !newValue) return;
   if (newValue === oldValue) {
@@ -13815,26 +14098,27 @@ function renameDictionaryEntry(type, oldValue, rawNewValue) {
     render();
     return;
   }
-  if (state[listName].includes(newValue)) {
+  owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
+  if (owner[listName].includes(newValue)) {
     showToast("Такое значение уже есть.", "warning");
     return;
   }
   const changedAt = nowIso();
-  state[listName] = state[listName].map((value) => value === oldValue ? newValue : value);
+  owner[listName] = owner[listName].map((value) => value === oldValue ? newValue : value);
   if (type === "location") {
-    Object.values(state.items).forEach((item) => {
+    scope.items.forEach((item) => {
       if (item.location !== oldValue) return;
       item.location = newValue;
       markEdited(item, changedAt);
     });
-    Object.values(state.containers).forEach((container) => {
+    scope.containers.forEach((container) => {
       if (container.location !== oldValue) return;
       container.location = newValue;
       touchContainer(container.id, changedAt);
     });
     if (refs.locationFilter.value === oldValue) refs.locationFilter.value = newValue;
   } else {
-    Object.values(state.items).forEach((item) => {
+    scope.items.forEach((item) => {
       if (!itemCategories(item).includes(oldValue)) return;
       item.categories = itemCategories(item).map((category) => category === oldValue ? newValue : category)
         .filter((category, index, list) => list.indexOf(category) === index);
@@ -13844,9 +14128,7 @@ function renameDictionaryEntry(type, oldValue, rawNewValue) {
     selectedCategoryFilters = selectedCategoryFilters.map((category) => category === oldValue ? newValue : category)
       .filter((category, index, list) => list.indexOf(category) === index);
   }
-  editingDictionaryEntry = null;
-  saveState();
-  render();
+  saveDictionaryOwner(owner);
 }
 
 function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
@@ -14496,9 +14778,10 @@ function openRootContainerDialog(containerId = null) {
 }
 
 function fillRootContainerLocationSelect(selected = "") {
-  const fallback = defaultRootContainerLocation(state);
-  const options = state.locations.map((location) => [location, location]);
-  fillSelect(refs.rootContainerLocation, options, selected || fallback);
+  const options = activeLocations();
+  const fallback = options[0] || defaultRootContainerLocation(state);
+  const entries = options.map((location) => [location, location]);
+  fillSelect(refs.rootContainerLocation, entries, selected || fallback);
 }
 
 function openItemDialog(itemId = null) {
@@ -14509,7 +14792,7 @@ function openItemDialog(itemId = null) {
     name: "",
     weight: 0,
     quantity: 1,
-    location: state.locations[0],
+    location: activeLocations()[0] || defaultRootContainerLocation(state),
     category: "Прочее",
     categories: ["Прочее"],
     containerId: "",
@@ -14631,7 +14914,6 @@ function saveNewLayout(event) {
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentEditMeta()
   };
-  saveState();
   if (!canUsePrivateState()) setActiveLocalEditableScope(id);
   switchActiveLayout(id);
   refs.layoutDialog.close();
