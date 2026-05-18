@@ -23,9 +23,6 @@ export function normalizeItemCategories(targetState) {
       .filter((value, index, list) => list.indexOf(value) === index);
     item.categories = normalized.length ? normalized : [targetState.categories[0] || "Прочее"];
     item.category = item.categories[0];
-    item.categories.forEach((category) => {
-      if (!targetState.categories.includes(category)) targetState.categories.push(category);
-    });
   });
 }
 

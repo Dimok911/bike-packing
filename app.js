@@ -74,6 +74,11 @@ import {
   stripPublicOriginForPrivateCopy
 } from "./src/public/copy-public-to-private.js";
 import {
+  publicCopyComparableText,
+  summarizeLayoutIdDuplicates,
+  summarizePublicCopyDuplicates
+} from "./src/public/copy-duplicates.js";
+import {
   generatedCatalogString,
   hasPublicOriginMarker,
   isGeneratedCatalogContainerStateArtifact,
@@ -143,6 +148,17 @@ import {
   stateIntegrityMetaFromResponse,
   stateStats
 } from "./src/state/diagnostics.js";
+import {
+  addCustomDictionaryValue,
+  dictionaryOptionsForUi as dictionaryOptionsForUiValues,
+  ensureLayoutDictionaries as ensureLayoutDictionariesForState,
+  ensurePrivateDictionaries as ensurePrivateDictionariesForState,
+  layoutDictionaryValues,
+  normalizeDictionaryValues,
+  readOnlyLayoutDictionaries as readOnlyLayoutDictionariesForState,
+  removeCustomDictionaryValue,
+  renameCustomDictionaryValue
+} from "./src/state/dictionaries.js";
 import { createBlankBikePackingState } from "./src/state/empty-state.js";
 import {
   itemPhotoMetaSignature,
@@ -173,6 +189,7 @@ import {
   containerPath as containerPathForState,
   itemCreatedTime as itemCreatedTimeForState
 } from "./src/state/record-derived.js";
+import { collectPublicLayoutRecordIds } from "./src/state/public-layout-scope.js";
 import {
   addItemToLayoutArrangement as addItemToLayoutArrangementForState,
   cleanupEmptyContainersInLayoutArrangement,
@@ -620,30 +637,44 @@ function orderAdminPublicDraftsLikeMainSelect(layouts) {
   });
 }
 
-function normalizeDictionaryValues(values, fallbackValues = []) {
-  const result = [];
-  [...(Array.isArray(values) ? values : []), ...(Array.isArray(fallbackValues) ? fallbackValues : [])].forEach((value) => {
-    if (typeof value !== "string") return;
-    const normalized = value.trim();
-    if (normalized && !result.includes(normalized)) result.push(normalized);
+function ensurePrivateDictionaries(sourceState = state) {
+  return ensurePrivateDictionariesForState(sourceState, {
+    locations,
+    categories,
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState
   });
-  return result;
 }
 
 function ensureLayoutDictionaries(layout, sourceState = null) {
   if (!layout) return null;
-  if (!Array.isArray(layout.locations) || !layout.locations.length) {
-    layout.locations = normalizeDictionaryValues(sourceState?.locations, state.locations || locations);
-  }
-  if (!Array.isArray(layout.categories) || !layout.categories.length) {
-    layout.categories = normalizeDictionaryValues(sourceState?.categories, state.categories || categories);
-  }
-  return layout;
+  const source = sourceState || state;
+  return ensureLayoutDictionariesForState(layout, {
+    sourceState: source,
+    defaults: { locations, categories },
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState
+  });
+}
+
+function activeReadOnlyDictionaryOwner() {
+  const virtualState = createSharedVirtualState();
+  const layout = virtualState.layouts?.[virtualState.activeLayoutId];
+  return layout ? readOnlyLayoutDictionariesForState(layout, {
+    sourceState: virtualState,
+    defaults: { locations, categories },
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState
+  }) : null;
 }
 
 function activeDictionaryOwner() {
-  const layout = state.layouts?.[state.activeLayoutId];
-  return isPublishedLayoutEditable(layout) ? ensureLayoutDictionaries(layout) : state;
+  if (isSharedLayoutView()) return activeReadOnlyDictionaryOwner() || ensurePrivateDictionaries(state);
+  const layout = state.layouts?.[getPublishedEditLayoutId()] || state.layouts?.[state.activeLayoutId];
+  if (layout && (isPublishedLayoutEditable(layout) || isGuestDemoCopyLayoutRecord(layout))) {
+    return ensureLayoutDictionaries(layout);
+  }
+  return ensurePrivateDictionaries(state);
 }
 
 function activeLocations() {
@@ -658,13 +689,22 @@ function activeDictionaryList(type) {
   return type === "location" ? activeLocations() : activeCategories();
 }
 
+function dictionaryOptionsForUi(type, { selected = [] } = {}) {
+  return dictionaryOptionsForUiValues(type, activeDictionaryList(type), { selected });
+}
+
 function dictionaryEditScope(owner = activeDictionaryOwner()) {
-  const layout = owner !== state ? state.layouts?.[state.activeLayoutId] : null;
+  const layout = owner !== state ? owner : null;
   if (!layout) {
+    const publicRecordIds = getPublicLayoutRecordIdsForState(state);
     return {
       owner: state,
-      items: Object.values(state.items || {}),
-      containers: Object.values(state.containers || {})
+      items: Object.entries(state.items || {})
+        .filter(([itemId, item]) => !publicRecordIds.itemIds.has(itemId) && !isPublicSyncItem(itemId, item))
+        .map(([, item]) => item),
+      containers: Object.entries(state.containers || {})
+        .filter(([containerId, container]) => !publicRecordIds.containerIds.has(containerId) && !isPublicSyncContainer(containerId, container))
+        .map(([, container]) => container)
     };
   }
   const itemIds = getLayoutItemIdSetForState(state, layout);
@@ -680,7 +720,7 @@ function dictionaryEditScope(owner = activeDictionaryOwner()) {
 function saveDictionaryOwner(owner = activeDictionaryOwner()) {
   editingDictionaryEntry = null;
   saveState();
-  if (owner !== state) scheduleActivePublishedEditSave();
+  if (owner !== state && isPublishedLayoutEditable(owner)) scheduleActivePublishedEditSave();
   render();
 }
 
@@ -2561,7 +2601,7 @@ function recordWasEditedAfterCreate(record) {
 
 function guestLayoutHasUserContentEdits(sourceState, layout) {
   if (!layout) return false;
-  if (!layout?.[GUEST_DEMO_COPY_FLAG]) return true;
+  if (!isGuestDemoCopyLayoutRecord(layout)) return false;
   if (recordWasEditedAfterCreate(layout)) return true;
   const containerIds = getLayoutContainerIdSetForState(sourceState, layout);
   const itemIds = getLayoutItemIdSetForState(sourceState, layout);
@@ -2584,7 +2624,7 @@ function guestLocalLayoutCandidate(sourceState = state) {
     // If normalization fails, continue with the shape checks below.
   }
   const personalLayouts = Object.values(sourceState.layouts || {}).filter((layout) =>
-    layout && !layout.adminDemo && !layout.adminSharedSourceId
+    layout && isGuestDemoCopyLayoutRecord(layout) && !layout.adminDemo && !layout.adminSharedSourceId
   );
   if (!personalLayouts.length) return null;
   const editedLayouts = personalLayouts.filter((layout) => guestLayoutHasUserContentEdits(sourceState, layout));
@@ -2601,11 +2641,10 @@ function guestLocalLayoutCandidate(sourceState = state) {
 }
 
 function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, sourceState = state) {
-  return previousScope === GUEST_STORAGE_SCOPE &&
-    nextScope !== GUEST_STORAGE_SCOPE &&
-    !isSharedListLinkRoute() &&
-    !syncMetaAccountKey(syncMeta) &&
-    (currentViewScope() === VIEW_SCOPE_GUEST_LOCAL || hasGuestDemoCopyLayoutRecord(sourceState.layouts));
+  if (previousScope !== GUEST_STORAGE_SCOPE || nextScope === GUEST_STORAGE_SCOPE) return false;
+  if (isSharedListLinkRoute() || syncMetaAccountKey(syncMeta)) return false;
+  if (currentViewScope() !== VIEW_SCOPE_GUEST_LOCAL && !hasGuestDemoCopyLayoutRecord(sourceState.layouts)) return false;
+  return Boolean(guestLocalLayoutCandidate(sourceState));
 }
 
 function consumeGuestLocalLayoutCandidate() {
@@ -3101,8 +3140,9 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
 
 function pruneAdminPublishedDraftsForSync(cloned) {
   const layouts = cloned.layouts || {};
+  const publicRecordIds = getPublicLayoutRecordIdsForState(cloned);
   const draftLayoutIds = Object.values(layouts)
-    .filter((layout) => layout?.adminDemo || layout?.adminSharedSourceId || layout?.[GUEST_DEMO_COPY_FLAG])
+    .filter((layout) => layout?.adminDemo || layout?.adminSharedSourceId || layout?.publicCatalogLayoutId || layout?.[GUEST_DEMO_COPY_FLAG])
     .map((layout) => layout.id)
     .filter(Boolean);
   const draftContainers = new Set();
@@ -3133,13 +3173,16 @@ function pruneAdminPublishedDraftsForSync(cloned) {
     if (!retainedContainers.has(containerId)) collectContainerTreeForDrop(cloned, containerId, containersToDrop);
   });
   Object.entries(cloned.containers || {}).forEach(([containerId, container]) => {
-    if (isPublicSyncContainer(containerId, container)) collectContainerTreeForDrop(cloned, containerId, containersToDrop);
+    if (publicRecordIds.containerIds.has(containerId) || isPublicSyncContainer(containerId, container)) {
+      collectContainerTreeForDrop(cloned, containerId, containersToDrop);
+    }
   });
   containersToDrop.forEach((containerId) => {
     delete cloned.containers[containerId];
   });
   Object.entries(cloned.items || {}).forEach(([itemId, item]) => {
     if (
+      publicRecordIds.itemIds.has(itemId) ||
       isPublicSyncItem(itemId, item) ||
       (item?.containerId && (!cloned.containers?.[item.containerId] || containersToDrop.has(item.containerId)))
     ) {
@@ -6034,6 +6077,8 @@ function importGuestLocalLayout(candidate, { replaceLayoutId = "" } = {}) {
     name: safeName,
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
+    locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
+    categories: normalizeDictionaryValues(sourceLayout.categories || source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
     ...currentCreateMeta(changedAt)
   };
   delete state.layouts[layoutId][GUEST_DEMO_COPY_FLAG];
@@ -6553,8 +6598,8 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, act
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     adminDemo: true,
     adminDemoLanguage: normalizedLanguage,
-    locations: normalizeDictionaryValues(source.locations, state.locations || locations),
-    categories: normalizeDictionaryValues(source.categories, state.categories || categories),
+    locations: normalizeDictionaryValues(source.locations, locations),
+    categories: normalizeDictionaryValues(source.categories, categories),
     ...currentCreateMeta(changedAt)
   };
   saveState({ sync: false });
@@ -6782,9 +6827,10 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
   delete demoLayout.adminSharedSourceId;
   delete demoLayout.sharedSourceId;
   delete demoLayout.publicCatalogLayoutId;
+  const dictionaryOwner = ensureLayoutDictionaries(layout);
   const demoState = {
-    locations: [...(isPublishedLayoutEditable(layout) ? activeLocations() : (state.locations || locations))],
-    categories: [...(isPublishedLayoutEditable(layout) ? activeCategories() : (state.categories || categories))],
+    locations: [...(dictionaryOwner?.locations || locations)],
+    categories: [...(dictionaryOwner?.categories || categories)],
     containers,
     items,
     layouts: { "layout-main": demoLayout },
@@ -6960,6 +7006,7 @@ function uniquePublishedRecordId(records, preferredId) {
 }
 
 function sharedRootToPublishedContainer(root, id, changedAt) {
+  const fallbackLocation = locations[0] || "";
   return {
     id,
     name: root.name,
@@ -6970,7 +7017,7 @@ function sharedRootToPublishedContainer(root, id, changedAt) {
     weight: Number(root.weightGrams || 0),
     volume: Number(root.volumeLiters || 0),
     color: "",
-    location: defaultRootContainerLocation(state),
+    location: fallbackLocation,
     note: root.description || "",
     photos: [],
     sharedSourceId: root.id,
@@ -6979,12 +7026,13 @@ function sharedRootToPublishedContainer(root, id, changedAt) {
 }
 
 function sharedItemToPublishedItem(item, id, containerId, changedAt) {
+  const fallbackLocation = locations[0] || "";
   return {
     id,
     name: item.name,
     weight: Number(item.weightGrams || 0),
     quantity: 1,
-    location: defaultRootContainerLocation(state),
+    location: fallbackLocation,
     category: "Прочее",
     categories: ["Прочее"],
     containerId,
@@ -7409,11 +7457,14 @@ function ensureSharedCopyTargetLayoutId() {
   const changedAt = nowIso();
   const layoutId = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const arrangement = createEmptyLayoutArrangement();
+  const activeLayoutDictionaries = ensurePrivateDictionaries(state);
   state.layouts[layoutId] = {
     id: layoutId,
     name: uniqueLayoutName("Новая укладка"),
     rootContainerIds: [],
     arrangement,
+    locations: [...(activeLayoutDictionaries?.locations || locations)],
+    categories: [...(activeLayoutDictionaries?.categories || categories)],
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentCreateMeta(changedAt)
   };
@@ -7668,68 +7719,22 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
   return id;
 }
 
-function publicCopyComparableText(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function publicCopyPhotoKey(record) {
-  const photo = Array.isArray(record?.photos) ? record.photos.find((entry) => entry?.id || entry?.url || entry?.thumbUrl) : null;
-  if (!photo) return "";
-  return publicCopyComparableText(photo.id || photo.photoId || photo.url || photo.thumbUrl).replace(/[?#].*$/, "");
-}
-
-function publicCopyItemFingerprint(item) {
-  if (!item) return "";
-  const categories = itemCategories(item).map(publicCopyComparableText).sort().join("|");
-  return [
-    publicCopyComparableText(item.name),
-    Number(item.weight || 0),
-    itemQuantity(item),
-    publicCopyComparableText(item.location),
-    categories,
-    publicCopyPhotoKey(item)
-  ].join("\u001f");
-}
-
 function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
-  const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}).map(String));
-  const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}).map(String));
-  const sourceItemFingerprints = new Set(Object.values(sourceSnapshot?.items || {}).map(publicCopyItemFingerprint).filter(Boolean));
-  const result = { containerIds: [], itemIds: [] };
-  if (!sourceContainerIds.size && !sourceItemIds.size) return result;
+  let result = { containerIds: [], itemIds: [] };
   withLayoutArrangementApplied(targetLayoutId, () => {
     const targetLayout = state.layouts[targetLayoutId];
-    getActiveLayoutContainerIdSet(targetLayout).forEach((containerId) => {
-      const container = state.containers[containerId];
-      if (container?._publicCopySourceKind === "container" && sourceContainerIds.has(String(container._publicCopySourceId || ""))) {
-        result.containerIds.push(containerId);
-      }
-    });
-    currentAppliedLayoutItemIds(targetLayout).forEach((itemId) => {
-      const item = state.items[itemId];
-      if (item?._publicCopySourceKind === "item" && sourceItemIds.has(String(item._publicCopySourceId || ""))) {
-        result.itemIds.push(itemId);
-      }
+    result = summarizePublicCopyDuplicates({
+      sourceSnapshot,
+      targetContainerIds: [...getActiveLayoutContainerIdSet(targetLayout)],
+      targetItemIds: [...currentAppliedLayoutItemIds(targetLayout)],
+      containers: state.containers,
+      items: state.items,
+      itemCategories,
+      itemQuantity,
+      hasPrivateSyncBlockedPublicOrigin
     });
   });
-  if (sourceItemIds.size) {
-    Object.entries(state.items || {}).forEach(([itemId, item]) => {
-      if (sourceItemIds.has(String(itemId)) || hasPrivateSyncBlockedPublicOrigin(item, itemId)) return;
-      const copiedFromSameSource =
-        item?._publicCopySourceKind === "item" &&
-        sourceItemIds.has(String(item._publicCopySourceId || ""));
-      const looksLikeSamePublicItem =
-        sourceItemFingerprints.size &&
-        sourceItemFingerprints.has(publicCopyItemFingerprint(item));
-      if (copiedFromSameSource || looksLikeSamePublicItem) {
-        result.itemIds.push(itemId);
-      }
-    });
-  }
-  return {
-    containerIds: [...new Set(result.containerIds)],
-    itemIds: [...new Set(result.itemIds)]
-  };
+  return result;
 }
 
 async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName = "") {
@@ -7779,10 +7784,10 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),
     demoSourceLanguage: uiLanguage,
+    locations: normalizeDictionaryValues(source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
+    categories: normalizeDictionaryValues(source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
     ...currentCreateMeta(changedAt)
   };
-  state.locations = mergeStringList(state.locations || [], source.locations || [], state.locations || []);
-  state.categories = mergeStringList(state.categories || [], source.categories || [], state.categories || []);
   if (activate) {
     setActiveLocalEditableScope(layoutId);
     state.activeLayoutId = layoutId;
@@ -7904,8 +7909,8 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
       rootContainerIds: rootIds,
       arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
       adminSharedSourceId: layout.id,
-      locations: normalizeDictionaryValues(sourceState?.locations, state.locations || locations),
-      categories: normalizeDictionaryValues(sourceState?.categories, state.categories || categories),
+      locations: normalizeDictionaryValues(sourceState?.locations, locations),
+      categories: normalizeDictionaryValues(sourceState?.categories, categories),
       ...currentCreateMeta(changedAt)
     };
     state.layouts[nextLayoutId] = editableLayout;
@@ -8146,6 +8151,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
   const id = preserveSource
     ? `container-shared-${root.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const fallbackLocation = preserveSource ? (locations[0] || "") : defaultRootContainerLocation(state);
   idMap?.containers?.set(root.id, id);
   state.containers[id] = {
     id,
@@ -8157,7 +8163,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
     weight: Number(root.weightGrams || 0),
     volume: Number(root.volumeLiters || 0),
     color: "",
-    location: defaultRootContainerLocation(state),
+    location: fallbackLocation,
     note: root.description || "",
     photos: sharedGearPhotos(root, changedAt),
     ...currentCreateMeta(changedAt)
@@ -8183,13 +8189,14 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
   const id = preserveSource
     ? `item-shared-${item.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const fallbackLocation = preserveSource ? (locations[0] || "") : defaultRootContainerLocation(state);
   idMap?.items?.set(item.id, id);
   state.items[id] = {
     id,
     name: item.name,
     weight: Number(item.weightGrams || 0),
     quantity: 1,
-    location: defaultRootContainerLocation(state),
+    location: fallbackLocation,
     category: "Прочее",
     categories: ["Прочее"],
     containerId,
@@ -8203,7 +8210,6 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
     markRecordPhotosForCurrentListCopy(state.items[id]);
     stripPublicOriginForPrivateCopy(state.items[id]);
   }
-  if (!preserveSource && !state.categories.includes("Прочее")) state.categories.push("Прочее");
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
     container.itemIds.push(id);
@@ -8976,11 +8982,11 @@ function renderFilters() {
     refs.deleteLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideDeleteLayout);
   }
   fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), state.activeLayoutId);
-  selectedCategoryFilters = selectedCategoryFilters.filter((category) => activeCategories().includes(category));
-  const locationOptions = getAvailableLocationFilterOptions();
+  selectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
+  const locationOptions = dictionaryOptionsForUi("location");
   fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, loc])], refs.locationFilter.value);
   updateCategoryFilterButton();
-  fillSelect(refs.itemLocation, activeLocations().map((loc) => [loc, loc]));
+  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location").map((loc) => [loc, loc]));
   renderItemCategoryPicker();
   refs.clearSearchBtn.hidden = !refs.searchInput.value.trim();
   const locationFilterActive = Boolean(refs.locationFilter.value);
@@ -9174,8 +9180,9 @@ function updateCategoryFilterButton() {
 
 function openCategoryFilterDialog() {
   const selectedSet = new Set(selectedCategoryFilters);
-  const availableSet = new Set(getAvailableCategoryFilterOptions());
-  const categoriesToShow = activeCategories().filter((category) => selectedSet.has(category) || availableSet.has(category));
+  const categoriesToShow = dictionaryOptionsForUi("category", {
+    selected: [...selectedSet]
+  });
   refs.categoryFilterList.innerHTML = categoriesToShow.map((category) => {
     const id = `filter-category-${cssSafeId(category)}`;
     return `
@@ -9753,44 +9760,6 @@ function focusRecentlyAddedContainer(containerId) {
   }, 1700);
 }
 
-function getFilterOptionItems() {
-  const view = getCurrentView();
-  if (view === "packing") return getActiveLayoutItems();
-  return getItemsForActiveCatalog();
-}
-
-function getAvailableLocationFilterOptions() {
-  const currentLocation = refs.locationFilter.value;
-  const available = new Set();
-  if (getCurrentView() === "bags") {
-    getRootContainers().filter(isRootContainerInActiveCatalog).forEach((container) => {
-      if (matchesRootContainerFieldsFilter(container, { ignoreLocation: true })) {
-        available.add(container.location || defaultRootContainerLocation(state));
-      }
-    });
-    if (currentLocation) available.add(currentLocation);
-    return activeLocations().filter((location) => available.has(location));
-  }
-  getFilterOptionItems().forEach((item) => {
-    if (matchesItemFieldsFilter(item, { ignoreLocation: true }) && matchesCollectionFilter(item)) {
-      available.add(item.location);
-    }
-  });
-  if (currentLocation) available.add(currentLocation);
-  return activeLocations().filter((location) => available.has(location));
-}
-
-function getAvailableCategoryFilterOptions() {
-  const available = new Set();
-  getFilterOptionItems().forEach((item) => {
-    if (matchesItemFieldsFilter(item, { ignoreCategories: true }) && matchesCollectionFilter(item)) {
-      itemCategories(item).forEach((category) => available.add(category));
-    }
-  });
-  selectedCategoryFilters.forEach((category) => available.add(category));
-  return activeCategories().filter((category) => available.has(category));
-}
-
 function fillSelect(select, entries, selected = "") {
   const current = selected || select.value;
   select.innerHTML = entries.map(([value, label, kind = ""]) => {
@@ -9802,7 +9771,7 @@ function fillSelect(select, entries, selected = "") {
 
 function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
   const selectedSet = new Set(selected || getDialogSelectedCategories());
-  const categoryOptions = activeCategories();
+  const categoryOptions = dictionaryOptionsForUi("category", { selected: [...selectedSet] });
   if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
   refs.itemCategoryList.innerHTML = categoryOptions.map((category) => {
     const id = `item-category-${cssSafeId(category)}`;
@@ -9817,7 +9786,7 @@ function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = 
 
 function getDialogSelectedCategories() {
   const checked = [...refs.itemCategoryList.querySelectorAll("input:checked")].map((input) => input.value);
-  return checked.length ? checked : [activeCategories()[0] || "Прочее"];
+  return checked.length ? checked : [dictionaryOptionsForUi("category")[0] || "Прочее"];
 }
 
 function isContainerPickerCopyMode() {
@@ -10168,7 +10137,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
   const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
-  if (!targetIsPublic && sourceIsPublicCopy) {
+  if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, source.name))) return;
   }
   if (!targetIsPublic && layoutContainsItem(targetLayoutId, itemId)) {
@@ -10347,8 +10316,10 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
   const sourceIsPublicCopy = snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
+  if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
+    if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, state.containers?.[containerId]?.name))) return;
+  }
   if (!targetIsPublic) {
-    if (sourceIsPublicCopy && !(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, state.containers?.[containerId]?.name))) return;
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (duplicates.containerIds.length || duplicates.itemIds.length) {
       const duplicate = await askConfirmDialog({
@@ -10373,14 +10344,15 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
 }
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
-  const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}));
-  const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}));
-  const result = { containerIds: [], itemIds: [] };
+  let result = { containerIds: [], itemIds: [] };
   withLayoutArrangementApplied(layoutId, () => {
     const targetContainerIds = getActiveLayoutContainerIdSet(state.layouts[layoutId]);
     const targetItemIds = currentAppliedLayoutItemIds(state.layouts[layoutId]);
-    result.containerIds = [...sourceContainerIds].filter((id) => targetContainerIds.has(id));
-    result.itemIds = [...sourceItemIds].filter((id) => targetItemIds.has(id));
+    result = summarizeLayoutIdDuplicates({
+      sourceSnapshot,
+      targetContainerIds: [...targetContainerIds],
+      targetItemIds: [...targetItemIds]
+    });
   });
   return result;
 }
@@ -10808,6 +10780,20 @@ function sharedVirtualItemId(itemId) {
   return `shared-virtual-item-${itemId}`;
 }
 
+function publicVirtualLayoutMarkers(layout, virtualLayoutId) {
+  if (layout?.id === DEMO_SHARED_LAYOUT_ID) {
+    return {
+      adminDemo: true,
+      adminDemoLanguage: layout.language || uiLanguage,
+      publicCatalogLayoutId: virtualLayoutId
+    };
+  }
+  return {
+    adminSharedSourceId: layout?.id || "",
+    publicCatalogLayoutId: virtualLayoutId
+  };
+}
+
 function originalSharedId(virtualId, prefix) {
   return String(virtualId || "").startsWith(prefix) ? String(virtualId).slice(prefix.length) : "";
 }
@@ -10821,6 +10807,8 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
   const items = {};
   const rootContainerIds = [];
   const changedAt = "1970-01-01T00:00:00.000Z";
+  const publicMarkers = publicVirtualLayoutMarkers(layout, virtualLayoutId);
+  const fallbackLocation = locations[0] || "";
   sharedLayoutRoots(layout).forEach((root) => {
     const containerId = sharedVirtualContainerId(root.id);
     rootContainerIds.push(containerId);
@@ -10834,12 +10822,13 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
       weight: Number(root.weightGrams || 0),
       volume: Number(root.volumeLiters || 0),
       color: "",
-      location: defaultRootContainerLocation(state),
+      location: fallbackLocation,
       note: root.description || "",
       photos: sharedGearPhotos(root, changedAt),
       createdAt: changedAt,
       updatedAt: changedAt,
-      sharedSourceId: root.id
+      sharedSourceId: root.id,
+      ...publicMarkers
     };
     (root.items || []).forEach((item) => {
       const itemId = sharedVirtualItemId(item.id);
@@ -10848,7 +10837,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
         name: item.name,
         weight: Number(item.weightGrams || 0),
         quantity: 1,
-        location: defaultRootContainerLocation(state),
+        location: fallbackLocation,
         category: "Прочее",
         categories: ["Прочее"],
         containerId,
@@ -10856,7 +10845,8 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
         photos: sharedGearPhotos(item, changedAt),
         createdAt: changedAt,
         updatedAt: changedAt,
-        sharedSourceId: item.id
+        sharedSourceId: item.id,
+        ...publicMarkers
       };
       containers[containerId].itemIds.push(itemId);
       containers[containerId].order.push({ type: "item", id: itemId });
@@ -10872,13 +10862,14 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
         rootContainerIds,
         arrangement: createLayoutArrangementFromCurrentState({ items, containers, layouts: {}, activeLayoutId: virtualLayoutId }, rootContainerIds),
         createdAt: changedAt,
-        updatedAt: changedAt
+        updatedAt: changedAt,
+        ...publicMarkers
       }
     },
     activeLayoutId: virtualLayoutId,
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
-    locations: [defaultRootContainerLocation(state)],
+    locations: [fallbackLocation],
     showItemMeta: true,
     categories: ["Прочее"]
   };
@@ -10887,6 +10878,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
 function createSharedVirtualStateFromPublishedState(layout, sourceState) {
   const sourceLayout = sourceState.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState.layouts || {})[0];
   const virtualLayoutId = sharedVirtualLayoutId(layout?.id || sourceLayout?.id || "shared");
+  const publicMarkers = publicVirtualLayoutMarkers(layout, virtualLayoutId);
   const containerMap = new Map();
   const itemMap = new Map();
   const containers = {};
@@ -10912,7 +10904,8 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
       containerId,
       sharedSourceId: itemId,
       createdAt: item.createdAt || changedAt,
-      updatedAt: item.updatedAt || changedAt
+      updatedAt: item.updatedAt || changedAt,
+      ...publicMarkers
     };
     return nextId;
   };
@@ -10930,7 +10923,8 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
       order: [],
       sharedSourceId: containerId,
       createdAt: container.createdAt || changedAt,
-      updatedAt: container.updatedAt || changedAt
+      updatedAt: container.updatedAt || changedAt,
+      ...publicMarkers
     };
     containers[nextId].childIds = (container.childIds || []).map((id) => copyContainer(id, nextId)).filter(Boolean);
     containers[nextId].itemIds = (container.itemIds || []).map((id) => copyItem(id, nextId)).filter(Boolean);
@@ -10963,13 +10957,14 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
         rootContainerIds,
         arrangement: createLayoutArrangementFromCurrentState({ items, containers, layouts: {}, activeLayoutId: virtualLayoutId }, rootContainerIds),
         createdAt: sourceLayout?.createdAt || changedAt,
-        updatedAt: sourceLayout?.updatedAt || changedAt
+        updatedAt: sourceLayout?.updatedAt || changedAt,
+        ...publicMarkers
       }
     },
     activeLayoutId: virtualLayoutId,
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
-    locations: [...(sourceState.locations || [defaultRootContainerLocation(state)])],
+    locations: [...(sourceState.locations || [locations[0] || ""])],
     showItemMeta: sourceState.showItemMeta !== false,
     categories: [...(sourceState.categories || ["Прочее"])],
     collectionMode: false,
@@ -13478,8 +13473,8 @@ function renderSettings() {
   const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
     <div class="settings-grid">
-      ${renderDictionary("Места хранения", "location", activeLocations())}
-      ${renderDictionary("Категории", "category", activeCategories())}
+      ${renderDictionary("Места хранения", "location", dictionaryOptionsForUi("location"))}
+      ${renderDictionary("Категории", "category", dictionaryOptionsForUi("category"))}
     </div>
   `;
   bindDictionary("location", dictionaryOwner);
@@ -13490,8 +13485,8 @@ function renderSharedSettingsView() {
   withSharedVirtualState(() => {
     refs.settingsView.innerHTML = `
       <div class="settings-grid">
-        ${renderDictionary("Места хранения", "location", state.locations)}
-        ${renderDictionary("Категории", "category", state.categories)}
+        ${renderDictionary("Места хранения", "location", dictionaryOptionsForUi("location"))}
+        ${renderDictionary("Категории", "category", dictionaryOptionsForUi("category"))}
       </div>
     `;
   });
@@ -14177,14 +14172,12 @@ function renderDictionaryEntry(type, value) {
 }
 
 function bindDictionary(type, owner = activeDictionaryOwner()) {
-  const listName = type === "location" ? "locations" : "categories";
   const scope = dictionaryEditScope(owner);
   const input = document.querySelector(`#${type}Input`);
   document.querySelector(`#${type}Add`).addEventListener("click", () => {
     const value = input.value.trim();
-    owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
-    if (!value || owner[listName].includes(value)) return;
-    owner[listName].push(value);
+    if (!value || dictionaryOptionsForUi(type).includes(value)) return;
+    addCustomDictionaryValue(owner, type, value);
     editingDictionaryEntry = null;
     input.value = "";
     saveDictionaryOwner(owner);
@@ -14226,13 +14219,13 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
   document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
-      owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
-      if (owner[listName].length <= 1) return;
+      const dictionaryValues = dictionaryOptionsForUi(type);
+      if (dictionaryValues.length <= 1) return;
       const affectedCount = scope.items.filter((item) => {
         if (type === "location") return item.location === value;
         return itemCategories(item).includes(value);
       }).length;
-      const fallback = owner[listName].find((item) => item !== value);
+      const fallback = dictionaryValues.find((item) => item !== value);
       const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
       const subject = type === "location" ? "место хранения" : "категорию";
       openConfirmDialog({
@@ -14245,7 +14238,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
           const changedAt = nowIso();
-          owner[listName] = owner[listName].filter((item) => item !== value);
+          removeCustomDictionaryValue(owner, type, value);
           scope.items.forEach((item) => {
             if (type === "location" && item.location === value) {
               item.location = fallback;
@@ -14273,7 +14266,6 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
 }
 
 function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictionaryOwner()) {
-  const listName = type === "location" ? "locations" : "categories";
   const scope = dictionaryEditScope(owner);
   const newValue = String(rawNewValue || "").trim();
   if (!oldValue || !newValue) return;
@@ -14282,13 +14274,12 @@ function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictio
     render();
     return;
   }
-  owner[listName] = normalizeDictionaryValues(owner[listName], type === "location" ? locations : categories);
-  if (owner[listName].includes(newValue)) {
+  if (dictionaryOptionsForUi(type).includes(newValue)) {
     showToast("Такое значение уже есть.", "warning");
     return;
   }
   const changedAt = nowIso();
-  owner[listName] = owner[listName].map((value) => value === oldValue ? newValue : value);
+  renameCustomDictionaryValue(owner, type, oldValue, newValue);
   if (type === "location") {
     scope.items.forEach((item) => {
       if (item.location !== oldValue) return;
@@ -14654,6 +14645,10 @@ async function copyRootContainer(containerId) {
   if (!container || container.parentId) return;
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
+  if (layout && isAdminEditablePublishedLayout(layoutId)) {
+    await copyContainerTreeToLayout(containerId, layout.id, "");
+    return;
+  }
   if (layout && !isAdminEditablePublishedLayout(layoutId)) {
     const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: layoutId });
     if (!(layout.rootContainerIds || []).includes(containerId)) {
@@ -14962,7 +14957,7 @@ function openRootContainerDialog(containerId = null) {
 }
 
 function fillRootContainerLocationSelect(selected = "") {
-  const options = activeLocations();
+  const options = dictionaryOptionsForUi("location", { selected: selected ? [selected] : [] });
   const fallback = options[0] || defaultRootContainerLocation(state);
   const entries = options.map((location) => [location, location]);
   fillSelect(refs.rootContainerLocation, entries, selected || fallback);
@@ -14976,7 +14971,7 @@ function openItemDialog(itemId = null) {
     name: "",
     weight: 0,
     quantity: 1,
-    location: activeLocations()[0] || defaultRootContainerLocation(state),
+    location: dictionaryOptionsForUi("location")[0] || defaultRootContainerLocation(state),
     category: "Прочее",
     categories: ["Прочее"],
     containerId: "",
@@ -14988,7 +14983,7 @@ function openItemDialog(itemId = null) {
   refs.itemWeight.value = item.weight || 0;
   refs.itemQuantity.value = itemQuantity(item);
   updateItemQuantityUi();
-  refs.itemLocation.value = item.location;
+  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map((location) => [location, location]), item.location);
   renderItemCategoryPicker(itemId ? itemCategories(item) : [], { fallbackDefault: Boolean(itemId) });
   refs.itemContainer.value = itemId
     ? getItemContainerIdInLayout(state.layouts?.[itemDialogTargetLayoutId], itemId)
@@ -15090,11 +15085,14 @@ function saveNewLayout(event) {
   const arrangement = shouldCopy
     ? clone(source.arrangement || createLayoutArrangementFromCurrentState(state, source.rootContainerIds || []))
     : createEmptyLayoutArrangement();
+  const sourceDictionaries = shouldCopy ? ensureLayoutDictionaries(source) : ensurePrivateDictionaries(state);
   state.layouts[id] = {
     id,
     name,
     rootContainerIds: [...arrangement.rootContainerIds],
     arrangement,
+    locations: [...(sourceDictionaries?.locations || locations)],
+    categories: [...(sourceDictionaries?.categories || categories)],
     ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
     ...currentEditMeta()
   };
@@ -15154,11 +15152,14 @@ function deleteActiveLayout() {
     const changedAt = nowIso();
     nextLayoutId = `layout-${Date.now()}`;
     const arrangement = createEmptyLayoutArrangement();
+    const activeLayoutDictionaries = ensureLayoutDictionaries(state.layouts?.[state.activeLayoutId]);
     state.layouts[nextLayoutId] = {
       id: nextLayoutId,
       name: uniqueLayoutName("Новая укладка"),
       rootContainerIds: [],
       arrangement,
+      locations: [...(activeLayoutDictionaries?.locations || locations)],
+      categories: [...(activeLayoutDictionaries?.categories || categories)],
       ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
       ...currentCreateMeta(changedAt)
     };
@@ -15675,7 +15676,7 @@ function getItemsForItemsView() {
 
 function getItemsForActiveCatalog() {
   return Object.entries(state.items)
-    .filter(([itemId, item]) => isScopedCatalogLayout() || !isPublicSyncItem(itemId, item))
+    .filter(([itemId, item]) => isPrivateCatalogItemRecord(itemId, item))
     .map(([, item]) => item)
     .filter((item) => isItemInActiveCatalog(item));
 }
@@ -15703,6 +15704,31 @@ function getItemsUsageCounts() {
 
 function isScopedCatalogLayout(layoutId = getPublishedEditLayoutId()) {
   return isAdminEditablePublishedLayout(layoutId);
+}
+
+function getPublicLayoutRecordIdsForState(targetState = state) {
+  return collectPublicLayoutRecordIds(targetState, {
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState
+  });
+}
+
+function isPublicCatalogItemRecord(itemId, item) {
+  if (isPublicSyncItem(itemId, item)) return true;
+  return getPublicLayoutRecordIdsForState().itemIds.has(itemId);
+}
+
+function isPublicCatalogContainerRecord(containerId, container) {
+  if (isPublicSyncContainer(containerId, container)) return true;
+  return getPublicLayoutRecordIdsForState().containerIds.has(containerId);
+}
+
+function isPrivateCatalogItemRecord(itemId, item) {
+  return isScopedCatalogLayout() || !isPublicCatalogItemRecord(itemId, item);
+}
+
+function isPrivateCatalogContainerRecord(containerId, container) {
+  return isScopedCatalogLayout() || !isPublicCatalogContainerRecord(containerId, container);
 }
 
 function isItemInActiveCatalog(item) {
@@ -15788,14 +15814,14 @@ function getDescendantContainerIds(containerId) {
 
 function getRootContainers() {
   return Object.values(state.containers)
-    .filter((container) => isScopedCatalogLayout() || !isPublicSyncContainer(container.id, container))
+    .filter((container) => isPrivateCatalogContainerRecord(container.id, container))
     .filter(isRootContainerForEditor)
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
 
 function getRootContainersForSettings() {
   const roots = Object.values(state.containers).filter((container) => {
-    if (!isScopedCatalogLayout() && isPublicSyncContainer(container.id, container)) return false;
+    if (!isPrivateCatalogContainerRecord(container.id, container)) return false;
     if (!isRootContainerForEditor(container)) return false;
     if (!isRootContainerInActiveCatalog(container)) return false;
     if (rootContainerUsageFilter === "current" && !isRootContainerInActiveLayout(container.id)) return false;
@@ -15828,7 +15854,7 @@ function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } 
 
 function getRootContainerUsageCounts() {
   return Object.values(state.containers).filter((container) =>
-    (isScopedCatalogLayout() || !isPublicSyncContainer(container.id, container)) &&
+    isPrivateCatalogContainerRecord(container.id, container) &&
     isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
   ).reduce(
     (counts, container) => {
