@@ -79,6 +79,9 @@ import {
   summarizePublicCopyDuplicates
 } from "./src/public/copy-duplicates.js";
 import {
+  markCopiedItemForPublicLayout
+} from "./src/public/copy-public-layout-target.js";
+import {
   generatedCatalogString,
   hasPublicOriginMarker,
   isGeneratedCatalogContainerStateArtifact,
@@ -406,6 +409,7 @@ let lastToastAt = 0;
 let containerPickerMode = "item";
 let containerPickerTargetContainerId = "";
 let containerPickerLayoutId = "";
+let containerPickerSourceLayoutId = "";
 let itemDialogTargetLayoutId = "";
 let editingDictionaryEntry = null;
 let fixedScrollbarRefreshFrame = null;
@@ -529,8 +533,24 @@ function resetGuestDemoScopeToCanonical() {
   setActivePrivateScope();
 }
 
+function removeScopedLocalValue(key) {
+  try {
+    localStorage.removeItem(scopedLocalStorageKey(key));
+  } catch {
+    // Local cleanup is best-effort.
+  }
+}
+
+function writeLargeScopedLocalValue(key, value, { clearBase = false, clearRecovery = true } = {}) {
+  const scopedKey = scopedLocalStorageKey(key);
+  if (safeSetLocalStorage(scopedKey, value, { silent: true })) return true;
+  if (clearRecovery && key !== RECOVERY_STATE_KEY) removeScopedLocalValue(RECOVERY_STATE_KEY);
+  if (clearBase && key !== BASE_STATE_KEY) removeScopedLocalValue(BASE_STATE_KEY);
+  return safeSetLocalStorage(scopedKey, value, { silent: true });
+}
+
 function persistStateSnapshot(snapshot = state) {
-  return safeSetLocalStorage(scopedLocalStorageKey(STORAGE_KEY), JSON.stringify(snapshot));
+  return writeLargeScopedLocalValue(STORAGE_KEY, JSON.stringify(snapshot), { clearBase: true });
 }
 
 function t(key, values = {}) {
@@ -677,16 +697,26 @@ function activeDictionaryOwner() {
   return ensurePrivateDictionaries(state);
 }
 
+function dictionaryListForOwner(owner, type) {
+  const fallbackValues = type === "location" ? locations : categories;
+  const ownerValues = normalizeDictionaryValues(owner?.[type === "location" ? "locations" : "categories"]);
+  return ownerValues.length ? ownerValues : normalizeDictionaryValues(fallbackValues);
+}
+
 function activeLocations() {
-  return normalizeDictionaryValues(activeDictionaryOwner()?.locations, locations);
+  return dictionaryListForOwner(activeDictionaryOwner(), "location");
 }
 
 function activeCategories() {
-  return normalizeDictionaryValues(activeDictionaryOwner()?.categories, categories);
+  return dictionaryListForOwner(activeDictionaryOwner(), "category");
 }
 
 function activeDictionaryList(type) {
   return type === "location" ? activeLocations() : activeCategories();
+}
+
+function dictionaryOptionsForOwner(type, owner, { selected = [] } = {}) {
+  return dictionaryOptionsForUiValues(type, dictionaryListForOwner(owner, type), { selected });
 }
 
 function dictionaryOptionsForUi(type, { selected = [] } = {}) {
@@ -719,8 +749,9 @@ function dictionaryEditScope(owner = activeDictionaryOwner()) {
 
 function saveDictionaryOwner(owner = activeDictionaryOwner()) {
   editingDictionaryEntry = null;
-  saveState();
-  if (owner !== state && isPublishedLayoutEditable(owner)) scheduleActivePublishedEditSave();
+  if (owner !== state && isPublishedLayoutEditable(owner)) touchLayout(owner.id);
+  if (owner !== state && isPublishedLayoutEditable(owner)) saveLayoutMutation(owner.id, { publishDelay: 0 });
+  else saveState();
   render();
 }
 
@@ -927,6 +958,9 @@ function init() {
     addToContainerTargetLayoutId = "";
     refs.addToContainerSearch.value = "";
     refs.newSubcontainerName.value = "";
+  });
+  refs.containerPickerDialog?.addEventListener("close", () => {
+    containerPickerSourceLayoutId = "";
   });
   refs.layoutRootSearch.addEventListener("input", renderLayoutRootResults);
   refs.clearLayoutRootSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -1168,7 +1202,7 @@ function setupTouchActionButtonFeedback() {
   let startY = 0;
   let feedbackTimer = null;
   let moved = false;
-  const selector = ".edit-button, .copy-item-button, .remove-layout-button, .delete-item-button, .add-to-container-button, .collapse-button";
+  const selector = "button, .item-photo-pick, .backup-file-pick";
 
   const clearFeedbackTimer = () => {
     if (!feedbackTimer) return;
@@ -1193,7 +1227,7 @@ function setupTouchActionButtonFeedback() {
   document.addEventListener("touchstart", (event) => {
     if (event.touches.length !== 1) return;
     const button = event.target.closest?.(selector);
-    if (!button || button.disabled) return;
+    if (!button || button.disabled || button.classList.contains("disabled")) return;
     clearActiveButton();
     const touch = event.touches[0];
     activeButton = button;
@@ -1784,7 +1818,7 @@ function loadBaseState() {
 }
 
 function saveBaseState(nextState = state) {
-  safeSetLocalStorage(scopedLocalStorageKey(BASE_STATE_KEY), JSON.stringify(nextState));
+  writeLargeScopedLocalValue(BASE_STATE_KEY, JSON.stringify(nextState), { clearRecovery: true });
 }
 
 function loadRecoverySnapshots() {
@@ -1807,7 +1841,11 @@ function saveRecoverySnapshot(reason, snapshot = state) {
     };
     const snapshots = loadRecoverySnapshots();
     snapshots.unshift(entry);
-    safeSetLocalStorage(scopedLocalStorageKey(RECOVERY_STATE_KEY), JSON.stringify(snapshots.slice(0, RECOVERY_STATE_MAX)));
+    if (writeLargeScopedLocalValue(RECOVERY_STATE_KEY, JSON.stringify(snapshots.slice(0, Math.min(RECOVERY_STATE_MAX, 3))), {
+      clearRecovery: false
+    })) return;
+    removeScopedLocalValue(RECOVERY_STATE_KEY);
+    writeLargeScopedLocalValue(RECOVERY_STATE_KEY, JSON.stringify([entry]), { clearRecovery: false });
   } catch {
     // Recovery snapshots are best-effort and must never interrupt the app.
   }
@@ -2277,7 +2315,8 @@ function persistActiveLayoutSelection({ sync = false } = {}) {
   if (!state.layouts?.[state.activeLayoutId]) return;
   if (isReadOnlyStateScope() || isAdminEditablePublishedLayout(state.activeLayoutId)) return;
   if (!canUseLocalEditableState(state.activeLayoutId)) return;
-  saveState({ sync });
+  saveState({ sync: false });
+  if (sync && syncMeta.dirty) updateSyncUi();
 }
 
 function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state) {
@@ -2530,6 +2569,12 @@ function saveState({ sync = true } = {}) {
     updateSyncUi();
     scheduleRemoteSave();
   }
+}
+
+function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900 } = {}) {
+  const targetIsPublic = isAdminEditablePublishedLayout(layoutId);
+  saveState({ sync: !targetIsPublic });
+  if (targetIsPublic) schedulePublishedLayoutSave(layoutId, publishDelay);
 }
 
 function hasLocalSyncChanges(baseState = loadBaseState()) {
@@ -6790,7 +6835,6 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
     containers[nextContainerId].parentId = container.parentId ? mapContainerId(container.parentId) : null;
     delete containers[nextContainerId].adminDemo;
     delete containers[nextContainerId].adminSharedSourceId;
-    delete containers[nextContainerId].sharedSourceId;
     delete containers[nextContainerId].publicCatalogLayoutId;
     (container.itemIds || []).forEach((itemId) => {
       if (state.items?.[itemId]) {
@@ -6800,7 +6844,6 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
         items[nextItemId].containerId = nextContainerId;
         delete items[nextItemId].adminDemo;
         delete items[nextItemId].adminSharedSourceId;
-        delete items[nextItemId].sharedSourceId;
         delete items[nextItemId].publicCatalogLayoutId;
       }
     });
@@ -6817,6 +6860,7 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
     return nextContainerId;
   };
   const rootContainerIds = (layout.rootContainerIds || []).map(walk).filter(Boolean);
+  const dictionaryOwner = ensureLayoutDictionaries(layout);
   const demoLayout = {
     ...clone(layout),
     id: "layout-main",
@@ -6827,7 +6871,6 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
   delete demoLayout.adminSharedSourceId;
   delete demoLayout.sharedSourceId;
   delete demoLayout.publicCatalogLayoutId;
-  const dictionaryOwner = ensureLayoutDictionaries(layout);
   const demoState = {
     locations: [...(dictionaryOwner?.locations || locations)],
     categories: [...(dictionaryOwner?.categories || categories)],
@@ -7544,7 +7587,9 @@ async function copySharedItem(itemId) {
 
 async function copySharedItemToLayoutContainer(itemId, targetContainerId, targetLayoutId) {
   if (!itemId || !targetContainerId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
-  await ensurePrivateStateForSharedCopy();
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
+  if (!state.layouts?.[targetLayoutId]) return;
   const published = findSharedPublishedItem(itemId);
   const match = published ? null : findSharedItem(itemId);
   const sourceName = published?.item?.name || match?.item?.name || "";
@@ -7552,18 +7597,19 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
     ? { rootId: "", containers: {}, items: { [itemId]: published.item } }
     : { rootId: "", containers: {}, items: { [itemId]: match?.item } };
   if (!sourceName || !(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName))) return;
+  const changedAt = nowIso();
   const copiedItemId = published
-    ? copyPublishedItemToState(published.sourceState, itemId, { containerId: "" })
-    : copySharedItemToState(match.item, { containerId: "" });
+    ? copyPublishedItemToState(published.sourceState, itemId, { containerId: "", changedAt, preserveSource: targetIsPublic })
+    : copySharedItemToState(match.item, { containerId: "", changedAt, preserveSource: targetIsPublic });
   if (!copiedItemId) return;
-  if (!placeExistingItemInLayout(copiedItemId, targetContainerId, targetLayoutId, { changedAt: nowIso() })) {
+  if (targetIsPublic) markCopiedItemForPublicLayout(state, copiedItemId, targetLayoutId, { changedAt, touch: markEdited });
+  if (!placeExistingItemInLayout(copiedItemId, targetContainerId, targetLayoutId, { changedAt })) {
     delete state.items[copiedItemId];
     return;
   }
   markRecentlyAddedItem(copiedItemId, targetLayoutId);
-  setActivePrivateScope();
-  saveState();
-  switchActiveLayout(targetLayoutId);
+  saveLayoutMutation(targetLayoutId);
+  openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   render();
   renderSharedLayouts();
@@ -7573,28 +7619,20 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
 
 async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId) {
   if (!rootId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
-  await ensurePrivateStateForSharedCopy();
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
+  if (!state.layouts?.[targetLayoutId]) return;
   const published = findSharedPublishedContainer(rootId);
   const root = published ? null : findSharedRoot(rootId);
   const sourceName = published?.container?.name || root?.name || "";
   const sourceSnapshot = published
     ? snapshotContainerTree(rootId, { targetState: published.sourceState })
     : root ? legacySharedRootSnapshot(root) : null;
-  if (!sourceName || !(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName))) return;
-  const changedAt = nowIso();
-  const copiedRootId = published
-    ? copyPublishedContainerToState(published.sourceState, rootId, { targetLayoutId: "", parentId: targetParentId || null, changedAt })
-    : copySharedRootToState(root, { targetLayoutId: "", parentId: targetParentId || null, changedAt });
-  if (!copiedRootId) return;
-  if (!placeExistingContainerInLayout(copiedRootId, targetParentId, targetLayoutId, { changedAt })) return;
-  setActivePrivateScope();
-  saveState();
-  switchActiveLayout(targetLayoutId);
-  refs.containerPickerDialog.close();
-  render();
-  renderSharedLayouts();
-  requestAnimationFrame(() => focusRecentlyAddedContainer(copiedRootId));
-  showToast(`"${sourceName}" \u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u0443\u044e \u0443\u043a\u043b\u0430\u0434\u043a\u0443.`, "success");
+  if (!sourceName || !(await confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, sourceName, { publicSource: true }))) return;
+  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+    sourceContainerId: rootId,
+    publicSource: true
+  });
 }
 
 function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
@@ -7723,10 +7761,28 @@ function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
   let result = { containerIds: [], itemIds: [] };
   withLayoutArrangementApplied(targetLayoutId, () => {
     const targetLayout = state.layouts[targetLayoutId];
+    const targetContainerIds = [...getActiveLayoutContainerIdSet(targetLayout)];
+    const targetItemIds = new Set(currentAppliedLayoutItemIds(targetLayout));
+    targetContainerIds.forEach((containerId) => {
+      getContainerItemIdsDeep(containerId).forEach((itemId) => targetItemIds.add(itemId));
+    });
+    Object.entries(state.items || {}).forEach(([itemId, item]) => {
+      if (!item) return;
+      if (item.publicCatalogLayoutId === targetLayoutId) {
+        targetItemIds.add(itemId);
+        return;
+      }
+      if (item.containerId && targetContainerIds.includes(item.containerId)) {
+        targetItemIds.add(itemId);
+        return;
+      }
+      const container = item.containerId ? state.containers?.[item.containerId] : null;
+      if (container?.publicCatalogLayoutId === targetLayoutId) targetItemIds.add(itemId);
+    });
     result = summarizePublicCopyDuplicates({
       sourceSnapshot,
-      targetContainerIds: [...getActiveLayoutContainerIdSet(targetLayout)],
-      targetItemIds: [...currentAppliedLayoutItemIds(targetLayout)],
+      targetContainerIds,
+      targetItemIds: [...targetItemIds],
       containers: state.containers,
       items: state.items,
       itemCategories,
@@ -7845,6 +7901,34 @@ async function confirmRepeatedSharedLayoutCopy(existingLayout, sourceName = "") 
   switchView("packing");
   render();
   showToast("Открыта уже скопированная укладка.", "success");
+  return false;
+}
+
+async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false } = {}) {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!targetLayout || !sourceSnapshot) return false;
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
+  const sourceIsPublicCopy = publicSource ||
+    snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
+    snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
+  if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
+    return confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, sourceName);
+  }
+  if (targetIsPublic) return true;
+  const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
+  if (!duplicates.containerIds.length && !duplicates.itemIds.length) return true;
+  const duplicate = await askConfirmDialog({
+    title: "Такие элементы уже есть в укладке",
+    text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
+    okText: "Дублировать",
+    cancelText: "Пропустить",
+    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`,
+    tone: "safe"
+  });
+  if (duplicate) return true;
+  refs.containerPickerDialog.close();
+  showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
   return false;
 }
 
@@ -9648,8 +9732,7 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   layout.rootContainerIds.splice(index, 0, containerId);
   markRecordActivePublicCatalog(state.containers[containerId]);
   touchLayout(layoutId);
-  saveState();
-  scheduleActivePublishedEditSave();
+  saveLayoutMutation(layoutId, { publishDelay: 500 });
   if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
   if (renderAfter) render();
 }
@@ -9665,8 +9748,7 @@ function addExistingItemToContainer(itemId) {
   state.collapsedContainers[containerId] = false;
   saveLocalUiState();
   markRecentlyAddedItem(itemId, layoutId);
-  saveState();
-  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+  saveLayoutMutation(layoutId);
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
@@ -9722,8 +9804,7 @@ function createSubcontainerFromAddDialog(event) {
   touchLayout(layoutId, changedAt);
   saveLocalUiState();
   if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
-  saveState();
-  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+  saveLayoutMutation(layoutId);
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => {
@@ -9806,6 +9887,7 @@ function openItemContainerPickerDialog(event) {
   containerPickerMode = "item";
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  containerPickerSourceLayoutId = getPublishedEditLayoutId();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9816,6 +9898,7 @@ async function openItemCopyContainerPickerDialog(event) {
   containerPickerMode = "item-copy";
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = getPublishedEditLayoutId();
+  containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -9827,6 +9910,7 @@ function openContainerParentPickerDialog(event) {
   containerPickerMode = "container";
   containerPickerTargetContainerId = editingRootContainerId;
   containerPickerLayoutId = getPublishedEditLayoutId();
+  containerPickerSourceLayoutId = getPublishedEditLayoutId();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9837,6 +9921,7 @@ async function openRootContainerCopyPickerDialog(event) {
   containerPickerMode = "container-copy";
   containerPickerTargetContainerId = editingRootContainerId;
   containerPickerLayoutId = getPublishedEditLayoutId();
+  containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -9854,6 +9939,7 @@ async function openSharedItemCopyPicker(sourceId) {
   containerPickerMode = SHARED_ITEM_COPY_PICKER_MODE;
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  containerPickerSourceLayoutId = "";
   await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -9867,6 +9953,7 @@ async function openSharedContainerCopyPicker(sourceId) {
   containerPickerMode = SHARED_CONTAINER_COPY_PICKER_MODE;
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  containerPickerSourceLayoutId = "";
   await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -10084,7 +10171,9 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
     return;
   }
   if (containerPickerMode === "container-copy") {
-    await copyContainerTreeToLayout(editingRootContainerId, containerPickerLayoutId, containerId);
+    await copyContainerTreeToLayout(editingRootContainerId, containerPickerLayoutId, containerId, {
+      sourceLayoutId: containerPickerSourceLayoutId
+    });
     return;
   }
   if (containerPickerMode === SHARED_ITEM_COPY_PICKER_MODE) {
@@ -10213,7 +10302,7 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   if (getLayoutItemIdSet(targetLayout).has(itemId)) return false;
   if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
   markRecentlyAddedItem(itemId, targetLayoutId);
-  saveState();
+  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
@@ -10255,8 +10344,7 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
     return;
   }
   markRecentlyAddedItem(copyId, targetLayoutId);
-  saveState();
-  if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
+  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
@@ -10268,6 +10356,7 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
 function snapshotContainerTree(containerId, { sourceLayoutId = "", excludeLayoutId = "", targetState = state } = {}) {
   const arrangementSnapshot = snapshotContainerTreeFromLayoutArrangement(containerId, { sourceLayoutId, excludeLayoutId, targetState });
   const liveSnapshot = snapshotContainerTreeFromLiveState(containerId, targetState);
+  if (sourceLayoutId && arrangementSnapshot) return arrangementSnapshot;
   if (!arrangementSnapshot) return liveSnapshot;
   if (!liveSnapshot) return arrangementSnapshot;
   return containerTreeSnapshotScore(liveSnapshot) > containerTreeSnapshotScore(arrangementSnapshot)
@@ -10308,39 +10397,25 @@ function snapshotContainerTreeFromLiveState(containerId, targetState = state) {
   return { rootId: containerId, containers, items };
 }
 
-async function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "") {
+async function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", { sourceLayoutId = "" } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
-  const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: targetLayoutId });
+  const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, excludeLayoutId: targetLayoutId });
   if (!sourceSnapshot || !targetLayout) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
-  const sourceIsPublicCopy = snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
-    snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
-  if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
-    if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, state.containers?.[containerId]?.name))) return;
-  }
+  if (!(await confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || ""))) return;
   if (!targetIsPublic) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (duplicates.containerIds.length || duplicates.itemIds.length) {
-      const duplicate = await askConfirmDialog({
-        title: "Такие элементы уже есть в укладке",
-        text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
-        okText: "Дублировать",
-        cancelText: "Пропустить",
-        highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`,
-        tone: "safe"
+      duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+        sourceContainerId: containerId
       });
-      if (!duplicate) {
-        refs.containerPickerDialog.close();
-        showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
-        return;
-      }
-      duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
       return;
     }
     if (!snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) && linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
   }
-  duplicateContainerTreeToLayout(containerId, targetLayoutId, targetParentId);
+  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+    sourceContainerId: containerId
+  });
 }
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
@@ -10409,7 +10484,7 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
   });
   if (!linked) return false;
   markRecentlyAddedContainer(sourceSnapshot.rootId, targetLayoutId);
-  saveState();
+  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   if (refs.containerPickerDialog.open) refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
@@ -10419,15 +10494,23 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
   return true;
 }
 
-function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "") {
+function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "", {
+  sourceContainerId = sourceSnapshot?.rootId || "",
+  publicSource = false
+} = {}) {
   const targetLayout = state.layouts[targetLayoutId];
-  const sourceSnapshot = snapshotContainerTree(containerId);
-  if (!sourceSnapshot || !targetLayout) return;
+  if (!sourceSnapshot || !targetLayout) return "";
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
-  const sourceIsPublicCopy = snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
+  const sourceIsPublicCopy = publicSource ||
+    snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
+  const mapPublicOrigin = (record, sourceRecord, kind, sourceId) => {
+    const marked = markPrivateCopyOriginFromSource(record, sourceRecord, kind, sourceId);
+    if (!marked && publicSource) markLocalPublicCopyOrigin(record, kind, sourceId, "");
+    if (targetIsPublic && publicSource && !record.sharedSourceId) record.sharedSourceId = sourceId;
+  };
   const mapRecordToTarget = (record) => {
     if (!record) return;
     if (targetIsPublic) {
@@ -10453,13 +10536,13 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
         createdAt: changedAt,
         ...currentEditMeta(changedAt)
       };
-      markPrivateCopyOriginFromSource(state.items[nextId], item, "item", itemId);
+      mapPublicOrigin(state.items[nextId], item, "item", itemId);
       mapRecordToTarget(state.items[nextId]);
       delete state.packedItems?.[nextId];
       return nextId;
     };
-    const copyContainerTree = (sourceContainerId, parentId, isTop = false) => {
-      const container = sourceSnapshot.containers[sourceContainerId];
+    const copyContainerTree = (sourceId, parentId, isTop = false) => {
+      const container = sourceSnapshot.containers[sourceId];
       if (!container) return "";
       const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       state.containers[nextId] = {
@@ -10474,7 +10557,7 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
         createdAt: changedAt,
         ...currentEditMeta(changedAt)
       };
-      markPrivateCopyOriginFromSource(state.containers[nextId], container, "container", sourceContainerId);
+      mapPublicOrigin(state.containers[nextId], container, "container", sourceId);
       mapRecordToTarget(state.containers[nextId]);
       state.collapsedContainers[nextId] = false;
       const copiedItems = new Map();
@@ -10484,20 +10567,23 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
         if (id) copiedContainers.set(childId, id);
         return id;
       };
-      const copyChildItem = (itemId) => {
-        const id = copyItemTree(itemId, nextId);
-        if (id) copiedItems.set(itemId, id);
+      const copyChildItem = (childItemId) => {
+        const id = copyItemTree(childItemId, nextId);
+        if (id) copiedItems.set(childItemId, id);
         return id;
       };
       state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
       state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
       state.containers[nextId].order = (container.order || []).map((entry) => {
-        if (entry.type === "container") {
+        if (entry?.type === "container") {
           const id = copiedContainers.get(entry.id);
           return id ? { type: "container", id } : null;
         }
-        const id = copiedItems.get(entry.id);
-        return id ? { type: "item", id } : null;
+        if (entry?.type === "item") {
+          const id = copiedItems.get(entry.id);
+          return id ? { type: "item", id } : null;
+        }
+        return null;
       }).filter(Boolean);
       if (!state.containers[nextId].order.length) {
         state.containers[nextId].order = [
@@ -10523,18 +10609,27 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     touchLayout(targetLayoutId, changedAt);
     copied = true;
   });
-  if (!copied) return;
+  if (!copied) return "";
   markRecentlyAddedContainer(nextRootId, targetLayoutId);
-  saveState();
-  if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
+  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
-  closeSourceEditorAfterCopy("container", containerId);
+  closeSourceEditorAfterCopy("container", sourceContainerId || sourceSnapshot.rootId);
   render();
+  renderSharedLayouts();
   requestAnimationFrame(() => focusRecentlyAddedContainer(nextRootId));
   showToast("Сумка или пакет скопированы в выбранную укладку.", "success");
+  return nextRootId;
 }
 
+function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", { sourceLayoutId = "" } = {}) {
+  const targetLayout = state.layouts[targetLayoutId];
+  const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId });
+  if (!sourceSnapshot || !targetLayout) return;
+  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+    sourceContainerId: containerId
+  });
+}
 function selectRootContainerParent(parentId, targetIndex = null) {
   const containerId = containerPickerTargetContainerId || editingRootContainerId;
   if (!containerId || !state.containers[containerId] || !state.containers[parentId]) return;
@@ -13473,8 +13568,8 @@ function renderSettings() {
   const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
     <div class="settings-grid">
-      ${renderDictionary("Места хранения", "location", dictionaryOptionsForUi("location"))}
-      ${renderDictionary("Категории", "category", dictionaryOptionsForUi("category"))}
+      ${renderDictionary("Места хранения", "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
+      ${renderDictionary("Категории", "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
     </div>
   `;
   bindDictionary("location", dictionaryOwner);
@@ -14149,10 +14244,10 @@ function renderDictionaryEntry(type, value) {
     return `
       <span class="chip dictionary-chip dictionary-chip-editing">
         <input data-dictionary-edit-input="${type}" value="${escapeHtml(value)}" />
-        <button class="edit-button dictionary-save-button" data-save-${type}="${escapeHtml(value)}" aria-label="Сохранить" title="Сохранить">
+        <button class="edit-button dictionary-save-button" type="button" data-save-${type}="${escapeHtml(value)}" aria-label="Сохранить" title="Сохранить">
           <span aria-hidden="true">✓</span>
         </button>
-        <button class="delete-item-button dictionary-cancel-button" data-cancel-${type}="${escapeHtml(value)}" aria-label="Отмена" title="Отмена">
+        <button class="delete-item-button dictionary-cancel-button" type="button" data-cancel-${type}="${escapeHtml(value)}" aria-label="Отмена" title="Отмена">
           <span aria-hidden="true">&times;</span>
         </button>
       </span>
@@ -14161,10 +14256,10 @@ function renderDictionaryEntry(type, value) {
   return `
     <span class="chip dictionary-chip">
       <span class="dictionary-chip-title">${escapeHtml(value)}</span>
-      <button class="edit-button" data-edit-${type}="${escapeHtml(value)}" aria-label="Редактировать" title="Редактировать">
+      <button class="edit-button" type="button" data-edit-${type}="${escapeHtml(value)}" aria-label="Редактировать" title="Редактировать">
         <span aria-hidden="true">&#9998;</span>
       </button>
-      <button class="delete-item-button" data-remove-${type}="${escapeHtml(value)}" aria-label="Удалить" title="Удалить">
+      <button class="delete-item-button" type="button" data-remove-${type}="${escapeHtml(value)}" aria-label="Удалить" title="Удалить">
         <span aria-hidden="true">&times;</span>
       </button>
     </span>
@@ -14176,7 +14271,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
   const input = document.querySelector(`#${type}Input`);
   document.querySelector(`#${type}Add`).addEventListener("click", () => {
     const value = input.value.trim();
-    if (!value || dictionaryOptionsForUi(type).includes(value)) return;
+    if (!value || dictionaryOptionsForOwner(type, owner).includes(value)) return;
     addCustomDictionaryValue(owner, type, value);
     editingDictionaryEntry = null;
     input.value = "";
@@ -14219,7 +14314,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
   document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
-      const dictionaryValues = dictionaryOptionsForUi(type);
+      const dictionaryValues = dictionaryOptionsForOwner(type, owner);
       if (dictionaryValues.length <= 1) return;
       const affectedCount = scope.items.filter((item) => {
         if (type === "location") return item.location === value;
@@ -14274,7 +14369,7 @@ function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictio
     render();
     return;
   }
-  if (dictionaryOptionsForUi(type).includes(newValue)) {
+  if (dictionaryOptionsForOwner(type, owner).includes(newValue)) {
     showToast("Такое значение уже есть.", "warning");
     return;
   }
@@ -14646,7 +14741,7 @@ async function copyRootContainer(containerId) {
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   if (layout && isAdminEditablePublishedLayout(layoutId)) {
-    await copyContainerTreeToLayout(containerId, layout.id, "");
+    await copyContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
     return;
   }
   if (layout && !isAdminEditablePublishedLayout(layoutId)) {
@@ -14665,7 +14760,7 @@ async function copyRootContainer(containerId) {
       tone: "safe"
     });
     if (!duplicate) return;
-    duplicateContainerTreeToLayout(containerId, layout.id, "");
+    duplicateContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
     return;
   }
   duplicateRootContainer(containerId, { addToLayoutId: layout?.id || "" });
@@ -15429,8 +15524,7 @@ function updateItemDialogSaveState() {
   const snapshot = getItemDialogSnapshot();
   const hasName = Boolean(snapshot.name);
   const changed = !itemDialogInitialSnapshot || !snapshotsEqual(snapshot, itemDialogInitialSnapshot);
-  refs.saveItemBtn.disabled = !hasName || !changed;
-  refs.saveItemBtn.classList.toggle("muted-save", refs.saveItemBtn.disabled);
+  updateModalSaveButton(refs.saveItemBtn, { hasName, changed });
 }
 
 function hasSavableItemDialogChanges() {
@@ -15443,8 +15537,27 @@ function updateRootContainerDialogSaveState() {
   const snapshot = getRootContainerDialogSnapshot();
   const hasName = Boolean(snapshot.name);
   const changed = !rootContainerDialogInitialSnapshot || !snapshotsEqual(snapshot, rootContainerDialogInitialSnapshot);
-  refs.saveRootContainerBtn.disabled = !hasName || !changed;
-  refs.saveRootContainerBtn.classList.toggle("muted-save", refs.saveRootContainerBtn.disabled);
+  updateModalSaveButton(refs.saveRootContainerBtn, { hasName, changed });
+}
+
+function updateModalSaveButton(button, { hasName, changed }) {
+  button.disabled = !hasName || !changed;
+  button.classList.toggle("muted-save", button.disabled);
+  if (!changed) {
+    button.textContent = "Изменений нет";
+    button.title = "Изменений нет, всё сохранено";
+    button.setAttribute("aria-label", "Изменений нет, всё сохранено");
+    return;
+  }
+  if (!hasName) {
+    button.textContent = "Введите название";
+    button.title = "Введите название, чтобы сохранить";
+    button.setAttribute("aria-label", "Введите название, чтобы сохранить");
+    return;
+  }
+  button.textContent = "Сохранить";
+  button.removeAttribute("title");
+  button.removeAttribute("aria-label");
 }
 
 function hasSavableRootContainerDialogChanges() {
@@ -15479,8 +15592,7 @@ function saveRootContainerDialog(event) {
     };
     markRecordActivePublicCatalog(state.containers[id]);
     refs.rootContainerDialog.close();
-    saveState();
-    scheduleActivePublishedEditSave();
+    saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
     render();
     return;
   }
@@ -15496,8 +15608,7 @@ function saveRootContainerDialog(event) {
   applyRootContainerDialogParent(changedAt);
   applyRootContainerDialogPlacement();
   refs.rootContainerDialog.close();
-  saveState();
-  scheduleActivePublishedEditSave();
+  saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
   render();
 }
 
@@ -15533,8 +15644,7 @@ function saveDialogItem(event) {
           showToast("Не удалось добавить вещь в эту укладку.", "error");
           return;
         }
-        saveState();
-        if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+        saveLayoutMutation(layoutId);
         render();
         return;
       }
@@ -15542,8 +15652,7 @@ function saveDialogItem(event) {
       cleanupEmptyContainersInLayoutArrangement(layout, previousContainerId);
       touchLayout(layoutId, changedAt);
       if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
-      saveState();
-      if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+      saveLayoutMutation(layoutId);
       render();
       return;
     }
@@ -15572,8 +15681,7 @@ function saveDialogItem(event) {
     }
   }
 
-  saveState();
-  if (isAdminEditablePublishedLayout(layoutId)) schedulePublishedLayoutSave(layoutId);
+  saveLayoutMutation(layoutId);
   refs.dialog.close();
   render();
 }

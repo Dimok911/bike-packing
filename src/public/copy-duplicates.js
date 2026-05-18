@@ -32,6 +32,48 @@ export function publicCopyContainerFingerprint(container) {
   ].join("\u001f");
 }
 
+function sourceIdVariants(value) {
+  const ids = new Set();
+  let id = String(value || "").trim();
+  if (!id) return ids;
+  ids.add(id);
+  let previous = "";
+  while (id && id !== previous) {
+    previous = id;
+    id = id
+      .replace(/^container-shared-/, "")
+      .replace(/^item-shared-/, "")
+      .replace(/^shared-virtual-container-/, "")
+      .replace(/^shared-virtual-item-/, "");
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+function copySourceIds(record, kind, fallbackId = "") {
+  const ids = new Set();
+  const add = (value) => {
+    sourceIdVariants(value).forEach((id) => ids.add(id));
+  };
+  add(fallbackId);
+  if (record?._publicCopySourceKind === kind) add(record._publicCopySourceId);
+  add(record?.sharedSourceId);
+  add(kind === "container" ? record?.sharedSourceContainerId : record?.sharedSourceItemId);
+  add(kind === "container" ? record?.publicSourceContainerId : record?.publicSourceItemId);
+  add(record?.publicSourceId);
+  add(record?.templateSourceId);
+  add(record?.sourceEntityId);
+  add(record?.sourceId || record?.source_id);
+  return ids;
+}
+
+function setsIntersect(left, right) {
+  for (const value of left) {
+    if (right.has(value)) return true;
+  }
+  return false;
+}
+
 export function summarizePublicCopyDuplicates({
   sourceSnapshot,
   targetContainerIds = [],
@@ -42,8 +84,14 @@ export function summarizePublicCopyDuplicates({
   itemQuantity,
   hasPrivateSyncBlockedPublicOrigin
 }) {
-  const sourceContainerIds = new Set(Object.keys(sourceSnapshot?.containers || {}).map(String));
-  const sourceItemIds = new Set(Object.keys(sourceSnapshot?.items || {}).map(String));
+  const sourceContainerIds = new Set();
+  const sourceItemIds = new Set();
+  Object.entries(sourceSnapshot?.containers || {}).forEach(([id, container]) => {
+    copySourceIds(container, "container", id).forEach((sourceId) => sourceContainerIds.add(sourceId));
+  });
+  Object.entries(sourceSnapshot?.items || {}).forEach(([id, item]) => {
+    copySourceIds(item, "item", id).forEach((sourceId) => sourceItemIds.add(sourceId));
+  });
   const sourceContainerFingerprints = new Set(
     Object.values(sourceSnapshot?.containers || {}).map(publicCopyContainerFingerprint).filter(Boolean)
   );
@@ -60,9 +108,8 @@ export function summarizePublicCopyDuplicates({
   targetContainerIds.forEach((containerId) => {
     const container = containers[containerId];
     if (!container) return;
-    const copiedFromSameSource =
-      container._publicCopySourceKind === "container" &&
-      sourceContainerIds.has(String(container._publicCopySourceId || ""));
+    const targetSourceIds = copySourceIds(container, "container", containerId);
+    const copiedFromSameSource = setsIntersect(targetSourceIds, sourceContainerIds);
     const sameId = sourceContainerIds.has(String(containerId));
     const looksLikeSamePublicContainer =
       sourceContainerFingerprints.size &&
@@ -73,9 +120,8 @@ export function summarizePublicCopyDuplicates({
   targetItemIds.forEach((itemId) => {
     const item = items[itemId];
     if (!item) return;
-    const copiedFromSameSource =
-      item._publicCopySourceKind === "item" &&
-      sourceItemIds.has(String(item._publicCopySourceId || ""));
+    const targetSourceIds = copySourceIds(item, "item", itemId);
+    const copiedFromSameSource = setsIntersect(targetSourceIds, sourceItemIds);
     const sameId = sourceItemIds.has(String(itemId));
     const blockedPublicOrigin = typeof hasPrivateSyncBlockedPublicOrigin === "function" &&
       hasPrivateSyncBlockedPublicOrigin(item, itemId);
