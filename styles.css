@@ -3275,11 +3275,26 @@ dialog::backdrop {
   justify-self: start;
   background: #eef1ed;
   color: var(--ink);
+  border-color: rgba(31, 111, 91, 0.18);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
 }
 
 .container-picker-none.active {
   background: var(--accent);
   color: white;
+}
+
+.container-picker-none:hover,
+.container-picker-none:focus-visible {
+  background: #e7f4ef;
+  border-color: #8bc4b4;
+  color: var(--green);
+  box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.08);
+}
+
+.container-picker-none:active {
+  transform: translateY(1px);
 }
 
 .container-picker-board {
@@ -3331,6 +3346,8 @@ dialog::backdrop {
   background: transparent;
   color: var(--ink);
   text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
 }
 
 .container-picker-root strong,
@@ -3395,6 +3412,23 @@ dialog::backdrop {
 .container-picker-slot.selected {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.container-picker-root:hover,
+.container-picker-root:focus-visible,
+.container-picker-node:hover,
+.container-picker-node:focus-visible,
+.container-picker-slot:hover,
+.container-picker-slot:focus-visible {
+  background: #e7f4ef;
+  color: var(--green);
+  box-shadow: inset 3px 0 0 rgba(36, 126, 98, 0.38);
+}
+
+.container-picker-root:active,
+.container-picker-node:active,
+.container-picker-slot:active {
+  transform: translateY(1px);
 }
 
 .container-picker-node.current {

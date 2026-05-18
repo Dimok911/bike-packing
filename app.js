@@ -4433,7 +4433,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
     normalizeItemPhotos(item).forEach((photo) => {
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
-      if (needsListReupload && allowRemoteOnlyReferences && keepRemoteOnlyPhotoReference(photo)) return;
+      if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
@@ -4445,7 +4445,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
     normalizeItemPhotos(container).forEach((photo) => {
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
-      if (needsListReupload && allowRemoteOnlyReferences && keepRemoteOnlyPhotoReference(photo)) return;
+      if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
@@ -4453,6 +4453,18 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
     });
   });
   return entries;
+}
+
+function photoShouldBeCopiedToCurrentList(photo) {
+  return Boolean(photo?._copyToCurrentList || photo?.copyToCurrentList || photo?.publicCopySourceId || photo?.sharedSourceId);
+}
+
+function markRecordPhotosForCurrentListCopy(record) {
+  if (!record || !Array.isArray(record.photos)) return;
+  normalizeItemPhotos(record).forEach((photo) => {
+    if (!hasRemotePhotoUrl(photo)) return;
+    photo._copyToCurrentList = true;
+  });
 }
 
 function getUnsyncedPhotoEntries({ layoutId = null, listId = "" } = {}) {
@@ -4573,8 +4585,10 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
 
 async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item") {
   const localId = photo.localId || photo.id;
-  const cached = await getCachedPhoto(localId);
-  if (!cached?.blob) {
+  const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType);
+  if (copiedOnServer) return true;
+  const uploadSource = await getPhotoUploadSource(photo, localId);
+  if (!uploadSource?.blob) {
     photo.status = "missing-local-file";
     photo.error = "Локальный файл фото не найден.";
     photo.updatedAt = nowIso();
@@ -4592,8 +4606,8 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     formData.append("entityId", entity.id);
     if (entityType === "item") formData.append("itemId", entity.id);
     formData.append("photoId", photo.id);
-    formData.append("file", cached.blob, cached.fileName || photo.fileName || `${photo.id}.jpg`);
-    if (cached.thumbBlob) formData.append("thumb", cached.thumbBlob, `thumb-${photo.id}.jpg`);
+    formData.append("file", uploadSource.blob, uploadSource.fileName || photo.fileName || `${photo.id}.jpg`);
+    if (uploadSource.thumbBlob) formData.append("thumb", uploadSource.thumbBlob, `thumb-${photo.id}.jpg`);
     const data = await apiFetch(path, {
       method: "POST",
       body: formData,
@@ -4610,6 +4624,8 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
       error: "",
       updatedAt: serverPhoto.updatedAt || nowIso()
     });
+    delete photo._copyToCurrentList;
+    delete photo.copyToCurrentList;
     if (entityType === "container") touchContainer(entity.id, photo.updatedAt);
     else touchItem(entity.id, photo.updatedAt);
     return true;
@@ -4619,6 +4635,92 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     photo.updatedAt = nowIso();
     return true;
   }
+}
+
+async function getPhotoUploadSource(photo, localId) {
+  const cached = await getCachedPhoto(localId);
+  if (cached?.blob) return cached;
+  if (!hasRemotePhotoUrl(photo)) return null;
+  const blob = await fetchRemotePhotoBlobForUpload(photo, "file");
+  if (!blob) return null;
+  const thumbBlob = await fetchRemotePhotoBlobForUpload(photo, "thumb").catch(() => null);
+  return {
+    blob,
+    thumbBlob,
+    fileName: photo.fileName || `${photo.id || localId || "photo"}.jpg`
+  };
+}
+
+async function copyRemotePhotoToList(listId, entity, photo, entityType = "item") {
+  if (!listId || !entity?.id || !hasRemotePhotoUrl(photo)) return false;
+  const source = remotePhotoSourceFromRecord(photo);
+  if (!source.sourceListId || !source.sourcePhotoId) return false;
+  try {
+    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy`, {
+      method: "POST",
+      timeoutMs: 30000,
+      body: JSON.stringify({
+        sourceListId: source.sourceListId,
+        sourcePhotoId: source.sourcePhotoId,
+        photoId: photo.id || source.sourcePhotoId,
+        entityType,
+        entityId: entity.id
+      })
+    });
+    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, `/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy`);
+    Object.assign(photo, {
+      ...photo,
+      ...serverPhoto,
+      id: serverPhoto.id || photo.id || source.sourcePhotoId,
+      localId: photo.localId || photo.id || source.sourcePhotoId,
+      listId: String(serverPhoto.listId || serverPhoto.list_id || listId || ""),
+      status: "synced",
+      error: "",
+      updatedAt: serverPhoto.updatedAt || nowIso()
+    });
+    delete photo._copyToCurrentList;
+    delete photo.copyToCurrentList;
+    if (entityType === "container") touchContainer(entity.id, photo.updatedAt);
+    else touchItem(entity.id, photo.updatedAt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function remotePhotoSourceFromRecord(photo) {
+  const fromUrl = remotePhotoSourceFromUrl(photo?.url) || remotePhotoSourceFromUrl(photo?.thumbUrl);
+  return {
+    sourceListId: String(photo?.listId || fromUrl?.sourceListId || "").trim(),
+    sourcePhotoId: String(fromUrl?.sourcePhotoId || photo?.id || photo?.photoId || "").trim()
+  };
+}
+
+function remotePhotoSourceFromUrl(src) {
+  if (!src) return null;
+  try {
+    const url = new URL(src, location.href);
+    const parts = url.pathname.split("/").map((part) => decodeURIComponent(part));
+    const listsIndex = parts.indexOf("lists");
+    const photosIndex = parts.indexOf("photos");
+    if (listsIndex < 0 || photosIndex < 0 || photosIndex <= listsIndex + 1) return null;
+    const sourceListId = parts[listsIndex + 1] || "";
+    const sourcePhotoId = parts[photosIndex + 1] || "";
+    return sourceListId && sourcePhotoId ? { sourceListId, sourcePhotoId } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRemotePhotoBlobForUpload(photo, variant = "file") {
+  normalizePhotoUrlFields(photo);
+  const src = variant === "thumb"
+    ? (photo.thumbUrl || photo.url || "")
+    : (photo.url || photo.thumbUrl || "");
+  if (!src) return null;
+  const response = await fetch(src, { credentials: "include", cache: "no-store" });
+  if (!response.ok) return null;
+  return response.blob();
 }
 
 async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item") {
@@ -6383,7 +6485,7 @@ function repairActiveEmptyAdminDemoDraft() {
   return true;
 }
 
-function importDemoStateAsEditableLayout(demoState, { language = uiLanguage } = {}) {
+function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, activate = true, renderAfter = true } = {}) {
   const source = normalizePublishedStatePayload(demoState) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
@@ -6455,12 +6557,15 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage } = 
     categories: normalizeDictionaryValues(source.categories, state.categories || categories),
     ...currentCreateMeta(changedAt)
   };
-  state.activeLayoutId = layoutId;
-  applyLayoutArrangement(layoutId);
-  setActivePrivateScope();
   saveState({ sync: false });
-  switchView("packing");
-  render();
+  if (activate) {
+    state.activeLayoutId = layoutId;
+    applyLayoutArrangement(layoutId);
+    setActivePrivateScope();
+    switchView("packing");
+    if (renderAfter) render();
+  }
+  return state.layouts[layoutId];
 }
 
 function repairAdminDemoLayout(layout) {
@@ -7813,6 +7918,47 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
   return editableLayout;
 }
 
+async function materializeDemoLayoutForAdminCopy(language = uiLanguage) {
+  if (!canOpenAdminPublishedEdit()) return null;
+  const normalizedLanguage = normalizeUiLanguage(language);
+  const existing = Object.values(state.layouts || {}).find((layout) =>
+    layout?.adminDemo && normalizeUiLanguage(layout.adminDemoLanguage || DEFAULT_LANGUAGE) === normalizedLanguage
+  );
+  if (existing && isLayoutMeaningful(existing.id)) {
+    repairAdminDemoLayout(existing);
+    return existing;
+  }
+  if (existing) removeLayoutTree(existing.id);
+  const demoState = await defaultDemoState(normalizedLanguage);
+  return importDemoStateAsEditableLayout(demoState, {
+    language: normalizedLanguage,
+    activate: false,
+    renderAfter: false
+  });
+}
+
+async function ensureAdminPublicCopyTargetsAvailable() {
+  if (!canOpenAdminPublishedEdit()) return;
+  for (const language of SUPPORTED_LANGUAGES) {
+    await materializeDemoLayoutForAdminCopy(language);
+  }
+  const sharedLayoutsToMaterialize = [
+    ...(linkedSharedListLayout ? [linkedSharedListLayout] : []),
+    ...allSharedLayoutsByAdminOrder()
+  ];
+  const seen = new Set();
+  for (const layout of sharedLayoutsToMaterialize) {
+    if (!layout?.id || seen.has(layout.id)) continue;
+    seen.add(layout.id);
+    try {
+      await loadSharedLayoutPayload(layout.id);
+    } catch {
+      // Built-in shared templates remain available without the public endpoint.
+    }
+    materializeSharedLayoutForAdmin(layout.id);
+  }
+}
+
 function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
   const sourceState = sharedLayoutStatePayload(layout);
   const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
@@ -8018,7 +8164,10 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
   };
   markLocalPublicCopyOrigin(state.containers[id], "container", root.id, "legacy-shared");
   if (preserveSource) state.containers[id].sharedSourceId = root.id;
-  else stripPublicOriginForPrivateCopy(state.containers[id]);
+  else {
+    markRecordPhotosForCurrentListCopy(state.containers[id]);
+    stripPublicOriginForPrivateCopy(state.containers[id]);
+  }
   (root.items || []).forEach((item) => copySharedItemToState(item, { containerId: id, changedAt, idMap, preserveSource }));
   state.collapsedContainers[id] = false;
   if (targetLayoutId && state.layouts[targetLayoutId]) {
@@ -8050,7 +8199,10 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
   };
   markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared");
   if (preserveSource) state.items[id].sharedSourceId = item.id;
-  else stripPublicOriginForPrivateCopy(state.items[id]);
+  else {
+    markRecordPhotosForCurrentListCopy(state.items[id]);
+    stripPublicOriginForPrivateCopy(state.items[id]);
+  }
   if (!preserveSource && !state.categories.includes("Прочее")) state.categories.push("Прочее");
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
@@ -9689,12 +9841,13 @@ function openItemContainerPickerDialog(event) {
   openModalDialog(refs.containerPickerDialog);
 }
 
-function openItemCopyContainerPickerDialog(event) {
+async function openItemCopyContainerPickerDialog(event) {
   event?.preventDefault();
   if (!editingItemId || !state.items[editingItemId]) return;
   containerPickerMode = "item-copy";
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = getPublishedEditLayoutId();
+  await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9709,12 +9862,13 @@ function openContainerParentPickerDialog(event) {
   openModalDialog(refs.containerPickerDialog);
 }
 
-function openRootContainerCopyPickerDialog(event) {
+async function openRootContainerCopyPickerDialog(event) {
   event?.preventDefault();
   if (!editingRootContainerId || !state.containers[editingRootContainerId]) return;
   containerPickerMode = "container-copy";
   containerPickerTargetContainerId = editingRootContainerId;
   containerPickerLayoutId = getPublishedEditLayoutId();
+  await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9731,6 +9885,7 @@ async function openSharedItemCopyPicker(sourceId) {
   containerPickerMode = SHARED_ITEM_COPY_PICKER_MODE;
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9743,6 +9898,7 @@ async function openSharedContainerCopyPicker(sourceId) {
   containerPickerMode = SHARED_CONTAINER_COPY_PICKER_MODE;
   containerPickerTargetContainerId = "";
   containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
+  await ensureAdminPublicCopyTargetsAvailable();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -9784,13 +9940,10 @@ function getContainerPickerLayoutOptions() {
   if (!copyMode) {
     return currentLayout ? [currentLayout] : [];
   }
-  const activePublishedLayoutId = getPublishedEditLayoutId();
-  const includeAdminPublishedTargets = canOpenAdminPublishedEdit() && isAdminEditablePublishedLayout(activePublishedLayoutId);
   const allLayouts = Object.values(state.layouts || {});
-  const publicDrafts = includeAdminPublishedTargets
-    ? orderAdminPublicDraftsLikeMainSelect(allLayouts.filter((layout) => isPublishedLayoutEditable(layout)))
-    : allLayouts.filter((layout) => layout.id === activePublishedLayoutId && isPublishedLayoutEditable(layout));
   const personalLayouts = allLayouts.filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId);
+  if (!canOpenAdminPublishedEdit()) return personalLayouts;
+  const publicDrafts = orderAdminPublicDraftsLikeMainSelect(allLayouts.filter((layout) => isPublishedLayoutEditable(layout)));
   return [...publicDrafts, ...personalLayouts];
 }
 
@@ -10058,6 +10211,17 @@ function ensureWritableTargetLayoutContext(layoutId) {
   return true;
 }
 
+function openCopiedTargetLayout(layoutId) {
+  if (!state.layouts?.[layoutId]) return false;
+  if (isAdminEditablePublishedLayout(layoutId)) {
+    activateAdminPublishedLayout(layoutId, { remember: true });
+    return true;
+  }
+  ensureWritableTargetLayoutContext(layoutId);
+  switchView("packing");
+  return true;
+}
+
 function currentAppliedLayoutItemIds(layout = state.layouts[state.activeLayoutId]) {
   const arrangement = layout?.arrangement;
   if (arrangement && typeof arrangement === "object") {
@@ -10081,6 +10245,7 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
   markRecentlyAddedItem(itemId, targetLayoutId);
   saveState();
+  openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
   render();
@@ -10113,6 +10278,7 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
   if (targetIsPublic) {
     state.items[copyId].publicCatalogLayoutId = targetLayoutId;
   } else {
+    markRecordPhotosForCurrentListCopy(state.items[copyId]);
     stripPublicOriginForPrivateCopy(state.items[copyId]);
   }
   if (!placeExistingItemInLayout(copyId, targetContainerId, targetLayoutId, { changedAt })) {
@@ -10122,6 +10288,7 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
   markRecentlyAddedItem(copyId, targetLayoutId);
   saveState();
   if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
+  openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
   render();
@@ -10131,7 +10298,20 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
 
 function snapshotContainerTree(containerId, { sourceLayoutId = "", excludeLayoutId = "", targetState = state } = {}) {
   const arrangementSnapshot = snapshotContainerTreeFromLayoutArrangement(containerId, { sourceLayoutId, excludeLayoutId, targetState });
-  if (arrangementSnapshot) return arrangementSnapshot;
+  const liveSnapshot = snapshotContainerTreeFromLiveState(containerId, targetState);
+  if (!arrangementSnapshot) return liveSnapshot;
+  if (!liveSnapshot) return arrangementSnapshot;
+  return containerTreeSnapshotScore(liveSnapshot) > containerTreeSnapshotScore(arrangementSnapshot)
+    ? liveSnapshot
+    : arrangementSnapshot;
+}
+
+function containerTreeSnapshotScore(snapshot) {
+  if (!snapshot) return 0;
+  return Object.keys(snapshot.containers || {}).length + Object.keys(snapshot.items || {}).length * 2;
+}
+
+function snapshotContainerTreeFromLiveState(containerId, targetState = state) {
   const root = targetState.containers?.[containerId];
   if (!root) return null;
   const containers = {};
@@ -10258,6 +10438,7 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
   if (!linked) return false;
   markRecentlyAddedContainer(sourceSnapshot.rootId, targetLayoutId);
   saveState();
+  openCopiedTargetLayout(targetLayoutId);
   if (refs.containerPickerDialog.open) refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
@@ -10280,98 +10461,101 @@ function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.acti
     if (targetIsPublic) {
       record.publicCatalogLayoutId = targetLayoutId;
     } else {
+      markRecordPhotosForCurrentListCopy(record);
       stripPublicOriginForPrivateCopy(record);
     }
   };
   let copied = false;
+  let nextRootId = "";
   withLayoutArrangementApplied(targetLayoutId, () => {
     const targetContainerSet = getActiveLayoutContainerIdSet(targetLayout);
     if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return;
     const copyItemTree = (itemId, parentId) => {
-    const item = sourceSnapshot.items[itemId];
-    if (!item) return "";
-    const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    state.items[nextId] = {
-      ...cloneIsolatedPublicEntity(item),
-      id: nextId,
-      containerId: parentId,
-      createdAt: changedAt,
-      ...currentEditMeta(changedAt)
+      const item = sourceSnapshot.items[itemId];
+      if (!item) return "";
+      const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      state.items[nextId] = {
+        ...cloneIsolatedPublicEntity(item),
+        id: nextId,
+        containerId: parentId,
+        createdAt: changedAt,
+        ...currentEditMeta(changedAt)
+      };
+      markPrivateCopyOriginFromSource(state.items[nextId], item, "item", itemId);
+      mapRecordToTarget(state.items[nextId]);
+      delete state.packedItems?.[nextId];
+      return nextId;
     };
-    markPrivateCopyOriginFromSource(state.items[nextId], item, "item", itemId);
-    mapRecordToTarget(state.items[nextId]);
-    delete state.packedItems?.[nextId];
-    return nextId;
-  };
-  const copyContainerTree = (sourceContainerId, parentId, isTop = false) => {
-    const container = sourceSnapshot.containers[sourceContainerId];
-    if (!container) return "";
-    const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    state.containers[nextId] = {
-      ...cloneIsolatedPublicEntity(container),
-      id: nextId,
-      name: isTop && !sourceIsPublicCopy ? makeContainerCopyName(container.name) : container.name,
-      parentId: parentId || null,
-      childIds: [],
-      itemIds: [],
-      order: [],
-      color: normalizeContainerColor(container.color),
-      createdAt: changedAt,
-      ...currentEditMeta(changedAt)
-    };
-    markPrivateCopyOriginFromSource(state.containers[nextId], container, "container", sourceContainerId);
-    mapRecordToTarget(state.containers[nextId]);
-    state.collapsedContainers[nextId] = false;
-    const copiedItems = new Map();
-    const copiedContainers = new Map();
-    const copyChildContainer = (childId) => {
-      const id = copyContainerTree(childId, nextId);
-      if (id) copiedContainers.set(childId, id);
-      return id;
-    };
-    const copyChildItem = (itemId) => {
-      const id = copyItemTree(itemId, nextId);
-      if (id) copiedItems.set(itemId, id);
-      return id;
-    };
-    state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
-    state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
-    state.containers[nextId].order = (container.order || []).map((entry) => {
-      if (entry.type === "container") {
-        const id = copiedContainers.get(entry.id);
-        return id ? { type: "container", id } : null;
+    const copyContainerTree = (sourceContainerId, parentId, isTop = false) => {
+      const container = sourceSnapshot.containers[sourceContainerId];
+      if (!container) return "";
+      const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      state.containers[nextId] = {
+        ...cloneIsolatedPublicEntity(container),
+        id: nextId,
+        name: isTop && !sourceIsPublicCopy ? makeContainerCopyName(container.name) : container.name,
+        parentId: parentId || null,
+        childIds: [],
+        itemIds: [],
+        order: [],
+        color: normalizeContainerColor(container.color),
+        createdAt: changedAt,
+        ...currentEditMeta(changedAt)
+      };
+      markPrivateCopyOriginFromSource(state.containers[nextId], container, "container", sourceContainerId);
+      mapRecordToTarget(state.containers[nextId]);
+      state.collapsedContainers[nextId] = false;
+      const copiedItems = new Map();
+      const copiedContainers = new Map();
+      const copyChildContainer = (childId) => {
+        const id = copyContainerTree(childId, nextId);
+        if (id) copiedContainers.set(childId, id);
+        return id;
+      };
+      const copyChildItem = (itemId) => {
+        const id = copyItemTree(itemId, nextId);
+        if (id) copiedItems.set(itemId, id);
+        return id;
+      };
+      state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
+      state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
+      state.containers[nextId].order = (container.order || []).map((entry) => {
+        if (entry.type === "container") {
+          const id = copiedContainers.get(entry.id);
+          return id ? { type: "container", id } : null;
+        }
+        const id = copiedItems.get(entry.id);
+        return id ? { type: "item", id } : null;
+      }).filter(Boolean);
+      if (!state.containers[nextId].order.length) {
+        state.containers[nextId].order = [
+          ...state.containers[nextId].itemIds.map((id) => ({ type: "item", id })),
+          ...state.containers[nextId].childIds.map((id) => ({ type: "container", id }))
+        ];
       }
-      const id = copiedItems.get(entry.id);
-      return id ? { type: "item", id } : null;
-    }).filter(Boolean);
-    if (!state.containers[nextId].order.length) {
-      state.containers[nextId].order = [
-        ...state.containers[nextId].itemIds.map((id) => ({ type: "item", id })),
-        ...state.containers[nextId].childIds.map((id) => ({ type: "container", id }))
-      ];
+      return nextId;
+    };
+    nextRootId = copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
+    if (!nextRootId) return;
+    if (targetParentId) {
+      const parent = state.containers[targetParentId];
+      parent.childIds = parent.childIds || [];
+      if (!parent.childIds.includes(nextRootId)) parent.childIds.push(nextRootId);
+      parent.order = parent.order || [];
+      parent.order.push({ type: "container", id: nextRootId });
+      state.collapsedContainers[targetParentId] = false;
+      touchContainer(targetParentId, changedAt);
+    } else {
+      targetLayout.rootContainerIds = [...(targetLayout.rootContainerIds || []), nextRootId];
     }
-    return nextId;
-  };
-  const nextRootId = copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
-  if (!nextRootId) return;
-  if (targetParentId) {
-    const parent = state.containers[targetParentId];
-    parent.childIds = parent.childIds || [];
-    if (!parent.childIds.includes(nextRootId)) parent.childIds.push(nextRootId);
-    parent.order = parent.order || [];
-    parent.order.push({ type: "container", id: nextRootId });
-    state.collapsedContainers[targetParentId] = false;
-    touchContainer(targetParentId, changedAt);
-  } else {
-    targetLayout.rootContainerIds = [...(targetLayout.rootContainerIds || []), nextRootId];
-  }
-  touchLayout(targetLayoutId, changedAt);
+    touchLayout(targetLayoutId, changedAt);
     copied = true;
   });
   if (!copied) return;
   markRecentlyAddedContainer(nextRootId, targetLayoutId);
   saveState();
   if (targetIsPublic) schedulePublishedLayoutSave(targetLayoutId);
+  openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("container", containerId);
   render();
