@@ -15723,6 +15723,8 @@ async function confirmDeleteManagedPublicLayout(layoutId) {
 async function deletePublishedSharedTemplate(sharedId) {
   return deletePublishedSharedTemplateRecord({
     sharedId,
+    apiFetch,
+    timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
     layoutsByLanguage: sharedLayoutsByLanguage,
     removePublicIndexEntry: removePublicSharedLayoutIndexEntry,
     warn: (...args) => {

@@ -134,7 +134,7 @@ export function bikePackingPhotoAssetUrl(listId, photoId, variant) {
 
 export function photoCopyApiPath({ uploadPath = "", listId = "" } = {}) {
   const path = String(uploadPath || "").replace(/\/+$/, "");
-  if (path.includes("/bike-packing/admin/")) return "";
+  if (path.includes("/bike-packing/admin/")) return `${path}/copy`;
   return listId ? `/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy` : "";
 }
 

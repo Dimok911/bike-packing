@@ -43,14 +43,22 @@ export async function removePublicSharedLayoutIndexEntry({
 
 export async function deletePublishedSharedTemplate({
   sharedId,
+  apiFetch,
+  timeoutMs,
   layoutsByLanguage,
   removePublicIndexEntry,
   warn = () => {}
 } = {}) {
   const id = String(sharedId || "").trim();
   if (!id) return false;
+  if (typeof apiFetch === "function") {
+    await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      timeoutMs
+    });
+  }
   await removePublicIndexEntry(id).catch((error) => {
-    warn("[bike-packing] Failed to remove shared layout from public index.", { id, error });
+    warn("[bike-packing] Failed to remove shared layout from public index after API delete.", { id, error });
     return false;
   });
   removeRuntimeSharedLayout(layoutsByLanguage, id);
