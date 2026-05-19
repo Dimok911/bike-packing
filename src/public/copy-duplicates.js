@@ -41,6 +41,8 @@ function sourceIdVariants(value) {
   while (id && id !== previous) {
     previous = id;
     id = id
+      .replace(/^admin-demo-container-\d+-/, "")
+      .replace(/^admin-demo-item-\d+-/, "")
       .replace(/^container-shared-/, "")
       .replace(/^item-shared-/, "")
       .replace(/^shared-virtual-container-/, "")

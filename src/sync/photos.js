@@ -132,6 +132,12 @@ export function bikePackingPhotoAssetUrl(listId, photoId, variant) {
   return `${API_BASE}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoId)}/${variant}`;
 }
 
+export function photoCopyApiPath({ uploadPath = "", listId = "" } = {}) {
+  const path = String(uploadPath || "").replace(/\/+$/, "");
+  if (path.includes("/bike-packing/admin/")) return "";
+  return listId ? `/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy` : "";
+}
+
 export function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath) {
   normalizePhotoUrlFields(photo);
   const photoId = photo?.id || photo?.photoId;

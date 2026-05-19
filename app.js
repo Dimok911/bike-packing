@@ -79,7 +79,8 @@ import {
   summarizePublicCopyDuplicates
 } from "./src/public/copy-duplicates.js";
 import {
-  markCopiedItemForPublicLayout
+  markCopiedItemForPublicLayout,
+  writeContainerTreeToLayoutArrangement
 } from "./src/public/copy-public-layout-target.js";
 import {
   generatedCatalogString,
@@ -101,9 +102,19 @@ import {
 } from "./src/public/guest-demo-startup.js";
 import {
   createSharedLayoutsByLanguage,
+  findSharedLayoutForLanguage,
+  mergeSharedLayoutIndexPayload,
   normalizeSharedGearName,
-  sharedGearPhotos
+  sharedLayoutIndexEntry,
+  sharedGearPhotos,
+  upsertRuntimeSharedLayout,
+  upsertSharedLayoutIndexEntry,
+  withRuntimeSharedLayoutIndex
 } from "./src/public/shared-layouts.js";
+import {
+  deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
+  removePublicSharedLayoutIndexEntry as removePublicSharedLayoutIndexEntryRecord
+} from "./src/public/shared-layout-admin.js";
 import {
   buildSharedListUrlFromHref,
   sharedLayoutIdFromUrl,
@@ -175,6 +186,24 @@ import {
   createLayoutArrangementFromCurrentState,
   uniqueLayoutIds
 } from "./src/state/layout-arrangement.js";
+import { removeLayoutTreeFromState } from "./src/state/layout-delete.js";
+import {
+  applyLayoutManageLanguage,
+  adminTemplateDraftChoice,
+  collectManagedPublicDraftRecords,
+  createManagedLayoutCopyRecord,
+  createTemplateCopyRecord,
+  editedLayoutName,
+  isDisposableManagedPublicDraft,
+  layoutManageLanguage,
+  managedSharedDraftLanguage,
+  mergeManagedPublicDraftRecords,
+  publicLayoutChoiceValue,
+  shouldCreatePublishedTemplateBeforePhotos,
+  templateCopySourceRootIds,
+  templateDraftLayoutId,
+  withoutPhotoReferences
+} from "./src/state/layout-manage.js";
 import {
   normalizeLayoutArrangement,
   normalizeLayoutFields,
@@ -264,6 +293,7 @@ import {
   hasRemotePhotoUrl,
   isPhotoStoredForList,
   normalizeUploadedPhotoAssetUrls,
+  photoCopyApiPath,
   photoRemoteSrc,
   putCachedPhoto
 } from "./src/sync/photos.js";
@@ -316,6 +346,13 @@ import {
   formatItemWeight,
   renderItemQuantityText
 } from "./src/ui/item-format.js";
+import {
+  layoutCopyTitle,
+  layoutEditTitle,
+  privateLayoutDeleteConfirm,
+  publicLayoutDeleteConfirm,
+  publicTemplateOptionLabel
+} from "./src/ui/layout-manage-dialog.js";
 import { buildPrintableDocument } from "./src/ui/print.js";
 import {
   confirmMessageHtml,
@@ -411,6 +448,8 @@ let containerPickerTargetContainerId = "";
 let containerPickerLayoutId = "";
 let containerPickerSourceLayoutId = "";
 let itemDialogTargetLayoutId = "";
+let layoutEditTargetId = "";
+let layoutCopyTargetId = "";
 let editingDictionaryEntry = null;
 let fixedScrollbarRefreshFrame = null;
 let searchRenderTimer = null;
@@ -613,6 +652,7 @@ function adminPublicLayoutOptions() {
       `${t("template.prefix")}: ${t("demo.layoutName")} (${languageOptionLabel(language)})`,
       "demo"
     ]),
+    ...localAdminTemplateCopyOptions(),
     ...(linkedSharedListLayout ? [[
       `shared:${linkedSharedListLayout.id}`,
       `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`,
@@ -626,11 +666,41 @@ function adminPublicLayoutOptions() {
   ];
 }
 
+function localAdminTemplateCopyOptions() {
+  if (!canOpenAdminPublishedEdit()) return [];
+  return Object.values(state.layouts || {})
+    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+    .map((layout) => [
+      adminTemplateDraftChoice(layout.id),
+      publicTemplateOptionLabel({
+        prefix: t("template.prefix"),
+        sharedPrefix: t("shared.prefix"),
+        name: layout.name || "Шаблон",
+        languageLabel: languageOptionLabel(layout.language || uiLanguage)
+      }),
+      "shared"
+    ]);
+}
+
+function activeAdminDraftOptionLabel(layout) {
+  if (!canOpenAdminPublishedEdit() || !isPublishedLayoutEditable(layout)) return "";
+  const sharedSource = layout?.adminSharedSourceId ? findSharedLayout(layout.adminSharedSourceId) : null;
+  return publicTemplateOptionLabel({
+    prefix: t("template.prefix"),
+    sharedPrefix: t("shared.prefix"),
+    name: layout.name || (layout.adminDemo ? t("demo.layoutName") : t("shared.prefix")),
+    languageLabel: languageOptionLabel(layout.adminDemo
+      ? layout.adminDemoLanguage || uiLanguage
+      : managedSharedDraftLanguage(layout, sharedSource, uiLanguage)),
+    demo: Boolean(layout.adminDemo)
+  });
+}
+
 function publicLayoutChoiceForLayout(layout) {
-  if (!layout) return "";
-  if (layout.adminDemo) return demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage);
-  if (layout.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
-  return "";
+  return publicLayoutChoiceValue(layout, {
+    demoChoiceForLanguage: demoLayoutChoiceForLanguage,
+    fallbackLanguage: uiLanguage
+  });
 }
 
 function copyPickerLayoutLabel(layout) {
@@ -640,7 +710,7 @@ function copyPickerLayoutLabel(layout) {
   }
   if (layout.adminSharedSourceId) {
     const sharedLayout = findSharedLayout(layout.adminSharedSourceId);
-    const language = layout.language || sharedLayout?.language || uiLanguage;
+    const language = layout.adminTemplateCopy ? layout.language || uiLanguage : sharedLayout?.language || layout.language || uiLanguage;
     return `${layout.name || sharedLayout?.name || t("shared.prefix")} (${languageOptionLabel(language)})`;
   }
   return layout.name || "Укладка";
@@ -799,12 +869,25 @@ function currentPublicTemplateStatusMessage() {
 async function setUiLanguage(language) {
   const nextLanguage = normalizeUiLanguage(language);
   if (nextLanguage === uiLanguage) return;
-  const wasDemoView = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID;
+  const previousReadOnlyLayoutId = activeReadOnlyLayoutId();
+  const wasDemoView = previousReadOnlyLayoutId === DEMO_SHARED_LAYOUT_ID;
+  const sharedLanguagePair = !canOpenAdminPublishedEdit() &&
+    isReadOnlyStateScope() &&
+    previousReadOnlyLayoutId &&
+    previousReadOnlyLayoutId !== DEMO_SHARED_LAYOUT_ID
+    ? findSharedLayoutForLanguage(sharedLayoutsByLanguage, previousReadOnlyLayoutId, nextLanguage)
+    : null;
   const wasAdminDemoEdit = Boolean(state.layouts?.[state.activeLayoutId]?.adminDemo);
   uiLanguage = nextLanguage;
   saveUiLanguage(uiLanguage);
   applyPublicTemplateLanguage();
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
+  if (sharedLanguagePair && sharedLanguagePair.id !== previousReadOnlyLayoutId) {
+    applyStaticTranslations();
+    await openSharedLayoutViewer(sharedLanguagePair.id, { remember: true });
+    updateSyncUi();
+    return;
+  }
   const readonlyId = activeReadOnlyLayoutId();
   if (isReadOnlyStateScope() && readonlyId && readonlyId !== DEMO_SHARED_LAYOUT_ID && !findSharedLayout(readonlyId)) {
     setActivePrivateScope();
@@ -868,7 +951,7 @@ function applyStaticTranslations() {
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
-  if (refs.deleteLayoutBtn) refs.deleteLayoutBtn.textContent = t("buttons.deleteLayout");
+  if (refs.editLayoutBtn) refs.editLayoutBtn.textContent = uiLanguage === "en" ? "Edit" : "Редактировать";
   if (searchLabel?.firstChild) searchLabel.firstChild.textContent = `${t("labels.search")}\n            `;
   refs.searchInput.placeholder = t("placeholders.search");
   if (locationLabel?.firstChild) locationLabel.firstChild.textContent = `${t("labels.storage")}\n          `;
@@ -881,7 +964,7 @@ function applyStaticTranslations() {
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
 }
 
-function init() {
+async function init() {
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     if (isLocalDevOrigin()) {
       navigator.serviceWorker.getRegistrations?.().then((registrations) => {
@@ -922,6 +1005,16 @@ function init() {
       if (await confirmPublicLayoutTransition("shared", findSharedLayout(layoutId))) {
         if (canOpenAdminPublishedEdit()) await openSharedLayoutForAdmin(layoutId);
         else await openSharedLayoutViewer(layoutId);
+      } else {
+        renderFilters();
+      }
+      return;
+    }
+    const templateDraftId = templateDraftLayoutId(value);
+    if (templateDraftId) {
+      const layoutId = templateDraftId;
+      if (canOpenAdminPublishedEdit() && state.layouts?.[layoutId]?.adminTemplateCopy) {
+        activateAdminPublishedLayout(layoutId);
       } else {
         renderFilters();
       }
@@ -1044,7 +1137,11 @@ function init() {
     }
     openLayoutDialog();
   });
-  refs.deleteLayoutBtn?.addEventListener("click", confirmDeleteActiveLayout);
+  refs.editLayoutBtn?.addEventListener("click", openLayoutEditDialog);
+  refs.saveEditedLayoutBtn?.addEventListener("click", saveEditedLayout);
+  refs.copyEditedLayoutBtn?.addEventListener("click", openLayoutCopyDialog);
+  refs.deleteEditedLayoutBtn?.addEventListener("click", confirmDeleteEditedLayout);
+  refs.saveLayoutCopyBtn?.addEventListener("click", saveLayoutCopy);
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
   refs.authBtn.addEventListener("click", handleAuthButton);
@@ -1151,6 +1248,7 @@ function init() {
     updateSyncUi("Проверяю вход...");
   }
   startRemoteStateWatcher();
+  await refreshPublicSharedLayoutIndex({ renderAfter: true }).catch(() => null);
   if (sharedListId) {
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
   } else if (isForcedOffline()) {
@@ -1851,6 +1949,27 @@ function saveRecoverySnapshot(reason, snapshot = state) {
   }
 }
 
+function restoreTemplateCopyDraftsFromRecovery() {
+  if (!canOpenAdminPublishedEdit()) return false;
+  const restored = { layouts: {}, containers: {}, items: {} };
+  loadRecoverySnapshots().forEach((entry) => {
+    const draftRecords = collectManagedPublicDraftRecords(entry?.payload);
+    Object.entries(draftRecords?.layouts || {}).forEach(([layoutId, layout]) => {
+      if (!layout?.adminTemplateCopy || state.layouts?.[layoutId] || restored.layouts[layoutId]) return;
+      restored.layouts[layoutId] = layout;
+      Object.entries(draftRecords.containers || {}).forEach(([containerId, container]) => {
+        if (!restored.containers[containerId]) restored.containers[containerId] = container;
+      });
+      Object.entries(draftRecords.items || {}).forEach(([itemId, item]) => {
+        if (!restored.items[itemId]) restored.items[itemId] = item;
+      });
+    });
+  });
+  if (!mergeManagedPublicDraftRecords(state, restored)) return false;
+  persistStateSnapshot(state);
+  return true;
+}
+
 function recoverBetterLocalSnapshotIfNeeded(currentState) {
   try {
     const currentStats = stateStats(currentState);
@@ -2035,12 +2154,14 @@ function normalizeActiveLayoutChoice(choice) {
   if (!value) return "";
   if (isDemoLayoutChoice(value)) return demoLayoutChoiceForLanguage(demoLanguageFromLayoutChoice(value));
   if (value.startsWith("shared:")) return value.slice("shared:".length) ? value : "";
+  const templateDraftId = templateDraftLayoutId(value);
+  if (templateDraftId) return state.layouts?.[templateDraftId]?.adminTemplateCopy ? value : "";
   return value;
 }
 
 function isPrivateLayoutChoice(choice) {
   const normalized = normalizeActiveLayoutChoice(choice);
-  return Boolean(normalized && !isDemoLayoutChoice(normalized) && !normalized.startsWith("shared:"));
+  return Boolean(normalized && !isDemoLayoutChoice(normalized) && !normalized.startsWith("shared:") && !templateDraftLayoutId(normalized));
 }
 
 function isPrivateUserLayoutId(layoutId) {
@@ -2101,6 +2222,7 @@ function currentLayoutChoice() {
   }
   const layout = state.layouts?.[state.activeLayoutId];
   if (layout?.adminDemo) return demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage);
+  if (layout?.adminTemplateCopy) return adminTemplateDraftChoice(layout.id);
   if (layout?.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
   return state.activeLayoutId || "";
 }
@@ -2214,7 +2336,8 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
   let choice = loadActiveLayoutChoice();
   const adminPublicChoice = !publicOnly && canOpenAdminPublishedEdit() && (
     isDemoLayoutChoice(choice) ||
-    String(choice || "").startsWith("shared:")
+    String(choice || "").startsWith("shared:") ||
+    Boolean(templateDraftLayoutId(choice))
   );
   if (privateOnly && adminPublicChoice) choice = privateChoice;
   if (!privateOnly && !adminPublicChoice && !publicOnly && isDemoLayoutChoice(choice) && !explicitChoice && privateChoice) choice = privateChoice;
@@ -2236,13 +2359,22 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
     else await openSharedLayoutViewer(layoutId, { remember: false });
     return true;
   }
+  const templateDraftId = templateDraftLayoutId(choice);
+  if (templateDraftId) {
+    if (privateOnly || publicOnly || !canOpenAdminPublishedEdit()) return false;
+    const layoutId = templateDraftId;
+    if (!state.layouts?.[layoutId]?.adminTemplateCopy) return false;
+    activateAdminPublishedLayout(layoutId, { remember: false });
+    return true;
+  }
   const savedLayout = state.layouts?.[choice];
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminDemo) {
     await openAdminDemoLayout({ remember: false, language: savedLayout.adminDemoLanguage || uiLanguage });
     return true;
   }
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminSharedSourceId) {
-    await openSharedLayoutForAdmin(savedLayout.adminSharedSourceId, { remember: false });
+    if (savedLayout.adminTemplateCopy) activateAdminPublishedLayout(savedLayout.id, { remember: false });
+    else await openSharedLayoutForAdmin(savedLayout.adminSharedSourceId, { remember: false });
     return true;
   }
   if (publicOnly || !canUsePrivateState() || !isPrivateUserLayoutId(choice)) return false;
@@ -2445,12 +2577,16 @@ function openPrivateLayout(layoutId, options = {}) {
 
 function activateAdminPublishedLayout(layoutId, { remember = true } = {}) {
   if (!layoutId || !isAdminEditablePublishedLayout(layoutId)) return false;
+  if (state.activeLayoutId && state.activeLayoutId !== layoutId && state.layouts?.[state.activeLayoutId]) {
+    captureActiveLayoutArrangement();
+  }
   if (!setViewScope(VIEW_SCOPE_ADMIN_PUBLIC_EDIT, { adminLayoutId: layoutId })) return false;
   state.activeLayoutId = layoutId;
   applyLayoutArrangement(layoutId);
   if (remember) {
     const layout = state.layouts?.[layoutId];
     if (layout?.adminDemo) rememberActiveLayoutChoice(demoLayoutChoiceForLanguage(layout.adminDemoLanguage || uiLanguage));
+    else if (layout?.adminTemplateCopy) rememberActiveLayoutChoice(adminTemplateDraftChoice(layout.id));
     else if (layout?.adminSharedSourceId) rememberActiveLayoutChoice(`shared:${layout.adminSharedSourceId}`);
   }
   saveState({ sync: false });
@@ -3340,6 +3476,7 @@ function normalizePublishedStatePayload(payload) {
 
 function replaceState(nextState, { preserveLocalUi = true } = {}) {
   saveRecoverySnapshot("before-replace", state);
+  const managedPublicDrafts = collectManagedPublicDraftRecords(state);
   const previousCollapsedContainers = preserveLocalUi ? state.collapsedContainers : null;
   const previousShowItemMeta = preserveLocalUi ? state.showItemMeta : null;
   const previousShowFilterContext = preserveLocalUi ? state.showFilterContext : null;
@@ -3348,6 +3485,7 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   applyingRemoteState = true;
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
+  mergeManagedPublicDraftRecords(state, managedPublicDrafts);
   normalizeContainerFields(state);
   normalizeItemFields(state);
   cleanupGeneratedCatalogArtifacts(state);
@@ -4522,7 +4660,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
       if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
-      if (needsListReupload && photo.status === "missing-local-file") return;
+      if (needsListReupload && allowRemoteOnlyReferences && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
       entries.push({ entity: item, entityType: "item", photo });
@@ -4534,7 +4672,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
       if (isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
       if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
-      if (needsListReupload && photo.status === "missing-local-file") return;
+      if (needsListReupload && allowRemoteOnlyReferences && photo.status === "missing-local-file") return;
       if (!needsListReupload && !["pending", "error", "uploading"].includes(photo.status)) return;
       if (!needsListReupload && photo.url && photo.thumbUrl && photo.status === "synced") return;
       entries.push({ entity: container, entityType: "container", photo });
@@ -4552,6 +4690,17 @@ function markRecordPhotosForCurrentListCopy(record) {
   normalizeItemPhotos(record).forEach((photo) => {
     if (!hasRemotePhotoUrl(photo)) return;
     photo._copyToCurrentList = true;
+  });
+}
+
+function markLayoutPhotosForCurrentListCopy(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout) return;
+  getLayoutContainerIdSetForState(state, layout).forEach((containerId) => {
+    markRecordPhotosForCurrentListCopy(state.containers?.[containerId]);
+  });
+  getLayoutItemIdSetForState(state, layout).forEach((itemId) => {
+    markRecordPhotosForCurrentListCopy(state.items?.[itemId]);
   });
 }
 
@@ -4673,7 +4822,7 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
 
 async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item") {
   const localId = photo.localId || photo.id;
-  const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType);
+  const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType, { uploadPath: path });
   if (copiedOnServer) return true;
   const uploadSource = await getPhotoUploadSource(photo, localId);
   if (!uploadSource?.blob) {
@@ -4739,13 +4888,16 @@ async function getPhotoUploadSource(photo, localId) {
   };
 }
 
-async function copyRemotePhotoToList(listId, entity, photo, entityType = "item") {
+async function copyRemotePhotoToList(listId, entity, photo, entityType = "item", { uploadPath = "" } = {}) {
   if (!listId || !entity?.id || !hasRemotePhotoUrl(photo)) return false;
   const source = remotePhotoSourceFromRecord(photo);
   if (!source.sourceListId || !source.sourcePhotoId) return false;
+  const copyPath = photoCopyApiPath({ uploadPath, listId });
+  if (!copyPath) return false;
   try {
-    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy`, {
+    const data = await apiFetch(copyPath, {
       method: "POST",
+      silentErrors: true,
       timeoutMs: 30000,
       body: JSON.stringify({
         sourceListId: source.sourceListId,
@@ -4755,7 +4907,7 @@ async function copyRemotePhotoToList(listId, entity, photo, entityType = "item")
         entityId: entity.id
       })
     });
-    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, `/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy`);
+    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, copyPath);
     Object.assign(photo, {
       ...photo,
       ...serverPhoto,
@@ -4919,6 +5071,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   setExplicitlySignedOut(false);
   appUnlocked = true;
   activateLocalStorageScopeForCurrentUser();
+  restoreTemplateCopyDraftsFromRecovery();
   updateSyncUi("Вход выполнен · загружаю данные...");
 
   try {
@@ -5744,6 +5897,86 @@ async function fetchPublishedListStateById(listId) {
   return payload;
 }
 
+async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
+  let merged = 0;
+  await Promise.all(SUPPORTED_LANGUAGES.map(async (language) => {
+    try {
+      const payload = await fetchPublishedListStateById(demoPublicListIdForLanguage(language));
+      merged += mergeSharedLayoutIndexPayload(sharedLayoutsByLanguage, payload);
+    } catch {
+      // Public shared template index is opportunistic; built-in templates still work without it.
+    }
+  }));
+  if (merged && renderAfter) render();
+  return merged;
+}
+
+async function savePublicSharedLayoutIndexEntry(layout) {
+  const entry = sharedLayoutIndexEntry({
+    id: layout?.id,
+    name: layout?.name || layout?.id || "",
+    language: layout?.language || uiLanguage,
+    statePayload: layout?.statePayload || null,
+    updatedAt: layout?.updatedAt || nowIso()
+  });
+  if (!entry?.id || !entry.statePayload) return false;
+  const language = normalizeUiLanguage(entry.language || uiLanguage);
+  let demoPayload = null;
+  try {
+    demoPayload = await fetchPublishedListStateById(demoPublicListIdForLanguage(language));
+  } catch {
+    demoPayload = demoStatePayloadForLanguage(language) || null;
+  }
+  if (!demoPayload) demoPayload = await defaultDemoState(language);
+  const indexedPayload = upsertSharedLayoutIndexEntry(
+    withRuntimeSharedLayoutIndex(demoPayload, sharedLayoutsByLanguage),
+    entry
+  );
+  const title = indexedPayload.layouts?.[indexedPayload.activeLayoutId]?.name || t("demo.layoutName");
+  await apiFetch(demoAdminStatePathForLanguage(language), {
+    method: "POST",
+    timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+    body: JSON.stringify({
+      title,
+      description: "",
+      visibility: "public",
+      listVisibility: "public",
+      payload: indexedPayload
+    })
+  });
+  setDemoStatePayloadForLanguage(language, indexedPayload);
+  mergeSharedLayoutIndexPayload(sharedLayoutsByLanguage, indexedPayload);
+  return true;
+}
+
+async function removePublicSharedLayoutIndexEntry(sharedId) {
+  return removePublicSharedLayoutIndexEntryRecord({
+    sharedId,
+    languages: SUPPORTED_LANGUAGES,
+    layoutsByLanguage: sharedLayoutsByLanguage,
+    fetchPublishedPayload: (language) => fetchPublishedListStateById(demoPublicListIdForLanguage(language)),
+    fallbackPayload: (language) => demoStatePayloadForLanguage(language) || null,
+    saveDemoPayload: async (language, payload, title) => {
+      await apiFetch(demoAdminStatePathForLanguage(language), {
+        method: "POST",
+        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+        body: JSON.stringify({
+          title,
+          description: "",
+          visibility: "public",
+          listVisibility: "public",
+          payload
+        })
+      });
+      setDemoStatePayloadForLanguage(language, payload);
+    },
+    demoTitle: (payload) => payload.layouts?.[payload.activeLayoutId]?.name || t("demo.layoutName"),
+    warn: (...args) => {
+      if (typeof console !== "undefined" && console.warn) console.warn(...args);
+    }
+  });
+}
+
 async function loadPublishedDemoState(language = uiLanguage) {
   const normalized = normalizeUiLanguage(language);
   try {
@@ -6455,7 +6688,7 @@ function removeAdminDemoLayouts() {
 
 function removePublicLayoutDrafts({ exceptLayoutId = "" } = {}) {
   const drafts = Object.values(state.layouts || {})
-    .filter((layout) => (layout?.adminDemo || layout?.adminSharedSourceId) && layout.id !== exceptLayoutId);
+    .filter((layout) => isDisposableManagedPublicDraft(layout) && layout.id !== exceptLayoutId);
   drafts.forEach((layout) => removeLayoutTree(layout.id));
   if (modeState.adminPublishedEditLayoutId && !state.layouts?.[modeState.adminPublishedEditLayoutId]) {
     modeState.adminPublishedEditLayoutId = "";
@@ -6476,7 +6709,10 @@ async function refreshActiveAdminDemoOnStartup() {
 
 function clearActiveAdminDemoStateOnStartup() {
   const activePublicDraft = state.layouts?.[state.activeLayoutId] || null;
-  const readonlyLayoutId = activePublicDraft?.adminSharedSourceId || (activePublicDraft?.adminDemo ? DEMO_SHARED_LAYOUT_ID : "");
+  const activeDraftIsDisposable = isDisposableManagedPublicDraft(activePublicDraft);
+  const readonlyLayoutId = activeDraftIsDisposable
+    ? activePublicDraft?.adminSharedSourceId || (activePublicDraft?.adminDemo ? DEMO_SHARED_LAYOUT_ID : "")
+    : "";
   const removed = removePublicLayoutDrafts();
   if (readonlyLayoutId) setActiveReadOnlyScope(readonlyLayoutId);
   return removed;
@@ -6531,6 +6767,7 @@ async function confirmPublicLayoutTransition(kind, layout = null) {
 function isLayoutMeaningful(layoutId, targetState = state) {
   const layout = targetState.layouts?.[layoutId];
   if (!layout) return false;
+  if (getLayoutItemIdSetForState(targetState, layout).size > 0) return true;
   const visitedContainers = new Set();
   const visit = (containerId) => {
     const container = targetState.containers?.[containerId];
@@ -6542,29 +6779,10 @@ function isLayoutMeaningful(layoutId, targetState = state) {
   return (layout.rootContainerIds || []).reduce((sum, containerId) => sum + visit(containerId), 0) > 0;
 }
 
-function removeLayoutTree(layoutId, targetState = state) {
-  const layout = targetState.layouts?.[layoutId];
-  if (!layout) return;
-  const containersToDelete = new Set();
-  const itemsToDelete = new Set();
-  const collect = (containerId) => {
-    const container = targetState.containers?.[containerId];
-    if (!container || containersToDelete.has(containerId)) return;
-    containersToDelete.add(containerId);
-    (container.itemIds || []).forEach((itemId) => itemsToDelete.add(itemId));
-    (container.childIds || []).forEach(collect);
-  };
-  (layout.rootContainerIds || []).forEach(collect);
-  delete targetState.layouts[layoutId];
-  containersToDelete.forEach((containerId) => delete targetState.containers[containerId]);
-  itemsToDelete.forEach((itemId) => delete targetState.items[itemId]);
-  Object.keys(targetState.collapsedContainers || {}).forEach((containerId) => {
-    if (containersToDelete.has(containerId)) delete targetState.collapsedContainers[containerId];
-  });
-  if (targetState.activeLayoutId === layoutId) {
-    targetState.activeLayoutId = Object.values(targetState.layouts || {})[0]?.id || "";
-  }
-  saveState({ sync: false });
+function removeLayoutTree(layoutId, targetState = state, { save = true } = {}) {
+  const removed = removeLayoutTreeFromState(targetState, layoutId);
+  if (removed && save && targetState === state) saveState({ sync: false });
+  return removed;
 }
 
 function repairActiveEmptyAdminDemoDraft() {
@@ -6662,14 +6880,33 @@ function repairAdminDemoLayout(layout) {
   if (!layout?.adminDemo) return false;
   const stamp = String(layout.id || "").match(/^layout-admin-demo-(\d+)/)?.[1] || "";
   const prefix = stamp ? `admin-demo-container-${stamp}-` : "admin-demo-container-";
-  const rootContainerIds = Object.values(state.containers || {})
-    .filter((container) => !container.parentId && String(container.id || "").startsWith(prefix))
+  const arrangement = normalizeLayoutArrangement(layout, state);
+  const arrangedChildIds = new Set();
+  Object.values(arrangement.containers || {}).forEach((placement) => {
+    (placement?.childIds || []).forEach((childId) => arrangedChildIds.add(childId));
+  });
+  const arrangedRootIds = uniqueLayoutIds([
+    ...(arrangement.rootContainerIds || []),
+    ...(layout.rootContainerIds || [])
+  ]).filter((containerId) => state.containers?.[containerId]);
+  const prefixedRootIds = Object.values(state.containers || {})
+    .filter((container) =>
+      String(container.id || "").startsWith(prefix) &&
+      !arrangedChildIds.has(container.id) &&
+      (!arrangement.containers?.[container.id] || !arrangement.containers[container.id].parentId)
+    )
     .map((container) => container.id);
+  const rootContainerIds = uniqueLayoutIds([...arrangedRootIds, ...prefixedRootIds]);
   if (!rootContainerIds.length) return false;
   const itemPrefix = stamp ? `admin-demo-item-${stamp}-` : "admin-demo-item-";
   Object.values(state.items || {})
     .filter((item) => String(item.id || "").startsWith(itemPrefix))
     .forEach((item) => {
+      const arrangedContainerId = arrangement.items?.[item.id] || "";
+      if (arrangedContainerId && state.containers[arrangedContainerId]) {
+        item.containerId = arrangedContainerId;
+        return;
+      }
       if (!item.containerId || !state.containers[item.containerId]) {
         const sourceId = String(item.id).slice(itemPrefix.length);
         const fallbackContainer = Object.values(state.containers || {}).find((container) =>
@@ -6680,9 +6917,8 @@ function repairAdminDemoLayout(layout) {
       }
     });
   layout.rootContainerIds = rootContainerIds;
-  layout.arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
-  touchLayout(layout.id);
-  saveState();
+  arrangement.rootContainerIds = rootContainerIds;
+  normalizeLayoutArrangement(layout, state);
   return true;
 }
 
@@ -6738,7 +6974,40 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   if (!target) return;
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю shared-укладку...");
   const publicListId = publicListIdForPublishedTarget(target);
-  const publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
+  const publishPayload = async (payload) => {
+    const path = target.type === "demo"
+      ? demoAdminStatePathForLanguage(target.language || uiLanguage)
+      : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
+    try {
+      await apiFetch(path, {
+        method: "POST",
+        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+        body: JSON.stringify({
+          title: layout.name || "",
+          description: layout.note || "",
+          visibility: "public",
+          listVisibility: "public",
+          payload
+        })
+      });
+    } catch (error) {
+      const targetLabel = target.type === "demo"
+        ? `demo:${target.language || uiLanguage}`
+        : `shared:${target.sharedId || ""}`;
+      const publishError = new Error(`${error.message || "publish failed"} [${targetLabel} ${path}]`);
+      publishError.cause = error;
+      publishError.path = path;
+      publishError.target = target;
+      throw publishError;
+    }
+  };
+  let publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
+    const existingPublishedLayout = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
+    const shouldPrimeTemplate = target.type === "shared" && shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
+    if (shouldPrimeTemplate) {
+      updateSyncUi("Создаю shared-шаблон перед копированием фото...");
+      await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
+    }
     const uploadablePhotos = getUploadablePhotoEntries({
       layoutId,
       listId: publicListId,
@@ -6755,37 +7024,30 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
     }
     return exportLayoutAsDemoState(layoutId);
   });
-  const path = target.type === "demo"
-    ? demoAdminStatePathForLanguage(target.language || uiLanguage)
-    : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
-  try {
-    await apiFetch(path, {
-      method: "POST",
-      timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-      body: JSON.stringify({
-        title: layout.name || "",
-        description: layout.note || "",
-        payload: publishedPayload
-      })
-    });
-  } catch (error) {
-    const targetLabel = target.type === "demo"
-      ? `demo:${target.language || uiLanguage}`
-      : `shared:${target.sharedId || ""}`;
-    const publishError = new Error(`${error.message || "publish failed"} [${targetLabel} ${path}]`);
-    publishError.cause = error;
-    publishError.path = path;
-    publishError.target = target;
-    throw publishError;
+  if (target.type === "demo") {
+    publishedPayload = withRuntimeSharedLayoutIndex(publishedPayload, sharedLayoutsByLanguage);
   }
+  await publishPayload(publishedPayload);
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = nowIso();
   saveSyncMeta();
   if (target.type === "demo") {
     setDemoStatePayloadForLanguage(target.language || uiLanguage, publishedPayload);
   } else {
-    const sharedLayout = findSharedLayout(target.sharedId);
+    const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+      id: target.sharedId,
+      name: layout.name || "",
+      language: layout.language || uiLanguage,
+      statePayload: publishedPayload,
+      runtimeSharedTemplate: true
+    }) || findSharedLayout(target.sharedId);
     if (sharedLayout) sharedLayout.statePayload = publishedPayload;
+    await savePublicSharedLayoutIndexEntry(sharedLayout || {
+      id: target.sharedId,
+      name: layout.name || "",
+      language: layout.language || uiLanguage,
+      statePayload: publishedPayload
+    });
   }
   refreshPublishedLayoutView(target);
   updateSyncUi();
@@ -7162,15 +7424,15 @@ function readonlyTemplateMessage() {
     : "Это shared-шаблон. Чтобы добавлять, редактировать и удалять, создайте свою укладку на основе шаблона.";
 }
 
-function confirmCreateLayoutFromReadonlyTemplate() {
+async function confirmCreateLayoutFromReadonlyTemplate() {
   const layout = currentSharedLayout();
-  openConfirmDialog({
+  const confirmed = await askConfirmDialog({
     title: "Это шаблон",
     text: readonlyTemplateMessage(),
     highlightText: layout?.name ? `Будет создана отдельная укладка «${layout.name}». Исходный шаблон не изменится.` : "",
-    okText: "Создать укладку",
-    onConfirm: () => copySharedLayout(activeReadOnlyLayoutId())
+    okText: "Создать укладку"
   });
+  if (confirmed) copySharedLayout(activeReadOnlyLayoutId());
 }
 
 function handleReadonlyTemplateAction(event) {
@@ -7635,10 +7897,10 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   });
 }
 
-function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false } = {}) {
-  const sourceSnapshot = snapshotContainerTree(containerId, { targetState: sourceState });
+function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "" } = {}) {
+  const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, targetState: sourceState });
   if (!sourceSnapshot) return "";
-  const sourceLayoutId = sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
+  const publicSourceLayoutId = sourceLayoutId || sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
   const containerMap = idMap?.containers || new Map();
   const itemMap = idMap?.items || new Map();
   const makeContainerId = (sourceId) => preserveSource
@@ -7661,7 +7923,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       containerId: nextContainerId,
       ...currentCreateMeta(changedAt)
     };
-    markLocalPublicCopyOrigin(state.items[nextId], "item", sourceItemId, sourceLayoutId);
+    markLocalPublicCopyOrigin(state.items[nextId], "item", sourceItemId, publicSourceLayoutId);
     if (preserveSource) state.items[nextId].sharedSourceId = sourceItemId;
     else stripPublicOriginForPrivateCopy(state.items[nextId]);
     return nextId;
@@ -7683,7 +7945,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       order: [],
       ...currentCreateMeta(changedAt)
     };
-    markLocalPublicCopyOrigin(state.containers[nextId], "container", sourceContainerId, sourceLayoutId);
+    markLocalPublicCopyOrigin(state.containers[nextId], "container", sourceContainerId, publicSourceLayoutId);
     if (preserveSource) state.containers[nextId].sharedSourceId = sourceContainerId;
     else stripPublicOriginForPrivateCopy(state.containers[nextId]);
     state.collapsedContainers[nextId] = false;
@@ -7759,36 +8021,38 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
 
 function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
   let result = { containerIds: [], itemIds: [] };
-  withLayoutArrangementApplied(targetLayoutId, () => {
-    const targetLayout = state.layouts[targetLayoutId];
-    const targetContainerIds = [...getActiveLayoutContainerIdSet(targetLayout)];
-    const targetItemIds = new Set(currentAppliedLayoutItemIds(targetLayout));
-    targetContainerIds.forEach((containerId) => {
-      getContainerItemIdsDeep(containerId).forEach((itemId) => targetItemIds.add(itemId));
-    });
-    Object.entries(state.items || {}).forEach(([itemId, item]) => {
-      if (!item) return;
-      if (item.publicCatalogLayoutId === targetLayoutId) {
-        targetItemIds.add(itemId);
-        return;
-      }
-      if (item.containerId && targetContainerIds.includes(item.containerId)) {
-        targetItemIds.add(itemId);
-        return;
-      }
-      const container = item.containerId ? state.containers?.[item.containerId] : null;
-      if (container?.publicCatalogLayoutId === targetLayoutId) targetItemIds.add(itemId);
-    });
-    result = summarizePublicCopyDuplicates({
-      sourceSnapshot,
-      targetContainerIds,
-      targetItemIds: [...targetItemIds],
-      containers: state.containers,
-      items: state.items,
-      itemCategories,
-      itemQuantity,
-      hasPrivateSyncBlockedPublicOrigin
-    });
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!targetLayout) return result;
+  const targetContainerIds = [...getLayoutContainerIdSet(targetLayout)];
+  const targetContainerSet = new Set(targetContainerIds);
+  const targetItemIds = new Set(getLayoutItemIdSet(targetLayout));
+  Object.entries(state.items || {}).forEach(([itemId, item]) => {
+    if (!item) return;
+    if (item.publicCatalogLayoutId === targetLayoutId) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    const arrangedContainerId = targetLayout.arrangement?.items?.[itemId] || "";
+    if (arrangedContainerId && targetContainerSet.has(arrangedContainerId)) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    if (item.containerId && targetContainerSet.has(item.containerId)) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    const container = item.containerId ? state.containers?.[item.containerId] : null;
+    if (container?.publicCatalogLayoutId === targetLayoutId) targetItemIds.add(itemId);
+  });
+  result = summarizePublicCopyDuplicates({
+    sourceSnapshot,
+    targetContainerIds,
+    targetItemIds: [...targetItemIds],
+    containers: state.containers,
+    items: state.items,
+    itemCategories,
+    itemQuantity,
+    hasPrivateSyncBlockedPublicOrigin
   });
   return result;
 }
@@ -7993,6 +8257,7 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
       rootContainerIds: rootIds,
       arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
       adminSharedSourceId: layout.id,
+      language: layout.language || uiLanguage,
       locations: normalizeDictionaryValues(sourceState?.locations, locations),
       categories: normalizeDictionaryValues(sourceState?.categories, categories),
       ...currentCreateMeta(changedAt)
@@ -8000,9 +8265,15 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
     state.layouts[nextLayoutId] = editableLayout;
     saveState({ sync: false });
   } else {
+    const sourceLanguage = normalizeUiLanguage(layout.language || uiLanguage);
+    let languageChanged = false;
+    if (!editableLayout.adminTemplateCopy && editableLayout.language !== sourceLanguage) {
+      editableLayout.language = sourceLanguage;
+      languageChanged = true;
+    }
     const syncedPublished = mergePublishedSharedStateIntoAdminLayout(layout, editableLayout);
     const syncedBuiltIn = sharedLayoutStatePayload(layout) ? false : mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout);
-    if (syncedPublished || syncedBuiltIn) saveState({ sync: false });
+    if (syncedPublished || syncedBuiltIn || languageChanged) saveState({ sync: false });
   }
   return editableLayout;
 }
@@ -8112,7 +8383,7 @@ function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
 
   (sourceLayout.rootContainerIds || []).forEach(syncContainerTree);
   if (changed) {
-    editableLayout.arrangement = createLayoutArrangementFromCurrentState(state, editableLayout.rootContainerIds || []);
+    normalizeLayoutArrangement(editableLayout, state);
     touchLayout(editableLayout.id, changedAt);
   }
   return changed;
@@ -8170,6 +8441,7 @@ function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
     if (!containerId) {
       containerId = copySharedRootToState(root, { targetLayoutId: "", changedAt, preserveSource: true });
       editableLayout.rootContainerIds = [...(editableLayout.rootContainerIds || []), containerId];
+      writeContainerTreeToLayoutArrangement(state, editableLayout.id, containerId);
       changed = true;
       (root.items || []).forEach((item) => {
         itemKeys.add(`source:${item.id}`);
@@ -8186,7 +8458,8 @@ function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
       const publishedSourceKey = `source:shared-item-${item.id}`;
       const nameKey = `name:${normalizeSharedGearName(item.name)}`;
       if (itemKeys.has(sourceKey) || itemKeys.has(publishedSourceKey) || itemKeys.has(nameKey)) return;
-      copySharedItemToState(item, { containerId, changedAt, preserveSource: true });
+      const copiedItemId = copySharedItemToState(item, { containerId, changedAt, preserveSource: true });
+      if (copiedItemId) addItemToLayoutArrangement(editableLayout, copiedItemId, containerId);
       itemKeys.add(sourceKey);
       itemKeys.add(publishedSourceKey);
       itemKeys.add(nameKey);
@@ -8195,7 +8468,7 @@ function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
   });
 
   if (changed) {
-    editableLayout.arrangement = createLayoutArrangementFromCurrentState(state, editableLayout.rootContainerIds || []);
+    normalizeLayoutArrangement(editableLayout, state);
     touchLayout(editableLayout.id, changedAt);
   }
   return changed;
@@ -9036,18 +9309,20 @@ function renderFilters() {
   const activeLayout = state.layouts?.[state.activeLayoutId];
   const selectedLayoutValue = isReadOnlyStateScope()
     ? (readonlyLayoutId === DEMO_SHARED_LAYOUT_ID ? DEMO_LAYOUT_SELECT_VALUE : `shared:${readonlyLayoutId}`)
-    : activeLayout?.adminDemo
-      ? demoLayoutChoiceForLanguage(activeLayout.adminDemoLanguage || uiLanguage)
-      : activeLayout?.adminSharedSourceId
-        ? `shared:${activeLayout.adminSharedSourceId}`
-    : state.activeLayoutId;
-  const publicOptions = canOpenAdminPublishedEdit()
+    : publicLayoutChoiceForLayout(activeLayout) || state.activeLayoutId;
+  let publicOptions = canOpenAdminPublishedEdit()
     ? adminPublicLayoutOptions()
     : [
       [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo"],
       ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
       ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared"])
     ];
+  const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
+  if (activeAdminLabel) {
+    publicOptions = publicOptions.map((option) =>
+      option[0] === selectedLayoutValue ? [option[0], activeAdminLabel, option[2]] : option
+    );
+  }
   const layoutOptions = [
     ...publicOptions,
     ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"])
@@ -9058,12 +9333,12 @@ function renderFilters() {
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
-  if (refs.deleteLayoutBtn) {
-    const canDeleteLayout = canDeleteActiveLayout();
-    const hideDeleteLayout = isReadOnlyStateScope() || isSharedLayoutView();
-    refs.deleteLayoutBtn.hidden = hideDeleteLayout;
-    refs.deleteLayoutBtn.disabled = !canDeleteLayout;
-    refs.deleteLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideDeleteLayout);
+  if (refs.editLayoutBtn) {
+    const canManageLayout = canManageActiveLayout();
+    const hideManageLayout = isReadOnlyStateScope() || isSharedLayoutView() || !state.layouts?.[state.activeLayoutId];
+    refs.editLayoutBtn.hidden = hideManageLayout;
+    refs.editLayoutBtn.disabled = !canManageLayout;
+    refs.editLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideManageLayout);
   }
   fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), state.activeLayoutId);
   selectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
@@ -9456,7 +9731,7 @@ function canRemoveContainerFromActiveLayout(containerId) {
   );
 }
 
-function confirmRemoveEditingContainerFromActiveLayout(event) {
+async function confirmRemoveEditingContainerFromActiveLayout(event) {
   event?.preventDefault();
   const containerId = editingRootContainerId;
   const container = state.containers?.[containerId];
@@ -9464,7 +9739,7 @@ function confirmRemoveEditingContainerFromActiveLayout(event) {
   if (!container || !layout || !canRemoveContainerFromActiveLayout(containerId)) return;
   const itemCount = getLayoutSubtreeItemCount(layout, containerId);
   const isRoot = getLayoutContainerRootStatus(layout, containerId);
-  openConfirmDialog({
+  const confirmed = await askConfirmDialog({
     title: "Удалить из укладки?",
     text: `«${container.name}» будет убран из текущей укладки.`,
     highlightText: itemCount
@@ -9473,9 +9748,9 @@ function confirmRemoveEditingContainerFromActiveLayout(event) {
         ? "Эта сумка/место уже пустая, поэтому из текущей укладки уйдёт только пустая заготовка."
         : "Этот пакет уже пустой, поэтому из текущей укладки уйдёт только пустой пакет.",
     tone: itemCount ? "danger" : "safe",
-    okText: "Удалить",
-    onConfirm: () => removeContainerFromLayoutWithAnimation(containerId)
+    okText: "Удалить"
   });
+  if (confirmed) removeContainerFromLayoutWithAnimation(containerId);
 }
 
 function removeContainerFromLayoutWithAnimation(containerId) {
@@ -10419,17 +10694,15 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
 }
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
-  let result = { containerIds: [], itemIds: [] };
-  withLayoutArrangementApplied(layoutId, () => {
-    const targetContainerIds = getActiveLayoutContainerIdSet(state.layouts[layoutId]);
-    const targetItemIds = currentAppliedLayoutItemIds(state.layouts[layoutId]);
-    result = summarizeLayoutIdDuplicates({
-      sourceSnapshot,
-      targetContainerIds: [...targetContainerIds],
-      targetItemIds: [...targetItemIds]
-    });
+  const targetLayout = state.layouts[layoutId];
+  if (!targetLayout) return { containerIds: [], itemIds: [] };
+  const targetContainerIds = getLayoutContainerIdSet(targetLayout);
+  const targetItemIds = getLayoutItemIdSet(targetLayout);
+  return summarizeLayoutIdDuplicates({
+    sourceSnapshot,
+    targetContainerIds: [...targetContainerIds],
+    targetItemIds: [...targetItemIds]
   });
-  return result;
 }
 
 function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "") {
@@ -10479,6 +10752,8 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
     } else {
       targetLayout.rootContainerIds = uniqueLayoutIds([...(targetLayout.rootContainerIds || []), rootId]);
     }
+    writeContainerTreeToLayoutArrangement(state, targetLayoutId, rootId);
+    normalizeLayoutArrangement(targetLayout, state);
     touchLayout(targetLayoutId, changedAt);
     linked = true;
   });
@@ -10520,96 +10795,134 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
       stripPublicOriginForPrivateCopy(record);
     }
   };
-  let copied = false;
   let nextRootId = "";
-  withLayoutArrangementApplied(targetLayoutId, () => {
-    const targetContainerSet = getActiveLayoutContainerIdSet(targetLayout);
-    if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return;
-    const copyItemTree = (itemId, parentId) => {
-      const item = sourceSnapshot.items[itemId];
-      if (!item) return "";
-      const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      state.items[nextId] = {
-        ...cloneIsolatedPublicEntity(item),
-        id: nextId,
-        containerId: parentId,
-        createdAt: changedAt,
-        ...currentEditMeta(changedAt)
-      };
-      mapPublicOrigin(state.items[nextId], item, "item", itemId);
-      mapRecordToTarget(state.items[nextId]);
-      delete state.packedItems?.[nextId];
-      return nextId;
+  const targetContainerSet = getLayoutContainerIdSet(targetLayout);
+  if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return "";
+
+  const copiedPlacements = {};
+  const copiedItemContainers = {};
+  const copyItemTree = (itemId, parentId) => {
+    const item = sourceSnapshot.items[itemId];
+    if (!item) return "";
+    const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    state.items[nextId] = {
+      ...cloneIsolatedPublicEntity(item),
+      id: nextId,
+      containerId: parentId,
+      createdAt: changedAt,
+      ...currentEditMeta(changedAt)
     };
-    const copyContainerTree = (sourceId, parentId, isTop = false) => {
-      const container = sourceSnapshot.containers[sourceId];
-      if (!container) return "";
-      const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      state.containers[nextId] = {
-        ...cloneIsolatedPublicEntity(container),
-        id: nextId,
-        name: isTop && !sourceIsPublicCopy ? makeContainerCopyName(container.name) : container.name,
-        parentId: parentId || null,
-        childIds: [],
-        itemIds: [],
-        order: [],
-        color: normalizeContainerColor(container.color),
-        createdAt: changedAt,
-        ...currentEditMeta(changedAt)
-      };
-      mapPublicOrigin(state.containers[nextId], container, "container", sourceId);
-      mapRecordToTarget(state.containers[nextId]);
-      state.collapsedContainers[nextId] = false;
-      const copiedItems = new Map();
-      const copiedContainers = new Map();
-      const copyChildContainer = (childId) => {
-        const id = copyContainerTree(childId, nextId);
-        if (id) copiedContainers.set(childId, id);
-        return id;
-      };
-      const copyChildItem = (childItemId) => {
-        const id = copyItemTree(childItemId, nextId);
-        if (id) copiedItems.set(childItemId, id);
-        return id;
-      };
-      state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
-      state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
-      state.containers[nextId].order = (container.order || []).map((entry) => {
-        if (entry?.type === "container") {
-          const id = copiedContainers.get(entry.id);
-          return id ? { type: "container", id } : null;
-        }
-        if (entry?.type === "item") {
-          const id = copiedItems.get(entry.id);
-          return id ? { type: "item", id } : null;
-        }
-        return null;
-      }).filter(Boolean);
-      if (!state.containers[nextId].order.length) {
-        state.containers[nextId].order = [
-          ...state.containers[nextId].itemIds.map((id) => ({ type: "item", id })),
-          ...state.containers[nextId].childIds.map((id) => ({ type: "container", id }))
-        ];
+    mapPublicOrigin(state.items[nextId], item, "item", itemId);
+    mapRecordToTarget(state.items[nextId]);
+    copiedItemContainers[nextId] = parentId;
+    delete state.packedItems?.[nextId];
+    return nextId;
+  };
+  const copyContainerTree = (sourceId, parentId, isTop = false) => {
+    const container = sourceSnapshot.containers[sourceId];
+    if (!container) return "";
+    const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    state.containers[nextId] = {
+      ...cloneIsolatedPublicEntity(container),
+      id: nextId,
+      name: isTop && !sourceIsPublicCopy ? makeContainerCopyName(container.name) : container.name,
+      parentId: parentId || null,
+      childIds: [],
+      itemIds: [],
+      order: [],
+      color: normalizeContainerColor(container.color),
+      createdAt: changedAt,
+      ...currentEditMeta(changedAt)
+    };
+    mapPublicOrigin(state.containers[nextId], container, "container", sourceId);
+    mapRecordToTarget(state.containers[nextId]);
+    state.collapsedContainers[nextId] = false;
+    const copiedItems = new Map();
+    const copiedContainers = new Map();
+    const copyChildContainer = (childId) => {
+      const id = copyContainerTree(childId, nextId);
+      if (id) copiedContainers.set(childId, id);
+      return id;
+    };
+    const copyChildItem = (childItemId) => {
+      const id = copyItemTree(childItemId, nextId);
+      if (id) copiedItems.set(childItemId, id);
+      return id;
+    };
+    state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
+    state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
+    state.containers[nextId].order = (container.order || []).map((entry) => {
+      if (entry?.type === "container") {
+        const id = copiedContainers.get(entry.id);
+        return id ? { type: "container", id } : null;
       }
-      return nextId;
-    };
-    nextRootId = copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
-    if (!nextRootId) return;
-    if (targetParentId) {
-      const parent = state.containers[targetParentId];
-      parent.childIds = parent.childIds || [];
-      if (!parent.childIds.includes(nextRootId)) parent.childIds.push(nextRootId);
-      parent.order = parent.order || [];
-      parent.order.push({ type: "container", id: nextRootId });
-      state.collapsedContainers[targetParentId] = false;
-      touchContainer(targetParentId, changedAt);
-    } else {
-      targetLayout.rootContainerIds = [...(targetLayout.rootContainerIds || []), nextRootId];
+      if (entry?.type === "item") {
+        const id = copiedItems.get(entry.id);
+        return id ? { type: "item", id } : null;
+      }
+      return null;
+    }).filter(Boolean);
+    if (!state.containers[nextId].order.length) {
+      state.containers[nextId].order = [
+        ...state.containers[nextId].itemIds.map((id) => ({ type: "item", id })),
+        ...state.containers[nextId].childIds.map((id) => ({ type: "container", id }))
+      ];
     }
-    touchLayout(targetLayoutId, changedAt);
-    copied = true;
-  });
-  if (!copied) return "";
+    copiedPlacements[nextId] = {
+      parentId: parentId || "",
+      itemIds: [...state.containers[nextId].itemIds],
+      childIds: [...state.containers[nextId].childIds],
+      order: state.containers[nextId].order.map((entry) => ({ type: entry.type, id: entry.id }))
+    };
+    return nextId;
+  };
+
+  nextRootId = copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
+  if (!nextRootId) return "";
+
+  targetLayout.arrangement = targetLayout.arrangement && typeof targetLayout.arrangement === "object"
+    ? targetLayout.arrangement
+    : createEmptyLayoutArrangement();
+  const arrangement = targetLayout.arrangement;
+  arrangement.rootContainerIds = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
+  arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
+  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
+  arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
+  Object.assign(arrangement.containers, copiedPlacements);
+  Object.assign(arrangement.items, copiedItemContainers);
+  if (targetParentId) {
+    const parent = state.containers[targetParentId];
+    const parentPlacement = ensureLayoutContainerPlacement(targetLayout, targetParentId);
+    if (!parent || !parentPlacement) return "";
+    parent.childIds = Array.isArray(parent.childIds) ? parent.childIds.filter((id) => id !== nextRootId) : [];
+    parent.order = Array.isArray(parent.order)
+      ? parent.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
+      : [];
+    parent.childIds.push(nextRootId);
+    parent.order.push({ type: "container", id: nextRootId });
+    parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds.filter((id) => id !== nextRootId) : [];
+    parentPlacement.order = Array.isArray(parentPlacement.order)
+      ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
+      : [];
+    parentPlacement.childIds.push(nextRootId);
+    parentPlacement.order.push({ type: "container", id: nextRootId });
+    arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== nextRootId);
+    copiedPlacements[nextRootId].parentId = targetParentId;
+    state.collapsedContainers[targetParentId] = false;
+    touchContainer(targetParentId, changedAt);
+  } else {
+    copiedPlacements[nextRootId].parentId = "";
+    state.containers[nextRootId].parentId = null;
+    arrangement.rootContainerIds = uniqueLayoutIds([
+      ...(arrangement.rootContainerIds || []),
+      ...(targetLayout.rootContainerIds || []),
+      nextRootId
+    ]);
+  }
+  targetLayout.rootContainerIds = [...arrangement.rootContainerIds];
+  normalizeLayoutArrangement(targetLayout, state);
+  touchLayout(targetLayoutId, changedAt);
+  if (targetLayoutId === state.activeLayoutId) applyLayoutArrangement(targetLayoutId);
   markRecentlyAddedContainer(nextRootId, targetLayoutId);
   saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
@@ -15153,6 +15466,93 @@ function uniqueLayoutName(baseName = "Новая укладка", { exceptLayout
   return uniqueName(baseName, existingNames, { fallback: "Новая укладка" });
 }
 
+function canManageLayout(layoutId = state.activeLayoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout || isReadOnlyStateScope() || isSharedLayoutView()) return false;
+  return isAdminEditablePublishedLayout(layout.id) || canUseLocalEditableState(layout.id);
+}
+
+function canManageActiveLayout() {
+  return canManageLayout(state.activeLayoutId);
+}
+
+function languageSelectEntries() {
+  return SUPPORTED_LANGUAGES.map((language) => [normalizeUiLanguage(language), languageOptionLabel(language)]);
+}
+
+function createLayoutCopyFromSource(sourceLayout, requestedName, {
+  activate = true,
+  publicTemplate = false,
+  language = ""
+} = {}) {
+  if (!sourceLayout || !requestedName) return "";
+  captureActiveLayoutArrangement();
+  const changedAt = nowIso();
+  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const arrangement = clone(sourceLayout.arrangement || createLayoutArrangementFromCurrentState(state, sourceLayout.rootContainerIds || []));
+  const dictionaries = ensureLayoutDictionaries(sourceLayout) || ensurePrivateDictionaries(state);
+  const layout = createManagedLayoutCopyRecord({
+    id,
+    name: uniqueLayoutName(requestedName),
+    sourceLayout,
+    arrangement,
+    dictionaries,
+    meta: currentCreateMeta(changedAt),
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    guestDemoCopy: !canUsePrivateState(),
+    language,
+    publicTemplate
+  });
+  state.layouts[id] = layout;
+  if (activate) {
+    if (isPublishedLayoutEditable(layout)) activateAdminPublishedLayout(id);
+    else {
+      if (!canUsePrivateState()) setActiveLocalEditableScope(id);
+      switchActiveLayout(id);
+    }
+  }
+  saveLayoutMutation(id);
+  render();
+  return id;
+}
+
+function createTemplateCopyFromSource(sourceLayout, requestedName, {
+  language = ""
+} = {}) {
+  if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
+  captureActiveLayoutArrangement();
+  normalizeLayoutArrangement(sourceLayout, state);
+  const changedAt = nowIso();
+  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const idMap = { containers: new Map(), items: new Map() };
+  const rootContainerIds = templateCopySourceRootIds(sourceLayout)
+    .map((rootId) => copyPublishedContainerToState(state, rootId, {
+      targetLayoutId: "",
+      changedAt,
+      idMap,
+      preserveSource: true,
+      sourceLayoutId: sourceLayout.id
+    }))
+    .filter(Boolean);
+  const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
+  const dictionaries = ensureLayoutDictionaries(sourceLayout) || ensurePrivateDictionaries(state);
+  const layout = createTemplateCopyRecord({
+    id,
+    name: uniqueLayoutName(requestedName),
+    sourceLayout,
+    arrangement,
+    dictionaries,
+    meta: currentCreateMeta(changedAt),
+    language
+  });
+  state.layouts[id] = layout;
+  markLayoutPhotosForCurrentListCopy(id);
+  activateAdminPublishedLayout(id);
+  saveLayoutMutation(id);
+  render();
+  return id;
+}
+
 function openLayoutDialog() {
   refs.layoutName.value = uniqueLayoutName("Новая укладка");
   refs.layoutCreateMode.value = "empty";
@@ -15175,27 +15575,180 @@ function saveNewLayout(event) {
   const source = state.layouts[refs.layoutCopyFrom.value] || state.layouts[state.activeLayoutId];
   const requestedName = refs.layoutName.value.trim();
   if (!requestedName) return;
-  const name = uniqueLayoutName(requestedName);
-  const id = `layout-${Date.now()}`;
-  const arrangement = shouldCopy
-    ? clone(source.arrangement || createLayoutArrangementFromCurrentState(state, source.rootContainerIds || []))
-    : createEmptyLayoutArrangement();
-  const sourceDictionaries = shouldCopy ? ensureLayoutDictionaries(source) : ensurePrivateDictionaries(state);
-  state.layouts[id] = {
-    id,
-    name,
-    rootContainerIds: [...arrangement.rootContainerIds],
-    arrangement,
-    locations: [...(sourceDictionaries?.locations || locations)],
-    categories: [...(sourceDictionaries?.categories || categories)],
-    ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
-    ...currentEditMeta()
-  };
-  if (!canUsePrivateState()) setActiveLocalEditableScope(id);
-  switchActiveLayout(id);
+  const sourceLayout = shouldCopy ? source : { arrangement: createEmptyLayoutArrangement(), rootContainerIds: [] };
+  createLayoutCopyFromSource(sourceLayout, requestedName);
   refs.layoutDialog.close();
   switchView("bags");
+}
+
+function openLayoutEditDialog() {
+  const layout = state.layouts?.[state.activeLayoutId];
+  if (!layout || !canManageActiveLayout()) {
+    showToast("Эту укладку нельзя редактировать.", "error");
+    return;
+  }
+  layoutEditTargetId = layout.id;
+  refs.layoutEditTitle.textContent = layoutEditTitle(layout);
+  refs.layoutEditName.value = layout.name || "";
+  const showLanguage = isAdminEditablePublishedLayout(layout.id);
+  refs.layoutEditLanguageLabel.hidden = !showLanguage;
+  refs.layoutEditLanguageLabel.setAttribute("aria-hidden", String(!showLanguage));
+  if (showLanguage) {
+    fillSelect(refs.layoutEditLanguage, languageSelectEntries(), normalizeUiLanguage(layoutManageLanguage(layout, uiLanguage)));
+  }
+  refs.deleteEditedLayoutBtn.disabled = !canDeleteManagedLayout(layout.id);
+  refs.copyEditedLayoutBtn.disabled = false;
+  openModalDialog(refs.layoutEditDialog);
+}
+
+function canDeleteManagedLayout(layoutId = layoutEditTargetId || state.activeLayoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout) return false;
+  if (isAdminEditablePublishedLayout(layoutId)) return canOpenAdminPublishedEdit();
+  return canDeleteActiveLayout() && layoutId === state.activeLayoutId;
+}
+
+function saveEditedLayout(event) {
+  event.preventDefault();
+  const layout = state.layouts?.[layoutEditTargetId];
+  if (!layout || !canManageLayout(layout.id)) return;
+  const changedAt = nowIso();
+  const nextName = refs.layoutEditName.value.trim();
+  if (!nextName) return;
+  let changed = false;
+  const savedName = editedLayoutName(layout, nextName, (name) => uniqueLayoutName(name, { exceptLayoutId: layout.id }));
+  if (layout.name !== savedName) {
+    layout.name = savedName;
+    changed = true;
+  }
+  if (isAdminEditablePublishedLayout(layout.id)) {
+    const language = normalizeUiLanguage(refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage));
+    if (layout.adminDemo) {
+      const duplicateLanguageDemo = Object.values(state.layouts || {}).find((entry) =>
+        entry?.id !== layout.id &&
+        entry?.adminDemo &&
+        normalizeUiLanguage(entry.adminDemoLanguage || DEFAULT_LANGUAGE) === language
+      );
+      if (duplicateLanguageDemo) {
+        showToast("Демо-шаблон для этого языка уже открыт.", "error");
+        return;
+      }
+    }
+    changed = applyLayoutManageLanguage(layout, language) || changed;
+  }
+  if (!changed) {
+    refs.layoutEditDialog.close();
+    return;
+  }
+  touchLayout(layout.id, changedAt);
+  saveLayoutMutation(layout.id);
+  refs.layoutEditDialog.close();
   render();
+  showToast("Укладка обновлена.", "success");
+}
+
+function openLayoutCopyDialog() {
+  const layout = state.layouts?.[layoutEditTargetId];
+  if (!layout || !canManageLayout(layout.id)) return;
+  layoutCopyTargetId = layout.id;
+  refs.layoutCopyTitle.textContent = layoutCopyTitle(layout);
+  refs.layoutCopyName.value = uniqueLayoutName(layout.name || "Новая укладка");
+  openModalDialog(refs.layoutCopyDialog);
+}
+
+function saveLayoutCopy(event) {
+  event.preventDefault();
+  const layout = state.layouts?.[layoutCopyTargetId || layoutEditTargetId];
+  if (!layout || !canManageLayout(layout.id)) return;
+  const requestedName = refs.layoutCopyName.value.trim();
+  if (!requestedName) return;
+  const language = isAdminEditablePublishedLayout(layout.id)
+    ? normalizeUiLanguage(refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage))
+    : "";
+  const createdId = isAdminEditablePublishedLayout(layout.id)
+    ? createTemplateCopyFromSource(layout, requestedName, { language })
+    : createLayoutCopyFromSource(layout, requestedName, { language });
+  if (!createdId) return;
+  refs.layoutCopyDialog.close();
+  refs.layoutEditDialog.close();
+  if (!isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id)) switchView("bags");
+  showToast(isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id) ? "Шаблон скопирован." : "Укладка скопирована.", "success");
+}
+
+async function confirmDeleteEditedLayout() {
+  const layout = state.layouts?.[layoutEditTargetId];
+  if (!layout || !canDeleteManagedLayout(layout.id)) {
+    showToast("Эту укладку нельзя удалить.", "error");
+    return;
+  }
+  if (isAdminEditablePublishedLayout(layout.id)) {
+    await confirmDeleteManagedPublicLayout(layout.id);
+    return;
+  }
+  await confirmDeleteEditableLayout(layout.id);
+}
+
+async function confirmDeleteEditableLayout(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout || layoutId !== state.activeLayoutId || !canDeleteActiveLayout()) return;
+  const containerCount = getLayoutContainerIdSet(layout).size;
+  const itemCount = getLayoutItemIdSet(layout).size;
+  const isLastLayout = userEditableLayouts().length <= 1;
+  const confirmed = await askConfirmDialog(privateLayoutDeleteConfirm({
+    layout,
+    containerCount,
+    itemText: formatThingCount(itemCount),
+    isLastLayout
+  }));
+  if (!confirmed) return;
+  refs.layoutEditDialog.close();
+  deleteActiveLayout();
+}
+
+async function confirmDeleteManagedPublicLayout(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
+  const containerCount = getLayoutContainerIdSet(layout).size;
+  const itemCount = getLayoutItemIdSet(layout).size;
+  const confirmed = await askConfirmDialog(publicLayoutDeleteConfirm({
+    layout,
+    containerCount,
+    itemText: formatThingCount(itemCount)
+  }));
+  if (!confirmed) return;
+  refs.layoutEditDialog.close();
+  await deleteManagedPublicLayout(layoutId);
+}
+
+async function deletePublishedSharedTemplate(sharedId) {
+  return deletePublishedSharedTemplateRecord({
+    sharedId,
+    layoutsByLanguage: sharedLayoutsByLanguage,
+    removePublicIndexEntry: removePublicSharedLayoutIndexEntry,
+    warn: (...args) => {
+      if (typeof console !== "undefined" && console.warn) console.warn(...args);
+    }
+  });
+}
+
+async function deleteManagedPublicLayout(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
+  const target = publishedLayoutTarget(layout);
+  const shouldDeletePublishedTemplate = Boolean(layout.adminTemplateCopy && target?.type === "shared" && target.sharedId);
+  removeLayoutTree(layoutId, state, { save: false });
+  if (shouldDeletePublishedTemplate) {
+    updateSyncUi("Удаляю shared-шаблон...");
+    await deletePublishedSharedTemplate(target.sharedId);
+    updateSyncUi();
+  }
+  const nextLayout = userEditableLayouts()[0] || Object.values(state.layouts || {}).find((entry) => entry && !isPublishedLayoutEditable(entry));
+  if (nextLayout) openPrivateLayout(nextLayout.id);
+  else if (target?.type === "shared" && target.sharedId && !shouldDeletePublishedTemplate) setActiveReadOnlyScope(target.sharedId);
+  else setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
+  saveState({ sync: false });
+  render();
+  showToast("Шаблон удален из локальных правок.", "success");
 }
 
 function userEditableLayouts() {
@@ -15227,11 +15780,12 @@ function confirmDeleteActiveLayout() {
   const itemCount = getLayoutItemIdSet(layout).size;
   const isLastLayout = userEditableLayouts().length <= 1;
   openConfirmDialog({
-    title: "Удалить укладку?",
-    text: `«${layout.name}» будет удалена из списка укладок.`,
-    highlightText: `${containerCount} сумок/контейнеров, ${formatThingCount(itemCount)} исчезнут только из этой укладки.\nСами вещи и сумки останутся во вкладках «Вещи» и «Сумки».${isLastLayout ? "\nЭто последняя укладка, вместо неё будет создана пустая." : ""}`,
-    okText: "Удалить",
-    tone: "danger",
+    ...privateLayoutDeleteConfirm({
+      layout,
+      containerCount,
+      itemText: formatThingCount(itemCount),
+      isLastLayout
+    }),
     onConfirm: () => deleteActiveLayout()
   });
 }

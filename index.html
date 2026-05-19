@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=606" />
+    <link rel="stylesheet" href="./styles.css?v=621" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -57,7 +57,7 @@
         </label>
         <div class="layout-actions">
           <button id="newLayoutBtn" class="ghost" type="button">Новая</button>
-          <button id="deleteLayoutBtn" class="ghost danger" type="button">Удалить</button>
+          <button id="editLayoutBtn" class="ghost" type="button">Редактировать</button>
         </div>
         <div class="search-control-row" data-main-filter-control>
           <label id="searchFilterLabel">
@@ -335,6 +335,44 @@
       </form>
     </dialog>
 
+    <dialog id="layoutEditDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2 id="layoutEditTitle">Редактировать укладку</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <label>
+          Название
+          <input id="layoutEditName" />
+        </label>
+        <label id="layoutEditLanguageLabel">
+          Язык шаблона
+          <select id="layoutEditLanguage"></select>
+        </label>
+        <footer class="layout-edit-actions">
+          <button id="copyEditedLayoutBtn" class="ghost" type="button">Скопировать</button>
+          <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Удалить</button>
+          <button id="saveEditedLayoutBtn" value="default">Сохранить</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="layoutCopyDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2 id="layoutCopyTitle">Скопировать укладку</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <label>
+          Имя новой укладки
+          <input id="layoutCopyName" />
+        </label>
+        <footer>
+          <button id="saveLayoutCopyBtn" value="default">Скопировать</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="layoutDialog">
       <form method="dialog" class="dialog-card">
         <header>
@@ -485,6 +523,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=606" type="module"></script>
+    <script src="./app.js?v=621" type="module"></script>
   </body>
 </html>
