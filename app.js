@@ -16218,10 +16218,12 @@ async function confirmDeleteManagedPublicLayout(layoutId) {
   if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
   const containerCount = getLayoutContainerIdSet(layout).size;
   const itemCount = getLayoutItemIdSet(layout).size;
+  const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
   const confirmed = await askConfirmDialog(publicLayoutDeleteConfirm({
     layout,
     containerCount,
-    itemText: formatThingCount(itemCount)
+    itemText: formatThingCount(itemCount),
+    deletePublished: shouldDeletePublishedTemplate
   }));
   if (!confirmed) return;
   refs.layoutEditDialog.close();
@@ -16243,24 +16245,32 @@ async function deletePublishedSharedTemplate(sharedId) {
   return deleted;
 }
 
+function shouldDeletePublishedSharedTemplateForLayout(layout) {
+  const target = publishedLayoutTarget(layout);
+  if (target?.type !== "shared" || !target.sharedId) return false;
+  if (layout?.adminTemplateCopy) return true;
+  const sharedLayout = findSharedLayout(target.sharedId);
+  return Boolean(sharedLayout?.runtimeSharedTemplate);
+}
+
 async function deleteManagedPublicLayout(layoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
   const target = publishedLayoutTarget(layout);
-  const shouldDeletePublishedTemplate = Boolean(layout.adminTemplateCopy && target?.type === "shared" && target.sharedId);
-  removeLayoutTree(layoutId, state, { save: false });
+  const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
   if (shouldDeletePublishedTemplate) {
     updateSyncUi("Удаляю shared-шаблон...");
     await deletePublishedSharedTemplate(target.sharedId);
     updateSyncUi();
   }
+  removeLayoutTree(layoutId, state, { save: false });
   const nextLayout = userEditableLayouts()[0] || Object.values(state.layouts || {}).find((entry) => entry && !isPublishedLayoutEditable(entry));
   if (nextLayout) openPrivateLayout(nextLayout.id);
   else if (target?.type === "shared" && target.sharedId && !shouldDeletePublishedTemplate) setActiveReadOnlyScope(target.sharedId);
   else setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
   saveState({ sync: false });
   render();
-  showToast("Шаблон удален из локальных правок.", "success");
+  showToast(shouldDeletePublishedTemplate ? "Shared-шаблон удален с сервера." : "Шаблон удален из локальных правок.", "success");
 }
 
 function userEditableLayouts() {

@@ -21,11 +21,14 @@ export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, i
   };
 }
 
-export function publicLayoutDeleteConfirm({ layout, containerCount, itemText }) {
+export function publicLayoutDeleteConfirm({ layout, containerCount, itemText, deletePublished = false }) {
+  const serverText = deletePublished
+    ? "Опубликованный shared-шаблон будет удален с сервера и из публичного списка шаблонов."
+    : "Опубликованная версия на сервере не удаляется.";
   return {
     title: "Удалить шаблон?",
     text: `«${layout?.name || "Шаблон"}» будет удален из локальных шаблонов для правки.`,
-    highlightText: `${containerCount} сумок/контейнеров, ${itemText} исчезнут из этого локального шаблона. Опубликованный шаблон на сервере не удаляется.`,
+    highlightText: `${containerCount} сумок/контейнеров, ${itemText} исчезнут из этого локального шаблона. ${serverText}`,
     okText: "Удалить",
     tone: "danger"
   };
