@@ -190,6 +190,10 @@ import {
 } from "./src/state/layout-arrangement.js";
 import { removeLayoutTreeFromState } from "./src/state/layout-delete.js";
 import {
+  solidifyManagedTemplateDrafts as solidifyManagedTemplateDraftsForState,
+  solidifyTemplateDraftLayout as solidifyTemplateDraftLayoutForState
+} from "./src/state/layout-draft-solidify.js";
+import {
   applyLayoutManageLanguage,
   adminTemplateDraftChoice,
   collectManagedPublicDraftRecords,
@@ -2993,8 +2997,21 @@ function stateStatsForDestructiveComparison(targetState) {
   }
 }
 
+function solidifyTemplateDraftLayout(layoutId) {
+  return solidifyTemplateDraftLayoutForState(state, layoutId, {
+    liveSnapshotForRoot: (rootId) => snapshotContainerTreeFromLiveState(rootId, state)
+  });
+}
+
+function solidifyManagedTemplateDrafts() {
+  return solidifyManagedTemplateDraftsForState(state, {
+    liveSnapshotForRoot: (rootId) => snapshotContainerTreeFromLiveState(rootId, state)
+  });
+}
+
 function saveState({ sync = true } = {}) {
   captureActiveLayoutArrangement();
+  solidifyManagedTemplateDrafts();
   sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
@@ -3035,6 +3052,7 @@ function saveState({ sync = true } = {}) {
 }
 
 function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900 } = {}) {
+  solidifyTemplateDraftLayout(layoutId);
   const targetIsPublic = isAdminEditablePublishedLayout(layoutId);
   saveState({ sync: !targetIsPublic });
   if (targetIsPublic) schedulePublishedLayoutSave(layoutId, publishDelay);
@@ -3814,6 +3832,8 @@ function normalizePublishedStatePayload(payload) {
 
 function replaceState(nextState, { preserveLocalUi = true } = {}) {
   saveRecoverySnapshot("before-replace", state);
+  captureActiveLayoutArrangement();
+  solidifyManagedTemplateDrafts();
   const managedPublicDrafts = collectManagedPublicDraftRecords(state);
   const previousCollapsedContainers = preserveLocalUi ? state.collapsedContainers : null;
   const previousItemDisplayMode = preserveLocalUi ? normalizeItemDisplayMode(state.itemDisplayMode) : null;
@@ -16234,6 +16254,7 @@ function createTemplateCopyFromSource(sourceLayout, requestedName, {
     language
   });
   state.layouts[id] = layout;
+  solidifyTemplateDraftLayout(id);
   markLayoutPhotosForCurrentListCopy(id);
   activateAdminPublishedLayout(id);
   saveLayoutMutation(id);
