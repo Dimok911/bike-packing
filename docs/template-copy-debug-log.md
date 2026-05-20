@@ -27,6 +27,14 @@
 - Уточнение v621: начата унификация удаления. Базовая операция удаления дерева укладки вынесена в `src/state/layout-delete.js`, операции удаления published shared template и public-index записи вынесены в `src/public/shared-layout-admin.js`; удаление admin-копии shared-шаблона теперь отдельно убирает локальную редактируемую вкладку, runtime shared template и запись из публичного индекса шаблонов. Важно: после удаления такой копии нельзя автоматически переключаться обратно на тот же `shared:<id>`, иначе визуально кажется, что удаление не сработало.
 - API-проверка v621: `DELETE /bike-packing/admin/shared-layouts/:id/state` возвращает `405 Method Not Allowed`, `DELETE /bike-packing/admin/shared-layouts/:id` возвращает `404`. Поэтому фронт не должен дергать DELETE для шаблонов: это дает красные ошибки в консоли и не удаляет запись. Рабочее удаление на текущем API — снять шаблон с публичного индекса и убрать из runtime списка.
 - Уточнение v622: после обновления `bikepacking-api` фронт снова подключен к реальным admin endpoints: удаление shared-шаблона вызывает `DELETE /bike-packing/admin/shared-layouts/:id`, а копирование фото для admin demo/shared targets снова использует `/photos/copy`.
+- Уточнение v623: при копировании whole template в админке нашли две новые проблемы: после refresh/переходов в селекте появлялись две строки с одинаковым названием, а фото в опубликованной копии оставались пустыми. Попробовали:
+  - скрывать локальный `adminTemplateCopy` из селекта, если для его `adminSharedSourceId` уже есть runtime/published `shared:*`;
+  - считать фото "лежащим в целевом list" только по URL `/lists/<target>/...`, а не только по совпавшему `photo.listId`;
+  - для admin `/photos/copy` синтезировать target URL `/bike-packing/lists/<target>/photos/<photoId>/file|thumb`, если API вернул короткий ответ без `url/thumbUrl`.
+  Риск: преждевременное переключение активной копии с локального `template-draft:*` на `shared:*` может открыть пустой/не загруженный published payload, если API/index не успел ответить.
+- Уточнение v624: при удалении старых битых shared-копий API отдавал `400 Bad Request` на сохранении demo-state индекса: `Public bike-packing payload references photos that were not uploaded to this public list`. Причина: `sharedLayoutsIndex` внутри demo-state содержал полные `statePayload` shared-шаблонов с photo URL их собственных public-list. Попробовали очистку `photos` только в payload, который кладется в `sharedLayoutsIndex`; настоящий shared endpoint при этом должен оставаться источником полного шаблона с фото.
+- Новый регресс после v623/v624: при копировании шаблона новая укладка сначала появляется, фото пустые и статус пишет про копирование картинок, затем шаблон становится пустым. В консоли видны `ERR_CONNECTION_TIMED_OUT` на `GET /bike-packing/lists/public-demo-state/state` и `public-demo-state-en/state`. В шапке скриншота клиент всё еще показывает `v622`, то есть проверка могла идти на старом service worker/bundle; но сам сценарий также указывает на архитектурный риск: нельзя подменять локальный редактируемый draft опубликованным `shared:*`, пока published state не подтвержден и не загружен.
+- Уточнение v625: удаление полусозданных/битых shared-копий падало на `DELETE /bike-packing/admin/shared-layouts/:id` с `404 Public bike-packing list has not been created yet`. Для удаления такой ответ должен считаться idempotent-success: серверной public-list записи уже нет или она не успела создаться, но фронт все равно обязан убрать локальный draft, runtime shared entry и запись из публичного индекса. Клиент теперь глотает только этот узкий класс `404 already absent`, остальные ошибки удаления остаются ошибками.
 - Важно не пытаться снова чинить оба поведения одним широким патчем. Раньше несколько итераций шли по кругу: исправлялся один глюк, но появлялся или возвращался другой.
 - Дальше любые изменения должны сохранять уже подтвержденное поведение по дубликатам. После каждого изменения проверять повторное копирование шаблон -> шаблон как регрессионный тест.
 
@@ -36,6 +44,8 @@
 - Проблема похожа на рассинхрон между live-состоянием `state.containers/state.items` и сохраненным `layout.arrangement`.
 - Для шаблонов есть особый admin/public путь: материализованные шаблоны используют `admin-demo-*`, `admin-shared-*`, `publicCatalogLayoutId`, `sharedSourceId` и `_publicCopySourceId`.
 - При переключении укладок `applyLayoutArrangement` очищает live-связи и восстанавливает их из `layout.arrangement`. Если arrangement неполный или перезаписан неполным снимком, вещи визуально пропадают до refresh.
+- Для whole-template copy теперь есть еще одна зона риска: локальный `adminTemplateCopy` является рабочей редактируемой правдой до тех пор, пока published shared state не сохранен и не прочитан обратно. Если UI/restore/select начинает считать опубликованный `shared:*` более авторитетным слишком рано, при сетевом timeout или урезанном `sharedLayoutsIndex` можно получить пустой экран, хотя локальный draft еще содержит дерево.
+- API delete для shared-template должен быть идемпотентным. Идеальный контракт: `DELETE /admin/shared-layouts/:id` удаляет/помечает удаленными public-list, фото и index entry в одной серверной операции и возвращает success даже если часть записей уже отсутствует. Текущий клиентский fallback нужен только для полусозданных записей.
 
 ## Уже испытано
 
@@ -147,9 +157,95 @@
 - Перед правками по глюку 1 не менять заново duplicate fingerprint/source-id логику без отдельной причины.
 - После любой правки по arrangement обязательно проверить, что глюк 2 не вернулся: повторное копирование той же сумки из шаблона в шаблон должно показывать найденные дубликаты вещей.
 - Если правка глюка 1 требует менять общий flow копирования, сначала проверить путь дубликатов на текущем коде и зафиксировать, какие ids/source markers видны в `targetLayout.arrangement`.
+- После правок whole-template copy проверять отдельно:
+  - сразу после копирования активна локальная редактируемая копия `template-draft:*`, а не read-only/remote `shared:*`;
+  - если demo/shared index не грузится из-за timeout, локальный draft не исчезает и не становится пустым;
+  - published shared entry может появиться в селекте, но не должен вытеснять локальный draft до успешного сохранения/загрузки published state;
+  - `sharedLayoutsIndex` не должен содержать photo references чужих public-list.
 
 ## Что не повторять без новой причины
 
 - Не ограничиваться еще одним вызовом `writeContainerTreeToLayoutArrangement` после старого flow.
 - Не чинить только `sourceIdVariants`, пока не доказано, что target duplicate summary видит правильные copied records.
 - Не полагаться на live `container.itemIds/item.containerId` как на источник правды после переключения шаблонов; для этого сценария источником правды должен быть `layout.arrangement`.
+- Не скрывать локальный `adminTemplateCopy` только потому, что runtime `findSharedLayout(adminSharedSourceId)` уже что-то нашел: runtime entry может быть создан локально раньше, чем серверная published запись стала надежной.
+- Не хранить полный published shared payload с фото внутри demo-state индекса. Индекс может быть каталогом/preview, но не должен становиться источником истины для картинок shared-шаблона.
+
+## v626: удаление и фото после регресса
+
+- Убрана преждевременная подмена локальной копии шаблона опубликованным `shared:*`: `template-draft:*` снова остается отдельным вариантом в селекте. Иначе локальная редактируемая копия могла выглядеть пустой или удаление уходило не в тот объект.
+- Удаление shared-шаблона больше не ждет браузерного пересохранения `sharedLayoutsIndex` через `POST /admin/demo-states/:lang/state`. Этот путь ломался на старых поврежденных payload с фото и давал ошибку `Public bike-packing payload references photos that were not uploaded to this public list`.
+- Источником удаления записи из публичного индекса теперь должен быть API `DELETE /bike-packing/admin/shared-layouts/:sharedId`, где уже сделана идемпотентная чистка индексов. Фронт после успешного/идемпотентного DELETE только убирает runtime-запись локально.
+- Для старых зависших записей добавлен локальный tombstone `bike-packing-deleted-shared-layouts-v1`: если DELETE вернул success или допустимый `already absent`, этот `sharedId` больше не подмешивается обратно в селект из поврежденного индекса после перезагрузки текущего браузера. Это страховка для админки, но серверная чистка все равно должна оставаться в API.
+- Для копирования фото при публикации shared-шаблона источник фото теперь берется сначала из URL `/lists/:sourceListId/photos/:sourcePhotoId/...`, а только потом из `photo.listId`. Это важно для старых испорченных копий, где `listId` мог указывать на битый target, а реальный source оставался в URL.
+- Добавлено предупреждение в консоль, если серверное `/photos/copy` не сработало и фронт уходит в fallback download/upload. Если фото снова пустые, в консоли надо смотреть именно это предупреждение: `copyPath`, `source`, `targetListId`, `entityType`, `entityId`.
+
+## Нерешено после v626
+
+Фактический результат на проверке пользователя:
+
+- Новые copied shared-шаблоны снова начинают копироваться и карточки/контейнеры появляются.
+- Картинки в новых скопированных шаблонах все равно не отображаются. Значит правки `isPhotoStoredForList`, fallback URL для admin photo copy и выбор `sourceListId` из URL не закрыли проблему полностью.
+- Новые скопированные шаблоны, похоже, удаляются.
+- Один старый поломанный шаблон все еще висит и не удаляется. Локальный tombstone не считается достаточным решением, потому что пользователь видит зависшую запись; надо разбираться с серверным индексом/записью до конца.
+
+Что уже пробовали сегодня:
+
+- Снова подключили фронт к реальному API удалений/копирования фото после обновления backend endpoints:
+  - `DELETE /bike-packing/admin/shared-layouts/:id`
+  - `POST /bike-packing/admin/shared-layouts/:id/photos/copy`
+  - `POST /bike-packing/admin/demo-states/:demoId/photos/copy`
+- На API сделан и запушен коммит `ebddcf5 Make shared layout delete idempotent`:
+  - DELETE shared-шаблона должен быть идемпотентным;
+  - если public-list уже отсутствует, API должен все равно чистить `sharedLayoutsIndex`;
+  - API должен удалять shared entry из demo indexes на сервере, а не заставлять фронт пересохранять весь demo-state.
+- Во фронте пробовали считать фото "уже лежащим в target list" строже: если в URL есть `/lists/...`, доверять URL, а не `photo.listId`.
+- Во фронте пробовали нормализовать ответ admin `/photos/copy`: если API возвращает короткий объект без `url/thumbUrl`, синтезировать target URL `/bike-packing/lists/<targetListId>/photos/<photoId>/file|thumb`.
+- Пробовали предварительную публикацию shared-шаблона без фото через `withoutPhotoReferences`, чтобы создать public shared list до копирования фото.
+- Пробовали чистить `photos` в payload, который кладется в `sharedLayoutsIndex`, чтобы demo-state index не ссылался на фото из чужого public-list.
+- Пробовали не скрывать локальный `template-draft:*` после появления runtime `shared:*`, потому что это ломало копирование сильнее: локальная копия превращалась в пустой/непрочитанный published shared.
+- Пробовали перестать ждать фронтовый `removePublicIndexEntry` при удалении, потому что он делал `POST /admin/demo-states/:lang/state` и падал на поврежденных photo references.
+- Добавили локальный tombstone для удаленных shared IDs, но он не является полноценной починкой старого зависшего шаблона.
+- Подняли версию и кэш до `v626`, проверяли, что `v625/v622` не остались в `index.html`, `sw.js`, `src/config/constants.js` и собранном `www/.../index.html`.
+
+Почему картинки все еще могут не отображаться:
+
+- `/photos/copy` может возвращать success, но фактический файл/thumb не доступен по синтезированному URL.
+- `/photos/copy` может падать, а fallback download/upload тоже не срабатывает из-за CORS/auth/timeout, но раньше это было тихо. После v626 в консоли должно быть предупреждение `Failed to copy remote photo through API; falling back to download/upload`.
+- `sourcePhotoId` может не совпадать с реальным `photo_id` в таблице `bike_packing_photos`: фронт берет его из URL или `photo.id`, но у старых payload это могли быть разные значения.
+- `sourceListId` может быть правильным в URL, но у API может не быть read access или записи в `bike_packing_photos` для этого list/photo.
+- API может быть закоммичен и запушен, но не развернут на `api.vniipo-help.ru`; тогда фронт работает против старого backend-контракта.
+- `sharedLayoutsIndex` теперь хранит payload без `photos`, поэтому если UI открывает shared-шаблон только из index preview, а полный `/shared-layouts/:id/state` не подтягивается или таймаутится, фото не появятся. Полный shared endpoint должен быть источником истины для фото.
+
+Что нужно проверить дальше досконально:
+
+- В DevTools Network при копировании шаблона:
+  - сколько запросов уходит на `/photos/copy`;
+  - какие у них status/response;
+  - какие `sourceListId`, `sourcePhotoId`, `photoId`, `entityType`, `entityId`;
+  - появляются ли после них реальные GET на `/lists/<targetListId>/photos/<photoId>/file|thumb`;
+  - какие status у этих GET.
+- В API логах/БД для конкретной копии:
+  - есть ли public list `public-shared-layout-<sharedId>`;
+  - есть ли rows в `bike_packing_photos` с `list_id = public-shared-layout-<sharedId>`;
+  - совпадают ли `photo_id` с тем, что записан в payload items/containers;
+  - есть ли файлы на диске по `file_path` и `thumb_path`.
+- Для старого зависшего шаблона:
+  - выписать его точный `sharedId` из dropdown/runtime/index;
+  - вручную проверить `DELETE /bike-packing/admin/shared-layouts/<sharedId>` на текущем API;
+  - проверить, удаляет ли API entry из всех `public-demo-state*` records;
+  - если API возвращает success, но запись снова появляется, значит она приходит из другого источника: linked shared list, built-in shared data, localStorage runtime draft или другой language index.
+- Проверить, развернут ли API-коммит `ebddcf5` на боевом `api.vniipo-help.ru`, а не только запушен в GitHub.
+
+Важно для следующего подхода:
+
+- Не считать проблему фото закрытой, пока в безлогине/readonly shared-шаблоне не видны реальные картинки после refresh.
+- Не считать удаление закрытым, пока старый зависший шаблон не исчезает после refresh и не возвращается из dropdown.
+- Следующая правка должна начинаться с трассировки одного конкретного фото: source URL -> source list/photo id -> `/photos/copy` request -> DB row target -> target URL -> browser GET image.
+
+## v651: первый радикальный шов без удаления старого fallback
+
+- Добавлен optional API-путь `copyPhotoReferences` для `POST /bike-packing/admin/shared-layouts/:id/state`: при сохранении shared-шаблона сервер сам проходит по photo references в payload, находит source list/photo из URL/metadata, копирует файл и thumb в target public-list и переписывает photo URL на target list перед validation/persist.
+- Фронт использует этот путь только для `adminTemplateCopy` shared-шаблонов. Если серверный путь не сработал или еще не развернут, фронт пишет warning и возвращается к старому flow: priming без фото -> `/photos/copy`/upload -> final state.
+- DELETE shared-шаблона на API теперь дополнительно удаляет legacy row из `bike_packing_user_data` для `shared-layout:<id>`, чтобы старый зависший шаблон не пересоздавался fallback-чтением после удаления из `bike_packing_lists`.
+- Важно: обычное копирование сумок/вещей и duplicate-логика не менялись. Новый путь включен только на публикации whole shared template copy.

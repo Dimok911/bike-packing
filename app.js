@@ -245,6 +245,11 @@ import {
   isRootContainerInLayout as isRootContainerInLayoutForState
 } from "./src/state/layout-selectors.js";
 import {
+  activeLayoutNestedContainerIds as activeLayoutNestedContainerIdsForState,
+  allActiveLayoutNestedContainersCollapsed as allActiveLayoutNestedContainersCollapsedForState,
+  toggleActiveLayoutNestedContainersCollapsed as toggleActiveLayoutNestedContainersCollapsedForState
+} from "./src/state/layout-collapse.js";
+import {
   applyDefaultCollapsedContainers,
   defaultRootContainerLocation,
   itemCategories,
@@ -303,6 +308,7 @@ import {
   stripContainerArrangementFields,
   stripItemPlacementFields
 } from "./src/sync/serialize.js";
+import { registerAppServiceWorker } from "./src/sync/service-worker.js";
 import {
   backupDownloadName,
   buildBackupManifest,
@@ -347,6 +353,16 @@ import {
   renderItemQuantityText
 } from "./src/ui/item-format.js";
 import {
+  ITEM_DISPLAY_MODE_DEFAULT,
+  ensureItemDisplayModeState,
+  itemDisplayModeFromFlags,
+  itemDisplayModeLabel,
+  nextItemDisplayMode as nextItemDisplayModeValue,
+  normalizeItemDisplayMode,
+  shouldShowItemLabelsForMode,
+  shouldShowItemPhotosForMode
+} from "./src/ui/item-display-mode.js";
+import {
   layoutCopyTitle,
   layoutEditTitle,
   privateLayoutDeleteConfirm,
@@ -361,6 +377,25 @@ import {
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
+const DELETED_SHARED_LAYOUTS_STORAGE_KEY = "bike-packing-deleted-shared-layouts-v1";
+const PACKING_VISUAL_STYLE_DEFAULT = "default";
+const PACKING_VISUAL_STYLE_PRIMARY = "text-hierarchy";
+const PACKING_VISUAL_STYLE_SETTINGS_VERSION = 2;
+const PACKING_VISUAL_STYLE_OPTIONS = [
+  { value: PACKING_VISUAL_STYLE_DEFAULT, label: "0. Текущий вид" },
+  { value: "soft-nested", label: "1. Тёплые списки + тихие кнопки" },
+  { value: "separated-axis", label: "2. Корни сверху, вложенность слева" },
+  { value: "folder-nested", label: "3. Вариант 2 + тихие кнопки" },
+  { value: "text-hierarchy", label: "4. Вариант 3 + бледные линии" },
+  { value: "depth-markers", label: "5. Разные цвета глубины" },
+  { value: "quiet-tools", label: "6. Только тихие кнопки" },
+  { value: "calm-combined", label: "1+2. Спокойный гибрид" }
+];
+const PACKING_VISUAL_STYLE_CLASS_PREFIX = "packing-visual-";
+const PACKING_VISUAL_STYLE_CLASS_NAMES = PACKING_VISUAL_STYLE_OPTIONS
+  .filter((option) => option.value !== PACKING_VISUAL_STYLE_DEFAULT)
+  .map((option) => `${PACKING_VISUAL_STYLE_CLASS_PREFIX}${option.value}`);
+let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
 applyPublicTemplateLanguage();
@@ -394,6 +429,8 @@ let itemUsageFilter = "all";
 let itemSortMode = normalizeSortMode(uiSettings.itemSortMode);
 let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
+let packingVisualStyle = normalizePackingVisualStyle(uiSettings.packingVisualStyle);
+let packingVisualStylePanelVisible = false;
 let selectedCategoryFilters = [];
 let addToContainerTargetId = null;
 let addToContainerTargetLayoutId = "";
@@ -423,6 +460,7 @@ let personalListApiUnavailable = false;
 let itemEntitySyncUnavailable = false;
 let containerEntitySyncUnavailable = false;
 let layoutEntitySyncUnavailable = false;
+let layoutLoadStatus = { tone: "idle", text: "" };
 let historyRecords = [];
 let expandedHistoryRecordId = "";
 let expandedHistoryGroups = {};
@@ -488,6 +526,28 @@ function loadUiLanguage() {
 
 function saveUiLanguage(language) {
   safeSetLocalStorage(LANGUAGE_KEY, normalizeUiLanguage(language));
+}
+
+function loadDeletedSharedLayoutIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DELETED_SHARED_LAYOUTS_STORAGE_KEY) || "[]");
+    return new Set(Array.isArray(parsed) ? parsed.map((id) => String(id || "").trim()).filter(Boolean) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberDeletedSharedLayoutId(layoutId) {
+  const id = String(layoutId || "").trim();
+  if (!id || id === DEMO_SHARED_LAYOUT_ID) return false;
+  deletedSharedLayoutIds.add(id);
+  safeSetLocalStorage(DELETED_SHARED_LAYOUTS_STORAGE_KEY, JSON.stringify([...deletedSharedLayoutIds]));
+  return true;
+}
+
+function isDeletedSharedLayoutId(layoutId) {
+  const id = String(layoutId || "").trim();
+  return Boolean(id && id !== DEMO_SHARED_LAYOUT_ID && deletedSharedLayoutIds.has(id));
 }
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
@@ -637,6 +697,7 @@ function allSharedLayoutsByAdminOrder() {
   languageOrder.forEach((language) => {
     currentSharedLayouts(language).forEach((layout) => {
       if (!layout?.id || seen.has(layout.id)) return;
+      if (isDeletedSharedLayoutId(layout.id)) return;
       seen.add(layout.id);
       if (!layout.language) layout.language = language;
       result.push(layout);
@@ -965,17 +1026,11 @@ function applyStaticTranslations() {
 }
 
 async function init() {
-  if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    if (isLocalDevOrigin()) {
-      navigator.serviceWorker.getRegistrations?.().then((registrations) => {
-        registrations.forEach((registration) => registration.unregister());
-      }).catch(() => null);
-    } else {
-      navigator.serviceWorker.register("./sw.js");
-    }
-  }
+  registerAppServiceWorker({ isLocalDevOrigin });
   if (refs.appVersion) refs.appVersion.textContent = APP_VERSION;
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
+  setupPackingVisualStyleQuickControl();
+  applyPackingVisualStyle();
   applyStaticTranslations();
   preventDoubleTapZoom();
   setupModalScrollLock();
@@ -1077,7 +1132,8 @@ async function init() {
     }
     selectItemContainer("");
   });
-  refs.metaToggleBtn.addEventListener("click", toggleItemMeta);
+  refs.metaToggleBtn.addEventListener("click", toggleItemDisplayMode);
+  refs.layoutCollapseAllBtn?.addEventListener("click", toggleActiveLayoutNestedContainers);
   refs.filterPrevBtn.addEventListener("pointerdown", commitSearchInputForNavigation);
   refs.filterNextBtn.addEventListener("pointerdown", commitSearchInputForNavigation);
   refs.filterPrevBtn.addEventListener("click", () => moveFilterMatch(-1));
@@ -1157,6 +1213,7 @@ async function init() {
   refs.authForm.addEventListener("submit", submitAuthDialog);
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
+  refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
   refs.topMenu.addEventListener("click", (event) => {
     if (event.target.closest("button")) closeTopMenu();
   });
@@ -1244,19 +1301,24 @@ async function init() {
     updateSyncUi();
   } else {
     initialRemoteLoadPending = true;
+    setLayoutLoadStatus("loading", "Проверяю вход и личные укладки...");
     renderGuestPublicDemoPreviewDuringAuthCheck();
     updateSyncUi("Проверяю вход...");
   }
   startRemoteStateWatcher();
-  await refreshPublicSharedLayoutIndex({ renderAfter: true }).catch(() => null);
+  const publicIndexRefresh = refreshPublicSharedLayoutIndex({ renderAfter: true }).catch(() => null);
   if (sharedListId) {
+    await publicIndexRefresh;
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
   } else if (isForcedOffline()) {
+    publicIndexRefresh.catch(() => null);
     if (signedOut) enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
     else unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
   } else if (offlineNow) {
+    publicIndexRefresh.catch(() => null);
     enterSignedOutPublicMode("Офлайн · вход не подтверждён, открыта локальная копия демо");
   } else {
+    publicIndexRefresh.catch(() => null);
     checkAuthAndLoad();
   }
 }
@@ -1805,7 +1867,8 @@ function createEmptyUserState() {
       [selfPocketId]: true
     },
     collapseDefaultsVersion: COLLAPSE_DEFAULTS_VERSION,
-    showItemMeta: true,
+    itemDisplayMode: ITEM_DISPLAY_MODE_DEFAULT,
+    showItemMeta: false,
     showFilterContext: false,
     collectionMode: false,
     showOnlyUnpacked: false,
@@ -1843,6 +1906,7 @@ function loadState() {
   const saved = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
   if (!saved) {
     const initial = createEmptyUserState();
+    ensureItemDisplayModeState(initial);
     normalizeContainerFields(initial);
     normalizeItemFields(initial);
     repairContainerMembershipFromItemLinks(initial);
@@ -1857,6 +1921,7 @@ function loadState() {
     const parsed = JSON.parse(saved);
     if (!parsed.collapsedContainers) parsed.collapsedContainers = {};
     if (typeof parsed.showItemMeta !== "boolean") parsed.showItemMeta = false;
+    ensureItemDisplayModeState(parsed);
     if (typeof parsed.showFilterContext !== "boolean") parsed.showFilterContext = false;
     if (typeof parsed.collectionMode !== "boolean") parsed.collectionMode = false;
     if (typeof parsed.showOnlyUnpacked !== "boolean") parsed.showOnlyUnpacked = false;
@@ -1877,6 +1942,7 @@ function loadState() {
     }
     if (isSuspiciousEmptyPackingState(parsed)) {
       const fallback = createEmptyUserState();
+      ensureItemDisplayModeState(fallback);
       normalizeContainerFields(fallback);
       normalizeItemFields(fallback);
       repairContainerMembershipFromItemLinks(fallback);
@@ -2095,12 +2161,16 @@ function loadUiSettings() {
     const parsed = JSON.parse(localStorage.getItem(UI_SETTINGS_KEY)) || {};
     return {
       itemSortMode: normalizeSortMode(parsed.itemSortMode),
-      rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode)
+      rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode),
+      packingVisualStyle: parsed.packingVisualStyleVersion === PACKING_VISUAL_STYLE_SETTINGS_VERSION && parsed.packingVisualStyle
+        ? normalizePackingVisualStyle(parsed.packingVisualStyle)
+        : PACKING_VISUAL_STYLE_PRIMARY
     };
   } catch {
     return {
       itemSortMode: "asc",
-      rootContainerSortMode: "asc"
+      rootContainerSortMode: "asc",
+      packingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY
     };
   }
 }
@@ -2109,11 +2179,177 @@ function saveUiSettings() {
   try {
     safeSetLocalStorage(UI_SETTINGS_KEY, JSON.stringify({
       itemSortMode: normalizeSortMode(itemSortMode),
-      rootContainerSortMode: normalizeSortMode(rootContainerSortMode)
+      rootContainerSortMode: normalizeSortMode(rootContainerSortMode),
+      packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION,
+      packingVisualStyle: normalizePackingVisualStyle(packingVisualStyle)
     }));
   } catch {
     // Sorting preferences are local convenience settings.
   }
+}
+
+function normalizePackingVisualStyle(value) {
+  const style = String(value || "").trim();
+  if (!style || style === PACKING_VISUAL_STYLE_DEFAULT) return PACKING_VISUAL_STYLE_PRIMARY;
+  return PACKING_VISUAL_STYLE_OPTIONS.some((option) => option.value === style)
+    ? style
+    : PACKING_VISUAL_STYLE_PRIMARY;
+}
+
+function applyPackingVisualStyle() {
+  packingVisualStyle = normalizePackingVisualStyle(packingVisualStyle);
+  document.body.classList.remove(...PACKING_VISUAL_STYLE_CLASS_NAMES);
+  if (packingVisualStyle !== PACKING_VISUAL_STYLE_DEFAULT) {
+    document.body.classList.add(`${PACKING_VISUAL_STYLE_CLASS_PREFIX}${packingVisualStyle}`);
+  }
+  syncPackingVisualStyleControls();
+}
+
+function setPackingVisualStyle(value) {
+  packingVisualStyle = normalizePackingVisualStyle(value);
+  applyPackingVisualStyle();
+  saveUiSettings();
+}
+
+function packingVisualStyleButtonLabel(option) {
+  return String(option.label || "").split(".")[0].trim() || option.value;
+}
+
+function setupPackingVisualStyleQuickControl() {
+  const control = document.querySelector("#packingVisualStyleControl");
+  if (!control) return;
+  control.innerHTML = PACKING_VISUAL_STYLE_OPTIONS.map((option) => `
+    <button
+      type="button"
+      class="admin-visual-option"
+      data-packing-visual-style="${escapeHtml(option.value)}"
+      title="${escapeHtml(option.label)}"
+      aria-label="${escapeHtml(option.label)}"
+      aria-pressed="${normalizePackingVisualStyle(packingVisualStyle) === option.value ? "true" : "false"}"
+    >${escapeHtml(packingVisualStyleButtonLabel(option))}</button>
+  `).join("");
+  control.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-packing-visual-style]");
+    if (!button) return;
+    setPackingVisualStyle(button.dataset.packingVisualStyle);
+  });
+}
+
+function syncPackingVisualStyleControls() {
+  document.querySelectorAll("[data-packing-visual-style]").forEach((button) => {
+    const active = button.dataset.packingVisualStyle === packingVisualStyle;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const control = document.querySelector("#packingVisualStyleControl");
+  control?.classList.toggle("is-visible", canOpenAdminPublishedEdit() && packingVisualStylePanelVisible);
+  if (refs.visualStyleMenuBtn) {
+    refs.visualStyleMenuBtn.hidden = !canOpenAdminPublishedEdit();
+    refs.visualStyleMenuBtn.classList.toggle("active", packingVisualStylePanelVisible);
+    refs.visualStyleMenuBtn.textContent = packingVisualStylePanelVisible ? "Скрыть варианты вида" : "Варианты вида";
+  }
+}
+
+function togglePackingVisualStylePanel() {
+  setPackingVisualStylePanelVisible(!packingVisualStylePanelVisible);
+}
+
+function setPackingVisualStylePanelVisible(visible) {
+  packingVisualStylePanelVisible = Boolean(visible && canOpenAdminPublishedEdit());
+  syncPackingVisualStyleControls();
+}
+
+function setLayoutLoadStatus(tone = "idle", text = "") {
+  layoutLoadStatus = { tone, text };
+  updateLayoutLoadStatusUi();
+}
+
+function setLayoutLoadProgress({ loaded = 0, total = null, prefix = "Загружаю личные укладки" } = {}) {
+  const knownTotal = Number.isFinite(total) && total >= 0;
+  const safeLoaded = Math.max(0, Number(loaded) || 0);
+  const safeTotal = knownTotal ? Math.max(safeLoaded, Number(total) || 0) : null;
+  const countText = knownTotal
+    ? `${safeLoaded} из ${safeTotal}`
+    : `${safeLoaded} загружено · уточняю полный список`;
+  setLayoutLoadStatus("loading", `${prefix}: ${countText}`);
+}
+
+function statePrivateLayoutCount(targetState) {
+  return Object.values(targetState?.layouts || {})
+    .filter((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG])
+    .length;
+}
+
+function remoteRecordStateInfo(record) {
+  const normalized = record ? normalizeRemoteListRecord(record) : null;
+  const remoteState = normalizeRemoteState(normalized?.payload);
+  return {
+    record: normalized,
+    state: remoteState,
+    count: statePrivateLayoutCount(remoteState),
+    meaningful: Boolean(remoteState && isMeaningfulPackingState(remoteState)),
+    updatedAt: timeValue(remoteUpdatedAt(normalized))
+  };
+}
+
+function remoteRecordPrivateLayoutCount(record) {
+  return remoteRecordStateInfo(record).count;
+}
+
+function pickRicherRemoteListRecord(currentRecord, nextRecord) {
+  if (!currentRecord) return nextRecord || null;
+  if (!nextRecord) return currentRecord || null;
+  const current = remoteRecordStateInfo(currentRecord);
+  const next = remoteRecordStateInfo(nextRecord);
+  if (next.count !== current.count) return next.count > current.count ? next.record : current.record;
+  if (next.meaningful !== current.meaningful) return next.meaningful ? next.record : current.record;
+  if (next.updatedAt !== current.updatedAt) return next.updatedAt > current.updatedAt ? next.record : current.record;
+  return current.record || next.record || null;
+}
+
+function bestCatalogListRecord(lists) {
+  return lists
+    .filter((list) => !isReadOnlyBikePackingRecord(list))
+    .map((list) => normalizeRemoteListRecord(list))
+    .reduce((best, list) => pickRicherRemoteListRecord(best, list), null);
+}
+
+function setLoadedRemoteListProgress(record, prefix = "Личные укладки получены", { final = false } = {}) {
+  const count = remoteRecordPrivateLayoutCount(record);
+  setLayoutLoadProgress({ loaded: count, total: final || count > 1 ? count : null, prefix });
+}
+
+function itemDisplayMode() {
+  return ensureItemDisplayModeState(state);
+}
+
+function shouldShowItemLabels() {
+  return shouldShowItemLabelsForMode(itemDisplayMode());
+}
+
+function shouldShowItemPhotos() {
+  return shouldShowItemPhotosForMode(itemDisplayMode());
+}
+
+function privateLayoutCount() {
+  return statePrivateLayoutCount(state);
+}
+
+function setPersonalLayoutsLoadedStatus() {
+  const count = privateLayoutCount();
+  setLayoutLoadStatus("success", count ? `Личные укладки загружены: ${count} из ${count}` : "Личные укладки загружены: 0 из 0 · список пока пустой");
+}
+
+function updateLayoutLoadStatusUi() {
+  const element = refs.layoutLoadStatus;
+  if (!element) return;
+  const text = String(layoutLoadStatus.text || "").trim();
+  element.hidden = false;
+  element.textContent = text;
+  element.classList.remove("loading", "success", "warning", "error", "empty");
+  element.classList.toggle("empty", !text);
+  const tone = String(layoutLoadStatus.tone || "");
+  if (["loading", "success", "warning", "error"].includes(tone)) element.classList.add(tone);
 }
 
 function loadActivePackingListId() {
@@ -3434,6 +3670,7 @@ function normalizeRemoteState(payload) {
   }
   if (!normalized.collapsedContainers) normalized.collapsedContainers = {};
   if (typeof normalized.showItemMeta !== "boolean") normalized.showItemMeta = false;
+  ensureItemDisplayModeState(normalized);
   if (typeof normalized.showFilterContext !== "boolean") normalized.showFilterContext = false;
   if (typeof normalized.collectionMode !== "boolean") normalized.collectionMode = false;
   if (typeof normalized.showOnlyUnpacked !== "boolean") normalized.showOnlyUnpacked = false;
@@ -3458,6 +3695,7 @@ function normalizePublishedStatePayload(payload) {
   }
   if (!normalized.collapsedContainers) normalized.collapsedContainers = {};
   if (typeof normalized.showItemMeta !== "boolean") normalized.showItemMeta = true;
+  ensureItemDisplayModeState(normalized);
   if (typeof normalized.showFilterContext !== "boolean") normalized.showFilterContext = false;
   if (typeof normalized.collectionMode !== "boolean") normalized.collectionMode = false;
   if (typeof normalized.showOnlyUnpacked !== "boolean") normalized.showOnlyUnpacked = false;
@@ -3478,6 +3716,7 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   saveRecoverySnapshot("before-replace", state);
   const managedPublicDrafts = collectManagedPublicDraftRecords(state);
   const previousCollapsedContainers = preserveLocalUi ? state.collapsedContainers : null;
+  const previousItemDisplayMode = preserveLocalUi ? normalizeItemDisplayMode(state.itemDisplayMode) : null;
   const previousShowItemMeta = preserveLocalUi ? state.showItemMeta : null;
   const previousShowFilterContext = preserveLocalUi ? state.showFilterContext : null;
   const previousCollectionMode = preserveLocalUi ? state.collectionMode : null;
@@ -3498,10 +3737,15 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
     state.collapsedContainers = mergeLocalCollapsedContainers(state.collapsedContainers || {}, previousCollapsedContainers);
   }
   if (preserveLocalUi) {
-    state.showItemMeta = typeof previousShowItemMeta === "boolean" ? previousShowItemMeta : Boolean(state.showItemMeta);
+    state.itemDisplayMode = previousItemDisplayMode || itemDisplayModeFromFlags({
+      showMeta: typeof previousShowItemMeta === "boolean" ? previousShowItemMeta : Boolean(state.showItemMeta)
+    });
+    ensureItemDisplayModeState(state);
     state.showFilterContext = typeof previousShowFilterContext === "boolean" ? previousShowFilterContext : Boolean(state.showFilterContext);
     state.collectionMode = Boolean(previousCollectionMode);
     state.showOnlyUnpacked = Boolean(previousShowOnlyUnpacked && state.collectionMode);
+  } else {
+    ensureItemDisplayModeState(state);
   }
   persistStateSnapshot(state);
   applyingRemoteState = false;
@@ -3738,6 +3982,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   appUnlocked = true;
   initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
+  setPersonalLayoutsLoadedStatus();
   updateSyncUi();
   return true;
 }
@@ -3766,7 +4011,8 @@ function mergeStateFromBase(baseState, localState, remoteState) {
   ["activeLayoutId", "collapseDefaultsVersion"].forEach((key) => {
     merged[key] = mergeScalarField(key, baseState[key], localState[key], remoteState[key], conflicts);
   });
-  merged.showItemMeta = Boolean(localState.showItemMeta);
+  merged.itemDisplayMode = normalizeItemDisplayMode(localState.itemDisplayMode);
+  merged.showItemMeta = merged.itemDisplayMode === "meta" || merged.itemDisplayMode === "meta-photos";
   merged.showFilterContext = Boolean(localState.showFilterContext);
   merged.collectionMode = Boolean(localState.collectionMode);
   merged.showOnlyUnpacked = Boolean(localState.showOnlyUnpacked && merged.collectionMode);
@@ -3968,6 +4214,7 @@ function settingLabel(key) {
   const labels = {
     activeLayoutId: "Текущая укладка",
     showItemMeta: "Показ меток",
+    itemDisplayMode: "Режим меток и фото",
     collapseDefaultsVersion: "Состояние сворачивания"
   };
   return labels[key] || key;
@@ -4538,6 +4785,8 @@ function updateSyncUi(message = "") {
   document.body.classList.toggle("auth-gated", !unlocked);
   document.body.classList.toggle("admin-session", canOpenAdminPublishedEdit());
   document.body.classList.toggle("readonly-template", isReadonlyTemplateView());
+  if (!canOpenAdminPublishedEdit()) packingVisualStylePanelVisible = false;
+  syncPackingVisualStyleControls();
   refs.authBtn.textContent = t("menu.signIn");
   refs.authBtn.hidden = loggedIn;
   refs.authBtn.classList.remove("danger");
@@ -4850,7 +5099,7 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
       body: formData,
       timeoutMs: 30000
     });
-    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, path);
+    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, path, photo.id);
     Object.assign(photo, {
       ...photo,
       ...serverPhoto,
@@ -4907,7 +5156,7 @@ async function copyRemotePhotoToList(listId, entity, photo, entityType = "item",
         entityId: entity.id
       })
     });
-    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, copyPath);
+    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, copyPath, photo.id || source.sourcePhotoId);
     Object.assign(photo, {
       ...photo,
       ...serverPhoto,
@@ -4923,7 +5172,17 @@ async function copyRemotePhotoToList(listId, entity, photo, entityType = "item",
     if (entityType === "container") touchContainer(entity.id, photo.updatedAt);
     else touchItem(entity.id, photo.updatedAt);
     return true;
-  } catch {
+  } catch (error) {
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[bike-packing] Failed to copy remote photo through API; falling back to download/upload.", {
+        copyPath,
+        source,
+        targetListId: listId,
+        entityType,
+        entityId: entity.id,
+        error
+      });
+    }
     return false;
   }
 }
@@ -4931,7 +5190,7 @@ async function copyRemotePhotoToList(listId, entity, photo, entityType = "item",
 function remotePhotoSourceFromRecord(photo) {
   const fromUrl = remotePhotoSourceFromUrl(photo?.url) || remotePhotoSourceFromUrl(photo?.thumbUrl);
   return {
-    sourceListId: String(photo?.listId || fromUrl?.sourceListId || "").trim(),
+    sourceListId: String(fromUrl?.sourceListId || photo?.listId || "").trim(),
     sourcePhotoId: String(fromUrl?.sourcePhotoId || photo?.id || photo?.photoId || "").trim()
   };
 }
@@ -5024,6 +5283,7 @@ async function refreshCurrentPackingListId() {
 async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice = true, preferredLayout = null } = {}) {
   if (isSharedListLinkRoute()) return;
   if (isForcedOffline()) {
+    setLayoutLoadStatus("warning", "Офлайн: показана локальная укладка");
     if (isExplicitlySignedOut()) {
       await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
       return;
@@ -5033,10 +5293,12 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   }
   let authData = null;
   try {
+    setLayoutLoadStatus("loading", "Проверяю вход и личные укладки...");
     updateSyncUi("Проверяю вход...");
     authData = await apiFetch("/auth/me");
   } catch (error) {
     currentUser = null;
+    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       appUnlocked = true;
       await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
@@ -5058,6 +5320,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   if (!currentUser) {
     appUnlocked = true;
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
+    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
       updateSyncUi(currentPublicTemplateStatusMessage());
@@ -5072,24 +5335,30 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   appUnlocked = true;
   activateLocalStorageScopeForCurrentUser();
   restoreTemplateCopyDraftsFromRecovery();
+  setLayoutLoadStatus("loading", "Загружаю личные укладки...");
   updateSyncUi("Вход выполнен · загружаю данные...");
+  await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });
 
   try {
     if (syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi("Есть локальные изменения · проверяю даты...");
       await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout });
       if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
+      setPersonalLayoutsLoadedStatus();
       return;
     }
     await loadRemoteState({ preferredLayout });
     if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
+    setPersonalLayoutsLoadedStatus();
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();
+      setLayoutLoadStatus("warning", "Сервер недоступен, показана локальная укладка");
       updateSyncUi("Вход выполнен · офлайн, локальная укладка доступна");
       return;
     }
     renderInitialLocalFallbackIfNeeded();
+    setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
     updateSyncUi(`Вход выполнен · не удалось загрузить данные: ${error.message}`);
   }
 }
@@ -5705,17 +5974,36 @@ async function copySharedListLink(link) {
 }
 
 async function fetchRemoteListStateSnapshot(listId) {
+  let stateRecord = null;
   try {
+    setLayoutLoadProgress({ loaded: 0, total: null, prefix: "Получаю данные укладок" });
     const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/state`, {
       timeoutMs: LIST_API_TIMEOUT_MS
     });
-    return normalizeRemoteListRecord(data);
+    stateRecord = normalizeRemoteListRecord(data);
   } catch (stateError) {
     try {
-      return await fetchRemoteListDetailRecord(listId);
+      const detailRecord = await fetchRemoteListDetailRecord(listId);
+      const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
+      setLoadedRemoteListProgress(bestRecord, "Данные укладок получены");
+      return bestRecord;
     } catch {
       throw stateError;
     }
+  }
+  const stateCount = remoteRecordPrivateLayoutCount(stateRecord);
+  if (stateRecord?.payload && stateCount > 1) {
+    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены");
+    return stateRecord;
+  }
+  try {
+    const detailRecord = await fetchRemoteListDetailRecord(listId);
+    const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
+    setLoadedRemoteListProgress(bestRecord, "Данные укладок получены");
+    return bestRecord;
+  } catch {
+    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены");
+    return stateRecord;
   }
 }
 
@@ -5747,23 +6035,64 @@ function shouldFallbackToLegacyPersonalSync(error) {
 async function fetchRemoteListStateRecord() {
   if (personalListApiUnavailable) return null;
   if (isPublicTemplateListId(currentPackingListId)) saveActivePackingListId("");
+  let savedRecord = null;
   if (currentPackingListId) {
     try {
-      const record = await fetchRemoteListStateSnapshot(currentPackingListId);
-      if (record?.payload) return record;
+      setLayoutLoadStatus("loading", "Загружаю сохранённую личную укладку...");
+      savedRecord = await fetchRemoteListStateSnapshot(currentPackingListId);
     } catch (error) {
       if (error.status === 404) saveActivePackingListId("");
       else throw error;
     }
   }
+  const savedCount = remoteRecordPrivateLayoutCount(savedRecord);
+  const shouldCheckCatalog = !savedRecord?.payload || savedCount <= 1;
+  if (savedRecord?.payload && !shouldCheckCatalog) {
+    rememberCurrentPackingListRecord(savedRecord);
+    return savedRecord;
+  }
 
-  const data = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
-  const list = chooseDefaultPackingList(normalizePackingListsResponse(data));
+  setLayoutLoadStatus(
+    "loading",
+    savedRecord?.payload ? "Проверяю, нет ли полного списка личных укладок..." : "Получаю список личных укладок..."
+  );
+  let data = null;
+  try {
+    data = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
+  } catch (error) {
+    if (savedRecord?.payload) {
+      rememberCurrentPackingListRecord(savedRecord);
+      return savedRecord;
+    }
+    throw error;
+  }
+  const lists = normalizePackingListsResponse(data);
+  const catalogBestRecord = bestCatalogListRecord(lists);
+  const catalogBestId = remoteRecordId(catalogBestRecord);
+  const list = (catalogBestId && lists.find((entry) => remoteRecordId(entry) === catalogBestId)) ||
+    chooseDefaultPackingList(lists);
   if (!list) return null;
-  const catalogRecord = rememberCurrentPackingListRecord(list);
-  if (catalogRecord?.payload) return catalogRecord;
-  if (!list.id) return catalogRecord;
-  return await fetchRemoteListStateSnapshot(list.id);
+  setLayoutLoadProgress({
+    loaded: 0,
+    total: null,
+    prefix: "Найден список, загружаю укладки"
+  });
+  const catalogRecord = normalizeRemoteListRecord(list);
+  const listId = remoteRecordId(catalogRecord);
+  let snapshotRecord = catalogRecord;
+  if (listId) {
+    try {
+      snapshotRecord = pickRicherRemoteListRecord(snapshotRecord, await fetchRemoteListStateSnapshot(listId));
+    } catch (error) {
+      if (!snapshotRecord?.payload && !savedRecord?.payload) throw error;
+    }
+  }
+  const bestRecord = pickRicherRemoteListRecord(savedRecord, snapshotRecord);
+  if (bestRecord) {
+    rememberCurrentPackingListRecord(bestRecord);
+    setLoadedRemoteListProgress(bestRecord, "Личные укладки выбраны", { final: true });
+  }
+  return bestRecord;
 }
 
 async function saveRemoteListStateRecord({ forceOverwrite = false } = {}) {
@@ -6384,6 +6713,9 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     updateSyncUi();
     return;
   }
+  if (initialRemoteLoadPending || !remoteRefreshInFlight) {
+    setLayoutLoadStatus("loading", initialRemoteLoadPending ? "Загружаю личные укладки..." : "Проверяю личные укладки...");
+  }
   clearStaleDirtyFlagIfNoLocalChanges();
   try {
     let data = await fetchRemoteStateRecord();
@@ -6391,9 +6723,18 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     let remoteState = normalizeRemoteState(record?.payload);
     if (!remoteState && data.source === "list") {
       saveActivePackingListId("");
+      setLayoutLoadProgress({ loaded: 0, total: null, prefix: "Повторно запрашиваю личные укладки" });
       data = await fetchRemoteStateRecord();
       record = data.record;
       remoteState = normalizeRemoteState(record?.payload);
+    }
+    const remoteLayoutCount = statePrivateLayoutCount(remoteState);
+    if (remoteState) {
+      setLayoutLoadProgress({
+        loaded: remoteLayoutCount,
+        total: remoteLayoutCount,
+        prefix: "Личные укладки получены"
+      });
     }
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
@@ -6583,28 +6924,33 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       initialRemoteLoadPending = false;
       renderPreservingPackingScroll();
     }
+    setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {
     if (isTemporaryServerStorageError(error)) {
       appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();
+      setLayoutLoadStatus("warning", "Синхронизация временно недоступна, показана локальная укладка");
       updateSyncUi("Серверная синхронизация временно недоступна · локальная укладка доступна");
       return;
     }
     if (isTimeoutError(error)) {
       appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();
+      setLayoutLoadStatus("warning", "Сервер долго отвечает, показана локальная укладка");
       updateSyncUi("Сервер долго отвечает · локальная укладка доступна");
       return;
     }
     if (isNetworkError(error)) {
       appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();
+      setLayoutLoadStatus("warning", "Офлайн: показана локальная укладка");
       updateSyncUi("Офлайн · локальная укладка доступна");
       return;
     }
     appUnlocked = true;
     renderInitialLocalFallbackIfNeeded();
+    setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
     updateSyncUi(`Сервер недоступен: ${error.message}`);
   }
 }
@@ -6974,12 +7320,12 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   if (!target) return;
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю shared-укладку...");
   const publicListId = publicListIdForPublishedTarget(target);
-  const publishPayload = async (payload) => {
+  const publishPayload = async (payload, extraBody = {}) => {
     const path = target.type === "demo"
       ? demoAdminStatePathForLanguage(target.language || uiLanguage)
       : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
     try {
-      await apiFetch(path, {
+      return await apiFetch(path, {
         method: "POST",
         timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
         body: JSON.stringify({
@@ -6987,6 +7333,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
           description: layout.note || "",
           visibility: "public",
           listVisibility: "public",
+          ...extraBody,
           payload
         })
       });
@@ -7001,33 +7348,51 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
       throw publishError;
     }
   };
-  let publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
-    const existingPublishedLayout = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
-    const shouldPrimeTemplate = target.type === "shared" && shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
-    if (shouldPrimeTemplate) {
-      updateSyncUi("Создаю shared-шаблон перед копированием фото...");
-      await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
+  let publishedPayload = null;
+  let publishedByServerPhotoCopy = false;
+  if (target.type === "shared" && layout.adminTemplateCopy) {
+    try {
+      publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
+        updateSyncUi("Сохраняю shared-шаблон и копирую фото на сервере...");
+        const result = await publishPayload(exportLayoutAsDemoState(layoutId), { copyPhotoReferences: true });
+        return result?.record?.payload || result?.payload || exportLayoutAsDemoState(layoutId);
+      });
+      publishedByServerPhotoCopy = true;
+    } catch (error) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[bike-packing] Server-side shared photo copy failed; falling back to legacy publish flow.", error);
+      }
     }
-    const uploadablePhotos = getUploadablePhotoEntries({
-      layoutId,
-      listId: publicListId,
-      allowRemoteOnlyReferences: false
-    });
-    if (uploadablePhotos.length) {
-      updateSyncUi(target.type === "demo" ? "Загружаю фото демо-укладки..." : "Загружаю фото shared-укладки...");
-      await uploadPublishedLayoutPhotos(layoutId, target, uploadablePhotos);
-    }
-    const unsyncedPhotos = getUnsyncedPhotoEntries({ layoutId, listId: publicListId });
-    if (unsyncedPhotos.length) {
-      const firstError = unsyncedPhotos.find((entry) => entry.photo?.error)?.photo?.error || "";
-      throw new Error(firstError || `Не удалось загрузить фото (${unsyncedPhotos.length}). Public-укладка не сохранена, чтобы не опубликовать локальные ссылки.`);
-    }
-    return exportLayoutAsDemoState(layoutId);
-  });
-  if (target.type === "demo") {
-    publishedPayload = withRuntimeSharedLayoutIndex(publishedPayload, sharedLayoutsByLanguage);
   }
-  await publishPayload(publishedPayload);
+  if (!publishedByServerPhotoCopy) {
+    publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
+      const existingPublishedLayout = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
+      const shouldPrimeTemplate = target.type === "shared" && shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
+      if (shouldPrimeTemplate) {
+        updateSyncUi("Создаю shared-шаблон перед копированием фото...");
+        await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
+      }
+      const uploadablePhotos = getUploadablePhotoEntries({
+        layoutId,
+        listId: publicListId,
+        allowRemoteOnlyReferences: false
+      });
+      if (uploadablePhotos.length) {
+        updateSyncUi(target.type === "demo" ? "Загружаю фото демо-укладки..." : "Загружаю фото shared-укладки...");
+        await uploadPublishedLayoutPhotos(layoutId, target, uploadablePhotos);
+      }
+      const unsyncedPhotos = getUnsyncedPhotoEntries({ layoutId, listId: publicListId });
+      if (unsyncedPhotos.length) {
+        const firstError = unsyncedPhotos.find((entry) => entry.photo?.error)?.photo?.error || "";
+        throw new Error(firstError || `Не удалось загрузить фото (${unsyncedPhotos.length}). Public-укладка не сохранена, чтобы не опубликовать локальные ссылки.`);
+      }
+      return exportLayoutAsDemoState(layoutId);
+    });
+    if (target.type === "demo") {
+      publishedPayload = withRuntimeSharedLayoutIndex(publishedPayload, sharedLayoutsByLanguage);
+    }
+    await publishPayload(publishedPayload);
+  }
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = nowIso();
   saveSyncMeta();
@@ -7642,7 +8007,7 @@ function renderSharedItemCard(layout, root, item) {
 }
 
 function renderSharedGearPhoto(bag) {
-  if (!state.showItemMeta) return "";
+  if (!shouldShowItemPhotos()) return "";
   if (bag.imageUrl) {
     return `
       <div class="shared-gear-photo">
@@ -7672,12 +8037,17 @@ function sharedRootWeight(root) {
 
 function findSharedLayout(layoutId) {
   if (layoutId === DEMO_SHARED_LAYOUT_ID) return demoSharedLayout;
+  if (isDeletedSharedLayoutId(layoutId)) return null;
   if (linkedSharedListLayout?.id === layoutId) return linkedSharedListLayout;
   return allSharedLayoutsByAdminOrder().find((layout) => layout.id === layoutId) || null;
 }
 
 function publicSharedLayouts() {
-  return [demoSharedLayout, ...(linkedSharedListLayout ? [linkedSharedListLayout] : []), ...allSharedLayoutsByAdminOrder()];
+  return [
+    demoSharedLayout,
+    ...(linkedSharedListLayout && !isDeletedSharedLayoutId(linkedSharedListLayout.id) ? [linkedSharedListLayout] : []),
+    ...allSharedLayoutsByAdminOrder()
+  ];
 }
 
 function findSharedPublishedContainer(containerId) {
@@ -9180,6 +9550,7 @@ function updateViewScopedControls(view = getCurrentView()) {
     setScopedControlState(element, visible, keepSpace);
   });
   setScopedControlState(refs.metaToggleBtn, view === "packing" || view === "items" || view === "bags", false);
+  updateLayoutCollapseAllToggle();
   refs.summary.classList.toggle("scoped-control-muted", view === "settings");
   refs.summary.setAttribute("aria-disabled", String(view === "settings"));
   refs.filterNav.hidden = !filtersVisible || !isFilterContextActive();
@@ -9271,6 +9642,10 @@ function restoreSearchBlurViewportLock(lock) {
   syncFixedScrollbarVisibility();
 }
 
+function renderContainerWeightText(weight) {
+  return shouldShowItemLabels() ? `<span class="container-weight">${formatWeight(weight)}</span>` : "";
+}
+
 function setScopedControlState(element, active, keepSpace) {
   if (!element) return;
   if (keepSpace) {
@@ -9301,6 +9676,22 @@ function renderInitialLocalFallbackIfNeeded() {
   return true;
 }
 
+async function renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice = true } = {}) {
+  if (!initialRemoteLoadPending || !currentUser || !hasLocalSavedState() || !isMeaningfulPackingState(state)) return false;
+  setActivePrivateScope();
+  if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
+  renderPreservingPackingScroll();
+  const count = privateLayoutCount();
+  setLayoutLoadStatus(
+    "loading",
+    count
+      ? `Показана локальная копия: ${count} загружено · проверяю сервер`
+      : "Показана локальная копия · проверяю сервер"
+  );
+  updateSyncUi("Показана локальная копия · проверяю сервер...");
+  return true;
+}
+
 function renderFilters() {
   const personalLayouts = canUsePrivateState()
     ? Object.values(state.layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId)
@@ -9328,6 +9719,7 @@ function renderFilters() {
     ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
+  updateLayoutLoadStatusUi();
   refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue));
   refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:"));
   refs.newLayoutBtn.textContent = isSharedLayoutView()
@@ -9356,6 +9748,7 @@ function renderFilters() {
   refs.clearCategoryFilterBtn.parentElement.classList.toggle("filter-field-active", categoryFilterActive);
   updateFilterHighlights();
   updateMetaToggle();
+  updateLayoutCollapseAllToggle();
   updateFilterContextToggle();
   refs.collectionModeBtn.closest(".collection-panel")?.classList.toggle("collection-panel-active", state.collectionMode);
   refs.collectionModeBtn.textContent = state.collectionMode ? "✓ Сбор включен" : "Режим сбора";
@@ -9416,8 +9809,17 @@ function commitSearchInputForNavigation() {
   }
 }
 
-function toggleItemMeta() {
-  state.showItemMeta = !state.showItemMeta;
+function toggleItemDisplayMode() {
+  state.itemDisplayMode = nextItemDisplayModeValue(itemDisplayMode());
+  ensureItemDisplayModeState(state);
+  saveLocalUiState();
+  render();
+}
+
+function toggleActiveLayoutNestedContainers() {
+  const { count } = toggleActiveLayoutNestedContainersCollapsedForState(state);
+  if (!count) return;
+  capturePackingScroll();
   saveLocalUiState();
   render();
 }
@@ -9433,11 +9835,31 @@ function toggleFilterContext() {
 }
 
 function updateMetaToggle() {
-  const label = state.showItemMeta ? "Скрыть метки и фото" : "Показать метки и фото";
-  refs.metaToggleBtn.classList.toggle("active", state.showItemMeta);
+  const mode = itemDisplayMode();
+  const label = `Режим карточек: ${itemDisplayModeLabel(mode)}`;
+  refs.metaToggleBtn.classList.toggle("active", mode !== ITEM_DISPLAY_MODE_DEFAULT);
+  refs.metaToggleBtn.dataset.displayMode = mode;
   refs.metaToggleBtn.setAttribute("aria-label", label);
-  refs.metaToggleBtn.setAttribute("aria-pressed", String(state.showItemMeta));
+  refs.metaToggleBtn.setAttribute("aria-pressed", String(mode !== ITEM_DISPLAY_MODE_DEFAULT));
   refs.metaToggleBtn.title = label;
+}
+
+function updateLayoutCollapseAllToggle() {
+  const button = refs.layoutCollapseAllBtn;
+  if (!button) return;
+  const isPackingView = getCurrentView() === "packing";
+  const hasNested = activeLayoutNestedContainerIdsForState(state).length > 0;
+  const allCollapsed = allActiveLayoutNestedContainersCollapsedForState(state);
+  button.hidden = !isPackingView || !hasNested;
+  button.classList.toggle("active", allCollapsed);
+  button.setAttribute("aria-label", allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки");
+  button.title = allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки";
+  button.innerHTML = `
+    <span class="stack-icon ${allCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
+      <span class="stack-chevron stack-chevron-up"></span>
+      <span class="stack-chevron stack-chevron-down"></span>
+    </span>
+  `;
 }
 
 function updateFilterContextToggle() {
@@ -11278,6 +11700,7 @@ function createSharedVirtualState(layout = currentSharedLayout()) {
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
     locations: [fallbackLocation],
+    itemDisplayMode: "meta-photos",
     showItemMeta: true,
     categories: ["Прочее"]
   };
@@ -11373,7 +11796,8 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
     locations: [...(sourceState.locations || [locations[0] || ""])],
-    showItemMeta: sourceState.showItemMeta !== false,
+    itemDisplayMode: normalizeItemDisplayMode(sourceState.itemDisplayMode),
+    showItemMeta: normalizeItemDisplayMode(sourceState.itemDisplayMode) === "meta" || normalizeItemDisplayMode(sourceState.itemDisplayMode) === "meta-photos",
     categories: [...(sourceState.categories || ["Прочее"])],
     collectionMode: false,
     showOnlyUnpacked: false
@@ -11391,6 +11815,7 @@ function withSharedVirtualState(callback) {
     packedItems: state.packedItems,
     locations: state.locations,
     categories: state.categories,
+    itemDisplayMode: state.itemDisplayMode,
     showItemMeta: state.showItemMeta,
     collectionMode: state.collectionMode,
     showOnlyUnpacked: state.showOnlyUnpacked
@@ -11403,7 +11828,8 @@ function withSharedVirtualState(callback) {
   state.packedItems = virtualState.packedItems;
   state.locations = virtualState.locations;
   state.categories = virtualState.categories;
-  state.showItemMeta = virtualState.showItemMeta !== false;
+  state.itemDisplayMode = normalizeItemDisplayMode(virtualState.itemDisplayMode);
+  ensureItemDisplayModeState(state);
   state.collectionMode = false;
   state.showOnlyUnpacked = false;
   try {
@@ -11418,6 +11844,7 @@ function withSharedVirtualState(callback) {
     state.packedItems = previous.packedItems;
     state.locations = previous.locations;
     state.categories = previous.categories;
+    state.itemDisplayMode = previous.itemDisplayMode;
     state.showItemMeta = previous.showItemMeta;
     state.collectionMode = previous.collectionMode;
     state.showOnlyUnpacked = previous.showOnlyUnpacked;
@@ -11789,7 +12216,7 @@ function renderContainer(containerId) {
               </span>
             </button>
           ` : ""}
-          <span>${formatWeight(total)}</span>
+          ${renderContainerWeightText(total)}
         </div>
       </header>
       ${rootCollapsed ? "" : renderItemPhoto(container)}
@@ -11832,7 +12259,7 @@ function renderFilteredContainer(containerId) {
             aria-label="Редактировать"
             title="Редактировать"
           >&#9998;</button>
-          <span>${formatWeight(total)}</span>
+          ${renderContainerWeightText(total)}
         </div>
       </header>
       ${rootCollapsed ? "" : renderItemPhoto(container)}
@@ -11869,7 +12296,7 @@ function renderSubcontainer(containerId) {
         <div class="subcontainer-tools">
           <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="Добавить вещь" title="Добавить вещь">+</button>
           <button class="header-icon-button" data-edit-container="${container.id}" aria-label="Редактировать" title="Редактировать">&#9998;</button>
-          <span>${formatWeight(containerWeight(containerId))}</span>
+          ${renderContainerWeightText(containerWeight(containerId))}
         </div>
       </div>
       ${collapsed ? "" : renderItemPhoto(container)}
@@ -11903,7 +12330,7 @@ function renderFilteredSubcontainer(containerId) {
         <div class="subcontainer-tools">
           <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="Добавить вещь" title="Добавить вещь">+</button>
           <button class="header-icon-button" data-edit-container="${container.id}" aria-label="Редактировать" title="Редактировать">&#9998;</button>
-          <span>${formatWeight(containerWeight(containerId))}</span>
+          ${renderContainerWeightText(containerWeight(containerId))}
         </div>
       </div>
       ${collapsed ? "" : renderItemPhoto(container)}
@@ -12122,7 +12549,7 @@ function renderItemCard(item) {
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      <div class="meta ${state.showItemMeta ? "" : "meta-hidden"}">
+      <div class="meta ${shouldShowItemLabels() ? "" : "meta-hidden"}">
         <span class="pill">${formatItemWeight(item)}</span>
         ${itemCategories(item).map((category) => `<span class="pill">${highlight(category)}</span>`).join("")}
         <span class="pill ${item.location === "Не знаю где" || item.location === "Надо купить" ? "warn" : ""}">${highlight(item.location)}</span>
@@ -12133,7 +12560,7 @@ function renderItemCard(item) {
 }
 
 function renderItemPhoto(item, { force = false } = {}) {
-  if (!state.showItemMeta) return "";
+  if (!force && !shouldShowItemPhotos()) return "";
   const photo = primaryItemPhoto(item);
   if (!photo) return "";
   const localId = photo.localId || photo.id;
@@ -13813,7 +14240,7 @@ function renderListItem(item) {
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      <div class="meta ${state.showItemMeta ? "" : "meta-hidden"}">
+      <div class="meta ${shouldShowItemLabels() ? "" : "meta-hidden"}">
         <span class="pill">${formatItemWeight(item)}</span>
         ${itemCategories(item).map((category) => `<span class="pill">${highlight(category)}</span>`).join("")}
         <span class="pill">${highlight(item.location)}</span>
@@ -14433,7 +14860,7 @@ function renderRootContainerCard(container) {
       <div class="item-card-top root-container-card-top">
         <div class="root-container-title-block">
           <strong class="item-title root-container-title" data-root-title="${container.id}">${highlight(container.name)}</strong>
-          ${state.showItemMeta && meta ? `<span class="root-container-meta">${highlight(meta)}</span>` : ""}
+          ${shouldShowItemLabels() && meta ? `<span class="root-container-meta">${highlight(meta)}</span>` : ""}
         </div>
         <button class="copy-item-button" data-copy-root="${container.id}" aria-label="Скопировать" title="Скопировать">
           <span aria-hidden="true">⧉</span>
@@ -15721,7 +16148,7 @@ async function confirmDeleteManagedPublicLayout(layoutId) {
 }
 
 async function deletePublishedSharedTemplate(sharedId) {
-  return deletePublishedSharedTemplateRecord({
+  const deleted = await deletePublishedSharedTemplateRecord({
     sharedId,
     apiFetch,
     timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
@@ -15731,6 +16158,8 @@ async function deletePublishedSharedTemplate(sharedId) {
       if (typeof console !== "undefined" && console.warn) console.warn(...args);
     }
   });
+  if (deleted) rememberDeletedSharedLayoutId(sharedId);
+  return deleted;
 }
 
 async function deleteManagedPublicLayout(layoutId) {

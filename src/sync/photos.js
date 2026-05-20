@@ -120,11 +120,15 @@ export function deleteCachedPhoto(id) {
 export function isPhotoStoredForList(photo, listId) {
   const normalizedListId = String(listId || "");
   if (!normalizedListId) return true;
-  if (photo?.listId && String(photo.listId) === normalizedListId) return true;
   const encoded = encodeURIComponent(normalizedListId);
-  return [photo?.url, photo?.thumbUrl].some((src) =>
-    typeof src === "string" && (src.includes(`/lists/${normalizedListId}/`) || src.includes(`/lists/${encoded}/`))
-  );
+  const urls = [photo?.url, photo?.thumbUrl].filter((src) => typeof src === "string" && src.trim());
+  const listScopedUrls = urls.filter((src) => src.includes("/lists/"));
+  if (listScopedUrls.length) {
+    return listScopedUrls.some((src) =>
+      src.includes(`/lists/${normalizedListId}/`) || src.includes(`/lists/${encoded}/`)
+    );
+  }
+  return Boolean(photo?.listId && String(photo.listId) === normalizedListId);
 }
 
 export function bikePackingPhotoAssetUrl(listId, photoId, variant) {
@@ -138,10 +142,11 @@ export function photoCopyApiPath({ uploadPath = "", listId = "" } = {}) {
   return listId ? `/bike-packing/lists/${encodeURIComponent(listId)}/photos/copy` : "";
 }
 
-export function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath) {
+export function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath, fallbackPhotoId = "") {
   normalizePhotoUrlFields(photo);
-  const photoId = photo?.id || photo?.photoId;
+  const photoId = photo?.id || photo?.photoId || fallbackPhotoId;
   if (!photo || !String(uploadPath || "").includes("/admin/") || !listId || !photoId) return photo;
+  if (!photo.id) photo.id = String(photoId);
   photo.url = bikePackingPhotoAssetUrl(listId, photoId, "file");
   photo.thumbUrl = bikePackingPhotoAssetUrl(listId, photoId, "thumb");
   return photo;

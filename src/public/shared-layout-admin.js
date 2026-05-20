@@ -52,15 +52,24 @@ export async function deletePublishedSharedTemplate({
   const id = String(sharedId || "").trim();
   if (!id) return false;
   if (typeof apiFetch === "function") {
-    await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      timeoutMs
-    });
+    try {
+      await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        timeoutMs
+      });
+    } catch (error) {
+      if (!isAlreadyDeletedSharedTemplateError(error)) throw error;
+      warn("[bike-packing] Shared layout delete skipped because public record is already absent.", { id, error });
+    }
   }
-  await removePublicIndexEntry(id).catch((error) => {
-    warn("[bike-packing] Failed to remove shared layout from public index after API delete.", { id, error });
-    return false;
-  });
+  // The API owns public index cleanup. Re-saving demo-state from the browser can
+  // fail on legacy broken photo references and keep deleted templates stuck.
   removeRuntimeSharedLayout(layoutsByLanguage, id);
   return true;
+}
+
+function isAlreadyDeletedSharedTemplateError(error) {
+  if (error?.status !== 404) return false;
+  const message = `${error?.message || ""} ${error?.data?.message || ""} ${error?.data?.error || ""}`;
+  return /not\s+found|not\s+been\s+created|has\s+not\s+been\s+created|missing/i.test(message);
 }

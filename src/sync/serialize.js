@@ -16,6 +16,7 @@ export function cloneStateForSyncPayload(sourceState, {
   if (forSync) {
     cleanupGeneratedCatalogArtifacts?.(cloned, { forSync: true });
     delete cloned.collapsedContainers;
+    delete cloned.itemDisplayMode;
     delete cloned.showItemMeta;
     delete cloned.showFilterContext;
     delete cloned.collectionMode;

@@ -1,9 +1,9 @@
-const CACHE_NAME = "bike-packing-prototype-v622";
+const CACHE_NAME = "bike-packing-prototype-v651";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=622",
-  "./app.js?v=622",
+  "./styles.css?v=651",
+  "./app.js?v=651",
   "./manifest.webmanifest"
 ];
 
@@ -18,6 +18,10 @@ self.addEventListener("activate", (event) => {
       Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -47,7 +51,7 @@ self.addEventListener("fetch", (event) => {
 async function serveAppShell(request) {
   const cached = await caches.match(request) || await caches.match("./index.html") || await caches.match("./");
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: "reload" });
     if (response && response.ok) {
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response.clone());

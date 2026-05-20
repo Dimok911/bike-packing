@@ -72,9 +72,20 @@ export function normalizeSharedLayoutIndexEntry(entry) {
     language,
     updatedAt: String(entry.updatedAt || entry.updated_at || "").trim(),
     statePayload: entry.statePayload && typeof entry.statePayload === "object"
-      ? clonePlain(entry.statePayload)
+      ? sharedLayoutIndexPayload(entry.statePayload)
       : null
   };
+}
+
+export function sharedLayoutIndexPayload(payload) {
+  const copy = clonePlain(payload || {});
+  Object.values(copy.items || {}).forEach((item) => {
+    if (item && typeof item === "object") item.photos = [];
+  });
+  Object.values(copy.containers || {}).forEach((container) => {
+    if (container && typeof container === "object") container.photos = [];
+  });
+  return copy;
 }
 
 export function mergeSharedLayoutIndexPayload(layoutsByLanguage, payload) {

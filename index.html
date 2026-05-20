@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=622" />
+    <link rel="stylesheet" href="./styles.css?v=651" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -17,8 +17,13 @@
           <span id="appVersion" class="app-version"></span>
         </div>
         <div class="top-actions">
-          <button id="syncBtn" class="ghost auth-required">Синхр.</button>
-          <span id="syncUserEmail" class="sync-user-email auth-required" hidden></span>
+          <div class="sync-cluster auth-required">
+            <div class="sync-row">
+              <button id="syncBtn" class="ghost">Синхр.</button>
+              <span id="syncUserEmail" class="sync-user-email" hidden></span>
+            </div>
+            <span id="layoutLoadStatus" class="layout-load-status"></span>
+          </div>
           <div class="top-menu-wrap">
             <button id="menuBtn" class="ghost menu-button" type="button" aria-label="Меню" aria-expanded="false" aria-controls="topMenu">
               <span aria-hidden="true"></span>
@@ -38,6 +43,7 @@
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
               <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать</button>
+              <button id="visualStyleMenuBtn" class="ghost menu-item auth-required admin-menu-item" type="button">Варианты вида</button>
               <button id="signOutBtn" class="ghost menu-item danger" type="button" hidden>Выйти</button>
             </div>
           </div>
@@ -103,10 +109,17 @@
       <div class="tabs-row auth-required">
         <nav class="tabs" aria-label="Разделы">
           <button class="tab active" data-view="packing">Укладка</button>
+          <button id="layoutCollapseAllBtn" class="collapse-button layout-collapse-all-button" type="button" aria-label="Свернуть все вложенные списки" title="Свернуть все вложенные списки">
+            <span class="stack-icon collapse-all-icon" aria-hidden="true">
+              <span class="stack-chevron stack-chevron-up"></span>
+              <span class="stack-chevron stack-chevron-down"></span>
+            </span>
+          </button>
           <button class="tab" data-view="items">Вещи</button>
           <button class="tab" data-view="bags">Сумки</button>
           <button class="tab" data-view="settings">Настройки</button>
         </nav>
+        <div id="packingVisualStyleControl" class="admin-visual-control" aria-label="Вариант визуальной иерархии укладки"></div>
         <div id="filterNav" class="filter-nav" hidden>
           <button id="filterPrevBtn" class="ghost" type="button" aria-label="Предыдущее совпадение">↑</button>
           <span id="filterNavStatus">0/0</span>
@@ -523,6 +536,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=622" type="module"></script>
+    <script src="./app.js?v=651" type="module"></script>
   </body>
 </html>
