@@ -783,8 +783,19 @@ function adminSharedTemplateOptions() {
     });
 
   return options
-    .sort((a, b) => compareSharedLayoutIndexEntries(a.layout, b.layout))
+    .sort((a, b) => compareSharedLayoutAdminOrder(a.layout, b.layout))
     .map((entry) => entry.option);
+}
+
+function compareSharedLayoutAdminOrder(a, b) {
+  const languageRank = (layout) => {
+    const language = normalizeUiLanguage(layout?.language || uiLanguage);
+    const index = SUPPORTED_LANGUAGES.map(normalizeUiLanguage).indexOf(language);
+    return index >= 0 ? index : SUPPORTED_LANGUAGES.length;
+  };
+  const languageOrder = languageRank(a) - languageRank(b);
+  if (languageOrder) return languageOrder;
+  return String(a?.name || "").localeCompare(String(b?.name || ""), "ru");
 }
 
 function localAdminTemplateCopySharedSourceIds() {
@@ -9958,7 +9969,7 @@ function renderFilters() {
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
   updateLayoutLoadStatusUi();
   refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue));
-  refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:"));
+  refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(templateDraftLayoutId(selectedLayoutValue)));
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
