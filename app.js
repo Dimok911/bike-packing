@@ -727,27 +727,64 @@ function allSharedLayoutsByAdminOrder() {
 }
 
 function adminPublicLayoutOptions() {
-  const localTemplateCopySourceIds = localAdminTemplateCopySharedSourceIds();
   return [
     ...SUPPORTED_LANGUAGES.map((language) => [
       demoLayoutChoiceForLanguage(language),
       `${t("template.prefix")}: ${t("demo.layoutName")} (${languageOptionLabel(language)})`,
       "demo"
     ]),
-    ...localAdminTemplateCopyOptions(),
-    ...(linkedSharedListLayout && !localTemplateCopySourceIds.has(linkedSharedListLayout.id) ? [[
+    ...adminSharedTemplateOptions()
+  ];
+}
+
+function adminSharedTemplateOptions() {
+  if (!canOpenAdminPublishedEdit()) return [];
+  const localTemplateCopySourceIds = localAdminTemplateCopySharedSourceIds();
+  const includedSourceIds = new Set(localTemplateCopySourceIds);
+  const options = localAdminTemplateCopyLayouts()
+    .map((layout) => ({
+      layout,
+      option: [
+        adminTemplateDraftChoice(layout.id),
+        publicTemplateOptionLabel({
+          prefix: t("template.prefix"),
+          sharedPrefix: t("shared.prefix"),
+          name: layout.name || "РЁР°Р±Р»РѕРЅ",
+          languageLabel: languageOptionLabel(layout.language || uiLanguage)
+        }),
+        "shared"
+      ]
+    }));
+
+  if (linkedSharedListLayout?.id && !includedSourceIds.has(linkedSharedListLayout.id)) {
+    includedSourceIds.add(linkedSharedListLayout.id);
+    options.push({
+      layout: linkedSharedListLayout,
+      option: [
       `shared:${linkedSharedListLayout.id}`,
       `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`,
       "shared"
-    ]] : []),
-    ...allSharedLayoutsByAdminOrder()
-      .filter((layout) => !localTemplateCopySourceIds.has(layout.id))
-      .map((layout) => [
-        `shared:${layout.id}`,
-        `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
-        "shared"
-      ])
-  ];
+      ]
+    });
+  }
+
+  allSharedLayoutsByAdminOrder()
+    .filter((layout) => !includedSourceIds.has(layout.id))
+    .forEach((layout) => {
+      includedSourceIds.add(layout.id);
+      options.push({
+        layout,
+        option: [
+          `shared:${layout.id}`,
+          `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
+          "shared"
+        ]
+      });
+    });
+
+  return options
+    .sort((a, b) => compareSharedLayoutIndexEntries(a.layout, b.layout))
+    .map((entry) => entry.option);
 }
 
 function localAdminTemplateCopySharedSourceIds() {
@@ -1104,7 +1141,12 @@ async function init() {
     const templateDraftId = templateDraftLayoutId(value);
     if (templateDraftId) {
       const layoutId = templateDraftId;
-      if (canOpenAdminPublishedEdit() && state.layouts?.[layoutId]?.adminTemplateCopy) {
+      const layout = state.layouts?.[layoutId];
+      if (canOpenAdminPublishedEdit() && layout?.adminTemplateCopy) {
+        if (!(await confirmPublicLayoutTransition("shared", findSharedLayout(layout.adminSharedSourceId) || layout))) {
+          renderFilters();
+          return;
+        }
         activateAdminPublishedLayout(layoutId);
       } else {
         renderFilters();
@@ -8458,8 +8500,8 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   });
 }
 
-function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "" } = {}) {
-  const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, targetState: sourceState });
+function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "", sourceSnapshot: providedSnapshot = null } = {}) {
+  const sourceSnapshot = providedSnapshot || snapshotContainerTree(containerId, { sourceLayoutId, targetState: sourceState });
   if (!sourceSnapshot) return "";
   const publicSourceLayoutId = sourceLayoutId || sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
   const containerMap = idMap?.containers || new Map();
@@ -16148,13 +16190,25 @@ function createTemplateCopyFromSource(sourceLayout, requestedName, {
   const changedAt = nowIso();
   const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const idMap = { containers: new Map(), items: new Map() };
-  const rootContainerIds = templateCopySourceRootIds(sourceLayout)
-    .map((rootId) => copyPublishedContainerToState(state, rootId, {
+  const sourceRootSnapshots = () => templateCopySourceRootIds(sourceLayout)
+    .map((rootId) => snapshotContainerTree(rootId, { sourceLayoutId: sourceLayout.id, targetState: state }))
+    .filter(Boolean);
+  let rootSnapshots = sourceRootSnapshots();
+  if (!rootSnapshots.length || rootSnapshots.every((snapshot) => containerTreeSnapshotScore(snapshot) <= 1)) {
+    withLayoutArrangementApplied(sourceLayout.id, () => {
+      captureActiveLayoutArrangement();
+      normalizeLayoutArrangement(sourceLayout, state);
+      rootSnapshots = sourceRootSnapshots();
+    });
+  }
+  const rootContainerIds = rootSnapshots
+    .map((snapshot) => copyPublishedContainerToState(state, snapshot.rootId, {
       targetLayoutId: "",
       changedAt,
       idMap,
       preserveSource: true,
-      sourceLayoutId: sourceLayout.id
+      sourceLayoutId: sourceLayout.id,
+      sourceSnapshot: snapshot
     }))
     .filter(Boolean);
   const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
