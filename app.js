@@ -4934,15 +4934,15 @@ function updateSyncUi(message = "") {
   refs.syncBtn.hidden = !loggedIn;
   refs.syncBtn.disabled = !loggedIn || !appUnlocked;
   const adminApiWarning = currentAdminApiWarning();
-  const showAdminApiWarning = Boolean(!message && adminApiWarning);
+  const showAdminApiWarning = Boolean(adminApiWarning);
   refs.syncStatus.classList.toggle("admin-api-warning", showAdminApiWarning);
   updateSyncVisualState({ loggedIn, unlocked, message, adminApiWarning: showAdminApiWarning });
-  if (message) {
-    refs.syncStatus.textContent = message;
-    return;
-  }
   if (adminApiWarning) {
     refs.syncStatus.textContent = adminApiWarning;
+    return;
+  }
+  if (message) {
+    refs.syncStatus.textContent = message;
     return;
   }
   if (forcedOffline && appUnlocked) {
