@@ -4849,7 +4849,13 @@ function adminApiWarningFromCapabilities(data) {
 
 async function checkAdminApiCompatibility({ force = false } = {}) {
   if (!canOpenAdminPublishedEdit() || isForcedOffline()) return;
-  if (adminApiCompatibility.checking) return;
+  if (adminApiCompatibility.checking) {
+    const startedAt = Date.now();
+    while (adminApiCompatibility.checking && Date.now() - startedAt < 7500) {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+    return adminApiCompatibility;
+  }
   if (!force && adminApiCompatibility.checkedAt && Date.now() - adminApiCompatibility.checkedAt < 5 * 60 * 1000) return;
   adminApiCompatibility.checking = true;
   try {
@@ -4877,10 +4883,20 @@ async function checkAdminApiCompatibility({ force = false } = {}) {
     };
   }
   updateSyncUi();
+  return adminApiCompatibility;
 }
 
 function currentAdminApiWarning() {
   return canOpenAdminPublishedEdit() ? String(adminApiCompatibility.warning || "") : "";
+}
+
+async function assertAdminApiCompatibility({ force = false } = {}) {
+  await checkAdminApiCompatibility({ force });
+  const warning = currentAdminApiWarning();
+  if (!warning) return true;
+  const error = new Error(warning);
+  error.isAdminApiCompatibilityError = true;
+  throw error;
 }
 
 function updateSyncUi(message = "") {
@@ -5124,6 +5140,7 @@ function refreshPublishedLayoutView(target) {
 async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) {
   const target = publishedLayoutTarget(layout);
   if (target?.type !== "shared" || !target.sharedId) return false;
+  await assertAdminApiCompatibility({ force: true });
   cancelPublishedLayoutSave(layout.id);
   const previousRuntime = findSharedLayout(target.sharedId);
   const previousRuntimeSnapshot = previousRuntime ? clone(previousRuntime) : null;
@@ -5746,6 +5763,9 @@ async function runSyncNow({ force = false } = {}) {
       return;
     }
     if (force && hadLocalChanges && !syncMeta.dirty) return;
+  }
+  if (canOpenAdminPublishedEdit()) {
+    await checkAdminApiCompatibility({ force }).catch(() => null);
   }
   if (canOpenAdminPublishedEdit() && isReadOnlyStateScope()) {
     if (!currentUser) {
@@ -16256,8 +16276,13 @@ async function saveEditedLayout(event) {
       if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
       saveState({ sync: false });
       render();
-      updateSyncUi(`Не удалось сохранить метку шаблона: ${error.message}`);
-      showToast(`Не удалось сохранить метку шаблона: ${error.message}`, "error");
+      if (error?.isAdminApiCompatibilityError) {
+        updateSyncUi();
+        showToast(error.message, "error");
+      } else {
+        updateSyncUi(`Не удалось сохранить метку шаблона: ${error.message}`);
+        showToast(`Не удалось сохранить метку шаблона: ${error.message}`, "error");
+      }
     } finally {
       refs.saveEditedLayoutBtn.disabled = false;
     }
