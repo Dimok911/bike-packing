@@ -405,7 +405,19 @@ function bindBike3dViewportControls(target, initialViewState, onViewStateChange)
   }, { passive: false });
 }
 
-function createBike3dScene(host, bagSlots, {
+function createBike3dScene(host, bagSlots, options = {}) {
+  try {
+    return createBike3dSceneUnsafe(host, bagSlots, options);
+  } catch (error) {
+    host?.closest(".bike3d-viewport")?.classList.remove("bike3d-webgl-ready");
+    host?.closest(".bike3d-viewport")?.classList.add("bike3d-webgl-failed");
+    host?.replaceChildren();
+    console.warn("Bike 3D WebGL fallback is shown:", error);
+    return null;
+  }
+}
+
+function createBike3dSceneUnsafe(host, bagSlots, {
   selectedId = "",
   adjustingContainerId = "",
   transforms = {},
@@ -417,7 +429,6 @@ function createBike3dScene(host, bagSlots, {
   const canvas = document.createElement("canvas");
   canvas.className = "bike3d-three-canvas";
   host.appendChild(canvas);
-  host.closest(".bike3d-viewport")?.classList.add("bike3d-webgl-ready");
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -573,6 +584,8 @@ function createBike3dScene(host, bagSlots, {
     renderer.render(scene, camera);
     frame = requestAnimationFrame(animate);
   };
+  renderer.render(scene, camera);
+  host.closest(".bike3d-viewport")?.classList.add("bike3d-webgl-ready");
   animate();
 
   return {

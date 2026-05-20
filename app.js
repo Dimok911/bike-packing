@@ -471,6 +471,7 @@ let lastPackingScrollSnapshot = null;
 let lastItemTitleTap = { id: "", time: 0 };
 let lastRootContainerTitleTap = { id: "", time: 0 };
 let lastPackingTabTapTime = 0;
+let lastPackingTouchToggleAt = 0;
 let syncMeta = startupSyncMeta;
 let syncDevice = loadSyncDevice();
 let currentUser = null;
@@ -1143,6 +1144,7 @@ async function init() {
     tab.addEventListener("click", () => switchView(tab.dataset.view));
     if (tab.dataset.view === "packing") {
       tab.addEventListener("dblclick", (event) => {
+        if (Date.now() - lastPackingTouchToggleAt < 900) return;
         event.preventDefault();
         switchView("packing");
         togglePackingViewMode();
@@ -9828,9 +9830,16 @@ function switchView(view) {
 
 function handlePackingTabTouchEnd(event) {
   const now = Date.now();
+  if (now - lastPackingTouchToggleAt < 700) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (now - lastPackingTabTapTime <= 360) {
     event.preventDefault();
+    event.stopPropagation();
     lastPackingTabTapTime = 0;
+    lastPackingTouchToggleAt = now;
     switchView("packing");
     togglePackingViewMode();
     return;
