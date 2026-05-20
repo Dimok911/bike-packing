@@ -111,6 +111,7 @@ import {
   upsertSharedLayoutIndexEntry,
   withRuntimeSharedLayoutIndex
 } from "./src/public/shared-layouts.js";
+import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
 import {
   deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
   removePublicSharedLayoutIndexEntry as removePublicSharedLayoutIndexEntryRecord
@@ -720,6 +721,7 @@ function allSharedLayoutsByAdminOrder() {
 }
 
 function adminPublicLayoutOptions() {
+  const localTemplateCopySourceIds = localAdminTemplateCopySharedSourceIds();
   return [
     ...SUPPORTED_LANGUAGES.map((language) => [
       demoLayoutChoiceForLanguage(language),
@@ -727,17 +729,26 @@ function adminPublicLayoutOptions() {
       "demo"
     ]),
     ...localAdminTemplateCopyOptions(),
-    ...(linkedSharedListLayout ? [[
+    ...(linkedSharedListLayout && !localTemplateCopySourceIds.has(linkedSharedListLayout.id) ? [[
       `shared:${linkedSharedListLayout.id}`,
       `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`,
       "shared"
     ]] : []),
-    ...allSharedLayoutsByAdminOrder().map((layout) => [
-      `shared:${layout.id}`,
-      `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
-      "shared"
-    ])
+    ...allSharedLayoutsByAdminOrder()
+      .filter((layout) => !localTemplateCopySourceIds.has(layout.id))
+      .map((layout) => [
+        `shared:${layout.id}`,
+        `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
+        "shared"
+      ])
   ];
+}
+
+function localAdminTemplateCopySharedSourceIds() {
+  if (!canOpenAdminPublishedEdit()) return new Set();
+  return new Set(Object.values(state.layouts || {})
+    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+    .map((layout) => layout.adminSharedSourceId));
 }
 
 function localAdminTemplateCopyOptions() {
@@ -5303,6 +5314,7 @@ async function fetchRemotePhotoBlobForUpload(photo, variant = "file") {
 
 async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item") {
   if (!currentUser || isForcedOffline() || !photo?.id) return;
+  if (isAdminEditablePublishedLayout(getPublishedEditLayoutId())) return;
   if (isReadOnlyBikePackingContext()) return;
   try {
     const listId = await ensureCurrentPackingListId();
@@ -7435,8 +7447,18 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
     try {
       publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
         updateSyncUi("Сохраняю shared-шаблон и копирую фото на сервере...");
-        const result = await publishPayload(exportLayoutAsDemoState(layoutId), { copyPhotoReferences: true });
-        return result?.record?.payload || result?.payload || exportLayoutAsDemoState(layoutId);
+        const localPayload = exportLayoutAsDemoState(layoutId);
+        const result = await publishPayload(localPayload, { copyPhotoReferences: true });
+        const serverPayload = result?.record?.payload || result?.payload || localPayload;
+        if (applyPublishedPayloadPhotosToLayoutState(state, layoutId, serverPayload, {
+          clone,
+          getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+          getLayoutItemIdSet: getLayoutItemIdSetForState,
+          publishedEntityId: cleanPublishedEntityId
+        })) {
+          persistStateSnapshot(state);
+        }
+        return serverPayload;
       });
       publishedByServerPhotoCopy = true;
     } catch (error) {
