@@ -1,4 +1,5 @@
 export const ITEM_DISPLAY_MODE_DEFAULT = "none";
+export const ITEM_DISPLAY_MODE_PUBLIC_DEFAULT = "meta-photos";
 export const ITEM_DISPLAY_MODES = ["none", "meta", "meta-photos", "photos"];
 
 export function normalizeItemDisplayMode(value) {
@@ -11,6 +12,11 @@ export function itemDisplayModeFromFlags({ showMeta = false, showPhotos = false 
   if (showMeta) return "meta";
   if (showPhotos) return "photos";
   return ITEM_DISPLAY_MODE_DEFAULT;
+}
+
+export function publicReadonlyItemDisplayMode(value) {
+  const mode = normalizeItemDisplayMode(value);
+  return mode === ITEM_DISPLAY_MODE_DEFAULT ? ITEM_DISPLAY_MODE_PUBLIC_DEFAULT : mode;
 }
 
 export function ensureItemDisplayModeState(targetState, { defaultMode = ITEM_DISPLAY_MODE_DEFAULT } = {}) {

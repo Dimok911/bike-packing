@@ -27,6 +27,11 @@ export function upsertRuntimeSharedLayout(layoutsByLanguage, {
 } = {}) {
   if (!id || !layoutsByLanguage || typeof layoutsByLanguage !== "object") return null;
   const normalizedLanguage = String(language || "ru").trim().toLowerCase() || "ru";
+  Object.keys(layoutsByLanguage).forEach((key) => {
+    if (String(key || "").trim().toLowerCase() === normalizedLanguage) return;
+    const entries = Array.isArray(layoutsByLanguage[key]) ? layoutsByLanguage[key] : [];
+    layoutsByLanguage[key] = entries.filter((entry) => entry?.id !== id);
+  });
   layoutsByLanguage[normalizedLanguage] = layoutsByLanguage[normalizedLanguage] || [];
   const layouts = layoutsByLanguage[normalizedLanguage];
   let layout = layouts.find((entry) => entry?.id === id);
@@ -46,6 +51,7 @@ export function upsertRuntimeSharedLayout(layoutsByLanguage, {
   layout.language = normalizedLanguage;
   if (statePayload) layout.statePayload = statePayload;
   if (runtimeSharedTemplate) layout.runtimeSharedTemplate = true;
+  layouts.sort(compareSharedLayoutIndexEntries);
   return layout;
 }
 
@@ -124,17 +130,19 @@ export function upsertSharedLayoutIndexEntry(payload, entry) {
   const entries = normalizeSharedLayoutIndexEntries(nextPayload)
     .filter((candidate) => candidate.id !== normalizedEntry.id);
   entries.push(normalizedEntry);
-  entries.sort((a, b) => {
-    const languageOrder = String(a.language || "").localeCompare(String(b.language || ""));
-    if (languageOrder) return languageOrder;
-    return String(a.name || "").localeCompare(String(b.name || ""), "ru");
-  });
+  entries.sort(compareSharedLayoutIndexEntries);
   nextPayload[SHARED_LAYOUTS_INDEX_KEY] = {
     version: 1,
     updatedAt: nowIso(),
     layouts: entries
   };
   return nextPayload;
+}
+
+export function compareSharedLayoutIndexEntries(a, b) {
+  const languageOrder = String(a?.language || "").localeCompare(String(b?.language || ""));
+  if (languageOrder) return languageOrder;
+  return String(a?.name || "").localeCompare(String(b?.name || ""), "ru");
 }
 
 export function removeSharedLayoutIndexEntry(payload, layoutId) {

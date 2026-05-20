@@ -10,14 +10,21 @@ export function publicCopyPhotoKey(record) {
 
 export function publicCopyItemFingerprint(item, { itemCategories, itemQuantity }) {
   if (!item) return "";
+  return [
+    publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity }),
+    publicCopyPhotoKey(item)
+  ].join("\u001f");
+}
+
+export function publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity }) {
+  if (!item) return "";
   const categories = itemCategories(item).map(publicCopyComparableText).sort().join("|");
   return [
     publicCopyComparableText(item.name),
     Number(item.weight || 0),
     itemQuantity(item),
     publicCopyComparableText(item.location),
-    categories,
-    publicCopyPhotoKey(item)
+    categories
   ].join("\u001f");
 }
 
@@ -45,6 +52,8 @@ function sourceIdVariants(value) {
       .replace(/^admin-demo-item-\d+-/, "")
       .replace(/^container-shared-/, "")
       .replace(/^item-shared-/, "")
+      .replace(/^shared-container-/, "")
+      .replace(/^shared-item-/, "")
       .replace(/^shared-virtual-container-/, "")
       .replace(/^shared-virtual-item-/, "");
     if (id) ids.add(id);
@@ -102,6 +111,11 @@ export function summarizePublicCopyDuplicates({
       publicCopyItemFingerprint(item, { itemCategories, itemQuantity })
     ).filter(Boolean)
   );
+  const sourceItemContentFingerprints = new Set(
+    Object.values(sourceSnapshot?.items || {}).map((item) =>
+      publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity })
+    ).filter(Boolean)
+  );
   const result = { containerIds: [], itemIds: [] };
   if (!sourceContainerIds.size && !sourceItemIds.size && !sourceContainerFingerprints.size && !sourceItemFingerprints.size) {
     return result;
@@ -131,7 +145,10 @@ export function summarizePublicCopyDuplicates({
       !blockedPublicOrigin &&
       sourceItemFingerprints.size &&
       sourceItemFingerprints.has(publicCopyItemFingerprint(item, { itemCategories, itemQuantity }));
-    if (copiedFromSameSource || sameId || looksLikeSamePublicItem) result.itemIds.push(itemId);
+    const looksLikeSamePublicItemContent =
+      sourceItemContentFingerprints.size &&
+      sourceItemContentFingerprints.has(publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity }));
+    if (copiedFromSameSource || sameId || looksLikeSamePublicItem || looksLikeSamePublicItemContent) result.itemIds.push(itemId);
   });
 
   return {

@@ -101,6 +101,7 @@ import {
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
 import {
+  compareSharedLayoutIndexEntries,
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
   mergeSharedLayoutIndexPayload,
@@ -355,11 +356,13 @@ import {
 } from "./src/ui/item-format.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
+  ITEM_DISPLAY_MODE_PUBLIC_DEFAULT,
   ensureItemDisplayModeState,
   itemDisplayModeFromFlags,
   itemDisplayModeLabel,
   nextItemDisplayMode as nextItemDisplayModeValue,
   normalizeItemDisplayMode,
+  publicReadonlyItemDisplayMode,
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
@@ -399,9 +402,10 @@ const PACKING_VISUAL_STYLE_CLASS_NAMES = PACKING_VISUAL_STYLE_OPTIONS
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
-  "sharedTemplatePhotoFileValidation"
+  "sharedTemplatePhotoFileValidation",
+  "sharedTemplateMetadataPatch"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v2";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v3";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
@@ -754,8 +758,7 @@ function localAdminTemplateCopySharedSourceIds() {
 
 function localAdminTemplateCopyOptions() {
   if (!canOpenAdminPublishedEdit()) return [];
-  return Object.values(state.layouts || {})
-    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+  return localAdminTemplateCopyLayouts()
     .map((layout) => [
       adminTemplateDraftChoice(layout.id),
       publicTemplateOptionLabel({
@@ -766,6 +769,13 @@ function localAdminTemplateCopyOptions() {
       }),
       "shared"
     ]);
+}
+
+function localAdminTemplateCopyLayouts() {
+  if (!canOpenAdminPublishedEdit()) return [];
+  return Object.values(state.layouts || {})
+    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+    .sort((a, b) => compareSharedLayoutIndexEntries(a, b));
 }
 
 function activeAdminDraftOptionLabel(layout) {
@@ -1920,6 +1930,8 @@ function createEmptyPublicTemplateState(language = uiLanguage) {
     }
   };
   template.activeLayoutId = layoutId;
+  template.itemDisplayMode = ITEM_DISPLAY_MODE_PUBLIC_DEFAULT;
+  template.showItemMeta = true;
   return template;
 }
 
@@ -3333,6 +3345,15 @@ function schedulePublishedLayoutSave(layoutId, delay = 900) {
       updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
     });
   }, delay);
+}
+
+function cancelPublishedLayoutSave(layoutId = "") {
+  if (!publishedLayoutSaveTimer) return false;
+  if (layoutId && publishedLayoutSaveLayoutId && publishedLayoutSaveLayoutId !== layoutId) return false;
+  window.clearTimeout(publishedLayoutSaveTimer);
+  publishedLayoutSaveTimer = null;
+  publishedLayoutSaveLayoutId = "";
+  return true;
 }
 
 function getPublishedEditLayoutId() {
@@ -5098,6 +5119,47 @@ function isViewingPublishedTarget(target) {
 function refreshPublishedLayoutView(target) {
   if (!isViewingPublishedTarget(target)) return;
   renderPreservingPackingScroll();
+}
+
+async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) {
+  const target = publishedLayoutTarget(layout);
+  if (target?.type !== "shared" || !target.sharedId) return false;
+  cancelPublishedLayoutSave(layout.id);
+  const previousRuntime = findSharedLayout(target.sharedId);
+  const previousRuntimeSnapshot = previousRuntime ? clone(previousRuntime) : null;
+  const payload = previousRuntime?.statePayload || exportLayoutAsDemoState(layout.id);
+  const nextLanguage = layout.language || previousRuntime?.language || uiLanguage;
+  try {
+    const data = await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/metadata`, {
+      method: "PATCH",
+      timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+      body: JSON.stringify({
+        title: layout.name || previousRuntime?.name || target.sharedId,
+        name: layout.name || previousRuntime?.name || target.sharedId,
+        language: nextLanguage
+      })
+    });
+    const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+      id: target.sharedId,
+      name: data?.name || layout.name || previousRuntime?.name || target.sharedId,
+      language: data?.language || nextLanguage,
+      statePayload: payload,
+      runtimeSharedTemplate: true
+    });
+    if (sharedLayout) sharedLayout.updatedAt = nowIso();
+    saveState({ sync: false });
+    refreshPublishedLayoutView(target);
+    return true;
+  } catch (error) {
+    if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
+    if (previousRuntimeSnapshot) {
+      upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+        ...previousRuntimeSnapshot,
+        runtimeSharedTemplate: Boolean(previousRuntimeSnapshot.runtimeSharedTemplate)
+      });
+    }
+    throw error;
+  }
 }
 
 async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId = "" } = {}) {
@@ -8586,6 +8648,10 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     categories: normalizeDictionaryValues(source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
     ...currentCreateMeta(changedAt)
   };
+  if (!canUsePrivateState()) {
+    state.itemDisplayMode = ITEM_DISPLAY_MODE_PUBLIC_DEFAULT;
+    state.showItemMeta = true;
+  }
   if (activate) {
     setActiveLocalEditableScope(layoutId);
     state.activeLayoutId = layoutId;
@@ -11818,6 +11884,7 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
   const sourceLayout = sourceState.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState.layouts || {})[0];
   const virtualLayoutId = sharedVirtualLayoutId(layout?.id || sourceLayout?.id || "shared");
   const publicMarkers = publicVirtualLayoutMarkers(layout, virtualLayoutId);
+  const displayMode = publicReadonlyItemDisplayMode(sourceState.itemDisplayMode);
   const containerMap = new Map();
   const itemMap = new Map();
   const containers = {};
@@ -11904,8 +11971,8 @@ function createSharedVirtualStateFromPublishedState(layout, sourceState) {
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds),
     packedItems: {},
     locations: [...(sourceState.locations || [locations[0] || ""])],
-    itemDisplayMode: normalizeItemDisplayMode(sourceState.itemDisplayMode),
-    showItemMeta: normalizeItemDisplayMode(sourceState.itemDisplayMode) === "meta" || normalizeItemDisplayMode(sourceState.itemDisplayMode) === "meta-photos",
+    itemDisplayMode: displayMode,
+    showItemMeta: shouldShowItemLabelsForMode(displayMode),
     categories: [...(sourceState.categories || ["Прочее"])],
     collectionMode: false,
     showOnlyUnpacked: false
@@ -16143,20 +16210,22 @@ function canDeleteManagedLayout(layoutId = layoutEditTargetId || state.activeLay
   return canDeleteActiveLayout() && layoutId === state.activeLayoutId;
 }
 
-function saveEditedLayout(event) {
+async function saveEditedLayout(event) {
   event.preventDefault();
   const layout = state.layouts?.[layoutEditTargetId];
   if (!layout || !canManageLayout(layout.id)) return;
+  const adminPublished = isAdminEditablePublishedLayout(layout.id);
   const changedAt = nowIso();
   const nextName = refs.layoutEditName.value.trim();
   if (!nextName) return;
   let changed = false;
+  const previousLayout = adminPublished ? clone(layout) : null;
   const savedName = editedLayoutName(layout, nextName, (name) => uniqueLayoutName(name, { exceptLayoutId: layout.id }));
   if (layout.name !== savedName) {
     layout.name = savedName;
     changed = true;
   }
-  if (isAdminEditablePublishedLayout(layout.id)) {
+  if (adminPublished) {
     const language = normalizeUiLanguage(refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage));
     if (layout.adminDemo) {
       const duplicateLanguageDemo = Object.values(state.layouts || {}).find((entry) =>
@@ -16176,6 +16245,24 @@ function saveEditedLayout(event) {
     return;
   }
   touchLayout(layout.id, changedAt);
+  if (adminPublished && !layout.adminDemo) {
+    refs.saveEditedLayoutBtn.disabled = true;
+    try {
+      await savePublishedSharedLayoutMetadata(layout, previousLayout);
+      refs.layoutEditDialog.close();
+      render();
+      showToast("Метка шаблона обновлена.", "success");
+    } catch (error) {
+      if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
+      saveState({ sync: false });
+      render();
+      updateSyncUi(`Не удалось сохранить метку шаблона: ${error.message}`);
+      showToast(`Не удалось сохранить метку шаблона: ${error.message}`, "error");
+    } finally {
+      refs.saveEditedLayoutBtn.disabled = false;
+    }
+    return;
+  }
   saveLayoutMutation(layout.id);
   refs.layoutEditDialog.close();
   render();
