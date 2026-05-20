@@ -403,9 +403,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
   "sharedTemplatePhotoFileValidation",
-  "sharedTemplateMetadataPatch"
+  "sharedTemplateMetadataPatch",
+  "sharedTemplateMetadataPost"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v3";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v4";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
