@@ -395,6 +395,11 @@ const PACKING_VISUAL_STYLE_CLASS_PREFIX = "packing-visual-";
 const PACKING_VISUAL_STYLE_CLASS_NAMES = PACKING_VISUAL_STYLE_OPTIONS
   .filter((option) => option.value !== PACKING_VISUAL_STYLE_DEFAULT)
   .map((option) => `${PACKING_VISUAL_STYLE_CLASS_PREFIX}${option.value}`);
+const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "sharedTemplatePhotoReferenceCopy",
+  "sharedTemplateDeleteLegacyCleanup"
+];
+const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v1";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
@@ -504,6 +509,14 @@ let sharedPickerSourceItemId = "";
 let sharedPickerSourceContainerId = "";
 const photoObjectUrls = new Map();
 let photoUploadInFlight = false;
+let adminApiCompatibility = {
+  checkedAt: 0,
+  checking: false,
+  ok: false,
+  warning: "",
+  version: "",
+  capabilities: []
+};
 let currentPackingListId = loadActivePackingListId();
 let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
@@ -4776,6 +4789,67 @@ function canOpenAdminPublishedEdit() {
   return isAdminSession();
 }
 
+function missingAdminApiCapabilities(capabilities = []) {
+  const available = new Set((Array.isArray(capabilities) ? capabilities : [])
+    .map((capability) => String(capability || "").trim())
+    .filter(Boolean));
+  return REQUIRED_ADMIN_API_CAPABILITIES.filter((capability) => !available.has(capability));
+}
+
+function adminApiWarningFromCapabilities(data) {
+  const version = String(data?.apiCompatibilityVersion || data?.bikePackingApiCompatibilityVersion || "").trim();
+  const capabilities = Array.isArray(data?.capabilities)
+    ? data.capabilities
+    : (Array.isArray(data?.bikePackingApiCapabilities) ? data.bikePackingApiCapabilities : []);
+  const missing = missingAdminApiCapabilities(capabilities);
+  if (!version) {
+    return "Админка: API не отдал версию совместимости. Проверьте деплой backend перед публикацией шаблонов.";
+  }
+  if (version !== REQUIRED_ADMIN_API_VERSION) {
+    return `Админка: фронт ${APP_VERSION} ждёт API ${REQUIRED_ADMIN_API_VERSION}, сейчас ${version}.`;
+  }
+  if (missing.length) {
+    return `Админка: API без нужных возможностей (${missing.join(", ")}). Не публикуйте шаблоны с фото до деплоя backend.`;
+  }
+  return "";
+}
+
+async function checkAdminApiCompatibility({ force = false } = {}) {
+  if (!canOpenAdminPublishedEdit() || isForcedOffline()) return;
+  if (adminApiCompatibility.checking) return;
+  if (!force && adminApiCompatibility.checkedAt && Date.now() - adminApiCompatibility.checkedAt < 5 * 60 * 1000) return;
+  adminApiCompatibility.checking = true;
+  try {
+    const data = await apiFetch("/bike-packing/capabilities", {
+      timeoutMs: 7000,
+      silentErrors: true
+    });
+    const warning = adminApiWarningFromCapabilities(data);
+    adminApiCompatibility = {
+      checkedAt: Date.now(),
+      checking: false,
+      ok: !warning,
+      warning,
+      version: String(data?.apiCompatibilityVersion || data?.bikePackingApiCompatibilityVersion || "").trim(),
+      capabilities: Array.isArray(data?.capabilities) ? data.capabilities : []
+    };
+  } catch (error) {
+    adminApiCompatibility = {
+      checkedAt: Date.now(),
+      checking: false,
+      ok: false,
+      warning: `Админка: не удалось проверить версию API (${apiErrorMessage(error)}). Перед публикацией шаблонов проверьте backend.`,
+      version: "",
+      capabilities: []
+    };
+  }
+  updateSyncUi();
+}
+
+function currentAdminApiWarning() {
+  return canOpenAdminPublishedEdit() ? String(adminApiCompatibility.warning || "") : "";
+}
+
 function updateSyncUi(message = "") {
   const loggedIn = Boolean(currentUser);
   const unlocked = loggedIn || appUnlocked;
@@ -4811,8 +4885,13 @@ function updateSyncUi(message = "") {
   refs.syncBtn.hidden = !loggedIn;
   refs.syncBtn.disabled = !loggedIn || !appUnlocked;
   updateSyncVisualState({ loggedIn, unlocked, message });
+  const adminApiWarning = currentAdminApiWarning();
   if (message) {
     refs.syncStatus.textContent = message;
+    return;
+  }
+  if (adminApiWarning) {
+    refs.syncStatus.textContent = adminApiWarning;
     return;
   }
   if (forcedOffline && appUnlocked) {
@@ -5335,6 +5414,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   appUnlocked = true;
   activateLocalStorageScopeForCurrentUser();
   restoreTemplateCopyDraftsFromRecovery();
+  if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
   setLayoutLoadStatus("loading", "Загружаю личные укладки...");
   updateSyncUi("Вход выполнен · загружаю данные...");
   await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });
@@ -7316,6 +7396,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
     showToast("Нужно войти админом, чтобы сохранить public-укладку.", "error");
     return;
   }
+  await checkAdminApiCompatibility({ force: true }).catch(() => null);
   const target = publishedLayoutTarget(layout, { defaultToDemo: true });
   if (!target) return;
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю shared-укладку...");
