@@ -398,9 +398,10 @@ const PACKING_VISUAL_STYLE_CLASS_NAMES = PACKING_VISUAL_STYLE_OPTIONS
   .map((option) => `${PACKING_VISUAL_STYLE_CLASS_PREFIX}${option.value}`);
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
-  "sharedTemplateDeleteLegacyCleanup"
+  "sharedTemplateDeleteLegacyCleanup",
+  "sharedTemplatePhotoFileValidation"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v2";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
@@ -4895,8 +4896,10 @@ function updateSyncUi(message = "") {
   }
   refs.syncBtn.hidden = !loggedIn;
   refs.syncBtn.disabled = !loggedIn || !appUnlocked;
-  updateSyncVisualState({ loggedIn, unlocked, message });
   const adminApiWarning = currentAdminApiWarning();
+  const showAdminApiWarning = Boolean(!message && adminApiWarning);
+  refs.syncStatus.classList.toggle("admin-api-warning", showAdminApiWarning);
+  updateSyncVisualState({ loggedIn, unlocked, message, adminApiWarning: showAdminApiWarning });
   if (message) {
     refs.syncStatus.textContent = message;
     return;
@@ -4920,10 +4923,12 @@ function updateSyncUi(message = "") {
   refs.syncStatus.textContent = syncMeta.dirty ? t("sync.dirty") : t("sync.synced");
 }
 
-function updateSyncVisualState({ loggedIn, unlocked, message = "" }) {
+function updateSyncVisualState({ loggedIn, unlocked, message = "", adminApiWarning = false }) {
   let nextState = "local";
   const lowerMessage = message.toLowerCase();
-  if (isForcedOffline()) {
+  if (adminApiWarning) {
+    nextState = "error";
+  } else if (isForcedOffline()) {
     nextState = "offline";
   } else if (lowerMessage.includes("не удалось") || lowerMessage.includes("нет соединения") || lowerMessage.includes("сервер недоступен")) {
     nextState = "error";

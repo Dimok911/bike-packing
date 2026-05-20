@@ -351,6 +351,11 @@ body.sync-offline .topbar {
   border-left-color: #9c8a42;
 }
 
+#syncStatus.admin-api-warning {
+  color: #9f2f22;
+  font-weight: 800;
+}
+
 h1,
 h2,
 h3,
