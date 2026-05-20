@@ -5131,7 +5131,7 @@ async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) 
   const nextLanguage = layout.language || previousRuntime?.language || uiLanguage;
   try {
     const data = await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/metadata`, {
-      method: "PATCH",
+      method: "POST",
       timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
       body: JSON.stringify({
         title: layout.name || previousRuntime?.name || target.sharedId,
