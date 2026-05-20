@@ -383,6 +383,14 @@ import {
   isDestructiveConfirmAction
 } from "./src/ui/confirm-dialog.js";
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
+import {
+  isBike3dPackingView,
+  normalizeBike3dViewState,
+  normalizeBike3dTransform,
+  normalizeBike3dTransforms,
+  normalizePackingViewMode,
+  renderBike3dPackingView
+} from "./src/ui/packing-bike3d.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
 const DELETED_SHARED_LAYOUTS_STORAGE_KEY = "bike-packing-deleted-shared-layouts-v1";
@@ -447,6 +455,11 @@ let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
 let packingVisualStyle = normalizePackingVisualStyle(uiSettings.packingVisualStyle);
 let packingVisualStylePanelVisible = false;
+let packingViewMode = normalizePackingViewMode(uiSettings.packingViewMode);
+let selectedBike3dContainerId = "";
+let adjustingBike3dContainerId = "";
+let bike3dTransforms = normalizeBike3dTransforms(uiSettings.bike3dTransforms);
+let bike3dViewState = normalizeBike3dViewState(uiSettings.bike3dViewState);
 let selectedCategoryFilters = [];
 let addToContainerTargetId = null;
 let addToContainerTargetLayoutId = "";
@@ -457,6 +470,7 @@ let pendingPackingScroll = null;
 let lastPackingScrollSnapshot = null;
 let lastItemTitleTap = { id: "", time: 0 };
 let lastRootContainerTitleTap = { id: "", time: 0 };
+let lastPackingTabTapTime = 0;
 let syncMeta = startupSyncMeta;
 let syncDevice = loadSyncDevice();
 let currentUser = null;
@@ -1127,6 +1141,14 @@ async function init() {
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => switchView(tab.dataset.view));
+    if (tab.dataset.view === "packing") {
+      tab.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        switchView("packing");
+        togglePackingViewMode();
+      });
+      tab.addEventListener("touchend", handlePackingTabTouchEnd, { passive: false });
+    }
   });
 
   refs.layoutSelect.addEventListener("change", async (event) => {
@@ -2259,13 +2281,19 @@ function loadUiSettings() {
       rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode),
       packingVisualStyle: parsed.packingVisualStyleVersion === PACKING_VISUAL_STYLE_SETTINGS_VERSION && parsed.packingVisualStyle
         ? normalizePackingVisualStyle(parsed.packingVisualStyle)
-        : PACKING_VISUAL_STYLE_PRIMARY
+        : PACKING_VISUAL_STYLE_PRIMARY,
+      packingViewMode: normalizePackingViewMode(parsed.packingViewMode),
+      bike3dTransforms: normalizeBike3dTransforms(parsed.bike3dTransforms),
+      bike3dViewState: normalizeBike3dViewState(parsed.bike3dViewState)
     };
   } catch {
     return {
       itemSortMode: "asc",
       rootContainerSortMode: "asc",
-      packingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY
+      packingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY,
+      packingViewMode: "columns",
+      bike3dTransforms: {},
+      bike3dViewState: normalizeBike3dViewState()
     };
   }
 }
@@ -2276,7 +2304,10 @@ function saveUiSettings() {
       itemSortMode: normalizeSortMode(itemSortMode),
       rootContainerSortMode: normalizeSortMode(rootContainerSortMode),
       packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION,
-      packingVisualStyle: normalizePackingVisualStyle(packingVisualStyle)
+      packingVisualStyle: normalizePackingVisualStyle(packingVisualStyle),
+      packingViewMode: normalizePackingViewMode(packingViewMode),
+      bike3dTransforms: normalizeBike3dTransforms(bike3dTransforms),
+      bike3dViewState: normalizeBike3dViewState(bike3dViewState)
     }));
   } catch {
     // Sorting preferences are local convenience settings.
@@ -2352,6 +2383,24 @@ function togglePackingVisualStylePanel() {
 function setPackingVisualStylePanelVisible(visible) {
   packingVisualStylePanelVisible = Boolean(visible && canOpenAdminPublishedEdit());
   syncPackingVisualStyleControls();
+}
+
+function togglePackingViewMode() {
+  packingViewMode = isBike3dPackingView(packingViewMode) ? "columns" : "bike3d";
+  if (!isBike3dPackingView(packingViewMode)) {
+    selectedBike3dContainerId = "";
+    adjustingBike3dContainerId = "";
+  }
+  saveUiSettings();
+  renderPacking();
+  updatePackingViewModeControl();
+  updateFilterNavigationUi();
+  syncFixedScrollbarVisibility();
+  showToast(isBike3dPackingView(packingViewMode) ? "3D-укладка включена." : "Обычная укладка включена.", "success");
+}
+
+function updatePackingViewModeControl(view = getCurrentView()) {
+  document.body.classList.toggle("packing-bike3d-view", view === "packing" && isBike3dPackingView(packingViewMode));
 }
 
 function setLayoutLoadStatus(tone = "idle", text = "") {
@@ -9777,6 +9826,18 @@ function switchView(view) {
   syncFixedScrollbarVisibility();
 }
 
+function handlePackingTabTouchEnd(event) {
+  const now = Date.now();
+  if (now - lastPackingTabTapTime <= 360) {
+    event.preventDefault();
+    lastPackingTabTapTime = 0;
+    switchView("packing");
+    togglePackingViewMode();
+    return;
+  }
+  lastPackingTabTapTime = now;
+}
+
 function render() {
   ensureGuestPublicScope();
   capturePackingScroll();
@@ -9818,6 +9879,7 @@ function updateViewScopedControls(view = getCurrentView()) {
     setScopedControlState(element, visible, keepSpace);
   });
   setScopedControlState(refs.metaToggleBtn, view === "packing" || view === "items" || view === "bags", false);
+  updatePackingViewModeControl(view);
   updateLayoutCollapseAllToggle();
   refs.summary.classList.toggle("scoped-control-muted", view === "settings");
   refs.summary.setAttribute("aria-disabled", String(view === "settings"));
@@ -12187,7 +12249,15 @@ function renderSharedSummary() {
 
 function renderPacking() {
   if (isSharedLayoutView()) {
+    if (isBike3dPackingView(packingViewMode)) {
+      renderSharedPackingBike3d();
+      return;
+    }
     renderSharedPacking();
+    return;
+  }
+  if (isBike3dPackingView(packingViewMode)) {
+    renderCurrentPackingBike3d();
     return;
   }
   const layout = state.layouts[state.activeLayoutId] || Object.values(state.layouts || {})[0] || { rootContainerIds: [] };
@@ -12201,6 +12271,117 @@ function renderPacking() {
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
   bindFixedScrollbar(sharedBoard);
+}
+
+function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
+  const layout = state.layouts[state.activeLayoutId] || Object.values(state.layouts || {})[0] || { rootContainerIds: [] };
+  const rootIds = getVisibleLayoutRootIds(layout).filter((id) => state.containers[id]);
+  if (selectedBike3dContainerId && !rootIds.includes(selectedBike3dContainerId)) {
+    selectedBike3dContainerId = "";
+    adjustingBike3dContainerId = "";
+  }
+  renderBike3dPackingView({
+    target: refs.packingView,
+    beforeHtml,
+    rootIds,
+    containers: state.containers,
+    selectedContainerId: selectedBike3dContainerId,
+    adjustingContainerId: adjustingBike3dContainerId,
+    transforms: bike3dTransforms,
+    viewState: bike3dViewState,
+    renderContainer,
+    containerWeight,
+    formatWeight,
+    escapeHtml,
+    onSelect: selectBike3dContainer,
+    onClose: closeBike3dDetail,
+    onToggleAdjust: toggleBike3dAdjusting,
+    onAdjust: adjustBike3dTransform,
+    onColor: setBike3dColor,
+    onViewStateChange: setBike3dViewState
+  });
+  if (shared) bindSharedVirtualEvents(refs.packingView);
+  else bindPackingEvents(refs.packingView.querySelector(".bike3d-detail") || refs.packingView);
+  syncFixedScrollbarVisibility();
+}
+
+function renderSharedPackingBike3d() {
+  withSharedVirtualState(() => {
+    renderCurrentPackingBike3d({
+      beforeHtml: renderSharedModeBanner(currentSharedLayout()),
+      shared: true
+    });
+  });
+}
+
+function selectBike3dContainer(containerId) {
+  if (!containerId || selectedBike3dContainerId === containerId) return;
+  const keepAdjusting = Boolean(adjustingBike3dContainerId);
+  selectedBike3dContainerId = containerId;
+  if (keepAdjusting) adjustingBike3dContainerId = containerId;
+  renderPacking();
+}
+
+function closeBike3dDetail() {
+  selectedBike3dContainerId = "";
+  adjustingBike3dContainerId = "";
+  renderPacking();
+}
+
+function toggleBike3dAdjusting(containerId) {
+  if (!containerId) return;
+  adjustingBike3dContainerId = adjustingBike3dContainerId === containerId ? "" : containerId;
+  selectedBike3dContainerId = containerId;
+  renderPacking();
+}
+
+function getBike3dTransform(containerId) {
+  return normalizeBike3dTransform(bike3dTransforms[containerId]);
+}
+
+function adjustBike3dTransform(action) {
+  if (!selectedBike3dContainerId) return;
+  const current = getBike3dTransform(selectedBike3dContainerId);
+  const next = { ...current };
+  const moveStep = 0.12;
+  const scaleStep = 0.08;
+  if (action === "move-left") next.x -= moveStep;
+  if (action === "move-right") next.x += moveStep;
+  if (action === "move-up") next.y += moveStep;
+  if (action === "move-down") next.y -= moveStep;
+  if (action === "move-forward") next.z += moveStep;
+  if (action === "move-back") next.z -= moveStep;
+  if (action === "scale-x-up") next.sx += scaleStep;
+  if (action === "scale-x-down") next.sx -= scaleStep;
+  if (action === "scale-y-up") next.sy += scaleStep;
+  if (action === "scale-y-down") next.sy -= scaleStep;
+  if (action === "scale-z-up") next.sz += scaleStep;
+  if (action === "scale-z-down") next.sz -= scaleStep;
+  if (action === "rotate-x-up") next.rx += 5;
+  if (action === "rotate-x-down") next.rx -= 5;
+  if (action === "rotate-y-up") next.ry += 5;
+  if (action === "rotate-y-down") next.ry -= 5;
+  if (action === "rotate-z-up") next.rz += 5;
+  if (action === "rotate-z-down") next.rz -= 5;
+  if (action === "reset") delete bike3dTransforms[selectedBike3dContainerId];
+  else bike3dTransforms[selectedBike3dContainerId] = normalizeBike3dTransform(next);
+  saveUiSettings();
+  renderPacking();
+}
+
+function setBike3dColor(color) {
+  if (!selectedBike3dContainerId || !/^#[0-9a-f]{6}$/i.test(String(color || ""))) return;
+  bike3dTransforms[selectedBike3dContainerId] = normalizeBike3dTransform({
+    ...getBike3dTransform(selectedBike3dContainerId),
+    color
+  });
+  saveUiSettings();
+  renderPacking();
+}
+
+function setBike3dViewState(nextViewState) {
+  bike3dViewState = normalizeBike3dViewState(nextViewState);
+  saveUiSettings();
 }
 
 function renderSharedModeBanner(layout = currentSharedLayout(), { compact = false } = {}) {

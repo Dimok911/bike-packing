@@ -1317,6 +1317,503 @@ button.ghost.context-toggle.active:focus-visible {
   scrollbar-width: none;
 }
 
+.bike3d-shell {
+  --bike-detail-width: min(420px, 34vw);
+  --bike-stage-height: clamp(500px, 64vh, 760px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  min-height: var(--bike-stage-height);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: clip;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(230, 239, 234, 0.9)),
+    #edf3ef;
+  box-shadow: var(--shadow);
+  transition: grid-template-columns 220ms ease;
+}
+
+.bike3d-shell.bike3d-inspecting {
+  grid-template-columns: minmax(0, 1fr) var(--bike-detail-width);
+}
+
+.bike3d-stage {
+  position: relative;
+  min-width: 0;
+  min-height: var(--bike-stage-height);
+  overflow: hidden;
+}
+
+.bike3d-toolbar {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.bike3d-toolbar span {
+  border: 1px solid rgba(31, 111, 91, 0.16);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 850;
+  box-shadow: 0 8px 20px rgba(29, 37, 34, 0.08);
+}
+
+.bike3d-viewport {
+  position: relative;
+  height: 100%;
+  min-height: var(--bike-stage-height);
+  overflow: hidden;
+  cursor: grab;
+  perspective: 1050px;
+  perspective-origin: 50% 42%;
+  touch-action: none;
+}
+
+.bike3d-viewport:active {
+  cursor: grabbing;
+}
+
+.bike3d-webgl-host,
+.bike3d-three-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.bike3d-webgl-host {
+  z-index: 2;
+}
+
+.bike3d-three-canvas {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bike3d-three-canvas:active {
+  cursor: grabbing;
+}
+
+.bike3d-webgl-ready .bike3d-space {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bike3d-space {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+}
+
+.bike3d-ground {
+  position: absolute;
+  left: 50%;
+  top: 61%;
+  width: min(760px, 82vw);
+  height: 190px;
+  transform: translate(-50%, -50%) rotateX(72deg);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(31, 111, 91, 0.18), rgba(31, 111, 91, 0.04) 58%, transparent 72%);
+  filter: blur(0.3px);
+}
+
+.bike3d-model {
+  --bike-base-scale: 1;
+  --bike-zoom: 1;
+  --bike-pan-x: 0px;
+  --bike-pan-y: 0px;
+  --bike-rotate-x: 62deg;
+  --bike-rotate-z: -18deg;
+  position: relative;
+  width: 600px;
+  height: 330px;
+  transform-style: preserve-3d;
+  transform:
+    translate3d(var(--bike-pan-x), var(--bike-pan-y), 0)
+    scale(calc(var(--bike-base-scale) * var(--bike-zoom)))
+    rotateX(var(--bike-rotate-x))
+    rotateZ(var(--bike-rotate-z));
+}
+
+.bike3d-wheel,
+.bike3d-frame,
+.bike3d-bar,
+.bike3d-seat,
+.bike3d-rack {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-style: preserve-3d;
+}
+
+.bike3d-wheel {
+  width: 142px;
+  height: 142px;
+  margin: -71px 0 0 -71px;
+  border: 12px solid #1f2d2a;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 0 48%, #cfdad4 49% 52%, transparent 53%);
+  box-shadow: inset 0 0 0 3px #eef5f1, 0 12px 30px rgba(29, 37, 34, 0.14);
+}
+
+.bike3d-wheel span {
+  position: absolute;
+  inset: 18px;
+  border: 2px dashed rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+}
+
+.bike3d-wheel-rear {
+  transform: translate3d(-228px, 76px, 0);
+}
+
+.bike3d-wheel-front {
+  transform: translate3d(228px, 76px, 0);
+}
+
+.bike3d-frame,
+.bike3d-bar,
+.bike3d-rack {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #193d37, #2f6d61);
+  box-shadow: 0 5px 14px rgba(29, 37, 34, 0.18);
+  transform-origin: left center;
+}
+
+.bike3d-frame-top {
+  width: 238px;
+  transform: translate3d(-104px, -58px, 18px) rotateZ(2deg);
+}
+
+.bike3d-frame-down {
+  width: 236px;
+  transform: translate3d(-4px, -48px, 14px) rotateZ(142deg);
+}
+
+.bike3d-frame-seat {
+  width: 152px;
+  transform: translate3d(-134px, -54px, 12px) rotateZ(106deg);
+}
+
+.bike3d-frame-chain {
+  width: 206px;
+  transform: translate3d(-236px, 76px, 10px) rotateZ(-3deg);
+}
+
+.bike3d-frame-stay {
+  width: 188px;
+  transform: translate3d(-228px, 72px, 8px) rotateZ(-45deg);
+}
+
+.bike3d-frame-fork {
+  width: 146px;
+  transform: translate3d(140px, -42px, 12px) rotateZ(72deg);
+}
+
+.bike3d-bar {
+  width: 84px;
+  transform: translate3d(130px, -78px, 28px) rotateZ(-22deg);
+}
+
+.bike3d-seat {
+  width: 70px;
+  height: 16px;
+  margin: -8px 0 0 -35px;
+  border-radius: 999px 999px 8px 8px;
+  background: #1f2d2a;
+  transform: translate3d(-146px, -86px, 30px) rotateZ(-5deg);
+}
+
+.bike3d-rack {
+  width: 116px;
+  height: 7px;
+  background: #52645e;
+}
+
+.bike3d-rack-left {
+  transform: translate3d(-260px, 18px, -42px);
+}
+
+.bike3d-rack-right {
+  transform: translate3d(-260px, 18px, 42px);
+}
+
+.bike3d-bag3d {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--bag-w);
+  height: var(--bag-h);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  transform:
+    translate3d(calc(-50% + var(--bag-x)), calc(-50% + var(--bag-y)), var(--bag-z))
+    rotateX(var(--bag-rx))
+    rotateY(var(--bag-ry))
+    rotateZ(var(--bag-rz))
+    scale3d(var(--bag-sx), var(--bag-sy), var(--bag-sz));
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.bike3d-bag3d:hover,
+.bike3d-bag3d.active {
+  filter: brightness(1.08) saturate(1.05);
+}
+
+.bike3d-bag3d.active {
+  outline: none;
+  transform:
+    translate3d(calc(-50% + var(--bag-x)), calc(-50% + var(--bag-y)), var(--bag-z))
+    rotateX(var(--bag-rx))
+    rotateY(var(--bag-ry))
+    rotateZ(var(--bag-rz))
+    scale3d(calc(var(--bag-sx) * 1.1), calc(var(--bag-sy) * 1.1), calc(var(--bag-sz) * 1.1));
+}
+
+.bike3d-bag-face {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 7px;
+  background: var(--bag-color);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 10px 22px rgba(29, 37, 34, 0.18);
+  overflow: hidden;
+}
+
+.bike3d-bag-front {
+  inset: 0;
+  transform: translateZ(calc(var(--bag-d) / 2));
+  padding: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  overflow-wrap: anywhere;
+}
+
+.bike3d-bag-top {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--bag-d);
+  transform-origin: center top;
+  transform: rotateX(90deg) translateY(calc(var(--bag-d) / -2));
+  filter: brightness(1.16);
+}
+
+.bike3d-bag-side {
+  right: 0;
+  top: 0;
+  width: var(--bag-d);
+  height: 100%;
+  transform-origin: right center;
+  transform: rotateY(90deg) translateX(calc(var(--bag-d) / 2));
+  filter: brightness(0.78);
+}
+
+.bike3d-bag3d.active .bike3d-bag-front {
+  box-shadow: 0 0 0 3px #ffe16a, 0 16px 30px rgba(29, 37, 34, 0.24);
+}
+
+.bike3d-adjust-controls {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 9;
+  display: grid;
+  gap: 8px;
+  width: min(390px, calc(100% - 28px));
+  padding: 9px;
+  border: 1px solid rgba(31, 111, 91, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 42px rgba(29, 37, 34, 0.16);
+}
+
+.bike3d-adjust-head,
+.bike3d-detail-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.bike3d-adjust-head strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.bike3d-adjust-color {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.bike3d-adjust-color button {
+  width: 24px;
+  height: 24px;
+  min-width: 0;
+  min-height: 0;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px rgba(29, 37, 34, 0.16);
+  cursor: pointer;
+}
+
+.bike3d-adjust-color button.active {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 10px rgba(29, 37, 34, 0.18);
+}
+
+.bike3d-adjust-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+}
+
+.bike3d-adjust-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  grid-auto-rows: 30px;
+  gap: 4px;
+  justify-content: center;
+}
+
+.bike3d-adjust-pad button,
+.bike3d-adjust-axis button,
+.bike3d-adjust-head button {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #cfd8d2;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-up"] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-left"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-down"] {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-right"] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-back"] {
+  grid-column: 1 / 2;
+  grid-row: 3;
+}
+
+.bike3d-adjust-pad [data-bike3d-adjust="move-forward"] {
+  grid-column: 2 / 4;
+  grid-row: 3;
+}
+
+.bike3d-adjust-values {
+  display: grid;
+  gap: 4px;
+}
+
+.bike3d-adjust-axis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
+  gap: 4px;
+  align-items: center;
+}
+
+.bike3d-adjust-axis span {
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.bike3d-adjust-axis b {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #d34d3f;
+  color: #fff;
+  font-size: 11px;
+}
+
+.bike3d-adjust-axis-y b {
+  background: #2f8b57;
+}
+
+.bike3d-adjust-axis-z b {
+  background: #386fbb;
+}
+
+.bike3d-detail {
+  min-width: 0;
+  border-left: 1px solid rgba(31, 111, 91, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+  overflow: auto;
+  padding: 12px;
+}
+
+.bike3d-detail[hidden] {
+  display: none;
+}
+
+.bike3d-detail-actions {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding-bottom: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+}
+
+.bike3d-detail-settings.active,
+.bike3d-detail-settings:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bike3d-detail-column .container-card {
+  width: 100%;
+  box-shadow: none;
+}
+
 .kanban-scrollbar {
   position: fixed;
   left: 50%;
@@ -1850,7 +2347,7 @@ button.ghost.context-toggle.active:focus-visible {
 
 .packing-visual-text-hierarchy .container-card {
   box-shadow:
-    inset 1px 0 0 rgba(31, 111, 91, 0.18),
+    inset 2px 0 0 rgba(31, 111, 91, 0.26),
     0 12px 28px rgba(38, 59, 52, 0.1);
 }
 
@@ -1865,8 +2362,8 @@ button.ghost.context-toggle.active:focus-visible {
 
 .packing-visual-text-hierarchy .subcontainer {
   border-color: #e3ebe7;
-  border-left-width: 1px;
-  border-left-color: #b9d1c8;
+  border-left-width: 2px;
+  border-left-color: #9fc4b8;
   background: #ffffff;
   box-shadow: none;
 }
@@ -4740,6 +5237,22 @@ dialog::backdrop {
   .summary {
     grid-template-columns: 1fr 1fr;
   }
+
+  .bike3d-shell,
+  .bike3d-shell.bike3d-inspecting {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bike3d-detail {
+    border-left: 0;
+    border-top: 1px solid rgba(31, 111, 91, 0.14);
+    max-height: none;
+  }
+
+  .bike3d-model {
+    width: 520px;
+    --bike-base-scale: 0.84;
+  }
 }
 
 @media (max-width: 520px) {
@@ -5123,14 +5636,42 @@ dialog::backdrop {
     grid-auto-columns: minmax(285px, calc(100vw - 36px));
   }
 
+  .bike3d-shell {
+    --bike-stage-height: min(560px, calc(100vh - 170px));
+  }
+
+  .bike3d-toolbar {
+    left: 10px;
+    top: 10px;
+  }
+
+  .bike3d-toolbar span {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  .bike3d-model {
+    --bike-base-scale: 0.68;
+  }
+
+  .bike3d-adjust-controls {
+    left: 8px;
+    bottom: 8px;
+    width: calc(100% - 16px);
+  }
+
+  .bike3d-adjust-grid {
+    grid-template-columns: 1fr;
+  }
+
   body.packing-visual-text-hierarchy .container-card {
     box-shadow:
-      inset 1px 0 0 rgba(31, 111, 91, 0.18),
+      inset 2px 0 0 rgba(31, 111, 91, 0.26),
       0 12px 28px rgba(38, 59, 52, 0.1);
   }
 
   body.packing-visual-text-hierarchy .subcontainer {
-    border-left-width: 1px;
+    border-left-width: 2px;
   }
 
   .container-header {
