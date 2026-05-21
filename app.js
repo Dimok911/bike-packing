@@ -5062,6 +5062,10 @@ function updateSyncUi(message = "") {
   const adminApiWarning = currentAdminApiWarning();
   const showAdminApiWarning = Boolean(adminApiWarning);
   refs.syncStatus.classList.toggle("admin-api-warning", showAdminApiWarning);
+  if (refs.mobileAdminApiWarning) {
+    refs.mobileAdminApiWarning.hidden = !showAdminApiWarning;
+    refs.mobileAdminApiWarning.textContent = adminApiWarning || "";
+  }
   updateSyncVisualState({ loggedIn, unlocked, message, adminApiWarning: showAdminApiWarning });
   if (adminApiWarning) {
     refs.syncStatus.textContent = adminApiWarning;

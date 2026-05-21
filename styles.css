@@ -356,6 +356,10 @@ body.sync-offline .topbar {
   font-weight: 800;
 }
 
+.mobile-admin-api-warning {
+  display: none;
+}
+
 h1,
 h2,
 h3,
@@ -5277,6 +5281,20 @@ dialog::backdrop {
 
   .topbar p {
     display: none;
+  }
+
+  .mobile-admin-api-warning:not([hidden]) {
+    display: block;
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    padding: 8px 10px;
+    border: 1px solid rgba(159, 47, 34, 0.32);
+    border-radius: 8px;
+    background: #fff4ef;
+    color: #8d2c20;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.25;
   }
 
   .top-actions {

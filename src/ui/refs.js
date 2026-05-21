@@ -1,6 +1,7 @@
 export function createRefs(root = document) {
   return {
     syncStatus: root.querySelector("#syncStatus"),
+    mobileAdminApiWarning: root.querySelector("#mobileAdminApiWarning"),
     appVersion: root.querySelector("#appVersion"),
     authBtn: root.querySelector("#authBtn"),
     authGateBtn: root.querySelector("#authGateBtn"),
