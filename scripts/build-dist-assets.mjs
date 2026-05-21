@@ -55,6 +55,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -80,20 +84,22 @@ self.addEventListener("fetch", (event) => {
 });
 
 async function serveAppShell(request) {
-  const cached = await caches.match(request) || await caches.match("./index.html") || await caches.match("./");
+  // CRITICAL: offline-start. Online must refresh HTML; offline must fall back to cached app shell.
+  const cached = await caches.match("./index.html") || await caches.match("./") || await caches.match(request);
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: "reload" });
     if (response && response.ok) {
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response.clone());
       await cache.put("./index.html", response.clone());
+      await cache.put("./", response.clone());
     }
     return response;
   } catch {
     if (cached) return cached;
-    return new Response("The app is not cached for offline use yet.", {
+    return new Response("<!doctype html><title>Bike packing</title><meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1\\"><p>The app shell is not cached on this device yet. Open it once with internet, then it will work offline.</p>", {
       status: 503,
-      headers: { "Content-Type": "text/plain; charset=utf-8" }
+      headers: { "Content-Type": "text/html; charset=utf-8" }
     });
   }
 }

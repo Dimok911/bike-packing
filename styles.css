@@ -1069,7 +1069,15 @@ button.filter-active {
 
 .tabs .layout-collapse-all-button {
   align-self: center;
-  margin-right: 2px;
+  flex: 0 0 28px;
+  margin: 0;
+}
+
+.tabs .layout-collapse-all-button.layout-collapse-all-button-placeholder {
+  visibility: visible;
+  opacity: 0.32;
+  filter: saturate(0.55);
+  pointer-events: none;
 }
 
 .tab {
@@ -1921,7 +1929,7 @@ button.ghost.context-toggle.active:focus-visible {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: auto;
+  touch-action: manipulation;
   user-select: none;
 }
 
@@ -2146,7 +2154,7 @@ button.ghost.context-toggle.active:focus-visible {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: auto;
+  touch-action: manipulation;
 }
 
 .subcontainer-title:active {
@@ -2544,6 +2552,51 @@ button.ghost.context-toggle.active:focus-visible {
 .packing-visual-calm-combined .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button,
 .packing-visual-calm-combined .subcontainer-tools .header-icon-button:focus-visible {
   opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .packing-visual-soft-nested .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button,
+  .packing-visual-soft-nested .container-card > .container-header:hover .container-tools .header-icon-button,
+  .packing-visual-soft-nested .item-card:hover .item-card-top button {
+    opacity: 0.36;
+  }
+
+  .packing-visual-folder-nested .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button,
+  .packing-visual-folder-nested .container-card > .container-header:hover .container-tools .header-icon-button,
+  .packing-visual-folder-nested .item-card:hover .item-card-top button,
+  .packing-visual-text-hierarchy .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button,
+  .packing-visual-text-hierarchy .container-card > .container-header:hover .container-tools .header-icon-button,
+  .packing-visual-text-hierarchy .item-card:hover .item-card-top button {
+    opacity: 0.34;
+  }
+
+  .packing-visual-quiet-tools .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button,
+  .packing-visual-quiet-tools .container-card > .container-header:hover .container-tools .header-icon-button,
+  .packing-visual-quiet-tools .item-card:hover .item-card-top button {
+    opacity: 0.36;
+  }
+
+  .packing-visual-calm-combined .subcontainer > .subcontainer-title:hover .subcontainer-tools .header-icon-button {
+    opacity: 0.45;
+  }
+
+  .packing-visual-soft-nested .item-card:hover .item-card-top .copy-item-button,
+  .packing-visual-soft-nested .item-card:hover .item-card-top .edit-button,
+  .packing-visual-folder-nested .item-card:hover .item-card-top .copy-item-button,
+  .packing-visual-folder-nested .item-card:hover .item-card-top .edit-button,
+  .packing-visual-text-hierarchy .item-card:hover .item-card-top .copy-item-button,
+  .packing-visual-text-hierarchy .item-card:hover .item-card-top .edit-button {
+    color: rgba(65, 82, 76, 0.26);
+  }
+
+  .packing-visual-soft-nested .item-card:hover .item-card-top .delete-item-button,
+  .packing-visual-soft-nested .item-card:hover .item-card-top .remove-layout-button,
+  .packing-visual-folder-nested .item-card:hover .item-card-top .delete-item-button,
+  .packing-visual-folder-nested .item-card:hover .item-card-top .remove-layout-button,
+  .packing-visual-text-hierarchy .item-card:hover .item-card-top .delete-item-button,
+  .packing-visual-text-hierarchy .item-card:hover .item-card-top .remove-layout-button {
+    color: rgba(65, 82, 76, 0.18);
+  }
 }
 
 .item-card {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=675" />
+    <link rel="stylesheet" href="./styles.css?v=684" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -42,7 +42,7 @@
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
-              <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать</button>
+              <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать / PDF</button>
               <button id="visualStyleMenuBtn" class="ghost menu-item auth-required admin-menu-item" type="button">Варианты вида</button>
               <button id="signOutBtn" class="ghost menu-item danger" type="button" hidden>Выйти</button>
             </div>
@@ -422,8 +422,8 @@
         </header>
         <p id="confirmText"></p>
         <footer>
-          <button id="confirmCancelBtn" type="button" value="cancel" class="ghost">Отмена</button>
           <button id="confirmOkBtn" type="button" value="default">Удалить</button>
+          <button id="confirmCancelBtn" type="button" value="cancel" class="ghost">Отмена</button>
         </footer>
       </form>
     </dialog>
@@ -537,6 +537,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=675" type="module"></script>
+    <script src="./app.js?v=684" type="module"></script>
   </body>
 </html>

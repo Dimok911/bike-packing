@@ -5,7 +5,6 @@ import {
   BASE_STATE_KEY,
   RECOVERY_STATE_KEY,
   RECOVERY_STATE_MAX,
-  AUTH_EMAIL_KEY,
   AUTH_SIGNED_OUT_KEY,
   FORCE_OFFLINE_KEY,
   DEVICE_META_KEY,
@@ -340,6 +339,13 @@ import {
   scopedLocalStorageKey as scopedStorageKey,
   userStorageScopeKey
 } from "./src/storage/scope.js";
+import {
+  buildRememberedOfflineUser,
+  currentUserIdFromStorage,
+  getSavedAuthEmailFromStorage,
+  rememberAuthenticatedUserInStorage,
+  saveAuthEmailToStorage
+} from "./src/storage/auth-scope.js";
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, snapshotsEqual } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
@@ -377,11 +383,21 @@ import {
   publicLayoutDeleteConfirm,
   publicTemplateOptionLabel
 } from "./src/ui/layout-manage-dialog.js";
-import { buildPrintableDocument } from "./src/ui/print.js";
 import {
-  confirmMessageHtml,
-  isDestructiveConfirmAction
-} from "./src/ui/confirm-dialog.js";
+  itemCopyConfirm,
+  rootContainerCopyConfirm
+} from "./src/ui/copy-confirm-dialog.js";
+import {
+  closeDialogWithoutRestoringFocus,
+  currentPageScrollPosition,
+  setupDialogKeyboardScrollGuard
+} from "./src/ui/modal-focus.js";
+import {
+  askPrintLabelsChoice,
+  buildPrintableDocument,
+  printHtmlDocument
+} from "./src/ui/print.js";
+import { createConfirmDialogController } from "./src/ui/confirm-dialog.js";
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
 import {
   isBike3dPackingView,
@@ -476,6 +492,7 @@ let lastPackingTouchToggleAt = 0;
 let syncMeta = startupSyncMeta;
 let syncDevice = loadSyncDevice();
 let currentUser = null;
+let offlineRememberedUser = null;
 let syncTimer = null;
 let syncInFlight = false;
 let syncQueued = false;
@@ -549,6 +566,11 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const {
+  askConfirmDialog,
+  askUnsavedChangesDialog,
+  openConfirmDialog
+} = createConfirmDialogController({ refs, openModalDialog });
 
 init();
 
@@ -1138,6 +1160,7 @@ async function init() {
   applyStaticTranslations();
   preventDoubleTapZoom();
   setupModalScrollLock();
+  setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();
   document.addEventListener("pointerdown", blurActiveEditableBeforeButtonAction, true);
 
@@ -1372,15 +1395,21 @@ async function init() {
     if (currentUser) {
       uploadPendingPhotos({ markDirty: true }).catch(() => null);
       syncNow();
+    } else if (isOfflineRememberedSession()) {
+      checkAuthAndLoad({
+        restoreLayoutChoice: false,
+        preferredLayout: preferredCurrentLayoutRef()
+      });
     } else if (appUnlocked) {
       updateSyncUi("Интернет появился · нажмите «Синхр.» для проверки входа");
     }
   });
   window.addEventListener("offline", () => {
-    const hadUser = Boolean(currentUser);
+    const rememberedUser = rememberedOfflineUser(currentUser);
     currentUser = null;
+    offlineRememberedUser = rememberedUser;
     appUnlocked = true;
-    if (isExplicitlySignedOut() || !hadUser) {
+    if (isExplicitlySignedOut() || !rememberedUser) {
       enterSignedOutPublicMode("Офлайн · личные списки скрыты, открыта локальная копия демо").catch(() => {
         setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
         render();
@@ -1388,6 +1417,8 @@ async function init() {
       });
       return;
     }
+    activateLocalStorageScope(userStorageScopeKey(rememberedUser));
+    setActivePrivateScope();
     renderInitialLocalFallbackIfNeeded();
     updateSyncUi("Офлайн · локальная укладка доступна");
   });
@@ -1434,7 +1465,9 @@ async function init() {
     else unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
   } else if (offlineNow) {
     publicIndexRefresh.catch(() => null);
-    enterSignedOutPublicMode("Офлайн · вход не подтверждён, открыта локальная копия демо");
+    if (!activateOfflineRememberedSession("Офлайн · открыта локальная копия личных укладок")) {
+      enterSignedOutPublicMode("Офлайн · вход не подтверждён, открыта локальная копия демо");
+    }
   } else {
     publicIndexRefresh.catch(() => null);
     checkAuthAndLoad();
@@ -3240,7 +3273,7 @@ function hasGuestDemoCopyLayout() {
 
 function currentSessionMode() {
   if (isAdminUser()) return SESSION_MODE_ADMIN;
-  if (currentUser || isForcedOffline()) return SESSION_MODE_USER;
+  if (currentUser || offlineRememberedUser || isForcedOffline()) return SESSION_MODE_USER;
   return SESSION_MODE_GUEST;
 }
 
@@ -4867,6 +4900,7 @@ function describeChangedFields(localValue, remoteValue, fields) {
 function unlockOfflineState(message = "Локально · можно работать, войдите для сохранения в аккаунт") {
   currentUser = null;
   appUnlocked = true;
+  if (activateOfflineRememberedSession(message)) return;
   if (!isForcedOffline()) {
     setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
     renderPreservingPackingScroll();
@@ -4875,6 +4909,37 @@ function unlockOfflineState(message = "Локально · можно работ
   }
   renderInitialLocalFallbackIfNeeded();
   updateSyncUi(message);
+}
+
+function rememberedOfflineUser(user = null) {
+  return buildRememberedOfflineUser({
+    user,
+    storage: localStorage,
+    signedOut: isExplicitlySignedOut()
+  });
+}
+
+function isOfflineRememberedSession() {
+  return Boolean(!currentUser && offlineRememberedUser);
+}
+
+function clearOfflineRememberedSession() {
+  offlineRememberedUser = null;
+}
+
+function activateOfflineRememberedSession(message = "Офлайн · открыта локальная копия личных укладок") {
+  const rememberedUser = rememberedOfflineUser(offlineRememberedUser);
+  if (!rememberedUser) return false;
+  currentUser = null;
+  offlineRememberedUser = rememberedUser;
+  appUnlocked = true;
+  activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
+  setActivePrivateScope();
+  setLayoutLoadStatus("warning", "Офлайн: показана локальная копия личных укладок");
+  const renderedFallback = renderInitialLocalFallbackIfNeeded();
+  if (!renderedFallback) renderPreservingPackingScroll();
+  updateSyncUi(message);
+  return true;
 }
 
 function toggleTopMenu(event) {
@@ -4893,15 +4958,11 @@ function closeTopMenu() {
 function currentUserEmail() {
   const fromUser = String(currentUser?.email || currentUser?.mail || currentUser?.login || "").trim().toLowerCase();
   if (fromUser) return fromUser;
-  try {
-    return String(localStorage.getItem(AUTH_EMAIL_KEY) || "").trim().toLowerCase();
-  } catch {
-    return "";
-  }
+  return getSavedAuthEmailFromStorage(localStorage);
 }
 
 function currentUserId() {
-  return String(currentUser?.id || currentUser?.userId || currentUser?.user_id || currentUser?.sub || "").trim().toLowerCase();
+  return currentUserIdFromStorage(currentUser, localStorage);
 }
 
 function currentUserSyncKey() {
@@ -5026,7 +5087,8 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 }
 
 function updateSyncUi(message = "") {
-  const loggedIn = Boolean(currentUser);
+  const rememberedOffline = isOfflineRememberedSession();
+  const loggedIn = Boolean(currentUser || rememberedOffline);
   const unlocked = loggedIn || appUnlocked;
   const forcedOffline = isForcedOffline();
   const privateStateAvailable = canUseLocalEditableState() && !isReadOnlyStateScope();
@@ -5077,6 +5139,12 @@ function updateSyncUi(message = "") {
   }
   if (forcedOffline && appUnlocked) {
     refs.syncStatus.textContent = t("sync.forcedOffline");
+    return;
+  }
+  if (rememberedOffline && appUnlocked && !message) {
+    refs.syncStatus.textContent = syncMeta.dirty
+      ? "Офлайн · локальные изменения сохранены на устройстве"
+      : "Офлайн · локальная копия личных укладок";
     return;
   }
   if (!loggedIn && appUnlocked) {
@@ -5611,6 +5679,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
       return;
     }
     if (isNetworkError(error)) {
+      if (activateOfflineRememberedSession("Сервер недоступен · открыта локальная копия личных укладок")) return;
       await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыта локальная копия демо");
       return;
     }
@@ -5623,6 +5692,7 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   currentUser = authData.user || authData.me || authData.account || null;
   if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
   if (!currentUser) {
+    clearOfflineRememberedSession();
     appUnlocked = true;
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
     setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
@@ -5637,8 +5707,10 @@ async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice =
   }
 
   setExplicitlySignedOut(false);
+  clearOfflineRememberedSession();
   appUnlocked = true;
   activateLocalStorageScopeForCurrentUser();
+  rememberAuthenticatedUser();
   restoreTemplateCopyDraftsFromRecovery();
   if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
   setLayoutLoadStatus("loading", "Загружаю личные укладки...");
@@ -5689,7 +5761,7 @@ async function handleAuthButton() {
     showToast("Сначала выключите офлайн-режим в меню.", "error");
     return;
   }
-  if (currentUser) {
+  if (currentUser || isOfflineRememberedSession()) {
     const confirmed = await askConfirmDialog({
       title: "Выйти из аккаунта?",
       text: "После выхода список будет скрыт на этом устройстве до нового входа. Локальная копия не удалится, но офлайн-доступ после явного выхода будет отключён.",
@@ -5697,13 +5769,16 @@ async function handleAuthButton() {
       cancelText: "Остаться"
     });
     if (!confirmed) return;
-    try {
-      updateSyncUi("Выходим...");
-      await apiFetch("/auth/logout", { method: "POST" });
-    } catch {
-      // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
+    if (currentUser) {
+      try {
+        updateSyncUi("Выходим...");
+        await apiFetch("/auth/logout", { method: "POST" });
+      } catch {
+        // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
+      }
     }
     currentUser = null;
+    clearOfflineRememberedSession();
     appUnlocked = true;
     setExplicitlySignedOut(true);
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
@@ -5717,15 +5792,15 @@ async function handleAuthButton() {
 }
 
 function getSavedAuthEmail() {
-  try {
-    return localStorage.getItem(AUTH_EMAIL_KEY) || "";
-  } catch {
-    return "";
-  }
+  return getSavedAuthEmailFromStorage(localStorage);
 }
 
 function saveAuthEmail(email) {
-  safeSetLocalStorage(AUTH_EMAIL_KEY, email);
+  saveAuthEmailToStorage(email, localStorage);
+}
+
+function rememberAuthenticatedUser(user = currentUser) {
+  rememberAuthenticatedUserInStorage(user, localStorage);
 }
 
 function isExplicitlySignedOut() {
@@ -5770,12 +5845,15 @@ async function toggleForcedOfflineMode() {
       window.clearTimeout(syncTimer);
       syncTimer = null;
     }
+    offlineRememberedUser = rememberedOfflineUser(currentUser);
     currentUser = null;
     appUnlocked = true;
+    activateOfflineRememberedSession("Принудительно офлайн · локальная укладка доступна");
     updateSyncUi("Принудительно офлайн · локальная укладка доступна");
     showToast("Офлайн-режим включён. API не будет использоваться.", "success");
     return;
   }
+  clearOfflineRememberedSession();
   updateSyncUi("Офлайн-режим выключен · проверяю вход...");
   showToast("Офлайн-режим выключен. Можно синхронизироваться.", "success");
   await checkAuthAndLoad();
@@ -5889,7 +5967,14 @@ async function runSyncNow({ force = false } = {}) {
     const hadLocalChanges = syncMeta.dirty;
     await checkAuthAndLoad({ syncDirtyNotify: force });
     if (!currentUser) {
-      if (force) showToast(appUnlocked ? "Офлайн: войдите, когда появится интернет." : "Нужно войти для синхронизации.", "error");
+      if (force) {
+        showToast(
+          isOfflineRememberedSession()
+            ? "Сервер недоступен. Локальная копия сохранена на устройстве."
+            : (appUnlocked ? "Офлайн: войдите, когда появится интернет." : "Нужно войти для синхронизации."),
+          isOfflineRememberedSession() ? "warning" : "error"
+        );
+      }
       return;
     }
     if (force && hadLocalChanges && !syncMeta.dirty) return;
@@ -9876,7 +9961,6 @@ function updateViewScopedControls(view = getCurrentView()) {
   const sharedView = isSharedLayoutView();
   const filtersVisible = view === "packing" || view === "items" || view === "bags";
   const categoryVisible = view === "packing" || view === "items";
-  const stableMobileControls = shouldKeepScopedControlsStable();
   document.querySelectorAll("[data-main-filter-control]").forEach((element) => {
     const isCollectionActions = element === refs.collectionActions;
     const isCategoryFilter = element === refs.categoryFilterLabel;
@@ -9886,13 +9970,11 @@ function updateViewScopedControls(view = getCurrentView()) {
         ? categoryVisible
         : filtersVisible;
     const keepSpace = isCollectionActions
-      ? false
-      : isCategoryFilter
-        ? view === "bags"
-        : stableMobileControls;
+      ? !sharedView && state.collectionMode
+      : true;
     setScopedControlState(element, visible, keepSpace);
   });
-  setScopedControlState(refs.metaToggleBtn, view === "packing" || view === "items" || view === "bags", false);
+  setScopedControlState(refs.metaToggleBtn, view === "packing" || view === "items" || view === "bags", true);
   updatePackingViewModeControl(view);
   updateLayoutCollapseAllToggle();
   refs.summary.classList.toggle("scoped-control-muted", view === "settings");
@@ -10193,8 +10275,13 @@ function updateLayoutCollapseAllToggle() {
   if (!button) return;
   const isPackingView = getCurrentView() === "packing";
   const hasNested = activeLayoutNestedContainerIdsForState(state).length > 0;
+  const available = isPackingView && hasNested;
   const allCollapsed = allActiveLayoutNestedContainersCollapsedForState(state);
-  button.hidden = !isPackingView || !hasNested;
+  button.hidden = false;
+  button.disabled = !available;
+  button.tabIndex = available ? 0 : -1;
+  button.setAttribute("aria-hidden", String(!available));
+  button.classList.toggle("layout-collapse-all-button-placeholder", !available);
   button.classList.toggle("active", allCollapsed);
   button.setAttribute("aria-label", allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки");
   button.title = allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки";
@@ -11252,8 +11339,10 @@ async function hydrateAuthForSharedLink() {
     currentUser = authData.user || authData.me || authData.account || null;
     if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
     if (currentUser) {
+      clearOfflineRememberedSession();
       setExplicitlySignedOut(false);
       activateLocalStorageScopeForCurrentUser();
+      rememberAuthenticatedUser();
     }
   } catch {
     currentUser = null;
@@ -12455,14 +12544,15 @@ function renderSharedPacking() {
 function capturePackingScroll() {
   const board = refs.packingView.querySelector(".board");
   const packingHidden = refs.packingView.classList.contains("hidden");
+  const pageScroll = currentPageScrollPosition();
   if (packingHidden && lastPackingScrollSnapshot) {
     pendingPackingScroll = { ...lastPackingScrollSnapshot };
     return;
   }
   pendingPackingScroll = {
     boardLeft: board?.scrollLeft || 0,
-    windowX: window.scrollX || 0,
-    windowY: window.scrollY || 0
+    windowX: pageScroll.x,
+    windowY: pageScroll.y
   };
   if (!packingHidden) {
     lastPackingScrollSnapshot = { ...pendingPackingScroll };
@@ -12471,10 +12561,11 @@ function capturePackingScroll() {
 
 function captureViewportSnapshot() {
   const board = refs.packingView.querySelector(".board");
+  const pageScroll = currentPageScrollPosition();
   return {
     boardLeft: board?.scrollLeft || 0,
-    windowX: window.scrollX || 0,
-    windowY: window.scrollY || 0
+    windowX: pageScroll.x,
+    windowY: pageScroll.y
   };
 }
 
@@ -13028,7 +13119,10 @@ function renderItemPhoto(item, { force = false } = {}) {
   const photo = primaryItemPhoto(item);
   if (!photo) return "";
   const localId = photo.localId || photo.id;
-  const src = photoRemoteSrc(photo) || (localId && photoObjectUrls.get(localId)) || "";
+  const localSrc = localId ? photoObjectUrls.get(localId) : "";
+  const remoteSrc = photoRemoteSrc(photo);
+  const src = localSrc || remoteSrc || "";
+  const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}"` : "";
   const statusText = src ? "" : photo.status === "pending" ? "ждёт загрузки" :
     photo.status === "uploading" ? "загружается" :
       photo.status === "error" ? "ошибка загрузки" :
@@ -13036,7 +13130,8 @@ function renderItemPhoto(item, { force = false } = {}) {
   return `
     <div class="item-photo ${!src && photo.status !== "synced" ? "item-photo-pending" : ""}">
       <img
-        ${src ? `src="${escapeHtml(src)}"` : `data-photo-local-id="${escapeHtml(localId)}"`}
+        ${src ? `src="${escapeHtml(src)}"` : ""}
+        ${localHydrateAttr}
         alt=""
         loading="lazy"
       />
@@ -13180,6 +13275,14 @@ function bindPackingEvents(root) {
       const containerId = subcontainer?.dataset.subcontainerId;
       if (!containerId || editingContainerId === containerId) return;
       if (event.detail !== 1) return;
+      if (isCoarsePointerInteraction(event)) {
+        event.preventDefault();
+        capturePackingScroll();
+        state.collapsedContainers[containerId] = !state.collapsedContainers[containerId];
+        saveLocalUiState();
+        render();
+        return;
+      }
       clickTimer = window.setTimeout(() => {
         capturePackingScroll();
         state.collapsedContainers[containerId] = !state.collapsedContainers[containerId];
@@ -13389,6 +13492,15 @@ function bindPackingEvents(root) {
       render();
     });
   });
+}
+
+function isCoarsePointerInteraction(event = null) {
+  if (event?.pointerType === "touch" || event?.pointerType === "pen") return true;
+  try {
+    return window.matchMedia?.("(hover: none), (pointer: coarse)")?.matches === true;
+  } catch {
+    return false;
+  }
 }
 
 function needsHoldToDrag(event) {
@@ -15153,93 +15265,6 @@ function bindSettingsPointerDrag() {
   });
 }
 
-function askConfirmDialog({ title, text, okText, cancelText = "Отмена", highlightText = "", highlightCount = "", tone = "" }) {
-  const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
-  refs.confirmTitle.textContent = title;
-  refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightCount, tone });
-  refs.confirmCancelBtn.textContent = cancelText;
-  refs.confirmOkBtn.textContent = okText;
-  refs.confirmCancelBtn.classList.remove("danger-action");
-  refs.confirmOkBtn.classList.toggle("danger-action", isDestructiveAction);
-  refs.confirmDialog.classList.toggle("danger-confirm-dialog", isDestructiveAction);
-  refs.confirmDialog.returnValue = "";
-  return new Promise((resolve) => {
-    const cleanup = () => {
-      refs.confirmDialog.removeEventListener("close", handleClose);
-      refs.confirmCancelBtn.onclick = null;
-      refs.confirmOkBtn.onclick = null;
-      refs.confirmCancelBtn.classList.remove("danger-action");
-      refs.confirmOkBtn.classList.remove("danger-action");
-      refs.confirmDialog.classList.remove("danger-confirm-dialog");
-    };
-    const handleClose = () => {
-      const confirmed = refs.confirmDialog.returnValue === "default";
-      cleanup();
-      resolve(confirmed);
-    };
-    refs.confirmCancelBtn.onclick = (event) => {
-      event.preventDefault();
-      refs.confirmDialog.close("cancel");
-    };
-    refs.confirmOkBtn.onclick = (event) => {
-      event.preventDefault();
-      refs.confirmDialog.close("default");
-    };
-    refs.confirmDialog.addEventListener("close", handleClose);
-    openModalDialog(refs.confirmDialog);
-  });
-}
-
-function askUnsavedChangesDialog() {
-  refs.confirmTitle.textContent = "Есть несохранённые изменения";
-  refs.confirmText.textContent = "Сохранить изменения перед закрытием?";
-  refs.confirmCancelBtn.textContent = "Закрыть без сохранения";
-  refs.confirmOkBtn.textContent = "Сохранить";
-  refs.confirmCancelBtn.classList.add("danger-action");
-  refs.confirmOkBtn.classList.remove("danger-action");
-  refs.confirmDialog.classList.remove("danger-confirm-dialog");
-  refs.confirmDialog.returnValue = "";
-
-  return new Promise((resolve) => {
-    const closeBtn = refs.confirmCloseBtn || refs.confirmDialog.querySelector("header .icon-button");
-    const cleanup = () => {
-      refs.confirmDialog.removeEventListener("close", handleClose);
-      refs.confirmCancelBtn.onclick = null;
-      refs.confirmOkBtn.onclick = null;
-      closeBtn?.removeEventListener("click", keepEditing);
-      refs.confirmCancelBtn.classList.remove("danger-action");
-      refs.confirmOkBtn.classList.remove("danger-action");
-      refs.confirmDialog.classList.remove("danger-confirm-dialog");
-    };
-    const handleClose = () => {
-      const value = refs.confirmDialog.returnValue;
-      cleanup();
-      if (value === "save") {
-        resolve("save");
-      } else if (value === "discard") {
-        resolve("discard");
-      } else {
-        resolve("keep");
-      }
-    };
-    const keepEditing = (event) => {
-      event.preventDefault();
-      refs.confirmDialog.close("keep");
-    };
-    refs.confirmCancelBtn.onclick = (event) => {
-      event.preventDefault();
-      refs.confirmDialog.close("discard");
-    };
-    refs.confirmOkBtn.onclick = (event) => {
-      event.preventDefault();
-      refs.confirmDialog.close("save");
-    };
-    closeBtn?.addEventListener("click", keepEditing);
-    refs.confirmDialog.addEventListener("close", handleClose);
-    openModalDialog(refs.confirmDialog);
-  });
-}
-
 function showToast(message, type = "") {
   if (!refs.toastRegion) return;
   const signature = `${type}:${message}`;
@@ -15254,13 +15279,6 @@ function showToast(message, type = "") {
   window.setTimeout(() => {
     toast.remove();
   }, 3600);
-}
-
-function openConfirmDialog({ title, text, okText, highlightText = "", highlightCount = "", tone = "", onConfirm }) {
-  askConfirmDialog({ title, text, okText, highlightText, highlightCount, tone }).then((confirmed) => {
-    if (!confirmed) return;
-    onConfirm();
-  });
 }
 
 function renderRootContainersEditor() {
@@ -15905,10 +15923,14 @@ function deleteItemForever(itemId) {
   render();
 }
 
-function copyItem(itemId, options = {}) {
+async function copyItem(itemId, options = {}) {
   const item = state.items[itemId];
   if (!item) return;
   const keepPlacement = Boolean(options.keepPlacement);
+  if (options.confirm !== false) {
+    const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement }));
+    if (!confirmed) return;
+  }
   const changedAt = nowIso();
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];
@@ -15945,6 +15967,8 @@ async function copyRootContainer(containerId) {
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   if (layout && isAdminEditablePublishedLayout(layoutId)) {
+    const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: true }));
+    if (!confirmed) return;
     await copyContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
     return;
   }
@@ -15967,6 +15991,8 @@ async function copyRootContainer(containerId) {
     duplicateContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
     return;
   }
+  const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: Boolean(layout) }));
+  if (!confirmed) return;
   duplicateRootContainer(containerId, { addToLayoutId: layout?.id || "" });
 }
 
@@ -16883,7 +16909,7 @@ async function updateItemDialogPhotoPreview(photo) {
     setItemDialogPhotoStatus("");
     return;
   }
-  const src = photoRemoteSrc(photo) || await getLocalPhotoPreviewUrl(photo);
+  const src = await getLocalPhotoPreviewUrl(photo) || photoRemoteSrc(photo);
   refs.itemPhotoPreview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="" />` : "";
   refs.itemPhotoPreview.classList.toggle("empty", !src);
   refs.itemPhotoRemoveBtn.hidden = false;
@@ -16949,7 +16975,7 @@ async function updateRootContainerDialogPhotoPreview(photo) {
     setRootContainerDialogPhotoStatus("");
     return;
   }
-  const src = photoRemoteSrc(photo) || await getLocalRootContainerPhotoPreviewUrl(photo);
+  const src = await getLocalRootContainerPhotoPreviewUrl(photo) || photoRemoteSrc(photo);
   refs.rootContainerPhotoPreview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="" />` : "";
   refs.rootContainerPhotoPreview.classList.toggle("empty", !src);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
@@ -17088,7 +17114,7 @@ function saveRootContainerDialog(event) {
       ...currentCreateMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.containers[id]);
-    refs.rootContainerDialog.close();
+    closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
     saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
     render();
     return;
@@ -17104,7 +17130,7 @@ function saveRootContainerDialog(event) {
   touchContainer(container.id, changedAt);
   applyRootContainerDialogParent(changedAt);
   applyRootContainerDialogPlacement();
-  refs.rootContainerDialog.close();
+  closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
   saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
   render();
 }
@@ -17135,7 +17161,7 @@ function saveDialogItem(event) {
     markRecordActivePublicCatalog(item);
     touchItem(editingItemId, changedAt);
     if (previousContainerId !== containerId) {
-      refs.dialog.close();
+      closeDialogWithoutRestoringFocus(refs.dialog);
       if (containerId) {
         if (!placeExistingItemInLayout(editingItemId, containerId, layoutId, { changedAt })) {
           showToast("Не удалось добавить вещь в эту укладку.", "error");
@@ -17179,7 +17205,7 @@ function saveDialogItem(event) {
   }
 
   saveLayoutMutation(layoutId);
-  refs.dialog.close();
+  closeDialogWithoutRestoringFocus(refs.dialog);
   render();
 }
 
@@ -17838,20 +17864,19 @@ async function restoreFullBackup() {
   }
 }
 
-function exportData() {
+async function exportData() {
+  const html = await buildPrintableHtmlFromChoice();
+  printHtmlDocument(html);
+}
+
+async function buildPrintableHtmlFromChoice() {
   const layout = state.layouts[state.activeLayoutId];
-  const html = buildPrintableDocument(state, {
+  const includeLabels = await askPrintLabelsChoice(askConfirmDialog);
+  return buildPrintableDocument(state, {
     layoutId: state.activeLayoutId,
-    includeGeneratedRoots: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id)
+    includeGeneratedRoots: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id),
+    includeLabels
   });
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "bike-packing-print.html";
-  a.target = "_blank";
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function resetData() {

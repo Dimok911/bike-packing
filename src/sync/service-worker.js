@@ -15,8 +15,15 @@ export function registerAppServiceWorker({ isLocalDevOrigin = () => false } = {}
     window.location.reload();
   });
 
+  const activateWaitingWorker = (registration) => {
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+  };
+
   navigator.serviceWorker.register("./sw.js").then((registration) => {
-    registration.update?.().catch(() => null);
+    activateWaitingWorker(registration);
+    registration.update?.().then(() => activateWaitingWorker(registration)).catch(() => null);
     registration.addEventListener("updatefound", () => {
       const worker = registration.installing;
       if (!worker) return;

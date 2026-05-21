@@ -1,10 +1,12 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v675";
+export const APP_VERSION = "v684";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
 export const RECOVERY_STATE_MAX = 12;
 export const AUTH_EMAIL_KEY = "bike-packing-auth-email";
+export const AUTH_USER_ID_KEY = "bike-packing-auth-user-id";
+export const AUTH_STORAGE_SCOPE_KEY = "bike-packing-auth-storage-scope";
 export const AUTH_SIGNED_OUT_KEY = "bike-packing-auth-signed-out";
 export const FORCE_OFFLINE_KEY = "bike-packing-force-offline";
 export const DEVICE_META_KEY = "bike-packing-device-meta-v1";
