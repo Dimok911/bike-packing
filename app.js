@@ -416,9 +416,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplateDeleteLegacyCleanup",
   "sharedTemplatePhotoFileValidation",
   "sharedTemplateMetadataPatch",
-  "sharedTemplateMetadataPost"
+  "sharedTemplateMetadataPost",
+  "sharedTemplateEntityTreeFilter"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-21.shared-template-admin-v4";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-22.shared-template-entity-tree-filter-v1";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
