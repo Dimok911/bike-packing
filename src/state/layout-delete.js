@@ -22,3 +22,13 @@ export function removeLayoutTreeFromState(targetState, layoutId) {
   }
   return true;
 }
+
+export function removeManagedSharedLayoutTreesFromState(targetState, sharedId) {
+  const id = String(sharedId || "").trim();
+  if (!targetState?.layouts || !id) return [];
+  const layoutIds = Object.values(targetState.layouts)
+    .filter((layout) => layout?.adminSharedSourceId === id)
+    .map((layout) => layout.id)
+    .filter(Boolean);
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+}

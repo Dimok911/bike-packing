@@ -78,6 +78,7 @@ import {
   summarizeLayoutIdDuplicates,
   summarizePublicCopyDuplicates
 } from "./src/public/copy-duplicates.js";
+import { createDeletedSharedLayoutStore } from "./src/public/deleted-shared-layouts.js";
 import {
   markCopiedItemForPublicLayout,
   writeContainerTreeToLayoutArrangement
@@ -104,9 +105,13 @@ import {
   compareSharedLayoutIndexEntries,
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
+  isPublicSharedLayoutListRecord,
   mergeSharedLayoutIndexPayload,
   normalizeSharedGearName,
+  pruneRuntimeSharedLayouts,
   sharedLayoutIndexEntry,
+  sharedLayoutIdFromPublicListRecord,
+  sharedLayoutLanguageFromPayload,
   sharedGearPhotos,
   upsertRuntimeSharedLayout,
   upsertSharedLayoutIndexEntry,
@@ -188,7 +193,10 @@ import {
   createLayoutArrangementFromCurrentState,
   uniqueLayoutIds
 } from "./src/state/layout-arrangement.js";
-import { removeLayoutTreeFromState } from "./src/state/layout-delete.js";
+import {
+  removeLayoutTreeFromState,
+  removeManagedSharedLayoutTreesFromState
+} from "./src/state/layout-delete.js";
 import {
   solidifyManagedTemplateDrafts as solidifyManagedTemplateDraftsForState,
   solidifyTemplateDraftLayout as solidifyTemplateDraftLayoutForState
@@ -385,6 +393,10 @@ import {
   publicTemplateOptionLabel
 } from "./src/ui/layout-manage-dialog.js";
 import {
+  countPrivateLayouts,
+  createLayoutLoadStatusController
+} from "./src/ui/layout-load-status.js";
+import {
   itemCopyConfirm,
   rootContainerCopyConfirm
 } from "./src/ui/copy-confirm-dialog.js";
@@ -393,6 +405,7 @@ import {
   currentPageScrollPosition,
   setupDialogKeyboardScrollGuard
 } from "./src/ui/modal-focus.js";
+import { createModalScrollLockController } from "./src/ui/modal-scroll-lock.js";
 import {
   askPrintLabelsChoice,
   buildPrintableDocument,
@@ -409,26 +422,22 @@ import {
   normalizePackingViewMode,
   renderBike3dPackingView
 } from "./src/ui/packing-bike3d.js";
+import {
+  PACKING_VISUAL_STYLE_OPTIONS,
+  PACKING_VISUAL_STYLE_PRIMARY,
+  PACKING_VISUAL_STYLE_SETTINGS_VERSION,
+  applyPackingVisualStyleClass,
+  normalizePackingVisualStyle,
+  packingVisualStyleButtonLabel
+} from "./src/ui/packing-visual-style.js";
+import {
+  blurActiveEditableBeforeButtonAction,
+  isEditableElement,
+  preventDoubleTapZoom,
+  setupTouchActionButtonFeedback
+} from "./src/ui/touch-actions.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
-const DELETED_SHARED_LAYOUTS_STORAGE_KEY = "bike-packing-deleted-shared-layouts-v1";
-const PACKING_VISUAL_STYLE_DEFAULT = "default";
-const PACKING_VISUAL_STYLE_PRIMARY = "text-hierarchy";
-const PACKING_VISUAL_STYLE_SETTINGS_VERSION = 2;
-const PACKING_VISUAL_STYLE_OPTIONS = [
-  { value: PACKING_VISUAL_STYLE_DEFAULT, label: "0. Текущий вид" },
-  { value: "soft-nested", label: "1. Тёплые списки + тихие кнопки" },
-  { value: "separated-axis", label: "2. Корни сверху, вложенность слева" },
-  { value: "folder-nested", label: "3. Вариант 2 + тихие кнопки" },
-  { value: "text-hierarchy", label: "4. Вариант 3 + бледные линии" },
-  { value: "depth-markers", label: "5. Разные цвета глубины" },
-  { value: "quiet-tools", label: "6. Только тихие кнопки" },
-  { value: "calm-combined", label: "1+2. Спокойный гибрид" }
-];
-const PACKING_VISUAL_STYLE_CLASS_PREFIX = "packing-visual-";
-const PACKING_VISUAL_STYLE_CLASS_NAMES = PACKING_VISUAL_STYLE_OPTIONS
-  .filter((option) => option.value !== PACKING_VISUAL_STYLE_DEFAULT)
-  .map((option) => `${PACKING_VISUAL_STYLE_CLASS_PREFIX}${option.value}`);
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
@@ -439,7 +448,11 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplateEntityRowsPublicScope"
 ];
 const REQUIRED_ADMIN_API_VERSION = "2026-05-23.shared-template-source-chain-v1";
-let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
+const {
+  forget: forgetDeletedSharedLayoutId,
+  has: isDeletedSharedLayoutId,
+  remember: rememberDeletedSharedLayoutId
+} = createDeletedSharedLayoutStore({ demoSharedLayoutId: DEMO_SHARED_LAYOUT_ID });
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
 applyPublicTemplateLanguage();
@@ -512,7 +525,6 @@ let personalListApiUnavailable = false;
 let itemEntitySyncUnavailable = false;
 let containerEntitySyncUnavailable = false;
 let layoutEntitySyncUnavailable = false;
-let layoutLoadStatus = { tone: "idle", text: "" };
 let historyRecords = [];
 let expandedHistoryRecordId = "";
 let expandedHistoryGroups = {};
@@ -525,7 +537,6 @@ let filterMatchSignature = "";
 let pendingFilterJump = false;
 let searchContextCommitTimer = null;
 let filterNavRefreshFrame = null;
-let modalScrollLock = null;
 let itemDialogInitialSnapshot = null;
 let rootContainerDialogInitialSnapshot = null;
 let rootContainerDialogPendingRootIds = null;
@@ -544,7 +555,6 @@ let editingDictionaryEntry = null;
 let fixedScrollbarRefreshFrame = null;
 let searchRenderTimer = null;
 let suppressNextFilterJump = false;
-let modalTouchStartY = 0;
 let itemDialogPhotoDraft = null;
 let itemDialogPhotoObjectUrl = "";
 let rootContainerDialogPhotoDraft = null;
@@ -569,6 +579,13 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const layoutLoadStatus = createLayoutLoadStatusController({
+  getElement: () => refs.layoutLoadStatus
+});
+const {
+  openModalDialog,
+  setupModalScrollLock
+} = createModalScrollLockController();
 const {
   askConfirmDialog,
   askUnsavedChangesDialog,
@@ -591,28 +608,6 @@ function loadUiLanguage() {
 
 function saveUiLanguage(language) {
   safeSetLocalStorage(LANGUAGE_KEY, normalizeUiLanguage(language));
-}
-
-function loadDeletedSharedLayoutIds() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DELETED_SHARED_LAYOUTS_STORAGE_KEY) || "[]");
-    return new Set(Array.isArray(parsed) ? parsed.map((id) => String(id || "").trim()).filter(Boolean) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function rememberDeletedSharedLayoutId(layoutId) {
-  const id = String(layoutId || "").trim();
-  if (!id || id === DEMO_SHARED_LAYOUT_ID) return false;
-  deletedSharedLayoutIds.add(id);
-  safeSetLocalStorage(DELETED_SHARED_LAYOUTS_STORAGE_KEY, JSON.stringify([...deletedSharedLayoutIds]));
-  return true;
-}
-
-function isDeletedSharedLayoutId(layoutId) {
-  const id = String(layoutId || "").trim();
-  return Boolean(id && id !== DEMO_SHARED_LAYOUT_ID && deletedSharedLayoutIds.has(id));
 }
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
@@ -801,7 +796,11 @@ function adminSharedTemplateOptions() {
       ]
     }));
 
-  if (linkedSharedListLayout?.id && !includedSourceIds.has(linkedSharedListLayout.id)) {
+  if (
+    linkedSharedListLayout?.id &&
+    !isDeletedSharedLayoutId(linkedSharedListLayout.id) &&
+    !includedSourceIds.has(linkedSharedListLayout.id)
+  ) {
     includedSourceIds.add(linkedSharedListLayout.id);
     options.push({
       layout: linkedSharedListLayout,
@@ -845,8 +844,7 @@ function compareSharedLayoutAdminOrder(a, b) {
 
 function localAdminTemplateCopySharedSourceIds() {
   if (!canOpenAdminPublishedEdit()) return new Set();
-  return new Set(Object.values(state.layouts || {})
-    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+  return new Set(localAdminTemplateCopyLayouts()
     .map((layout) => layout.adminSharedSourceId));
 }
 
@@ -868,7 +866,11 @@ function localAdminTemplateCopyOptions() {
 function localAdminTemplateCopyLayouts() {
   if (!canOpenAdminPublishedEdit()) return [];
   return Object.values(state.layouts || {})
-    .filter((layout) => layout?.adminTemplateCopy && layout.adminSharedSourceId)
+    .filter((layout) =>
+      layout?.adminTemplateCopy &&
+      layout.adminSharedSourceId &&
+      !isDeletedSharedLayoutId(layout.adminSharedSourceId)
+    )
     .sort((a, b) => compareSharedLayoutIndexEntries(a, b));
 }
 
@@ -1165,7 +1167,9 @@ async function init() {
   setupModalScrollLock();
   setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();
-  document.addEventListener("pointerdown", blurActiveEditableBeforeButtonAction, true);
+  document.addEventListener("pointerdown", (event) => {
+    blurActiveEditableBeforeButtonAction(event, { ignoredButton: refs.saveRootContainerBtn });
+  }, true);
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => switchView(tab.dataset.view));
@@ -1458,7 +1462,10 @@ async function init() {
     updateSyncUi("Проверяю вход...");
   }
   startRemoteStateWatcher();
-  const publicIndexRefresh = refreshPublicSharedLayoutIndex({ renderAfter: true }).catch(() => null);
+  const publicIndexRefresh = Promise.all([
+    refreshPublicSharedLayoutIndex({ renderAfter: true }),
+    refreshPublicSharedLayoutCatalog({ renderAfter: true })
+  ]).catch(() => null);
   if (sharedListId) {
     await publicIndexRefresh;
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
@@ -1475,218 +1482,6 @@ async function init() {
     publicIndexRefresh.catch(() => null);
     checkAuthAndLoad();
   }
-}
-
-function preventDoubleTapZoom() {
-  let lastTouchEnd = 0;
-  document.addEventListener("touchend", (event) => {
-    if (document.body.classList.contains("dragging-ui") || document.body.classList.contains("drag-pending-ui")) return;
-    const now = Date.now();
-    if (now - lastTouchEnd <= 320) {
-      event.preventDefault();
-    }
-    lastTouchEnd = now;
-  }, { passive: false, capture: true });
-
-  document.addEventListener("dblclick", (event) => {
-    event.preventDefault();
-  }, { capture: true });
-}
-
-function blurActiveEditableBeforeButtonAction(event) {
-  const button = event.target.closest?.("button");
-  if (!button || button.disabled) return;
-  if (button.closest?.("dialog")?.open) return;
-  if (button.closest?.(".search-control-row, .filter-field")) return;
-  if (button === refs.saveRootContainerBtn) return;
-  const active = document.activeElement;
-  if (!isEditableElement(active) || button.contains(active)) return;
-  active.blur();
-}
-
-function isEditableElement(element) {
-  if (!element || element === document.body) return false;
-  if (element.matches?.("input, textarea, select")) return true;
-  return Boolean(element.isContentEditable);
-}
-
-function setupTouchActionButtonFeedback() {
-  let activeButton = null;
-  let startX = 0;
-  let startY = 0;
-  let feedbackTimer = null;
-  let moved = false;
-  const selector = "button, .item-photo-pick, .backup-file-pick";
-
-  const clearFeedbackTimer = () => {
-    if (!feedbackTimer) return;
-    window.clearTimeout(feedbackTimer);
-    feedbackTimer = null;
-  };
-
-  const clearActiveButton = () => {
-    clearFeedbackTimer();
-    activeButton?.classList.remove("touch-feedback-active");
-    activeButton = null;
-  };
-
-  const scheduleFeedback = () => {
-    clearFeedbackTimer();
-    feedbackTimer = window.setTimeout(() => {
-      feedbackTimer = null;
-      if (!moved) activeButton?.classList.add("touch-feedback-active");
-    }, 70);
-  };
-
-  document.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) return;
-    const button = event.target.closest?.(selector);
-    if (!button || button.disabled || button.classList.contains("disabled")) return;
-    clearActiveButton();
-    const touch = event.touches[0];
-    activeButton = button;
-    startX = touch.clientX;
-    startY = touch.clientY;
-    moved = false;
-    scheduleFeedback();
-  }, { passive: true, capture: true });
-
-  document.addEventListener("touchmove", (event) => {
-    if (!activeButton || event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    const distance = Math.hypot(touch.clientX - startX, touch.clientY - startY);
-    if (distance <= 8) return;
-    moved = true;
-    clearActiveButton();
-  }, { passive: true, capture: true });
-
-  document.addEventListener("touchend", () => {
-    if (!activeButton) return;
-    clearFeedbackTimer();
-    if (!moved) {
-      activeButton.classList.add("touch-feedback-active");
-      window.setTimeout(clearActiveButton, 130);
-      return;
-    }
-    clearActiveButton();
-  }, { passive: true, capture: true });
-
-  document.addEventListener("touchcancel", clearActiveButton, { passive: true, capture: true });
-}
-
-function setupModalScrollLock() {
-  document.querySelectorAll("dialog").forEach((dialog) => {
-    dialog.addEventListener("close", updateModalScrollLock);
-    dialog.addEventListener("cancel", () => requestAnimationFrame(updateModalScrollLock));
-  });
-  document.addEventListener("touchstart", captureModalTouchStart, { passive: true, capture: true });
-  document.addEventListener("touchmove", preventBackgroundModalScroll, { passive: false, capture: true });
-  document.addEventListener("wheel", preventBackgroundModalWheel, { passive: false, capture: true });
-}
-
-function openModalDialog(dialog) {
-  if (!dialog.open) dialog.showModal();
-  updateModalScrollLock();
-}
-
-function hasOpenModalDialog() {
-  return Array.from(document.querySelectorAll("dialog")).some((dialog) => dialog.open);
-}
-
-function updateModalScrollLock() {
-  if (hasOpenModalDialog()) {
-    lockPageScrollForModal();
-  } else {
-    unlockPageScrollForModal();
-  }
-}
-
-function lockPageScrollForModal() {
-  if (modalScrollLock) return;
-  const softLock = shouldUseSoftModalScrollLock();
-  modalScrollLock = {
-    softLock,
-    x: window.scrollX,
-    y: window.scrollY,
-    position: document.body.style.position,
-    top: document.body.style.top,
-    left: document.body.style.left,
-    right: document.body.style.right,
-    width: document.body.style.width,
-    overflow: document.body.style.overflow
-  };
-  document.body.classList.add("modal-scroll-locked");
-  if (softLock) return;
-  document.body.style.position = "fixed";
-  document.body.style.top = `-${modalScrollLock.y}px`;
-  document.body.style.left = `-${modalScrollLock.x}px`;
-  document.body.style.right = "0";
-  document.body.style.width = "100%";
-  document.body.style.overflow = "hidden";
-}
-
-function unlockPageScrollForModal() {
-  if (!modalScrollLock) return;
-  const { softLock, x, y, position, top, left, right, width, overflow } = modalScrollLock;
-  modalScrollLock = null;
-  document.body.classList.remove("modal-scroll-locked");
-  if (softLock) return;
-  document.body.style.position = position;
-  document.body.style.top = top;
-  document.body.style.left = left;
-  document.body.style.right = right;
-  document.body.style.width = width;
-  document.body.style.overflow = overflow;
-  window.scrollTo(x, y);
-}
-
-function shouldUseSoftModalScrollLock() {
-  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
-  return Boolean(coarsePointer && window.innerWidth <= 760);
-}
-
-function captureModalTouchStart(event) {
-  modalTouchStartY = event.touches?.[0]?.clientY || 0;
-}
-
-function preventBackgroundModalScroll(event) {
-  if (!modalScrollLock) return;
-  const dialog = event.target.closest?.("dialog");
-  if (dialog?.open && event.target !== dialog) {
-    const currentY = event.touches?.[0]?.clientY || modalTouchStartY;
-    const deltaY = currentY - modalTouchStartY;
-    if (canScrollInsideOpenDialog(event.target, dialog, deltaY)) return;
-  }
-  event.preventDefault();
-}
-
-function preventBackgroundModalWheel(event) {
-  if (!modalScrollLock) return;
-  const dialog = event.target.closest?.("dialog");
-  if (dialog?.open && event.target !== dialog && canScrollInsideOpenDialog(event.target, dialog, -event.deltaY)) return;
-  event.preventDefault();
-}
-
-function canScrollInsideOpenDialog(target, dialog, deltaY) {
-  if (!deltaY) return true;
-  const scroller = findModalScrollableAncestor(target, dialog);
-  if (!scroller) return false;
-  const maxScroll = scroller.scrollHeight - scroller.clientHeight;
-  if (maxScroll <= 0) return false;
-  if (deltaY > 0) return scroller.scrollTop > 0;
-  return scroller.scrollTop < maxScroll - 1;
-}
-
-function findModalScrollableAncestor(target, dialog) {
-  let element = target;
-  while (element && element !== dialog && element !== document.body) {
-    if (element.scrollHeight > element.clientHeight + 1) {
-      const overflowY = window.getComputedStyle(element).overflowY;
-      if (overflowY === "auto" || overflowY === "scroll") return element;
-    }
-    element = element.parentElement;
-  }
-  return null;
 }
 
 function createEmptyUserState() {
@@ -2353,20 +2148,8 @@ function saveUiSettings() {
   }
 }
 
-function normalizePackingVisualStyle(value) {
-  const style = String(value || "").trim();
-  if (!style || style === PACKING_VISUAL_STYLE_DEFAULT) return PACKING_VISUAL_STYLE_PRIMARY;
-  return PACKING_VISUAL_STYLE_OPTIONS.some((option) => option.value === style)
-    ? style
-    : PACKING_VISUAL_STYLE_PRIMARY;
-}
-
 function applyPackingVisualStyle() {
-  packingVisualStyle = normalizePackingVisualStyle(packingVisualStyle);
-  document.body.classList.remove(...PACKING_VISUAL_STYLE_CLASS_NAMES);
-  if (packingVisualStyle !== PACKING_VISUAL_STYLE_DEFAULT) {
-    document.body.classList.add(`${PACKING_VISUAL_STYLE_CLASS_PREFIX}${packingVisualStyle}`);
-  }
+  packingVisualStyle = applyPackingVisualStyleClass(document.body, packingVisualStyle);
   syncPackingVisualStyleControls();
 }
 
@@ -2374,10 +2157,6 @@ function setPackingVisualStyle(value) {
   packingVisualStyle = normalizePackingVisualStyle(value);
   applyPackingVisualStyle();
   saveUiSettings();
-}
-
-function packingVisualStyleButtonLabel(option) {
-  return String(option.label || "").split(".")[0].trim() || option.value;
 }
 
 function setupPackingVisualStyleQuickControl() {
@@ -2443,8 +2222,7 @@ function updatePackingViewModeControl(view = getCurrentView()) {
 }
 
 function setLayoutLoadStatus(tone = "idle", text = "") {
-  layoutLoadStatus = { tone, text };
-  updateLayoutLoadStatusUi();
+  layoutLoadStatus.setStatus(tone, text);
 }
 
 function setLayoutLoadProgress({ loaded = 0, total = null, prefix = "Загружаю личные укладки" } = {}) {
@@ -2458,9 +2236,7 @@ function setLayoutLoadProgress({ loaded = 0, total = null, prefix = "Загру�
 }
 
 function statePrivateLayoutCount(targetState) {
-  return Object.values(targetState?.layouts || {})
-    .filter((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG])
-    .length;
+  return countPrivateLayouts(targetState, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
 }
 
 function remoteRecordStateInfo(record) {
@@ -2524,15 +2300,7 @@ function setPersonalLayoutsLoadedStatus() {
 }
 
 function updateLayoutLoadStatusUi() {
-  const element = refs.layoutLoadStatus;
-  if (!element) return;
-  const text = String(layoutLoadStatus.text || "").trim();
-  element.hidden = false;
-  element.textContent = text;
-  element.classList.remove("loading", "success", "warning", "error", "empty");
-  element.classList.toggle("empty", !text);
-  const tone = String(layoutLoadStatus.tone || "");
-  if (["loading", "success", "warning", "error"].includes(tone)) element.classList.add(tone);
+  layoutLoadStatus.render();
 }
 
 function loadActivePackingListId() {
@@ -6633,6 +6401,56 @@ async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
       // Public shared template index is opportunistic; built-in templates still work without it.
     }
   }));
+  if (merged && renderAfter) render();
+  return merged;
+}
+
+async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
+  let merged = 0;
+  let data = null;
+  try {
+    data = await apiFetch("/bike-packing/public-lists", {
+      timeoutMs: LIST_API_TIMEOUT_MS,
+      silentErrors: true
+    });
+  } catch {
+    return 0;
+  }
+  const records = Array.isArray(data?.lists) ? data.lists : [];
+  const publicSharedIds = new Set(records
+    .filter(isPublicSharedLayoutListRecord)
+    .map(sharedLayoutIdFromPublicListRecord)
+    .filter(Boolean));
+  pruneRuntimeSharedLayouts(sharedLayoutsByLanguage, (layout) =>
+    layout?.runtimeSharedTemplate &&
+    String(layout.id || "").startsWith("template-copy-") &&
+    !publicSharedIds.has(layout.id)
+  );
+  await Promise.all(records
+    .filter(isPublicSharedLayoutListRecord)
+    .map(async (record) => {
+      const sharedId = sharedLayoutIdFromPublicListRecord(record);
+      if (!sharedId) return;
+      forgetDeletedSharedLayoutId(sharedId);
+      let payload = null;
+      try {
+        payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId));
+      } catch {
+        return;
+      }
+      if (!isMeaningfulPackingState(payload)) return;
+      const activeLayout = sharedPayloadActiveLayout(payload);
+      const fallbackLanguage = sharedId.endsWith("-en") ? "en" : uiLanguage;
+      const layout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+        id: sharedId,
+        name: activeLayout?.name || record.title || sharedId,
+        language: sharedLayoutLanguageFromPayload(payload, fallbackLanguage),
+        statePayload: payload,
+        runtimeSharedTemplate: true,
+        updatedAt: record.updatedAt || record.updated_at || ""
+      });
+      if (layout) merged += 1;
+    }));
   if (merged && renderAfter) render();
   return merged;
 }
@@ -16402,6 +16220,17 @@ function uniqueLayoutName(baseName = "Новая укладка", { exceptLayout
   return uniqueName(baseName, existingNames, { fallback: "Новая укладка" });
 }
 
+function uniquePublishedTemplateName(baseName = "Шаблон", { exceptLayoutId = "" } = {}) {
+  const existingNames = [
+    ...(linkedSharedListLayout && !isDeletedSharedLayoutId(linkedSharedListLayout.id) ? [linkedSharedListLayout.name] : []),
+    ...allSharedLayoutsByAdminOrder().map((layout) => layout?.name),
+    ...localAdminTemplateCopyLayouts()
+      .filter((layout) => layout?.id !== exceptLayoutId)
+      .map((layout) => layout?.name)
+  ];
+  return uniqueName(baseName, existingNames, { fallback: "Шаблон" });
+}
+
 function canManageLayout(layoutId = state.activeLayoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || isReadOnlyStateScope() || isSharedLayoutView()) return false;
@@ -16452,46 +16281,103 @@ function createLayoutCopyFromSource(sourceLayout, requestedName, {
   return id;
 }
 
-function createTemplateCopyFromSource(sourceLayout, requestedName, {
+function templateCopyRootSnapshots(sourceLayout, sourceState = state) {
+  if (!sourceLayout || !sourceState) return [];
+  return templateCopySourceRootIds(sourceLayout)
+    .map((rootId) => snapshotContainerTree(rootId, { sourceLayoutId: sourceLayout.id, targetState: sourceState }))
+    .filter(Boolean);
+}
+
+function templateCopySourceScore(sourceLayout, sourceState = state) {
+  return templateCopyRootSnapshots(sourceLayout, sourceState)
+    .reduce((sum, snapshot) => sum + containerTreeSnapshotScore(snapshot), 0);
+}
+
+async function loadPublishedTemplateCopySource(sourceLayout) {
+  if (!sourceLayout) return null;
+  if (sourceLayout.adminSharedSourceId) {
+    const sharedId = sourceLayout.adminSharedSourceId;
+    let payload = null;
+    const sharedLayout = findSharedLayout(sharedId);
+    if (sharedLayout) {
+      await loadSharedLayoutPayload(sharedId).catch(() => false);
+      payload = sharedLayoutStatePayload(findSharedLayout(sharedId) || sharedLayout);
+    }
+    if (!payload) {
+      payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId)).catch(() => null);
+    }
+    const layout = sharedPayloadActiveLayout(payload);
+    if (!payload || !layout) return null;
+    upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+      id: sharedId,
+      name: layout.name || sharedLayout?.name || sharedId,
+      language: sharedLayoutLanguageFromPayload(payload, sourceLayout.language || uiLanguage),
+      statePayload: payload,
+      runtimeSharedTemplate: true
+    });
+    return { state: payload, layout, score: templateCopySourceScore(layout, payload) };
+  }
+  if (sourceLayout.adminDemo) {
+    const demoLanguage = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
+    const payload = await loadPublishedDemoState(demoLanguage).catch(() => null);
+    const layout = sharedPayloadActiveLayout(payload);
+    if (!payload || !layout) return null;
+    return { state: payload, layout, score: templateCopySourceScore(layout, payload) };
+  }
+  return null;
+}
+
+async function createTemplateCopyFromSource(sourceLayout, requestedName, {
   language = ""
 } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
   captureActiveLayoutArrangement();
   normalizeLayoutArrangement(sourceLayout, state);
-  const changedAt = nowIso();
-  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const idMap = { containers: new Map(), items: new Map() };
-  const sourceRootSnapshots = () => templateCopySourceRootIds(sourceLayout)
-    .map((rootId) => snapshotContainerTree(rootId, { sourceLayoutId: sourceLayout.id, targetState: state }))
-    .filter(Boolean);
-  let rootSnapshots = sourceRootSnapshots();
+  let sourceState = state;
+  let copySourceLayout = sourceLayout;
+  let rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
   if (!rootSnapshots.length || rootSnapshots.every((snapshot) => containerTreeSnapshotScore(snapshot) <= 1)) {
     withLayoutArrangementApplied(sourceLayout.id, () => {
       captureActiveLayoutArrangement();
       normalizeLayoutArrangement(sourceLayout, state);
-      rootSnapshots = sourceRootSnapshots();
+      rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
     });
   }
+  const localScore = rootSnapshots.reduce((sum, snapshot) => sum + containerTreeSnapshotScore(snapshot), 0);
+  const publishedSource = await loadPublishedTemplateCopySource(sourceLayout);
+  if (publishedSource?.score > localScore) {
+    sourceState = publishedSource.state;
+    copySourceLayout = publishedSource.layout;
+    rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
+  }
+  if (!rootSnapshots.length) {
+    throw new Error("источник шаблона пустой или не загрузился");
+  }
+  const changedAt = nowIso();
+  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const idMap = { containers: new Map(), items: new Map() };
   const rootContainerIds = rootSnapshots
-    .map((snapshot) => copyPublishedContainerToState(state, snapshot.rootId, {
+    .map((snapshot) => copyPublishedContainerToState(sourceState, snapshot.rootId, {
       targetLayoutId: "",
       changedAt,
       idMap,
       preserveSource: true,
-      sourceLayoutId: sourceLayout.id,
+      sourceLayoutId: copySourceLayout.id,
       sourceSnapshot: snapshot
     }))
     .filter(Boolean);
   const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
-  const dictionaries = ensureLayoutDictionaries(sourceLayout) || ensurePrivateDictionaries(state);
+  const dictionaries = sourceState === state
+    ? ensureLayoutDictionaries(copySourceLayout)
+    : ensureLayoutDictionaries(copySourceLayout, sourceState);
   const layout = createTemplateCopyRecord({
     id,
-    name: uniqueLayoutName(requestedName),
-    sourceLayout,
+    name: uniquePublishedTemplateName(requestedName),
+    sourceLayout: copySourceLayout,
     arrangement,
-    dictionaries,
+    dictionaries: dictionaries || ensurePrivateDictionaries(state),
     meta: currentCreateMeta(changedAt),
-    language
+    language: language || copySourceLayout.language || sourceLayout.language || uiLanguage
   });
   state.layouts[id] = layout;
   solidifyTemplateDraftLayout(id);
@@ -16626,11 +16512,13 @@ function openLayoutCopyDialog() {
   if (!layout || !canManageLayout(layout.id)) return;
   layoutCopyTargetId = layout.id;
   refs.layoutCopyTitle.textContent = layoutCopyTitle(layout);
-  refs.layoutCopyName.value = uniqueLayoutName(layout.name || "Новая укладка");
+  refs.layoutCopyName.value = isAdminEditablePublishedLayout(layout.id)
+    ? uniquePublishedTemplateName(layout.name || "Шаблон", { exceptLayoutId: layout.id })
+    : uniqueLayoutName(layout.name || "Новая укладка");
   openModalDialog(refs.layoutCopyDialog);
 }
 
-function saveLayoutCopy(event) {
+async function saveLayoutCopy(event) {
   event.preventDefault();
   const layout = state.layouts?.[layoutCopyTargetId || layoutEditTargetId];
   if (!layout || !canManageLayout(layout.id)) return;
@@ -16639,14 +16527,21 @@ function saveLayoutCopy(event) {
   const language = isAdminEditablePublishedLayout(layout.id)
     ? normalizeUiLanguage(refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage))
     : "";
-  const createdId = isAdminEditablePublishedLayout(layout.id)
-    ? createTemplateCopyFromSource(layout, requestedName, { language })
-    : createLayoutCopyFromSource(layout, requestedName, { language });
-  if (!createdId) return;
-  refs.layoutCopyDialog.close();
-  refs.layoutEditDialog.close();
-  if (!isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id)) switchView("bags");
-  showToast(isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id) ? "Шаблон скопирован." : "Укладка скопирована.", "success");
+  refs.saveLayoutCopyBtn.disabled = true;
+  try {
+    const createdId = isAdminEditablePublishedLayout(layout.id)
+      ? await createTemplateCopyFromSource(layout, requestedName, { language })
+      : createLayoutCopyFromSource(layout, requestedName, { language });
+    if (!createdId) return;
+    refs.layoutCopyDialog.close();
+    refs.layoutEditDialog.close();
+    if (!isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id)) switchView("bags");
+    showToast(isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id) ? "Шаблон скопирован." : "Укладка скопирована.", "success");
+  } catch (error) {
+    showToast(`Не удалось скопировать шаблон: ${error.message}`, "error");
+  } finally {
+    refs.saveLayoutCopyBtn.disabled = false;
+  }
 }
 
 async function confirmDeleteEditedLayout() {
@@ -16725,11 +16620,22 @@ async function deleteManagedPublicLayout(layoutId) {
   const target = publishedLayoutTarget(layout);
   const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
   if (shouldDeletePublishedTemplate) {
-    updateSyncUi("Удаляю shared-шаблон...");
-    await deletePublishedSharedTemplate(target.sharedId);
-    updateSyncUi();
+    try {
+      await assertAdminApiCompatibility({ force: true });
+      updateSyncUi("Удаляю shared-шаблон...");
+      await deletePublishedSharedTemplate(target.sharedId);
+      updateSyncUi();
+    } catch (error) {
+      updateSyncUi();
+      showToast(`Не удалось удалить shared-шаблон: ${error.message}`, "error");
+      return;
+    }
   }
-  removeLayoutTree(layoutId, state, { save: false });
+  if (shouldDeletePublishedTemplate && target?.type === "shared") {
+    removeManagedSharedLayoutTreesFromState(state, target.sharedId);
+  } else {
+    removeLayoutTree(layoutId, state, { save: false });
+  }
   const nextLayout = userEditableLayouts()[0] || Object.values(state.layouts || {}).find((entry) => entry && !isPublishedLayoutEditable(entry));
   if (nextLayout) openPrivateLayout(nextLayout.id);
   else if (target?.type === "shared" && target.sharedId && !shouldDeletePublishedTemplate) setActiveReadOnlyScope(target.sharedId);

@@ -2,6 +2,7 @@ import { clonePlain } from "../utils/json.js";
 import { nowIso } from "../utils/time.js";
 
 export const SHARED_LAYOUTS_INDEX_KEY = "sharedLayoutsIndex";
+export const PUBLIC_SHARED_LAYOUT_LIST_PREFIX = "public-shared-layout-";
 
 export function createSharedLayoutsByLanguage(layouts) {
   const ruLayouts = layouts;
@@ -23,7 +24,8 @@ export function upsertRuntimeSharedLayout(layoutsByLanguage, {
   name = "",
   language = "ru",
   statePayload = null,
-  runtimeSharedTemplate = false
+  runtimeSharedTemplate = false,
+  updatedAt = ""
 } = {}) {
   if (!id || !layoutsByLanguage || typeof layoutsByLanguage !== "object") return null;
   const normalizedLanguage = String(language || "ru").trim().toLowerCase() || "ru";
@@ -51,8 +53,24 @@ export function upsertRuntimeSharedLayout(layoutsByLanguage, {
   layout.language = normalizedLanguage;
   if (statePayload) layout.statePayload = statePayload;
   if (runtimeSharedTemplate) layout.runtimeSharedTemplate = true;
+  if (updatedAt) layout.updatedAt = updatedAt;
   layouts.sort(compareSharedLayoutIndexEntries);
   return layout;
+}
+
+export function sharedLayoutIdFromPublicListRecord(record) {
+  const listId = String(record?.id || record?.listId || record?.list_id || "").trim();
+  if (!listId.startsWith(PUBLIC_SHARED_LAYOUT_LIST_PREFIX)) return "";
+  return listId.slice(PUBLIC_SHARED_LAYOUT_LIST_PREFIX.length);
+}
+
+export function isPublicSharedLayoutListRecord(record) {
+  return Boolean(sharedLayoutIdFromPublicListRecord(record));
+}
+
+export function sharedLayoutLanguageFromPayload(payload, fallbackLanguage = "ru") {
+  const activeLayout = payload?.layouts?.[payload?.activeLayoutId] || Object.values(payload?.layouts || {})[0] || null;
+  return String(activeLayout?.language || fallbackLanguage || "ru").trim().toLowerCase() || "ru";
 }
 
 export function normalizeSharedLayoutIndexEntries(payload) {
@@ -168,6 +186,21 @@ export function removeRuntimeSharedLayout(layoutsByLanguage, layoutId) {
     const layouts = Array.isArray(layoutsByLanguage[language]) ? layoutsByLanguage[language] : [];
     const nextLayouts = layouts.filter((layout) => layout?.id !== id);
     if (nextLayouts.length !== layouts.length) removed = true;
+    layoutsByLanguage[language] = nextLayouts;
+  });
+  return removed;
+}
+
+export function pruneRuntimeSharedLayouts(layoutsByLanguage, shouldRemove) {
+  if (!layoutsByLanguage || typeof layoutsByLanguage !== "object" || typeof shouldRemove !== "function") return 0;
+  let removed = 0;
+  Object.keys(layoutsByLanguage).forEach((language) => {
+    const layouts = Array.isArray(layoutsByLanguage[language]) ? layoutsByLanguage[language] : [];
+    const nextLayouts = layouts.filter((layout) => {
+      const remove = shouldRemove(layout, language);
+      if (remove) removed += 1;
+      return !remove;
+    });
     layoutsByLanguage[language] = nextLayouts;
   });
   return removed;

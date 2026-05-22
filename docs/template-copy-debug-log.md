@@ -262,3 +262,21 @@
 - Повторное копирование локальной копии shared-шаблона не должно строить новый источник от временных `item-shared-*`/`container-shared-*` id. Новая копия наследует исходный public source id из `sharedSourceId`/`_publicCopySourceId`, чтобы не появлялись вложенные `item-shared-item-shared-*`.
 - Published payload перед отправкой на API очищается от локальных source-маркеров (`sharedSourceId`, `_publicCopySource*`, `publicCatalogLayoutId` и т.п.). Эти маркеры нужны локальной админской копии, но не должны становиться частью серверного shared-шаблона.
 - На API entity-row endpoints (`items`, `containers`, `layouts`) теперь используют те же public-scope правила фильтрации, что и assembled state. Иначе public shared rows с корректными source-маркерами могли отфильтровываться как служебные.
+
+## v701: сначала нормальное удаление
+
+- При удалении опубликованного shared-шаблона фронт теперь убирает не только активную вкладку, но и все локальные admin/draft materialization layouts с тем же `adminSharedSourceId`. Это закрывает раздражающий случай, когда после удаления одного опубликованного шаблона в селекте оставались его локальные копии.
+- Локальные `adminTemplateCopy` с уже tombstoned shared id больше не попадают в админский список шаблонов.
+- Серверный контракт удаления не менялся: `DELETE /bike-packing/admin/shared-layouts/:id` по-прежнему отвечает за удаление public list, legacy row и entry из demo indexes.
+
+## v702: пересборка границ shared-каталога
+
+- Runtime-каталог shared-шаблонов теперь пополняется не только из `sharedLayoutsIndex` в demo payload, но и из реальных `public-shared-layout-*` rows, которые отдает `/bike-packing/public-lists`. Для каждой такой строки фронт подтягивает полный `shared-layout:<id>` payload и только после этого добавляет шаблон в селект.
+- Локальный tombstone больше не прячет запись, если API-каталог прямо подтверждает, что серверная public row существует. Tombstone остается только страховкой от устаревшего index-preview после успешного удаления.
+- Копирование admin shared-шаблона теперь сравнивает локальную materialization с опубликованным payload и берет более полный источник. Пустая локальная вкладка больше не должна порождать пустую копию, если на сервере есть нормальный state.
+- Имена новых published template copies считаются по видимому shared/template каталогу, а не по всем личным укладкам и скрытым локальным хвостам.
+
+## v703: public catalog становится авторитетным для template-copy rows
+
+- После успешной загрузки `/bike-packing/public-lists` фронт удаляет из runtime-каталога stale `template-copy-*` entries, которых нет среди реальных `public-shared-layout-*` строк. Это закрывает случай "в БД одна копия, в селекте две": новая реальная строка приходила из public catalog, а старая удаленная копия продолжала жить из `sharedLayoutsIndex`.
+- Built-in shared reference entries не вычищаются этим правилом, чтобы встроенные шаблоны оставались доступными даже если public catalog временно неполный.
