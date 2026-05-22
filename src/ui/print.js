@@ -10,6 +10,10 @@ import {
 import { escapeHtml } from "../utils/html.js";
 import { formatWeight } from "../utils/weight.js";
 
+const PRINT_COLUMN_CAPACITY = 40;
+const PRINT_COLUMN_CAPACITY_WITH_LABELS = 34;
+const PRINT_MAX_DEPTH = 6;
+
 const ATTENTION_LOCATIONS = ["Надо купить", "Не знаю где"];
 
 export function askPrintLabelsChoice(askConfirmDialog, { createPrintTarget = null } = {}) {
@@ -264,6 +268,23 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
     }
     .checklist { width: 100%; }
     .checklist-flow { width: 100%; }
+    .bag-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      width: 100%;
+    }
+    .bag-column {
+      min-width: 0;
+      border-right: 1px solid #000;
+    }
+    .bag-column + .bag-column { border-left: 0; }
+    .bag-column:last-child { border-right: 0; }
+    .flow-depth-item {
+      border-left: 1px solid #000;
+      margin-left: calc(3mm + var(--print-depth, 0) * 3mm);
+    }
+    .flow-depth-item .item-name { padding-left: 3px; }
     .check-header,
     .check-row {
       display: grid;
@@ -294,7 +315,21 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
       page-break-inside: avoid;
       min-height: 8mm;
     }
-    .check-row:last-child { border-bottom: 0; }
+    .flow-depth-item:last-child { border-bottom: 1px solid #000; }
+    .bag-column .check-header,
+    .bag-column .check-row {
+      grid-template-columns: 7mm minmax(18mm, 1fr) 8mm 12mm 15mm 17mm;
+      font-size: 9px;
+      line-height: 1.18;
+    }
+    .bag-column .check-header.compact,
+    .bag-column .check-row.compact {
+      grid-template-columns: 7mm minmax(32mm, 1fr) 8mm 12mm;
+    }
+    .bag-column .check-header > div,
+    .bag-column .check-row > div {
+      padding: 2px 3px;
+    }
     .box-cell { display: flex; align-items: center; justify-content: center; }
     .checkbox {
       width: 5mm;
@@ -327,6 +362,34 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
     }
     .group .group-heading { background: #fff; }
     .group .check-header { background: #fff; }
+    .group-flow-heading {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      align-items: start;
+      border-top: 2px solid #000;
+      border-bottom: 1px solid #000;
+      border-left: 2px solid #000;
+      background: #f0f0f0;
+      padding: 4px 5px;
+      margin-left: calc(var(--print-depth, 0) * 3mm);
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+    .group-flow-title {
+      display: flex;
+      gap: 5px;
+      align-items: baseline;
+      min-width: 0;
+    }
+    .flow-note {
+      border-left: 2px solid #000;
+      margin-left: calc(3mm + var(--print-depth, 0) * 3mm);
+    }
+    .flow-block-depth {
+      border-left: 1px solid #000;
+      margin-left: calc(3mm + var(--print-depth, 0) * 3mm);
+    }
     .empty-line {
       min-height: 9mm;
       border-bottom: 1px solid #000;
@@ -341,6 +404,10 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
     @media print {
       body { font-size: 10.5px; }
       main { max-width: none; padding: 0; }
+      .bags {
+        break-before: page;
+        page-break-before: always;
+      }
       .bag + .bag { margin-top: 7px; }
       .bag {
         break-after: page;
@@ -350,14 +417,10 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
         break-after: auto;
         page-break-after: auto;
       }
-      .bag-flow {
-        column-count: 2;
-        column-gap: 6mm;
-        column-rule: 1px solid #000;
-      }
-      .bag-flow > .check-row,
-      .bag-flow > .group,
-      .bag-flow > .empty-line {
+      .bag-column > .check-row,
+      .bag-column > .group,
+      .bag-column > .group-flow-heading,
+      .bag-column > .empty-line {
         break-inside: avoid;
         page-break-inside: avoid;
       }
@@ -365,7 +428,7 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
       .overview thead { display: table-header-group; }
       a { color: #000; text-decoration: none; }
     }
-    @page { margin: 10mm; }
+    @page { size: A4 portrait; margin: 10mm; }
   </style>
 </head>
 <body class="${includeLabels ? "print-with-labels" : "print-without-labels"}">
@@ -431,15 +494,25 @@ function renderOverviewRow(targetState, containerId, index, { includeLabels = tr
 function renderPrintableContainer(targetState, containerId, { root = false, indexLabel = "", depth = 0, includeLabels = true } = {}) {
   const container = targetState.containers?.[containerId];
   if (!container) return "";
+  if (root) {
+    return renderPrintableRootContainer(targetState, containerId, {
+      indexLabel,
+      includeLabels
+    });
+  }
   const tag = root ? "article" : "section";
   const className = root ? "bag" : "group";
   const titleClass = root ? "bag-heading" : "group-heading";
   const headingLevel = root ? "h2" : "h3";
-  const entriesHtml = renderContainerEntries(targetState, container, indexLabel, depth, { includeLabels });
+  const entryBlocks = renderContainerEntryBlocks(targetState, container, indexLabel, depth, { includeLabels });
+  const entriesHtml = entryBlocks.map((block) => block.html).join("");
   const facts = renderContainerFacts(targetState, containerId, container, { includeLabels });
   const note = printableNote(container);
   const depthStyle = root ? "" : ` style="--print-depth:${Math.min(Math.max(depth, 1), 6)}"`;
-  const flowClass = root ? "checklist-flow bag-flow" : "checklist-flow";
+  const checklistHtml = `${renderChecklistHeader({ includeLabels })}
+    <div class="checklist-flow">
+      ${entriesHtml || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}
+    </div>`;
 
   return `<${tag} class="${className}"${depthStyle}>
     <div class="${titleClass}">
@@ -451,30 +524,187 @@ function renderPrintableContainer(targetState, containerId, { root = false, inde
     </div>
     ${note ? `<div class="container-note">${escapeHtml(note)}</div>` : ""}
     <div class="checklist">
-      ${renderChecklistHeader({ includeLabels })}
-      <div class="${flowClass}">
-        ${entriesHtml || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}
-      </div>
+      ${checklistHtml}
     </div>
   </${tag}>`;
 }
 
-function renderContainerEntries(targetState, container, indexLabel, depth, { includeLabels = true } = {}) {
+function renderPrintableRootContainer(targetState, containerId, { indexLabel = "", includeLabels = true } = {}) {
+  const container = targetState.containers?.[containerId];
+  if (!container) return "";
+  const entryBlocks = renderContainerFlowBlocks(targetState, container, indexLabel, 0, { includeLabels });
+  const pages = splitPrintableBlocksIntoPages(entryBlocks, { includeLabels });
+  const note = printableNote(container);
+
+  return pages.map((page, pageIndex) => {
+    const continued = pageIndex > 0;
+    const title = continued ? `${container.name} (продолжение)` : container.name;
+    const pageLabel = pages.length > 1 ? ` · лист ${pageIndex + 1}/${pages.length}` : "";
+    return `<article class="bag">
+      <div class="bag-heading">
+        <div class="bag-title">
+          ${indexLabel ? `<span class="bag-index">${escapeHtml(indexLabel)}</span>` : ""}
+          <h2>${escapeHtml(title)}${pageLabel ? `<span class="muted">${escapeHtml(pageLabel)}</span>` : ""}</h2>
+        </div>
+        <div class="facts">${renderContainerFacts(targetState, containerId, container, { includeLabels })}</div>
+      </div>
+      ${note && !continued ? `<div class="container-note">${escapeHtml(note)}</div>` : ""}
+      <div class="checklist">
+        ${renderRootChecklistPage(page, { includeLabels })}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function renderRootChecklistPage(page, { includeLabels = true } = {}) {
+  const renderColumn = (blocks) => `${renderChecklistHeader({ includeLabels })}${blocks.map((block) => block.html).join("") || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}`;
+  return `<div class="bag-columns">
+    <div class="bag-column">${renderColumn(page[0])}</div>
+    <div class="bag-column">${renderColumn(page[1])}</div>
+  </div>`;
+}
+
+function splitPrintableBlocksIntoPages(blocks, { includeLabels = true } = {}) {
+  const pages = [];
+  const columnCapacity = includeLabels ? PRINT_COLUMN_CAPACITY_WITH_LABELS : PRINT_COLUMN_CAPACITY;
+  let page = [[], []];
+  let weights = [0, 0];
+  let columnIndex = 0;
+
+  if (!blocks.length) return [[[], []]];
+  blocks.forEach((block) => {
+    const requiredWeight = block.keepWithNextWeight || block.weight;
+    if (weights[columnIndex] > 0 && weights[columnIndex] + requiredWeight > columnCapacity) {
+      ({ page, weights, columnIndex } = advancePrintableColumn(pages, page, weights, columnIndex));
+    }
+    page[columnIndex].push(block);
+    weights[columnIndex] += block.weight;
+  });
+  if (page[0].length || page[1].length) pages.push(page);
+  return pages.length ? pages : [[[], []]];
+}
+
+function advancePrintableColumn(pages, page, weights, columnIndex) {
+  if (columnIndex === 0) {
+    return { page, weights, columnIndex: 1 };
+  }
+  pages.push(page);
+  return { page: [[], []], weights: [0, 0], columnIndex: 0 };
+}
+
+function renderContainerFlowBlocks(targetState, container, indexLabel, depth, { includeLabels = true } = {}) {
+  let childIndex = 0;
+  const blocks = [];
+  (container.order || []).forEach((entry) => {
+    if (entry.type === "item") {
+      const item = targetState.items?.[entry.id];
+      blocks.push({
+        html: renderPrintableItem(targetState, entry.id, { includeLabels, depth }),
+        weight: printableItemBlockWeight(item, { includeLabels })
+      });
+      return;
+    }
+    if (entry.type === "container") {
+      childIndex += 1;
+      const childContainer = targetState.containers?.[entry.id];
+      if (!childContainer) return;
+      const childLabel = indexLabel ? `${indexLabel}.${childIndex}` : String(childIndex);
+      const childNote = printableNote(childContainer);
+      const childBlocks = renderContainerFlowBlocks(targetState, childContainer, childLabel, depth + 1, { includeLabels });
+      const emptyBlock = {
+        html: `<div class="empty-line flow-block-depth"${printDepthStyle(depth + 1)}>Пусто - можно вписать вручную.</div>`,
+        weight: 1
+      };
+      const noteWeight = childNote ? printableNoteBlockWeight(childNote, { includeLabels }) : 0;
+      const firstContentWeight = childBlocks[0]?.keepWithNextWeight || childBlocks[0]?.weight || emptyBlock.weight;
+      blocks.push({
+        html: renderPrintableFlowContainerHeading(targetState, entry.id, childLabel, depth + 1, { includeLabels }),
+        weight: 2.4,
+        keepWithNextWeight: 2.4 + noteWeight + firstContentWeight
+      });
+      if (childNote) {
+        blocks.push({
+          html: `<div class="container-note flow-note"${printDepthStyle(depth + 1)}>${escapeHtml(childNote)}</div>`,
+          weight: noteWeight
+        });
+      }
+      if (childBlocks.length) {
+        blocks.push(...childBlocks);
+      } else {
+        blocks.push(emptyBlock);
+      }
+    }
+  });
+  return blocks;
+}
+
+function renderPrintableFlowContainerHeading(targetState, containerId, indexLabel, depth, { includeLabels = true } = {}) {
+  const container = targetState.containers?.[containerId];
+  if (!container) return "";
+  return `<div class="group-flow-heading"${printDepthStyle(depth)}>
+    <div class="group-flow-title">
+      ${indexLabel ? `<span class="bag-index">${escapeHtml(indexLabel)}</span>` : ""}
+      <h3>${escapeHtml(container.name)}</h3>
+    </div>
+    <div class="facts">${renderContainerFacts(targetState, containerId, container, { includeLabels })}</div>
+  </div>`;
+}
+
+function printDepthStyle(depth) {
+  const value = Math.min(Math.max(Number(depth) || 0, 0), PRINT_MAX_DEPTH);
+  return value ? ` style="--print-depth:${value}"` : "";
+}
+
+function renderContainerEntryBlocks(targetState, container, indexLabel, depth, { includeLabels = true } = {}) {
   let childIndex = 0;
   return (container.order || []).map((entry) => {
-    if (entry.type === "item") return renderPrintableItem(targetState, entry.id, { includeLabels });
+    if (entry.type === "item") {
+      return {
+        html: renderPrintableItem(targetState, entry.id, { includeLabels }),
+        weight: printableItemBlockWeight(targetState.items?.[entry.id], { includeLabels })
+      };
+    }
     if (entry.type === "container") {
       childIndex += 1;
       const childLabel = indexLabel ? `${indexLabel}.${childIndex}` : String(childIndex);
-      return renderPrintableContainer(targetState, entry.id, {
-        root: false,
-        indexLabel: childLabel,
-        depth: depth + 1,
-        includeLabels
-      });
+      return {
+        html: renderPrintableContainer(targetState, entry.id, {
+          root: false,
+          indexLabel: childLabel,
+          depth: depth + 1,
+          includeLabels
+        }),
+        weight: printableContainerBlockWeight(targetState, entry.id)
+      };
     }
-    return "";
-  }).join("");
+    return { html: "", weight: 0 };
+  }).filter((block) => block.html);
+}
+
+function printableItemBlockWeight(item, { includeLabels = true } = {}) {
+  if (!item) return 1;
+  const note = printableNote(item);
+  const nameLength = String(item.name || "").length;
+  const labelLength = includeLabels
+    ? String(item.location || "").length + itemCategories(item).join(", ").length
+    : 0;
+  return 1.1 +
+    Math.ceil(nameLength / 28) * 0.42 +
+    (includeLabels ? Math.ceil(labelLength / 18) * 0.32 : 0) +
+    (note ? printableNoteBlockWeight(note, { includeLabels }) : 0);
+}
+
+function printableNoteBlockWeight(note, { includeLabels = true } = {}) {
+  const textLength = String(note || "").length;
+  return 0.8 + Math.ceil(textLength / (includeLabels ? 34 : 52)) * 0.35;
+}
+
+function printableContainerBlockWeight(targetState, containerId) {
+  const container = targetState.containers?.[containerId];
+  if (!container) return 1;
+  const entryCount = (container.order || []).length;
+  const nestedCount = (container.order || []).filter((entry) => entry.type === "container").length;
+  return 1.8 + entryCount * 1.1 + nestedCount * 0.8;
 }
 
 function renderContainerFacts(targetState, containerId, container, { includeLabels = true } = {}) {
@@ -497,7 +727,7 @@ function renderChecklistHeader({ includeLabels = true } = {}) {
   </div>`;
 }
 
-function renderPrintableItem(targetState, itemId, { includeLabels = true } = {}) {
+function renderPrintableItem(targetState, itemId, { includeLabels = true, depth = 0 } = {}) {
   const item = targetState.items?.[itemId];
   if (!item) return "";
   const quantity = itemQuantity(item);
@@ -507,7 +737,11 @@ function renderPrintableItem(targetState, itemId, { includeLabels = true } = {})
   const attention = ATTENTION_LOCATIONS.includes(location);
   const note = printableNote(item);
 
-  return `<div class="check-row ${includeLabels ? "" : "compact"}">
+  const depthValue = Math.min(Math.max(depth, 0), PRINT_MAX_DEPTH);
+  const depthClass = depthValue ? " flow-depth-item" : "";
+  const depthStyle = depthValue ? ` style="--print-depth:${depthValue}"` : "";
+
+  return `<div class="check-row ${includeLabels ? "" : "compact"}${depthClass}"${depthStyle}>
     <div class="box-cell"><span class="checkbox"></span></div>
     <div class="item-name">${escapeHtml(item.name)}</div>
     <div>${quantity}</div>
