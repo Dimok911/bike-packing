@@ -70,6 +70,7 @@ import {
   sanitizePrivateCopiedPublicOrigins,
   snapshotHasLocalPublicCopyOrigin,
   snapshotHasPrivateSyncBlockedPublicOrigin,
+  stripPublishedPublicOriginMarkers,
   stripPublicOriginForPrivateCopy
 } from "./src/public/copy-public-to-private.js";
 import {
@@ -434,9 +435,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoFileValidation",
   "sharedTemplateMetadataPatch",
   "sharedTemplateMetadataPost",
-  "sharedTemplateEntityTreeFilter"
+  "sharedTemplateEntityTreeFilter",
+  "sharedTemplateEntityRowsPublicScope"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-22.shared-template-entity-tree-filter-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.shared-template-source-chain-v1";
 let deletedSharedLayoutIds = loadDeletedSharedLayoutIds();
 let uiLanguage = loadUiLanguage();
 const missingDemoPublicTemplates = {};
@@ -7875,9 +7877,7 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
         items[nextItemId] = clone(state.items[itemId]);
         items[nextItemId].id = nextItemId;
         items[nextItemId].containerId = nextContainerId;
-        delete items[nextItemId].adminDemo;
-        delete items[nextItemId].adminSharedSourceId;
-        delete items[nextItemId].publicCatalogLayoutId;
+        stripPublishedPublicOriginMarkers(items[nextItemId]);
       }
     });
     (container.childIds || []).forEach(walk);
@@ -7890,6 +7890,7 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
         ...containers[nextContainerId].childIds.map((id) => ({ type: "container", id }))
       ];
     }
+    stripPublishedPublicOriginMarkers(containers[nextContainerId]);
     return nextContainerId;
   };
   const rootContainerIds = (layout.rootContainerIds || []).map(walk).filter(Boolean);
@@ -7904,6 +7905,7 @@ function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
   delete demoLayout.adminSharedSourceId;
   delete demoLayout.sharedSourceId;
   delete demoLayout.publicCatalogLayoutId;
+  stripPublishedPublicOriginMarkers(demoLayout);
   const demoState = {
     locations: [...(dictionaryOwner?.locations || locations)],
     categories: [...(dictionaryOwner?.categories || categories)],
@@ -8685,12 +8687,15 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
   const makeItemId = (sourceId) => preserveSource
     ? `item-shared-${sourceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const sourceIdForPublicCopy = (record, kind, fallbackId) =>
+    publicCopySourceIdFromRecord(record, kind, fallbackId) || fallbackId;
 
   const copyItem = (sourceItemId, nextContainerId) => {
     const sourceItem = sourceSnapshot.items[sourceItemId] || sourceState.items?.[sourceItemId];
     if (!sourceItem) return "";
     if (itemMap.has(sourceItemId)) return itemMap.get(sourceItemId);
-    const nextId = makeItemId(sourceItemId);
+    const publicSourceId = sourceIdForPublicCopy(sourceItem, "item", sourceItemId);
+    const nextId = makeItemId(publicSourceId);
     itemMap.set(sourceItemId, nextId);
     if (idMap?.items) idMap.items.set(sourceItemId, nextId);
     state.items[nextId] = {
@@ -8699,8 +8704,13 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       containerId: nextContainerId,
       ...currentCreateMeta(changedAt)
     };
-    markLocalPublicCopyOrigin(state.items[nextId], "item", sourceItemId, publicSourceLayoutId);
-    if (preserveSource) state.items[nextId].sharedSourceId = sourceItemId;
+    markLocalPublicCopyOrigin(
+      state.items[nextId],
+      "item",
+      publicSourceId,
+      sourceItem._publicCopySourceLayoutId || publicSourceLayoutId
+    );
+    if (preserveSource) state.items[nextId].sharedSourceId = publicSourceId;
     else stripPublicOriginForPrivateCopy(state.items[nextId]);
     return nextId;
   };
@@ -8709,7 +8719,8 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     const sourceContainer = sourceSnapshot.containers[sourceContainerId] || sourceState.containers?.[sourceContainerId];
     if (!sourceContainer) return "";
     if (containerMap.has(sourceContainerId)) return containerMap.get(sourceContainerId);
-    const nextId = makeContainerId(sourceContainerId);
+    const publicSourceId = sourceIdForPublicCopy(sourceContainer, "container", sourceContainerId);
+    const nextId = makeContainerId(publicSourceId);
     containerMap.set(sourceContainerId, nextId);
     if (idMap?.containers) idMap.containers.set(sourceContainerId, nextId);
     state.containers[nextId] = {
@@ -8721,8 +8732,13 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       order: [],
       ...currentCreateMeta(changedAt)
     };
-    markLocalPublicCopyOrigin(state.containers[nextId], "container", sourceContainerId, publicSourceLayoutId);
-    if (preserveSource) state.containers[nextId].sharedSourceId = sourceContainerId;
+    markLocalPublicCopyOrigin(
+      state.containers[nextId],
+      "container",
+      publicSourceId,
+      sourceContainer._publicCopySourceLayoutId || publicSourceLayoutId
+    );
+    if (preserveSource) state.containers[nextId].sharedSourceId = publicSourceId;
     else stripPublicOriginForPrivateCopy(state.containers[nextId]);
     state.collapsedContainers[nextId] = false;
 
@@ -8773,8 +8789,9 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
   const source = sourceState.items?.[itemId];
   if (!source) return "";
   const sourceLayoutId = sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
+  const publicSourceId = publicCopySourceIdFromRecord(source, "item", itemId) || itemId;
   const id = preserveSource
-    ? `item-shared-${itemId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    ? `item-shared-${publicSourceId}-${Date.now()}-${Math.random().toString(16).slice(2)}`
     : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   idMap?.items?.set(itemId, id);
   state.items[id] = {
@@ -8783,8 +8800,8 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     containerId,
     ...currentCreateMeta(changedAt)
   };
-  markLocalPublicCopyOrigin(state.items[id], "item", itemId, sourceLayoutId);
-  if (preserveSource) state.items[id].sharedSourceId = itemId;
+  markLocalPublicCopyOrigin(state.items[id], "item", publicSourceId, source._publicCopySourceLayoutId || sourceLayoutId);
+  if (preserveSource) state.items[id].sharedSourceId = publicSourceId;
   else stripPublicOriginForPrivateCopy(state.items[id]);
   if (containerId && state.containers[containerId]) {
     const container = state.containers[containerId];
@@ -11638,9 +11655,10 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
     snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
   const mapPublicOrigin = (record, sourceRecord, kind, sourceId) => {
+    const publicSourceId = publicCopySourceIdFromRecord(sourceRecord, kind, sourceId) || sourceId;
     const marked = markPrivateCopyOriginFromSource(record, sourceRecord, kind, sourceId);
-    if (!marked && publicSource) markLocalPublicCopyOrigin(record, kind, sourceId, "");
-    if (targetIsPublic && publicSource && !record.sharedSourceId) record.sharedSourceId = sourceId;
+    if (!marked && publicSource) markLocalPublicCopyOrigin(record, kind, publicSourceId, sourceRecord?._publicCopySourceLayoutId || "");
+    if (targetIsPublic && publicSource && !record.sharedSourceId) record.sharedSourceId = publicSourceId;
   };
   const mapRecordToTarget = (record) => {
     if (!record) return;

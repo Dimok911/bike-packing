@@ -256,3 +256,9 @@
 - Исправлено: если редактируемый shared layout указывает на runtime/published `shared:*` с `runtimeSharedTemplate`, удаление вызывает `DELETE /bike-packing/admin/shared-layouts/:id`, ждет успешного/idempotent ответа и только потом убирает локальную вкладку.
 - Текст подтверждения теперь различает два случая: локальное удаление draft vs удаление опубликованного shared-шаблона с сервера.
 - На текущем понимании ветку удаления shared-шаблонов считаем закрытой. Не возвращаться к tombstone/local-only обходам без нового фактического симптома после `v653`.
+
+## v700: source chain для последовательного копирования
+
+- Повторное копирование локальной копии shared-шаблона не должно строить новый источник от временных `item-shared-*`/`container-shared-*` id. Новая копия наследует исходный public source id из `sharedSourceId`/`_publicCopySourceId`, чтобы не появлялись вложенные `item-shared-item-shared-*`.
+- Published payload перед отправкой на API очищается от локальных source-маркеров (`sharedSourceId`, `_publicCopySource*`, `publicCatalogLayoutId` и т.п.). Эти маркеры нужны локальной админской копии, но не должны становиться частью серверного shared-шаблона.
+- На API entity-row endpoints (`items`, `containers`, `layouts`) теперь используют те же public-scope правила фильтрации, что и assembled state. Иначе public shared rows с корректными source-маркерами могли отфильтровываться как служебные.

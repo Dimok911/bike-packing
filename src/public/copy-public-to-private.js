@@ -131,6 +131,22 @@ export function stripPublicOriginForPrivateCopy(record) {
   return changed;
 }
 
+export function stripPublishedPublicOriginMarkers(record) {
+  if (!record || typeof record !== "object") return false;
+  let changed = stripPublicOriginForPrivateCopy(record);
+  [
+    "_publicCopySourceKind",
+    "_publicCopySourceId",
+    "_publicCopySourceLayoutId"
+  ].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      delete record[key];
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 export function publicCopySourceIdFromRecord(record, kind, fallbackId = "") {
   if (!record || typeof record !== "object") return "";
   if (record._publicCopySourceKind === kind && record._publicCopySourceId) {
