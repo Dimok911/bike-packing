@@ -20,7 +20,17 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     footer.insertBefore(refs.confirmOkBtn, refs.confirmCancelBtn);
   }
 
-  function askConfirmDialog({ title, text, okText, cancelText = "Отмена", highlightText = "", highlightCount = "", tone = "" }) {
+  function askConfirmDialog({
+    title,
+    text,
+    okText,
+    cancelText = "Отмена",
+    highlightText = "",
+    highlightCount = "",
+    tone = "",
+    onOk = null,
+    onCancel = null
+  }) {
     const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
     refs.confirmTitle.textContent = title;
     refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightCount, tone });
@@ -46,12 +56,21 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         cleanup();
         resolve(confirmed);
       };
+      const runAction = (action) => {
+        try {
+          action?.();
+        } catch {
+          // Confirmation side effects must not prevent the dialog from closing.
+        }
+      };
       refs.confirmCancelBtn.onclick = (event) => {
         event.preventDefault();
+        runAction(onCancel);
         refs.confirmDialog.close("cancel");
       };
       refs.confirmOkBtn.onclick = (event) => {
         event.preventDefault();
+        runAction(onOk);
         refs.confirmDialog.close("default");
       };
       refs.confirmDialog.addEventListener("close", handleClose);

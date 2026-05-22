@@ -12,26 +12,57 @@ import { formatWeight } from "../utils/weight.js";
 
 const ATTENTION_LOCATIONS = ["Надо купить", "Не знаю где"];
 
-export function askPrintLabelsChoice(askConfirmDialog) {
-  if (typeof askConfirmDialog !== "function") return Promise.resolve(true);
+export function askPrintLabelsChoice(askConfirmDialog, { createPrintTarget = null } = {}) {
+  if (typeof askConfirmDialog !== "function") {
+    return Promise.resolve({ includeLabels: true, printTarget: createPrintTarget?.() || null });
+  }
+  let printTarget = null;
+  const preparePrintTarget = () => {
+    printTarget = createPrintTarget?.() || null;
+  };
   return askConfirmDialog({
     title: "Печать списка",
     text: "Печатать метки мест хранения и категорий? С метками проще ориентироваться в поездке, без меток список компактнее.",
     okText: "С метками",
-    cancelText: "Без меток"
-  });
+    cancelText: "Без меток",
+    onOk: preparePrintTarget,
+    onCancel: preparePrintTarget
+  }).then((includeLabels) => ({
+    includeLabels,
+    printTarget
+  }));
 }
 
-export function printHtmlDocument(html) {
+export function createPrintWindowTarget() {
   const printWindow = window.open("", "_blank", "popup=no,width=920,height=1200");
   if (printWindow) {
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    schedulePrintWindow(printWindow);
-    return;
+    writePrintPlaceholder(printWindow);
   }
+  return printWindow;
+}
 
+export function printHtmlDocument(html, { printTarget = null } = {}) {
+  const printWindow = printTarget && !printTarget.closed
+    ? printTarget
+    : createPrintWindowTarget();
+  if (printWindow) {
+    try {
+      writePrintHtml(printWindow, html);
+      schedulePrintWindow(printWindow);
+      return true;
+    } catch {
+      try {
+        printWindow.close();
+      } catch {
+        // Ignore close errors and fall back to iframe printing.
+      }
+    }
+  }
+  printHtmlInFrame(html);
+  return true;
+}
+
+function printHtmlInFrame(html) {
   const frame = document.createElement("iframe");
   frame.title = "PDF print";
   frame.style.position = "absolute";
@@ -66,6 +97,32 @@ export function printHtmlDocument(html) {
   }, { once: true });
   document.body.appendChild(frame);
   frame.srcdoc = html;
+}
+
+function writePrintPlaceholder(printWindow) {
+  try {
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Печать</title>
+  <style>
+    body { margin: 24px; font-family: Arial, Helvetica, sans-serif; color: #111; }
+  </style>
+</head>
+<body>Готовлю печатный список...</body>
+</html>`);
+    printWindow.document.close();
+  } catch {
+    // A pre-opened print target is best-effort; the caller will fall back if it cannot be written.
+  }
+}
+
+function writePrintHtml(printWindow, html) {
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 function schedulePrintWindow(printWindow) {
@@ -206,6 +263,7 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
       font-size: 10px;
     }
     .checklist { width: 100%; }
+    .checklist-flow { width: 100%; }
     .check-header,
     .check-row {
       display: grid;
@@ -284,6 +342,25 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
       body { font-size: 10.5px; }
       main { max-width: none; padding: 0; }
       .bag + .bag { margin-top: 7px; }
+      .bag {
+        break-after: page;
+        page-break-after: always;
+      }
+      .bag:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .bag-flow {
+        column-count: 2;
+        column-gap: 6mm;
+        column-rule: 1px solid #000;
+      }
+      .bag-flow > .check-row,
+      .bag-flow > .group,
+      .bag-flow > .empty-line {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
       .group { margin-left: calc(var(--print-depth, 1) * 3mm); }
       .overview thead { display: table-header-group; }
       a { color: #000; text-decoration: none; }
@@ -362,6 +439,7 @@ function renderPrintableContainer(targetState, containerId, { root = false, inde
   const facts = renderContainerFacts(targetState, containerId, container, { includeLabels });
   const note = printableNote(container);
   const depthStyle = root ? "" : ` style="--print-depth:${Math.min(Math.max(depth, 1), 6)}"`;
+  const flowClass = root ? "checklist-flow bag-flow" : "checklist-flow";
 
   return `<${tag} class="${className}"${depthStyle}>
     <div class="${titleClass}">
@@ -374,7 +452,9 @@ function renderPrintableContainer(targetState, containerId, { root = false, inde
     ${note ? `<div class="container-note">${escapeHtml(note)}</div>` : ""}
     <div class="checklist">
       ${renderChecklistHeader({ includeLabels })}
-      ${entriesHtml || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}
+      <div class="${flowClass}">
+        ${entriesHtml || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}
+      </div>
     </div>
   </${tag}>`;
 }

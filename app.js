@@ -395,6 +395,7 @@ import {
 import {
   askPrintLabelsChoice,
   buildPrintableDocument,
+  createPrintWindowTarget,
   printHtmlDocument
 } from "./src/ui/print.js";
 import { createConfirmDialogController } from "./src/ui/confirm-dialog.js";
@@ -17865,18 +17866,23 @@ async function restoreFullBackup() {
 }
 
 async function exportData() {
-  const html = await buildPrintableHtmlFromChoice();
-  printHtmlDocument(html);
+  const { html, printTarget } = await buildPrintableHtmlFromChoice();
+  printHtmlDocument(html, { printTarget });
 }
 
 async function buildPrintableHtmlFromChoice() {
   const layout = state.layouts[state.activeLayoutId];
-  const includeLabels = await askPrintLabelsChoice(askConfirmDialog);
-  return buildPrintableDocument(state, {
-    layoutId: state.activeLayoutId,
-    includeGeneratedRoots: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id),
-    includeLabels
+  const { includeLabels, printTarget } = await askPrintLabelsChoice(askConfirmDialog, {
+    createPrintTarget: createPrintWindowTarget
   });
+  return {
+    html: buildPrintableDocument(state, {
+      layoutId: state.activeLayoutId,
+      includeGeneratedRoots: isReadOnlyStateScope() || isAdminEditablePublishedLayout(layout?.id),
+      includeLabels
+    }),
+    printTarget
+  };
 }
 
 function resetData() {
