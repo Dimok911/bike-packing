@@ -23,17 +23,26 @@ export function askPrintLabelsChoice(askConfirmDialog) {
 }
 
 export function printHtmlDocument(html) {
+  const printWindow = window.open("", "_blank", "popup=no,width=920,height=1200");
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    schedulePrintWindow(printWindow);
+    return;
+  }
+
   const frame = document.createElement("iframe");
   frame.title = "PDF print";
-  frame.style.position = "fixed";
+  frame.style.position = "absolute";
   frame.style.left = "0";
   frame.style.top = "0";
-  frame.style.width = "100vw";
-  frame.style.height = "100vh";
+  frame.style.width = "210mm";
+  frame.style.minHeight = "297mm";
   frame.style.border = "0";
-  frame.style.opacity = "0";
+  frame.style.visibility = "hidden";
   frame.style.pointerEvents = "none";
-  frame.style.zIndex = "-1";
+  frame.style.zIndex = "0";
   frame.addEventListener("load", () => {
     const targetWindow = frame.contentWindow;
     if (!targetWindow) {
@@ -42,12 +51,52 @@ export function printHtmlDocument(html) {
     }
     const cleanup = () => window.setTimeout(() => frame.remove(), 3000);
     targetWindow.addEventListener("afterprint", cleanup, { once: true });
-    targetWindow.focus();
-    targetWindow.print();
-    window.setTimeout(cleanup, 120000);
+    waitForPrintableLayout(targetWindow).then(() => {
+      const doc = targetWindow.document;
+      const height = Math.max(
+        doc.body?.scrollHeight || 0,
+        doc.documentElement?.scrollHeight || 0,
+        1123
+      );
+      frame.style.height = `${height}px`;
+      targetWindow.focus();
+      targetWindow.print();
+      window.setTimeout(cleanup, 120000);
+    });
   }, { once: true });
   document.body.appendChild(frame);
   frame.srcdoc = html;
+}
+
+function schedulePrintWindow(printWindow) {
+  const print = () => {
+    waitForPrintableLayout(printWindow).then(() => {
+      printWindow.focus();
+      printWindow.print();
+    });
+  };
+  printWindow.addEventListener("afterprint", () => {
+    window.setTimeout(() => printWindow.close(), 250);
+  }, { once: true });
+  if (printWindow.document.readyState === "complete") {
+    print();
+  } else {
+    printWindow.addEventListener("load", print, { once: true });
+  }
+}
+
+function waitForPrintableLayout(targetWindow) {
+  return new Promise((resolve) => {
+    const doc = targetWindow.document;
+    const fontsReady = doc.fonts?.ready
+      ? doc.fonts.ready.catch(() => null)
+      : Promise.resolve();
+    fontsReady.then(() => {
+      targetWindow.requestAnimationFrame(() => {
+        targetWindow.requestAnimationFrame(resolve);
+      });
+    });
+  });
 }
 
 export function buildPrintableDocument(targetState, { layoutId = targetState.activeLayoutId, includeGeneratedRoots = false, includeLabels = true } = {}) {
@@ -118,11 +167,12 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
     }
     .overview th { background: #eee; font-size: 10px; text-transform: uppercase; }
     .overview .num { width: 9mm; text-align: center; font-weight: 700; }
-    .bags { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+    .bags { display: block; }
+    .bag + .bag { margin-top: 8px; }
     .bag {
       border: 2px solid #000;
-      break-inside: avoid;
-      page-break-inside: avoid;
+      break-inside: auto;
+      page-break-inside: auto;
       background: #fff;
     }
     .bag-heading,
@@ -208,8 +258,14 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
       margin-left: calc(var(--print-depth, 1) * 4mm);
       border-top: 2px solid #000;
       border-left: 2px solid #000;
-      break-inside: avoid;
-      page-break-inside: avoid;
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+    .bag-heading,
+    .group-heading,
+    .check-header {
+      break-after: avoid;
+      page-break-after: avoid;
     }
     .group .group-heading { background: #fff; }
     .group .check-header { background: #fff; }
@@ -227,7 +283,7 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
     @media print {
       body { font-size: 10.5px; }
       main { max-width: none; padding: 0; }
-      .bags { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+      .bag + .bag { margin-top: 7px; }
       .group { margin-left: calc(var(--print-depth, 1) * 3mm); }
       .overview thead { display: table-header-group; }
       a { color: #000; text-decoration: none; }
