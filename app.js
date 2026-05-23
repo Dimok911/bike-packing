@@ -307,6 +307,10 @@ import {
   isRootContainerInLayout as isRootContainerInLayoutForState
 } from "./src/state/layout-selectors.js";
 import {
+  createItemUsageCounts,
+  createRootContainerUsageCounts
+} from "./src/state/catalog-usage.js";
+import {
   activeLayoutNestedContainerIds as activeLayoutNestedContainerIdsForState,
   allActiveLayoutNestedContainersCollapsed as allActiveLayoutNestedContainersCollapsedForState,
   toggleActiveLayoutNestedContainersCollapsed as toggleActiveLayoutNestedContainersCollapsedForState
@@ -17436,20 +17440,12 @@ function itemCreatedTime(item) {
 }
 
 function getItemsUsageCounts() {
-  return getItemsForActiveCatalog().filter(matchesItemsViewFilters).reduce(
-    (counts, item) => {
-      counts.all += 1;
-      if (isItemAwayFromHomeAndBike(item)) counts.away += 1;
-      if (isItemWithoutWeight(item)) counts.noWeight += 1;
-      if (isItemInActiveLayout(item)) {
-        counts.current += 1;
-      } else {
-        counts.unused += 1;
-      }
-      return counts;
-    },
-    { all: 0, current: 0, away: 0, noWeight: 0, unused: 0 }
-  );
+  return createItemUsageCounts(getItemsForActiveCatalog(), {
+    matchesItem: matchesItemsViewFilters,
+    isAwayFromHomeAndBike: isItemAwayFromHomeAndBike,
+    isWithoutWeight: isItemWithoutWeight,
+    isInCurrentLayout: isItemInActiveLayout
+  });
 }
 
 function isScopedCatalogLayout(layoutId = getPublishedEditLayoutId()) {
@@ -17613,18 +17609,13 @@ function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } 
 }
 
 function getRootContainerUsageCounts() {
-  return Object.values(state.containers).filter((container) =>
-    isPrivateCatalogContainerRecord(container.id, container) &&
-    isRootContainerForEditor(container) && isRootContainerInActiveCatalog(container)
-  ).reduce(
-    (counts, container) => {
-      counts.all += 1;
-      if (isRootContainerInActiveLayout(container.id)) counts.current += 1;
-      else counts.unused += 1;
-      return counts;
-    },
-    { all: 0, current: 0, unused: 0 }
-  );
+  return createRootContainerUsageCounts(Object.values(state.containers), {
+    isEligible: (container) =>
+      isPrivateCatalogContainerRecord(container.id, container) &&
+      isRootContainerForEditor(container) &&
+      isRootContainerInActiveCatalog(container),
+    isInCurrentLayout: isRootContainerInActiveLayout
+  });
 }
 
 function isRootContainerInActiveLayout(containerId) {
