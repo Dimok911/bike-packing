@@ -417,6 +417,10 @@ import {
   saveStoredUiSettings
 } from "./src/storage/ui-settings.js";
 import {
+  loadStoredSyncMeta,
+  saveStoredSyncMeta
+} from "./src/storage/sync-meta.js";
+import {
   loadUiLanguage,
   saveUiLanguage
 } from "./src/storage/ui-language.js";
@@ -2137,46 +2141,14 @@ function normalizeRecoveryPayload(payload) {
 }
 
 function loadSyncMeta() {
-  try {
-    const meta = JSON.parse(localStorage.getItem(scopedLocalStorageKey(SYNC_META_KEY))) || {};
-    return {
-      dirty: Boolean(meta.dirty),
-      serverUpdatedAt: meta.serverUpdatedAt || null,
-      localUpdatedAt: meta.localUpdatedAt || null,
-      lastSyncedLocalUpdatedAt: meta.lastSyncedLocalUpdatedAt || null,
-      stateRevision: normalizeStateRevision(meta.stateRevision ?? meta.state_revision),
-      payloadHash: meta.payloadHash || null,
-      entityHash: meta.entityHash || null,
-      accountKey: meta.accountKey || null,
-      accountEmail: meta.accountEmail || null,
-      accountId: meta.accountId || null,
-      itemCount: normalizeIntegrityCount(meta.itemCount),
-      containerCount: normalizeIntegrityCount(meta.containerCount),
-      layoutCount: normalizeIntegrityCount(meta.layoutCount),
-      payloadSize: normalizeIntegrityCount(meta.payloadSize)
-    };
-  } catch {
-    return {
-      dirty: false,
-      serverUpdatedAt: null,
-      localUpdatedAt: null,
-      lastSyncedLocalUpdatedAt: null,
-      stateRevision: null,
-      payloadHash: null,
-      entityHash: null,
-      accountKey: null,
-      accountEmail: null,
-      accountId: null,
-      itemCount: null,
-      containerCount: null,
-      layoutCount: null,
-      payloadSize: null
-    };
-  }
+  return loadStoredSyncMeta(scopedLocalStorageKey(SYNC_META_KEY), {
+    normalizeStateRevision,
+    normalizeIntegrityCount
+  });
 }
 
 function saveSyncMeta() {
-  safeSetLocalStorage(scopedLocalStorageKey(SYNC_META_KEY), JSON.stringify(syncMeta));
+  saveStoredSyncMeta(scopedLocalStorageKey(SYNC_META_KEY), syncMeta);
 }
 
 function loadUiSettings() {
