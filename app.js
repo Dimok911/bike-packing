@@ -377,6 +377,17 @@ import {
   userStorageScopeKey
 } from "./src/storage/scope.js";
 import {
+  isPrivateLayoutChoice as isPrivateLayoutChoiceValue,
+  isPublicTemplateListId,
+  isStoredActiveLayoutChoiceExplicit,
+  loadStoredActiveLayoutChoice,
+  loadStoredActivePackingListId,
+  loadStoredActivePrivateLayoutChoice,
+  normalizeActiveLayoutChoice as normalizeActiveLayoutChoiceValue,
+  saveStoredActiveLayoutChoice,
+  saveStoredActivePackingListId
+} from "./src/storage/active-choice.js";
+import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
   getSavedAuthEmailFromStorage,
@@ -2366,51 +2377,36 @@ function updateLayoutLoadStatusUi() {
 }
 
 function loadActivePackingListId() {
-  try {
-    const key = scopedLocalStorageKey(ACTIVE_LIST_ID_KEY);
-    const listId = localStorage.getItem(key) || "";
-    if (isPublicTemplateListId(listId)) {
-      localStorage.removeItem(key);
-      return "";
-    }
-    return listId;
-  } catch {
-    return "";
-  }
-}
-
-function isPublicTemplateListId(listId) {
-  const id = String(listId || "").trim();
-  return id === "public-demo-state" ||
-    id.startsWith("public-demo-state-") ||
-    id.startsWith("public-shared-layout-");
+  return loadStoredActivePackingListId({
+    storageKey: ACTIVE_LIST_ID_KEY,
+    scopedKey: scopedLocalStorageKey
+  });
 }
 
 function saveActivePackingListId(listId) {
-  currentPackingListId = isPublicTemplateListId(listId) ? "" : String(listId || "");
+  currentPackingListId = saveStoredActivePackingListId(listId, {
+    storageKey: ACTIVE_LIST_ID_KEY,
+    scopedKey: scopedLocalStorageKey
+  });
   if (!currentPackingListId) currentPackingListMeta = null;
-  try {
-    const key = scopedLocalStorageKey(ACTIVE_LIST_ID_KEY);
-    if (currentPackingListId) safeSetLocalStorage(key, currentPackingListId);
-    else localStorage.removeItem(key);
-  } catch {
-    // Active list id is a convenience cache; sync can still work through the legacy endpoint.
-  }
 }
 
 function normalizeActiveLayoutChoice(choice) {
-  const value = String(choice || "").trim();
-  if (!value) return "";
-  if (isDemoLayoutChoice(value)) return demoLayoutChoiceForLanguage(demoLanguageFromLayoutChoice(value));
-  if (value.startsWith("shared:")) return value.slice("shared:".length) ? value : "";
-  const templateDraftId = templateDraftLayoutId(value);
-  if (templateDraftId) return state.layouts?.[templateDraftId]?.adminTemplateCopy ? value : "";
-  return value;
+  return normalizeActiveLayoutChoiceValue(choice, {
+    isDemoLayoutChoice,
+    demoLayoutChoiceForLanguage,
+    demoLanguageFromLayoutChoice,
+    templateDraftLayoutId,
+    isAdminTemplateCopyChoice: (layoutId) => Boolean(state.layouts?.[layoutId]?.adminTemplateCopy)
+  });
 }
 
 function isPrivateLayoutChoice(choice) {
-  const normalized = normalizeActiveLayoutChoice(choice);
-  return Boolean(normalized && !isDemoLayoutChoice(normalized) && !normalized.startsWith("shared:") && !templateDraftLayoutId(normalized));
+  return isPrivateLayoutChoiceValue(choice, {
+    normalizeChoice: normalizeActiveLayoutChoice,
+    isDemoLayoutChoice,
+    templateDraftLayoutId
+  });
 }
 
 function isPrivateUserLayoutId(layoutId) {
@@ -2419,49 +2415,40 @@ function isPrivateUserLayoutId(layoutId) {
 }
 
 function loadActiveLayoutChoice() {
-  try {
-    return normalizeActiveLayoutChoice(localStorage.getItem(scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_KEY)) || "");
-  } catch {
-    return "";
-  }
+  return loadStoredActiveLayoutChoice({
+    storageKey: ACTIVE_LAYOUT_CHOICE_KEY,
+    scopedKey: scopedLocalStorageKey,
+    normalizeChoice: normalizeActiveLayoutChoice
+  });
 }
 
 function loadActivePrivateLayoutChoice() {
-  try {
-    const choice = normalizeActiveLayoutChoice(localStorage.getItem(scopedLocalStorageKey(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY)) || "");
-    return isPrivateLayoutChoice(choice) && isPrivateUserLayoutId(choice) ? choice : "";
-  } catch {
-    return "";
-  }
+  return loadStoredActivePrivateLayoutChoice({
+    storageKey: ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+    scopedKey: scopedLocalStorageKey,
+    normalizeChoice: normalizeActiveLayoutChoice,
+    isPrivateChoice: isPrivateLayoutChoice,
+    isPrivateUserLayoutId
+  });
 }
 
 function isActiveLayoutChoiceExplicit() {
-  try {
-    return localStorage.getItem(scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY)) === "explicit";
-  } catch {
-    return false;
-  }
+  return isStoredActiveLayoutChoiceExplicit({
+    storageKey: ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+    scopedKey: scopedLocalStorageKey
+  });
 }
 
 function saveActiveLayoutChoice(choice) {
-  const normalized = normalizeActiveLayoutChoice(choice);
-  try {
-    const choiceKey = scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_KEY);
-    const sourceKey = scopedLocalStorageKey(ACTIVE_LAYOUT_CHOICE_SOURCE_KEY);
-    const privateChoiceKey = scopedLocalStorageKey(ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY);
-    if (normalized) {
-      safeSetLocalStorage(choiceKey, normalized);
-      safeSetLocalStorage(sourceKey, "explicit");
-    } else {
-      localStorage.removeItem(choiceKey);
-      localStorage.removeItem(sourceKey);
-    }
-    if (isPrivateLayoutChoice(normalized) && isPrivateUserLayoutId(normalized)) {
-      safeSetLocalStorage(privateChoiceKey, normalized);
-    }
-  } catch {
-    // The last opened layout is only a UI preference.
-  }
+  saveStoredActiveLayoutChoice(choice, {
+    choiceStorageKey: ACTIVE_LAYOUT_CHOICE_KEY,
+    sourceStorageKey: ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+    privateChoiceStorageKey: ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+    scopedKey: scopedLocalStorageKey,
+    normalizeChoice: normalizeActiveLayoutChoice,
+    isPrivateChoice: isPrivateLayoutChoice,
+    isPrivateUserLayoutId
+  });
 }
 
 function currentLayoutChoice() {
