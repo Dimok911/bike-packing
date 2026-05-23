@@ -32,7 +32,6 @@ import {
   STATE_SCOPE_SHARED,
   SHARED_LIST_QUERY_PARAM,
   SHARED_LAYOUT_QUERY_PARAM,
-  LANGUAGE_KEY,
   DEFAULT_LANGUAGE,
   SUPPORTED_LANGUAGES,
   ADMIN_EMAILS,
@@ -419,6 +418,10 @@ import {
   saveStoredUiSettings
 } from "./src/storage/ui-settings.js";
 import {
+  loadUiLanguage,
+  saveUiLanguage
+} from "./src/storage/ui-language.js";
+import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
   getSavedAuthEmailFromStorage,
@@ -686,18 +689,6 @@ init();
 
 function isLocalDevOrigin() {
   return ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
-}
-
-function loadUiLanguage() {
-  try {
-    return normalizeUiLanguage(localStorage.getItem(LANGUAGE_KEY) || DEFAULT_LANGUAGE);
-  } catch {
-    return DEFAULT_LANGUAGE;
-  }
-}
-
-function saveUiLanguage(language) {
-  safeSetLocalStorage(LANGUAGE_KEY, normalizeUiLanguage(language));
 }
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
