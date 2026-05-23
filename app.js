@@ -447,6 +447,10 @@ import {
   renderItemQuantityText
 } from "./src/ui/item-format.js";
 import {
+  formatFullDateTime,
+  formatShortDateTime
+} from "./src/ui/date-format.js";
+import {
   ITEM_DISPLAY_MODE_DEFAULT,
   ITEM_DISPLAY_MODE_PUBLIC_DEFAULT,
   ensureItemDisplayModeState,
@@ -4538,34 +4542,6 @@ function conflictVersionStamp(value, exists, fallbackDevice, missingText = "не
   const device = value?.updatedByDeviceName || fallbackDevice || "устройство";
   const time = formatShortDateTime(value?.updatedAt);
   return time ? `${device}, ${time}` : device;
-}
-
-function formatShortDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function formatFullDateTime(value) {
-  if (!value) return "";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const text = date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short"
-  });
-  return `${text} (${date.toISOString()})`;
 }
 
 function conflictValueSummary(conflict, value, exists, missingText = "нет") {
