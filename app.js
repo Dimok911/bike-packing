@@ -484,7 +484,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "templateCopyMetadataSidecar",
   "adminUsageReports"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.admin-usage-reports-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.admin-usage-reports-fast-users-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
