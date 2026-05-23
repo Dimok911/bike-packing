@@ -459,9 +459,9 @@ import {
   renderItemQuantityText
 } from "./src/ui/item-format.js";
 import {
-  formatFullDateTime,
-  formatShortDateTime
+  formatFullDateTime
 } from "./src/ui/date-format.js";
+import { conflictVersionStamp as conflictVersionStampValue } from "./src/ui/conflict-format.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
   ITEM_DISPLAY_MODE_PUBLIC_DEFAULT,
@@ -4499,10 +4499,7 @@ function conflictSummary(conflict) {
 }
 
 function conflictVersionStamp(value, exists, fallbackDevice, missingText = "нет") {
-  if (!exists) return missingText;
-  const device = value?.updatedByDeviceName || fallbackDevice || "устройство";
-  const time = formatShortDateTime(value?.updatedAt);
-  return time ? `${device}, ${time}` : device;
+  return conflictVersionStampValue(value, exists, fallbackDevice, missingText);
 }
 
 function conflictValueSummary(conflict, value, exists, missingText = "нет") {
