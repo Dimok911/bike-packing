@@ -7,7 +7,6 @@ import {
   RECOVERY_STATE_MAX,
   AUTH_SIGNED_OUT_KEY,
   FORCE_OFFLINE_KEY,
-  DEVICE_META_KEY,
   UI_SETTINGS_KEY,
   ACTIVE_LIST_ID_KEY,
   ACTIVE_LAYOUT_CHOICE_KEY,
@@ -421,6 +420,7 @@ import {
   loadUiLanguage,
   saveUiLanguage
 } from "./src/storage/ui-language.js";
+import { loadSyncDevice } from "./src/storage/sync-device.js";
 import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
@@ -2133,35 +2133,6 @@ function normalizeRecoveryPayload(payload) {
   applyLayoutArrangement(candidate.activeLayoutId, candidate);
   applyDefaultCollapsedContainers(candidate);
   return candidate;
-}
-
-function loadSyncDevice() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(DEVICE_META_KEY));
-    if (saved?.id && saved?.name) return saved;
-  } catch {
-    // Recreate below.
-  }
-  const meta = {
-    id: globalThis.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: guessDeviceName()
-  };
-  try {
-    safeSetLocalStorage(DEVICE_META_KEY, JSON.stringify(meta));
-  } catch {
-    // Device labels are optional sync metadata.
-  }
-  return meta;
-}
-
-function guessDeviceName() {
-  const ua = navigator.userAgent || "";
-  if (/iPhone/i.test(ua)) return "iPhone";
-  if (/iPad/i.test(ua)) return "iPad";
-  if (/Android/i.test(ua)) return "Android";
-  if (/Windows/i.test(ua)) return "Windows";
-  if (/Macintosh|Mac OS/i.test(ua)) return "Mac";
-  return "Это устройство";
 }
 
 function loadSyncMeta() {
