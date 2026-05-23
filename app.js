@@ -348,6 +348,7 @@ import {
   isTimeoutError
 } from "./src/sync/api-client.js";
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
+import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import {
   formatHistoryDateTime,
   groupHistoryRecords as groupHistoryRecordsForSync,
@@ -693,6 +694,15 @@ adminReportsDialogController = createAdminReportsDialogController({
   openModalDialog,
   showToast,
   apiErrorMessage
+});
+const remoteListRecords = createRemoteListRecordSelector({
+  normalizeRemoteListRecord,
+  normalizeRemoteState,
+  countPrivateLayouts: statePrivateLayoutCount,
+  isMeaningfulPackingState,
+  remoteUpdatedAt,
+  timeValue,
+  isReadOnlyRecord: isReadOnlyBikePackingRecord
 });
 
 init();
@@ -2276,37 +2286,19 @@ function statePrivateLayoutCount(targetState) {
 }
 
 function remoteRecordStateInfo(record) {
-  const normalized = record ? normalizeRemoteListRecord(record) : null;
-  const remoteState = normalizeRemoteState(normalized?.payload);
-  return {
-    record: normalized,
-    state: remoteState,
-    count: statePrivateLayoutCount(remoteState),
-    meaningful: Boolean(remoteState && isMeaningfulPackingState(remoteState)),
-    updatedAt: timeValue(remoteUpdatedAt(normalized))
-  };
+  return remoteListRecords.remoteRecordStateInfo(record);
 }
 
 function remoteRecordPrivateLayoutCount(record) {
-  return remoteRecordStateInfo(record).count;
+  return remoteListRecords.remoteRecordPrivateLayoutCount(record);
 }
 
 function pickRicherRemoteListRecord(currentRecord, nextRecord) {
-  if (!currentRecord) return nextRecord || null;
-  if (!nextRecord) return currentRecord || null;
-  const current = remoteRecordStateInfo(currentRecord);
-  const next = remoteRecordStateInfo(nextRecord);
-  if (next.count !== current.count) return next.count > current.count ? next.record : current.record;
-  if (next.meaningful !== current.meaningful) return next.meaningful ? next.record : current.record;
-  if (next.updatedAt !== current.updatedAt) return next.updatedAt > current.updatedAt ? next.record : current.record;
-  return current.record || next.record || null;
+  return remoteListRecords.pickRicherRemoteListRecord(currentRecord, nextRecord);
 }
 
 function bestCatalogListRecord(lists) {
-  return lists
-    .filter((list) => !isReadOnlyBikePackingRecord(list))
-    .map((list) => normalizeRemoteListRecord(list))
-    .reduce((best, list) => pickRicherRemoteListRecord(best, list), null);
+  return remoteListRecords.bestCatalogListRecord(lists);
 }
 
 function setLoadedRemoteListProgress(record, prefix = "Личные укладки получены", { final = false } = {}) {
