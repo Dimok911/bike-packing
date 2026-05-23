@@ -477,6 +477,7 @@ import {
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
+import { syncVisualHelp } from "./src/ui/sync-visual-state.js";
 import {
   layoutCopyTitle,
   layoutEditTitle,
@@ -4840,18 +4841,6 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "", adminApiWarni
   const help = syncVisualHelp(syncVisualState);
   refs.syncBtn.title = help;
   refs.syncBtn.setAttribute("aria-label", help);
-}
-
-function syncVisualHelp(stateName = syncVisualState) {
-  const labels = {
-    synced: "Зелёная точка: синхронизировано.",
-    dirty: "Оранжевая точка: есть локальные изменения, нужна синхронизация.",
-    syncing: "Зелёная мигающая точка: идёт загрузка или сохранение.",
-    offline: "Жёлтая точка: офлайн или локальный режим.",
-    error: "Красная точка: ошибка синхронизации или сервер недоступен.",
-    local: "Серая точка: локальное состояние без активной синхронизации."
-  };
-  return `${labels[stateName] || labels.local} Нажмите, чтобы проверить сервер и сохранить изменения.`;
 }
 
 async function apiFetch(path, options = {}) {
