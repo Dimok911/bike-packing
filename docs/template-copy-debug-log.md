@@ -382,3 +382,10 @@
 - После деплоя v718 `/bike-packing/public-lists` и `/bike-packing/public-shared-layouts` могли падать с MySQL `Out of sort memory`, потому что listing-запрос выбирал большой JSON `payload` и сортировал public rows по датам.
 - Public listing больше не выбирает `payload`; `/public-shared-layouts` берет name/language из server metadata/index или lightweight row metadata. Demo-index payload читается отдельным узким запросом без `ORDER BY`.
 - Compatibility API поднята до `2026-05-23.public-list-lightweight-catalog-v1`, добавлена capability `publicListLightweightCatalog`.
+
+## v720: template-copy language хранится как metadata sidecar
+
+- После v718/v719 безлогиновый catalog мог видеть реальную `public-shared-layout-template-copy-*` строку, но терять ее язык, если copy больше не лежит в demo-index и public listing не читает тяжелый payload.
+- API теперь при сохранении shared/template state и metadata-only смене языка обновляет demo `sharedLayoutsIndex` как metadata sidecar: `name/language` доступны публичному catalog без чтения payload.
+- Это не возвращает старую проблему с призраками: `/public-shared-layouts` использует sidecar для `template-copy-*` только если существует реальная `public-shared-layout-*` строка.
+- Compatibility API поднята до `2026-05-23.template-copy-metadata-sidecar-v1`, добавлена capability `templateCopyMetadataSidecar`.

@@ -478,9 +478,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplateIndexCatalog",
   "publicTemplateCatalogResilientSelect",
   "templateCopyRequiresPublicSharedRow",
-  "publicListLightweightCatalog"
+  "publicListLightweightCatalog",
+  "templateCopyMetadataSidecar"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.public-list-lightweight-catalog-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.template-copy-metadata-sidecar-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
