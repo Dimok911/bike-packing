@@ -376,3 +376,9 @@
 - Backend `/bike-packing/public-shared-layouts` больше не синтезирует `template-copy-*` из demo-index без реальной `public-shared-layout-*` строки. Если row есть, metadata из index может только уточнить name/language.
 - При сохранении shared template copy фронт больше не записывает эту копию обратно в demo `sharedLayoutsIndex`; видимость копии идет через canonical/public shared row.
 - Compatibility API поднята до `2026-05-23.template-copy-real-row-catalog-v1`, добавлена capability `templateCopyRequiresPublicSharedRow`.
+
+## v719: public catalog не сортирует тяжелые payload
+
+- После деплоя v718 `/bike-packing/public-lists` и `/bike-packing/public-shared-layouts` могли падать с MySQL `Out of sort memory`, потому что listing-запрос выбирал большой JSON `payload` и сортировал public rows по датам.
+- Public listing больше не выбирает `payload`; `/public-shared-layouts` берет name/language из server metadata/index или lightweight row metadata. Demo-index payload читается отдельным узким запросом без `ORDER BY`.
+- Compatibility API поднята до `2026-05-23.public-list-lightweight-catalog-v1`, добавлена capability `publicListLightweightCatalog`.
