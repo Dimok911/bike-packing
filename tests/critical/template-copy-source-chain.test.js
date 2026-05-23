@@ -11,7 +11,14 @@ import {
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload
 } from "../../src/public/shared-layouts.js";
+import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
+import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
 import { removeManagedSharedLayoutTreesFromState } from "../../src/state/layout-delete.js";
+import {
+  adoptTemplateCopySharedSourceId,
+  findAdoptableTemplateCopyDraft,
+  isTemplateCopySharedId
+} from "../../src/state/layout-manage.js";
 
 test("template copy uses the original public source id when copying a copy", () => {
   const copiedItem = {
@@ -172,4 +179,167 @@ test("public shared catalog prunes stale template-copy runtime entries", () => {
     "template-copy-ru-existing"
   ]);
   assert.deepEqual(layoutsByLanguage.en, []);
+});
+
+test("published template-copy row adopts a same-name local draft with an old source id", () => {
+  const state = {
+    layouts: {
+      "layout-local-draft": {
+        id: "layout-local-draft",
+        name: "Bikepacking reference 2",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "bikepacking-reference-bags",
+        language: "ru",
+        rootContainerIds: []
+      },
+      "layout-private": {
+        id: "layout-private",
+        name: "Bikepacking reference 2",
+        language: "ru",
+        rootContainerIds: []
+      }
+    }
+  };
+  const published = {
+    id: "template-copy-ru-123",
+    name: "Bikepacking reference 2",
+    language: "ru",
+    runtimeSharedTemplate: true
+  };
+
+  assert.equal(isTemplateCopySharedId(published.id), true);
+  assert.equal(findAdoptableTemplateCopyDraft(state.layouts, published)?.id, "layout-local-draft");
+
+  const adopted = adoptTemplateCopySharedSourceId(state, published, "ru");
+
+  assert.deepEqual(adopted, {
+    layoutId: "layout-local-draft",
+    previousSharedSourceId: "bikepacking-reference-bags",
+    sharedSourceId: "template-copy-ru-123"
+  });
+  assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
+  assert.equal(findAdoptableTemplateCopyDraft(state.layouts, published), null);
+});
+
+test("admin template options collapse local draft and published template-copy row into one option", () => {
+  const options = buildAdminSharedTemplateOptions({
+    canOpen: true,
+    localLayouts: [{
+      id: "layout-local-draft",
+      name: "Bikepacking reference 2",
+      adminTemplateCopy: true,
+      adminSharedSourceId: "bikepacking-reference-bags",
+      language: "ru",
+      rootContainerIds: ["container-a"]
+    }],
+    sharedLayouts: [{
+      id: "template-copy-ru-123",
+      name: "Bikepacking reference 2",
+      language: "ru",
+      runtimeSharedTemplate: true,
+      statePayload: {}
+    }],
+    fallbackLanguage: "ru",
+    isLayoutMeaningful: () => true,
+    templateCopySourceScore: () => 3,
+    labels: {
+      templatePrefix: "Template",
+      sharedPrefix: "Shared",
+      defaultName: "Template",
+      languageOptionLabel: (language) => language.toUpperCase(),
+      publicTemplateOptionLabel: ({ prefix, sharedPrefix, name, languageLabel }) =>
+        `${prefix}: ${sharedPrefix}: ${name} (${languageLabel})`
+    }
+  });
+
+  assert.equal(options.length, 1);
+  assert.equal(options[0][0], "template-draft:layout-local-draft");
+});
+
+test("empty local template-copy draft is hydrated from meaningful published payload", () => {
+  const state = {
+    layouts: {
+      "layout-local-draft": {
+        id: "layout-local-draft",
+        name: "Bikepacking reference 2",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "template-copy-ru-123",
+        language: "ru",
+        rootContainerIds: []
+      }
+    },
+    containers: {},
+    items: {},
+    activeLayoutId: "layout-local-draft"
+  };
+  const payload = {
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Bikepacking reference 2",
+        language: "ru",
+        rootContainerIds: ["container-a"]
+      }
+    },
+    activeLayoutId: "layout-main",
+    containers: {
+      "container-a": { id: "container-a", itemIds: ["item-a"], childIds: [] }
+    },
+    items: {
+      "item-a": { id: "item-a", containerId: "container-a" }
+    }
+  };
+  const sharedLayout = {
+    id: "template-copy-ru-123",
+    name: "Bikepacking reference 2",
+    language: "ru",
+    statePayload: payload
+  };
+
+  const repaired = repairEmptyTemplateCopyDraftFromPublishedLayout({
+    state,
+    sharedLayout,
+    editableLayout: state.layouts["layout-local-draft"],
+    fallbackLanguage: "ru",
+    canRepair: true,
+    isLayoutMeaningful: () => false,
+    sharedLayoutStatePayload: (layout) => layout.statePayload,
+    sharedPayloadActiveLayout: (sourceState) => sourceState.layouts[sourceState.activeLayoutId],
+    templateCopySourceScore: () => 3,
+    removeLayoutTree: (layoutId, targetState) => {
+      delete targetState.layouts[layoutId];
+      targetState.containers = {};
+      targetState.items = {};
+      return true;
+    },
+    copyPublishedContainerToState: (sourceState, containerId) => {
+      const nextContainerId = `copy-${containerId}`;
+      const nextItemId = "copy-item-a";
+      state.containers[nextContainerId] = {
+        ...sourceState.containers[containerId],
+        id: nextContainerId,
+        itemIds: [nextItemId]
+      };
+      state.items[nextItemId] = { ...sourceState.items["item-a"], id: nextItemId, containerId: nextContainerId };
+      return nextContainerId;
+    },
+    createLayoutArrangementFromCurrentState: (targetState, rootContainerIds) => ({
+      rootContainerIds,
+      containers: {
+        [rootContainerIds[0]]: { parentId: "", itemIds: ["copy-item-a"], childIds: [], order: [{ type: "item", id: "copy-item-a" }] }
+      },
+      items: { "copy-item-a": rootContainerIds[0] },
+      packedItems: {}
+    }),
+    normalizeLayoutArrangement: () => {},
+    ensureLayoutDictionaries: () => ({ locations: ["Home"], categories: ["Gear"] }),
+    currentMeta: { updatedByDeviceId: "test-device", updatedByDeviceName: "test" },
+    nowIso: () => "2026-05-23T00:00:00.000Z"
+  });
+
+  assert.equal(repaired?.id, "layout-local-draft");
+  assert.equal(state.activeLayoutId, "layout-local-draft");
+  assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
+  assert.deepEqual(state.layouts["layout-local-draft"].rootContainerIds, ["copy-container-a"]);
+  assert.ok(state.items["copy-item-a"]);
 });

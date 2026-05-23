@@ -1,6 +1,147 @@
 import { createEmptyLayoutArrangement, uniqueLayoutIds } from "./layout-arrangement.js";
 import { clonePlain } from "../utils/json.js";
 
+function normalizeTemplateCopyIdentityValue(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function templateCopyNameLanguageKey(name, language = "ru") {
+  const normalizedName = normalizeTemplateCopyIdentityValue(name);
+  if (!normalizedName) return "";
+  return `copy-name:${normalizeTemplateCopyIdentityValue(language || "ru")}:${normalizedName}`;
+}
+
+export function isTemplateCopySharedId(sharedId) {
+  return String(sharedId || "").trim().startsWith("template-copy-");
+}
+
+export function adminSharedTemplateIdentityKeys({
+  sharedId = "",
+  name = "",
+  language = "ru",
+  adminTemplateCopy = false,
+  runtimeSharedTemplate = false
+} = {}) {
+  const id = String(sharedId || "").trim();
+  const keys = [];
+  if (id) keys.push(`id:${id}`);
+  if (adminTemplateCopy || runtimeSharedTemplate || isTemplateCopySharedId(id)) {
+    const nameKey = templateCopyNameLanguageKey(name, language);
+    if (nameKey) keys.push(nameKey);
+  }
+  return [...new Set(keys)];
+}
+
+function candidateKeys(candidate) {
+  return new Set((candidate?.identityKeys || []).filter(Boolean));
+}
+
+function candidateUpdatedAtValue(candidate) {
+  const value = Date.parse(candidate?.updatedAt || candidate?.layout?.updatedAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function compareTemplateCandidateWinner(a, b) {
+  const priority = Number(b?.priority || 0) - Number(a?.priority || 0);
+  if (priority) return priority;
+  const score = Number(b?.contentScore || 0) - Number(a?.contentScore || 0);
+  if (score) return score;
+  const updated = candidateUpdatedAtValue(b) - candidateUpdatedAtValue(a);
+  if (updated) return updated;
+  return Number(a?.order || 0) - Number(b?.order || 0);
+}
+
+export function dedupeAdminSharedTemplateCandidates(candidates = []) {
+  const groups = [];
+  candidates.forEach((candidate) => {
+    const keys = candidateKeys(candidate);
+    if (!keys.size) return;
+    const matching = groups.filter((group) => [...keys].some((key) => group.keys.has(key)));
+    const nextGroup = matching[0] || { keys: new Set(), candidates: [] };
+    matching.slice(1).forEach((group) => {
+      group.keys.forEach((key) => nextGroup.keys.add(key));
+      nextGroup.candidates.push(...group.candidates);
+      const index = groups.indexOf(group);
+      if (index >= 0) groups.splice(index, 1);
+    });
+    keys.forEach((key) => nextGroup.keys.add(key));
+    nextGroup.candidates.push(candidate);
+    if (!matching.length) groups.push(nextGroup);
+  });
+  return groups
+    .map((group) => [...group.candidates].sort(compareTemplateCandidateWinner)[0])
+    .filter(Boolean);
+}
+
+export function findAdoptableTemplateCopyDraft(layouts, sharedLayout, fallbackLanguage = "ru") {
+  const sharedId = String(sharedLayout?.id || "").trim();
+  if (!isTemplateCopySharedId(sharedId)) return null;
+  const sharedName = normalizeTemplateCopyIdentityValue(sharedLayout?.name || "");
+  if (!sharedName) return null;
+  const sharedLanguage = normalizeTemplateCopyIdentityValue(sharedLayout?.language || fallbackLanguage || "ru");
+  return Object.values(layouts || {}).find((layout) => {
+    if (!layout?.adminTemplateCopy || !layout.adminSharedSourceId || layout.adminSharedSourceId === sharedId) return false;
+    if (normalizeTemplateCopyIdentityValue(layout.name || "") !== sharedName) return false;
+    return normalizeTemplateCopyIdentityValue(layout.language || fallbackLanguage || "ru") === sharedLanguage;
+  }) || null;
+}
+
+export function adoptTemplateCopySharedSourceId(targetState, sharedLayout, fallbackLanguage = "ru") {
+  const sharedId = String(sharedLayout?.id || "").trim();
+  const draft = findAdoptableTemplateCopyDraft(targetState?.layouts, sharedLayout, fallbackLanguage);
+  if (!draft) return null;
+  const previousSharedSourceId = draft.adminSharedSourceId;
+  draft.adminSharedSourceId = sharedId;
+  if (sharedLayout?.language) draft.language = sharedLayout.language;
+  return {
+    layoutId: draft.id,
+    previousSharedSourceId,
+    sharedSourceId: sharedId
+  };
+}
+
+export function shouldHydrateTemplateCopyDraftFromPublished({
+  draftLayout,
+  sharedLayout,
+  draftMeaningful = false,
+  publishedScore = 0
+} = {}) {
+  return Boolean(
+    draftLayout?.adminTemplateCopy &&
+    isTemplateCopySharedId(sharedLayout?.id) &&
+    !draftMeaningful &&
+    Number(publishedScore) > 1
+  );
+}
+
+export function createHydratedTemplateCopyDraftRecord({
+  previousLayout,
+  sharedLayout,
+  sourceLayout,
+  rootContainerIds = [],
+  arrangement = null,
+  dictionaries = {},
+  changedAt = "",
+  currentMeta = {},
+  fallbackLanguage = "ru"
+} = {}) {
+  if (!previousLayout?.id || !sharedLayout?.id || !sourceLayout || !rootContainerIds.length) return null;
+  return {
+    ...clonePlain(previousLayout),
+    name: previousLayout.name || sourceLayout.name || sharedLayout.name || sharedLayout.id,
+    rootContainerIds: [...rootContainerIds],
+    arrangement: clonePlain(arrangement || sourceLayout.arrangement || createEmptyLayoutArrangement()),
+    adminSharedSourceId: sharedLayout.id,
+    adminTemplateCopy: true,
+    language: sharedLayout.language || sourceLayout.language || previousLayout.language || fallbackLanguage || "ru",
+    locations: [...(dictionaries.locations || previousLayout.locations || [])],
+    categories: [...(dictionaries.categories || previousLayout.categories || [])],
+    updatedAt: changedAt || currentMeta.updatedAt || previousLayout.updatedAt || "",
+    updatedByDeviceId: currentMeta.updatedByDeviceId || previousLayout.updatedByDeviceId || "local-device",
+    updatedByDeviceName: currentMeta.updatedByDeviceName || previousLayout.updatedByDeviceName || "local-device"
+  };
+}
+
 export function layoutManageLanguage(layout, fallbackLanguage = "ru") {
   return String(layout?.adminDemoLanguage || layout?.language || fallbackLanguage || "ru");
 }

@@ -280,3 +280,21 @@
 
 - После успешной загрузки `/bike-packing/public-lists` фронт удаляет из runtime-каталога stale `template-copy-*` entries, которых нет среди реальных `public-shared-layout-*` строк. Это закрывает случай "в БД одна копия, в селекте две": новая реальная строка приходила из public catalog, а старая удаленная копия продолжала жить из `sharedLayoutsIndex`.
 - Built-in shared reference entries не вычищаются этим правилом, чтобы встроенные шаблоны оставались доступными даже если public catalog временно неполный.
+
+## v704: index-preview больше не может переиграть public catalog
+
+- Стартовая загрузка shared templates теперь идет последовательно: сначала opportunistic `sharedLayoutsIndex`, затем authoritative `/bike-packing/public-lists` с pruning stale `template-copy-*`. Раньше эти запросы шли параллельно, и старый index мог вернуться позже catalog-prune и снова добавить пустую копию в селект.
+- После публикации shared template copy фронт повторно сверяет runtime catalog с `/bike-packing/public-lists`, чтобы только что созданная server row осталась единственным `template-copy-*` вариантом для этого состояния.
+
+## v705: локальный draft усыновляется опубликованной template-copy строкой
+
+- Закрыт сценарий, где в админке видны две копии при одной строке в БД: локальный `adminTemplateCopy` мог оставаться привязанным к старому source id, а `/bike-packing/public-lists` приносил настоящую `template-copy-*` строку. Теперь catalog refresh сверяет `template-copy-*` по имени и языку и переносит локальный draft на фактический published shared id.
+- Если локальный admin draft с этим `template-copy-*` id пустой, а published payload уже наполнен, открытие/refresh восстанавливает локальный draft из published payload. Серверная строка становится каноническим источником, а пустая локальная оболочка больше не может затенить нормальный шаблон.
+- Важный урок для следующих правок: нельзя просто прятать local draft или просто доверять `sharedLayoutsIndex`. Нужно сначала нормализовать identity локального draft к реальному `public-shared-layout-template-copy-*`, затем чинить пустой локальный материализованный layout из полного published state.
+
+## v706: старая multi-source структура больше не решает UI-список
+
+- Проблема была глубже v705: админский select собирал равноправные строки из local draft, `sharedLayoutsIndex` preview и real public-list catalog. Пока эти источники были равноправны, дубль мог вернуться при любом несовпадении id.
+- Добавлен общий canonical слой `src/public/admin-shared-template-options.js`: перед выводом все кандидаты проходят дедупликацию по published id и по `template-copy` identity `name+language`. Local наполненный draft выигрывает как рабочая вкладка, real runtime/published row остается источником данных, но не создает вторую строку.
+- API получил отдельный canonical endpoint `/bike-packing/public-shared-layouts` и capability `sharedTemplateCanonicalCatalog`; фронт требует compatibility `2026-05-23.shared-template-canonical-catalog-v1`. Старый `/public-lists` больше не является контрактом для админского shared-template catalog.
+- `app.js` больше не содержит правила сборки/дедупликации списка шаблонов: только вызывает модуль и передает текущие зависимости.

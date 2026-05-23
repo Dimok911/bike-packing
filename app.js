@@ -102,6 +102,11 @@ import {
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
 import {
+  buildAdminSharedTemplateOptions,
+  compareSharedTemplateAdminOrder,
+  selectLocalAdminTemplateCopyLayouts
+} from "./src/public/admin-shared-template-options.js";
+import {
   compareSharedLayoutIndexEntries,
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
@@ -127,6 +132,10 @@ import {
   sharedLayoutIdFromUrl,
   sharedListIdFromUrl
 } from "./src/public/shared-link-url.js";
+import {
+  reconcilePublishedTemplateCopyDraft,
+  repairEmptyTemplateCopyDraftFromPublishedLayout
+} from "./src/public/template-copy-admin-repair.js";
 import {
   SHARED_CONTAINER_COPY_PICKER_MODE,
   SHARED_ITEM_COPY_PICKER_MODE,
@@ -450,9 +459,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplateMetadataPatch",
   "sharedTemplateMetadataPost",
   "sharedTemplateEntityTreeFilter",
-  "sharedTemplateEntityRowsPublicScope"
+  "sharedTemplateEntityRowsPublicScope",
+  "sharedTemplateCanonicalCatalog"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.shared-template-source-chain-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.shared-template-canonical-catalog-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -783,102 +793,48 @@ function adminPublicLayoutOptions() {
 }
 
 function adminSharedTemplateOptions() {
-  if (!canOpenAdminPublishedEdit()) return [];
-  const localTemplateCopySourceIds = localAdminTemplateCopySharedSourceIds();
-  const includedSourceIds = new Set(localTemplateCopySourceIds);
-  const options = localAdminTemplateCopyLayouts()
-    .map((layout) => ({
-      layout,
-      option: [
-        adminTemplateDraftChoice(layout.id),
-        publicTemplateOptionLabel({
-          prefix: t("template.prefix"),
-          sharedPrefix: t("shared.prefix"),
-          name: layout.name || "РЁР°Р±Р»РѕРЅ",
-          languageLabel: languageOptionLabel(layout.language || uiLanguage)
-        }),
-        "shared"
-      ]
-    }));
-
-  if (
-    linkedSharedListLayout?.id &&
-    !isDeletedSharedLayoutId(linkedSharedListLayout.id) &&
-    !includedSourceIds.has(linkedSharedListLayout.id)
-  ) {
-    includedSourceIds.add(linkedSharedListLayout.id);
-    options.push({
-      layout: linkedSharedListLayout,
-      option: [
-      `shared:${linkedSharedListLayout.id}`,
-      `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`,
-      "shared"
-      ]
-    });
-  }
-
-  allSharedLayoutsByAdminOrder()
-    .filter((layout) => !includedSourceIds.has(layout.id))
-    .forEach((layout) => {
-      includedSourceIds.add(layout.id);
-      options.push({
-        layout,
-        option: [
-          `shared:${layout.id}`,
-          `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name} (${languageOptionLabel(layout.language || uiLanguage)})`,
-          "shared"
-        ]
-      });
-    });
-
-  return options
-    .sort((a, b) => compareSharedLayoutAdminOrder(a.layout, b.layout))
-    .map((entry) => entry.option);
+  return buildAdminSharedTemplateOptions({
+    canOpen: canOpenAdminPublishedEdit(),
+    localLayouts: localAdminTemplateCopyLayouts(),
+    linkedSharedListLayout,
+    sharedLayouts: allSharedLayoutsByAdminOrder(),
+    isDeletedSharedLayoutId,
+    fallbackLanguage: uiLanguage,
+    isLayoutMeaningful,
+    templateCopySourceScore: (layout, sourceState = state) => templateCopySourceScore(layout, sourceState),
+    sharedLayoutStatePayload,
+    sharedPayloadActiveLayout,
+    compareLayouts: compareSharedLayoutAdminOrder,
+    labels: {
+      templatePrefix: t("template.prefix"),
+      sharedPrefix: t("shared.prefix"),
+      defaultName: "Шаблон",
+      languageOptionLabel,
+      publicTemplateOptionLabel
+    }
+  });
 }
 
 function compareSharedLayoutAdminOrder(a, b) {
-  const languageRank = (layout) => {
-    const language = normalizeUiLanguage(layout?.language || uiLanguage);
-    const index = SUPPORTED_LANGUAGES.map(normalizeUiLanguage).indexOf(language);
-    return index >= 0 ? index : SUPPORTED_LANGUAGES.length;
-  };
-  const languageOrder = languageRank(a) - languageRank(b);
-  if (languageOrder) return languageOrder;
-  return String(a?.name || "").localeCompare(String(b?.name || ""), "ru");
-}
-
-function localAdminTemplateCopySharedSourceIds() {
-  if (!canOpenAdminPublishedEdit()) return new Set();
-  return new Set(localAdminTemplateCopyLayouts()
-    .map((layout) => layout.adminSharedSourceId));
-}
-
-function localAdminTemplateCopyOptions() {
-  if (!canOpenAdminPublishedEdit()) return [];
-  return localAdminTemplateCopyLayouts()
-    .map((layout) => [
-      adminTemplateDraftChoice(layout.id),
-      publicTemplateOptionLabel({
-        prefix: t("template.prefix"),
-        sharedPrefix: t("shared.prefix"),
-        name: layout.name || "Шаблон",
-        languageLabel: languageOptionLabel(layout.language || uiLanguage)
-      }),
-      "shared"
-    ]);
+  return compareSharedTemplateAdminOrder(a, b, {
+    supportedLanguages: SUPPORTED_LANGUAGES,
+    normalizeLanguage: normalizeUiLanguage,
+    fallbackLanguage: uiLanguage,
+    locale: "ru"
+  });
 }
 
 function localAdminTemplateCopyLayouts() {
-  if (!canOpenAdminPublishedEdit()) return [];
-  return Object.values(state.layouts || {})
-    .filter((layout) =>
-      layout?.adminTemplateCopy &&
-      layout.adminSharedSourceId &&
-      !isDeletedSharedLayoutId(layout.adminSharedSourceId)
-    )
-    .sort((a, b) => compareSharedLayoutIndexEntries(a, b));
+  return selectLocalAdminTemplateCopyLayouts({
+    layouts: state.layouts,
+    canOpen: canOpenAdminPublishedEdit(),
+    isDeletedSharedLayoutId,
+    fallbackLanguage: uiLanguage,
+    isLayoutMeaningful,
+    templateCopySourceScore: (layout) => templateCopySourceScore(layout, state),
+    compareEntries: compareSharedLayoutIndexEntries
+  });
 }
-
 function activeAdminDraftOptionLabel(layout) {
   if (!canOpenAdminPublishedEdit() || !isPublishedLayoutEditable(layout)) return "";
   const sharedSource = layout?.adminSharedSourceId ? findSharedLayout(layout.adminSharedSourceId) : null;
@@ -1467,10 +1423,7 @@ async function init() {
     updateSyncUi("Проверяю вход...");
   }
   startRemoteStateWatcher();
-  const publicIndexRefresh = Promise.all([
-    refreshPublicSharedLayoutIndex({ renderAfter: true }),
-    refreshPublicSharedLayoutCatalog({ renderAfter: true })
-  ]).catch(() => null);
+  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: true }).catch(() => null);
   if (sharedListId) {
     await publicIndexRefresh;
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
@@ -6344,9 +6297,10 @@ async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
 
 async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
   let merged = 0;
+  let localDraftReconciled = false;
   let data = null;
   try {
-    data = await apiFetch("/bike-packing/public-lists", {
+    data = await apiFetch("/bike-packing/public-shared-layouts", {
       timeoutMs: LIST_API_TIMEOUT_MS,
       silentErrors: true
     });
@@ -6386,10 +6340,39 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
         runtimeSharedTemplate: true,
         updatedAt: record.updatedAt || record.updated_at || ""
       });
-      if (layout) merged += 1;
+      if (layout) {
+        merged += 1;
+        if (reconcilePublishedTemplateCopyDraft({
+          state,
+          sharedLayout: layout,
+          fallbackLanguage: uiLanguage,
+          canRepair: canOpenAdminPublishedEdit(),
+          isLayoutMeaningful,
+          sharedLayoutStatePayload,
+          sharedPayloadActiveLayout,
+          templateCopySourceScore,
+          removeLayoutTree,
+          copyPublishedContainerToState,
+          createLayoutArrangementFromCurrentState,
+          normalizeLayoutArrangement,
+          ensureLayoutDictionaries,
+          currentMeta: currentEditMeta(),
+          nowIso
+        })) {
+          localDraftReconciled = true;
+        }
+      }
     }));
+  if (localDraftReconciled) saveState({ sync: false });
   if (merged && renderAfter) render();
   return merged;
+}
+
+async function refreshPublicSharedTemplates({ renderAfter = false } = {}) {
+  const indexMerged = await refreshPublicSharedLayoutIndex();
+  const catalogMerged = await refreshPublicSharedLayoutCatalog();
+  if (renderAfter && (indexMerged || catalogMerged)) render();
+  return indexMerged + catalogMerged;
 }
 
 async function savePublicSharedLayoutIndexEntry(layout) {
@@ -7576,6 +7559,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
       language: layout.language || uiLanguage,
       statePayload: publishedPayload
     });
+    await refreshPublicSharedLayoutCatalog().catch(() => null);
   }
   refreshPublishedLayoutView(target);
   updateSyncUi();
@@ -8817,6 +8801,28 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
     state.layouts[nextLayoutId] = editableLayout;
     saveState({ sync: false });
   } else {
+    const repaired = repairEmptyTemplateCopyDraftFromPublishedLayout({
+      state,
+      sharedLayout: layout,
+      editableLayout,
+      fallbackLanguage: uiLanguage,
+      canRepair: canOpenAdminPublishedEdit(),
+      isLayoutMeaningful,
+      sharedLayoutStatePayload,
+      sharedPayloadActiveLayout,
+      templateCopySourceScore,
+      removeLayoutTree,
+      copyPublishedContainerToState,
+      createLayoutArrangementFromCurrentState,
+      normalizeLayoutArrangement,
+      ensureLayoutDictionaries,
+      currentMeta: currentEditMeta(),
+      nowIso
+    });
+    if (repaired) {
+      saveState({ sync: false });
+      return repaired;
+    }
     const sourceLanguage = normalizeUiLanguage(layout.language || uiLanguage);
     let languageChanged = false;
     if (!editableLayout.adminTemplateCopy && editableLayout.language !== sourceLanguage) {
