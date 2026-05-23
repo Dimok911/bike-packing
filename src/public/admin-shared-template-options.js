@@ -1,7 +1,8 @@
 import {
   adminSharedTemplateIdentityKeys,
   adminTemplateDraftChoice,
-  dedupeAdminSharedTemplateCandidates
+  dedupeAdminSharedTemplateCandidates,
+  isTemplateCopySharedId
 } from "../state/layout-manage.js";
 
 export function compareSharedTemplateAdminOrder(a, b, {
@@ -59,6 +60,9 @@ export function buildAdminSharedTemplateOptions({
   localLayouts = [],
   linkedSharedListLayout = null,
   sharedLayouts = [],
+  serverConfirmedSharedLayouts = [],
+  requireServerConfirmationForSharedTemplates = false,
+  requireServerConfirmationForTemplateCopies = false,
   isDeletedSharedLayoutId = () => false,
   fallbackLanguage = "ru",
   isLayoutMeaningful = () => false,
@@ -77,9 +81,37 @@ export function buildAdminSharedTemplateOptions({
   const templatePrefix = labels.templatePrefix || "Template";
   const sharedPrefix = labels.sharedPrefix || "Shared";
   const defaultName = labels.defaultName || "Template";
+  const confirmedSharedTemplateKeys = new Set(serverConfirmedSharedLayouts.flatMap((layout) =>
+    adminSharedTemplateIdentityKeys({
+      sharedId: layout.id,
+      name: layout.name,
+      language: layout.language || fallbackLanguage,
+      adminTemplateCopy: Boolean(layout.adminTemplateCopy),
+      runtimeSharedTemplate: true
+    })
+  ));
+  const pushCandidate = (candidate) => {
+    const sharedTemplateCandidate = Boolean(
+      candidate?.layout?.adminSharedSourceId ||
+      candidate?.layout?.runtimeSharedTemplate ||
+      candidate?.layout?.id
+    );
+    const templateCopyCandidate = Boolean(
+      candidate?.layout?.adminTemplateCopy ||
+      candidate?.layout?.runtimeSharedTemplate ||
+      isTemplateCopySharedId(candidate?.layout?.id) ||
+      isTemplateCopySharedId(candidate?.layout?.adminSharedSourceId)
+    );
+    const mustBeServerConfirmed = (
+      (requireServerConfirmationForSharedTemplates && sharedTemplateCandidate) ||
+      (requireServerConfirmationForTemplateCopies && templateCopyCandidate)
+    );
+    if (mustBeServerConfirmed && !(candidate.identityKeys || []).some((key) => confirmedSharedTemplateKeys.has(key))) return;
+    candidates.push(candidate);
+  };
 
   localLayouts.forEach((layout) => {
-    candidates.push({
+    pushCandidate({
       layout,
       priority: isLayoutMeaningful(layout.id) ? 120 : 75,
       contentScore: templateCopySourceScore(layout),
@@ -105,7 +137,7 @@ export function buildAdminSharedTemplateOptions({
   });
 
   if (linkedSharedListLayout?.id && !isDeletedSharedLayoutId(linkedSharedListLayout.id)) {
-    candidates.push({
+    pushCandidate({
       layout: linkedSharedListLayout,
       priority: 60,
       contentScore: 0,
@@ -128,7 +160,7 @@ export function buildAdminSharedTemplateOptions({
   sharedLayouts.forEach((layout) => {
     const sourceState = sharedLayoutStatePayload(layout);
     const sourceLayout = sharedPayloadActiveLayout(sourceState);
-    candidates.push({
+    pushCandidate({
       layout,
       priority: layout.runtimeSharedTemplate ? 95 : 50,
       contentScore: templateCopySourceScore(sourceLayout, sourceState),

@@ -308,6 +308,31 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button.button-loading {
+  position: relative;
+  padding-left: 36px;
+}
+
+button.button-loading::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: button-spinner 0.75s linear infinite;
+}
+
+@keyframes button-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .template-action-disabled {
   opacity: 0.55;
   cursor: not-allowed;

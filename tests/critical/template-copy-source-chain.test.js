@@ -7,13 +7,32 @@ import {
 } from "../../src/public/copy-public-to-private.js";
 import {
   isPublicSharedLayoutListRecord,
+  mergeSharedLayoutIndexPayload,
+  mergeSharedLayoutCatalogEntries,
   pruneRuntimeSharedLayouts,
+  serverConfirmedSharedLayoutsFromIndexPayload,
+  serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload
 } from "../../src/public/shared-layouts.js";
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
+import {
+  isNetworkUnavailable,
+  publishedTemplateBlockReason
+} from "../../src/public/public-template-availability.js";
+import {
+  createSharedLayoutCatalogDiagnostics,
+  shouldWarnAboutSharedLayoutCatalog
+} from "../../src/public/shared-layout-catalog-diagnostics.js";
+import {
+  purgeDeletedSharedTemplateFromFrontendState,
+  purgeUnconfirmedSharedTemplatesFromFrontendState
+} from "../../src/public/shared-layout-admin.js";
 import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
-import { removeManagedSharedLayoutTreesFromState } from "../../src/state/layout-delete.js";
+import {
+  removeManagedSharedLayoutTreesFromState,
+  removeManagedSharedTemplateTreesFromState
+} from "../../src/state/layout-delete.js";
 import {
   adoptTemplateCopySharedSourceId,
   findAdoptableTemplateCopyDraft,
@@ -132,6 +151,154 @@ test("template delete removes every local draft for the same published shared id
   assert.ok(state.items["item-other"]);
 });
 
+test("template delete removes stale local drafts for the same template identity", () => {
+  const state = {
+    layouts: {
+      "layout-old-draft": {
+        id: "layout-old-draft",
+        name: "Bikepacking reference 2",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "bikepacking-reference-bags",
+        language: "ru",
+        rootContainerIds: ["container-old"]
+      },
+      "layout-private": {
+        id: "layout-private",
+        name: "Bikepacking reference 2",
+        language: "ru",
+        rootContainerIds: ["container-private"]
+      }
+    },
+    containers: {
+      "container-old": { id: "container-old", itemIds: ["item-old"], childIds: [] },
+      "container-private": { id: "container-private", itemIds: ["item-private"], childIds: [] }
+    },
+    items: {
+      "item-old": { id: "item-old" },
+      "item-private": { id: "item-private" }
+    },
+    collapsedContainers: { "container-old": true },
+    activeLayoutId: "layout-old-draft"
+  };
+
+  const removed = removeManagedSharedTemplateTreesFromState(state, {
+    sharedId: "template-copy-ru-123",
+    name: "Bikepacking reference 2",
+    language: "ru"
+  });
+
+  assert.deepEqual(removed, ["layout-old-draft"]);
+  assert.equal(state.layouts["layout-old-draft"], undefined);
+  assert.equal(state.containers["container-old"], undefined);
+  assert.equal(state.items["item-old"], undefined);
+  assert.ok(state.layouts["layout-private"]);
+});
+
+test("deleted template-copy is purged from runtime catalog and admin drafts", () => {
+  const state = {
+    layouts: {
+      "layout-local-draft": {
+        id: "layout-local-draft",
+        name: "Bikepacking reference 2",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "bikepacking-reference-bags",
+        language: "ru",
+        rootContainerIds: ["container-local"]
+      }
+    },
+    containers: {
+      "container-local": { id: "container-local", itemIds: ["item-local"], childIds: [] }
+    },
+    items: {
+      "item-local": { id: "item-local" }
+    },
+    activeLayoutId: "layout-local-draft"
+  };
+  const layoutsByLanguage = {
+    ru: [
+      { id: "bikepacking-reference-bags", name: "Bikepacking reference", runtimeSharedTemplate: true, language: "ru" },
+      { id: "template-copy-ru-123", name: "Bikepacking reference 2", runtimeSharedTemplate: true, language: "ru" },
+      { id: "template-copy-ru-stale", name: "Bikepacking reference 2", runtimeSharedTemplate: true, language: "ru" }
+    ],
+    en: [
+      { id: "template-copy-en-456", name: "Bikepacking reference 2", runtimeSharedTemplate: true, language: "en" }
+    ]
+  };
+
+  const result = purgeDeletedSharedTemplateFromFrontendState({
+    targetState: state,
+    layoutsByLanguage,
+    sharedId: "template-copy-ru-123",
+    name: "Bikepacking reference 2",
+    language: "ru"
+  });
+
+  assert.equal(result.removedRuntimeCount, 2);
+  assert.deepEqual(result.removedLayoutIds, ["layout-local-draft"]);
+  assert.deepEqual(layoutsByLanguage.ru.map((layout) => layout.id), ["bikepacking-reference-bags"]);
+  assert.deepEqual(layoutsByLanguage.en.map((layout) => layout.id), ["template-copy-en-456"]);
+  assert.equal(state.layouts["layout-local-draft"], undefined);
+});
+
+test("unconfirmed server catalog entries cannot remain visible from local state", () => {
+  const state = {
+    layouts: {
+      "layout-stale-draft": {
+        id: "layout-stale-draft",
+        name: "Deleted Copy",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "template-copy-ru-deleted",
+        language: "ru",
+        rootContainerIds: ["container-stale"]
+      }
+    },
+    containers: {
+      "container-stale": { id: "container-stale", itemIds: ["item-stale"], childIds: [] }
+    },
+    items: {
+      "item-stale": { id: "item-stale" }
+    },
+    activeLayoutId: "layout-stale-draft"
+  };
+  const layoutsByLanguage = {
+    ru: [
+      { id: "template-copy-ru-deleted", name: "Deleted Copy", runtimeSharedTemplate: true, language: "ru" },
+      { id: "template-copy-ru-confirmed", name: "Confirmed Copy", runtimeSharedTemplate: true, language: "ru" }
+    ]
+  };
+  const confirmedSharedLayouts = [{
+    id: "template-copy-ru-confirmed",
+    name: "Confirmed Copy",
+    runtimeSharedTemplate: true,
+    language: "ru"
+  }];
+
+  const purged = purgeUnconfirmedSharedTemplatesFromFrontendState({
+    targetState: state,
+    layoutsByLanguage,
+    confirmedSharedLayouts,
+    fallbackLanguage: "ru"
+  });
+  const options = buildAdminSharedTemplateOptions({
+    canOpen: true,
+    localLayouts: Object.values(state.layouts),
+    sharedLayouts: Object.values(layoutsByLanguage).flat(),
+    serverConfirmedSharedLayouts: confirmedSharedLayouts,
+    requireServerConfirmationForSharedTemplates: true,
+    fallbackLanguage: "ru",
+    isLayoutMeaningful: () => true,
+    templateCopySourceScore: () => 3
+  });
+
+  assert.deepEqual(purged, {
+    removedRuntimeCount: 1,
+    removedLayoutIds: ["layout-stale-draft"]
+  });
+  assert.deepEqual(layoutsByLanguage.ru.map((layout) => layout.id), ["template-copy-ru-confirmed"]);
+  assert.deepEqual(Object.keys(state.layouts), []);
+  assert.deepEqual(options.map((option) => option[0]), ["shared:template-copy-ru-confirmed"]);
+});
+
 test("public shared list rows can be reconciled back into the template catalog", () => {
   const row = {
     id: "public-shared-layout-template-copy-ru-123",
@@ -152,6 +319,107 @@ test("public shared list rows can be reconciled back into the template catalog",
   assert.equal(sharedLayoutIdFromPublicListRecord(row), "template-copy-ru-123");
   assert.equal(sharedLayoutLanguageFromPayload(payload, "en"), "ru");
   assert.equal(sharedLayoutIdFromPublicListRecord({ id: "public-demo-state" }), "");
+});
+
+test("public shared catalog language uses server metadata before payload language", () => {
+  const row = {
+    id: "public-shared-layout-template-copy-ru-123",
+    title: "Bikepacking reference 2",
+    language: "en"
+  };
+  const layoutsByLanguage = {
+    ru: [{
+      id: "template-copy-ru-123",
+      name: "Bikepacking reference 2",
+      language: "ru",
+      runtimeSharedTemplate: true
+    }],
+    en: []
+  };
+
+  const confirmed = serverConfirmedSharedLayoutsFromPublicRecords([row], {
+    layoutsByLanguage,
+    fallbackLanguage: "ru"
+  });
+
+  assert.equal(confirmed.length, 1);
+  assert.equal(confirmed[0].id, "template-copy-ru-123");
+  assert.equal(confirmed[0].language, "en");
+});
+
+test("server demo shared-layout index stays confirmed when catalog endpoint fails", () => {
+  const payload = {
+    sharedLayoutsIndex: {
+      layouts: [{
+        id: "bikepacking-reference-bags",
+        name: "Bikepacking reference",
+        language: "ru"
+      }]
+    }
+  };
+
+  const indexConfirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
+  const preservedAfterCatalogFailure = mergeSharedLayoutCatalogEntries(indexConfirmed, []);
+
+  assert.equal(indexConfirmed.length, 1);
+  assert.equal(indexConfirmed[0].id, "bikepacking-reference-bags");
+  assert.equal(indexConfirmed[0].serverConfirmed, true);
+  assert.deepEqual(preservedAfterCatalogFailure.map((layout) => layout.id), [
+    "bikepacking-reference-bags"
+  ]);
+});
+
+test("server demo shared-layout index creates an admin option under confirmed contract", () => {
+  const payload = {
+    sharedLayoutsIndex: {
+      layouts: [{
+        id: "bikepacking-reference-bags",
+        name: "Bikepacking reference",
+        language: "ru"
+      }]
+    }
+  };
+  const confirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
+  const options = buildAdminSharedTemplateOptions({
+    canOpen: true,
+    sharedLayouts: confirmed,
+    serverConfirmedSharedLayouts: confirmed,
+    requireServerConfirmationForSharedTemplates: true,
+    fallbackLanguage: "ru",
+    isLayoutMeaningful: () => true,
+    templateCopySourceScore: () => 3
+  });
+
+  assert.deepEqual(options.map((option) => option[0]), [
+    "shared:bikepacking-reference-bags"
+  ]);
+});
+
+test("server demo shared-layout index does not confirm stale template-copy entries", () => {
+  const payload = {
+    sharedLayoutsIndex: {
+      layouts: [
+        {
+          id: "bikepacking-reference-bags",
+          name: "Bikepacking reference",
+          language: "ru"
+        },
+        {
+          id: "template-copy-ru-deleted",
+          name: "Bikepacking reference 2",
+          language: "ru"
+        }
+      ]
+    }
+  };
+  const layoutsByLanguage = { ru: [] };
+
+  const confirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
+  const merged = mergeSharedLayoutIndexPayload(layoutsByLanguage, payload);
+
+  assert.equal(merged, 1);
+  assert.deepEqual(confirmed.map((layout) => layout.id), ["bikepacking-reference-bags"]);
+  assert.deepEqual(layoutsByLanguage.ru.map((layout) => layout.id), ["bikepacking-reference-bags"]);
 });
 
 test("public shared catalog prunes stale template-copy runtime entries", () => {
@@ -222,6 +490,12 @@ test("published template-copy row adopts a same-name local draft with an old sou
 });
 
 test("admin template options collapse local draft and published template-copy row into one option", () => {
+  const confirmed = [{
+    id: "template-copy-ru-123",
+    name: "Bikepacking reference 2",
+    language: "ru",
+    runtimeSharedTemplate: true
+  }];
   const options = buildAdminSharedTemplateOptions({
     canOpen: true,
     localLayouts: [{
@@ -239,6 +513,8 @@ test("admin template options collapse local draft and published template-copy ro
       runtimeSharedTemplate: true,
       statePayload: {}
     }],
+    serverConfirmedSharedLayouts: confirmed,
+    requireServerConfirmationForSharedTemplates: true,
     fallbackLanguage: "ru",
     isLayoutMeaningful: () => true,
     templateCopySourceScore: () => 3,
@@ -254,6 +530,34 @@ test("admin template options collapse local draft and published template-copy ro
 
   assert.equal(options.length, 1);
   assert.equal(options[0][0], "template-draft:layout-local-draft");
+});
+
+test("admin template options hide local and runtime entries without server confirmation", () => {
+  const options = buildAdminSharedTemplateOptions({
+    canOpen: true,
+    localLayouts: [{
+      id: "layout-local-draft",
+      name: "Bikepacking reference 2",
+      adminTemplateCopy: true,
+      adminSharedSourceId: "template-copy-ru-123",
+      language: "ru",
+      rootContainerIds: ["container-a"]
+    }],
+    sharedLayouts: [{
+      id: "template-copy-ru-123",
+      name: "Bikepacking reference 2",
+      language: "ru",
+      runtimeSharedTemplate: true,
+      statePayload: {}
+    }],
+    serverConfirmedSharedLayouts: [],
+    requireServerConfirmationForSharedTemplates: true,
+    fallbackLanguage: "ru",
+    isLayoutMeaningful: () => true,
+    templateCopySourceScore: () => 3
+  });
+
+  assert.deepEqual(options, []);
 });
 
 test("empty local template-copy draft is hydrated from meaningful published payload", () => {
@@ -342,4 +646,47 @@ test("empty local template-copy draft is hydrated from meaningful published payl
   assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
   assert.deepEqual(state.layouts["layout-local-draft"].rootContainerIds, ["copy-container-a"]);
   assert.ok(state.items["copy-item-a"]);
+});
+
+test("published templates are blocked when offline or forced offline", () => {
+  assert.equal(isNetworkUnavailable({
+    forcedOffline: false,
+    hasNavigatorOnline: true,
+    navigatorOnline: true
+  }), false);
+  assert.equal(isNetworkUnavailable({
+    forcedOffline: false,
+    hasNavigatorOnline: true,
+    navigatorOnline: false
+  }), true);
+  assert.equal(isNetworkUnavailable({
+    forcedOffline: true,
+    hasNavigatorOnline: true,
+    navigatorOnline: true
+  }), true);
+  assert.match(publishedTemplateBlockReason({
+    forcedOffline: false,
+    hasNavigatorOnline: true,
+    navigatorOnline: false,
+    language: "ru"
+  }), /нет интернета/);
+});
+
+test("shared template catalog diagnostics warn when confirmed rows create no options", () => {
+  const diagnostics = createSharedLayoutCatalogDiagnostics({
+    source: "/bike-packing/public-shared-layouts",
+    records: [{ id: "public-shared-layout-template-copy-ru-1" }],
+    sharedLayoutIdFromRecord: sharedLayoutIdFromPublicListRecord,
+    confirmedLayouts: [{ id: "template-copy-ru-1" }],
+    visibleOptions: []
+  });
+
+  assert.equal(diagnostics.recordCount, 1);
+  assert.equal(diagnostics.parsedIdCount, 1);
+  assert.equal(diagnostics.confirmedCount, 1);
+  assert.equal(shouldWarnAboutSharedLayoutCatalog(diagnostics), true);
+  assert.equal(shouldWarnAboutSharedLayoutCatalog({
+    ...diagnostics,
+    visibleSharedOptionCount: 1
+  }), false);
 });

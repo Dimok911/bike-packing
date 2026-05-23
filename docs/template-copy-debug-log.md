@@ -288,13 +288,91 @@
 
 ## v705: локальный draft усыновляется опубликованной template-copy строкой
 
-- Закрыт сценарий, где в админке видны две копии при одной строке в БД: локальный `adminTemplateCopy` мог оставаться привязанным к старому source id, а `/bike-packing/public-lists` приносил настоящую `template-copy-*` строку. Теперь catalog refresh сверяет `template-copy-*` по имени и языку и переносит локальный draft на фактический published shared id.
+- Закрыт сценарий, где в админке видны две копии при одной строке в БД: локальный `adminTemplateCopy` оставался привязанным к старому source id, а `/bike-packing/public-lists` приносил настоящую `template-copy-*` строку. Теперь catalog refresh сверяет `template-copy-*` по имени и языку и переносит локальный draft на фактический published shared id.
 - Если локальный admin draft с этим `template-copy-*` id пустой, а published payload уже наполнен, открытие/refresh восстанавливает локальный draft из published payload. Серверная строка становится каноническим источником, а пустая локальная оболочка больше не может затенить нормальный шаблон.
 - Важный урок для следующих правок: нельзя просто прятать local draft или просто доверять `sharedLayoutsIndex`. Нужно сначала нормализовать identity локального draft к реальному `public-shared-layout-template-copy-*`, затем чинить пустой локальный материализованный layout из полного published state.
 
 ## v706: старая multi-source структура больше не решает UI-список
 
-- Проблема была глубже v705: админский select собирал равноправные строки из local draft, `sharedLayoutsIndex` preview и real public-list catalog. Пока эти источники были равноправны, дубль мог вернуться при любом несовпадении id.
+- Проблема была глубже v705: админский select собирал равноправные строки из local draft, `sharedLayoutsIndex` preview и real public-list catalog. Пока эти источники были равноправны, дубль возвращался при несовпадении id.
 - Добавлен общий canonical слой `src/public/admin-shared-template-options.js`: перед выводом все кандидаты проходят дедупликацию по published id и по `template-copy` identity `name+language`. Local наполненный draft выигрывает как рабочая вкладка, real runtime/published row остается источником данных, но не создает вторую строку.
 - API получил отдельный canonical endpoint `/bike-packing/public-shared-layouts` и capability `sharedTemplateCanonicalCatalog`; фронт требует compatibility `2026-05-23.shared-template-canonical-catalog-v1`. Старый `/public-lists` больше не является контрактом для админского shared-template catalog.
 - `app.js` больше не содержит правила сборки/дедупликации списка шаблонов: только вызывает модуль и передает текущие зависимости.
+
+## v708: server-confirmed catalog для admin shared/template
+
+- Admin shared/template select больше не строится из локального state/runtime как из источника истины. Видимые shared/template варианты проходят через `serverConfirmedSharedLayouts`, который заполняется только ответом `/bike-packing/public-shared-layouts`.
+- Если API не подтвердил shared/template запись, локальный `adminTemplateCopy`, runtime entry из старого индекса и materialized draft не дают строку в админском списке. После ответа canonical catalog неподтвержденные materialized drafts удаляются из local state, чтобы активная админская вкладка тоже не оставалась видимой.
+- После успешного `DELETE /bike-packing/admin/shared-layouts/:id` фронт дополнительно чистит весь локальный след template-copy: exact `sharedId`, stale runtime entries и local admin drafts той же identity `name+language`.
+- Чистка вынесена из `app.js`: state-удаление живет в `src/state/layout-delete.js`, runtime/frontend purge живет в `src/public/shared-layout-admin.js`, canonical catalog mapping живет в `src/public/shared-layouts.js`. `app.js` только вызывает модули после ответа API.
+- Добавлены critical tests: stale local draft со старым `adminSharedSourceId` удаляется вместе с опубликованным template-copy; runtime-каталог не оставляет строку в админском select после удаления из БД; local/runtime entries не отображаются без server confirmation; неподтвержденная active materialization удаляется после canonical refresh.
+
+## v709: copy/delete flow следует server-confirmed контракту
+
+- Копирование admin shared/template больше не останавливается на локальном draft. Фронт создает локальную заготовку, сразу сохраняет ее на сервере, обновляет canonical catalog и только после подтверждения открывает новую копию.
+- Если серверное сохранение копии не подтвердилось, локальная заготовка удаляется и в админский список не попадает.
+- После удаления shared/template фронт выбирает следующий server-confirmed shared-шаблон по порядку. Если shared-шаблонов больше нет, открывается demo-шаблон в админской зоне, а не пользовательская укладка.
+- Единая логика без технических деталей записана в `docs/template-copy-flow.md`.
+
+## v710: pending UI и metadata-only смена языка шаблона
+
+- Кнопка копирования теперь получает loading-state на время серверного сохранения: она заблокирована, помечена `aria-busy` и показывает крутилку, пока сервер не подтвердил новую published shared/template запись.
+- Смена языка или названия published shared/template идет через metadata endpoint и не создает payload из текущего layout. Это защищает шаблон от случайного пересохранения всего состояния при изменении только метки.
+- Обновление подтвержденного shared/template каталога вынесено в `src/public/shared-layouts.js`, чтобы `app.js` не копил новую бизнес-логику.
+- В документах разведены правила копирования: `docs/template-copy-flow.md` описывает server-confirmed published шаблоны, `docs/user-layout-copy-flow.md` описывает локальные пользовательские укладки и их оффлайн-поведение.
+
+## v711: язык публичного шаблона берется из server metadata
+
+- Корень бага смены языка был в canonical endpoint: `/bike-packing/public-shared-layouts` вычислял `language` из payload шаблона. Metadata endpoint менял серверную метку, но payload намеренно не переписывался, поэтому безлогинный публичный каталог продолжал видеть старый язык.
+- API теперь собирает language/name для public shared catalog из server-side shared index metadata, которую обновляет metadata endpoint. Payload остается неизменным.
+- Фронт при раскладке runtime shared templates доверяет `record.language` из canonical catalog перед языком из payload.
+- Compatibility API поднята до `2026-05-23.shared-template-catalog-metadata-language-v1`, добавлена capability `sharedTemplateCatalogMetadataLanguage`.
+- Добавлен critical test: server metadata language переигрывает старый runtime/payload language при сборке confirmed shared catalog.
+
+## v712: canonical shared catalog включает серверный demo shared-index
+
+- Причина пропажи shared-шаблонов из админки: demo options добавлялись напрямую по языкам, а shared options требовали `/bike-packing/public-shared-layouts`. Endpoint возвращал только отдельные `public-shared-layout-*` rows и не включал server-side `sharedLayoutsIndex` из demo payload. Поэтому shared entries, подтвержденные demo-index, не попадали в admin select.
+- API `/bike-packing/public-shared-layouts` теперь возвращает unified catalog: реальные `public-shared-layout-*` rows плюс entries из серверного demo `sharedLayoutsIndex`.
+- Demo и shared зафиксированы как один публичный каталог шаблонов: demo является основным шаблоном языка, shared является дополнительным опубликованным шаблоном из того же server-confirmed каталога.
+- Compatibility API поднята до `2026-05-23.shared-template-index-catalog-v1`, добавлена capability `sharedTemplateIndexCatalog`.
+
+## v713: published templates блокируются в оффлайне
+
+- В принудительном оффлайн-режиме или при `navigator.onLine === false` published-шаблоны считаются недоступными: открыть demo/shared, открыть admin draft, копировать или редактировать published template нельзя.
+- В селекте шаблоны остаются видимыми, но получают disabled option. Личные пользовательские укладки остаются доступными.
+- Логика блокировки вынесена в `src/public/public-template-availability.js`, чтобы не держать это правило внутри `app.js`.
+- Добавлен critical test на forced-offline/browser-offline блокировку published templates.
+
+## v714: fallback server-confirmed catalog через public-lists
+
+- Если новый canonical endpoint `/bike-packing/public-shared-layouts` ещё не развернут или временно не отдает records, фронт больше не обнуляет shared-шаблоны сразу.
+- Fallback идет через `/bike-packing/public-lists` и берет только реальные `public-shared-layout-*` строки. Это всё еще серверное подтверждение из БД/API, а не локальный state/runtime.
+- Цель: при старом или не перезапущенном backend shared-шаблоны из БД не пропадают из админского списка, но локальные неподтвержденные хвосты по-прежнему не показываются.
+
+## v715: диагностика API -> admin select для shared-шаблонов
+
+- Добавлен диагностический контракт для shared catalog: фронт считает `recordCount`, `parsedIdCount`, `confirmedCount`, `visibleSharedOptionCount` и sample id на пути API -> confirmed catalog -> admin options.
+- Если API отдал shared rows, фронт распарсил id и получил confirmed layouts, но admin options пустые, в консоль пишется предупреждение `[bike-packing] Shared template catalog was confirmed by API but produced no admin options.`
+- Если API отдал rows, но ни одна строка не стала confirmed layout, пишется предупреждение `[bike-packing] Shared template API returned rows, but none became confirmed shared layouts.`
+- Диагностика вынесена в `src/public/shared-layout-catalog-diagnostics.js`, добавлен critical test.
+
+## v716: public template endpoints не зависят от optional metadata columns
+
+- По факту из браузера оба server-confirmed endpoint отвечали `500`: `/bike-packing/public-shared-layouts` и fallback `/bike-packing/public-lists`. Это означает падение API до фронтовой фильтрации.
+- Public catalog endpoints больше не выбирают необязательные metadata-колонки (`author_name`, `tags`, `region`, `duration_days`, `cover_photo_id` и т.п.) как реальные колонки. Для публичного каталога они не нужны; query возвращает `NULL AS ...`, чтобы каталог не падал при отличиях схемы БД.
+- Compatibility API поднята до `2026-05-23.public-template-catalog-resilient-v1`, добавлена capability `publicTemplateCatalogResilientSelect`.
+
+## v717: server demo shared-index снова является подтвержденным источником
+
+- Точная причина пропажи shared-шаблонов из админки: после перехода admin select на `serverConfirmedSharedLayouts` серверный `sharedLayoutsIndex` из demo payload продолжал наполнять runtime-список, но не попадал в confirmed catalog.
+- Это нарушило правило из `docs/template-copy-flow.md`: шаблон можно показывать только после подтверждения сервером, но серверное подтверждение может приходить не только из `/bike-packing/public-shared-layouts`, а также из загруженного с сервера demo `sharedLayoutsIndex`.
+- Исправление: `refreshPublicSharedLayoutIndex()` теперь добавляет entries из server demo `sharedLayoutsIndex` в `serverConfirmedSharedLayouts`; ошибка дополнительного catalog endpoint больше не очищает уже подтвержденные index entries.
+- Добавлен critical test: server demo shared-layout index остается confirmed source, даже если catalog endpoint не дал новых строк.
+
+## v718: template-copy подтверждается только реальной public shared row
+
+- Найден источник "призрачных" копий: старые `template-copy-*` entries оставались внутри `sharedLayoutsIndex` у `public-demo-state`, хотя соответствующих `public-shared-layout-template-copy-*` строк уже не было.
+- Frontend больше не поднимает `template-copy-*` из demo `sharedLayoutsIndex` в runtime/confirmed каталог. Demo-index остается подтвержденным источником для built-in/reference shared entries, но не для опубликованных копий шаблонов.
+- Backend `/bike-packing/public-shared-layouts` больше не синтезирует `template-copy-*` из demo-index без реальной `public-shared-layout-*` строки. Если row есть, metadata из index может только уточнить name/language.
+- При сохранении shared template copy фронт больше не записывает эту копию обратно в demo `sharedLayoutsIndex`; видимость копии идет через canonical/public shared row.
+- Compatibility API поднята до `2026-05-23.template-copy-real-row-catalog-v1`, добавлена capability `templateCopyRequiresPublicSharedRow`.

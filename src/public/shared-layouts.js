@@ -68,6 +68,87 @@ export function isPublicSharedLayoutListRecord(record) {
   return Boolean(sharedLayoutIdFromPublicListRecord(record));
 }
 
+export function isTemplateCopySharedLayoutId(layoutId) {
+  return String(layoutId || "").trim().startsWith("template-copy-");
+}
+
+export function sharedLayoutCatalogEntryFromPublicRecord(record, {
+  layoutsByLanguage = null,
+  fallbackLanguage = "ru"
+} = {}) {
+  const id = sharedLayoutIdFromPublicListRecord(record);
+  if (!id) return null;
+  const runtimeLayout = Object.values(layoutsByLanguage || {})
+    .flat()
+    .find((layout) => layout?.id === id) || null;
+  const language = String(
+    record?.language ||
+    runtimeLayout?.language ||
+    fallbackLanguage ||
+    "ru"
+  ).trim().toLowerCase() || "ru";
+  return {
+    ...(runtimeLayout || {}),
+    id,
+    name: runtimeLayout?.name || record?.name || record?.title || id,
+    language,
+    runtimeSharedTemplate: true,
+    serverConfirmed: true,
+    updatedAt: runtimeLayout?.updatedAt || record?.updatedAt || record?.updated_at || ""
+  };
+}
+
+export function serverConfirmedSharedLayoutsFromPublicRecords(records = [], options = {}) {
+  const byId = new Map();
+  records
+    .map((record) => sharedLayoutCatalogEntryFromPublicRecord(record, options))
+    .filter(Boolean)
+    .forEach((layout) => {
+      if (!byId.has(layout.id)) byId.set(layout.id, layout);
+    });
+  return [...byId.values()];
+}
+
+export function serverConfirmedSharedLayoutsFromIndexPayload(payload, {
+  includeTemplateCopies = false
+} = {}) {
+  return normalizeSharedLayoutIndexEntries(payload)
+    .filter((entry) => includeTemplateCopies || !isTemplateCopySharedLayoutId(entry.id))
+    .map((entry) => ({
+      ...entry,
+      runtimeSharedTemplate: true,
+      serverConfirmed: true
+    }));
+}
+
+export function mergeSharedLayoutCatalogEntries(catalog = [], entries = []) {
+  const byId = new Map();
+  (Array.isArray(catalog) ? catalog : []).forEach((entry) => {
+    if (entry?.id) byId.set(entry.id, entry);
+  });
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    if (entry?.id) byId.set(entry.id, { ...(byId.get(entry.id) || {}), ...entry });
+  });
+  return [...byId.values()];
+}
+
+export function updateSharedLayoutCatalogEntryMetadata(catalog = [], sharedId, {
+  name = "",
+  language = "",
+  updatedAt = ""
+} = {}) {
+  if (!sharedId) return Array.isArray(catalog) ? catalog : [];
+  return (Array.isArray(catalog) ? catalog : []).map((entry) => {
+    if (entry?.id !== sharedId) return entry;
+    return {
+      ...entry,
+      name: name || entry.name,
+      language: language || entry.language,
+      updatedAt: updatedAt || entry.updatedAt
+    };
+  });
+}
+
 export function sharedLayoutLanguageFromPayload(payload, fallbackLanguage = "ru") {
   const activeLayout = payload?.layouts?.[payload?.activeLayoutId] || Object.values(payload?.layouts || {})[0] || null;
   return String(activeLayout?.language || fallbackLanguage || "ru").trim().toLowerCase() || "ru";
@@ -112,15 +193,19 @@ export function sharedLayoutIndexPayload(payload) {
   return copy;
 }
 
-export function mergeSharedLayoutIndexPayload(layoutsByLanguage, payload) {
+export function mergeSharedLayoutIndexPayload(layoutsByLanguage, payload, {
+  includeTemplateCopies = false
+} = {}) {
   let changed = 0;
-  normalizeSharedLayoutIndexEntries(payload).forEach((entry) => {
-    const layout = upsertRuntimeSharedLayout(layoutsByLanguage, {
-      ...entry,
-      runtimeSharedTemplate: true
+  normalizeSharedLayoutIndexEntries(payload)
+    .filter((entry) => includeTemplateCopies || !isTemplateCopySharedLayoutId(entry.id))
+    .forEach((entry) => {
+      const layout = upsertRuntimeSharedLayout(layoutsByLanguage, {
+        ...entry,
+        runtimeSharedTemplate: true
+      });
+      if (layout) changed += 1;
     });
-    if (layout) changed += 1;
-  });
   return changed;
 }
 
@@ -206,10 +291,13 @@ export function pruneRuntimeSharedLayouts(layoutsByLanguage, shouldRemove) {
   return removed;
 }
 
-export function runtimeSharedLayoutIndexEntries(layoutsByLanguage) {
+export function runtimeSharedLayoutIndexEntries(layoutsByLanguage, {
+  includeTemplateCopies = false
+} = {}) {
   return Object.values(layoutsByLanguage || {})
     .flat()
     .filter((layout) => layout?.runtimeSharedTemplate && layout.statePayload)
+    .filter((layout) => includeTemplateCopies || !isTemplateCopySharedLayoutId(layout.id))
     .map((layout) => sharedLayoutIndexEntry({
       id: layout.id,
       name: layout.name || layout.id,
@@ -220,8 +308,8 @@ export function runtimeSharedLayoutIndexEntries(layoutsByLanguage) {
     .filter(Boolean);
 }
 
-export function withRuntimeSharedLayoutIndex(payload, layoutsByLanguage) {
-  return runtimeSharedLayoutIndexEntries(layoutsByLanguage)
+export function withRuntimeSharedLayoutIndex(payload, layoutsByLanguage, options = {}) {
+  return runtimeSharedLayoutIndexEntries(layoutsByLanguage, options)
     .reduce((nextPayload, entry) => upsertSharedLayoutIndexEntry(nextPayload, entry), clonePlain(payload || {}));
 }
 

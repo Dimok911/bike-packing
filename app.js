@@ -101,6 +101,11 @@ import {
   shouldImportGuestLayoutBeforeRemote,
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
+import { publishedTemplateBlockReason } from "./src/public/public-template-availability.js";
+import {
+  createSharedLayoutCatalogDiagnostics,
+  shouldWarnAboutSharedLayoutCatalog
+} from "./src/public/shared-layout-catalog-diagnostics.js";
 import {
   buildAdminSharedTemplateOptions,
   compareSharedTemplateAdminOrder,
@@ -111,13 +116,18 @@ import {
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
   isPublicSharedLayoutListRecord,
+  isTemplateCopySharedLayoutId,
+  mergeSharedLayoutCatalogEntries,
   mergeSharedLayoutIndexPayload,
   normalizeSharedGearName,
   pruneRuntimeSharedLayouts,
+  serverConfirmedSharedLayoutsFromIndexPayload,
+  serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIndexEntry,
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload,
   sharedGearPhotos,
+  updateSharedLayoutCatalogEntryMetadata,
   upsertRuntimeSharedLayout,
   upsertSharedLayoutIndexEntry,
   withRuntimeSharedLayoutIndex
@@ -125,6 +135,8 @@ import {
 import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
 import {
   deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
+  purgeDeletedSharedTemplateFromFrontendState,
+  purgeUnconfirmedSharedTemplatesFromFrontendState,
   removePublicSharedLayoutIndexEntry as removePublicSharedLayoutIndexEntryRecord
 } from "./src/public/shared-layout-admin.js";
 import {
@@ -209,7 +221,7 @@ import {
 } from "./src/state/layout-choice.js";
 import {
   removeLayoutTreeFromState,
-  removeManagedSharedLayoutTreesFromState
+  removeManagedSharedTemplateTreesFromState
 } from "./src/state/layout-delete.js";
 import {
   solidifyManagedTemplateDrafts as solidifyManagedTemplateDraftsForState,
@@ -452,6 +464,7 @@ import {
 } from "./src/ui/touch-actions.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
+let serverConfirmedSharedLayouts = [];
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
@@ -460,9 +473,13 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplateMetadataPost",
   "sharedTemplateEntityTreeFilter",
   "sharedTemplateEntityRowsPublicScope",
-  "sharedTemplateCanonicalCatalog"
+  "sharedTemplateCanonicalCatalog",
+  "sharedTemplateCatalogMetadataLanguage",
+  "sharedTemplateIndexCatalog",
+  "publicTemplateCatalogResilientSelect",
+  "templateCopyRequiresPublicSharedRow"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.shared-template-canonical-catalog-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.template-copy-real-row-catalog-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -534,6 +551,7 @@ let applyingRemoteState = false;
 let appUnlocked = true;
 let initialRemoteLoadPending = false;
 let syncVisualState = "local";
+let sharedLayoutCatalogDiagnostics = null;
 let remoteRefreshTimer = null;
 let remoteRefreshInFlight = false;
 let personalListApiUnavailable = false;
@@ -781,23 +799,67 @@ function allSharedLayoutsByAdminOrder() {
   return result;
 }
 
-function adminPublicLayoutOptions() {
+function currentPublishedTemplateBlockReason() {
+  return publishedTemplateBlockReason({
+    forcedOffline: isForcedOffline(),
+    hasNavigatorOnline: typeof navigator !== "undefined" && "onLine" in navigator,
+    navigatorOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+    language: uiLanguage
+  });
+}
+
+function arePublishedTemplatesBlocked() {
+  return Boolean(currentPublishedTemplateBlockReason());
+}
+
+function requirePublishedTemplatesAvailable() {
+  const reason = currentPublishedTemplateBlockReason();
+  if (!reason) return true;
+  updateSyncUi(reason);
+  showToast(reason, "error");
+  return false;
+}
+
+function markLayoutOptionsDisabled(options, disabled) {
+  if (!disabled) return options;
+  return options.map(([value, label, kind = ""]) => [value, label, kind, true]);
+}
+
+function serverConfirmedSharedLayoutsByAdminOrder() {
+  return [...serverConfirmedSharedLayouts]
+    .filter((layout) => layout?.id && !isDeletedSharedLayoutId(layout.id))
+    .sort(compareSharedLayoutAdminOrder);
+}
+
+function nextServerConfirmedSharedLayoutAfter(sharedId) {
+  const id = String(sharedId || "").trim();
+  const layouts = serverConfirmedSharedLayoutsByAdminOrder();
+  if (!layouts.length) return null;
+  const index = layouts.findIndex((layout) => layout.id === id);
+  if (index < 0) return layouts[0] || null;
+  return layouts[index + 1] || layouts[index - 1] || null;
+}
+
+function adminPublicLayoutOptions({ disabled = false } = {}) {
   return [
     ...SUPPORTED_LANGUAGES.map((language) => [
       demoLayoutChoiceForLanguage(language),
       `${t("template.prefix")}: ${t("demo.layoutName")} (${languageOptionLabel(language)})`,
-      "demo"
+      "demo",
+      disabled
     ]),
-    ...adminSharedTemplateOptions()
+    ...markLayoutOptionsDisabled(adminSharedTemplateOptions(), disabled)
   ];
 }
 
 function adminSharedTemplateOptions() {
-  return buildAdminSharedTemplateOptions({
+  const options = buildAdminSharedTemplateOptions({
     canOpen: canOpenAdminPublishedEdit(),
     localLayouts: localAdminTemplateCopyLayouts(),
     linkedSharedListLayout,
-    sharedLayouts: allSharedLayoutsByAdminOrder(),
+    sharedLayouts: serverConfirmedSharedLayoutsByAdminOrder(),
+    serverConfirmedSharedLayouts: serverConfirmedSharedLayoutsByAdminOrder(),
+    requireServerConfirmationForSharedTemplates: true,
     isDeletedSharedLayoutId,
     fallbackLanguage: uiLanguage,
     isLayoutMeaningful,
@@ -813,6 +875,19 @@ function adminSharedTemplateOptions() {
       publicTemplateOptionLabel
     }
   });
+  if (sharedLayoutCatalogDiagnostics) {
+    sharedLayoutCatalogDiagnostics.visibleSharedOptionCount = options
+      .filter((option) => String(option?.[0] || "").startsWith("shared:") || Boolean(templateDraftLayoutId(option?.[0])))
+      .length;
+    sharedLayoutCatalogDiagnostics.sampleVisibleOptions = options
+      .map((option) => String(option?.[0] || ""))
+      .filter((value) => value.startsWith("shared:") || value.startsWith("template:"))
+      .slice(0, 8);
+    if (shouldWarnAboutSharedLayoutCatalog(sharedLayoutCatalogDiagnostics) && typeof console !== "undefined" && console.warn) {
+      console.warn("[bike-packing] Shared template catalog was confirmed by API but produced no admin options.", sharedLayoutCatalogDiagnostics);
+    }
+  }
+  return options;
 }
 
 function compareSharedLayoutAdminOrder(a, b) {
@@ -1150,6 +1225,10 @@ async function init() {
     await flushActivePublishedEditSave();
     const value = event.target.value;
     if (isDemoLayoutChoice(value)) {
+      if (!requirePublishedTemplatesAvailable()) {
+        renderFilters();
+        return;
+      }
       const language = demoLanguageFromLayoutChoice(value);
       if (await confirmPublicLayoutTransition("demo")) {
         if (canOpenAdminPublishedEdit()) await openAdminDemoLayout({ language });
@@ -1160,6 +1239,10 @@ async function init() {
       return;
     }
     if (value.startsWith("shared:")) {
+      if (!requirePublishedTemplatesAvailable()) {
+        renderFilters();
+        return;
+      }
       const layoutId = value.slice("shared:".length);
       if (await confirmPublicLayoutTransition("shared", findSharedLayout(layoutId))) {
         if (canOpenAdminPublishedEdit()) await openSharedLayoutForAdmin(layoutId);
@@ -1171,6 +1254,10 @@ async function init() {
     }
     const templateDraftId = templateDraftLayoutId(value);
     if (templateDraftId) {
+      if (!requirePublishedTemplatesAvailable()) {
+        renderFilters();
+        return;
+      }
       const layoutId = templateDraftId;
       const layout = state.layouts?.[layoutId];
       if (canOpenAdminPublishedEdit() && layout?.adminTemplateCopy) {
@@ -5003,7 +5090,7 @@ async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) 
   cancelPublishedLayoutSave(layout.id);
   const previousRuntime = findSharedLayout(target.sharedId);
   const previousRuntimeSnapshot = previousRuntime ? clone(previousRuntime) : null;
-  const payload = previousRuntime?.statePayload || exportLayoutAsDemoState(layout.id);
+  const payload = previousRuntime?.statePayload || null;
   const nextLanguage = layout.language || previousRuntime?.language || uiLanguage;
   try {
     const data = await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/metadata`, {
@@ -5015,14 +5102,21 @@ async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) 
         language: nextLanguage
       })
     });
+    const confirmedName = data?.name || layout.name || previousRuntime?.name || target.sharedId;
+    const confirmedLanguage = data?.language || nextLanguage;
     const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
       id: target.sharedId,
-      name: data?.name || layout.name || previousRuntime?.name || target.sharedId,
-      language: data?.language || nextLanguage,
+      name: confirmedName,
+      language: confirmedLanguage,
       statePayload: payload,
       runtimeSharedTemplate: true
     });
     if (sharedLayout) sharedLayout.updatedAt = nowIso();
+    serverConfirmedSharedLayouts = updateSharedLayoutCatalogEntryMetadata(serverConfirmedSharedLayouts, target.sharedId, {
+      name: confirmedName,
+      language: confirmedLanguage,
+      updatedAt: sharedLayout?.updatedAt || nowIso()
+    });
     saveState({ sync: false });
     refreshPublishedLayoutView(target);
     return true;
@@ -6287,6 +6381,10 @@ async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
     try {
       const payload = await fetchPublishedListStateById(demoPublicListIdForLanguage(language));
       merged += mergeSharedLayoutIndexPayload(sharedLayoutsByLanguage, payload);
+      serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(
+        serverConfirmedSharedLayouts,
+        serverConfirmedSharedLayoutsFromIndexPayload(payload)
+      );
     } catch {
       // Public shared template index is opportunistic; built-in templates still work without it.
     }
@@ -6300,19 +6398,44 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
   let localDraftReconciled = false;
   let data = null;
   try {
-    data = await apiFetch("/bike-packing/public-shared-layouts", {
-      timeoutMs: LIST_API_TIMEOUT_MS,
-      silentErrors: true
-    });
+    data = await fetchPublicSharedLayoutCatalog();
   } catch {
+    const confirmedSharedLayouts = serverConfirmedSharedLayoutsByAdminOrder();
+    const purgedUnconfirmed = purgeUnconfirmedSharedTemplatesFromFrontendState({
+      targetState: state,
+      layoutsByLanguage: sharedLayoutsByLanguage,
+      confirmedSharedLayouts,
+      fallbackLanguage: uiLanguage
+    });
+    if (purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
+    if (renderAfter && (purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
     return 0;
   }
   const records = Array.isArray(data?.lists) ? data.lists : [];
+  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(records, {
+    layoutsByLanguage: sharedLayoutsByLanguage,
+    fallbackLanguage: uiLanguage
+  }));
+  sharedLayoutCatalogDiagnostics = createSharedLayoutCatalogDiagnostics({
+    source: data?.fallback || "/bike-packing/public-shared-layouts",
+    records,
+    sharedLayoutIdFromRecord: sharedLayoutIdFromPublicListRecord,
+    confirmedLayouts: serverConfirmedSharedLayouts,
+    visibleOptions: []
+  });
+  if (
+    records.length &&
+    sharedLayoutCatalogDiagnostics.confirmedCount === 0 &&
+    typeof console !== "undefined" &&
+    console.warn
+  ) {
+    console.warn("[bike-packing] Shared template API returned rows, but none became confirmed shared layouts.", sharedLayoutCatalogDiagnostics);
+  }
   const publicSharedIds = new Set(records
     .filter(isPublicSharedLayoutListRecord)
     .map(sharedLayoutIdFromPublicListRecord)
     .filter(Boolean));
-  pruneRuntimeSharedLayouts(sharedLayoutsByLanguage, (layout) =>
+  const prunedMissingRuntime = pruneRuntimeSharedLayouts(sharedLayoutsByLanguage, (layout) =>
     layout?.runtimeSharedTemplate &&
     String(layout.id || "").startsWith("template-copy-") &&
     !publicSharedIds.has(layout.id)
@@ -6335,7 +6458,7 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
       const layout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
         id: sharedId,
         name: activeLayout?.name || record.title || sharedId,
-        language: sharedLayoutLanguageFromPayload(payload, fallbackLanguage),
+        language: record.language || sharedLayoutLanguageFromPayload(payload, fallbackLanguage),
         statePayload: payload,
         runtimeSharedTemplate: true,
         updatedAt: record.updatedAt || record.updated_at || ""
@@ -6363,9 +6486,43 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
         }
       }
     }));
-  if (localDraftReconciled) saveState({ sync: false });
-  if (merged && renderAfter) render();
+  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(records, {
+    layoutsByLanguage: sharedLayoutsByLanguage,
+    fallbackLanguage: uiLanguage
+  }));
+  const purgedUnconfirmed = purgeUnconfirmedSharedTemplatesFromFrontendState({
+    targetState: state,
+    layoutsByLanguage: sharedLayoutsByLanguage,
+    confirmedSharedLayouts: serverConfirmedSharedLayouts,
+    fallbackLanguage: uiLanguage
+  });
+  if (localDraftReconciled || purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
+  if (renderAfter && (merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
   return merged;
+}
+
+async function fetchPublicSharedLayoutCatalog() {
+  try {
+    const data = await apiFetch("/bike-packing/public-shared-layouts", {
+      timeoutMs: LIST_API_TIMEOUT_MS,
+      silentErrors: true
+    });
+    const records = Array.isArray(data?.lists) ? data.lists : [];
+    if (records.length || data?.canonical) return { ...data, lists: records };
+  } catch {
+    // Fall through to the legacy public-lists catalog. It is still server-confirmed.
+  }
+  const fallback = await apiFetch("/bike-packing/public-lists", {
+    timeoutMs: LIST_API_TIMEOUT_MS,
+    silentErrors: true
+  });
+  const records = (Array.isArray(fallback?.lists) ? fallback.lists : []).filter(isPublicSharedLayoutListRecord);
+  return {
+    ok: Boolean(fallback?.ok),
+    canonical: false,
+    fallback: "public-lists",
+    lists: records
+  };
 }
 
 async function refreshPublicSharedTemplates({ renderAfter = false } = {}) {
@@ -6376,6 +6533,7 @@ async function refreshPublicSharedTemplates({ renderAfter = false } = {}) {
 }
 
 async function savePublicSharedLayoutIndexEntry(layout) {
+  if (isTemplateCopySharedLayoutId(layout?.id)) return false;
   const entry = sharedLayoutIndexEntry({
     id: layout?.id,
     name: layout?.name || layout?.id || "",
@@ -7121,6 +7279,10 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
 }
 
 async function openAdminDemoLayout({ remember = true, language = uiLanguage } = {}) {
+  if (!requirePublishedTemplatesAvailable()) {
+    renderFilters();
+    return;
+  }
   if (!canOpenAdminPublishedEdit()) {
     showToast("Демо может редактировать только админ.", "error");
     return;
@@ -7200,6 +7362,10 @@ function clearActiveAdminDemoStateOnStartup() {
 }
 
 async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage } = {}) {
+  if (!requirePublishedTemplatesAvailable()) {
+    renderFilters();
+    return;
+  }
   if (canOpenAdminPublishedEdit()) {
     await openAdminDemoLayout({ remember, language });
     return;
@@ -7693,6 +7859,7 @@ function cleanGeneratedEntityId(value) {
 }
 
 function openSharedLayoutsDialog() {
+  if (!requirePublishedTemplatesAvailable()) return;
   const layoutId = currentSharedLayouts()[0]?.id;
   if (canOpenAdminPublishedEdit()) {
     openSharedLayoutForAdmin(layoutId);
@@ -7702,6 +7869,10 @@ function openSharedLayoutsDialog() {
 }
 
 async function openSharedLayoutViewer(layoutId, { remember = true } = {}) {
+  if (!requirePublishedTemplatesAvailable()) {
+    renderFilters();
+    return;
+  }
   const layout = findSharedLayout(layoutId);
   if (!layout) return;
   if (canOpenAdminPublishedEdit()) {
@@ -7727,6 +7898,10 @@ async function openSharedLayoutViewer(layoutId, { remember = true } = {}) {
 }
 
 async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
+  if (!requirePublishedTemplatesAvailable()) {
+    renderFilters();
+    return;
+  }
   const layout = findSharedLayout(layoutId);
   if (!layout || !canOpenAdminPublishedEdit()) return;
   updateSyncUi(`Shared укладка · загружаю для правки ${layout.name || ""}`);
@@ -9906,12 +10081,13 @@ function renderFilters() {
   const selectedLayoutValue = isReadOnlyStateScope()
     ? (readonlyLayoutId === DEMO_SHARED_LAYOUT_ID ? DEMO_LAYOUT_SELECT_VALUE : `shared:${readonlyLayoutId}`)
     : publicLayoutChoiceForLayout(activeLayout) || state.activeLayoutId;
+  const publicTemplatesBlocked = arePublishedTemplatesBlocked();
   let publicOptions = canOpenAdminPublishedEdit()
-    ? adminPublicLayoutOptions()
+    ? adminPublicLayoutOptions({ disabled: publicTemplatesBlocked })
     : [
-      [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo"],
-      ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared"]] : []),
-      ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared"])
+      [DEMO_LAYOUT_SELECT_VALUE, `${t("template.prefix")}: ${t("demo.layoutName")}`, "demo", publicTemplatesBlocked],
+      ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${linkedSharedListLayout.name}`, "shared", publicTemplatesBlocked]] : []),
+      ...currentSharedLayouts().map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${t("shared.prefix")}: ${layout.name}`, "shared", publicTemplatesBlocked])
     ];
   const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
   if (activeAdminLabel) {
@@ -10750,9 +10926,10 @@ function focusRecentlyAddedContainer(containerId) {
 
 function fillSelect(select, entries, selected = "") {
   const current = selected || select.value;
-  select.innerHTML = entries.map(([value, label, kind = ""]) => {
+  select.innerHTML = entries.map(([value, label, kind = "", disabled = false]) => {
     const className = kind ? ` class="select-option-${escapeHtml(kind)}"` : "";
-    return `<option value="${escapeHtml(value)}"${className}>${escapeHtml(label)}</option>`;
+    const disabledAttribute = disabled ? " disabled" : "";
+    return `<option value="${escapeHtml(value)}"${className}${disabledAttribute}>${escapeHtml(label)}</option>`;
   }).join("");
   if (entries.some(([value]) => value === current)) select.value = current;
 }
@@ -16271,7 +16448,9 @@ async function loadPublishedTemplateCopySource(sourceLayout) {
 }
 
 async function createTemplateCopyFromSource(sourceLayout, requestedName, {
-  language = ""
+  language = "",
+  activate = true,
+  renderAfter = true
 } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
   captureActiveLayoutArrangement();
@@ -16325,9 +16504,9 @@ async function createTemplateCopyFromSource(sourceLayout, requestedName, {
   state.layouts[id] = layout;
   solidifyTemplateDraftLayout(id);
   markLayoutPhotosForCurrentListCopy(id);
-  activateAdminPublishedLayout(id);
+  if (activate) activateAdminPublishedLayout(id);
   saveLayoutMutation(id);
-  render();
+  if (renderAfter) render();
   return id;
 }
 
@@ -16461,6 +16640,14 @@ function openLayoutCopyDialog() {
   openModalDialog(refs.layoutCopyDialog);
 }
 
+function setLayoutCopySaving(saving) {
+  const active = Boolean(saving);
+  if (!refs.saveLayoutCopyBtn) return;
+  refs.saveLayoutCopyBtn.disabled = active;
+  refs.saveLayoutCopyBtn.classList.toggle("button-loading", active);
+  refs.saveLayoutCopyBtn.setAttribute("aria-busy", active ? "true" : "false");
+}
+
 async function saveLayoutCopy(event) {
   event.preventDefault();
   const layout = state.layouts?.[layoutCopyTargetId || layoutEditTargetId];
@@ -16470,20 +16657,40 @@ async function saveLayoutCopy(event) {
   const language = isAdminEditablePublishedLayout(layout.id)
     ? normalizeUiLanguage(refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage))
     : "";
-  refs.saveLayoutCopyBtn.disabled = true;
+  setLayoutCopySaving(true);
   try {
-    const createdId = isAdminEditablePublishedLayout(layout.id)
-      ? await createTemplateCopyFromSource(layout, requestedName, { language })
+    const copyingAdminTemplate = isAdminEditablePublishedLayout(layout.id);
+    const createdId = copyingAdminTemplate
+      ? await createTemplateCopyFromSource(layout, requestedName, { language, activate: false, renderAfter: false })
       : createLayoutCopyFromSource(layout, requestedName, { language });
     if (!createdId) return;
+    if (copyingAdminTemplate) {
+      try {
+        updateSyncUi("Сохраняю копию шаблона на сервере...");
+        await savePublishedLayoutRecord(createdId);
+        const confirmedCopy = state.layouts?.[createdId];
+        const confirmedSharedId = confirmedCopy?.adminSharedSourceId || "";
+        if (!confirmedSharedId || !serverConfirmedSharedLayouts.some((entry) => entry?.id === confirmedSharedId)) {
+          throw new Error("Сервер не подтвердил копию шаблона.");
+        }
+        activateAdminPublishedLayout(createdId);
+      } catch (error) {
+        removeLayoutTree(createdId, state, { save: false });
+        saveState({ sync: false });
+        render();
+        throw error;
+      } finally {
+        updateSyncUi();
+      }
+    }
     refs.layoutCopyDialog.close();
     refs.layoutEditDialog.close();
-    if (!isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id)) switchView("bags");
-    showToast(isAdminEditablePublishedLayout(state.layouts?.[createdId]?.id) ? "Шаблон скопирован." : "Укладка скопирована.", "success");
+    if (!copyingAdminTemplate) switchView("bags");
+    showToast(copyingAdminTemplate ? "Шаблон скопирован." : "Укладка скопирована.", "success");
   } catch (error) {
     showToast(`Не удалось скопировать шаблон: ${error.message}`, "error");
   } finally {
-    refs.saveLayoutCopyBtn.disabled = false;
+    setLayoutCopySaving(false);
   }
 }
 
@@ -16534,7 +16741,10 @@ async function confirmDeleteManagedPublicLayout(layoutId) {
   await deleteManagedPublicLayout(layoutId);
 }
 
-async function deletePublishedSharedTemplate(sharedId) {
+async function deletePublishedSharedTemplate(sharedId, sourceLayout = null) {
+  const runtimeLayout = findSharedLayout(sharedId);
+  const deletedName = runtimeLayout?.name || sourceLayout?.name || sharedId;
+  const deletedLanguage = runtimeLayout?.language || sourceLayout?.language || uiLanguage;
   const deleted = await deletePublishedSharedTemplateRecord({
     sharedId,
     apiFetch,
@@ -16545,7 +16755,17 @@ async function deletePublishedSharedTemplate(sharedId) {
       if (typeof console !== "undefined" && console.warn) console.warn(...args);
     }
   });
-  if (deleted) rememberDeletedSharedLayoutId(sharedId);
+  if (deleted) {
+    rememberDeletedSharedLayoutId(sharedId);
+    serverConfirmedSharedLayouts = serverConfirmedSharedLayouts.filter((layout) => layout?.id !== sharedId);
+    purgeDeletedSharedTemplateFromFrontendState({
+      targetState: state,
+      layoutsByLanguage: sharedLayoutsByLanguage,
+      sharedId,
+      name: deletedName,
+      language: deletedLanguage
+    });
+  }
   return deleted;
 }
 
@@ -16562,11 +16782,14 @@ async function deleteManagedPublicLayout(layoutId) {
   if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
   const target = publishedLayoutTarget(layout);
   const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
+  const nextSharedLayout = shouldDeletePublishedTemplate && target?.type === "shared"
+    ? nextServerConfirmedSharedLayoutAfter(target.sharedId)
+    : null;
   if (shouldDeletePublishedTemplate) {
     try {
       await assertAdminApiCompatibility({ force: true });
       updateSyncUi("Удаляю shared-шаблон...");
-      await deletePublishedSharedTemplate(target.sharedId);
+      await deletePublishedSharedTemplate(target.sharedId, layout);
       updateSyncUi();
     } catch (error) {
       updateSyncUi();
@@ -16575,16 +16798,23 @@ async function deleteManagedPublicLayout(layoutId) {
     }
   }
   if (shouldDeletePublishedTemplate && target?.type === "shared") {
-    removeManagedSharedLayoutTreesFromState(state, target.sharedId);
+    removeManagedSharedTemplateTreesFromState(state, {
+      sharedId: target.sharedId,
+      name: layout.name,
+      language: layout.language || uiLanguage
+    });
   } else {
     removeLayoutTree(layoutId, state, { save: false });
   }
-  const nextLayout = userEditableLayouts()[0] || Object.values(state.layouts || {}).find((entry) => entry && !isPublishedLayoutEditable(entry));
-  if (nextLayout) openPrivateLayout(nextLayout.id);
-  else if (target?.type === "shared" && target.sharedId && !shouldDeletePublishedTemplate) setActiveReadOnlyScope(target.sharedId);
-  else setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
   saveState({ sync: false });
-  render();
+  if (shouldDeletePublishedTemplate) {
+    if (nextSharedLayout?.id) await openSharedLayoutForAdmin(nextSharedLayout.id);
+    else await openAdminDemoLayout({ language: layout.language || uiLanguage });
+  } else if (target?.type === "shared" && target.sharedId) {
+    await openSharedLayoutForAdmin(target.sharedId);
+  } else {
+    await openAdminDemoLayout({ language: layout.language || uiLanguage });
+  }
   showToast(shouldDeletePublishedTemplate ? "Shared-шаблон удален с сервера." : "Шаблон удален из локальных правок.", "success");
 }
 
