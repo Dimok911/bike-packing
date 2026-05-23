@@ -272,7 +272,12 @@ import {
   applyEditMeta,
   createMetaForDevice
 } from "./src/state/record-meta.js";
-import { collectPublicLayoutRecordIds } from "./src/state/public-layout-scope.js";
+import {
+  collectPublicLayoutRecordIds,
+  isPrivateCatalogRecord,
+  isPublicCatalogContainerRecord as isPublicCatalogContainerRecordForState,
+  isPublicCatalogItemRecord as isPublicCatalogItemRecordForState
+} from "./src/state/public-layout-scope.js";
 import {
   addItemToLayoutArrangement as addItemToLayoutArrangementForState,
   cleanupEmptyContainersInLayoutArrangement,
@@ -17453,21 +17458,31 @@ function getPublicLayoutRecordIdsForState(targetState = state) {
 }
 
 function isPublicCatalogItemRecord(itemId, item) {
-  if (isPublicSyncItem(itemId, item)) return true;
-  return getPublicLayoutRecordIdsForState().itemIds.has(itemId);
+  return isPublicCatalogItemRecordForState(itemId, item, {
+    publicRecordIds: getPublicLayoutRecordIdsForState(),
+    isPublicSyncItem
+  });
 }
 
 function isPublicCatalogContainerRecord(containerId, container) {
-  if (isPublicSyncContainer(containerId, container)) return true;
-  return getPublicLayoutRecordIdsForState().containerIds.has(containerId);
+  return isPublicCatalogContainerRecordForState(containerId, container, {
+    publicRecordIds: getPublicLayoutRecordIdsForState(),
+    isPublicSyncContainer
+  });
 }
 
 function isPrivateCatalogItemRecord(itemId, item) {
-  return isScopedCatalogLayout() || !isPublicCatalogItemRecord(itemId, item);
+  return isPrivateCatalogRecord({
+    scoped: isScopedCatalogLayout(),
+    isPublic: isPublicCatalogItemRecord(itemId, item)
+  });
 }
 
 function isPrivateCatalogContainerRecord(containerId, container) {
-  return isScopedCatalogLayout() || !isPublicCatalogContainerRecord(containerId, container);
+  return isPrivateCatalogRecord({
+    scoped: isScopedCatalogLayout(),
+    isPublic: isPublicCatalogContainerRecord(containerId, container)
+  });
 }
 
 function isItemInActiveCatalog(item) {

@@ -27,3 +27,23 @@ export function collectPublicLayoutRecordIds(targetState, helpers = {}) {
   });
   return { containerIds, itemIds };
 }
+
+export function isPublicCatalogItemRecord(itemId, item, {
+  publicRecordIds = { itemIds: new Set() },
+  isPublicSyncItem = () => false
+} = {}) {
+  if (isPublicSyncItem(itemId, item)) return true;
+  return publicRecordIds.itemIds.has(itemId);
+}
+
+export function isPublicCatalogContainerRecord(containerId, container, {
+  publicRecordIds = { containerIds: new Set() },
+  isPublicSyncContainer = () => false
+} = {}) {
+  if (isPublicSyncContainer(containerId, container)) return true;
+  return publicRecordIds.containerIds.has(containerId);
+}
+
+export function isPrivateCatalogRecord({ scoped = false, isPublic = false } = {}) {
+  return Boolean(scoped || !isPublic);
+}
