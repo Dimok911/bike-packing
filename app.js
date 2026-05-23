@@ -431,6 +431,7 @@ import {
 import { escapeHtml } from "./src/utils/html.js";
 import { clonePlain, snapshotsEqual } from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
+import { isLocalDevOrigin } from "./src/utils/origin.js";
 import { safeSetLocalStorage } from "./src/utils/storage.js";
 import { capitalize, formatThingCount } from "./src/utils/text.js";
 import { nowIso, timeValue } from "./src/utils/time.js";
@@ -690,10 +691,6 @@ adminReportsDialogController = createAdminReportsDialogController({
 });
 
 init();
-
-function isLocalDevOrigin() {
-  return ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
-}
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
   return scopedStorageKey(key, scope);
