@@ -274,7 +274,8 @@ import {
 } from "./src/state/record-derived.js";
 import {
   applyEditMeta,
-  createMetaForDevice
+  createMetaForDevice,
+  editMetaForDevice
 } from "./src/state/record-meta.js";
 import {
   collectPublicLayoutRecordIds,
@@ -3279,11 +3280,7 @@ function saveLocalUiState() {
 }
 
 function currentEditMeta(when = nowIso()) {
-  return {
-    updatedAt: when,
-    updatedByDeviceId: syncDevice?.id || "local-device",
-    updatedByDeviceName: syncDevice?.name || "Это устройство"
-  };
+  return editMetaForDevice(syncDevice, when);
 }
 
 function currentCreateMeta(when = nowIso()) {
