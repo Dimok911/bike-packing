@@ -288,6 +288,8 @@ body.readonly-template .container-header,
 body.readonly-template .container-header:active,
 body.readonly-template .subcontainer-title,
 body.readonly-template .subcontainer-title:active,
+body.readonly-template .item-title-hitarea,
+body.readonly-template .item-title-hitarea:active,
 body.readonly-template .item-title,
 body.readonly-template .item-title:active,
 body.readonly-template .item-card-top {
@@ -2946,8 +2948,11 @@ button.ghost.context-toggle.active:focus-visible {
   hyphens: auto;
 }
 
-.item-title {
+.item-title-hitarea {
   min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: flex-start;
   cursor: pointer;
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
@@ -2957,6 +2962,18 @@ button.ghost.context-toggle.active:focus-visible {
   user-select: none;
 }
 
+.item-title {
+  min-width: 0;
+  cursor: inherit;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: auto;
+  user-select: none;
+}
+
+.item-title-hitarea:active,
 .item-title:active {
   cursor: pointer;
 }
@@ -3585,6 +3602,7 @@ dialog {
 
 #conflictDialog,
 #historyDialog,
+#adminReportsDialog,
 #backupDialog {
   width: min(760px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
@@ -3624,6 +3642,15 @@ dialog::backdrop {
   max-height: min(760px, calc(100dvh - 24px));
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
+}
+
+.admin-reports-dialog-card {
+  width: min(760px, calc(100vw - 24px));
+  height: min(760px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .backup-mode-grid {
@@ -5252,6 +5279,157 @@ dialog::backdrop {
   line-height: 1.35;
 }
 
+.admin-reports-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-report-metric {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.admin-report-metric strong {
+  font-size: 1.25rem;
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+.admin-report-metric span,
+.admin-report-metric small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.admin-report-section {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-report-section h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.admin-report-days,
+.admin-report-user-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-report-day,
+.admin-report-user-list li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-report-day small,
+.admin-report-user-list span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.admin-report-day-bars {
+  height: 20px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.admin-report-day-bars i,
+.admin-report-day-bars b {
+  display: block;
+  height: 7px;
+  min-width: 4px;
+  border-radius: 999px;
+}
+
+.admin-report-day-bars i {
+  background: #2f7d67;
+}
+
+.admin-report-day-bars b {
+  background: #b96f3c;
+}
+
+.admin-report-route-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-report-route-table [role="row"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 9px;
+}
+
+.admin-report-route-table [role="row"] + [role="row"] {
+  border-top: 1px solid var(--line);
+}
+
+.admin-report-route-head {
+  background: #eef6f1;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-report-route-table span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-report-route-table [role="cell"] {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-report-route-table [role="cell"]:first-child {
+  color: var(--text);
+}
+
+.admin-report-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .toast-region {
   position: fixed;
   right: 16px;
@@ -5302,6 +5480,14 @@ dialog::backdrop {
 }
 
 @media (max-width: 800px) {
+  .admin-report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-report-route-table [role="row"] {
+    grid-template-columns: minmax(0, 1fr) 62px 52px;
+  }
+
   .topbar {
     display: grid;
   }
@@ -5338,6 +5524,15 @@ dialog::backdrop {
 }
 
 @media (max-width: 520px) {
+  .admin-report-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-report-day,
+  .admin-report-user-list li {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
   :root {
     --page-gutter: 8px;
   }

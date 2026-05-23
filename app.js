@@ -321,6 +321,7 @@ import {
   isTemporaryServerStorageError,
   isTimeoutError
 } from "./src/sync/api-client.js";
+import { fetchAdminReports } from "./src/sync/admin-reports.js";
 import {
   formatHistoryDateTime,
   groupHistoryRecords as groupHistoryRecordsForSync,
@@ -369,6 +370,7 @@ import {
   resetBackupImportUi,
   selectedBackupLayoutIds as selectedBackupLayoutIdsFromUi
 } from "./src/ui/backup-dialog.js";
+import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
 import {
   GUEST_STORAGE_SCOPE,
   scopedLocalStorageKey as scopedStorageKey,
@@ -479,9 +481,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicTemplateCatalogResilientSelect",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
-  "templateCopyMetadataSidecar"
+  "templateCopyMetadataSidecar",
+  "adminUsageReports"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.template-copy-metadata-sidecar-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-23.admin-usage-reports-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -565,6 +568,7 @@ let expandedHistoryRecordId = "";
 let expandedHistoryGroups = {};
 let historyComparisonState = null;
 let activeHistorySource = "private";
+let adminReportsDialogController = null;
 let filterViewCollapseSignature = "";
 let filterViewCollapsedContainers = {};
 let filterMatchIndex = 0;
@@ -626,6 +630,15 @@ const {
   askUnsavedChangesDialog,
   openConfirmDialog
 } = createConfirmDialogController({ refs, openModalDialog });
+adminReportsDialogController = createAdminReportsDialogController({
+  refs,
+  fetchReports: () => fetchAdminReports(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
+  canOpenAdmin: canOpenAdminPublishedEdit,
+  isForcedOffline,
+  openModalDialog,
+  showToast,
+  apiErrorMessage
+});
 
 init();
 
@@ -1175,6 +1188,7 @@ function applyStaticTranslations() {
   if (refs.syncBtn) refs.syncBtn.textContent = t("buttons.sync");
   if (refs.sharedLayoutsBtn) refs.sharedLayoutsBtn.textContent = t("menu.sharedLayouts");
   if (refs.shareListBtn) refs.shareListBtn.textContent = t("menu.shareList");
+  if (refs.adminReportsBtn) refs.adminReportsBtn.textContent = t("menu.adminReports");
   document.querySelector("#exportBtn")?.replaceChildren(document.createTextNode(t("menu.print")));
   if (languageLabel) languageLabel.textContent = t("menu.language");
   if (layoutLabel?.firstChild) layoutLabel.firstChild.textContent = `${t("labels.layout")}\n          `;
@@ -1416,6 +1430,7 @@ async function init() {
     if (event.target.closest("button")) closeTopMenu();
   });
   refs.historyBtn.addEventListener("click", openHistoryDialog);
+  refs.adminReportsBtn?.addEventListener("click", () => adminReportsDialogController?.open());
   refs.backupBtn?.addEventListener("click", openBackupDialog);
   refs.backupCreateBtn?.addEventListener("click", createBackupArchive);
   refs.backupFileInput?.addEventListener("change", handleBackupFileSelected);
@@ -4848,6 +4863,7 @@ function updateSyncUi(message = "") {
   document.body.classList.toggle("readonly-template", isReadonlyTemplateView());
   if (!canOpenAdminPublishedEdit()) packingVisualStylePanelVisible = false;
   syncPackingVisualStyleControls();
+  adminReportsDialogController?.syncVisibility();
   refs.authBtn.textContent = t("menu.signIn");
   refs.authBtn.hidden = loggedIn;
   refs.authBtn.classList.remove("danger");
@@ -8775,7 +8791,7 @@ async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourc
     title: "Уже скопировано в эту укладку",
     text: `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`,
     okText: "Дублировать",
-    cancelText: "Пропустить",
+    cancelText: "Не копировать",
     highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID`,
     tone: "safe"
   });
@@ -8899,7 +8915,7 @@ async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, 
     title: "Такие элементы уже есть в укладке",
     text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
     okText: "Дублировать",
-    cancelText: "Пропустить",
+    cancelText: "Не копировать",
     highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`,
     tone: "safe"
   });
@@ -11322,7 +11338,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
       title: "Вещь уже есть в этой укладке",
       text: `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`,
       okText: "Дублировать",
-      cancelText: "Пропустить",
+      cancelText: "Не копировать",
       tone: "safe"
     });
     if (!duplicate) {
@@ -13038,9 +13054,11 @@ function renderItemCard(item) {
   const collection = Boolean(state.collectionMode);
   const filterMatch = isFilterContextActive() && matchesFilters(item);
   const justAdded = recentlyAddedItemId === item.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
-  const title = editingItemTitleId === item.id
+  const isEditingTitle = editingItemTitleId === item.id;
+  const title = isEditingTitle
     ? `<input class="item-title-input" data-item-title-input="${item.id}" value="${escapeHtml(item.name)}" />`
-    : `<strong class="item-title" data-item-drag="${item.id}">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
+    : `<strong class="item-title">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
+  const titleDragAttr = isEditingTitle ? "" : ` data-item-drag="${item.id}"`;
   return `
     <article class="item-card ${packed ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top ${collection ? "with-pack-toggle" : ""}">
@@ -13052,7 +13070,7 @@ function renderItemCard(item) {
             title="${packed ? "Собрано" : "Не собрано"}"
           >${packed ? "✓" : ""}</button>
         ` : ""}
-        ${title}
+        <div class="item-title-hitarea"${titleDragAttr}>${title}</div>
         <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="Скопировать" title="Скопировать">
           <span aria-hidden="true">⧉</span>
         </button>

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=720" />
+    <link rel="stylesheet" href="./styles.css?v=723" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -42,6 +42,7 @@
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
+              <button id="adminReportsBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Отчёты</button>
               <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать / PDF</button>
               <button id="visualStyleMenuBtn" class="ghost menu-item auth-required admin-menu-item" type="button">Варианты вида</button>
               <button id="signOutBtn" class="ghost menu-item danger" type="button" hidden>Выйти</button>
@@ -418,7 +419,6 @@
       <form method="dialog" class="dialog-card">
         <header>
           <h2 id="confirmTitle">Подтвердить</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <p id="confirmText"></p>
         <footer>
@@ -488,6 +488,22 @@
       </form>
     </dialog>
 
+    <dialog id="adminReportsDialog">
+      <form method="dialog" class="dialog-card admin-reports-dialog-card">
+        <header>
+          <h2>Отчёты админки</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note">Регистрации, активность пользователей и использование API.</p>
+        <p id="adminReportsStatus" class="dialog-status" aria-live="polite"></p>
+        <div id="adminReportsContent" class="admin-reports-content"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+          <button id="adminReportsRefreshBtn" type="button">Обновить</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="backupDialog">
       <form method="dialog" class="dialog-card backup-dialog-card">
         <header>
@@ -537,6 +553,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=720" type="module"></script>
+    <script src="./app.js?v=723" type="module"></script>
   </body>
 </html>
