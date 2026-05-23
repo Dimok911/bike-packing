@@ -268,6 +268,10 @@ import {
   containerPath as containerPathForState,
   itemCreatedTime as itemCreatedTimeForState
 } from "./src/state/record-derived.js";
+import {
+  applyEditMeta,
+  createMetaForDevice
+} from "./src/state/record-meta.js";
 import { collectPublicLayoutRecordIds } from "./src/state/public-layout-scope.js";
 import {
   addItemToLayoutArrangement as addItemToLayoutArrangementForState,
@@ -3332,16 +3336,11 @@ function currentEditMeta(when = nowIso()) {
 }
 
 function currentCreateMeta(when = nowIso()) {
-  return {
-    createdAt: when,
-    ...currentEditMeta(when)
-  };
+  return createMetaForDevice(syncDevice, when);
 }
 
 function markEdited(record, when = nowIso()) {
-  if (!record || typeof record !== "object") return when;
-  Object.assign(record, currentEditMeta(when));
-  return when;
+  return applyEditMeta(record, currentEditMeta(when), when);
 }
 
 function touchItem(itemId, when = nowIso()) {
