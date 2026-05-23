@@ -102,7 +102,8 @@ const renderNewestUsers = (users = []) => {
       ${users.map((user) => `
         <li>
           <strong>${escapeHtml(user.email || "без email")}</strong>
-          <span>${escapeHtml(formatDateTime(user.createdAt))}</span>
+          <span><b>Регистрация</b>${escapeHtml(formatDateTime(user.createdAt))}</span>
+          <span><b>Последнее использование</b>${escapeHtml(formatDateTime(user.lastUsedAt || user.createdAt))}</span>
         </li>
       `).join("")}
     </ul>
