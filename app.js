@@ -472,7 +472,8 @@ import {
 } from "./src/ui/date-format.js";
 import {
   conflictVersionStamp as conflictVersionStampValue,
-  describeChangedFields as describeChangedFieldsValue
+  describeChangedFields as describeChangedFieldsValue,
+  formatArrangementConflictValue as formatArrangementConflictValueText
 } from "./src/ui/conflict-format.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
@@ -4494,11 +4495,7 @@ function formatConflictContainerValue(value) {
 }
 
 function formatArrangementConflictValue(value) {
-  if (!value || typeof value !== "object") return "пусто";
-  const containers = value.containers && typeof value.containers === "object" ? Object.keys(value.containers).length : 0;
-  const items = value.items && typeof value.items === "object" ? Object.keys(value.items).length : 0;
-  const roots = Array.isArray(value.rootContainerIds) ? value.rootContainerIds.length : 0;
-  return `${roots} корневых, ${containers} сумок, ${items} вещей`;
+  return formatArrangementConflictValueText(value);
 }
 
 function formatCompactJson(value) {
