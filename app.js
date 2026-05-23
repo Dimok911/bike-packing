@@ -347,6 +347,7 @@ import {
   isTemporaryServerStorageError,
   isTimeoutError
 } from "./src/sync/api-client.js";
+import { adminApiWarningFromCapabilities as adminApiWarningFromCapabilitiesValue } from "./src/sync/admin-api-compat.js";
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import {
@@ -4679,29 +4680,12 @@ function canOpenAdminPublishedEdit() {
   return isAdminSession();
 }
 
-function missingAdminApiCapabilities(capabilities = []) {
-  const available = new Set((Array.isArray(capabilities) ? capabilities : [])
-    .map((capability) => String(capability || "").trim())
-    .filter(Boolean));
-  return REQUIRED_ADMIN_API_CAPABILITIES.filter((capability) => !available.has(capability));
-}
-
 function adminApiWarningFromCapabilities(data) {
-  const version = String(data?.apiCompatibilityVersion || data?.bikePackingApiCompatibilityVersion || "").trim();
-  const capabilities = Array.isArray(data?.capabilities)
-    ? data.capabilities
-    : (Array.isArray(data?.bikePackingApiCapabilities) ? data.bikePackingApiCapabilities : []);
-  const missing = missingAdminApiCapabilities(capabilities);
-  if (!version) {
-    return "Админка: API не отдал версию совместимости. Проверьте деплой backend перед публикацией шаблонов.";
-  }
-  if (version !== REQUIRED_ADMIN_API_VERSION) {
-    return `Админка: фронт ${APP_VERSION} ждёт API ${REQUIRED_ADMIN_API_VERSION}, сейчас ${version}.`;
-  }
-  if (missing.length) {
-    return `Админка: API без нужных возможностей (${missing.join(", ")}). Не публикуйте шаблоны с фото до деплоя backend.`;
-  }
-  return "";
+  return adminApiWarningFromCapabilitiesValue(data, {
+    appVersion: APP_VERSION,
+    requiredVersion: REQUIRED_ADMIN_API_VERSION,
+    requiredCapabilities: REQUIRED_ADMIN_API_CAPABILITIES
+  });
 }
 
 async function checkAdminApiCompatibility({ force = false } = {}) {
