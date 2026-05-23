@@ -477,7 +477,7 @@ import {
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
-import { syncVisualHelp } from "./src/ui/sync-visual-state.js";
+import { applySyncVisualState } from "./src/ui/sync-visual-state.js";
 import {
   layoutCopyTitle,
   layoutEditTitle,
@@ -4831,16 +4831,7 @@ function updateSyncVisualState({ loggedIn, unlocked, message = "", adminApiWarni
     nextState = "synced";
   }
   syncVisualState = nextState;
-  document.body.classList.toggle("sync-local", syncVisualState === "local");
-  document.body.classList.toggle("sync-offline", syncVisualState === "offline");
-  document.body.classList.toggle("sync-syncing", syncVisualState === "syncing");
-  document.body.classList.toggle("sync-dirty", syncVisualState === "dirty");
-  document.body.classList.toggle("sync-synced", syncVisualState === "synced");
-  document.body.classList.toggle("sync-error", syncVisualState === "error");
-  refs.syncBtn.dataset.syncState = syncVisualState;
-  const help = syncVisualHelp(syncVisualState);
-  refs.syncBtn.title = help;
-  refs.syncBtn.setAttribute("aria-label", help);
+  applySyncVisualState({ syncButton: refs.syncBtn, stateName: syncVisualState });
 }
 
 async function apiFetch(path, options = {}) {
