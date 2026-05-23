@@ -145,6 +145,13 @@ import {
   sharedListIdFromUrl
 } from "./src/public/shared-link-url.js";
 import {
+  originalSharedId,
+  publicVirtualLayoutMarkers as publicVirtualLayoutMarkersForSharedState,
+  sharedVirtualContainerId,
+  sharedVirtualItemId,
+  sharedVirtualLayoutId
+} from "./src/public/shared-virtual-state.js";
+import {
   reconcilePublishedTemplateCopyDraft,
   repairEmptyTemplateCopyDraftFromPublishedLayout
 } from "./src/public/template-copy-admin-repair.js";
@@ -11993,34 +12000,11 @@ function sharedVirtualCollapsedState(layout, containers, rootContainerIds = []) 
   return collapsedDefaultsForTemplateContainers(containers, sharedVirtualCollapsedContainers, rootContainerIds);
 }
 
-function sharedVirtualLayoutId(layoutId) {
-  return `shared-virtual-layout-${layoutId}`;
-}
-
-function sharedVirtualContainerId(rootId) {
-  return `shared-virtual-container-${rootId}`;
-}
-
-function sharedVirtualItemId(itemId) {
-  return `shared-virtual-item-${itemId}`;
-}
-
 function publicVirtualLayoutMarkers(layout, virtualLayoutId) {
-  if (layout?.id === DEMO_SHARED_LAYOUT_ID) {
-    return {
-      adminDemo: true,
-      adminDemoLanguage: layout.language || uiLanguage,
-      publicCatalogLayoutId: virtualLayoutId
-    };
-  }
-  return {
-    adminSharedSourceId: layout?.id || "",
-    publicCatalogLayoutId: virtualLayoutId
-  };
-}
-
-function originalSharedId(virtualId, prefix) {
-  return String(virtualId || "").startsWith(prefix) ? String(virtualId).slice(prefix.length) : "";
+  return publicVirtualLayoutMarkersForSharedState(layout, virtualLayoutId, {
+    demoSharedLayoutId: DEMO_SHARED_LAYOUT_ID,
+    uiLanguage
+  });
 }
 
 function createSharedVirtualState(layout = currentSharedLayout()) {
