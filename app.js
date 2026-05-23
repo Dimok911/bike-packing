@@ -14779,8 +14779,23 @@ function renderSharedItemsView() {
 
 function renderListItem(item) {
   const filterMatch = isFilterContextActive() && matchesItemsViewFilters(item);
+  const placementText = item.containerId ? containerPath(item.containerId) : "Вне укладки";
+  const quantityText = itemQuantity(item) > 1 ? `${itemQuantity(item)} шт.` : "";
+  const cardTitle = [
+    item.name,
+    quantityText,
+    formatItemWeight(item),
+    itemCategories(item).join(", "),
+    item.location,
+    placementText
+  ].filter(Boolean).join("\n");
+  const photoSlot = shouldShowItemPhotos()
+    ? primaryItemPhoto(item)
+      ? renderItemPhoto(item)
+      : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
+    : "";
   return `
-    <article class="item-card ${filterMatch ? "filter-match" : ""}" data-list-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
+    <article class="item-card ${filterMatch ? "filter-match" : ""}" data-list-item-id="${item.id}" title="${escapeHtml(cardTitle)}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top">
         <strong>${highlight(item.name)}${renderItemQuantityText(item)}</strong>
         <button class="copy-item-button" data-copy-item="${item.id}" aria-label="Скопировать" title="Скопировать">
@@ -14798,8 +14813,8 @@ function renderListItem(item) {
         ${itemCategories(item).map((category) => `<span class="pill">${highlight(category)}</span>`).join("")}
         <span class="pill">${highlight(item.location)}</span>
       </div>
-      <small>${highlight(item.containerId ? containerPath(item.containerId) : "Вне укладки")}</small>
-      ${renderItemPhoto(item)}
+      <small>${highlight(placementText)}</small>
+      ${photoSlot}
     </article>
   `;
 }
@@ -15283,7 +15298,7 @@ function renderRootContainersEditor() {
           </button>
         </div>
       </div>
-      <div class="root-container-list">
+      <div class="root-container-list ${shouldShowItemPhotos() ? "with-photo-slots" : ""} ${shouldShowItemLabels() ? "with-meta-slots" : ""}">
         ${roots.map(renderRootContainerCard).join("") || `<div class="empty">Ничего не найдено</div>`}
       </div>
     </section>
@@ -15314,12 +15329,17 @@ function renderRootContainerCard(container) {
       </article>
     `;
   }
+  const photoSlot = shouldShowItemPhotos()
+    ? primaryItemPhoto(container)
+      ? renderItemPhoto(container)
+      : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
+    : "";
   return `
     <article class="item-card root-container-card ${filterMatch ? "filter-match" : ""}" data-root-card="${container.id}" data-root-drag="${container.id}" ${filterMatch ? `data-filter-match-id="root-${container.id}"` : ""} title="Удерживайте и перетащите в укладку">
       <div class="item-card-top root-container-card-top">
         <div class="root-container-title-block">
-          <strong class="item-title root-container-title" data-root-title="${container.id}">${highlight(container.name)}</strong>
-          ${shouldShowItemLabels() && meta ? `<span class="root-container-meta">${highlight(meta)}</span>` : ""}
+          <strong class="item-title root-container-title" data-root-title="${container.id}" title="${escapeHtml(container.name)}">${highlight(container.name)}</strong>
+          ${shouldShowItemLabels() && meta ? `<span class="root-container-meta" title="${escapeHtml(meta)}">${highlight(meta)}</span>` : ""}
         </div>
         <button class="copy-item-button" data-copy-root="${container.id}" aria-label="Скопировать" title="Скопировать">
           <span aria-hidden="true">⧉</span>
@@ -15331,7 +15351,7 @@ function renderRootContainerCard(container) {
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      ${renderItemPhoto(container)}
+      ${photoSlot}
     </article>
   `;
 }
