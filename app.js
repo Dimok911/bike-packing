@@ -103,6 +103,12 @@ import {
 } from "./src/public/guest-demo-startup.js";
 import { publishedTemplateBlockReason } from "./src/public/public-template-availability.js";
 import {
+  demoLanguageFromLayoutChoice as demoLanguageFromLayoutChoiceValue,
+  demoLayoutChoiceForLanguage as demoLayoutChoiceForLanguageValue,
+  isDemoLayoutChoice as isDemoLayoutChoiceValue,
+  languageOptionLabel as languageOptionLabelValue
+} from "./src/public/demo-layout-choice.js";
+import {
   createSharedLayoutCatalogDiagnostics,
   shouldWarnAboutSharedLayoutCatalog
 } from "./src/public/shared-layout-catalog-diagnostics.js";
@@ -798,28 +804,33 @@ function currentSharedLayouts(language = uiLanguage) {
 }
 
 function demoLayoutChoiceForLanguage(language = uiLanguage) {
-  const normalized = normalizeUiLanguage(language);
-  return normalized === DEFAULT_LANGUAGE ? DEMO_LAYOUT_SELECT_VALUE : `demo:${normalized}`;
+  return demoLayoutChoiceForLanguageValue(language, {
+    currentLanguage: uiLanguage,
+    defaultLanguage: DEFAULT_LANGUAGE,
+    demoSelectValue: DEMO_LAYOUT_SELECT_VALUE,
+    normalizeLanguage: normalizeUiLanguage
+  });
 }
 
 function isDemoLayoutChoice(choice) {
-  const value = String(choice || "").trim();
-  if (value === DEMO_LAYOUT_SELECT_VALUE) return true;
-  if (!value.startsWith("demo:")) return false;
-  const language = value.slice("demo:".length);
-  return Boolean(language && SUPPORTED_LANGUAGES.includes(normalizeUiLanguage(language)));
+  return isDemoLayoutChoiceValue(choice, {
+    demoSelectValue: DEMO_LAYOUT_SELECT_VALUE,
+    supportedLanguages: SUPPORTED_LANGUAGES,
+    normalizeLanguage: normalizeUiLanguage
+  });
 }
 
 function demoLanguageFromLayoutChoice(choice) {
-  const value = String(choice || "").trim();
-  if (!value.startsWith("demo:")) return DEFAULT_LANGUAGE;
-  const language = value.slice("demo:".length);
-  if (!language || language === "default") return DEFAULT_LANGUAGE;
-  return normalizeUiLanguage(language);
+  return demoLanguageFromLayoutChoiceValue(choice, {
+    defaultLanguage: DEFAULT_LANGUAGE,
+    normalizeLanguage: normalizeUiLanguage
+  });
 }
 
 function languageOptionLabel(language) {
-  return normalizeUiLanguage(language).toUpperCase();
+  return languageOptionLabelValue(language, {
+    normalizeLanguage: normalizeUiLanguage
+  });
 }
 
 function allSharedLayoutsByAdminOrder() {
