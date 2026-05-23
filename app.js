@@ -309,6 +309,11 @@ import {
   createItemUsageCounts,
   createRootContainerUsageCounts
 } from "./src/state/catalog-usage.js";
+import {
+  isItemAwayFromHomeAndBike as isItemAwayFromHomeAndBikeValue,
+  isItemWithoutWeight as isItemWithoutWeightValue,
+  matchesCollectionFilter as matchesCollectionFilterValue
+} from "./src/state/catalog-filters.js";
 import { sortCatalogRecords } from "./src/state/catalog-sort.js";
 import {
   activeLayoutNestedContainerIds as activeLayoutNestedContainerIdsForState,
@@ -17348,11 +17353,11 @@ function markRecordActivePublicCatalog(record) {
 }
 
 function isItemAwayFromHomeAndBike(item) {
-  return item.location !== "Дом" && item.location !== "Уже на велосипеде";
+  return isItemAwayFromHomeAndBikeValue(item);
 }
 
 function isItemWithoutWeight(item) {
-  return !Number(item?.weight || 0);
+  return isItemWithoutWeightValue(item);
 }
 
 function isItemInActiveLayout(item) {
@@ -17384,8 +17389,11 @@ function matchesBaseFilters(item) {
 }
 
 function matchesCollectionFilter(item) {
-  if (state.collectionMode && state.showOnlyUnpacked && isItemPacked(item.id)) return false;
-  return true;
+  return matchesCollectionFilterValue(item, {
+    collectionMode: state.collectionMode,
+    showOnlyUnpacked: state.showOnlyUnpacked,
+    isPacked: isItemPacked
+  });
 }
 
 function matchesItemFieldsFilter(item, { includeContainerPath = false, ignoreLocation = false, ignoreCategories = false } = {}) {
