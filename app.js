@@ -410,6 +410,10 @@ import {
   saveStoredActivePackingListId
 } from "./src/storage/active-choice.js";
 import {
+  loadStoredUiSettings,
+  saveStoredUiSettings
+} from "./src/storage/ui-settings.js";
+import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
   getSavedAuthEmailFromStorage,
@@ -2208,44 +2212,35 @@ function saveSyncMeta() {
 }
 
 function loadUiSettings() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(UI_SETTINGS_KEY)) || {};
-    return {
-      itemSortMode: normalizeSortMode(parsed.itemSortMode),
-      rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode),
-      packingVisualStyle: parsed.packingVisualStyleVersion === PACKING_VISUAL_STYLE_SETTINGS_VERSION && parsed.packingVisualStyle
-        ? normalizePackingVisualStyle(parsed.packingVisualStyle)
-        : PACKING_VISUAL_STYLE_PRIMARY,
-      packingViewMode: normalizePackingViewMode(parsed.packingViewMode),
-      bike3dTransforms: normalizeBike3dTransforms(parsed.bike3dTransforms),
-      bike3dViewState: normalizeBike3dViewState(parsed.bike3dViewState)
-    };
-  } catch {
-    return {
-      itemSortMode: "asc",
-      rootContainerSortMode: "asc",
-      packingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY,
-      packingViewMode: "columns",
-      bike3dTransforms: {},
-      bike3dViewState: normalizeBike3dViewState()
-    };
-  }
+  return loadStoredUiSettings({
+    storageKey: UI_SETTINGS_KEY,
+    normalizeSortMode,
+    normalizePackingVisualStyle,
+    normalizePackingViewMode,
+    normalizeBike3dTransforms,
+    normalizeBike3dViewState,
+    packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION,
+    defaultPackingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY
+  });
 }
 
 function saveUiSettings() {
-  try {
-    safeSetLocalStorage(UI_SETTINGS_KEY, JSON.stringify({
-      itemSortMode: normalizeSortMode(itemSortMode),
-      rootContainerSortMode: normalizeSortMode(rootContainerSortMode),
-      packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION,
-      packingVisualStyle: normalizePackingVisualStyle(packingVisualStyle),
-      packingViewMode: normalizePackingViewMode(packingViewMode),
-      bike3dTransforms: normalizeBike3dTransforms(bike3dTransforms),
-      bike3dViewState: normalizeBike3dViewState(bike3dViewState)
-    }));
-  } catch {
-    // Sorting preferences are local convenience settings.
-  }
+  saveStoredUiSettings({
+    itemSortMode,
+    rootContainerSortMode,
+    packingVisualStyle,
+    packingViewMode,
+    bike3dTransforms,
+    bike3dViewState
+  }, {
+    storageKey: UI_SETTINGS_KEY,
+    normalizeSortMode,
+    normalizePackingVisualStyle,
+    normalizePackingViewMode,
+    normalizeBike3dTransforms,
+    normalizeBike3dViewState,
+    packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION
+  });
 }
 
 function applyPackingVisualStyle() {
