@@ -314,6 +314,10 @@ import {
   isItemWithoutWeight as isItemWithoutWeightValue,
   matchesCollectionFilter as matchesCollectionFilterValue
 } from "./src/state/catalog-filters.js";
+import {
+  matchesItemFieldsFilter as matchesItemFieldsFilterValue,
+  matchesRootContainerFieldsFilter as matchesRootContainerFieldsFilterValue
+} from "./src/state/catalog-search.js";
 import { sortCatalogRecords } from "./src/state/catalog-sort.js";
 import {
   activeLayoutNestedContainerIds as activeLayoutNestedContainerIdsForState,
@@ -17397,22 +17401,16 @@ function matchesCollectionFilter(item) {
 }
 
 function matchesItemFieldsFilter(item, { includeContainerPath = false, ignoreLocation = false, ignoreCategories = false } = {}) {
-  const query = refs.searchInput.value.trim().toLowerCase();
-  const location = refs.locationFilter.value;
-  const categories = selectedCategoryFilters;
-  if (!ignoreLocation && location && item.location !== location) return false;
-  if (!ignoreCategories && categories.length && !categories.some((category) => itemCategories(item).includes(category))) return false;
-  if (!query) return true;
-  return [
-    item.name,
-    itemCategories(item).join(" "),
-    item.location,
-    item.note || "",
-    includeContainerPath && item.containerId ? containerPath(item.containerId) : ""
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
+  return matchesItemFieldsFilterValue(item, {
+    query: refs.searchInput.value,
+    location: refs.locationFilter.value,
+    categories: selectedCategoryFilters,
+    includeContainerPath,
+    ignoreLocation,
+    ignoreCategories,
+    itemCategories,
+    containerPath
+  });
 }
 
 function getAllContainers() {
@@ -17444,17 +17442,13 @@ function getRootContainersForSettings() {
 }
 
 function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } = {}) {
-  const query = refs.searchInput.value.trim().toLowerCase();
-  const location = refs.locationFilter.value;
   const containerLocation = container.location || defaultRootContainerLocation(state);
-  if (!ignoreLocation && location && containerLocation !== location) return false;
-  if (!query) return true;
-  return [
-    container.name,
-    container.color || "",
+  return matchesRootContainerFieldsFilterValue(container, {
+    query: refs.searchInput.value,
+    location: refs.locationFilter.value,
     containerLocation,
-    container.note || ""
-  ].join(" ").toLowerCase().includes(query);
+    ignoreLocation
+  });
 }
 
 function getRootContainerUsageCounts() {
