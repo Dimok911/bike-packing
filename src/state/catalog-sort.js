@@ -2,14 +2,15 @@ const DEFAULT_LOCALE = "ru";
 
 export function sortCatalogRecords(records, sortMode, {
   createdTime = () => 0,
+  name = recordName,
   locale = DEFAULT_LOCALE
 } = {}) {
   const sorted = [...records];
   if (sortMode === "asc") {
-    return sorted.sort((a, b) => recordName(a).localeCompare(recordName(b), locale));
+    return sorted.sort((a, b) => String(name(a) || "").localeCompare(String(name(b) || ""), locale));
   }
   if (sortMode === "desc") {
-    return sorted.sort((a, b) => recordName(b).localeCompare(recordName(a), locale));
+    return sorted.sort((a, b) => String(name(b) || "").localeCompare(String(name(a) || ""), locale));
   }
   return sorted.sort((a, b) => createdTime(b) - createdTime(a));
 }

@@ -17414,7 +17414,10 @@ function matchesItemFieldsFilter(item, { includeContainerPath = false, ignoreLoc
 }
 
 function getAllContainers() {
-  return Object.values(state.containers).sort((a, b) => containerPath(a.id).localeCompare(containerPath(b.id), "ru"));
+  return sortCatalogRecords(Object.values(state.containers), "asc", {
+    createdTime: containerCreatedTime,
+    name: (container) => containerPath(container.id)
+  });
 }
 
 function getDescendantContainerIds(containerId) {
@@ -17422,10 +17425,10 @@ function getDescendantContainerIds(containerId) {
 }
 
 function getRootContainers() {
-  return Object.values(state.containers)
+  const roots = Object.values(state.containers)
     .filter((container) => isPrivateCatalogContainerRecord(container.id, container))
-    .filter(isRootContainerForEditor)
-    .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    .filter(isRootContainerForEditor);
+  return sortCatalogRecords(roots, "asc");
 }
 
 function getRootContainersForSettings() {
