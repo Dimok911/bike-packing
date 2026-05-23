@@ -461,7 +461,10 @@ import {
 import {
   formatFullDateTime
 } from "./src/ui/date-format.js";
-import { conflictVersionStamp as conflictVersionStampValue } from "./src/ui/conflict-format.js";
+import {
+  conflictVersionStamp as conflictVersionStampValue,
+  describeChangedFields as describeChangedFieldsValue
+} from "./src/ui/conflict-format.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
   ITEM_DISPLAY_MODE_PUBLIC_DEFAULT,
@@ -4560,11 +4563,7 @@ function conflictDifferenceSummary(conflict) {
 }
 
 function describeChangedFields(localValue, remoteValue, fields) {
-  const changed = fields
-    .filter(([key]) => !sameJson(localValue?.[key], remoteValue?.[key]))
-    .map(([, label]) => label);
-  if (changed.length) return changed.slice(0, 4).join(", ") + (changed.length > 4 ? "…" : "");
-  return "служебные данные";
+  return describeChangedFieldsValue(localValue, remoteValue, fields);
 }
 
 function unlockOfflineState(message = "Локально · можно работать, войдите для сохранения в аккаунт") {
