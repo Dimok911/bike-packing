@@ -349,6 +349,7 @@ import {
   legacyComparableStateForSync as legacyComparableStateForSyncPayload,
   splitEntitySyncEntries as splitEntitySyncEntriesForSync
 } from "./src/sync/entity-sync.js";
+import { isConflictMetaField } from "./src/sync/conflict-meta.js";
 import {
   apiErrorMessage,
   apiFetchRequest,
@@ -4426,26 +4427,6 @@ function conflictDiffFieldDefinitions(conflict) {
   if (conflict.type === "packed") return [["value", "Собранность", "boolean"]];
   if (conflict.type === "setting") return [["value", settingLabel(conflict.id)]];
   return [];
-}
-
-function isConflictMetaField(key) {
-  return [
-    "id",
-    "createdAt",
-    "created_at",
-    "createdByDeviceId",
-    "createdByDeviceName",
-    "updatedAt",
-    "updated_at",
-    "updatedByDeviceId",
-    "updatedByDeviceName",
-    "clientUpdatedAt",
-    "client_updated_at",
-    "sourceDeviceId",
-    "sourceDeviceName",
-    "source_device_id",
-    "source_device_name"
-  ].includes(key);
 }
 
 function formatConflictFieldValue(value, key, conflict, format = "") {
