@@ -436,7 +436,11 @@ import {
   saveAuthEmailToStorage
 } from "./src/storage/auth-scope.js";
 import { escapeHtml } from "./src/utils/html.js";
-import { clonePlain, snapshotsEqual } from "./src/utils/json.js";
+import {
+  clonePlain,
+  formatCompactJson as formatCompactJsonValue,
+  snapshotsEqual
+} from "./src/utils/json.js";
 import { normalizeUiLanguage } from "./src/utils/language.js";
 import { isLocalDevOrigin } from "./src/utils/origin.js";
 import { safeSetLocalStorage } from "./src/utils/storage.js";
@@ -4482,9 +4486,7 @@ function formatArrangementConflictValue(value) {
 }
 
 function formatCompactJson(value) {
-  const text = JSON.stringify(value ?? null);
-  if (!text) return "пусто";
-  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+  return formatCompactJsonValue(value);
 }
 
 function conflictSummary(conflict) {
