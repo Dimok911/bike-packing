@@ -310,6 +310,7 @@ import {
   createItemUsageCounts,
   createRootContainerUsageCounts
 } from "./src/state/catalog-usage.js";
+import { sortCatalogRecords } from "./src/state/catalog-sort.js";
 import {
   activeLayoutNestedContainerIds as activeLayoutNestedContainerIdsForState,
   allActiveLayoutNestedContainersCollapsed as allActiveLayoutNestedContainersCollapsedForState,
@@ -17419,13 +17420,7 @@ function getItemsForItemsView() {
     if (itemUsageFilter === "unused") return !isItemInActiveLayout(item);
     return true;
   });
-  if (itemSortMode === "asc") {
-    return items.sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }
-  if (itemSortMode === "desc") {
-    return items.sort((a, b) => b.name.localeCompare(a.name, "ru"));
-  }
-  return items.sort((a, b) => itemCreatedTime(b) - itemCreatedTime(a));
+  return sortCatalogRecords(items, itemSortMode, { createdTime: itemCreatedTime });
 }
 
 function getItemsForActiveCatalog() {
@@ -17585,13 +17580,7 @@ function getRootContainersForSettings() {
     if (!matchesRootContainerFieldsFilter(container)) return false;
     return true;
   });
-  if (rootContainerSortMode === "asc") {
-    return roots.sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }
-  if (rootContainerSortMode === "desc") {
-    return roots.sort((a, b) => b.name.localeCompare(a.name, "ru"));
-  }
-  return roots.sort((a, b) => containerCreatedTime(b) - containerCreatedTime(a));
+  return sortCatalogRecords(roots, rootContainerSortMode, { createdTime: containerCreatedTime });
 }
 
 function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } = {}) {
