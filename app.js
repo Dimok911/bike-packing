@@ -477,7 +477,10 @@ import {
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
-import { applySyncVisualState } from "./src/ui/sync-visual-state.js";
+import {
+  applySyncVisualState,
+  resolveSyncVisualState
+} from "./src/ui/sync-visual-state.js";
 import {
   layoutCopyTitle,
   layoutEditTitle,
@@ -4813,24 +4816,15 @@ function updateSyncUi(message = "") {
 }
 
 function updateSyncVisualState({ loggedIn, unlocked, message = "", adminApiWarning = false }) {
-  let nextState = "local";
-  const lowerMessage = message.toLowerCase();
-  if (adminApiWarning) {
-    nextState = "error";
-  } else if (isForcedOffline()) {
-    nextState = "offline";
-  } else if (lowerMessage.includes("не удалось") || lowerMessage.includes("нет соединения") || lowerMessage.includes("сервер недоступен")) {
-    nextState = "error";
-  } else if (!loggedIn && unlocked) {
-    nextState = isReadOnlyStateScope() ? "synced" : "offline";
-  } else if (loggedIn && (lowerMessage.includes("сохраня") || lowerMessage.includes("загружа") || lowerMessage.includes("проверя"))) {
-    nextState = "syncing";
-  } else if (loggedIn && syncMeta.dirty) {
-    nextState = "dirty";
-  } else if (loggedIn) {
-    nextState = "synced";
-  }
-  syncVisualState = nextState;
+  syncVisualState = resolveSyncVisualState({
+    loggedIn,
+    unlocked,
+    message,
+    adminApiWarning,
+    forcedOffline: isForcedOffline(),
+    readOnlyScope: isReadOnlyStateScope(),
+    dirty: syncMeta.dirty
+  });
   applySyncVisualState({ syncButton: refs.syncBtn, stateName: syncVisualState });
 }
 

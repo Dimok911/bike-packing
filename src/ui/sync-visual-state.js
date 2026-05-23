@@ -7,6 +7,38 @@ const SYNC_VISUAL_HELP = {
   local: "Серая точка: локальное состояние без активной синхронизации."
 };
 
+const ERROR_MESSAGE_PARTS = [
+  "не удалось",
+  "нет соединения",
+  "сервер недоступен"
+];
+
+const SYNCING_MESSAGE_PARTS = [
+  "сохраня",
+  "загружа",
+  "проверя"
+];
+
+export function resolveSyncVisualState({
+  loggedIn = false,
+  unlocked = false,
+  message = "",
+  adminApiWarning = false,
+  forcedOffline = false,
+  readOnlyScope = false,
+  dirty = false
+} = {}) {
+  const lowerMessage = message.toLowerCase();
+  if (adminApiWarning) return "error";
+  if (forcedOffline) return "offline";
+  if (ERROR_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "error";
+  if (!loggedIn && unlocked) return readOnlyScope ? "synced" : "offline";
+  if (loggedIn && SYNCING_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "syncing";
+  if (loggedIn && dirty) return "dirty";
+  if (loggedIn) return "synced";
+  return "local";
+}
+
 export function syncVisualHelp(stateName = "local") {
   return `${SYNC_VISUAL_HELP[stateName] || SYNC_VISUAL_HELP.local} Нажмите, чтобы проверить сервер и сохранить изменения.`;
 }
