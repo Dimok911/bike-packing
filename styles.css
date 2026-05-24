@@ -2765,6 +2765,12 @@ button.ghost.context-toggle.active:focus-visible {
   text-decoration-color: rgba(31, 111, 91, 0.45);
 }
 
+.item-card.in-current-layout {
+  border-color: rgba(31, 111, 91, 0.32);
+  background: rgba(220, 236, 230, 0.3);
+  box-shadow: 0 0 0 1px rgba(31, 111, 91, 0.08);
+}
+
 .item-card.filter-match {
   border-color: rgba(255, 138, 0, 0.5);
   box-shadow: inset 4px 0 0 rgba(255, 138, 0, 0.72);
@@ -3328,11 +3334,11 @@ mark {
   }
 
   .root-container-list .root-container-title {
-    min-height: 5em;
-    max-height: 5em;
+    min-height: 3.75em;
+    max-height: 3.75em;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 3;
     overflow: hidden;
   }
 
@@ -3342,30 +3348,30 @@ mark {
     overflow: hidden;
   }
 
-  .root-container-list .root-container-title-block {
-    min-height: 5em;
+  .root-container-list .catalog-card-title-block {
+    min-height: calc(3.75em + 1.2em + 4px);
     align-content: start;
   }
 
-  .root-container-list .root-container-card:has(.root-container-meta):not(:has(.item-photo)) {
+  .root-container-list .root-container-card:has(.meta:not(.meta-hidden)):not(:has(.item-photo)) {
     height: 148px;
   }
 
-  .root-container-list .root-container-card:has(.root-container-meta) .root-container-title-block {
-    min-height: calc(5em + 3.6em + 4px);
+  .root-container-list .root-container-card:has(.meta:not(.meta-hidden)) .catalog-card-title-block,
+  .root-container-list.with-meta-slots .catalog-card-title-block {
+    min-height: calc(3.75em + 2.4em + 1.2em + 8px);
   }
 
-  .root-container-list.with-meta-slots .root-container-title-block {
-    min-height: calc(5em + 3.6em + 4px);
-  }
-
-  .root-container-list .root-container-meta {
-    min-height: 3.6em;
-    max-height: 3.6em;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+  .root-container-list .root-container-card .meta {
+    min-height: 2.4em;
+    max-height: 2.4em;
     overflow: hidden;
+    align-content: flex-start;
+  }
+
+  .root-container-list .root-container-card .pill {
+    line-height: 16px;
+    white-space: nowrap;
   }
 
   .items-list .item-card:not(:has(.item-photo)) {
@@ -3404,14 +3410,14 @@ mark {
     grid-row: 2;
   }
 
-  .root-container-list.with-photo-slots .root-container-card-top {
+  .root-container-list.with-photo-slots .root-container-card .item-card-top {
     min-height: 0;
     max-height: var(--photo-top-row-height);
     overflow: hidden;
   }
 
-  .root-container-list.with-photo-slots .root-container-title-block,
-  .root-container-list.with-photo-slots.with-meta-slots .root-container-title-block {
+  .root-container-list.with-photo-slots .catalog-card-title-block,
+  .root-container-list.with-photo-slots.with-meta-slots .catalog-card-title-block {
     min-height: 0;
     max-height: var(--photo-top-row-height);
     overflow: hidden;
@@ -3500,12 +3506,7 @@ mark {
   touch-action: auto;
 }
 
-.root-container-card-top {
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  align-items: start;
-}
-
-.root-container-title-block {
+.catalog-card-title-block {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -3684,7 +3685,7 @@ mark {
 }
 
 .layout-member-title span,
-.root-container-meta {
+.catalog-card-status {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.2;

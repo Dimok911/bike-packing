@@ -34,7 +34,11 @@ export function normalizeItemPhotos(item) {
         height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0,
         createdAt: typeof photo.createdAt === "string" ? photo.createdAt : nowIso(),
         updatedAt: typeof photo.updatedAt === "string" ? photo.updatedAt : nowIso(),
-        error: typeof photo.error === "string" ? photo.error : ""
+        error: typeof photo.error === "string" ? photo.error : "",
+        ...(photo._copyToCurrentList ? { _copyToCurrentList: true } : {}),
+        ...(photo.copyToCurrentList ? { copyToCurrentList: true } : {}),
+        ...(photo.publicCopySourceId ? { publicCopySourceId: String(photo.publicCopySourceId) } : {}),
+        ...(photo.sharedSourceId ? { sharedSourceId: String(photo.sharedSourceId) } : {})
       };
     });
   return item.photos;

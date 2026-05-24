@@ -383,6 +383,7 @@ import {
   summarizeHistoryPayload
 } from "./src/sync/history.js";
 import {
+  copyRecordPhotosForLocalDuplicate,
   createItemPhotoFromFile,
   deleteCachedPhoto,
   getCachedPhoto,
@@ -421,6 +422,10 @@ import {
   selectedBackupLayoutIds as selectedBackupLayoutIdsFromUi
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
+import {
+  renderCatalogCard,
+  renderCatalogPills
+} from "./src/ui/catalog-card.js";
 import {
   GUEST_STORAGE_SCOPE,
   scopedLocalStorageKey as scopedStorageKey,
@@ -4870,7 +4875,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
   Object.values(state.items || {}).forEach((item) => {
     if (!isEntityInPhotoUploadScope(item, "item", scope)) return;
     normalizeItemPhotos(item).forEach((photo) => {
-      if (isPhotoUsableFromServer(photo, listId)) return;
+      if (!photoShouldBeCopiedToCurrentList(photo) && isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
       if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && allowRemoteOnlyReferences && photo.status === "missing-local-file") return;
@@ -4882,7 +4887,7 @@ function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOn
   Object.values(state.containers || {}).forEach((container) => {
     if (!isEntityInPhotoUploadScope(container, "container", scope)) return;
     normalizeItemPhotos(container).forEach((photo) => {
-      if (isPhotoUsableFromServer(photo, listId)) return;
+      if (!photoShouldBeCopiedToCurrentList(photo) && isPhotoUsableFromServer(photo, listId)) return;
       const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
       if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;
       if (needsListReupload && allowRemoteOnlyReferences && photo.status === "missing-local-file") return;
@@ -8469,7 +8474,7 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
     ? snapshotContainerTree(rootId, { targetState: published.sourceState })
     : root ? legacySharedRootSnapshot(root) : null;
   if (!sourceName || !(await confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, sourceName, { publicSource: true }))) return;
-  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+  await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: rootId,
     publicSource: true
   });
@@ -11213,7 +11218,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
       showToast("Копирование пропущено: вещь уже есть в целевой укладке.", "success");
       return;
     }
-    duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+    await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
     return;
   }
   if (
@@ -11221,7 +11226,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
     !hasPrivateSyncBlockedPublicOrigin(source, itemId) &&
     linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)
   ) return;
-  duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+  await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
 }
 
 function layoutContainsItem(layoutId, itemId) {
@@ -11283,7 +11288,7 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   return true;
 }
 
-function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+async function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
@@ -11299,7 +11304,7 @@ function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayou
     id: copyId,
     name: sourceIsPublicCopy ? sourceSnapshot.name : makeItemCopyName(sourceSnapshot.name),
     containerId: "",
-    photos: Array.isArray(sourceSnapshot.photos) ? clone(sourceSnapshot.photos) : [],
+    photos: await copyRecordPhotosForLocalDuplicate(sourceSnapshot, { changedAt }),
     createdAt: changedAt,
     ...currentEditMeta(changedAt)
   };
@@ -11377,14 +11382,14 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (!targetIsPublic) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (duplicates.containerIds.length || duplicates.itemIds.length) {
-      duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+      await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
         sourceContainerId: containerId
       });
       return;
     }
     if (!snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) && linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId)) return;
   }
-  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+  await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: containerId
   });
 }
@@ -11465,7 +11470,7 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
   return true;
 }
 
-function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "", {
+async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "", {
   sourceContainerId = sourceSnapshot?.rootId || "",
   publicSource = false
 } = {}) {
@@ -11498,7 +11503,7 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
 
   const copiedPlacements = {};
   const copiedItemContainers = {};
-  const copyItemTree = (itemId, parentId) => {
+  const copyItemTree = async (itemId, parentId) => {
     const item = sourceSnapshot.items[itemId];
     if (!item) return "";
     const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -11506,6 +11511,7 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
       ...cloneIsolatedPublicEntity(item),
       id: nextId,
       containerId: parentId,
+      photos: await copyRecordPhotosForLocalDuplicate(item, { changedAt }),
       createdAt: changedAt,
       ...currentEditMeta(changedAt)
     };
@@ -11515,7 +11521,7 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
     delete state.packedItems?.[nextId];
     return nextId;
   };
-  const copyContainerTree = (sourceId, parentId, isTop = false) => {
+  const copyContainerTree = async (sourceId, parentId, isTop = false) => {
     const container = sourceSnapshot.containers[sourceId];
     if (!container) return "";
     const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -11528,6 +11534,7 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
       itemIds: [],
       order: [],
       color: normalizeContainerColor(container.color),
+      photos: await copyRecordPhotosForLocalDuplicate(container, { changedAt }),
       createdAt: changedAt,
       ...currentEditMeta(changedAt)
     };
@@ -11536,18 +11543,18 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
     state.collapsedContainers[nextId] = false;
     const copiedItems = new Map();
     const copiedContainers = new Map();
-    const copyChildContainer = (childId) => {
-      const id = copyContainerTree(childId, nextId);
+    const copyChildContainer = async (childId) => {
+      const id = await copyContainerTree(childId, nextId);
       if (id) copiedContainers.set(childId, id);
       return id;
     };
-    const copyChildItem = (childItemId) => {
-      const id = copyItemTree(childItemId, nextId);
+    const copyChildItem = async (childItemId) => {
+      const id = await copyItemTree(childItemId, nextId);
       if (id) copiedItems.set(childItemId, id);
       return id;
     };
-    state.containers[nextId].childIds = (container.childIds || []).map(copyChildContainer).filter(Boolean);
-    state.containers[nextId].itemIds = (container.itemIds || []).map(copyChildItem).filter(Boolean);
+    state.containers[nextId].childIds = (await Promise.all((container.childIds || []).map(copyChildContainer))).filter(Boolean);
+    state.containers[nextId].itemIds = (await Promise.all((container.itemIds || []).map(copyChildItem))).filter(Boolean);
     state.containers[nextId].order = (container.order || []).map((entry) => {
       if (entry?.type === "container") {
         const id = copiedContainers.get(entry.id);
@@ -11574,7 +11581,7 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
     return nextId;
   };
 
-  nextRootId = copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
+  nextRootId = await copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
   if (!nextRootId) return "";
 
   targetLayout.arrangement = targetLayout.arrangement && typeof targetLayout.arrangement === "object"
@@ -11632,11 +11639,11 @@ function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId = sta
   return nextRootId;
 }
 
-function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", { sourceLayoutId = "" } = {}) {
+async function duplicateContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", { sourceLayoutId = "" } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId });
   if (!sourceSnapshot || !targetLayout) return;
-  duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+  await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: containerId
   });
 }
@@ -14639,6 +14646,7 @@ function renderSharedItemsView() {
 
 function renderListItem(item) {
   const filterMatch = isFilterContextActive() && matchesItemsViewFilters(item);
+  const inCurrentLayout = isItemInActiveLayout(item);
   const placementText = item.containerId ? containerPath(item.containerId) : "Вне укладки";
   const quantityText = itemQuantity(item) > 1 ? `${itemQuantity(item)} шт.` : "";
   const cardTitle = [
@@ -14654,29 +14662,36 @@ function renderListItem(item) {
       ? renderItemPhoto(item)
       : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
     : "";
-  return `
-    <article class="item-card ${filterMatch ? "filter-match" : ""}" data-list-item-id="${item.id}" title="${escapeHtml(cardTitle)}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
-      <div class="item-card-top">
-        <strong>${highlight(item.name)}${renderItemQuantityText(item)}</strong>
-        <button class="copy-item-button" data-copy-item="${item.id}" aria-label="Скопировать" title="Скопировать">
-          <span aria-hidden="true">⧉</span>
-        </button>
-        <button class="edit-button" data-edit-item="${item.id}" aria-label="Редактировать" title="Редактировать">
-          <span aria-hidden="true">&#9998;</span>
-        </button>
-        <button class="delete-item-button" data-delete-item="${item.id}" aria-label="Удалить навсегда" title="Удалить навсегда">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="meta ${shouldShowItemLabels() ? "" : "meta-hidden"}">
-        <span class="pill">${formatItemWeight(item)}</span>
-        ${itemCategories(item).map((category) => `<span class="pill">${highlight(category)}</span>`).join("")}
-        <span class="pill">${highlight(item.location)}</span>
-      </div>
-      <small>${highlight(placementText)}</small>
-      ${photoSlot}
-    </article>
-  `;
+  return renderCatalogCard({
+    classes: [
+      inCurrentLayout ? "in-current-layout" : "",
+      filterMatch ? "filter-match" : ""
+    ],
+    attributes: {
+      "data-list-item-id": item.id,
+      ...(filterMatch ? { "data-filter-match-id": item.id } : {})
+    },
+    title: cardTitle,
+    titleHtml: `${highlight(item.name)}${renderItemQuantityText(item)}`,
+    metaHtml: renderCatalogPills([
+      formatItemWeight(item),
+      ...itemCategories(item).map((category) => highlight(category)),
+      highlight(item.location)
+    ], { hidden: !shouldShowItemLabels() }),
+    statusHtml: highlight(placementText),
+    photoHtml: photoSlot,
+    actionsHtml: `
+      <button class="copy-item-button" data-copy-item="${item.id}" aria-label="Скопировать" title="Скопировать">
+        <span aria-hidden="true">⧉</span>
+      </button>
+      <button class="edit-button" data-edit-item="${item.id}" aria-label="Редактировать" title="Редактировать">
+        <span aria-hidden="true">&#9998;</span>
+      </button>
+      <button class="delete-item-button" data-delete-item="${item.id}" aria-label="Удалить навсегда" title="Удалить навсегда">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    `
+  });
 }
 
 function renderBags() {
@@ -15149,10 +15164,16 @@ function renderRootContainersEditor() {
 
 function renderRootContainerCard(container) {
   const filterMatch = isFilterContextActive() && matchesRootContainerFieldsFilter(container);
-  const meta = [
-    container.color ? `Цвет: ${container.color}` : "",
-    Number(container.weight || 0) ? `Вес: ${formatWeight(container.weight)}` : "",
-    Number(container.volume || 0) ? `Объём: ${formatVolume(container.volume)}` : ""
+  const inCurrentLayout = isRootContainerInActiveLayout(container.id);
+  const placementText = inCurrentLayout ? "В текущей укладке" : "Вне текущей укладки";
+  const location = container.location || defaultRootContainerLocation(state);
+  const metaTags = [
+    Number(container.weight || 0) ? formatWeight(container.weight) : "",
+    highlight(location)
+  ].filter(Boolean);
+  const metaTitle = [
+    Number(container.weight || 0) ? formatWeight(container.weight) : "",
+    location
   ].filter(Boolean).join(" · ");
   if (false && editingRootContainerId === container.id) {
     return `
@@ -15176,26 +15197,43 @@ function renderRootContainerCard(container) {
       ? renderItemPhoto(container)
       : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
     : "";
-  return `
-    <article class="item-card root-container-card ${filterMatch ? "filter-match" : ""}" data-root-card="${container.id}" data-root-drag="${container.id}" ${filterMatch ? `data-filter-match-id="root-${container.id}"` : ""} title="Удерживайте и перетащите в укладку">
-      <div class="item-card-top root-container-card-top">
-        <div class="root-container-title-block">
-          <strong class="item-title root-container-title" data-root-title="${container.id}" title="${escapeHtml(container.name)}">${highlight(container.name)}</strong>
-          ${shouldShowItemLabels() && meta ? `<span class="root-container-meta" title="${escapeHtml(meta)}">${highlight(meta)}</span>` : ""}
-        </div>
-        <button class="copy-item-button" data-copy-root="${container.id}" aria-label="Скопировать" title="Скопировать">
-          <span aria-hidden="true">⧉</span>
-        </button>
-        <button class="edit-button" data-edit-root="${container.id}" aria-label="Редактировать" title="Редактировать">
-          <span aria-hidden="true">&#9998;</span>
-        </button>
-        <button class="delete-item-button" data-delete-root="${container.id}" aria-label="Удалить" title="Удалить">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      ${photoSlot}
-    </article>
-  `;
+  return renderCatalogCard({
+    classes: [
+      "root-container-card",
+      inCurrentLayout ? "in-current-layout" : "",
+      filterMatch ? "filter-match" : ""
+    ],
+    attributes: {
+      "data-root-card": container.id,
+      "data-root-drag": container.id,
+      ...(filterMatch ? { "data-filter-match-id": `root-${container.id}` } : {})
+    },
+    title: [
+      "Удерживайте и перетащите в укладку",
+      metaTitle,
+      placementText
+    ].filter(Boolean).join("\n"),
+    titleHtml: highlight(container.name),
+    titleClass: "root-container-title",
+    titleAttributes: {
+      "data-root-title": container.id,
+      title: container.name
+    },
+    metaHtml: renderCatalogPills(metaTags, { hidden: !shouldShowItemLabels() }),
+    statusHtml: placementText,
+    photoHtml: photoSlot,
+    actionsHtml: `
+      <button class="copy-item-button" data-copy-root="${container.id}" aria-label="Скопировать" title="Скопировать">
+        <span aria-hidden="true">⧉</span>
+      </button>
+      <button class="edit-button" data-edit-root="${container.id}" aria-label="Редактировать" title="Редактировать">
+        <span aria-hidden="true">&#9998;</span>
+      </button>
+      <button class="delete-item-button" data-delete-root="${container.id}" aria-label="Удалить" title="Удалить">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    `
+  });
 }
 
 function bindRootContainersEditor() {
@@ -15782,7 +15820,7 @@ async function copyItem(itemId, options = {}) {
     id,
     name: makeItemCopyName(item.name),
     containerId: "",
-    photos: [],
+    photos: await copyRecordPhotosForLocalDuplicate(item, { changedAt }),
     createdAt: changedAt,
     ...currentEditMeta(changedAt)
   };
@@ -15803,39 +15841,12 @@ async function copyItem(itemId, options = {}) {
 async function copyRootContainer(containerId) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
-  const layoutId = getPublishedEditLayoutId();
-  const layout = state.layouts[layoutId];
-  if (layout && isAdminEditablePublishedLayout(layoutId)) {
-    const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: true }));
-    if (!confirmed) return;
-    await copyContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
-    return;
-  }
-  if (layout && !isAdminEditablePublishedLayout(layoutId)) {
-    const sourceSnapshot = snapshotContainerTree(containerId, { excludeLayoutId: layoutId });
-    if (!(layout.rootContainerIds || []).includes(containerId)) {
-      if (sourceSnapshot && linkExistingContainerTreeToLayout(sourceSnapshot, layoutId, "")) return;
-      addRootContainerToActiveLayout(containerId);
-      showToast("Сумка добавлена в текущую укладку без создания дубля.", "success");
-      return;
-    }
-    const duplicate = await askConfirmDialog({
-      title: "Сумка уже есть в этой укладке",
-      text: `«${container.name || "Сумка"}» уже участвует в укладке «${layout.name || "Укладка"}». Создать отдельную копию верхнего уровня?`,
-      okText: "Дублировать",
-      cancelText: "Отмена",
-      tone: "safe"
-    });
-    if (!duplicate) return;
-    duplicateContainerTreeToLayout(containerId, layout.id, "", { sourceLayoutId: layoutId });
-    return;
-  }
-  const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: Boolean(layout) }));
+  const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: false }));
   if (!confirmed) return;
-  duplicateRootContainer(containerId, { addToLayoutId: layout?.id || "" });
+  await duplicateRootContainer(containerId);
 }
 
-function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
+async function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
   const changedAt = nowIso();
@@ -15849,7 +15860,7 @@ function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
     itemIds: [],
     order: [],
     color: normalizeContainerColor(container.color),
-    photos: [],
+    photos: await copyRecordPhotosForLocalDuplicate(container, { changedAt }),
     createdAt: changedAt,
     ...currentEditMeta(changedAt)
   };

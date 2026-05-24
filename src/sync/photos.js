@@ -7,7 +7,7 @@ import {
   PHOTO_DB_VERSION,
   PHOTO_STORE
 } from "../config/constants.js";
-import { normalizePhotoUrlFields } from "../state/item-photos.js";
+import { normalizePhotoStatus, normalizePhotoUrlFields } from "../state/item-photos.js";
 import { nowIso } from "../utils/time.js";
 
 export function hasRemotePhotoUrl(photo) {
@@ -115,6 +115,66 @@ export function getCachedPhoto(id) {
 export function deleteCachedPhoto(id) {
   if (!id) return Promise.resolve();
   return photoDbStore("readwrite", (store) => store.delete(id)).catch(() => null);
+}
+
+export async function copyRecordPhotosForLocalDuplicate(record, { changedAt = nowIso() } = {}) {
+  const photos = Array.isArray(record?.photos) ? record.photos : [];
+  const copies = [];
+  for (const photo of photos) {
+    const copy = await copyPhotoForLocalDuplicate(photo, { changedAt });
+    if (copy) copies.push(copy);
+  }
+  return copies;
+}
+
+async function copyPhotoForLocalDuplicate(photo, { changedAt = nowIso() } = {}) {
+  if (!photo || typeof photo !== "object") return null;
+  normalizePhotoUrlFields(photo);
+  const nextId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const sourceLocalId = String(photo.localId || photo.id || "").trim();
+  const cached = sourceLocalId ? await getCachedPhoto(sourceLocalId) : null;
+  const remote = hasRemotePhotoUrl(photo);
+  const copy = {
+    ...photo,
+    id: nextId,
+    localId: "",
+    status: remote ? "pending" : normalizePhotoStatus(photo.status),
+    createdAt: changedAt,
+    updatedAt: changedAt,
+    error: ""
+  };
+  if (cached?.blob) {
+    try {
+      await putCachedPhoto({
+        ...cached,
+        id: nextId,
+        createdAt: changedAt,
+        updatedAt: changedAt
+      });
+      copy.localId = nextId;
+      copy.url = "";
+      copy.thumbUrl = "";
+      copy.listId = "";
+      copy.status = "pending";
+      delete copy._copyToCurrentList;
+      delete copy.copyToCurrentList;
+      return copy;
+    } catch {
+      // Fall through to remote copy when the original has already been synced.
+    }
+  }
+  if (remote) {
+    copy.localId = "";
+    copy.status = "pending";
+    copy._copyToCurrentList = true;
+    delete copy.copyToCurrentList;
+    return copy;
+  }
+  if (sourceLocalId) {
+    copy.status = "missing-local-file";
+    copy.error = photo.error || "local-photo-copy-missing";
+  }
+  return copy;
 }
 
 export function isPhotoStoredForList(photo, listId) {
