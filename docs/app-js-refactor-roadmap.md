@@ -18,6 +18,38 @@
 
 Важно: размер production bundle может временно не уменьшаться, потому что сейчас задача - исходная модульность, а не code splitting. Главная метрика на этом этапе: меньше бизнес-логики в `app.js`, яснее границы ответственности, проще искать баги.
 
+## Примерная оценка уменьшения app.js
+
+Оценки ниже показывают только чистое уменьшение `app.js`. Общий объем кода в репозитории может не уменьшиться: часть строк переедет в `src/...`, появятся imports, wrappers и проверки. Поэтому цифры нужны как ориентир по прогрессу, а не как обещание точного результата.
+
+Текущая база для оценки: около `17853` строк.
+
+| Срез | Примерное уменьшение `app.js` | Почему такой диапазон |
+| --- | ---: | --- |
+| Добрать conflict formatting и conflict merge helpers | 300-700 строк | Часть форматирования уедет полностью, но останутся UI wrappers и callbacks. |
+| Вынести sync merge и remote state | 800-1400 строк | Merge-функции крупные и в основном чистые; часть останется вокруг dialogs/status. |
+| Вынести photo upload/copy scope | 400-800 строк | Много правил выбора фото, но upload orchestration и статусы останутся в `app.js`. |
+| Вынести public/shared/template copy zone | 900-1700 строк | Крупная зона с identity/source/delete/copy правилами; часть сценариев останется glue-кодом. |
+| Вынести layout/item/container operations | 900-1600 строк | Много state-операций можно перенести, но confirm/toast/render/save останутся рядом с UI. |
+| Вынести backup/import flow | 400-900 строк | Analysis/summary/photo preparation уедут, orchestration диалога останется. |
+| Разделить UI render islands | 2500-4500 строк | Самый большой потенциальный выигрыш: summary/items/bags/settings/dialog render blocks. |
+| Drag/drop и pointer interactions | 1200-2500 строк | Крупная область, но самая рискованная; переносить только после очистки state operations. |
+
+Ориентир после всех фаз: `app.js` может прийти примерно к `6000-10000` строкам. Реалистичная промежуточная цель - сначала пройти ниже `15000`, затем ниже `10000`.
+
+Ближайшие операции с ожидаемым эффектом:
+
+| Ближайшая операция | Ожидаемое уменьшение `app.js` |
+| --- | ---: |
+| `formatConflictFieldValue` + `formatConflictCountValue` в `src/ui/conflict-format.js` | 80-180 строк |
+| `conflictValueSummary` + `conflictDifferenceSummary` в `src/ui/conflict-format.js` | 120-260 строк |
+| `changedComparableKeys` + `comparableValueForMerge` в `src/sync/conflict-merge.js` | 120-280 строк |
+| `mergeStringList` + `mergeScalarField` в `src/sync/state-merge.js` | 120-260 строк |
+| `mergeRecordMap` + `mergeStateFromBase` в `src/sync/state-merge.js` | 350-700 строк |
+| Photo upload scope helpers в `src/sync/photo-upload-scope.js` | 250-500 строк |
+| Template copy source helpers в `src/public/template-copy-source.js` | 300-700 строк |
+| Item/container copy/delete pure operations в `src/state/item-ops.js` и `src/state/container-ops.js` | 500-1000 строк |
+
 ## Правила каждого среза
 
 - Один срез = один смысловой слой, который можно быстро проверить и откатить.
