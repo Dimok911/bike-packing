@@ -593,7 +593,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-24.collection-mode-state-sync-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-24.github-pages-cors-origin-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
