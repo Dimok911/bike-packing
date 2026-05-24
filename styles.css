@@ -1848,7 +1848,9 @@ button.ghost.context-toggle.active:focus-visible {
   background: rgba(255, 255, 255, 0.9);
   box-shadow: -14px 0 34px rgba(29, 37, 34, 0.12);
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  touch-action: pan-y;
   padding: 12px;
 }
 

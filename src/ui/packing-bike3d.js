@@ -40,6 +40,8 @@ const BIKE3D_SLOT_CONFIG = {
 };
 
 const BIKE3D_BAG_DIMENSION_SCENE_SCALE = 0.022;
+const BIKE3D_DEFAULT_VIEW_DIRECTION = Object.freeze({ x: 1.32, y: 0.66, z: 0.78 });
+const BIKE3D_DEFAULT_FIT_PADDING = 1.34;
 
 export function defaultBike3dViewState() {
   return { zoom: 1, panX: 0, panY: 0, rotateX: 62, rotateZ: -18 };
@@ -55,8 +57,8 @@ export function normalizeBike3dViewState(value) {
   };
   const normalized = {
     zoom: clamp("zoom", 0.55, 2.4),
-    panX: clamp("panX", -260, 260),
-    panY: clamp("panY", -180, 180),
+    panX: clamp("panX", -2400, 2400),
+    panY: clamp("panY", -2400, 2400),
     rotateX: clamp("rotateX", 48, 76),
     rotateZ: clamp("rotateZ", -60, 36)
   };
@@ -183,6 +185,7 @@ export function renderBike3dPackingView({
     onViewStateChange,
     onResetView
   });
+  bindBike3dDetailScrollChain(target);
   createBike3dScene(target.querySelector("[data-bike3d-webgl]"), bagSlots, {
     selectedId,
     adjustingContainerId,
@@ -192,6 +195,60 @@ export function renderBike3dPackingView({
     onViewStateChange
   });
   renderBike3dLoadSummary(target, bagSlots, { containerWeight, formatWeight });
+}
+
+function bindBike3dDetailScrollChain(target) {
+  const detail = target.querySelector(".bike3d-detail:not([hidden])");
+  if (!detail) return;
+  let startX = 0;
+  let startY = 0;
+  let lastY = 0;
+  let verticalGesture = false;
+  detail.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    lastY = touch.clientY;
+    verticalGesture = false;
+  }, { passive: true });
+  detail.addEventListener("touchmove", (event) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const totalDx = touch.clientX - startX;
+    const totalDy = touch.clientY - startY;
+    if (!verticalGesture) {
+      if (Math.abs(totalDy) < 6 || Math.abs(totalDy) <= Math.abs(totalDx)) {
+        lastY = touch.clientY;
+        return;
+      }
+      verticalGesture = true;
+    }
+    const dy = touch.clientY - lastY;
+    lastY = touch.clientY;
+    if (!dy) return;
+    const pageDelta = -dy;
+    if (!shouldChainBike3dDetailScroll(detail, pageDelta) || !canScrollPageBy(pageDelta)) return;
+    if (event.cancelable) event.preventDefault();
+    window.scrollBy({ top: pageDelta, left: 0, behavior: "auto" });
+  }, { passive: false });
+}
+
+function shouldChainBike3dDetailScroll(detail, deltaY) {
+  const maxScrollTop = Math.max(0, detail.scrollHeight - detail.clientHeight);
+  if (maxScrollTop <= 1) return true;
+  if (deltaY > 0) return detail.scrollTop >= maxScrollTop - 1;
+  if (deltaY < 0) return detail.scrollTop <= 1;
+  return false;
+}
+
+function canScrollPageBy(deltaY) {
+  const scroller = document.scrollingElement || document.documentElement;
+  if (!scroller) return false;
+  const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  if (deltaY > 0) return scroller.scrollTop < maxScrollTop - 1;
+  if (deltaY < 0) return scroller.scrollTop > 1;
+  return false;
 }
 
 function renderBikeModel(bagSlots, { selectedId, escapeHtml, viewState }) {
@@ -456,20 +513,23 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+  controls.enabled = false;
   controls.target.set(0, 0.9, 0);
   controls.minDistance = 4.8;
   controls.maxDistance = 13;
   controls.maxPolarAngle = Math.PI * 0.48;
-  controls.enablePan = true;
   controls.enableRotate = true;
+  controls.enableZoom = false;
+  controls.enablePan = false;
+  controls.screenSpacePanning = true;
   controls.mouseButtons = {
-    LEFT: THREE.MOUSE.PAN,
+    LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
     RIGHT: THREE.MOUSE.ROTATE
   };
   controls.touches = {
     ONE: THREE.TOUCH.ROTATE,
-    TWO: THREE.TOUCH.DOLLY_PAN
+    TWO: null
   };
 
   scene.add(new THREE.HemisphereLight(0xf7fff9, 0x6f7a74, 2.2));
@@ -482,22 +542,64 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   const bikeFrame = bikeGeometryFrame(BIKE_GEOMETRY_M);
   const clickable = buildBike3dModel(bikeGroup, bagSlots, { bikeFrame, selectedId, adjustingContainerId, transforms });
   const orbitTarget = bike3dOrbitTarget(bikeFrame);
+  let cameraDistanceLimits = { fit: 6.2, min: 1.8, max: 32 };
+  let screenPanX = 0;
+  let screenPanY = 0;
 
-  const fitBikeToViewport = () => {
+  const syncCameraToTarget = () => {
+    camera.lookAt(controls.target);
+    applyCameraViewOffset();
+    camera.updateMatrixWorld(true);
+  };
+
+  const applyCameraViewOffset = () => {
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width));
+    const height = Math.max(1, Math.floor(rect.height));
+    if (Math.abs(screenPanX) < 0.01 && Math.abs(screenPanY) < 0.01) {
+      camera.clearViewOffset();
+    } else {
+      camera.setViewOffset(width, height, -screenPanX, -screenPanY, width, height);
+    }
+    camera.updateProjectionMatrix();
+  };
+
+  const measureBikeFitDistance = () => {
     const box = new THREE.Box3().setFromObject(bikeGroup);
     const size = box.getSize(new THREE.Vector3());
     const verticalFov = THREE.MathUtils.degToRad(camera.fov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
-    const padding = 1.22;
+    const padding = BIKE3D_DEFAULT_FIT_PADDING;
     const distanceForHeight = (size.y * padding) / (2 * Math.tan(verticalFov / 2));
     const distanceForWidth = (size.x * padding) / (2 * Math.tan(horizontalFov / 2));
-    const distance = Math.max(distanceForHeight, distanceForWidth, 6.2);
-    const direction = new THREE.Vector3(1, 0.82, 1).normalize();
+    return Math.max(distanceForHeight, distanceForWidth, 6.2);
+  };
+
+  const updateCameraDistanceLimits = () => {
+    const fit = measureBikeFitDistance();
+    cameraDistanceLimits = {
+      fit,
+      min: Math.max(1.5, fit * 0.32),
+      max: Math.max(28, fit * 5.4)
+    };
+    controls.minDistance = cameraDistanceLimits.min;
+    controls.maxDistance = cameraDistanceLimits.max;
+  };
+
+  const fitBikeToViewport = () => {
+    updateCameraDistanceLimits();
+    const direction = new THREE.Vector3(
+      BIKE3D_DEFAULT_VIEW_DIRECTION.x,
+      BIKE3D_DEFAULT_VIEW_DIRECTION.y,
+      BIKE3D_DEFAULT_VIEW_DIRECTION.z
+    ).normalize();
+    const rect = host.getBoundingClientRect();
+    screenPanX = rect.width >= 900 ? -Math.min(300, Math.round(rect.width * 0.12)) : 0;
+    screenPanY = 0;
     controls.target.copy(orbitTarget);
-    camera.position.copy(orbitTarget).add(direction.multiplyScalar(distance));
-    controls.minDistance = Math.max(4.8, distance * 0.58);
-    controls.maxDistance = Math.max(13, distance * 1.75);
-    controls.update();
+    camera.position.copy(orbitTarget).add(direction.multiplyScalar(cameraDistanceLimits.fit));
+    camera.zoom = 1;
+    syncCameraToTarget();
   };
 
   const applyViewState = (nextViewState) => {
@@ -507,13 +609,13 @@ function createBike3dSceneUnsafe(host, bagSlots, {
     const savedTarget = new THREE.Vector3(normalized.target.x, normalized.target.y, normalized.target.z);
     const savedOffset = savedPosition.sub(savedTarget);
     if (!Number.isFinite(savedOffset.lengthSq()) || savedOffset.lengthSq() < 0.0001) return false;
-    const target = bike3dOrbitPlaneTarget(savedTarget, orbitTarget);
-    camera.position.copy(target).add(savedOffset);
-    controls.target.copy(target);
-    keepBike3dOrbitTargetInPlane(camera, controls);
-    camera.zoom = normalized.zoom || 1;
-    camera.updateProjectionMatrix();
-    controls.update();
+    savedOffset.setLength(THREE.MathUtils.clamp(savedOffset.length(), cameraDistanceLimits.min, cameraDistanceLimits.max));
+    screenPanX = normalized.panX;
+    screenPanY = normalized.panY;
+    controls.target.copy(orbitTarget);
+    camera.position.copy(orbitTarget).add(savedOffset);
+    camera.zoom = 1;
+    syncCameraToTarget();
     return true;
   };
 
@@ -522,11 +624,26 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   let hoveredObject = null;
   let pointerDownPoint = null;
   let pointerMovedSinceDown = false;
+  let suppressNextClick = false;
+  let panPointerId = null;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panDragging = false;
+  let lastPanX = 0;
+  let lastPanY = 0;
+  let rotatePointerId = null;
+  let rotateLastX = 0;
+  let rotateLastY = 0;
+  let rotateDragging = false;
+  const touchPointers = new Map();
+  let touchPanZoomGesture = null;
   let viewStateSaveTimer = null;
 
   const currentViewState = () => normalizeBike3dViewState({
     ...viewState,
-    zoom: camera.zoom || 1,
+    zoom: 1,
+    panX: screenPanX,
+    panY: screenPanY,
     position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
     target: { x: controls.target.x, y: controls.target.y, z: controls.target.z }
   });
@@ -568,6 +685,7 @@ function createBike3dSceneUnsafe(host, bagSlots, {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    updateCameraDistanceLimits();
     if (!applyViewState(viewState)) fitBikeToViewport();
   };
 
@@ -587,6 +705,12 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   };
   const onPointerLeave = () => setHoveredObject(null);
   const onClick = (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      pointerDownPoint = null;
+      pointerMovedSinceDown = false;
+      return;
+    }
     if (pointerMovedSinceDown) return;
     const hit = pickObject(event);
     if (hit?.userData?.containerId) onSelect?.(hit.userData.containerId);
@@ -594,23 +718,228 @@ function createBike3dSceneUnsafe(host, bagSlots, {
     pointerMovedSinceDown = false;
   };
 
+  const panCameraInScreenPlane = (deltaX, deltaY) => {
+    screenPanX += deltaX;
+    screenPanY += deltaY;
+    syncCameraToTarget();
+    saveViewStateSoon();
+  };
+
+  const dollyCameraByScale = (scale) => {
+    const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const currentDistance = offset.length();
+    if (!Number.isFinite(currentDistance) || currentDistance < 0.0001) return;
+    const nextDistance = THREE.MathUtils.clamp(
+      currentDistance * scale,
+      cameraDistanceLimits.min,
+      cameraDistanceLimits.max
+    );
+    offset.setLength(nextDistance);
+    controls.target.copy(orbitTarget);
+    camera.position.copy(orbitTarget).add(offset);
+    camera.zoom = 1;
+    camera.updateProjectionMatrix();
+    syncCameraToTarget();
+    saveViewStateSoon();
+  };
+
+  const rotateCameraAroundTarget = (deltaX, deltaY) => {
+    const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const distance = offset.length();
+    if (!Number.isFinite(distance) || distance < 0.0001) return;
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    spherical.theta -= deltaX * 0.006;
+    spherical.phi = THREE.MathUtils.clamp(
+      spherical.phi - deltaY * 0.0048,
+      Math.PI * 0.08,
+      controls.maxPolarAngle
+    );
+    spherical.radius = distance;
+    offset.setFromSpherical(spherical);
+    camera.position.copy(controls.target).add(offset);
+    camera.updateProjectionMatrix();
+    syncCameraToTarget();
+    saveViewStateSoon();
+  };
+
+  const touchGestureSnapshot = () => {
+    if (touchPointers.size < 2) return null;
+    const points = [...touchPointers.values()].slice(0, 2);
+    const centerX = (points[0].x + points[1].x) / 2;
+    const centerY = (points[0].y + points[1].y) / 2;
+    return {
+      centerX,
+      centerY,
+      distance: Math.max(1, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y))
+    };
+  };
+
+  const stopNativeEvent = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onCustomPointerDown = (event) => {
+    if (event.pointerType === "touch") {
+      touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPointers.size >= 2) {
+        rotatePointerId = null;
+        rotateDragging = false;
+        touchPanZoomGesture = touchGestureSnapshot();
+        pointerMovedSinceDown = true;
+        suppressNextClick = true;
+        stopNativeEvent(event);
+        return;
+      }
+      rotatePointerId = event.pointerId;
+      rotateLastX = event.clientX;
+      rotateLastY = event.clientY;
+      rotateDragging = false;
+      canvas.setPointerCapture?.(event.pointerId);
+      stopNativeEvent(event);
+      return;
+    }
+    if (event.button === 2 || (event.button === 0 && event.shiftKey)) {
+      rotatePointerId = event.pointerId;
+      rotateLastX = event.clientX;
+      rotateLastY = event.clientY;
+      rotateDragging = false;
+      pointerMovedSinceDown = false;
+      suppressNextClick = false;
+      canvas.setPointerCapture?.(event.pointerId);
+      canvas.style.cursor = "grabbing";
+      stopNativeEvent(event);
+      return;
+    }
+    if (event.button !== 0) return;
+    panPointerId = event.pointerId;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panDragging = false;
+    lastPanX = event.clientX;
+    lastPanY = event.clientY;
+    pointerMovedSinceDown = false;
+    suppressNextClick = false;
+    canvas.setPointerCapture?.(event.pointerId);
+    canvas.style.cursor = "grabbing";
+    stopNativeEvent(event);
+  };
+
+  const onCustomPointerMove = (event) => {
+    if (event.pointerType === "touch") {
+      if (!touchPointers.has(event.pointerId)) return;
+      touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPanZoomGesture && touchPointers.size >= 2) {
+        const nextGesture = touchGestureSnapshot();
+        if (!nextGesture) return;
+        panCameraInScreenPlane(
+          nextGesture.centerX - touchPanZoomGesture.centerX,
+          nextGesture.centerY - touchPanZoomGesture.centerY
+        );
+        dollyCameraByScale(touchPanZoomGesture.distance / nextGesture.distance);
+        touchPanZoomGesture = nextGesture;
+        stopNativeEvent(event);
+        return;
+      }
+      if (event.pointerId !== rotatePointerId) return;
+      if (Math.hypot(event.clientX - rotateLastX, event.clientY - rotateLastY) > 1) {
+        rotateDragging = true;
+        pointerMovedSinceDown = true;
+        suppressNextClick = true;
+      }
+      rotateCameraAroundTarget(event.clientX - rotateLastX, event.clientY - rotateLastY);
+      rotateLastX = event.clientX;
+      rotateLastY = event.clientY;
+      stopNativeEvent(event);
+      return;
+    }
+    if (event.pointerId === rotatePointerId) {
+      if (Math.hypot(event.clientX - rotateLastX, event.clientY - rotateLastY) > 1) {
+        rotateDragging = true;
+        pointerMovedSinceDown = true;
+        suppressNextClick = true;
+      }
+      rotateCameraAroundTarget(event.clientX - rotateLastX, event.clientY - rotateLastY);
+      rotateLastX = event.clientX;
+      rotateLastY = event.clientY;
+      stopNativeEvent(event);
+      return;
+    }
+    if (event.pointerId !== panPointerId) return;
+    if (!panDragging && Math.hypot(event.clientX - panStartX, event.clientY - panStartY) > 4) {
+      panDragging = true;
+      pointerMovedSinceDown = true;
+      suppressNextClick = true;
+    }
+    if (!panDragging) return;
+    panCameraInScreenPlane(event.clientX - lastPanX, event.clientY - lastPanY);
+    lastPanX = event.clientX;
+    lastPanY = event.clientY;
+    stopNativeEvent(event);
+  };
+
+  const endCustomPointer = (event) => {
+    if (event.pointerType === "touch") {
+      touchPointers.delete(event.pointerId);
+      if (touchPointers.size < 2 && touchPanZoomGesture) {
+        touchPanZoomGesture = null;
+        onViewStateChange?.(currentViewState());
+        stopNativeEvent(event);
+      }
+      if (event.pointerId === rotatePointerId) {
+        rotatePointerId = null;
+        rotateDragging = false;
+        canvas.releasePointerCapture?.(event.pointerId);
+        onViewStateChange?.(currentViewState());
+        stopNativeEvent(event);
+      }
+      return;
+    }
+    if (event.pointerId === rotatePointerId) {
+      rotatePointerId = null;
+      rotateDragging = false;
+      canvas.releasePointerCapture?.(event.pointerId);
+      canvas.style.cursor = hoveredObject ? "pointer" : "grab";
+      onViewStateChange?.(currentViewState());
+      stopNativeEvent(event);
+      return;
+    }
+    if (event.pointerId !== panPointerId) return;
+    panPointerId = null;
+    panDragging = false;
+    canvas.releasePointerCapture?.(event.pointerId);
+    canvas.style.cursor = hoveredObject ? "pointer" : "grab";
+    onViewStateChange?.(currentViewState());
+    stopNativeEvent(event);
+  };
+
+  const onWheel = (event) => {
+    event.preventDefault();
+    const scale = Math.exp(THREE.MathUtils.clamp(event.deltaY, -600, 600) * 0.0012);
+    dollyCameraByScale(scale);
+    onViewStateChange?.(currentViewState());
+  };
+
+  canvas.addEventListener("pointerdown", onCustomPointerDown, { capture: true });
+  canvas.addEventListener("pointermove", onCustomPointerMove, { capture: true });
+  canvas.addEventListener("pointerup", endCustomPointer, { capture: true });
+  canvas.addEventListener("pointercancel", endCustomPointer, { capture: true });
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("contextmenu", stopNativeEvent);
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("click", onClick);
   const onControlsChange = () => {
-    keepBike3dOrbitTargetInPlane(camera, controls);
     saveViewStateSoon();
   };
   controls.addEventListener("change", onControlsChange);
   controls.addEventListener("end", () => {
-    keepBike3dOrbitTargetInPlane(camera, controls);
     onViewStateChange?.(currentViewState());
   });
 
   let frame = 0;
   const animate = () => {
-    controls.update();
     renderer.render(scene, camera);
     frame = requestAnimationFrame(animate);
   };
@@ -623,6 +952,12 @@ function createBike3dSceneUnsafe(host, bagSlots, {
       window.clearTimeout(viewStateSaveTimer);
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
+      canvas.removeEventListener("pointerdown", onCustomPointerDown, { capture: true });
+      canvas.removeEventListener("pointermove", onCustomPointerMove, { capture: true });
+      canvas.removeEventListener("pointerup", endCustomPointer, { capture: true });
+      canvas.removeEventListener("pointercancel", endCustomPointer, { capture: true });
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("contextmenu", stopNativeEvent);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
@@ -641,28 +976,15 @@ function createBike3dSceneUnsafe(host, bagSlots, {
 }
 
 function bike3dOrbitTarget(bikeFrame) {
-  const center = bikeFrame?.points?.rotationCenter || { x: 0, y: 0 };
-  return new THREE.Vector3(Number(center.x) || 0, Number(center.y) || 0, 0);
-}
-
-function bike3dOrbitPlaneTarget(source, fallback) {
-  const x = Number(source?.x);
-  const y = Number(source?.y);
+  const wheelCenter = bikeFrame?.points?.rotationCenter || { x: 0, y: 0 };
+  const bottomBracket = bikeFrame?.points?.bottomBracket || wheelCenter;
+  const x = Number(bottomBracket.x);
+  const y = Number(wheelCenter.y);
   return new THREE.Vector3(
-    Number.isFinite(x) ? x : fallback.x,
-    Number.isFinite(y) ? y : fallback.y,
+    Number.isFinite(x) ? x : Number(wheelCenter.x) || 0,
+    Number.isFinite(y) ? y : Number(bottomBracket.y) || 0,
     0
   );
-}
-
-function keepBike3dOrbitTargetInPlane(camera, controls) {
-  const zOffset = controls.target.z;
-  if (!Number.isFinite(zOffset) || Math.abs(zOffset) < 0.000001) {
-    controls.target.z = 0;
-    return;
-  }
-  controls.target.z = 0;
-  camera.position.z -= zOffset;
 }
 
 function buildBike3dModel(group, bagSlots, { bikeFrame, selectedId, adjustingContainerId, transforms }) {
