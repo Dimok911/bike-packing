@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=775" />
+    <link rel="stylesheet" href="./styles.css?v=785" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -234,6 +234,21 @@
             Цвет
             <input id="rootContainerColor" type="text" placeholder="например: красная" />
           </label>
+          <fieldset class="container-dimensions-field">
+            <legend>Размеры, см</legend>
+            <label>
+              Ш
+              <input id="rootContainerWidth" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+            <label>
+              В
+              <input id="rootContainerHeight" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+            <label>
+              Г
+              <input id="rootContainerDepth" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+          </fieldset>
         </div>
         <label>
           Где хранится
@@ -552,6 +567,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=775" type="module"></script>
+    <script src="./app.js?v=785" type="module"></script>
   </body>
 </html>

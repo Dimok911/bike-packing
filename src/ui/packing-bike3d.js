@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { normalizeContainerDimensions } from "../state/container-fields.js";
+import { BIKE_GEOMETRY_M, bikeGeometryFrame } from "./bike-geometry.js";
 
 const PACKING_VIEW_BIKE3D = "bike3d";
 const PACKING_VIEW_COLUMNS = "columns";
@@ -36,6 +38,8 @@ const BIKE3D_SLOT_CONFIG = {
   seat: { x: -136, y: -64, z: 0, w: 60, h: 42, d: 44 },
   fork: { x: 168, y: -8, z: 0, w: 52, h: 82, d: 30 }
 };
+
+const BIKE3D_BAG_DIMENSION_SCENE_SCALE = 0.022;
 
 export function defaultBike3dViewState() {
   return { zoom: 1, panX: 0, panY: 0, rotateX: 62, rotateZ: -18 };
@@ -77,6 +81,10 @@ export function normalizePackingViewMode(value) {
 
 export function isBike3dPackingView(value) {
   return normalizePackingViewMode(value) === PACKING_VIEW_BIKE3D;
+}
+
+export function getBike3dPackingScrollHost(root) {
+  return root?.querySelector("[data-bike3d-shell]") || null;
 }
 
 export function defaultBike3dTransform() {
@@ -135,7 +143,8 @@ export function renderBike3dPackingView({
   onToggleAdjust,
   onAdjust,
   onColor,
-  onViewStateChange
+  onViewStateChange,
+  onResetView
 } = {}) {
   if (!target) return;
   const validRootIds = rootIds.filter((id) => containers[id]);
@@ -145,7 +154,7 @@ export function renderBike3dPackingView({
   const normalizedViewState = normalizeBike3dViewState(viewState);
   target.innerHTML = `
     ${beforeHtml}
-    <section class="bike3d-shell ${selected ? "bike3d-inspecting" : ""}" data-bike3d-shell>
+    <section class="bike3d-shell ${selected ? "bike3d-has-selection" : ""}" data-bike3d-shell>
       <div class="bike3d-stage">
         <div class="bike3d-toolbar">
           <span>3D-укладка</span>
@@ -157,6 +166,7 @@ export function renderBike3dPackingView({
           ${selected && adjustingContainerId === selected.id
             ? renderBike3dAdjustControls(selected.id, transforms[selected.id], escapeHtml)
             : ""}
+          <button class="bike3d-view-reset" type="button" data-bike3d-reset-view title="Вид по умолчанию" aria-label="Вид по умолчанию">↺</button>
         </div>
       </div>
       <aside class="bike3d-detail" ${selected ? "" : "hidden"}>
@@ -170,7 +180,8 @@ export function renderBike3dPackingView({
     onToggleAdjust,
     onAdjust,
     onColor,
-    onViewStateChange
+    onViewStateChange,
+    onResetView
   });
   createBike3dScene(target.querySelector("[data-bike3d-webgl]"), bagSlots, {
     selectedId,
@@ -336,6 +347,10 @@ function bindBike3dViewEvents(target, handlers) {
       handlers.onColor?.(button.dataset.bike3dColor);
     });
   });
+  target.querySelector("[data-bike3d-reset-view]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    handlers.onResetView?.();
+  });
   target.querySelectorAll("[data-bike3d-container]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -452,6 +467,10 @@ function createBike3dSceneUnsafe(host, bagSlots, {
     MIDDLE: THREE.MOUSE.DOLLY,
     RIGHT: THREE.MOUSE.ROTATE
   };
+  controls.touches = {
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN
+  };
 
   scene.add(new THREE.HemisphereLight(0xf7fff9, 0x6f7a74, 2.2));
   const key = new THREE.DirectionalLight(0xffffff, 1.8);
@@ -460,23 +479,22 @@ function createBike3dSceneUnsafe(host, bagSlots, {
 
   const bikeGroup = new THREE.Group();
   scene.add(bikeGroup);
-  const clickable = buildBike3dModel(bikeGroup, bagSlots, { selectedId, adjustingContainerId, transforms });
+  const bikeFrame = bikeGeometryFrame(BIKE_GEOMETRY_M);
+  const clickable = buildBike3dModel(bikeGroup, bagSlots, { bikeFrame, selectedId, adjustingContainerId, transforms });
+  const orbitTarget = bike3dOrbitTarget(bikeFrame);
 
   const fitBikeToViewport = () => {
     const box = new THREE.Box3().setFromObject(bikeGroup);
-    const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const verticalFov = THREE.MathUtils.degToRad(camera.fov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
-    const padding = selectedId ? 1.62 : 1.22;
+    const padding = 1.22;
     const distanceForHeight = (size.y * padding) / (2 * Math.tan(verticalFov / 2));
     const distanceForWidth = (size.x * padding) / (2 * Math.tan(horizontalFov / 2));
-    const distance = Math.max(distanceForHeight, distanceForWidth, selectedId ? 8.4 : 6.2);
-    const direction = new THREE.Vector3(7, 3.3, 8).normalize();
-    const target = center.clone();
-    target.y += 0.25;
-    controls.target.copy(target);
-    camera.position.copy(target).add(direction.multiplyScalar(distance));
+    const distance = Math.max(distanceForHeight, distanceForWidth, 6.2);
+    const direction = new THREE.Vector3(1, 0.82, 1).normalize();
+    controls.target.copy(orbitTarget);
+    camera.position.copy(orbitTarget).add(direction.multiplyScalar(distance));
     controls.minDistance = Math.max(4.8, distance * 0.58);
     controls.maxDistance = Math.max(13, distance * 1.75);
     controls.update();
@@ -485,8 +503,14 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   const applyViewState = (nextViewState) => {
     const normalized = normalizeBike3dViewState(nextViewState);
     if (!normalized.position || !normalized.target) return false;
-    camera.position.set(normalized.position.x, normalized.position.y, normalized.position.z);
-    controls.target.set(normalized.target.x, normalized.target.y, normalized.target.z);
+    const savedPosition = new THREE.Vector3(normalized.position.x, normalized.position.y, normalized.position.z);
+    const savedTarget = new THREE.Vector3(normalized.target.x, normalized.target.y, normalized.target.z);
+    const savedOffset = savedPosition.sub(savedTarget);
+    if (!Number.isFinite(savedOffset.lengthSq()) || savedOffset.lengthSq() < 0.0001) return false;
+    const target = bike3dOrbitPlaneTarget(savedTarget, orbitTarget);
+    camera.position.copy(target).add(savedOffset);
+    controls.target.copy(target);
+    keepBike3dOrbitTargetInPlane(camera, controls);
     camera.zoom = normalized.zoom || 1;
     camera.updateProjectionMatrix();
     controls.update();
@@ -523,10 +547,9 @@ function createBike3dSceneUnsafe(host, bagSlots, {
 
   const refreshBagVisual = (object, hover = false) => {
     if (!object?.material) return;
-    const active = object.userData.containerId === selectedId;
-    object.material.emissive.set(active || hover ? 0xffdf6b : 0x000000);
-    object.material.emissiveIntensity = active && hover ? 1.15 : active ? 0.95 : hover ? 0.58 : 0;
-    const visualScale = active && hover ? 1.14 : active ? 1.1 : hover ? 1.06 : 1;
+    object.material.emissive.set(hover ? object.material.color : 0x000000);
+    object.material.emissiveIntensity = hover ? 0.18 : 0;
+    const visualScale = hover ? 1.06 : 1;
     object.scale.copy(object.userData.baseScale || new THREE.Vector3(1, 1, 1)).multiplyScalar(visualScale);
   };
 
@@ -575,8 +598,15 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("click", onClick);
-  controls.addEventListener("change", saveViewStateSoon);
-  controls.addEventListener("end", () => onViewStateChange?.(currentViewState()));
+  const onControlsChange = () => {
+    keepBike3dOrbitTargetInPlane(camera, controls);
+    saveViewStateSoon();
+  };
+  controls.addEventListener("change", onControlsChange);
+  controls.addEventListener("end", () => {
+    keepBike3dOrbitTargetInPlane(camera, controls);
+    onViewStateChange?.(currentViewState());
+  });
 
   let frame = 0;
   const animate = () => {
@@ -597,6 +627,7 @@ function createBike3dSceneUnsafe(host, bagSlots, {
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("click", onClick);
+      controls.removeEventListener("change", onControlsChange);
       controls.dispose();
       renderer.dispose();
       scene.traverse((object) => {
@@ -609,10 +640,39 @@ function createBike3dSceneUnsafe(host, bagSlots, {
   };
 }
 
-function buildBike3dModel(group, bagSlots, { selectedId, adjustingContainerId, transforms }) {
+function bike3dOrbitTarget(bikeFrame) {
+  const center = bikeFrame?.points?.rotationCenter || { x: 0, y: 0 };
+  return new THREE.Vector3(Number(center.x) || 0, Number(center.y) || 0, 0);
+}
+
+function bike3dOrbitPlaneTarget(source, fallback) {
+  const x = Number(source?.x);
+  const y = Number(source?.y);
+  return new THREE.Vector3(
+    Number.isFinite(x) ? x : fallback.x,
+    Number.isFinite(y) ? y : fallback.y,
+    0
+  );
+}
+
+function keepBike3dOrbitTargetInPlane(camera, controls) {
+  const zOffset = controls.target.z;
+  if (!Number.isFinite(zOffset) || Math.abs(zOffset) < 0.000001) {
+    controls.target.z = 0;
+    return;
+  }
+  controls.target.z = 0;
+  camera.position.z -= zOffset;
+}
+
+function buildBike3dModel(group, bagSlots, { bikeFrame, selectedId, adjustingContainerId, transforms }) {
+  const frame = bikeFrame || bikeGeometryFrame(BIKE_GEOMETRY_M);
+  const points = frame.points;
+  const dimensions = frame.dimensions;
   const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x1f3a36, metalness: 0.35, roughness: 0.32 });
   const tireMaterial = new THREE.MeshStandardMaterial({ color: 0x202826, metalness: 0.05, roughness: 0.72 });
   const rimMaterial = new THREE.MeshStandardMaterial({ color: 0xdbe6df, metalness: 0.25, roughness: 0.38 });
+  const contactMaterial = new THREE.MeshStandardMaterial({ color: 0x52645e, metalness: 0.18, roughness: 0.42 });
 
   const makeTube = (name, start, end, radius = 0.045, material = frameMaterial) => {
     const direction = new THREE.Vector3().subVectors(end, start);
@@ -625,73 +685,126 @@ function buildBike3dModel(group, bagSlots, { selectedId, adjustingContainerId, t
     return mesh;
   };
 
-  const rear = new THREE.Vector3(-2.5, 0.72, 0);
-  const front = new THREE.Vector3(2.55, 0.72, 0);
-  const bottom = new THREE.Vector3(-0.35, 0.84, 0);
-  const seat = new THREE.Vector3(-1.15, 2.05, 0);
-  const head = new THREE.Vector3(1.42, 1.9, 0);
-  const bar = new THREE.Vector3(2.08, 2.22, 0);
+  const vector = (point, z = 0) => new THREE.Vector3(point.x, point.y, z);
+  const rear = vector(points.rearAxle);
+  const front = vector(points.frontAxle);
+  const bottom = vector(points.bottomBracket);
+  const seat = vector(points.seatTop);
+  const headTop = vector(points.headTop);
+  const headBottom = vector(points.headBottom);
+  const seatPostTop = vector(points.seatPostTop);
+  const stemEnd = vector(points.stemEnd);
+  const saddleCenter = vector(points.saddleCenter);
+  const handlebarCenter = vector(points.handlebarCenter);
 
   [rear, front].forEach((position) => {
-    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.06, 18, 72), tireMaterial);
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(dimensions.wheelRadius, dimensions.tireRadius, 18, 96), tireMaterial);
     tire.position.copy(position);
     group.add(tire);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.018, 12, 60), rimMaterial);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(dimensions.rimRadius, dimensions.tireRadius * 0.22, 12, 72), rimMaterial);
     rim.position.copy(position);
     group.add(rim);
   });
 
-  makeTube("top-tube", seat, head);
-  makeTube("down-tube", head, bottom);
-  makeTube("seat-tube", seat, bottom);
-  makeTube("chain-stay", bottom, rear);
-  makeTube("seat-stay", seat, rear);
-  makeTube("fork", head, front, 0.04);
-  makeTube("handlebar", head, bar, 0.035);
-  makeTube("rear-rack", new THREE.Vector3(-2.35, 1.55, -0.72), new THREE.Vector3(-1.2, 1.55, -0.72), 0.035);
-  makeTube("rear-rack-2", new THREE.Vector3(-2.35, 1.55, 0.72), new THREE.Vector3(-1.2, 1.55, 0.72), 0.035);
+  makeTube("top-tube", seat, headTop, dimensions.tubeRadius);
+  makeTube("down-tube", headBottom, bottom, dimensions.tubeRadius);
+  makeTube("seat-tube", bottom, seat, dimensions.tubeRadius);
+  makeTube("head-tube", headBottom, headTop, dimensions.tubeRadius);
+  makeTube("chain-stay", bottom, rear, dimensions.slimTubeRadius);
+  makeTube("seat-stay", seat, rear, dimensions.slimTubeRadius);
+  makeTube("fork", headBottom, front, dimensions.slimTubeRadius);
+  makeTube("seat-post", seat, seatPostTop, dimensions.seatPostRadius, contactMaterial);
+  makeTube("stem", headTop, stemEnd, dimensions.slimTubeRadius, contactMaterial);
+  makeTube(
+    "handlebar",
+    handlebarCenter.clone().setZ(-dimensions.handlebarWidth / 2),
+    handlebarCenter.clone().setZ(dimensions.handlebarWidth / 2),
+    dimensions.slimTubeRadius,
+    contactMaterial
+  );
 
-  const seatMesh = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.32), frameMaterial);
-  seatMesh.position.set(-1.32, 2.18, 0);
-  group.add(seatMesh);
+  const saddle = new THREE.Mesh(new THREE.BoxGeometry(dimensions.saddleLength, dimensions.tireRadius * 0.55, dimensions.saddleWidth), contactMaterial);
+  saddle.name = "saddle";
+  saddle.position.copy(saddleCenter);
+  group.add(saddle);
 
   return bagSlots.map((slot) => addBike3dBag(group, slot, {
+    frame,
     selectedId,
     adjustingContainerId,
     transform: transforms[slot.id]
   }));
 }
 
-function addBike3dBag(group, slot, { selectedId, adjustingContainerId, transform }) {
+function addBike3dBag(group, slot, { frame, selectedId, adjustingContainerId, transform }) {
+  const points = frame?.points || {};
+  const rear = points.rearAxle || { x: 0, y: 0 };
+  const front = points.frontAxle || { x: 0, y: 0 };
+  const bottom = points.bottomBracket || { x: 0, y: 0 };
+  const seat = points.seatTop || { x: 0, y: 0 };
+  const head = points.headTop || { x: 0, y: 0 };
+  const handlebar = points.handlebarCenter || head;
   const positions = {
-    "rear-left": { p: [-2.1, 1.08, -0.82], s: [0.78, 0.92, 0.32] },
-    "rear-right": { p: [-2.1, 1.08, 0.82], s: [0.78, 0.92, 0.32] },
-    "front-left": { p: [2.35, 0.98, -0.66], s: [0.58, 0.74, 0.28] },
-    "front-right": { p: [2.35, 0.98, 0.66], s: [0.58, 0.74, 0.28] },
-    frame: { p: [-0.25, 1.32, 0], s: [0.98, 0.46, 0.34] },
-    handlebar: { p: [2.34, 2.05, 0], s: [0.72, 0.34, 0.74] },
-    seat: { p: [-1.72, 1.72, 0], s: [0.52, 0.42, 0.42] },
-    fork: { p: [1.72, 1.32, 0], s: [0.42, 0.7, 0.3] }
+    "rear-left": { p: [rear.x + 0.76, rear.y + 0.34, -0.82], s: [0.78, 0.92, 0.32] },
+    "rear-right": { p: [rear.x + 0.76, rear.y + 0.34, 0.82], s: [0.78, 0.92, 0.32] },
+    "front-left": { p: [front.x - 0.24, front.y + 0.22, -0.66], s: [0.58, 0.74, 0.28] },
+    "front-right": { p: [front.x - 0.24, front.y + 0.22, 0.66], s: [0.58, 0.74, 0.28] },
+    frame: { p: [(bottom.x + head.x) / 2, (bottom.y + head.y) / 2 - 0.12, 0], s: [0.98, 0.46, 0.34] },
+    handlebar: { p: [handlebar.x, handlebar.y - 0.18, 0], s: [0.72, 0.34, 0.74] },
+    seat: { p: [seat.x - 0.16, seat.y + 0.18, 0], s: [0.52, 0.42, 0.42] },
+    fork: { p: [front.x - 0.42, front.y + 0.62, 0], s: [0.42, 0.7, 0.3] }
   };
   const config = positions[slot.slot] || positions.frame;
+  const size = bike3dBagSize(config.s, slot.dimensions);
   const active = slot.id === selectedId;
   const normalized = normalizeBike3dTransform(transform);
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(normalized.color || slot.color),
     metalness: 0.05,
     roughness: 0.48,
-    emissive: active ? new THREE.Color(0xffdf6b) : new THREE.Color(0x000000),
-    emissiveIntensity: active ? 0.95 : 0
+    emissive: new THREE.Color(0x000000),
+    emissiveIntensity: 0
   });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...config.s), material);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   mesh.userData.basePosition = new THREE.Vector3(...config.p);
   mesh.userData.containerId = slot.id;
   mesh.name = slot.name;
   applyBike3dTransformToMesh(mesh, normalized);
-  if (active) mesh.scale.multiplyScalar(1.1);
+  if (active) mesh.add(createBike3dSelectionOutline(size));
   if (active && adjustingContainerId === slot.id) mesh.add(createBike3dAxesGizmo());
   group.add(mesh);
   return mesh;
+}
+
+function bike3dBagSize(fallbackSize, dimensions) {
+  const normalized = normalizeContainerDimensions(dimensions);
+  const [fallbackWidth, fallbackHeight, fallbackDepth] = fallbackSize;
+  return [
+    normalized.width ? normalized.width * BIKE3D_BAG_DIMENSION_SCENE_SCALE : fallbackWidth,
+    normalized.height ? normalized.height * BIKE3D_BAG_DIMENSION_SCENE_SCALE : fallbackHeight,
+    normalized.depth ? normalized.depth * BIKE3D_BAG_DIMENSION_SCENE_SCALE : fallbackDepth
+  ];
+}
+
+function createBike3dSelectionOutline(size) {
+  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(...size));
+  const material = new THREE.LineBasicMaterial({ color: 0xf4fff9, linewidth: 2 });
+  const outline = new THREE.LineSegments(geometry, material);
+  outline.name = "selected-bag-outline";
+  outline.scale.setScalar(1.055);
+  const glowGeometry = new THREE.BoxGeometry(...size);
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0xe9fff6,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    side: THREE.BackSide
+  });
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.name = "selected-bag-glow";
+  glow.scale.setScalar(1.14);
+  outline.add(glow);
+  return outline;
 }
 
 function createBike3dAxesGizmo() {
@@ -743,6 +856,7 @@ function bike3dBagSlots(rootIds, { containers, transforms }) {
       id,
       name: container?.name || id,
       slot: slotName,
+      dimensions: normalizeContainerDimensions(container?.dimensions),
       x: Math.round(slot.x + transform.x * 24),
       y: Math.round(slot.y - transform.y * 24),
       z: Math.round(slot.z + transform.z * 18),

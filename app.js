@@ -188,7 +188,12 @@ import {
   isReadOnlyScope,
   sharedLayoutItemKey as sharedLayoutItemKeyFromScope
 } from "./src/public/scope.js";
-import { normalizeContainerColor } from "./src/state/container-fields.js";
+import {
+  hasContainerDimensions,
+  normalizeContainerColor,
+  normalizeContainerDimensions,
+  parseContainerDimensionInput
+} from "./src/state/container-fields.js";
 import { cleanupGeneratedCatalogArtifacts } from "./src/state/cleanup.js";
 import {
   applyCollectionModeFromSource,
@@ -529,6 +534,8 @@ import {
 import { createConfirmDialogController } from "./src/ui/confirm-dialog.js";
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
 import {
+  defaultBike3dViewState,
+  getBike3dPackingScrollHost,
   isBike3dPackingView,
   normalizeBike3dViewState,
   normalizeBike3dTransform,
@@ -9746,7 +9753,7 @@ function switchView(view) {
   updateViewScopedControls(view);
   updateFilterNavigationUi();
   if (view === "packing") {
-    requestAnimationFrame(() => restorePendingPackingScroll(refs.packingView.querySelector(".board")));
+    requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost()));
   }
   syncFixedScrollbarVisibility();
 }
@@ -9877,7 +9884,7 @@ function captureSearchBlurViewportLock() {
   const rect = target.getBoundingClientRect();
   const stickyBottom = stickyViewportBottom();
   if (rect.bottom <= stickyBottom || rect.top >= window.innerHeight) return null;
-  const board = view === "packing" ? refs.packingView.querySelector(".board") : null;
+  const board = view === "packing" ? getPackingScrollHost() : null;
   return {
     view,
     element: target,
@@ -9890,7 +9897,7 @@ function captureSearchBlurViewportLock() {
 function restoreSearchBlurViewportLock(lock) {
   updateCompactStickyControls();
   if (!lock.element?.isConnected) return;
-  const board = lock.view === "packing" ? refs.packingView.querySelector(".board") : null;
+  const board = lock.view === "packing" ? getPackingScrollHost() : null;
   if (board) board.scrollLeft = lock.boardLeft;
   const rect = lock.element.getBoundingClientRect();
   window.scrollTo({
@@ -9919,7 +9926,7 @@ function setScopedControlState(element, active, keepSpace) {
 }
 
 function renderPreservingPackingScroll() {
-  const board = refs.packingView.querySelector(".board");
+  const board = getPackingScrollHost();
   if (board && !refs.packingView.classList.contains("hidden")) {
     capturePackingScroll();
   }
@@ -12213,10 +12220,14 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
     onToggleAdjust: toggleBike3dAdjusting,
     onAdjust: adjustBike3dTransform,
     onColor: setBike3dColor,
-    onViewStateChange: setBike3dViewState
+    onViewStateChange: setBike3dViewState,
+    onResetView: resetBike3dViewState
   });
   if (shared) bindSharedVirtualEvents(refs.packingView);
   else bindPackingEvents(refs.packingView.querySelector(".bike3d-detail") || refs.packingView);
+  const scrollHost = getPackingScrollHost();
+  restorePendingPackingScroll(scrollHost);
+  bindFixedScrollbar(scrollHost);
   syncFixedScrollbarVisibility();
 }
 
@@ -12231,6 +12242,7 @@ function renderSharedPackingBike3d() {
 
 function selectBike3dContainer(containerId) {
   if (!containerId || selectedBike3dContainerId === containerId) return;
+  capturePackingScroll();
   const keepAdjusting = Boolean(adjustingBike3dContainerId);
   selectedBike3dContainerId = containerId;
   if (keepAdjusting) adjustingBike3dContainerId = containerId;
@@ -12299,6 +12311,12 @@ function setBike3dViewState(nextViewState) {
   saveUiSettings();
 }
 
+function resetBike3dViewState() {
+  bike3dViewState = defaultBike3dViewState();
+  saveUiSettings();
+  renderPacking();
+}
+
 function renderSharedModeBanner(layout = currentSharedLayout(), { compact = false } = {}) {
   const demoSource = layout?.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
   const buttonText = demoSource ? demoCopyActionText() : t("buttons.copyAll");
@@ -12354,7 +12372,7 @@ function renderSharedPacking() {
 }
 
 function capturePackingScroll() {
-  const board = refs.packingView.querySelector(".board");
+  const board = getPackingScrollHost();
   const packingHidden = refs.packingView.classList.contains("hidden");
   const pageScroll = currentPageScrollPosition();
   if (packingHidden && lastPackingScrollSnapshot) {
@@ -12372,7 +12390,7 @@ function capturePackingScroll() {
 }
 
 function captureViewportSnapshot() {
-  const board = refs.packingView.querySelector(".board");
+  const board = getPackingScrollHost();
   const pageScroll = currentPageScrollPosition();
   return {
     boardLeft: board?.scrollLeft || 0,
@@ -12383,7 +12401,7 @@ function captureViewportSnapshot() {
 
 function restoreViewportSnapshot(snapshot, focusTarget = null, anchor = null) {
   const apply = () => {
-    const board = refs.packingView.querySelector(".board");
+    const board = getPackingScrollHost();
     if (board) board.scrollLeft = snapshot.boardLeft;
     if (focusTarget) focusTarget.focus({ preventScroll: true });
     const anchorElement = anchor ? findAnchorElement(anchor) : null;
@@ -14474,9 +14492,13 @@ function bindFixedScrollbar(board) {
   window.addEventListener("resize", updateWidth, { passive: true });
 }
 
+function getPackingScrollHost() {
+  return refs.packingView.querySelector(".board") || getBike3dPackingScrollHost(refs.packingView);
+}
+
 function syncFixedScrollbarVisibility() {
   const bar = document.querySelector("#kanbanScrollbar");
-  const board = refs.packingView.querySelector(".board");
+  const board = getPackingScrollHost();
   const isPacking = !refs.packingView.classList.contains("hidden");
   const needsScroll = board && board.scrollWidth > board.clientWidth + 1;
   const show = Boolean(isPacking && needsScroll);
@@ -14485,7 +14507,7 @@ function syncFixedScrollbarVisibility() {
   if (show) updateFixedScrollbarThumb(board);
 }
 
-function updateFixedScrollbarThumb(board = refs.packingView.querySelector(".board")) {
+function updateFixedScrollbarThumb(board = getPackingScrollHost()) {
   const track = document.querySelector("#kanbanScrollTrack");
   const thumb = document.querySelector("#kanbanScrollThumb");
   if (!board || !track || !thumb) return;
@@ -16085,6 +16107,10 @@ function openRootContainerDialog(containerId = null) {
   refs.rootContainerWeight.value = Number(container?.weight || 0);
   refs.rootContainerVolume.value = container?.volume ? String(container.volume).replace(".", ",") : "";
   if (refs.rootContainerColor) refs.rootContainerColor.value = container?.color || "";
+  const dimensions = normalizeContainerDimensions(container?.dimensions);
+  if (refs.rootContainerWidth) refs.rootContainerWidth.value = dimensions.width ? String(dimensions.width).replace(".", ",") : "";
+  if (refs.rootContainerHeight) refs.rootContainerHeight.value = dimensions.height ? String(dimensions.height).replace(".", ",") : "";
+  if (refs.rootContainerDepth) refs.rootContainerDepth.value = dimensions.depth ? String(dimensions.depth).replace(".", ",") : "";
   fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
   updateRootContainerPlacementButton();
   updateRootContainerRemoveFromLayoutButton();
@@ -16976,11 +17002,15 @@ function updateItemQuantityUi() {
 }
 
 function getRootContainerDialogSnapshot() {
+  const dimensions = readRootContainerDialogDimensions();
   return {
     name: refs.rootContainerName.value.trim(),
     weight: parseWeightInput(refs.rootContainerWeight.value),
     volume: parseVolumeInput(refs.rootContainerVolume.value),
     color: normalizeContainerColor(refs.rootContainerColor?.value),
+    width: dimensions.width,
+    height: dimensions.height,
+    depth: dimensions.depth,
     location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
     note: refs.rootContainerNote.value.trim(),
     photo: getRootContainerDialogPhotoSnapshot(),
@@ -17054,6 +17084,7 @@ function saveRootContainerDialog(event) {
   const changedAt = nowIso();
   const container = editingRootContainerId ? state.containers[editingRootContainerId] : null;
   if (editingRootContainerId && !container) return;
+  const dimensions = readRootContainerDialogDimensions();
   if (!container) {
     const id = `container-${Date.now()}`;
     state.containers[id] = {
@@ -17066,6 +17097,7 @@ function saveRootContainerDialog(event) {
       weight: parseWeightInput(refs.rootContainerWeight.value),
       volume: parseVolumeInput(refs.rootContainerVolume.value),
       color: normalizeContainerColor(refs.rootContainerColor?.value),
+      ...(hasContainerDimensions(dimensions) ? { dimensions } : {}),
       location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
       note: refs.rootContainerNote.value.trim(),
       photos: rootContainerDialogPhotoDraft?.photo ? [rootContainerDialogPhotoDraft.photo] : [],
@@ -17081,6 +17113,7 @@ function saveRootContainerDialog(event) {
   container.weight = parseWeightInput(refs.rootContainerWeight.value);
   container.volume = parseVolumeInput(refs.rootContainerVolume.value);
   container.color = normalizeContainerColor(refs.rootContainerColor?.value);
+  applyRootContainerDimensions(container, dimensions);
   container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
   container.note = refs.rootContainerNote.value.trim();
   applyRootContainerDialogPhotoDraft(container, changedAt);
@@ -17821,6 +17854,20 @@ async function buildPrintableHtmlFromChoice() {
     }),
     printTarget
   };
+}
+
+function readRootContainerDialogDimensions() {
+  return normalizeContainerDimensions({
+    width: parseContainerDimensionInput(refs.rootContainerWidth?.value),
+    height: parseContainerDimensionInput(refs.rootContainerHeight?.value),
+    depth: parseContainerDimensionInput(refs.rootContainerDepth?.value)
+  });
+}
+
+function applyRootContainerDimensions(container, dimensions = readRootContainerDialogDimensions()) {
+  const normalized = normalizeContainerDimensions(dimensions);
+  if (hasContainerDimensions(normalized)) container.dimensions = normalized;
+  else delete container.dimensions;
 }
 
 function resetData() {

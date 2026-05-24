@@ -1,6 +1,6 @@
 import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
 import { REQUIRED_CHARGE_CATEGORY, categories } from "../data/demo-data.js";
-import { normalizeContainerColor } from "./container-fields.js";
+import { hasContainerDimensions, normalizeContainerColor, normalizeContainerDimensions } from "./container-fields.js";
 import { normalizeItemPhotos } from "./item-photos.js";
 import { parseWeightInput } from "../utils/weight.js";
 
@@ -57,6 +57,9 @@ export function normalizeContainerFields(targetState) {
     container.location = location || fallbackLocation;
     container.note = typeof container.note === "string" ? container.note : "";
     container.color = normalizeContainerColor(container.color);
+    const dimensions = normalizeContainerDimensions(container.dimensions);
+    if (hasContainerDimensions(dimensions)) container.dimensions = dimensions;
+    else delete container.dimensions;
     normalizeItemPhotos(container);
   });
 }
