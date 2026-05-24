@@ -18,6 +18,7 @@ export function createRefs(root = document) {
     topMenu: root.querySelector("#topMenu"),
     historyBtn: root.querySelector("#historyBtn"),
     backupBtn: root.querySelector("#backupBtn"),
+    helpLimitsBtn: root.querySelector("#helpLimitsBtn"),
     controls: root.querySelector(".controls"),
     layoutSelect: root.querySelector("#layoutSelect"),
     layoutLoadStatus: root.querySelector("#layoutLoadStatus"),
@@ -173,6 +174,8 @@ export function createRefs(root = document) {
     sharedLayoutsList: root.querySelector("#sharedLayoutsList"),
     sharedCopyLayoutSelect: root.querySelector("#sharedCopyLayoutSelect"),
     copySharedLayoutBtn: root.querySelector("#copySharedLayoutBtn"),
+    helpLimitsDialog: root.querySelector("#helpLimitsDialog"),
+    helpLimitsContent: root.querySelector("#helpLimitsContent"),
     toastRegion: root.querySelector("#toastRegion")
   };
 }

@@ -2730,6 +2730,64 @@ button.ghost.context-toggle.active:focus-visible {
   background: #fff;
 }
 
+.photo-gallery-track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
+}
+
+.photo-gallery-track::-webkit-scrollbar {
+  display: none;
+}
+
+.photo-gallery-slide {
+  flex: 0 0 100%;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scroll-snap-align: start;
+}
+
+.photo-gallery-slide img {
+  pointer-events: none;
+}
+
+.photo-gallery-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  display: flex;
+  gap: 5px;
+  transform: translateX(-50%);
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 2px 8px rgba(29, 37, 34, 0.12);
+}
+
+.photo-gallery-dot {
+  width: 7px;
+  height: 7px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgba(31, 111, 91, 0.55);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.photo-gallery-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .item-photo span {
   position: absolute;
   left: 6px;
@@ -4445,6 +4503,89 @@ dialog::backdrop {
 
 .item-photo-preview.empty {
   display: none;
+}
+
+.dialog-photo-gallery {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.photo-lightbox-open {
+  overflow: hidden;
+}
+
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 15, 14, 0.92);
+  cursor: zoom-out;
+  touch-action: none;
+}
+
+.photo-lightbox-image {
+  max-width: none;
+  max-height: none;
+  width: auto;
+  height: auto;
+  min-width: min(100vw, 320px);
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  cursor: grab;
+  user-select: none;
+  transform-origin: center;
+}
+
+.photo-lightbox-image:active {
+  cursor: grabbing;
+}
+
+.photo-lightbox-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.help-limits-content {
+  display: grid;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.help-limits-section {
+  display: grid;
+  gap: 6px;
+}
+
+.help-limits-section h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.help-limits-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.help-limits-section p,
+.help-limits-section li,
+.help-limits-mode {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .item-photo-actions {

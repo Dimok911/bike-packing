@@ -226,10 +226,13 @@ import {
 } from "./src/state/dictionaries.js";
 import { createBlankBikePackingState } from "./src/state/empty-state.js";
 import {
-  itemPhotoMetaSignature,
   itemPhotoSignature,
+  addPhotosToDraft,
+  createPhotoDraftFromRecord,
   normalizeItemPhotos,
   normalizePhotoUrlFields,
+  photoDraftChanged,
+  removePhotoFromDraft,
   primaryItemPhoto
 } from "./src/state/item-photos.js";
 import {
@@ -289,6 +292,11 @@ import {
   createMetaForDevice,
   editMetaForDevice
 } from "./src/state/record-meta.js";
+import {
+  canAddUsageEntries,
+  usageLimitExceededMessage,
+  usageLimitForRole
+} from "./src/state/usage-limits.js";
 import {
   collectPublicLayoutRecordIds,
   isPrivateCatalogRecord,
@@ -389,10 +397,12 @@ import {
   getCachedPhoto,
   hasRemotePhotoUrl,
   isPhotoStoredForList,
+  normalizeRemotePhotoUrl,
   normalizeUploadedPhotoAssetUrls,
   photoCopyApiPath,
   photoRemoteSrc,
-  putCachedPhoto
+  putCachedPhoto,
+  versionedPhotoUrl
 } from "./src/sync/photos.js";
 import {
   cloneStateForSyncPayload,
@@ -694,9 +704,12 @@ let fixedScrollbarRefreshFrame = null;
 let searchRenderTimer = null;
 let suppressNextFilterJump = false;
 let itemDialogPhotoDraft = null;
-let itemDialogPhotoObjectUrl = "";
+let itemDialogPhotoObjectUrls = [];
+let itemDialogPhotoActiveIndex = 0;
 let rootContainerDialogPhotoDraft = null;
-let rootContainerDialogPhotoObjectUrl = "";
+let rootContainerDialogPhotoObjectUrls = [];
+let rootContainerDialogPhotoActiveIndex = 0;
+let lightboxObjectUrl = "";
 let sharedDialogCopyItemId = "";
 let backupImportState = null;
 let pendingGuestLocalLayoutCandidate = null;
@@ -1286,6 +1299,7 @@ function applyStaticTranslations() {
   if (refs.sharedLayoutsBtn) refs.sharedLayoutsBtn.textContent = t("menu.sharedLayouts");
   if (refs.shareListBtn) refs.shareListBtn.textContent = t("menu.shareList");
   if (refs.adminReportsBtn) refs.adminReportsBtn.textContent = t("menu.adminReports");
+  if (refs.helpLimitsBtn) refs.helpLimitsBtn.textContent = t("menu.help");
   document.querySelector("#exportBtn")?.replaceChildren(document.createTextNode(t("menu.print")));
   if (languageLabel) languageLabel.textContent = t("menu.language");
   if (layoutLabel?.firstChild) layoutLabel.firstChild.textContent = `${t("labels.layout")}\n          `;
@@ -1528,6 +1542,7 @@ async function init() {
   refs.historyBtn.addEventListener("click", openHistoryDialog);
   refs.adminReportsBtn?.addEventListener("click", () => adminReportsDialogController?.open());
   refs.backupBtn?.addEventListener("click", openBackupDialog);
+  refs.helpLimitsBtn?.addEventListener("click", openHelpLimitsDialog);
   refs.backupCreateBtn?.addEventListener("click", createBackupArchive);
   refs.backupFileInput?.addEventListener("change", handleBackupFileSelected);
   refs.backupAnalysis?.addEventListener("change", handleBackupSelectionChange);
@@ -4692,6 +4707,80 @@ function isAdminUser() {
 
 function canOpenAdminPublishedEdit() {
   return isAdminSession();
+}
+
+function currentUsageLimit(name) {
+  return usageLimitForRole(name, canOpenAdminPublishedEdit());
+}
+
+function requireUsageCapacity(name, add = 1) {
+  const current = {
+    items: Object.keys(state.items || {}).length,
+    containers: Object.keys(state.containers || {}).length,
+    categories: dictionaryOptionsForOwner("category", activeDictionaryOwner()).length,
+    locations: dictionaryOptionsForOwner("location", activeDictionaryOwner()).length
+  }[name] || 0;
+  const limit = currentUsageLimit(name);
+  if (canAddUsageEntries({ current, add, limit })) return true;
+  showToast(usageLimitExceededMessage(name, limit), "warning");
+  return false;
+}
+
+function openHelpLimitsDialog() {
+  const isAdmin = canOpenAdminPublishedEdit();
+  const photoLimit = currentUsageLimit("photosPerRecord");
+  const en = uiLanguage === "en";
+  const limitText = Number.isFinite(photoLimit) ? String(photoLimit) : (en ? "unlimited" : "без ограничений");
+  refs.helpLimitsDialog?.querySelector("h2")?.replaceChildren(document.createTextNode(t("menu.help")));
+  refs.helpLimitsDialog?.querySelector("footer button")?.replaceChildren(document.createTextNode(en ? "Close" : "Закрыть"));
+  refs.helpLimitsContent.innerHTML = en ? `
+    <section class="help-limits-section">
+      <h3>Photos</h3>
+      <p>${isAdmin ? "You can add up to 50 photos to one item or bag." : "You can add up to 3 photos to one item or bag."}</p>
+      <p>Current limit: ${limitText} photos.</p>
+    </section>
+    <section class="help-limits-section">
+      <h3>Catalog</h3>
+      ${isAdmin ? `
+        <p>Your catalog limits are unlimited.</p>
+      ` : `
+        <ul>
+          <li>Items: up to 500.</li>
+          <li>Bags and storage places: up to 50.</li>
+          <li>Categories: up to 50.</li>
+          <li>Storage places: up to 10.</li>
+        </ul>
+      `}
+    </section>
+    <section class="help-limits-section">
+      <h3>Photo Viewer</h3>
+      <p>Swipe to switch photos. On desktop, dots below the photo show the current slide. Click a photo to open it fullscreen; drag to pan, use the mouse wheel or pinch to zoom, and click the photo again to close.</p>
+    </section>
+  ` : `
+    <section class="help-limits-section">
+      <h3>Фото</h3>
+      <p>${isAdmin ? "Можно добавить до 50 фото на одну вещь или сумку." : "Можно добавить до 3 фото на одну вещь или сумку."}</p>
+      <p>Текущий лимит: ${limitText} фото.</p>
+    </section>
+    <section class="help-limits-section">
+      <h3>Каталог</h3>
+      ${isAdmin ? `
+        <p>Для вашего каталога лимиты не ограничены.</p>
+      ` : `
+        <ul>
+          <li>Вещи: до 500 шт.</li>
+          <li>Сумки и места хранения: до 50 шт.</li>
+          <li>Категории: до 50 шт.</li>
+          <li>Места хранения: до 10 шт.</li>
+        </ul>
+      `}
+    </section>
+    <section class="help-limits-section">
+      <h3>Просмотр фото</h3>
+      <p>Фото можно листать свайпом. На десктопе точки под фото показывают текущий слайд. Клик по фото открывает полноэкранный просмотр; фото можно двигать, масштаб менять колесом мыши или pinch-жестом, следующий клик по фото закрывает просмотр.</p>
+    </section>
+  `;
+  openModalDialog(refs.helpLimitsDialog);
 }
 
 function adminApiWarningFromCapabilities(data) {
@@ -9795,7 +9884,7 @@ function render() {
   updateViewScopedControls();
   updateFilterNavigationUi();
   scheduleFixedScrollbarRefresh();
-  hydrateItemPhotos(document);
+  hydrateItemPhotos(document).finally(() => bindPhotoGalleries(document));
 }
 
 function getCurrentView() {
@@ -10748,6 +10837,7 @@ function createSubcontainerFromAddDialog(event) {
   const parentPlacement = ensureLayoutContainerPlacement(layout, parentId);
   const name = refs.newSubcontainerName.value.trim();
   if (!parent || !layout || !parentPlacement || !name) return;
+  if (!requireUsageCapacity("containers")) return;
   const changedAt = nowIso();
   const id = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   state.containers[id] = {
@@ -11292,6 +11382,7 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
+  if (!requireUsageCapacity("items")) return;
   const sourceSnapshot = clone(source);
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
@@ -11476,6 +11567,8 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
 } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!sourceSnapshot || !targetLayout) return "";
+  if (!requireUsageCapacity("containers", Object.keys(sourceSnapshot.containers || {}).length)) return "";
+  if (!requireUsageCapacity("items", Object.keys(sourceSnapshot.items || {}).length)) return "";
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
@@ -12956,26 +13049,49 @@ function renderItemCard(item) {
 
 function renderItemPhoto(item, { force = false } = {}) {
   if (!force && !shouldShowItemPhotos()) return "";
-  const photo = primaryItemPhoto(item);
-  if (!photo) return "";
+  const photos = normalizeItemPhotos(item);
+  if (!photos.length) return "";
+  const slides = photos.map((photo) => renderPhotoSlide(photo)).join("");
+  const dots = renderPhotoDots(photos.length);
+  const pending = photos.some((photo) => !photoRemoteSrc(photo) && ["pending", "uploading", "error", "missing-local-file"].includes(photo.status));
+  const statusText = pending ? photoStatusText(photos) : "";
+  return `
+    <div class="item-photo ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
+      <div class="photo-gallery-track">
+        ${slides}
+      </div>
+      ${dots}
+      ${statusText ? `<span>${escapeHtml(statusText)}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderPhotoSlide(photo) {
   const localId = photo.localId || photo.id;
   const localSrc = localId ? photoObjectUrls.get(localId) : "";
   const remoteSrc = photoRemoteSrc(photo);
   const src = localSrc || remoteSrc || "";
-  const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}"` : "";
-  const statusText = src ? "" : photo.status === "pending" ? "ждёт загрузки" :
-    photo.status === "uploading" ? "загружается" :
-      photo.status === "error" ? "ошибка загрузки" :
-        photo.status === "missing-local-file" ? "нет локального файла" : "";
+  const fullSrc = photo.url ? versionedPhotoUrl(normalizeRemotePhotoUrl(photo.url), photo.updatedAt || photo.id || "") : remoteSrc;
+  const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : "";
+  const fullAttr = fullSrc ? ` data-photo-full-src="${escapeHtml(fullSrc)}"` : "";
   return `
-    <div class="item-photo ${!src && photo.status !== "synced" ? "item-photo-pending" : ""}">
+    <button class="photo-gallery-slide" type="button" data-photo-open>
       <img
         ${src ? `src="${escapeHtml(src)}"` : ""}
         ${localHydrateAttr}
+        ${fullAttr}
         alt=""
         loading="lazy"
       />
-      ${statusText ? `<span>${escapeHtml(statusText)}</span>` : ""}
+    </button>
+  `;
+}
+
+function renderPhotoDots(count, activeIndex = 0) {
+  if (count <= 1) return "";
+  return `
+    <div class="photo-gallery-dots" aria-hidden="true">
+      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot ${index === activeIndex ? "active" : ""}" type="button" data-photo-index="${index}" tabindex="-1"></button>`).join("")}
     </div>
   `;
 }
@@ -13003,6 +13119,155 @@ function getPhotoObjectUrl(id, blob) {
   const url = URL.createObjectURL(blob);
   photoObjectUrls.set(id, url);
   return url;
+}
+
+function bindPhotoGalleries(root = document) {
+  root.querySelectorAll("[data-photo-gallery]").forEach((gallery) => {
+    if (gallery.dataset.photoGalleryBound === "true") return;
+    gallery.dataset.photoGalleryBound = "true";
+    const track = gallery.querySelector(".photo-gallery-track");
+    const dots = [...gallery.querySelectorAll(".photo-gallery-dot")];
+    if (!track) return;
+    const setActive = (index) => {
+      dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
+      if (gallery.closest("#itemPhotoPreview")) itemDialogPhotoActiveIndex = index;
+      if (gallery.closest("#rootContainerPhotoPreview")) rootContainerDialogPhotoActiveIndex = index;
+    };
+    const syncActive = () => {
+      const width = track.clientWidth || 1;
+      const index = Math.max(0, Math.min(dots.length - 1, Math.round(track.scrollLeft / width)));
+      setActive(index);
+    };
+    dots.forEach((dot, index) => {
+      dot.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        track.scrollTo({ left: track.clientWidth * index, behavior: "smooth" });
+        setActive(index);
+      });
+    });
+    track.addEventListener("scroll", () => requestAnimationFrame(syncActive), { passive: true });
+    gallery.querySelectorAll("[data-photo-open]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const image = button.querySelector("img");
+        if (image) openPhotoLightbox(image);
+      });
+    });
+    const initialIndex = Math.max(0, Math.min(Math.max(0, dots.length - 1), Number(gallery.dataset.photoInitialIndex || 0) || 0));
+    if (initialIndex) requestAnimationFrame(() => track.scrollLeft = track.clientWidth * initialIndex);
+    setActive(initialIndex);
+  });
+}
+
+async function openPhotoLightbox(sourceImage) {
+  const localId = sourceImage.dataset.photoLocalSourceId || sourceImage.dataset.photoLocalId || "";
+  let src = sourceImage.dataset.photoFullSrc || sourceImage.currentSrc || sourceImage.src;
+  closePhotoLightbox();
+  if (localId) {
+    const cached = await getCachedPhoto(localId);
+    if (cached?.blob) {
+      lightboxObjectUrl = URL.createObjectURL(cached.blob);
+      src = lightboxObjectUrl;
+    }
+  }
+  if (!src) return;
+  const overlay = document.createElement("div");
+  overlay.className = "photo-lightbox";
+  overlay.innerHTML = `
+    <button class="photo-lightbox-close" type="button" aria-label="Закрыть">×</button>
+    <img class="photo-lightbox-image" src="${escapeHtml(src)}" alt="" />
+  `;
+  document.body.append(overlay);
+  document.body.classList.add("photo-lightbox-open");
+  const image = overlay.querySelector(".photo-lightbox-image");
+  const close = () => closePhotoLightbox();
+  overlay.querySelector(".photo-lightbox-close")?.addEventListener("click", close);
+  let scale = 1;
+  let panX = 0;
+  let panY = 0;
+  let startX = 0;
+  let startY = 0;
+  let startPanX = 0;
+  let startPanY = 0;
+  let moved = false;
+  const apply = () => {
+    image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
+  };
+  image.addEventListener("click", (event) => {
+    if (moved) {
+      moved = false;
+      return;
+    }
+    event.preventDefault();
+    close();
+  });
+  image.addEventListener("pointerdown", (event) => {
+    image.setPointerCapture(event.pointerId);
+    startX = event.clientX;
+    startY = event.clientY;
+    startPanX = panX;
+    startPanY = panY;
+    moved = false;
+  });
+  image.addEventListener("pointermove", (event) => {
+    if (!image.hasPointerCapture(event.pointerId)) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+    panX = startPanX + dx;
+    panY = startPanY + dy;
+    apply();
+  });
+  image.addEventListener("pointerup", (event) => {
+    if (image.hasPointerCapture(event.pointerId)) image.releasePointerCapture(event.pointerId);
+  });
+  overlay.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.18 : -0.18;
+    scale = Math.max(1, Math.min(4, scale + delta));
+    if (scale === 1) {
+      panX = 0;
+      panY = 0;
+    }
+    apply();
+  }, { passive: false });
+  let pinchDistance = 0;
+  let pinchScale = 1;
+  overlay.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 2) return;
+    pinchDistance = touchDistance(event.touches[0], event.touches[1]);
+    pinchScale = scale;
+  }, { passive: true });
+  overlay.addEventListener("touchmove", (event) => {
+    if (event.touches.length !== 2 || !pinchDistance) return;
+    event.preventDefault();
+    const nextDistance = touchDistance(event.touches[0], event.touches[1]);
+    scale = Math.max(1, Math.min(4, pinchScale * (nextDistance / pinchDistance)));
+    if (scale === 1) {
+      panX = 0;
+      panY = 0;
+    }
+    apply();
+  }, { passive: false });
+  document.addEventListener("keydown", closePhotoLightboxOnEscape);
+}
+
+function touchDistance(first, second) {
+  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+}
+
+function closePhotoLightboxOnEscape(event) {
+  if (event.key === "Escape") closePhotoLightbox();
+}
+
+function closePhotoLightbox() {
+  document.querySelector(".photo-lightbox")?.remove();
+  document.body.classList.remove("photo-lightbox-open");
+  if (lightboxObjectUrl) URL.revokeObjectURL(lightboxObjectUrl);
+  lightboxObjectUrl = "";
+  document.removeEventListener("keydown", closePhotoLightboxOnEscape);
 }
 
 function bindPackingEvents(root) {
@@ -15371,6 +15636,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
   document.querySelector(`#${type}Add`).addEventListener("click", () => {
     const value = input.value.trim();
     if (!value || dictionaryOptionsForOwner(type, owner).includes(value)) return;
+    if (!requireUsageCapacity(type === "location" ? "locations" : "categories")) return;
     addCustomDictionaryValue(owner, type, value);
     editingDictionaryEntry = null;
     input.value = "";
@@ -15530,6 +15796,7 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
 
 function createGroupFromItems(itemId, targetItemId) {
   if (itemId === targetItemId) return;
+  if (!requireUsageCapacity("containers")) return;
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];
   const item = state.items[itemId];
@@ -15803,6 +16070,7 @@ function deleteItemForever(itemId) {
 async function copyItem(itemId, options = {}) {
   const item = state.items[itemId];
   if (!item) return;
+  if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
   if (options.confirm !== false) {
     const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement }));
@@ -15849,6 +16117,7 @@ async function copyRootContainer(containerId) {
 async function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
+  if (!requireUsageCapacity("containers")) return;
   const changedAt = nowIso();
   const copyId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   state.containers[copyId] = {
@@ -16129,7 +16398,7 @@ function openRootContainerDialog(containerId = null) {
   refs.rootContainerNote.value = container?.note || "";
   rootContainerDialogPhotoDraft = null;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
-  updateRootContainerDialogPhotoPreview(primaryItemPhoto(container || { photos: [] }));
+  updateRootContainerDialogPhotoPreview(normalizeItemPhotos(container || { photos: [] }));
   rootContainerDialogInitialSnapshot = getRootContainerDialogSnapshot();
   updateRootContainerDialogSaveState();
   openModalDialog(refs.rootContainerDialog);
@@ -16172,7 +16441,7 @@ function openItemDialog(itemId = null) {
   refs.itemNote.value = item.note || "";
   itemDialogPhotoDraft = null;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
-  updateItemDialogPhotoPreview(primaryItemPhoto(item));
+  updateItemDialogPhotoPreview(normalizeItemPhotos(item));
   itemDialogInitialSnapshot = getItemDialogSnapshot();
   updateItemDialogSaveState();
   openModalDialog(refs.dialog);
@@ -16196,7 +16465,7 @@ function openSharedReadonlyItemDialog(sourceItemId) {
   refs.itemNote.value = item.description || "";
   itemDialogPhotoDraft = null;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
-  updateItemDialogPhotoPreview(primaryItemPhoto({ photos: sharedGearPhotos(item) }));
+  updateItemDialogPhotoPreview(sharedGearPhotos(item));
   setSharedReadonlyItemDialog(true);
   openModalDialog(refs.dialog);
 }
@@ -16858,131 +17127,228 @@ function getItemDialogSnapshot() {
 }
 
 function getItemDialogPhotoSnapshot() {
-  if (itemDialogPhotoDraft?.remove) return "remove";
-  if (itemDialogPhotoDraft?.photo) return `draft:${itemPhotoMetaSignature(itemDialogPhotoDraft.photo)}`;
+  if (itemDialogPhotoDraft) return `draft:${itemPhotoSignature({ photos: itemDialogPhotoDraft.photos })}:${itemDialogPhotoDraft.deletedPhotos.length}`;
   return editingItemId ? itemPhotoSignature(state.items[editingItemId]) : "";
 }
 
 async function handleItemPhotoInputChange(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
   try {
     setItemDialogPhotoStatus("Готовлю фото...");
-    const photo = await createItemPhotoFromFile(file);
-    itemDialogPhotoDraft = { photo, remove: false };
-    updateItemDialogPhotoPreview(photo);
+    const photos = [];
+    for (const file of files) {
+      photos.push(await createItemPhotoFromFile(file));
+    }
+    const limit = usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit());
+    const source = editingItemId ? state.items[editingItemId] : { photos: [] };
+    const draft = itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
+    const result = addPhotosToDraft(draft, photos, limit);
+    itemDialogPhotoDraft = result.draft;
+    if (result.rejected.length) showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    itemDialogPhotoActiveIndex = Math.max(0, itemDialogPhotoDraft.photos.length - result.accepted.length);
+    updateItemDialogPhotoPreview(itemDialogPhotoDraft.photos);
     updateItemDialogSaveState();
   } catch (error) {
     setItemDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
     showToast(error.message || "Не удалось подготовить фото.", "error");
+  } finally {
+    if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
   }
 }
 
 function removeItemDialogPhoto() {
-  itemDialogPhotoDraft = { photo: null, remove: true };
+  const source = editingItemId ? state.items[editingItemId] : { photos: [] };
+  const draft = itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  const result = removePhotoFromDraft(draft, itemDialogPhotoActiveIndex);
+  itemDialogPhotoDraft = result.draft;
+  itemDialogPhotoActiveIndex = result.nextIndex;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
-  updateItemDialogPhotoPreview(null);
+  updateItemDialogPhotoPreview(itemDialogPhotoDraft.photos);
   updateItemDialogSaveState();
 }
 
 function resetItemDialogPhotoDraft() {
   itemDialogPhotoDraft = null;
-  if (itemDialogPhotoObjectUrl) URL.revokeObjectURL(itemDialogPhotoObjectUrl);
-  itemDialogPhotoObjectUrl = "";
+  revokeObjectUrls(itemDialogPhotoObjectUrls);
+  itemDialogPhotoObjectUrls = [];
+  itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
-  updateItemDialogPhotoPreview(null);
+  updateItemDialogPhotoPreview([]);
 }
 
-async function updateItemDialogPhotoPreview(photo) {
+async function updateItemDialogPhotoPreview(photos) {
   if (!refs.itemPhotoPreview) return;
-  if (itemDialogPhotoObjectUrl) URL.revokeObjectURL(itemDialogPhotoObjectUrl);
-  itemDialogPhotoObjectUrl = "";
-  if (!photo) {
+  revokeObjectUrls(itemDialogPhotoObjectUrls);
+  itemDialogPhotoObjectUrls = [];
+  const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
+  if (!list.length) {
     refs.itemPhotoPreview.innerHTML = "";
     refs.itemPhotoPreview.classList.add("empty");
     refs.itemPhotoRemoveBtn.hidden = true;
     setItemDialogPhotoStatus("");
     return;
   }
-  const src = await getLocalPhotoPreviewUrl(photo) || photoRemoteSrc(photo);
-  refs.itemPhotoPreview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="" />` : "";
-  refs.itemPhotoPreview.classList.toggle("empty", !src);
+  const rendered = await renderPhotoGalleryHtml(list, {
+    objectUrls: itemDialogPhotoObjectUrls,
+    activeIndex: itemDialogPhotoActiveIndex,
+    className: "dialog-photo-gallery"
+  });
+  refs.itemPhotoPreview.innerHTML = rendered;
+  refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
-  setItemDialogPhotoStatus(photo.status === "synced" ? "Фото загружено" : "Фото сохранено локально и ждёт синхронизации");
+  bindPhotoGalleries(refs.itemPhotoPreview);
+  setItemDialogPhotoStatus(photoStatusText(list));
 }
 
 async function getLocalPhotoPreviewUrl(photo) {
   const cached = await getCachedPhoto(photo.localId || photo.id);
   const blob = cached?.thumbBlob || cached?.blob;
   if (!blob) return "";
-  itemDialogPhotoObjectUrl = URL.createObjectURL(blob);
-  return itemDialogPhotoObjectUrl;
+  const url = URL.createObjectURL(blob);
+  itemDialogPhotoObjectUrls.push(url);
+  return url;
 }
 
 function setItemDialogPhotoStatus(message) {
   if (refs.itemPhotoStatus) refs.itemPhotoStatus.textContent = message || "";
 }
 
+function revokeObjectUrls(urls) {
+  (Array.isArray(urls) ? urls : [urls]).filter(Boolean).forEach((url) => URL.revokeObjectURL(url));
+}
+
+async function renderPhotoGalleryHtml(photos, { objectUrls = [], activeIndex = 0, className = "" } = {}) {
+  const slides = [];
+  for (const photo of photos) {
+    slides.push(await renderPhotoPreviewSlide(photo, objectUrls));
+  }
+  return `
+    <div class="item-photo ${className}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
+      <div class="photo-gallery-track">
+        ${slides.join("")}
+      </div>
+      ${renderPhotoDots(photos.length, activeIndex)}
+    </div>
+  `;
+}
+
+async function renderPhotoPreviewSlide(photo, objectUrls = []) {
+  const cached = await getCachedPhoto(photo.localId || photo.id);
+  const blob = cached?.thumbBlob || cached?.blob;
+  const fullBlob = cached?.blob || cached?.thumbBlob;
+  const localSrc = blob ? URL.createObjectURL(blob) : "";
+  const fullLocalSrc = fullBlob && fullBlob !== blob ? URL.createObjectURL(fullBlob) : localSrc;
+  if (localSrc) objectUrls.push(localSrc);
+  if (fullLocalSrc && fullLocalSrc !== localSrc) objectUrls.push(fullLocalSrc);
+  const remoteSrc = photoRemoteSrc(photo);
+  const fullSrc = fullLocalSrc || (photo.url ? versionedPhotoUrl(normalizeRemotePhotoUrl(photo.url), photo.updatedAt || photo.id || "") : remoteSrc);
+  const src = localSrc || remoteSrc || "";
+  const localId = photo.localId || photo.id || "";
+  return `
+    <button class="photo-gallery-slide" type="button" data-photo-open>
+      <img
+        ${src ? `src="${escapeHtml(src)}"` : ""}
+        ${fullSrc ? `data-photo-full-src="${escapeHtml(fullSrc)}"` : ""}
+        ${localId ? `data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
+        alt=""
+      />
+    </button>
+  `;
+}
+
+function photoStatusText(photos) {
+  const list = Array.isArray(photos) ? photos : [];
+  if (!list.length) return "";
+  if (list.some((photo) => photo.status === "error")) return "Ошибка загрузки фото";
+  if (list.some((photo) => photo.status === "missing-local-file")) return "Нет локального файла фото";
+  if (list.some((photo) => photo.status === "uploading")) return "Фото загружается";
+  if (list.some((photo) => photo.status === "pending")) return "Фото сохранено локально и ждёт синхронизации";
+  return list.length > 1 ? `${list.length} фото загружено` : "Фото загружено";
+}
+
 function getRootContainerDialogPhotoSnapshot() {
-  if (rootContainerDialogPhotoDraft?.remove) return "remove";
-  if (rootContainerDialogPhotoDraft?.photo) return `draft:${itemPhotoMetaSignature(rootContainerDialogPhotoDraft.photo)}`;
+  if (rootContainerDialogPhotoDraft) return `draft:${itemPhotoSignature({ photos: rootContainerDialogPhotoDraft.photos })}:${rootContainerDialogPhotoDraft.deletedPhotos.length}`;
   return editingRootContainerId ? itemPhotoSignature(state.containers[editingRootContainerId]) : "";
 }
 
 async function handleRootContainerPhotoInputChange(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
   try {
     setRootContainerDialogPhotoStatus("Готовлю фото...");
-    const photo = await createItemPhotoFromFile(file);
-    rootContainerDialogPhotoDraft = { photo, remove: false };
-    updateRootContainerDialogPhotoPreview(photo);
+    const photos = [];
+    for (const file of files) {
+      photos.push(await createItemPhotoFromFile(file));
+    }
+    const limit = usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit());
+    const source = editingRootContainerId ? state.containers[editingRootContainerId] : { photos: [] };
+    const draft = rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
+    const result = addPhotosToDraft(draft, photos, limit);
+    rootContainerDialogPhotoDraft = result.draft;
+    if (result.rejected.length) showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    rootContainerDialogPhotoActiveIndex = Math.max(0, rootContainerDialogPhotoDraft.photos.length - result.accepted.length);
+    updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
     updateRootContainerDialogSaveState();
   } catch (error) {
     setRootContainerDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
     showToast(error.message || "Не удалось подготовить фото.", "error");
+  } finally {
+    if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
   }
 }
 
 function removeRootContainerDialogPhoto() {
-  rootContainerDialogPhotoDraft = { photo: null, remove: true };
+  const source = editingRootContainerId ? state.containers[editingRootContainerId] : { photos: [] };
+  const draft = rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  const result = removePhotoFromDraft(draft, rootContainerDialogPhotoActiveIndex);
+  rootContainerDialogPhotoDraft = result.draft;
+  rootContainerDialogPhotoActiveIndex = result.nextIndex;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
-  updateRootContainerDialogPhotoPreview(null);
+  updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
   updateRootContainerDialogSaveState();
 }
 
 function resetRootContainerDialogPhotoDraft() {
   rootContainerDialogPhotoDraft = null;
-  if (rootContainerDialogPhotoObjectUrl) URL.revokeObjectURL(rootContainerDialogPhotoObjectUrl);
-  rootContainerDialogPhotoObjectUrl = "";
+  revokeObjectUrls(rootContainerDialogPhotoObjectUrls);
+  rootContainerDialogPhotoObjectUrls = [];
+  rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
-  updateRootContainerDialogPhotoPreview(null);
+  updateRootContainerDialogPhotoPreview([]);
 }
 
-async function updateRootContainerDialogPhotoPreview(photo) {
+async function updateRootContainerDialogPhotoPreview(photos) {
   if (!refs.rootContainerPhotoPreview) return;
-  if (rootContainerDialogPhotoObjectUrl) URL.revokeObjectURL(rootContainerDialogPhotoObjectUrl);
-  rootContainerDialogPhotoObjectUrl = "";
-  if (!photo) {
+  revokeObjectUrls(rootContainerDialogPhotoObjectUrls);
+  rootContainerDialogPhotoObjectUrls = [];
+  const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
+  if (!list.length) {
     refs.rootContainerPhotoPreview.innerHTML = "";
     refs.rootContainerPhotoPreview.classList.add("empty");
     refs.rootContainerPhotoRemoveBtn.hidden = true;
     setRootContainerDialogPhotoStatus("");
     return;
   }
-  const src = await getLocalRootContainerPhotoPreviewUrl(photo) || photoRemoteSrc(photo);
-  refs.rootContainerPhotoPreview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="" />` : "";
-  refs.rootContainerPhotoPreview.classList.toggle("empty", !src);
+  const rendered = await renderPhotoGalleryHtml(list, {
+    objectUrls: rootContainerDialogPhotoObjectUrls,
+    activeIndex: rootContainerDialogPhotoActiveIndex,
+    className: "dialog-photo-gallery"
+  });
+  refs.rootContainerPhotoPreview.innerHTML = rendered;
+  refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
-  setRootContainerDialogPhotoStatus(photo.status === "synced" ? "Фото загружено" : "Фото сохранено локально и ждёт синхронизации");
+  bindPhotoGalleries(refs.rootContainerPhotoPreview);
+  setRootContainerDialogPhotoStatus(photoStatusText(list));
 }
 
 async function getLocalRootContainerPhotoPreviewUrl(photo) {
   const cached = await getCachedPhoto(photo.localId || photo.id);
   const blob = cached?.thumbBlob || cached?.blob;
   if (!blob) return "";
-  rootContainerDialogPhotoObjectUrl = URL.createObjectURL(blob);
-  return rootContainerDialogPhotoObjectUrl;
+  const url = URL.createObjectURL(blob);
+  rootContainerDialogPhotoObjectUrls.push(url);
+  return url;
 }
 
 function setRootContainerDialogPhotoStatus(message) {
@@ -17095,6 +17461,7 @@ function saveRootContainerDialog(event) {
   const changedAt = nowIso();
   const container = editingRootContainerId ? state.containers[editingRootContainerId] : null;
   if (editingRootContainerId && !container) return;
+  if (!container && !requireUsageCapacity("containers")) return;
   const dimensions = readRootContainerDialogDimensions();
   if (!container) {
     const id = `container-${Date.now()}`;
@@ -17111,7 +17478,7 @@ function saveRootContainerDialog(event) {
       ...(hasContainerDimensions(dimensions) ? { dimensions } : {}),
       location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
       note: refs.rootContainerNote.value.trim(),
-      photos: rootContainerDialogPhotoDraft?.photo ? [rootContainerDialogPhotoDraft.photo] : [],
+      photos: rootContainerDialogPhotoDraft?.photos ? [...rootContainerDialogPhotoDraft.photos] : [],
       ...currentCreateMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.containers[id]);
@@ -17182,6 +17549,7 @@ function saveDialogItem(event) {
       return;
     }
   } else {
+    if (!requireUsageCapacity("items")) return;
     const id = `item-${Date.now()}`;
     state.items[id] = {
       id,
@@ -17193,7 +17561,7 @@ function saveDialogItem(event) {
       categories: selectedCategories,
       containerId: "",
       note: refs.itemNote.value.trim(),
-      photos: itemDialogPhotoDraft?.photo ? [itemDialogPhotoDraft.photo] : [],
+      photos: itemDialogPhotoDraft?.photos ? [...itemDialogPhotoDraft.photos] : [],
       ...currentEditMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.items[id]);
@@ -17212,43 +17580,23 @@ function saveDialogItem(event) {
 }
 
 function applyItemDialogPhotoDraft(item, changedAt = nowIso()) {
-  if (!itemDialogPhotoDraft) return;
-  const oldPhoto = primaryItemPhoto(item);
-  if (itemDialogPhotoDraft.remove) {
-    item.photos = [];
-    if (oldPhoto?.localId || oldPhoto?.id) deleteCachedPhoto(oldPhoto.localId || oldPhoto.id);
-    if (oldPhoto?.url || oldPhoto?.thumbUrl) deleteRemotePhotoIfPossible(item.id, oldPhoto);
-    markEdited(item, changedAt);
-    return;
-  }
-  if (itemDialogPhotoDraft.photo) {
-    item.photos = [itemDialogPhotoDraft.photo];
-    if (oldPhoto && oldPhoto.id !== itemDialogPhotoDraft.photo.id) {
-      if (oldPhoto.localId || oldPhoto.id) deleteCachedPhoto(oldPhoto.localId || oldPhoto.id);
-      if (oldPhoto.url || oldPhoto.thumbUrl) deleteRemotePhotoIfPossible(item.id, oldPhoto);
-    }
-    markEdited(item, changedAt);
-  }
+  if (!itemDialogPhotoDraft || !photoDraftChanged(itemDialogPhotoDraft, item)) return;
+  item.photos = [...itemDialogPhotoDraft.photos];
+  itemDialogPhotoDraft.deletedPhotos.forEach((photo) => {
+    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(item.id, photo);
+  });
+  markEdited(item, changedAt);
 }
 
 function applyRootContainerDialogPhotoDraft(container, changedAt = nowIso()) {
-  if (!rootContainerDialogPhotoDraft) return;
-  const oldPhoto = primaryItemPhoto(container);
-  if (rootContainerDialogPhotoDraft.remove) {
-    container.photos = [];
-    if (oldPhoto?.localId || oldPhoto?.id) deleteCachedPhoto(oldPhoto.localId || oldPhoto.id);
-    if (oldPhoto?.url || oldPhoto?.thumbUrl) deleteRemotePhotoIfPossible(container.id, oldPhoto, "container");
-    markEdited(container, changedAt);
-    return;
-  }
-  if (rootContainerDialogPhotoDraft.photo) {
-    container.photos = [rootContainerDialogPhotoDraft.photo];
-    if (oldPhoto && oldPhoto.id !== rootContainerDialogPhotoDraft.photo.id) {
-      if (oldPhoto.localId || oldPhoto.id) deleteCachedPhoto(oldPhoto.localId || oldPhoto.id);
-      if (oldPhoto.url || oldPhoto.thumbUrl) deleteRemotePhotoIfPossible(container.id, oldPhoto, "container");
-    }
-    markEdited(container, changedAt);
-  }
+  if (!rootContainerDialogPhotoDraft || !photoDraftChanged(rootContainerDialogPhotoDraft, container)) return;
+  container.photos = [...rootContainerDialogPhotoDraft.photos];
+  rootContainerDialogPhotoDraft.deletedPhotos.forEach((photo) => {
+    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(container.id, photo, "container");
+  });
+  markEdited(container, changedAt);
 }
 
 function applyRootContainerDialogParent(changedAt = nowIso()) {

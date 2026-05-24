@@ -5,5 +5,9 @@ ftp-upload/
 www/
 node_modules/
 
+# local editor/deploy settings
+.vscode/sftp.json
+AGENTS.md
+
 # standalone backend repo
 bikepacking-api/

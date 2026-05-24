@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=800" />
+    <link rel="stylesheet" href="./styles.css?v=802" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -42,6 +42,7 @@
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
+              <button id="helpLimitsBtn" class="ghost menu-item" type="button">Помощь</button>
               <button id="adminReportsBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Отчёты</button>
               <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать / PDF</button>
               <button id="visualStyleMenuBtn" class="ghost menu-item auth-required admin-menu-item" type="button">Варианты вида</button>
@@ -198,7 +199,7 @@
           <div class="item-photo-actions">
             <label class="ghost item-photo-pick">
               Выбрать фото
-              <input id="itemPhotoInput" type="file" accept="image/*" />
+              <input id="itemPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
           </div>
@@ -273,7 +274,7 @@
           <div class="item-photo-actions">
             <label class="ghost item-photo-pick">
               Выбрать фото
-              <input id="rootContainerPhotoInput" type="file" accept="image/*" />
+              <input id="rootContainerPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
           </div>
@@ -565,8 +566,21 @@
       </form>
     </dialog>
 
+    <dialog id="helpLimitsDialog">
+      <form method="dialog" class="dialog-card help-limits-dialog-card">
+        <header>
+          <h2>Лимиты</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div id="helpLimitsContent" class="help-limits-content"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+        </footer>
+      </form>
+    </dialog>
+
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=800" type="module"></script>
+    <script src="./app.js?v=802" type="module"></script>
   </body>
 </html>

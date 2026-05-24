@@ -55,9 +55,11 @@ export function itemPhotoMetaSignature(photo) {
 }
 
 export function itemPhotoSignature(item) {
-  const photo = primaryItemPhoto(item);
-  if (!photo) return "";
-  return [
+  return itemPhotosSignature(item);
+}
+
+export function itemPhotosSignature(item) {
+  return normalizeItemPhotos(item).map((photo) => [
     photo.id,
     photo.localId,
     photo.status,
@@ -65,5 +67,42 @@ export function itemPhotoSignature(item) {
     photo.thumbUrl,
     photo.updatedAt,
     photo.error
-  ].join("|");
+  ].join("|")).join("||");
+}
+
+export function createPhotoDraftFromRecord(record) {
+  return {
+    photos: normalizeItemPhotos(record).map((photo) => ({ ...photo })),
+    deletedPhotos: []
+  };
+}
+
+export function addPhotosToDraft(draft, photos, limit = Infinity) {
+  const target = draft || { photos: [], deletedPhotos: [] };
+  const incoming = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
+  const freeSlots = Number.isFinite(limit) ? Math.max(0, limit - target.photos.length) : incoming.length;
+  const accepted = incoming.slice(0, freeSlots);
+  target.photos = [...target.photos, ...accepted];
+  return {
+    draft: target,
+    accepted,
+    rejected: incoming.slice(accepted.length)
+  };
+}
+
+export function removePhotoFromDraft(draft, index = 0) {
+  const target = draft || { photos: [], deletedPhotos: [] };
+  const safeIndex = Math.max(0, Math.min(Number(index) || 0, target.photos.length - 1));
+  const [removed] = target.photos.splice(safeIndex, 1);
+  if (removed) target.deletedPhotos.push(removed);
+  return {
+    draft: target,
+    removed,
+    nextIndex: Math.max(0, Math.min(safeIndex, target.photos.length - 1))
+  };
+}
+
+export function photoDraftChanged(draft, record) {
+  if (!draft) return false;
+  return itemPhotosSignature({ photos: draft.photos }) !== itemPhotosSignature(record) || draft.deletedPhotos.length > 0;
 }
