@@ -1,8 +1,8 @@
-# App JS refactor roadmap
+# Дорожная карта рефакторинга app.js
 
-Цель: превратить `app.js` в тонкий сценарный entrypoint: старт приложения, связывание UI, текущий экран, вызовы модулей и сохранение. Бизнес-правила, нормализация, выбор источников, форматирование, sync/storage и публичные шаблоны должны жить в `src/...`.
+Цель: превратить `app.js` в тонкую сценарную точку входа. В нем должны остаться старт приложения, связывание UI, текущий экран, вызовы модулей, сохранение и перерисовка. Бизнес-правила, нормализация, выбор источников, форматирование, sync/storage и публичные шаблоны должны жить в `src/...`.
 
-Документ нужен как рабочая карта: что уже вынесено, что будет выноситься дальше, как проверять прогресс и где быть особенно осторожным.
+Этот документ - рабочая карта: что уже вынесено, что выносить дальше, как проверять прогресс и где быть особенно осторожным.
 
 ## Текущее состояние
 
@@ -16,47 +16,47 @@
 - `src/ui`: sync visual state, conflict/date formatting, layout load status, item display/format, dialogs, print, search highlight, packing 3D.
 - `src/public`: shared layouts, demo layout choice, template copy, public-to-private copy, admin shared layout operations.
 
-Важно: размер production bundle может временно не уменьшаться, потому что это исходная модульность, а не code splitting. Главная метрика сейчас: меньше бизнес-логики в `app.js`, яснее границы ответственности, проще искать баги.
+Важно: размер production bundle может временно не уменьшаться, потому что сейчас задача - исходная модульность, а не code splitting. Главная метрика на этом этапе: меньше бизнес-логики в `app.js`, яснее границы ответственности, проще искать баги.
 
 ## Правила каждого среза
 
 - Один срез = один смысловой слой, который можно быстро проверить и откатить.
 - В `app.js` оставлять wrapper/orchestration: взять зависимости из state/UI, вызвать модуль, показать статус, сохранить.
-- В `src/state` не передавать DOM/fetch/localStorage.
-- В `src/ui` не решать API-контракты и не чинить state-структуру.
+- В `src/state` не передавать DOM, fetch и localStorage.
+- В `src/ui` не решать API-контракты и не чинить структуру state.
 - В `src/sync` держать сеть, payload, serialize, conflict/sync helpers, но не рендер.
 - В `src/public` держать shared/demo/template identity, copy/delete/publish-adjacent правила.
-- Любой новый `src/...` файл добавлять в `npm.cmd run check`.
-- Если изменен runtime/frontend-visible код: bump `APP_VERSION`, `index.html`, `sw.js`, затем `npm.cmd run check` и `npm.cmd run build`.
+- Любой новый файл в `src/...` добавлять в `npm.cmd run check`.
+- Если изменен runtime или видимый браузеру код: bump `APP_VERSION`, `index.html`, `sw.js`, затем `npm.cmd run check` и `npm.cmd run build`.
 - Если затронут `CRITICAL:` или flow из `docs/critical-flows.md`: дополнительно `npm.cmd run test:critical`.
-- Коммитить небольшими именованными checkpoint-ами; после пачки успешных коммитов пушить `main`.
+- Коммитить маленькими именованными checkpoint-ами. После пачки успешных коммитов пушить `main`.
 
 ## Карта ответственности
 
 Идеальная конечная роль `app.js`:
 
 - инициализация refs/controllers;
-- маршрут/режим экрана;
+- маршрут и режим экрана;
 - связывание DOM событий;
 - получение текущего state/scope/user;
 - вызов профильных модулей;
 - save/render/toast/status;
 - минимальные compatibility wrappers для постепенного перехода.
 
-Модули:
+Роли модулей:
 
-- `src/config`: версии, ключи, endpoints, feature flags.
-- `src/storage`: localStorage/session/storage scope и persisted UI/sync settings.
-- `src/state`: чистые операции над состоянием, layout arrangement, catalog, dictionaries, delete/normalize/repair/metrics.
-- `src/sync`: API, upload/copy photos, entity sync, merge/conflicts, remote records, serialize, payload diagnostics.
-- `src/public`: shared/demo/public/template-copy contracts.
-- `src/ui`: standalone render/format/dialog/controllers, без API-контрактов.
-- `src/backup`: backup archive/restore analysis/import helpers.
-- `src/utils`: маленькие generic helpers.
+- `src/config` - версии, ключи, endpoints, feature flags.
+- `src/storage` - localStorage/session/storage scope и persisted UI/sync settings.
+- `src/state` - чистые операции над состоянием, layout arrangement, catalog, dictionaries, delete/normalize/repair/metrics.
+- `src/sync` - API, upload/copy photos, entity sync, merge/conflicts, remote records, serialize, payload diagnostics.
+- `src/public` - shared/demo/public/template-copy contracts.
+- `src/ui` - standalone render/format/dialog/controllers, без API-контрактов.
+- `src/backup` - backup archive/restore analysis/import helpers.
+- `src/utils` - маленькие generic helpers.
 
-## Roadmap
+## План работ
 
-### Phase 1. Закрепить уже начатые безопасные зоны
+### Фаза 1. Закрепить уже начатые безопасные зоны
 
 Цель: быстро добрать рядом лежащие чистые helpers, чтобы не оставлять половинчатые домены.
 
@@ -69,17 +69,17 @@
 - [ ] Conflict merge pure helpers: `changedComparableKeys`, `comparableValueForMerge`, scalar merge helpers.
 - [ ] Catalog wrappers cleanup: reduce remaining tiny wrappers once call sites are clear.
 
-Suggested target modules:
+Целевые модули:
 
 - `src/ui/conflict-format.js`
 - `src/sync/conflict-merge.js`
-- `src/state/catalog-selectors.js` if catalog wrappers grow beyond filters/search/sort.
+- `src/state/catalog-selectors.js`, если catalog wrappers перерастут filters/search/sort.
 
-### Phase 2. Sync merge and remote state
+### Фаза 2. Sync merge и remote state
 
-Цель: отделить merge/sync contracts от UI and app lifecycle.
+Цель: отделить merge/sync contracts от UI и lifecycle приложения.
 
-Candidate functions from `app.js`:
+Кандидаты из `app.js`:
 
 - `mergeStateFromBase`
 - `mergeStringList`
@@ -93,23 +93,24 @@ Candidate functions from `app.js`:
 - `buildListSaveBody`
 - `rememberConflictRemoteMeta`
 
-Planned modules:
+Планируемые модули:
 
-- `src/sync/state-merge.js`: pure three-way merge and conflict choice application.
-- `src/sync/conflict-format.js` or keep UI text in `src/ui/conflict-format.js` and pure conflict data in `src/sync/conflict-merge.js`.
-- `src/sync/save-body.js`: remote/list save request body building.
+- `src/sync/state-merge.js` - чистый three-way merge и применение выбранных решений конфликтов.
+- `src/sync/conflict-merge.js` - чистые conflict data helpers.
+- `src/ui/conflict-format.js` - текст и форматирование для UI конфликтов.
+- `src/sync/save-body.js` - построение remote/list save request body.
 
-Checks:
+Проверки:
 
 - `npm.cmd run check`
 - `npm.cmd run build`
-- `npm.cmd run test:critical` if sync-save behavior changes.
+- `npm.cmd run test:critical`, если меняется поведение sync-save.
 
-### Phase 3. Photos and upload scope
+### Фаза 3. Photos и upload scope
 
 Цель: убрать из `app.js` правила выбора фото для upload/copy/reupload.
 
-Candidate functions:
+Кандидаты:
 
 - `getPhotoUploadScope`
 - `isEntityInPhotoUploadScope`
@@ -123,19 +124,19 @@ Candidate functions:
 - `remotePhotoSourceFromRecord`
 - `remotePhotoSourceFromUrl`
 
-Planned module:
+Планируемый модуль:
 
 - расширить `src/sync/photos.js` или добавить `src/sync/photo-upload-scope.js`.
 
-Risk:
+Риск:
 
-- Offline photos are critical. If behavior changes, run `npm.cmd run test:critical`.
+- Offline photos - критичный сценарий. Если меняется поведение, запускать `npm.cmd run test:critical`.
 
-### Phase 4. Public/shared/template copy zone
+### Фаза 4. Public/shared/template copy
 
-Цель: `app.js` должен только запускать пользовательский сценарий copy/delete/publish, а identity/source/dedup/restore должны быть в модулях.
+Цель: `app.js` должен только запускать пользовательский сценарий copy/delete/publish. Identity/source/dedup/restore должны быть в модулях.
 
-Candidate functions:
+Кандидаты:
 
 - `createSharedVirtualState`
 - `createSharedVirtualStateFromPublishedState`
@@ -149,24 +150,24 @@ Candidate functions:
 - `deleteManagedPublicLayout`
 - `shouldDeletePublishedSharedTemplateForLayout`
 
-Planned modules:
+Планируемые модули:
 
 - продолжить `src/public/shared-virtual-state.js`
 - `src/public/template-copy-source.js`
 - `src/public/shared-template-delete.js`
 
-Checks:
+Проверки:
 
 - `npm.cmd run check`
 - `npm.cmd run build`
 - для template copy/delete: свериться с `docs/critical-flows.md`; при изменении контрактов запускать `npm.cmd run test:critical`.
 - Если API затронут: отдельно backend check/commit/push.
 
-### Phase 5. Layout/item/container operations
+### Фаза 5. Layout/item/container operations
 
-Цель: операции создания, копирования, удаления и перемещения должны жить в state modules; `app.js` оставляет confirm/toast/render/save.
+Цель: операции создания, копирования, удаления и перемещения должны жить в state modules. `app.js` оставляет confirm/toast/render/save.
 
-Candidate functions:
+Кандидаты:
 
 - `copyItem`
 - `copyRootContainer`
@@ -183,22 +184,22 @@ Candidate functions:
 - `moveContainer`
 - `createGroupFromItems`
 
-Planned modules:
+Планируемые модули:
 
 - `src/state/item-ops.js`
 - `src/state/container-ops.js`
-- possibly extend `src/state/layout-ops.js` and `src/state/layout-delete.js`.
+- возможно расширить `src/state/layout-ops.js` и `src/state/layout-delete.js`.
 
-Risk:
+Риск:
 
-- Touch/drag timing is critical, but pure layout operations are safer than pointer handlers.
-- Keep DOM drag/drop code out of this phase.
+- Touch/drag timing критичен, но чистые layout operations безопаснее pointer handlers.
+- DOM drag/drop код в эту фазу не трогать.
 
-### Phase 6. Backup/import flow
+### Фаза 6. Backup/import flow
 
-Цель: backup import orchestration in `app.js`, analysis/summary/photo preparation in modules.
+Цель: backup import orchestration оставить в `app.js`, а analysis/summary/photo preparation вынести в модули.
 
-Candidate functions:
+Кандидаты:
 
 - `buildCurrentBackupManifest`
 - `backupLayoutRows`
@@ -208,23 +209,23 @@ Candidate functions:
 - `restoreSelectedBackupLayouts`
 - `restoreFullBackup`
 
-Planned modules:
+Планируемые модули:
 
-- extend `src/backup/archive.js`
-- extend `src/backup/restore.js`
-- maybe `src/sync/backup-photos.js` for server photo resolve.
+- расширить `src/backup/archive.js`
+- расширить `src/backup/restore.js`
+- возможно добавить `src/sync/backup-photos.js` для server photo resolve.
 
-Checks:
+Проверки:
 
 - `npm.cmd run check`
 - `npm.cmd run build`
-- manual backup import/export smoke if UI behavior changes.
+- manual backup import/export smoke, если меняется UI-поведение.
 
-### Phase 7. UI rendering islands
+### Фаза 7. UI render islands
 
-Цель: переносить крупные render blocks только после state/sync/public helpers, потому что UI has sticky dependencies.
+Цель: переносить крупные render blocks только после state/sync/public helpers, потому что у UI самые липкие зависимости.
 
-Candidate islands:
+Кандидаты:
 
 - summary rendering;
 - items list rendering;
@@ -234,7 +235,7 @@ Candidate islands:
 - backup dialog orchestration;
 - shared mode banners and shared packing.
 
-Planned modules:
+Планируемые модули:
 
 - `src/ui/summary.js`
 - `src/ui/items-view.js`
@@ -243,16 +244,16 @@ Planned modules:
 - `src/ui/item-dialog.js`
 - `src/ui/root-container-dialog.js`
 
-Rule:
+Правило:
 
-- UI modules receive prepared data and callbacks.
-- UI modules should not normalize backend payloads or decide sync contracts.
+- UI modules получают подготовленные данные и callbacks.
+- UI modules не должны normalize backend payloads и не должны решать sync contracts.
 
-### Phase 8. Drag/drop and pointer interactions last
+### Фаза 8. Drag/drop и pointer interactions - в конце
 
-Цель: оставить самую хрупкую область на конец, когда state operations are already clean.
+Цель: оставить самую хрупкую область на конец, когда state operations уже чистые.
 
-Candidate functions:
+Кандидаты:
 
 - pointer drag binding;
 - root column drag;
@@ -260,42 +261,42 @@ Candidate functions:
 - nested group hover/open timings;
 - drop target calculation.
 
-Risk:
+Риск:
 
-- `touch-click-timing` is critical.
-- Do not change timing constants without direct regression reason.
-- After touching: `npm.cmd run test:critical`, `npm.cmd run check`, `npm.cmd run build`, plus manual mobile/touch smoke.
+- `touch-click-timing` - критичный сценарий.
+- Не менять timing constants без прямой причины.
+- После изменений: `npm.cmd run test:critical`, `npm.cmd run check`, `npm.cmd run build`, плюс manual mobile/touch smoke.
 
-## Progress tracking
+## Отслеживание прогресса
 
-Update this table after each meaningful push.
+Обновлять таблицу после каждого значимого push.
 
-| Date | App size | Completed slice | Last pushed commit |
+| Дата | Размер app.js | Завершенный срез | Последний push |
 | --- | ---: | --- | --- |
 | 2026-05-24 | ~17853 | storage, catalog helpers, sync visual, conflict helpers, admin API warning, remote list selector | `d2d436b` |
 
-Suggested per-slice note format:
+Формат заметки по срезу:
 
 ```text
-YYYY-MM-DD | app.js N lines | moved X to src/domain/file.js | check/build ok | commit abc123
+YYYY-MM-DD | app.js N строк | вынесено X в src/domain/file.js | check/build ok | commit abc123
 ```
 
-## Definition of done
+## Критерии готовности
 
-Short-term done:
+Короткий горизонт:
 
-- `app.js` drops below 15000 lines.
-- New business logic no longer lands directly in `app.js`.
-- Existing modules cover storage, catalog, sync merge, photos, template copy, backup.
+- `app.js` меньше 15000 строк.
+- Новая бизнес-логика больше не попадает напрямую в `app.js`.
+- Модули покрывают storage, catalog, sync merge, photos, template copy, backup.
 
-Medium-term done:
+Средний горизонт:
 
-- `app.js` drops below 10000 lines.
-- Most state/sync/public flows are testable without DOM.
-- UI render islands are separated by screen/dialog.
+- `app.js` меньше 10000 строк.
+- Большинство state/sync/public flows тестируются без DOM.
+- UI render islands разделены по экранам и диалогам.
 
-Final target:
+Финальная цель:
 
-- `app.js` is mostly boot, routing/mode, event binding, controller wiring, save/render orchestration.
-- Critical contracts are documented and backed by tests.
-- New bugs can be searched by domain folder instead of scrolling a giant file.
+- `app.js` в основном отвечает за boot, routing/mode, event binding, controller wiring, save/render orchestration.
+- Критичные контракты документированы и защищены тестами.
+- Новые баги ищутся по доменным папкам, а не прокруткой гигантского файла.

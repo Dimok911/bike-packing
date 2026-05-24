@@ -1,29 +1,39 @@
-# App JS Module Split
+# Разбиение app.js на модули
 
-`app.js` is being split gradually into plain ES modules. The goal is to make data bugs easier to isolate while keeping runtime code simple.
+`app.js` постепенно разбивается на обычные ES-модули. Цель - сделать ошибки в данных и сценариях проще для поиска, при этом оставить runtime-код понятным и предсказуемым.
 
-Detailed phased roadmap and progress checklist: `docs/app-js-refactor-roadmap.md`.
+Подробная дорожная карта и чеклист прогресса лежат в `docs/app-js-refactor-roadmap.md`.
 
-The deploy path now uses Vite/Rollup:
+## Направление
 
-- `npm install` once to install the local build tooling.
-- `npm run build` writes the deployable site to `dist/`.
-- Upload the contents of `dist/` to hosting. The generated `sw.js` precaches the hashed Vite assets from that build.
+- `src/config` - константы приложения, версии, ключи storage/API, feature flags.
+- `src/data` - статические словари, demo/shared seed data и простые helpers для угадывания категории/локации.
+- `src/utils` - маленькие общие helpers для времени, JSON, HTML escaping, языка, storage, веса и размера payload.
+- `src/state` - чистая работа с состоянием: форма state, layout arrangement, normalize/repair/delete/selectors, метрики вещей/контейнеров, derived-поля, диагностика, catalog helpers.
+- `src/sync` - API client, history, payload report, фото, serialize, entity sync, merge/conflict helpers, remote list records.
+- `src/public` - shared/demo/public/template-copy логика, read-only scope, public-to-private copy, shared layout admin operations.
+- `src/ui` - DOM refs, standalone UI formatting/render helpers, dialogs, print, search highlight, visual state controllers.
+- `src/storage` - localStorage/session/storage scope, persisted UI/sync settings.
+- `src/backup` - backup archive, restore analysis, import/export helpers.
 
-## Current Direction
+## Рабочее правило
 
-- `src/config` keeps app constants and storage/API keys.
-- `src/data` keeps static dictionaries, demo/shared seed data, and simple data guessing helpers.
-- `src/utils` keeps small helpers for time, JSON, HTML escaping, language, storage, weights, and byte formatting.
-- `src/state` has safe state shape, layout arrangement/normalization/operation/selector helpers, item/container metrics, record-derived helpers, item photo metadata, state diagnostics, repair/cleanup helpers, and field normalization.
-- `src/sync` has the API client helpers, history helpers, payload reporting, photo cache/prep helpers, state serialization helpers, and entity sync payload helpers.
-- `src/public` has scope/read-only helpers, shared layout helpers, public artifact checks, and the first public-to-private copy helpers.
-- `src/ui` has DOM refs and standalone UI render/export helpers such as item formatting and printable HTML generation.
+Каждый шаг должен быть маленьким, behavior-preserving и простым для отката.
 
-## Working Rule
+- Core state helpers не должны знать про DOM, fetch и localStorage.
+- Sync code не должен рендерить UI.
+- UI code должен получать подготовленные данные и callbacks, а не чинить структуру state.
+- `app.js` должен оставаться orchestration layer: взять текущие зависимости, вызвать модуль, показать status/toast, сохранить и перерисовать.
 
-Each step should be small, behavior-preserving, and easy to revert. Core state helpers should stay free of DOM and fetch. Sync code should stay out of UI rendering. UI code should consume prepared state instead of repairing data structure on its own.
+## Следующие срезы
 
-## Next Slices
+Ближайшие полезные срезы:
 
-The next useful slices are the remaining state cleanup helpers, API client, then public/demo copy logic. UI rendering and drag/drop should stay near the end because they have the stickiest dependencies.
+- добрать оставшиеся conflict formatting и conflict merge helpers;
+- вынести photo upload/copy scope;
+- отделить sync save body и merge contracts;
+- продолжить public/shared/template-copy source/delete logic;
+- вынести layout/item/container operations;
+- только потом переходить к крупным render blocks и drag/drop.
+
+UI rendering и drag/drop лучше оставлять ближе к концу: там самые липкие зависимости и критичные touch/click timing контракты.
