@@ -53,7 +53,6 @@ import {
   REQUIRED_CHARGE_CATEGORY,
   categories,
   locations,
-  sharedLayouts,
   demoSharedLayout
 } from "./src/data/demo-data.js";
 import { guessCategory, guessLocation } from "./src/data/guess.js";
@@ -107,6 +106,11 @@ import {
   languageOptionLabel as languageOptionLabelValue
 } from "./src/public/demo-layout-choice.js";
 import {
+  guestDemoCopyCleanupPlan,
+  normalizeDemoTemplateName,
+  normalizePublishedDemoTemplatePayload
+} from "./src/public/demo-template-state.js";
+import {
   createSharedLayoutCatalogDiagnostics,
   shouldWarnAboutSharedLayoutCatalog
 } from "./src/public/shared-layout-catalog-diagnostics.js";
@@ -119,13 +123,13 @@ import {
   compareSharedLayoutIndexEntries,
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
+  isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
   isTemplateCopySharedLayoutId,
   mergeSharedLayoutCatalogEntries,
   mergeSharedLayoutIndexPayload,
   normalizeSharedGearName,
   pruneRuntimeSharedLayouts,
-  serverConfirmedSharedLayoutsFromIndexPayload,
   serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIndexEntry,
   sharedLayoutIdFromPublicListRecord,
@@ -134,6 +138,7 @@ import {
   updateSharedLayoutCatalogEntryMetadata,
   upsertRuntimeSharedLayout,
   upsertSharedLayoutIndexEntry,
+  visibleSharedLayoutsForLanguage,
   withRuntimeSharedLayoutIndex
 } from "./src/public/shared-layouts.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
@@ -573,7 +578,7 @@ import {
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
 
-const sharedLayoutsByLanguage = createSharedLayoutsByLanguage(sharedLayouts);
+const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
 let serverConfirmedSharedLayouts = [];
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedTemplatePhotoReferenceCopy",
@@ -872,7 +877,10 @@ function t(key, values = {}) {
 }
 
 function currentSharedLayouts(language = uiLanguage) {
-  return sharedLayoutsByLanguage[normalizeUiLanguage(language)] || sharedLayoutsByLanguage[DEFAULT_LANGUAGE] || [];
+  return visibleSharedLayoutsForLanguage(sharedLayoutsByLanguage, language, {
+    defaultLanguage: DEFAULT_LANGUAGE,
+    serverConfirmedSharedLayouts
+  });
 }
 
 function demoLayoutChoiceForLanguage(language = uiLanguage) {
@@ -902,6 +910,28 @@ function demoLanguageFromLayoutChoice(choice) {
 function languageOptionLabel(language) {
   return languageOptionLabelValue(language, {
     normalizeLanguage: normalizeUiLanguage
+  });
+}
+
+function demoTemplateNameCandidates() {
+  return SUPPORTED_LANGUAGES
+    .map((language) => I18N[normalizeUiLanguage(language)]?.["demo.layoutName"])
+    .filter(Boolean);
+}
+
+function normalizeDemoLayoutName(name = "", language = uiLanguage) {
+  const normalizedLanguage = normalizeUiLanguage(language);
+  return normalizeDemoTemplateName(name, {
+    fallbackName: I18N[normalizedLanguage]?.["demo.layoutName"] || t("demo.layoutName"),
+    demoNames: demoTemplateNameCandidates()
+  });
+}
+
+function normalizeDemoPayloadForLanguage(payload, language = uiLanguage) {
+  const normalizedLanguage = normalizeUiLanguage(language);
+  return normalizePublishedDemoTemplatePayload(payload, {
+    fallbackName: I18N[normalizedLanguage]?.["demo.layoutName"] || t("demo.layoutName"),
+    demoNames: demoTemplateNameCandidates()
   });
 }
 
@@ -1041,7 +1071,9 @@ function activeAdminDraftOptionLabel(layout) {
   return publicTemplateOptionLabel({
     prefix: t("template.prefix"),
     sharedPrefix: t("shared.prefix"),
-    name: layout.name || (layout.adminDemo ? t("demo.layoutName") : t("shared.prefix")),
+    name: layout.adminDemo
+      ? normalizeDemoLayoutName(layout.name || t("demo.layoutName"), layout.adminDemoLanguage || uiLanguage)
+      : layout.name || t("shared.prefix"),
     languageLabel: languageOptionLabel(layout.adminDemo
       ? layout.adminDemoLanguage || uiLanguage
       : managedSharedDraftLanguage(layout, sharedSource, uiLanguage)),
@@ -1059,7 +1091,7 @@ function publicLayoutChoiceForLayout(layout) {
 function copyPickerLayoutLabel(layout) {
   if (!layout) return "Укладка";
   if (layout.adminDemo) {
-    return `${layout.name || t("demo.layoutName")} (${languageOptionLabel(layout.adminDemoLanguage || uiLanguage)})`;
+    return `${normalizeDemoLayoutName(layout.name || t("demo.layoutName"), layout.adminDemoLanguage || uiLanguage)} (${languageOptionLabel(layout.adminDemoLanguage || uiLanguage)})`;
   }
   if (layout.adminSharedSourceId) {
     const sharedLayout = findSharedLayout(layout.adminSharedSourceId);
@@ -1195,9 +1227,10 @@ function demoStatePayloadForLanguage(language = uiLanguage) {
 
 function setDemoStatePayloadForLanguage(language, payload) {
   const normalized = normalizeUiLanguage(language);
+  const nextPayload = payload ? normalizeDemoPayloadForLanguage(payload, normalized) : null;
   demoSharedLayout.statePayloadByLanguage = demoSharedLayout.statePayloadByLanguage || {};
-  demoSharedLayout.statePayloadByLanguage[normalized] = payload || null;
-  if (normalized === normalizeUiLanguage(uiLanguage)) demoSharedLayout.statePayload = payload || null;
+  demoSharedLayout.statePayloadByLanguage[normalized] = nextPayload;
+  if (normalized === normalizeUiLanguage(uiLanguage)) demoSharedLayout.statePayload = nextPayload;
 }
 
 function setDemoPublicTemplateMissing(language, missing) {
@@ -6356,21 +6389,8 @@ async function fetchPublishedListStateById(listId) {
 }
 
 async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
-  let merged = 0;
-  await Promise.all(SUPPORTED_LANGUAGES.map(async (language) => {
-    try {
-      const payload = await fetchPublishedListStateById(demoPublicListIdForLanguage(language));
-      merged += mergeSharedLayoutIndexPayload(sharedLayoutsByLanguage, payload);
-      serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(
-        serverConfirmedSharedLayouts,
-        serverConfirmedSharedLayoutsFromIndexPayload(payload)
-      );
-    } catch {
-      // Public shared template index is opportunistic; built-in templates still work without it.
-    }
-  }));
-  if (merged && renderAfter) render();
-  return merged;
+  void renderAfter;
+  return 0;
 }
 
 async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
@@ -6392,36 +6412,34 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
     return 0;
   }
   const records = Array.isArray(data?.lists) ? data.lists : [];
-  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(records, {
+  const concreteRecords = records.filter(isConcretePublicSharedLayoutListRecord);
+  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: sharedLayoutsByLanguage,
     fallbackLanguage: uiLanguage
   }));
   sharedLayoutCatalogDiagnostics = createSharedLayoutCatalogDiagnostics({
     source: data?.fallback || "/bike-packing/public-shared-layouts",
-    records,
+    records: concreteRecords,
     sharedLayoutIdFromRecord: sharedLayoutIdFromPublicListRecord,
     confirmedLayouts: serverConfirmedSharedLayouts,
     visibleOptions: []
   });
   if (
-    records.length &&
+    concreteRecords.length &&
     sharedLayoutCatalogDiagnostics.confirmedCount === 0 &&
     typeof console !== "undefined" &&
     console.warn
   ) {
     console.warn("[bike-packing] Shared template API returned rows, but none became confirmed shared layouts.", sharedLayoutCatalogDiagnostics);
   }
-  const publicSharedIds = new Set(records
-    .filter(isPublicSharedLayoutListRecord)
+  const publicSharedIds = new Set(concreteRecords
     .map(sharedLayoutIdFromPublicListRecord)
     .filter(Boolean));
   const prunedMissingRuntime = pruneRuntimeSharedLayouts(sharedLayoutsByLanguage, (layout) =>
     layout?.runtimeSharedTemplate &&
-    String(layout.id || "").startsWith("template-copy-") &&
     !publicSharedIds.has(layout.id)
   );
-  await Promise.all(records
-    .filter(isPublicSharedLayoutListRecord)
+  await Promise.all(concreteRecords
     .map(async (record) => {
       const sharedId = sharedLayoutIdFromPublicListRecord(record);
       if (!sharedId) return;
@@ -6466,7 +6484,7 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
         }
       }
     }));
-  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(records, {
+  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: sharedLayoutsByLanguage,
     fallbackLanguage: uiLanguage
   }));
@@ -6582,7 +6600,10 @@ async function removePublicSharedLayoutIndexEntry(sharedId) {
 async function loadPublishedDemoState(language = uiLanguage) {
   const normalized = normalizeUiLanguage(language);
   try {
-    const demoState = await fetchPublishedListStateById(demoPublicListIdForLanguage(normalized));
+    const demoState = normalizeDemoPayloadForLanguage(
+      await fetchPublishedListStateById(demoPublicListIdForLanguage(normalized)),
+      normalized
+    );
     if (isSafePublishedDemoState(demoState)) {
       setDemoPublicTemplateMissing(normalized, false);
       return demoState;
@@ -6591,7 +6612,10 @@ async function loadPublishedDemoState(language = uiLanguage) {
     // Missing localized demo is a normal isolated state until admin publishes it.
   }
   try {
-    const demoState = await fetchStateRecordByItemKey(demoItemKeyForLanguage(normalized));
+    const demoState = normalizeDemoPayloadForLanguage(
+      await fetchStateRecordByItemKey(demoItemKeyForLanguage(normalized)),
+      normalized
+    );
     if (isSafePublishedDemoState(demoState)) {
       setDemoPublicTemplateMissing(normalized, false);
       return demoState;
@@ -7421,7 +7445,7 @@ function repairActiveEmptyAdminDemoDraft() {
 }
 
 function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, activate = true, renderAfter = true } = {}) {
-  const source = normalizePublishedStatePayload(demoState) || createBlankBikePackingState();
+  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) throw new Error("В демо нет укладки.");
   const normalizedLanguage = normalizeUiLanguage(language);
@@ -7483,7 +7507,7 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, act
   });
   state.layouts[layoutId] = {
     id: layoutId,
-    name: sourceLayout.name || "Демо для всех",
+    name: normalizeDemoLayoutName(sourceLayout.name, normalizedLanguage),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     adminDemo: true,
@@ -7505,6 +7529,12 @@ function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, act
 
 function repairAdminDemoLayout(layout) {
   if (!layout?.adminDemo) return false;
+  let changed = false;
+  const normalizedName = normalizeDemoLayoutName(layout.name, layout.adminDemoLanguage || uiLanguage);
+  if (layout.name !== normalizedName) {
+    layout.name = normalizedName;
+    changed = true;
+  }
   const stamp = String(layout.id || "").match(/^layout-admin-demo-(\d+)/)?.[1] || "";
   const prefix = stamp ? `admin-demo-container-${stamp}-` : "admin-demo-container-";
   const arrangement = normalizeLayoutArrangement(layout, state);
@@ -7524,7 +7554,7 @@ function repairAdminDemoLayout(layout) {
     )
     .map((container) => container.id);
   const rootContainerIds = uniqueLayoutIds([...arrangedRootIds, ...prefixedRootIds]);
-  if (!rootContainerIds.length) return false;
+  if (!rootContainerIds.length) return changed;
   const itemPrefix = stamp ? `admin-demo-item-${stamp}-` : "admin-demo-item-";
   Object.values(state.items || {})
     .filter((item) => String(item.id || "").startsWith(itemPrefix))
@@ -7575,6 +7605,7 @@ async function publishActiveLayoutAsDemo() {
     updateSyncUi("Публикую демо-укладку...");
     layout.adminDemo = true;
     layout.adminDemoLanguage = layout.adminDemoLanguage || uiLanguage;
+    layout.name = normalizeDemoLayoutName(layout.name, layout.adminDemoLanguage);
     touchLayout(layout.id);
     saveState();
     await savePublishedLayoutRecord(layout.id);
@@ -7602,6 +7633,9 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   if (!target) return;
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю shared-укладку...");
   const publicListId = publicListIdForPublishedTarget(target);
+  const publishTitle = target.type === "demo"
+    ? normalizeDemoLayoutName(layout.name || "", target.language || uiLanguage)
+    : layout.name || "";
   const publishPayload = async (payload, extraBody = {}) => {
     const path = target.type === "demo"
       ? demoAdminStatePathForLanguage(target.language || uiLanguage)
@@ -7611,7 +7645,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
         method: "POST",
         timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
         body: JSON.stringify({
-          title: layout.name || "",
+          title: publishTitle,
           description: layout.note || "",
           visibility: "public",
           listVisibility: "public",
@@ -7681,6 +7715,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
       return exportLayoutAsDemoState(layoutId);
     });
     if (target.type === "demo") {
+      publishedPayload = normalizeDemoPayloadForLanguage(publishedPayload, target.language || uiLanguage) || publishedPayload;
       publishedPayload = withRuntimeSharedLayoutIndex(publishedPayload, sharedLayoutsByLanguage);
     }
     await publishPayload(publishedPayload);
@@ -8768,12 +8803,12 @@ function demoCopyActionText() {
 
 function demoCopyLayoutName(sourceName = "") {
   const fallback = uiLanguage === "en" ? "Demo copy" : "\u041c\u043e\u044f \u0434\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
-  const baseName = readableGuestDemoLayoutName(sourceName, fallback);
+  const baseName = normalizeDemoLayoutName(readableGuestDemoLayoutName(sourceName, fallback), uiLanguage);
   return uniqueLayoutName(baseName || fallback);
 }
 
 function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remember = true } = {}) {
-  const source = normalizePublishedStatePayload(demoState) || createBlankBikePackingState();
+  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), uiLanguage) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
   if (!sourceLayout) return "";
   const stamp = Date.now();
@@ -8811,7 +8846,25 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   return layoutId;
 }
 
+function pruneUneditedGuestDemoCopies() {
+  const plan = guestDemoCopyCleanupPlan({
+    layouts: state.layouts,
+    activeLayoutId: state.activeLayoutId,
+    isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
+    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(state, layout)
+  });
+  if (!plan.removeLayoutIds.length) return false;
+  plan.removeLayoutIds.forEach((layoutId) => removeLayoutTree(layoutId, state, { save: false }));
+  if (!state.layouts?.[state.activeLayoutId] && plan.keepLayoutId && state.layouts?.[plan.keepLayoutId]) {
+    state.activeLayoutId = plan.keepLayoutId;
+    applyLayoutArrangement(plan.keepLayoutId);
+  }
+  persistStateSnapshot(state);
+  return true;
+}
+
 async function createLocalDemoCopy({ forceNew = false, remember = true } = {}) {
+  if (!forceNew) pruneUneditedGuestDemoCopies();
   const existing = !forceNew
     ? Object.values(state.layouts || {}).find((layout) => layout?.[GUEST_DEMO_COPY_FLAG])
     : null;
@@ -16741,7 +16794,10 @@ async function saveEditedLayout(event) {
   if (!nextName) return;
   let changed = false;
   const previousLayout = adminPublished ? clone(layout) : null;
-  const savedName = editedLayoutName(layout, nextName, (name) => uniqueLayoutName(name, { exceptLayoutId: layout.id }));
+  const requestedName = layout.adminDemo
+    ? normalizeDemoLayoutName(nextName, refs.layoutEditLanguage.value || layoutManageLanguage(layout, uiLanguage))
+    : nextName;
+  const savedName = editedLayoutName(layout, requestedName, (name) => uniqueLayoutName(name, { exceptLayoutId: layout.id }));
   if (layout.name !== savedName) {
     layout.name = savedName;
     changed = true;

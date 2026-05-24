@@ -4,19 +4,13 @@ import { nowIso } from "../utils/time.js";
 export const SHARED_LAYOUTS_INDEX_KEY = "sharedLayoutsIndex";
 export const PUBLIC_SHARED_LAYOUT_LIST_PREFIX = "public-shared-layout-";
 
-export function createSharedLayoutsByLanguage(layouts) {
-  const ruLayouts = layouts;
-  const enLayouts = clonePlain(layouts).map((layout) => ({
-    ...layout,
-    id: `${layout.id}-en`,
-    name: layout.name === "Bikepacking reference" ? "Bikepacking reference" : layout.name,
-    subtitle: "Shared layout",
-    language: "en"
-  }));
-  ruLayouts.forEach((layout) => {
-    layout.language = "ru";
-  });
-  return { ru: ruLayouts, en: enLayouts };
+export function createSharedLayoutsByLanguage(_layouts = [], {
+  languages = ["ru", "en"]
+} = {}) {
+  return Object.fromEntries(
+    [...new Set(languages.map((language) => String(language || "").trim().toLowerCase()).filter(Boolean))]
+      .map((language) => [language, []])
+  );
 }
 
 export function upsertRuntimeSharedLayout(layoutsByLanguage, {
@@ -66,6 +60,19 @@ export function sharedLayoutIdFromPublicListRecord(record) {
 
 export function isPublicSharedLayoutListRecord(record) {
   return Boolean(sharedLayoutIdFromPublicListRecord(record));
+}
+
+export function isConcretePublicSharedLayoutListRecord(record) {
+  if (!isPublicSharedLayoutListRecord(record)) return false;
+  return Boolean(
+    record?.ownerId ||
+    record?.owner_id ||
+    record?.createdAt ||
+    record?.created_at ||
+    record?.stateRevision != null ||
+    record?.state_revision != null ||
+    record?.payload
+  );
 }
 
 export function isTemplateCopySharedLayoutId(layoutId) {
@@ -315,6 +322,53 @@ export function withRuntimeSharedLayoutIndex(payload, layoutsByLanguage, options
 
 export function sharedLayoutFamilyKey(layoutId) {
   return String(layoutId || "").replace(/-en$/, "");
+}
+
+function sharedLayoutVisibilityScore(layout, serverConfirmedIds) {
+  const id = String(layout?.id || "").trim();
+  let score = 0;
+  if (serverConfirmedIds.has(id) || layout?.serverConfirmed) score += 100;
+  if (layout?.runtimeSharedTemplate) score += 50;
+  if (layout?.statePayload) score += 20;
+  if (id && !/-en$/.test(id)) score += 1;
+  return score;
+}
+
+export function visibleSharedLayoutsForLanguage(layoutsByLanguage, language, {
+  defaultLanguage = "",
+  serverConfirmedSharedLayouts = []
+} = {}) {
+  const normalizedLanguage = String(language || "").trim().toLowerCase();
+  const fallbackLanguage = String(defaultLanguage || "").trim().toLowerCase();
+  const layouts =
+    layoutsByLanguage?.[normalizedLanguage] ||
+    (fallbackLanguage ? layoutsByLanguage?.[fallbackLanguage] : null) ||
+    [];
+  const serverConfirmedIds = new Set(
+    (Array.isArray(serverConfirmedSharedLayouts) ? serverConfirmedSharedLayouts : [])
+      .map((layout) => String(layout?.id || "").trim())
+      .filter(Boolean)
+  );
+  const byFamily = new Map();
+  layouts.forEach((layout, index) => {
+    const id = String(layout?.id || "").trim();
+    if (!id) return;
+    if (!serverConfirmedIds.has(id) && !layout?.serverConfirmed) return;
+    const familyKey = sharedLayoutFamilyKey(id) || id;
+    const candidate = {
+      layout,
+      order: byFamily.has(familyKey) ? byFamily.get(familyKey).order : index,
+      index,
+      score: sharedLayoutVisibilityScore(layout, serverConfirmedIds)
+    };
+    const previous = byFamily.get(familyKey);
+    if (!previous || candidate.score > previous.score) {
+      byFamily.set(familyKey, candidate);
+    }
+  });
+  return [...byFamily.values()]
+    .sort((a, b) => a.order - b.order || a.index - b.index)
+    .map((entry) => entry.layout);
 }
 
 export function findSharedLayoutForLanguage(layoutsByLanguage, layoutId, language) {

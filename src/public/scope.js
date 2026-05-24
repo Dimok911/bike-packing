@@ -1,5 +1,4 @@
 import {
-  DEFAULT_LANGUAGE,
   DEMO_ITEM_KEY,
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG,
@@ -9,6 +8,8 @@ import {
   VIEW_SCOPE_SHARED
 } from "../config/constants.js";
 import { normalizeUiLanguage } from "../utils/language.js";
+
+const DEMO_PUBLIC_DEFAULT_LANGUAGE = "ru";
 
 export function isPublishedLayoutEditable(layout) {
   return Boolean(layout?.adminDemo || layout?.adminSharedSourceId);
@@ -64,7 +65,7 @@ export function isReadOnlyBikePackingError(error) {
 
 export function demoLanguageSuffix(language) {
   const normalized = normalizeUiLanguage(language);
-  return normalized === DEFAULT_LANGUAGE ? "" : normalized;
+  return normalized === DEMO_PUBLIC_DEFAULT_LANGUAGE ? "" : normalized;
 }
 
 export function demoItemKeyForLanguage(language) {

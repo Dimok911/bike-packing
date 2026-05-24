@@ -1,11 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  guestDemoCopyCleanupPlan,
+  normalizeDemoTemplateName,
+  normalizePublishedDemoTemplatePayload
+} from "../../src/public/demo-template-state.js";
+import {
+  demoAdminStatePathForLanguage,
+  demoItemKeyForLanguage,
+  demoPublicListIdForLanguage
+} from "../../src/public/scope.js";
+import {
   cloneIsolatedPublicEntity,
   publicCopySourceIdFromRecord,
   stripPublishedPublicOriginMarkers
 } from "../../src/public/copy-public-to-private.js";
 import {
+  createSharedLayoutsByLanguage,
+  isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
   mergeSharedLayoutIndexPayload,
   mergeSharedLayoutCatalogEntries,
@@ -13,7 +25,8 @@ import {
   serverConfirmedSharedLayoutsFromIndexPayload,
   serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIdFromPublicListRecord,
-  sharedLayoutLanguageFromPayload
+  sharedLayoutLanguageFromPayload,
+  visibleSharedLayoutsForLanguage
 } from "../../src/public/shared-layouts.js";
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
 import {
@@ -38,6 +51,88 @@ import {
   findAdoptableTemplateCopyDraft,
   isTemplateCopySharedId
 } from "../../src/state/layout-manage.js";
+
+const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
+
+test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
+  assert.equal(demoPublicListIdForLanguage("ru"), "public-demo-state");
+  assert.equal(demoItemKeyForLanguage("ru"), "demo-state");
+  assert.equal(demoAdminStatePathForLanguage("ru"), "/bike-packing/admin/demo-state");
+  assert.equal(demoPublicListIdForLanguage("en"), "public-demo-state-en");
+  assert.equal(demoItemKeyForLanguage("en"), "demo-state:en");
+  assert.equal(demoAdminStatePathForLanguage("en"), "/bike-packing/admin/demo-states/en/state");
+});
+
+test("demo template name drops unique-copy numeric suffixes only for known demo names", () => {
+  assert.equal(normalizeDemoTemplateName(`${RU_DEMO_NAME} 2`, {
+    fallbackName: "Demo layout",
+    demoNames: [RU_DEMO_NAME, "Demo layout"]
+  }), RU_DEMO_NAME);
+  assert.equal(normalizeDemoTemplateName("Demo layout 7", {
+    fallbackName: "Demo layout",
+    demoNames: [RU_DEMO_NAME, "Demo layout"]
+  }), "Demo layout");
+  assert.equal(normalizeDemoTemplateName("Custom trip 2", {
+    fallbackName: "Demo layout",
+    demoNames: [RU_DEMO_NAME, "Demo layout"]
+  }), "Custom trip 2");
+});
+
+test("published demo payload is collapsed to one canonical layout", () => {
+  const payload = {
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: `${RU_DEMO_NAME} 2`,
+        rootContainerIds: ["container-a"]
+      },
+      "layout-stale": {
+        id: "layout-stale",
+        name: "stale",
+        rootContainerIds: ["container-b"]
+      }
+    },
+    activeLayoutId: "layout-main",
+    containers: {
+      "container-a": { id: "container-a", itemIds: ["item-a"], childIds: [] },
+      "container-b": { id: "container-b", itemIds: ["item-b"], childIds: [] }
+    },
+    items: {
+      "item-a": { id: "item-a", containerId: "container-a" },
+      "item-b": { id: "item-b", containerId: "container-b" }
+    }
+  };
+
+  const normalized = normalizePublishedDemoTemplatePayload(payload, {
+    fallbackName: "Demo layout",
+    demoNames: [RU_DEMO_NAME, "Demo layout"]
+  });
+
+  assert.equal(normalized.activeLayoutId, "layout-main");
+  assert.deepEqual(Object.keys(normalized.layouts), ["layout-main"]);
+  assert.equal(normalized.layouts["layout-main"].name, RU_DEMO_NAME);
+  assert.deepEqual(normalized.layouts["layout-main"].rootContainerIds, ["container-a"]);
+  assert.deepEqual(Object.keys(normalized.containers), ["container-a"]);
+  assert.deepEqual(Object.keys(normalized.items), ["item-a"]);
+});
+
+test("guest demo startup cleanup removes only unedited duplicate auto-copies", () => {
+  const layouts = {
+    edited: { id: "edited", guestDemoCopy: true, updatedAt: "2026-05-24T10:00:00.000Z" },
+    active: { id: "active", guestDemoCopy: true, updatedAt: "2026-05-24T09:00:00.000Z" },
+    stale: { id: "stale", guestDemoCopy: true, updatedAt: "2026-05-24T08:00:00.000Z" },
+    private: { id: "private" }
+  };
+
+  const plan = guestDemoCopyCleanupPlan({
+    layouts,
+    activeLayoutId: "active",
+    hasUserEdits: (layout) => layout.id === "edited"
+  });
+
+  assert.equal(plan.keepLayoutId, "active");
+  assert.deepEqual(plan.removeLayoutIds, ["stale"]);
+});
 
 test("template copy uses the original public source id when copying a copy", () => {
   const copiedItem = {
@@ -437,7 +532,6 @@ test("public shared catalog prunes stale template-copy runtime entries", () => {
 
   const removed = pruneRuntimeSharedLayouts(layoutsByLanguage, (layout) =>
     layout?.runtimeSharedTemplate &&
-    String(layout.id || "").startsWith("template-copy-") &&
     !publicSharedIds.has(layout.id)
   );
 
@@ -447,6 +541,73 @@ test("public shared catalog prunes stale template-copy runtime entries", () => {
     "template-copy-ru-existing"
   ]);
   assert.deepEqual(layoutsByLanguage.en, []);
+});
+
+test("shared runtime catalog starts empty without server rows", () => {
+  const layoutsByLanguage = createSharedLayoutsByLanguage([{
+    id: "bikepacking-reference-bags",
+    name: "Bikepacking reference"
+  }], { languages: ["ru", "en"] });
+
+  assert.deepEqual(layoutsByLanguage, { ru: [], en: [] });
+});
+
+test("public shared options show only server-confirmed rows", () => {
+  const layoutsByLanguage = {
+    en: [
+      {
+        id: "bikepacking-reference-bags-en",
+        name: "Bikepacking reference",
+        language: "en"
+      },
+      {
+        id: "bikepacking-reference-bags",
+        name: "Bikepacking reference",
+        language: "en",
+        runtimeSharedTemplate: true,
+        statePayload: { activeLayoutId: "layout-main", layouts: {} }
+      }
+    ]
+  };
+
+  const visible = visibleSharedLayoutsForLanguage(layoutsByLanguage, "en", {
+    defaultLanguage: "en",
+    serverConfirmedSharedLayouts: [{ id: "bikepacking-reference-bags" }]
+  });
+
+  assert.deepEqual(visible.map((layout) => layout.id), ["bikepacking-reference-bags"]);
+});
+
+test("public shared options stay empty while the server row is absent", () => {
+  const layoutsByLanguage = {
+    en: [{
+      id: "bikepacking-reference-bags-en",
+      name: "Bikepacking reference",
+      language: "en"
+    }]
+  };
+
+  const visible = visibleSharedLayoutsForLanguage(layoutsByLanguage, "en", {
+    defaultLanguage: "en",
+    serverConfirmedSharedLayouts: []
+  });
+
+  assert.deepEqual(visible.map((layout) => layout.id), []);
+});
+
+test("public shared catalog treats demo-index-only entries as non-concrete", () => {
+  assert.equal(isConcretePublicSharedLayoutListRecord({
+    id: "public-shared-layout-bikepacking-reference-bags",
+    title: "Bikepacking reference",
+    sharedLayoutId: "bikepacking-reference-bags"
+  }), false);
+  assert.equal(isConcretePublicSharedLayoutListRecord({
+    id: "public-shared-layout-bikepacking-reference-bags",
+    title: "Bikepacking reference",
+    ownerId: "user-1",
+    stateRevision: 3,
+    sharedLayoutId: "bikepacking-reference-bags"
+  }), true);
 });
 
 test("published template-copy row adopts a same-name local draft with an old source id", () => {
