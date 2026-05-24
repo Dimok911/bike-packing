@@ -191,6 +191,13 @@ import {
 import { normalizeContainerColor } from "./src/state/container-fields.js";
 import { cleanupGeneratedCatalogArtifacts } from "./src/state/cleanup.js";
 import {
+  applyCollectionModeFromSource,
+  isCollectionPackedVisible,
+  normalizeCollectionModeState,
+  toggleCollectionModeEnabled,
+  toggleShowOnlyUnpacked
+} from "./src/state/collection-mode.js";
+import {
   hasStateIntegrityMeta,
   isMeaningfulPackingState,
   isPackingStateShape,
@@ -561,9 +568,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
-  "adminUsageReports"
+  "adminUsageReports",
+  "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-23.admin-usage-reports-fast-users-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-24.collection-mode-state-sync-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1430,9 +1438,8 @@ async function init() {
   refs.collectionModeBtn.addEventListener("click", toggleCollectionMode);
   refs.collectionMenuBtn.addEventListener("click", toggleCollectionMode);
   refs.unpackedOnlyBtn.addEventListener("click", () => {
-    state.showOnlyUnpacked = !state.showOnlyUnpacked;
-    if (state.showOnlyUnpacked) state.collectionMode = true;
-    saveLocalUiState();
+    toggleShowOnlyUnpacked(state);
+    saveState();
     render();
   });
   refs.unpackAllBtn.addEventListener("click", unpackAllItems);
@@ -2013,8 +2020,7 @@ function loadState() {
     if (typeof parsed.showItemMeta !== "boolean") parsed.showItemMeta = false;
     ensureItemDisplayModeState(parsed);
     if (typeof parsed.showFilterContext !== "boolean") parsed.showFilterContext = false;
-    if (typeof parsed.collectionMode !== "boolean") parsed.collectionMode = false;
-    if (typeof parsed.showOnlyUnpacked !== "boolean") parsed.showOnlyUnpacked = false;
+    normalizeCollectionModeState(parsed);
     if (!parsed.packedItems || typeof parsed.packedItems !== "object") parsed.packedItems = {};
     normalizeContainerFields(parsed);
     normalizeItemFields(parsed);
@@ -3596,8 +3602,7 @@ function normalizeRemoteState(payload) {
   if (typeof normalized.showItemMeta !== "boolean") normalized.showItemMeta = false;
   ensureItemDisplayModeState(normalized);
   if (typeof normalized.showFilterContext !== "boolean") normalized.showFilterContext = false;
-  if (typeof normalized.collectionMode !== "boolean") normalized.collectionMode = false;
-  if (typeof normalized.showOnlyUnpacked !== "boolean") normalized.showOnlyUnpacked = false;
+  normalizeCollectionModeState(normalized);
   if (!normalized.packedItems || typeof normalized.packedItems !== "object") normalized.packedItems = {};
   normalizeContainerFields(normalized);
   normalizeItemFields(normalized);
@@ -3621,8 +3626,7 @@ function normalizePublishedStatePayload(payload) {
   if (typeof normalized.showItemMeta !== "boolean") normalized.showItemMeta = true;
   ensureItemDisplayModeState(normalized);
   if (typeof normalized.showFilterContext !== "boolean") normalized.showFilterContext = false;
-  if (typeof normalized.collectionMode !== "boolean") normalized.collectionMode = false;
-  if (typeof normalized.showOnlyUnpacked !== "boolean") normalized.showOnlyUnpacked = false;
+  normalizeCollectionModeState(normalized);
   if (!normalized.packedItems || typeof normalized.packedItems !== "object") normalized.packedItems = {};
   normalizeContainerFields(normalized);
   normalizeItemFields(normalized);
@@ -3645,8 +3649,6 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   const previousItemDisplayMode = preserveLocalUi ? normalizeItemDisplayMode(state.itemDisplayMode) : null;
   const previousShowItemMeta = preserveLocalUi ? state.showItemMeta : null;
   const previousShowFilterContext = preserveLocalUi ? state.showFilterContext : null;
-  const previousCollectionMode = preserveLocalUi ? state.collectionMode : null;
-  const previousShowOnlyUnpacked = preserveLocalUi ? state.showOnlyUnpacked : null;
   applyingRemoteState = true;
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
@@ -3659,6 +3661,7 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   normalizeItemCategories(state);
   migrateContainerOrder(state);
   applyLayoutArrangement(state.activeLayoutId, state);
+  applyCollectionModeFromSource(state, nextState);
   if (previousCollapsedContainers) {
     state.collapsedContainers = mergeLocalCollapsedContainers(state.collapsedContainers || {}, previousCollapsedContainers);
   }
@@ -3668,8 +3671,6 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
     });
     ensureItemDisplayModeState(state);
     state.showFilterContext = typeof previousShowFilterContext === "boolean" ? previousShowFilterContext : Boolean(state.showFilterContext);
-    state.collectionMode = Boolean(previousCollectionMode);
-    state.showOnlyUnpacked = Boolean(previousShowOnlyUnpacked && state.collectionMode);
   } else {
     ensureItemDisplayModeState(state);
   }
@@ -3940,8 +3941,20 @@ function mergeStateFromBase(baseState, localState, remoteState) {
   merged.itemDisplayMode = normalizeItemDisplayMode(localState.itemDisplayMode);
   merged.showItemMeta = merged.itemDisplayMode === "meta" || merged.itemDisplayMode === "meta-photos";
   merged.showFilterContext = Boolean(localState.showFilterContext);
-  merged.collectionMode = Boolean(localState.collectionMode);
-  merged.showOnlyUnpacked = Boolean(localState.showOnlyUnpacked && merged.collectionMode);
+  merged.collectionMode = Boolean(mergeScalarField(
+    "collectionMode",
+    Boolean(baseState.collectionMode),
+    Boolean(localState.collectionMode),
+    Boolean(remoteState.collectionMode),
+    conflicts
+  ));
+  merged.showOnlyUnpacked = Boolean(mergeScalarField(
+    "showOnlyUnpacked",
+    Boolean(baseState.showOnlyUnpacked && baseState.collectionMode),
+    Boolean(localState.showOnlyUnpacked && localState.collectionMode),
+    Boolean(remoteState.showOnlyUnpacked && remoteState.collectionMode),
+    conflicts
+  ) && merged.collectionMode);
 
   migrateContainerOrder(merged);
   applyLayoutArrangement(merged.activeLayoutId, merged);
@@ -10007,9 +10020,8 @@ function renderFilters() {
 }
 
 function toggleCollectionMode() {
-  state.collectionMode = !state.collectionMode;
-  if (!state.collectionMode) state.showOnlyUnpacked = false;
-  saveLocalUiState();
+  toggleCollectionModeEnabled(state);
+  saveState();
   render();
 }
 
@@ -12876,6 +12888,7 @@ function unpackAllItems() {
 
 function renderItemCard(item) {
   const packed = isItemPacked(item.id);
+  const packedVisible = isCollectionPackedVisible(state, packed);
   const collection = Boolean(state.collectionMode);
   const filterMatch = isFilterContextActive() && matchesFilters(item);
   const justAdded = recentlyAddedItemId === item.id && (!recentlyAddedLayoutId || recentlyAddedLayoutId === state.activeLayoutId);
@@ -12885,15 +12898,15 @@ function renderItemCard(item) {
     : `<strong class="item-title">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
   const titleDragAttr = isEditingTitle ? "" : ` data-item-drag="${item.id}"`;
   return `
-    <article class="item-card ${packed ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
+    <article class="item-card ${packedVisible ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top ${collection ? "with-pack-toggle" : ""}">
         ${collection ? `
           <button
-            class="pack-toggle ${packed ? "packed" : ""}"
+            class="pack-toggle ${packedVisible ? "packed" : ""}"
             data-toggle-packed="${item.id}"
             aria-label="${packed ? "Отметить как не собранное" : "Отметить как собранное"}"
             title="${packed ? "Собрано" : "Не собрано"}"
-          >${packed ? "✓" : ""}</button>
+          >${packedVisible ? "✓" : ""}</button>
         ` : ""}
         <div class="item-title-hitarea"${titleDragAttr}>${title}</div>
         <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="Скопировать" title="Скопировать">
@@ -14747,13 +14760,6 @@ function renderLayoutEditor() {
   return `
     <section class="settings-panel layout-editor">
       <h2>Текущая укладка</h2>
-      <div class="layout-name-row">
-        <label>
-          Название
-          <input id="activeLayoutName" value="${escapeHtml(layout.name)}" />
-        </label>
-        <button id="renameLayoutBtn">Сохранить</button>
-      </div>
       <div class="layout-section-heading">
         <h3>Сумки в этой укладке</h3>
         <button id="addLayoutRootBtn" class="add-inline-button" type="button" aria-label="Добавить сумку или место" title="Добавить сумку или место">+</button>
@@ -14775,19 +14781,8 @@ function renderLayoutEditor() {
 }
 
 function bindLayoutEditor() {
-  const nameInput = document.querySelector("#activeLayoutName");
   const layoutPlaceholder = document.createElement("div");
   layoutPlaceholder.className = "drop-placeholder";
-
-  document.querySelector("#renameLayoutBtn").addEventListener("click", () => {
-    const requestedName = nameInput.value.trim();
-    if (!requestedName) return;
-    const name = uniqueLayoutName(requestedName, { exceptLayoutId: state.activeLayoutId });
-    state.layouts[state.activeLayoutId].name = name;
-    touchActiveLayout();
-    saveState();
-    render();
-  });
 
   document.querySelector("#addLayoutRootBtn")?.addEventListener("click", openLayoutRootDialog);
 

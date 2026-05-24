@@ -2,6 +2,7 @@ import {
   normalizePhotoStatus,
   normalizePhotoUrlFields
 } from "../state/item-photos.js";
+import { normalizeCollectionModeState } from "../state/collection-mode.js";
 import {
   normalizeRemotePhotoUrl,
   syncSafePhotoUrl
@@ -13,14 +14,13 @@ export function cloneStateForSyncPayload(sourceState, {
   pruneAdminPublishedDraftsForSync = null
 } = {}) {
   const cloned = JSON.parse(JSON.stringify(sourceState));
+  normalizeCollectionModeState(cloned);
   if (forSync) {
     cleanupGeneratedCatalogArtifacts?.(cloned, { forSync: true });
     delete cloned.collapsedContainers;
     delete cloned.itemDisplayMode;
     delete cloned.showItemMeta;
     delete cloned.showFilterContext;
-    delete cloned.collectionMode;
-    delete cloned.showOnlyUnpacked;
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
     stripAppliedArrangementFieldsForSync(cloned);
