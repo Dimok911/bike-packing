@@ -1,29 +1,30 @@
 # Bike Packing
 
-Веб-приложение для подготовки велопоходной укладки: список вещей, сумки, места хранения, вес, категории и фото.
+Web app for planning bikepacking gear: packing lists, bags, storage locations, weights, categories, photos, and trip-ready checklists.
 
-Сайт: https://dimok911.github.io/bike-packing
+Site: https://dimok911.github.io/bike-packing
 
-## Возможности
+## Features
 
-- Создание нескольких укладок для разных поездок.
-- Каталог вещей с весом, количеством, категориями и местами хранения.
-- Сумки и вложенные пакеты с drag-and-drop раскладкой.
-- Фото вещей и сумок, галерея и полноэкранный просмотр.
-- Режим сбора с отметками, что уже собрано.
-- Поиск, фильтры по категориям и местам хранения.
-- Печать и PDF-версия списка.
-- Локальная работа, офлайн-режим и синхронизация после входа.
-- Демо/shared-шаблоны для быстрого старта.
+- Create multiple packing layouts for different trips.
+- Manage a gear catalog with weight, quantity, category, and storage location.
+- Organize bags and nested pouches with drag-and-drop packing.
+- Add item and bag photos with gallery and fullscreen viewing.
+- Track packed items in collection mode.
+- Search and filter by category or storage location.
+- Print or export a PDF version of the packing list.
+- Work locally, use offline mode, and sync after sign-in.
+- Start quickly from demo and shared templates.
+- Inspect a 3D bike packing view.
 
-## Для разработки
+## Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Проверка и сборка:
+Checks and production build:
 
 ```bash
 npm run check

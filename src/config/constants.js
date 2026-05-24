@@ -1,5 +1,5 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v803";
+export const APP_VERSION = "v804";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -45,7 +45,7 @@ export const STATE_SCOPE_SHARED = "shared";
 export const SHARED_LIST_QUERY_PARAM = "sharedList";
 export const SHARED_LAYOUT_QUERY_PARAM = "sharedLayout";
 export const LANGUAGE_KEY = "bike-packing-language-v1";
-export const DEFAULT_LANGUAGE = "ru";
+export const DEFAULT_LANGUAGE = "en";
 export const SUPPORTED_LANGUAGES = ["ru", "en"];
 export const ADMIN_EMAILS = ["dimok911@gmail.com"];
 export const ADMIN_USER_IDS = ["04c69a90-72b5-4891-9607-1cb636c5af21"];
