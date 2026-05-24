@@ -2,6 +2,8 @@
 
 `app.js` is being split gradually into plain ES modules. The goal is to make data bugs easier to isolate while keeping runtime code simple.
 
+Detailed phased roadmap and progress checklist: `docs/app-js-refactor-roadmap.md`.
+
 The deploy path now uses Vite/Rollup:
 
 - `npm install` once to install the local build tooling.
