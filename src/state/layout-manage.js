@@ -182,11 +182,13 @@ export function templateDraftLayoutId(choice) {
 
 export function publicLayoutChoiceValue(layout, {
   demoChoiceForLanguage,
+  demoChoiceForLayout,
   fallbackLanguage = "ru"
 } = {}) {
   if (!layout) return "";
   if (layout.adminTemplateCopy) return adminTemplateDraftChoice(layout.id);
   if (layout.adminDemo) {
+    if (demoChoiceForLayout) return demoChoiceForLayout(layout);
     return demoChoiceForLanguage ? demoChoiceForLanguage(layout.adminDemoLanguage || fallbackLanguage) : "";
   }
   if (layout.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
@@ -339,6 +341,34 @@ export function createTemplateCopyRecord({
   record.adminSharedSourceId = sharedSourceId || templateCopySharedSourceId({ language });
   record.adminTemplateCopy = true;
   if (language || sourceLayout?.language) record.language = language || sourceLayout.language;
+  return record;
+}
+
+export function createDemoTemplateCopyRecord({
+  id,
+  name,
+  sourceLayout,
+  arrangement,
+  dictionaries = {},
+  meta = {},
+  language = "",
+  demoListId = ""
+} = {}) {
+  const record = createManagedLayoutCopyRecord({
+    id,
+    name,
+    sourceLayout,
+    arrangement,
+    dictionaries,
+    meta,
+    language,
+    publicTemplate: false
+  });
+  const resolvedLanguage = language || layoutManageLanguage(sourceLayout);
+  record.adminDemo = true;
+  record.adminDemoLanguage = resolvedLanguage;
+  record.language = resolvedLanguage;
+  if (demoListId) record.adminDemoListId = demoListId;
   return record;
 }
 

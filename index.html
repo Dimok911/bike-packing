@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=808" />
+    <link rel="stylesheet" href="./styles.css?v=817" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -184,8 +184,8 @@
           <span id="itemContainerLabel">Положить в</span>
           <div class="item-container-control">
             <span id="itemContainerCurrent" class="item-container-current" hidden></span>
-            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Вне укладки</button>
-            <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в...</button>
+            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
+            <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
           </div>
           <input id="itemContainer" type="hidden" />
         </div>
@@ -259,8 +259,8 @@
           <span id="rootContainerPlacementLabel">Находится в</span>
           <div class="item-container-control root-container-placement-control">
             <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
-            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переставить</button>
-            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Копия</button>
+            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переложить в пределах укладки</button>
+            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
             <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Удалить</button>
           </div>
         </div>
@@ -488,10 +488,10 @@
           <div id="historySourceTabs" class="history-source-tabs" role="group" aria-label="Источник истории">
             <button type="button" data-history-source="private">Моя</button>
             <button type="button" data-history-source="demo">Демо</button>
-            <button type="button" data-history-source="shared">Shared</button>
+            <button type="button" data-history-source="shared">Шаблоны</button>
           </div>
           <label id="historySharedField" class="history-shared-field">
-            <span>Shared укладка</span>
+            <span>Шаблон</span>
             <select id="historySharedSelect"></select>
           </label>
         </div>
@@ -549,7 +549,7 @@
     <dialog id="sharedLayoutsDialog">
       <form method="dialog" class="dialog-card shared-layouts-dialog-card">
         <header>
-          <h2>Shared укладки</h2>
+          <h2>Шаблоны</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <div class="shared-viewer-toolbar">
@@ -581,6 +581,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=808" type="module"></script>
+    <script src="./app.js?v=817" type="module"></script>
   </body>
 </html>

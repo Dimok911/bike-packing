@@ -26,7 +26,7 @@ export const sharedLayouts = [
   {
     id: "bikepacking-reference-bags",
     name: "Bikepacking reference",
-    subtitle: "Shared укладка",
+  subtitle: "Шаблон",
     roots: [
       {
         id: "rockgeist-52-hz-frame-bag",
@@ -107,7 +107,7 @@ export const sharedLayouts = [
       {
         id: "shared-small-gear",
         name: "Small gear",
-        description: "Навесное и мелкие элементы этой shared-укладки.",
+        description: "Навесное и мелкие элементы этой укладки.",
         weightGrams: 0,
         weightAlt: "",
         photoKind: "bag",

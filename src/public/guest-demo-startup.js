@@ -53,6 +53,17 @@ export function readableGuestDemoLayoutName(name = "", fallback = "Моя дем
   return text;
 }
 
+export function guestDemoCopyLayoutName(sourceName = "", {
+  fallbackName = "Demo copy",
+  normalizeName = (name) => String(name || "").trim(),
+  uniqueName = null,
+  exactTemplateName = false
+} = {}) {
+  const baseName = normalizeName(readableGuestDemoLayoutName(sourceName, fallbackName)) || fallbackName;
+  if (exactTemplateName) return baseName;
+  return uniqueName ? uniqueName(baseName) : baseName;
+}
+
 export function shouldImportGuestLayoutBeforeRemote({
   candidate,
   remoteStateMeaningful,
@@ -61,4 +72,19 @@ export function shouldImportGuestLayoutBeforeRemote({
   return Boolean(candidate?.sourceState && candidate.layoutId) &&
     !remoteStateMeaningful &&
     !localStateCanOverrideRemote;
+}
+
+export function guestDemoStartupAction({
+  forcePublicScope = false,
+  preferLocalCopy = false,
+  allowAutomaticLocalCopy = false,
+  canUsePrivateState = false,
+  syncDirty = false,
+  hadAuthoritativeLocalStateAtStartup = false,
+  suspiciousEmptyState = false
+} = {}) {
+  if (forcePublicScope) return "readonly";
+  if (preferLocalCopy && allowAutomaticLocalCopy && !canUsePrivateState) return "copy";
+  if (!syncDirty || !hadAuthoritativeLocalStateAtStartup || suspiciousEmptyState) return "readonly";
+  return "keep";
 }

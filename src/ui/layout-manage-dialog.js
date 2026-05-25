@@ -6,9 +6,8 @@ export function layoutCopyTitle(layout) {
   return layout?.adminDemo || layout?.adminSharedSourceId ? "Скопировать шаблон" : "Скопировать укладку";
 }
 
-export function publicTemplateOptionLabel({ prefix, sharedPrefix, name, languageLabel, demo = false }) {
-  const kind = demo ? "" : `${sharedPrefix}: `;
-  return `${prefix}: ${kind}${name} (${languageLabel})`;
+export function publicTemplateOptionLabel({ prefix, name, languageLabel }) {
+  return `${prefix}: ${name} (${languageLabel})`;
 }
 
 export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, isLastLayout }) {
@@ -23,7 +22,7 @@ export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, i
 
 export function publicLayoutDeleteConfirm({ layout, containerCount, itemText, deletePublished = false }) {
   const serverText = deletePublished
-    ? "Опубликованный shared-шаблон будет удален с сервера и из публичного списка шаблонов."
+    ? "Опубликованный шаблон будет удален с сервера и из публичного списка шаблонов."
     : "Опубликованная версия на сервере не удаляется.";
   return {
     title: "Удалить шаблон?",

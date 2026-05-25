@@ -76,10 +76,9 @@ export function buildAdminSharedTemplateOptions({
   const candidates = [];
   let order = 0;
   const languageLabel = labels.languageOptionLabel || ((language) => String(language || fallbackLanguage).toUpperCase());
-  const optionLabel = labels.publicTemplateOptionLabel || (({ prefix, sharedPrefix, name, languageLabel: label }) =>
-    `${prefix}: ${sharedPrefix}: ${name} (${label})`);
+  const optionLabel = labels.publicTemplateOptionLabel || (({ prefix, name, languageLabel: label }) =>
+    `${prefix}: ${name} (${label})`);
   const templatePrefix = labels.templatePrefix || "Template";
-  const sharedPrefix = labels.sharedPrefix || "Shared";
   const defaultName = labels.defaultName || "Template";
   const confirmedSharedTemplateKeys = new Set(serverConfirmedSharedLayouts.flatMap((layout) =>
     adminSharedTemplateIdentityKeys({
@@ -127,7 +126,6 @@ export function buildAdminSharedTemplateOptions({
         adminTemplateDraftChoice(layout.id),
         optionLabel({
           prefix: templatePrefix,
-          sharedPrefix,
           name: layout.name || defaultName,
           languageLabel: languageLabel(layout.language || fallbackLanguage)
         }),
@@ -151,7 +149,7 @@ export function buildAdminSharedTemplateOptions({
       order: order++,
       option: [
         `shared:${linkedSharedListLayout.id}`,
-        `${templatePrefix}: ${sharedPrefix}: ${linkedSharedListLayout.name}`,
+        `${templatePrefix}: ${linkedSharedListLayout.name}`,
         "shared"
       ]
     });
@@ -174,7 +172,7 @@ export function buildAdminSharedTemplateOptions({
       order: order++,
       option: [
         `shared:${layout.id}`,
-        `${templatePrefix}: ${sharedPrefix}: ${layout.name} (${languageLabel(layout.language || fallbackLanguage)})`,
+        `${templatePrefix}: ${layout.name} (${languageLabel(layout.language || fallbackLanguage)})`,
         "shared"
       ]
     });

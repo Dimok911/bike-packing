@@ -68,18 +68,11 @@ function collectDemoLayoutTreeIds(state, layout) {
 }
 
 export function normalizeDemoTemplateName(name = "", {
-  fallbackName = "Demo layout",
-  demoNames = []
+  fallbackName = "Demo layout"
 } = {}) {
   const text = normalizeText(name);
   const fallback = normalizeText(fallbackName) || "Demo layout";
-  const candidates = [...new Set([...demoNames, fallback].map(normalizeText).filter(Boolean))];
-  if (!text) return fallback;
-  for (const candidate of candidates) {
-    const duplicatePattern = new RegExp(`^${escapeRegExp(candidate)}\\s+\\d+$`, "i");
-    if (duplicatePattern.test(text)) return candidate;
-  }
-  return text;
+  return text || fallback;
 }
 
 export function normalizePublishedDemoTemplatePayload(payload, options = {}) {

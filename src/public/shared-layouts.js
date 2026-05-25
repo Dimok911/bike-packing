@@ -1,7 +1,5 @@
-import { clonePlain } from "../utils/json.js";
 import { nowIso } from "../utils/time.js";
 
-export const SHARED_LAYOUTS_INDEX_KEY = "sharedLayoutsIndex";
 export const PUBLIC_SHARED_LAYOUT_LIST_PREFIX = "public-shared-layout-";
 
 export function createSharedLayoutsByLanguage(_layouts = [], {
@@ -35,7 +33,7 @@ export function upsertRuntimeSharedLayout(layoutsByLanguage, {
     layout = {
       id,
       name: name || id,
-      subtitle: "Shared layout",
+      subtitle: "Template",
       language: normalizedLanguage,
       roots: [],
       bags: [],
@@ -80,20 +78,15 @@ export function isTemplateCopySharedLayoutId(layoutId) {
 }
 
 export function sharedLayoutCatalogEntryFromPublicRecord(record, {
-  layoutsByLanguage = null,
-  fallbackLanguage = "ru"
+  layoutsByLanguage = null
 } = {}) {
   const id = sharedLayoutIdFromPublicListRecord(record);
   if (!id) return null;
+  const language = String(record?.language || "").trim().toLowerCase();
+  if (!language) return null;
   const runtimeLayout = Object.values(layoutsByLanguage || {})
     .flat()
     .find((layout) => layout?.id === id) || null;
-  const language = String(
-    record?.language ||
-    runtimeLayout?.language ||
-    fallbackLanguage ||
-    "ru"
-  ).trim().toLowerCase() || "ru";
   return {
     ...(runtimeLayout || {}),
     id,
@@ -114,18 +107,6 @@ export function serverConfirmedSharedLayoutsFromPublicRecords(records = [], opti
       if (!byId.has(layout.id)) byId.set(layout.id, layout);
     });
   return [...byId.values()];
-}
-
-export function serverConfirmedSharedLayoutsFromIndexPayload(payload, {
-  includeTemplateCopies = false
-} = {}) {
-  return normalizeSharedLayoutIndexEntries(payload)
-    .filter((entry) => includeTemplateCopies || !isTemplateCopySharedLayoutId(entry.id))
-    .map((entry) => ({
-      ...entry,
-      runtimeSharedTemplate: true,
-      serverConfirmed: true
-    }));
 }
 
 export function mergeSharedLayoutCatalogEntries(catalog = [], entries = []) {
@@ -161,113 +142,10 @@ export function sharedLayoutLanguageFromPayload(payload, fallbackLanguage = "ru"
   return String(activeLayout?.language || fallbackLanguage || "ru").trim().toLowerCase() || "ru";
 }
 
-export function normalizeSharedLayoutIndexEntries(payload) {
-  const index = payload?.[SHARED_LAYOUTS_INDEX_KEY];
-  const entries = Array.isArray(index?.layouts)
-    ? index.layouts
-    : Array.isArray(index?.entries)
-      ? index.entries
-      : Array.isArray(index)
-        ? index
-        : [];
-  return entries.map(normalizeSharedLayoutIndexEntry).filter(Boolean);
-}
-
-export function normalizeSharedLayoutIndexEntry(entry) {
-  if (!entry || typeof entry !== "object") return null;
-  const id = String(entry.id || "").trim();
-  if (!id) return null;
-  const language = String(entry.language || "ru").trim().toLowerCase() || "ru";
-  return {
-    id,
-    name: String(entry.name || id).trim() || id,
-    language,
-    updatedAt: String(entry.updatedAt || entry.updated_at || "").trim(),
-    statePayload: entry.statePayload && typeof entry.statePayload === "object"
-      ? sharedLayoutIndexPayload(entry.statePayload)
-      : null
-  };
-}
-
-export function sharedLayoutIndexPayload(payload) {
-  const copy = clonePlain(payload || {});
-  Object.values(copy.items || {}).forEach((item) => {
-    if (item && typeof item === "object") item.photos = [];
-  });
-  Object.values(copy.containers || {}).forEach((container) => {
-    if (container && typeof container === "object") container.photos = [];
-  });
-  return copy;
-}
-
-export function mergeSharedLayoutIndexPayload(layoutsByLanguage, payload, {
-  includeTemplateCopies = false
-} = {}) {
-  let changed = 0;
-  normalizeSharedLayoutIndexEntries(payload)
-    .filter((entry) => includeTemplateCopies || !isTemplateCopySharedLayoutId(entry.id))
-    .forEach((entry) => {
-      const layout = upsertRuntimeSharedLayout(layoutsByLanguage, {
-        ...entry,
-        runtimeSharedTemplate: true
-      });
-      if (layout) changed += 1;
-    });
-  return changed;
-}
-
-export function sharedLayoutIndexEntry({
-  id,
-  name = "",
-  language = "ru",
-  statePayload = null,
-  updatedAt = nowIso()
-} = {}) {
-  const normalized = normalizeSharedLayoutIndexEntry({
-    id,
-    name,
-    language,
-    statePayload,
-    updatedAt
-  });
-  return normalized;
-}
-
-export function upsertSharedLayoutIndexEntry(payload, entry) {
-  const normalizedEntry = normalizeSharedLayoutIndexEntry(entry);
-  if (!normalizedEntry) return clonePlain(payload || {});
-  const nextPayload = clonePlain(payload || {});
-  const entries = normalizeSharedLayoutIndexEntries(nextPayload)
-    .filter((candidate) => candidate.id !== normalizedEntry.id);
-  entries.push(normalizedEntry);
-  entries.sort(compareSharedLayoutIndexEntries);
-  nextPayload[SHARED_LAYOUTS_INDEX_KEY] = {
-    version: 1,
-    updatedAt: nowIso(),
-    layouts: entries
-  };
-  return nextPayload;
-}
-
 export function compareSharedLayoutIndexEntries(a, b) {
   const languageOrder = String(a?.language || "").localeCompare(String(b?.language || ""));
   if (languageOrder) return languageOrder;
   return String(a?.name || "").localeCompare(String(b?.name || ""), "ru");
-}
-
-export function removeSharedLayoutIndexEntry(payload, layoutId) {
-  const id = String(layoutId || "").trim();
-  const nextPayload = clonePlain(payload || {});
-  if (!id) return { payload: nextPayload, removed: false };
-  const entries = normalizeSharedLayoutIndexEntries(nextPayload);
-  const nextEntries = entries.filter((entry) => entry.id !== id);
-  if (nextEntries.length === entries.length) return { payload: nextPayload, removed: false };
-  nextPayload[SHARED_LAYOUTS_INDEX_KEY] = {
-    version: 1,
-    updatedAt: nowIso(),
-    layouts: nextEntries
-  };
-  return { payload: nextPayload, removed: true };
 }
 
 export function removeRuntimeSharedLayout(layoutsByLanguage, layoutId) {
@@ -298,30 +176,12 @@ export function pruneRuntimeSharedLayouts(layoutsByLanguage, shouldRemove) {
   return removed;
 }
 
-export function runtimeSharedLayoutIndexEntries(layoutsByLanguage, {
-  includeTemplateCopies = false
-} = {}) {
-  return Object.values(layoutsByLanguage || {})
-    .flat()
-    .filter((layout) => layout?.runtimeSharedTemplate && layout.statePayload)
-    .filter((layout) => includeTemplateCopies || !isTemplateCopySharedLayoutId(layout.id))
-    .map((layout) => sharedLayoutIndexEntry({
-      id: layout.id,
-      name: layout.name || layout.id,
-      language: layout.language || "ru",
-      statePayload: layout.statePayload,
-      updatedAt: layout.updatedAt || nowIso()
-    }))
-    .filter(Boolean);
-}
-
-export function withRuntimeSharedLayoutIndex(payload, layoutsByLanguage, options = {}) {
-  return runtimeSharedLayoutIndexEntries(layoutsByLanguage, options)
-    .reduce((nextPayload, entry) => upsertSharedLayoutIndexEntry(nextPayload, entry), clonePlain(payload || {}));
-}
-
 export function sharedLayoutFamilyKey(layoutId) {
   return String(layoutId || "").replace(/-en$/, "");
+}
+
+function sharedLayoutNameKey(layout) {
+  return String(layout?.name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function sharedLayoutVisibilityScore(layout, serverConfirmedIds) {
@@ -371,10 +231,34 @@ export function visibleSharedLayoutsForLanguage(layoutsByLanguage, language, {
     .map((entry) => entry.layout);
 }
 
-export function findSharedLayoutForLanguage(layoutsByLanguage, layoutId, language) {
-  const familyKey = sharedLayoutFamilyKey(layoutId);
-  const layouts = layoutsByLanguage?.[String(language || "").trim().toLowerCase()] || [];
-  return layouts.find((layout) => sharedLayoutFamilyKey(layout?.id) === familyKey) || null;
+export function findSharedLayoutForLanguage(layoutsByLanguage, layoutId, language, {
+  sourceLanguage = "",
+  serverConfirmedSharedLayouts = []
+} = {}) {
+  const id = String(layoutId || "").trim();
+  const familyKey = sharedLayoutFamilyKey(id);
+  const sourceLayouts = sourceLanguage
+    ? visibleSharedLayoutsForLanguage(layoutsByLanguage, sourceLanguage, {
+      serverConfirmedSharedLayouts
+    })
+    : [];
+  const allLayouts = Object.values(layoutsByLanguage || {}).flat();
+  const sourceLayout = sourceLayouts.find((layout) => String(layout?.id || "").trim() === id) ||
+    allLayouts.find((layout) => String(layout?.id || "").trim() === id) ||
+    (Array.isArray(serverConfirmedSharedLayouts) ? serverConfirmedSharedLayouts : [])
+      .find((layout) => String(layout?.id || "").trim() === id) ||
+    null;
+  const sourceNameKey = sharedLayoutNameKey(sourceLayout);
+  const sourceIndex = sourceLayouts.findIndex((layout) => String(layout?.id || "").trim() === id);
+  const targetLayouts = visibleSharedLayoutsForLanguage(layoutsByLanguage, language, {
+    serverConfirmedSharedLayouts
+  });
+  if (!targetLayouts.length) return null;
+  return targetLayouts.find((layout) => String(layout?.id || "").trim() === id) ||
+    targetLayouts.find((layout) => sharedLayoutFamilyKey(layout?.id) === familyKey && String(layout?.id || "").trim() !== id) ||
+    targetLayouts.find((layout) => sourceNameKey && sharedLayoutNameKey(layout) === sourceNameKey && String(layout?.id || "").trim() !== id) ||
+    targetLayouts[Math.max(0, Math.min(sourceIndex < 0 ? 0 : sourceIndex, targetLayouts.length - 1))] ||
+    null;
 }
 
 export function normalizeSharedGearName(name) {

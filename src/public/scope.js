@@ -83,8 +83,28 @@ export function demoPublicListIdForLanguage(language) {
   return suffix ? `public-demo-state-${suffix}` : "public-demo-state";
 }
 
+export function demoAdminIdForPublicListId(listId, language) {
+  const id = String(listId || "").trim();
+  if (id === "public-demo-state") return DEMO_ITEM_KEY;
+  if (id.startsWith("public-demo-state-")) return id.slice("public-demo-state-".length) || demoAdminIdForLanguage(language);
+  return demoAdminIdForLanguage(language);
+}
+
+export function demoPublicListIdForAdminId(adminId, language) {
+  const id = String(adminId || "").trim();
+  if (!id || id === DEMO_ITEM_KEY) return demoPublicListIdForLanguage(language);
+  if (id.startsWith("public-demo-state-")) return id;
+  return `public-demo-state-${id}`;
+}
+
 export function demoAdminPathForLanguage(suffix = "", language) {
   const adminId = demoAdminIdForLanguage(language);
+  if (adminId === DEMO_ITEM_KEY) return `/bike-packing/admin/demo-state${suffix}`;
+  return `/bike-packing/admin/demo-states/${encodeURIComponent(adminId)}${suffix}`;
+}
+
+export function demoAdminPathForPublicListId(suffix = "", listId = "", language) {
+  const adminId = demoAdminIdForPublicListId(listId, language);
   if (adminId === DEMO_ITEM_KEY) return `/bike-packing/admin/demo-state${suffix}`;
   return `/bike-packing/admin/demo-states/${encodeURIComponent(adminId)}${suffix}`;
 }
@@ -93,6 +113,10 @@ export function demoAdminStatePathForLanguage(language) {
   const adminId = demoAdminIdForLanguage(language);
   if (adminId === DEMO_ITEM_KEY) return "/bike-packing/admin/demo-state";
   return demoAdminPathForLanguage("/state", language);
+}
+
+export function demoAdminStatePathForPublicListId(listId = "", language) {
+  return demoAdminPathForPublicListId("/state", listId, language);
 }
 
 export function sharedLayoutItemKey(layoutId, language) {

@@ -389,3 +389,18 @@
 - API теперь при сохранении shared/template state и metadata-only смене языка обновляет demo `sharedLayoutsIndex` как metadata sidecar: `name/language` доступны публичному catalog без чтения payload.
 - Это не возвращает старую проблему с призраками: `/public-shared-layouts` использует sidecar для `template-copy-*` только если существует реальная `public-shared-layout-*` строка.
 - Compatibility API поднята до `2026-05-23.template-copy-metadata-sidecar-v1`, добавлена capability `templateCopyMetadataSidecar`.
+
+## v811: demo и shared сведены в единый public template catalog
+
+- Добавлен API endpoint `/bike-packing/public-templates`: он отдает metadata для demo и shared в одном списке.
+- Frontend сначала читает единый каталог, а затем fallback-ит на старый shared-only каталог. Выбор языка остается общим: роль шаблона + язык + metadata, потом загрузка payload.
+- Demo больше не берет встроенную наполненную заготовку, если серверной demo-записи нет. В этом случае показывается пустой изолированный public template выбранного языка.
+- Compatibility API поднята до `2026-05-25.public-template-unified-catalog-v1`, добавлена capability `publicTemplateUnifiedCatalog`.
+
+## v813: public template language is stored in one DB column
+
+- Demo and shared no longer use different language sources. The authoritative metadata field is `bike_packing_lists.language` for both public template kinds.
+- Runtime no longer derives demo language from `public-demo-state[-en]` and no longer confirms shared templates from demo `sharedLayoutsIndex`.
+- Public rows without `language` are ignored by the template catalog instead of being guessed as RU/EN.
+- Added migration: `bikepacking-api/docs/bike-packing-public-template-language-migration.sql`.
+- Compatibility API is `2026-05-26.public-template-language-column-v1`, capability `publicTemplateLanguageColumn`.

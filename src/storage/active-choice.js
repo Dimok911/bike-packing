@@ -42,7 +42,7 @@ export function normalizeActiveLayoutChoice(choice, {
 } = {}) {
   const value = String(choice || "").trim();
   if (!value) return "";
-  if (isDemoLayoutChoice?.(value)) return demoLayoutChoiceForLanguage(demoLanguageFromLayoutChoice(value));
+  if (isDemoLayoutChoice?.(value)) return value;
   if (value.startsWith("shared:")) return value.slice("shared:".length) ? value : "";
   const templateDraftId = templateDraftLayoutId?.(value);
   if (templateDraftId) return isAdminTemplateCopyChoice?.(templateDraftId) ? value : "";

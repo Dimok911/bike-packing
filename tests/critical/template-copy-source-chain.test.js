@@ -11,18 +11,32 @@ import {
   demoPublicListIdForLanguage
 } from "../../src/public/scope.js";
 import {
+  demoLanguageFromLayoutChoice,
+  demoLayoutChoiceForLanguage,
+  demoLayoutChoiceForTemplate,
+  demoTemplateIdFromLayoutChoice
+} from "../../src/public/demo-layout-choice.js";
+import {
+  createDemoTemplateListId,
+  demoTemplateEntryForLanguage,
+  demoTemplateForLanguage,
+  demoTemplatesForLanguage,
+  findDemoTemplateForLanguage,
+  publicDemoTemplateEntryFromRecord,
+  publicTemplateChoice
+} from "../../src/public/public-template-catalog.js";
+import {
   cloneIsolatedPublicEntity,
   publicCopySourceIdFromRecord,
   stripPublishedPublicOriginMarkers
 } from "../../src/public/copy-public-to-private.js";
 import {
   createSharedLayoutsByLanguage,
+  findSharedLayoutForLanguage,
   isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
-  mergeSharedLayoutIndexPayload,
   mergeSharedLayoutCatalogEntries,
   pruneRuntimeSharedLayouts,
-  serverConfirmedSharedLayoutsFromIndexPayload,
   serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload,
@@ -38,6 +52,10 @@ import {
   shouldWarnAboutSharedLayoutCatalog
 } from "../../src/public/shared-layout-catalog-diagnostics.js";
 import {
+  guestDemoCopyLayoutName,
+  guestDemoStartupAction
+} from "../../src/public/guest-demo-startup.js";
+import {
   purgeDeletedSharedTemplateFromFrontendState,
   purgeUnconfirmedSharedTemplatesFromFrontendState
 } from "../../src/public/shared-layout-admin.js";
@@ -48,6 +66,7 @@ import {
 } from "../../src/state/layout-delete.js";
 import {
   adoptTemplateCopySharedSourceId,
+  createDemoTemplateCopyRecord,
   findAdoptableTemplateCopyDraft,
   isTemplateCopySharedId
 } from "../../src/state/layout-manage.js";
@@ -63,15 +82,148 @@ test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
   assert.equal(demoAdminStatePathForLanguage("en"), "/bike-packing/admin/demo-states/en/state");
 });
 
-test("demo template name drops unique-copy numeric suffixes only for known demo names", () => {
+test("demo layout choices encode the selected UI language", () => {
+  const options = {
+    currentLanguage: "ru",
+    defaultLanguage: "en",
+    demoSelectValue: "demo:default",
+    normalizeLanguage: (language) => String(language || "en").trim().toLowerCase() || "en"
+  };
+
+  assert.equal(demoLayoutChoiceForLanguage("ru", options), "demo:ru");
+  assert.equal(demoLayoutChoiceForLanguage("en", options), "demo:default");
+  assert.equal(demoLanguageFromLayoutChoice("demo:ru", options), "ru");
+  assert.equal(demoLanguageFromLayoutChoice("demo:default", options), "en");
+});
+
+test("demo layout choices can target exact public template rows", () => {
+  const options = {
+    currentLanguage: "ru",
+    defaultLanguage: "en",
+    demoSelectValue: "demo:default",
+    normalizeLanguage: (language) => String(language || "en").trim().toLowerCase() || "en"
+  };
+  const choice = demoLayoutChoiceForTemplate({
+    listId: "public-demo-state-copy-ru-a1",
+    language: "ru"
+  }, options);
+
+  assert.equal(choice, "demo:ru:public-demo-state-copy-ru-a1");
+  assert.equal(demoLanguageFromLayoutChoice(choice, options), "ru");
+  assert.equal(demoTemplateIdFromLayoutChoice(choice), "public-demo-state-copy-ru-a1");
+});
+
+test("demo templates use catalog metadata like shared templates", () => {
+  const enEntry = publicDemoTemplateEntryFromRecord({
+    id: "public-demo-state-en",
+    title: "Demo layout",
+    language: "en",
+    publicTemplateKind: "demo"
+  });
+  const legacyEntryWithoutLanguage = publicDemoTemplateEntryFromRecord({
+    id: "public-demo-state-en",
+    title: "Demo layout",
+    publicTemplateKind: "demo"
+  });
+  const ruFallback = demoTemplateEntryForLanguage("ru", {
+    listId: "public-demo-state",
+    name: "Демо-укладка",
+    missing: true
+  });
+
+  assert.equal(legacyEntryWithoutLanguage, null);
+  assert.equal(enEntry?.publicTemplateKind, "demo");
+  assert.equal(enEntry?.language, "en");
+  assert.equal(enEntry?.name, "Demo layout");
+  assert.equal(demoTemplateForLanguage([enEntry], "ru", { fallbackEntry: ruFallback }), ruFallback);
+  assert.equal(publicTemplateChoice(enEntry, {
+    demoChoiceForLanguage: (language) => language === "en" ? "demo:default" : `demo:${language}`
+  }), "demo:default");
+});
+
+test("demo catalog supports multiple templates per language and pairs them on language switch", () => {
+  const catalog = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state-copy-ru-2", name: `${RU_DEMO_NAME} 2`, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "public-demo-state-en-copy-2", name: "Demo layout 2", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "public-demo-state-en", name: "Demo layout", serverConfirmed: true })
+  ];
+
+  assert.deepEqual(demoTemplatesForLanguage(catalog, "ru").map((entry) => entry.name), [
+    RU_DEMO_NAME,
+    `${RU_DEMO_NAME} 2`
+  ]);
+  assert.equal(demoTemplateForLanguage(catalog, "ru")?.listId, "public-demo-state");
+  assert.equal(
+    findDemoTemplateForLanguage(catalog, "public-demo-state-copy-ru-2", "en", { sourceLanguage: "ru" })?.listId,
+    "public-demo-state-en-copy-2"
+  );
+});
+
+test("demo catalog language switch falls back to nearest template in the selected language", () => {
+  const catalog = [
+    demoTemplateEntryForLanguage("ru", { listId: "demo-ru-a", name: "Alpha", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: "demo-ru-b", name: "Beta", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "demo-en-a", name: "One", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "demo-en-b", name: "Two", serverConfirmed: true })
+  ];
+
+  assert.equal(
+    findDemoTemplateForLanguage(catalog, "demo-ru-b", "en", { sourceLanguage: "ru" })?.listId,
+    "demo-en-b"
+  );
+});
+
+test("demo catalog metadata keeps the title exactly for rendering options", () => {
+  const ruEntry = publicDemoTemplateEntryFromRecord({
+    id: "public-demo-state",
+    title: `${RU_DEMO_NAME} 2`,
+    language: "ru",
+    publicTemplateKind: "demo"
+  });
+
+  assert.equal(ruEntry?.name, `${RU_DEMO_NAME} 2`);
+});
+
+test("demo template copies stay demo templates with their own public list id", () => {
+  const demoListId = createDemoTemplateListId({
+    language: "ru",
+    takenListIds: [],
+    now: () => 12345,
+    random: () => 0.123456789
+  });
+  const record = createDemoTemplateCopyRecord({
+    id: "layout-copy",
+    name: `${RU_DEMO_NAME} 3`,
+    sourceLayout: {
+      id: "layout-demo",
+      adminDemo: true,
+      adminDemoLanguage: "ru",
+      rootContainerIds: ["bag-a"],
+      arrangement: { rootContainerIds: ["bag-a"], containers: {}, items: {} }
+    },
+    arrangement: { rootContainerIds: ["bag-a"], containers: {}, items: {} },
+    language: "ru",
+    demoListId
+  });
+
+  assert.equal(demoListId, "public-demo-state-copy-ru-9ix-12345678");
+  assert.equal(record.adminDemo, true);
+  assert.equal(record.adminTemplateCopy, undefined);
+  assert.equal(record.adminDemoLanguage, "ru");
+  assert.equal(record.language, "ru");
+  assert.equal(record.adminDemoListId, demoListId);
+});
+
+test("demo template name keeps explicit title suffixes", () => {
   assert.equal(normalizeDemoTemplateName(`${RU_DEMO_NAME} 2`, {
     fallbackName: "Demo layout",
     demoNames: [RU_DEMO_NAME, "Demo layout"]
-  }), RU_DEMO_NAME);
+  }), `${RU_DEMO_NAME} 2`);
   assert.equal(normalizeDemoTemplateName("Demo layout 7", {
     fallbackName: "Demo layout",
     demoNames: [RU_DEMO_NAME, "Demo layout"]
-  }), "Demo layout");
+  }), "Demo layout 7");
   assert.equal(normalizeDemoTemplateName("Custom trip 2", {
     fallbackName: "Demo layout",
     demoNames: [RU_DEMO_NAME, "Demo layout"]
@@ -110,7 +262,7 @@ test("published demo payload is collapsed to one canonical layout", () => {
 
   assert.equal(normalized.activeLayoutId, "layout-main");
   assert.deepEqual(Object.keys(normalized.layouts), ["layout-main"]);
-  assert.equal(normalized.layouts["layout-main"].name, RU_DEMO_NAME);
+  assert.equal(normalized.layouts["layout-main"].name, `${RU_DEMO_NAME} 2`);
   assert.deepEqual(normalized.layouts["layout-main"].rootContainerIds, ["container-a"]);
   assert.deepEqual(Object.keys(normalized.containers), ["container-a"]);
   assert.deepEqual(Object.keys(normalized.items), ["item-a"]);
@@ -132,6 +284,56 @@ test("guest demo startup cleanup removes only unedited duplicate auto-copies", (
 
   assert.equal(plan.keepLayoutId, "active");
   assert.deepEqual(plan.removeLayoutIds, ["stale"]);
+});
+
+test("guest startup creates one automatic demo layout only when startup policy allows it", () => {
+  assert.equal(
+    guestDemoStartupAction({
+      preferLocalCopy: true,
+      canUsePrivateState: false,
+      syncDirty: false
+    }),
+    "readonly"
+  );
+  assert.equal(
+    guestDemoStartupAction({
+      preferLocalCopy: true,
+      allowAutomaticLocalCopy: true,
+      canUsePrivateState: false
+    }),
+    "copy"
+  );
+  assert.equal(
+    guestDemoStartupAction({
+      syncDirty: true,
+      hadAuthoritativeLocalStateAtStartup: true,
+      suspiciousEmptyState: false
+    }),
+    "keep"
+  );
+});
+
+test("automatic guest demo layout keeps the template title without uniqueness suffixes", () => {
+  const uniqueName = (name) => `${name} 2`;
+
+  assert.equal(
+    guestDemoCopyLayoutName("Demo-packing", {
+      fallbackName: "Demo copy",
+      normalizeName: (name) => name.trim(),
+      uniqueName,
+      exactTemplateName: true
+    }),
+    "Demo-packing"
+  );
+  assert.equal(
+    guestDemoCopyLayoutName("Demo-packing", {
+      fallbackName: "Demo copy",
+      normalizeName: (name) => name.trim(),
+      uniqueName,
+      exactTemplateName: false
+    }),
+    "Demo-packing 2"
+  );
 });
 
 test("template copy uses the original public source id when copying a copy", () => {
@@ -442,79 +644,19 @@ test("public shared catalog language uses server metadata before payload languag
   assert.equal(confirmed[0].language, "en");
 });
 
-test("server demo shared-layout index stays confirmed when catalog endpoint fails", () => {
-  const payload = {
-    sharedLayoutsIndex: {
-      layouts: [{
-        id: "bikepacking-reference-bags",
-        name: "Bikepacking reference",
-        language: "ru"
-      }]
-    }
+test("public shared catalog ignores rows without language metadata", () => {
+  const row = {
+    id: "public-shared-layout-bikepacking-reference-bags",
+    title: "Bikepacking reference",
+    ownerId: "user-1",
+    stateRevision: 3
   };
 
-  const indexConfirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
-  const preservedAfterCatalogFailure = mergeSharedLayoutCatalogEntries(indexConfirmed, []);
-
-  assert.equal(indexConfirmed.length, 1);
-  assert.equal(indexConfirmed[0].id, "bikepacking-reference-bags");
-  assert.equal(indexConfirmed[0].serverConfirmed, true);
-  assert.deepEqual(preservedAfterCatalogFailure.map((layout) => layout.id), [
-    "bikepacking-reference-bags"
-  ]);
-});
-
-test("server demo shared-layout index creates an admin option under confirmed contract", () => {
-  const payload = {
-    sharedLayoutsIndex: {
-      layouts: [{
-        id: "bikepacking-reference-bags",
-        name: "Bikepacking reference",
-        language: "ru"
-      }]
-    }
-  };
-  const confirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
-  const options = buildAdminSharedTemplateOptions({
-    canOpen: true,
-    sharedLayouts: confirmed,
-    serverConfirmedSharedLayouts: confirmed,
-    requireServerConfirmationForSharedTemplates: true,
-    fallbackLanguage: "ru",
-    isLayoutMeaningful: () => true,
-    templateCopySourceScore: () => 3
+  const confirmed = serverConfirmedSharedLayoutsFromPublicRecords([row], {
+    layoutsByLanguage: { ru: [], en: [] }
   });
 
-  assert.deepEqual(options.map((option) => option[0]), [
-    "shared:bikepacking-reference-bags"
-  ]);
-});
-
-test("server demo shared-layout index does not confirm stale template-copy entries", () => {
-  const payload = {
-    sharedLayoutsIndex: {
-      layouts: [
-        {
-          id: "bikepacking-reference-bags",
-          name: "Bikepacking reference",
-          language: "ru"
-        },
-        {
-          id: "template-copy-ru-deleted",
-          name: "Bikepacking reference 2",
-          language: "ru"
-        }
-      ]
-    }
-  };
-  const layoutsByLanguage = { ru: [] };
-
-  const confirmed = serverConfirmedSharedLayoutsFromIndexPayload(payload);
-  const merged = mergeSharedLayoutIndexPayload(layoutsByLanguage, payload);
-
-  assert.equal(merged, 1);
-  assert.deepEqual(confirmed.map((layout) => layout.id), ["bikepacking-reference-bags"]);
-  assert.deepEqual(layoutsByLanguage.ru.map((layout) => layout.id), ["bikepacking-reference-bags"]);
+  assert.deepEqual(confirmed, []);
 });
 
 test("public shared catalog prunes stale template-copy runtime entries", () => {
@@ -595,6 +737,25 @@ test("public shared options stay empty while the server row is absent", () => {
   assert.deepEqual(visible.map((layout) => layout.id), []);
 });
 
+test("public shared options do not borrow another language when the selected language is empty", () => {
+  const layoutsByLanguage = {
+    ru: [],
+    en: [{
+      id: "bikepacking-reference-bags-en",
+      name: "Bikepacking reference",
+      language: "en",
+      serverConfirmed: true
+    }]
+  };
+
+  const visible = visibleSharedLayoutsForLanguage(layoutsByLanguage, "ru", {
+    defaultLanguage: "en",
+    serverConfirmedSharedLayouts: [{ id: "bikepacking-reference-bags-en" }]
+  });
+
+  assert.deepEqual(visible.map((layout) => layout.id), []);
+});
+
 test("public shared catalog treats demo-index-only entries as non-concrete", () => {
   assert.equal(isConcretePublicSharedLayoutListRecord({
     id: "public-shared-layout-bikepacking-reference-bags",
@@ -608,6 +769,67 @@ test("public shared catalog treats demo-index-only entries as non-concrete", () 
     stateRevision: 3,
     sharedLayoutId: "bikepacking-reference-bags"
   }), true);
+});
+
+test("language switch picks the shared template pair by family or name", () => {
+  const byFamily = findSharedLayoutForLanguage({
+    ru: [{ id: "bikepacking-reference-bags", name: "Bikepacking reference", language: "ru", serverConfirmed: true }],
+    en: [{ id: "bikepacking-reference-bags-en", name: "Bikepacking reference", language: "en", serverConfirmed: true }]
+  }, "bikepacking-reference-bags", "en", {
+    sourceLanguage: "ru",
+    serverConfirmedSharedLayouts: [
+      { id: "bikepacking-reference-bags" },
+      { id: "bikepacking-reference-bags-en" }
+    ]
+  });
+  const byName = findSharedLayoutForLanguage({
+    ru: [{ id: "reference-ru", name: "Bikepacking reference", language: "ru", serverConfirmed: true }],
+    en: [{ id: "reference-en", name: "Bikepacking reference", language: "en", serverConfirmed: true }]
+  }, "reference-ru", "en", {
+    sourceLanguage: "ru",
+    serverConfirmedSharedLayouts: [
+      { id: "reference-ru" },
+      { id: "reference-en" }
+    ]
+  });
+
+  assert.equal(byFamily?.id, "bikepacking-reference-bags-en");
+  assert.equal(byName?.id, "reference-en");
+});
+
+test("language switch falls back to the nearest shared template in selected language", () => {
+  const target = findSharedLayoutForLanguage({
+    ru: [
+      { id: "ru-first", name: "First", language: "ru", serverConfirmed: true },
+      { id: "ru-second", name: "Second", language: "ru", serverConfirmed: true }
+    ],
+    en: [
+      { id: "en-first", name: "Other first", language: "en", serverConfirmed: true },
+      { id: "en-second", name: "Other second", language: "en", serverConfirmed: true }
+    ]
+  }, "ru-second", "en", {
+    sourceLanguage: "ru",
+    serverConfirmedSharedLayouts: [
+      { id: "ru-first" },
+      { id: "ru-second" },
+      { id: "en-first" },
+      { id: "en-second" }
+    ]
+  });
+
+  assert.equal(target?.id, "en-second");
+});
+
+test("language switch returns no shared target when the selected language has no shared templates", () => {
+  const target = findSharedLayoutForLanguage({
+    ru: [{ id: "bikepacking-reference-bags", name: "Bikepacking reference", language: "ru", serverConfirmed: true }],
+    en: []
+  }, "bikepacking-reference-bags", "en", {
+    sourceLanguage: "ru",
+    serverConfirmedSharedLayouts: [{ id: "bikepacking-reference-bags" }]
+  });
+
+  assert.equal(target, null);
 });
 
 test("published template-copy row adopts a same-name local draft with an old source id", () => {

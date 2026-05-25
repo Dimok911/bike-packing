@@ -8,6 +8,25 @@ export function demoLayoutChoiceForLanguage(language, {
   return normalized === defaultLanguage ? demoSelectValue : `demo:${normalized}`;
 }
 
+export function demoLayoutChoiceForTemplate(entry, {
+  currentLanguage = "ru",
+  defaultLanguage = "ru",
+  demoSelectValue = "demo",
+  normalizeLanguage = normalizeDemoLanguage
+} = {}) {
+  const language = normalizeLanguage(entry?.language || currentLanguage);
+  const listId = String(entry?.listId || entry?.id || "").trim();
+  if (!listId) {
+    return demoLayoutChoiceForLanguage(language, {
+      currentLanguage,
+      defaultLanguage,
+      demoSelectValue,
+      normalizeLanguage
+    });
+  }
+  return `demo:${language}:${encodeURIComponent(listId)}`;
+}
+
 export function isDemoLayoutChoice(choice, {
   demoSelectValue = "demo",
   supportedLanguages = [],
@@ -16,7 +35,7 @@ export function isDemoLayoutChoice(choice, {
   const value = String(choice || "").trim();
   if (value === demoSelectValue) return true;
   if (!value.startsWith("demo:")) return false;
-  const language = value.slice("demo:".length);
+  const language = value.slice("demo:".length).split(":")[0] || "";
   return Boolean(language && supportedLanguages.includes(normalizeLanguage(language)));
 }
 
@@ -26,9 +45,21 @@ export function demoLanguageFromLayoutChoice(choice, {
 } = {}) {
   const value = String(choice || "").trim();
   if (!value.startsWith("demo:")) return defaultLanguage;
-  const language = value.slice("demo:".length);
+  const language = value.slice("demo:".length).split(":")[0] || "";
   if (!language || language === "default") return defaultLanguage;
   return normalizeLanguage(language);
+}
+
+export function demoTemplateIdFromLayoutChoice(choice) {
+  const value = String(choice || "").trim();
+  if (!value.startsWith("demo:")) return "";
+  const parts = value.split(":");
+  if (parts.length < 3) return "";
+  try {
+    return decodeURIComponent(parts.slice(2).join(":"));
+  } catch {
+    return parts.slice(2).join(":");
+  }
 }
 
 export function languageOptionLabel(language, {
