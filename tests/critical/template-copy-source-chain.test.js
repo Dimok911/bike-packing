@@ -923,7 +923,7 @@ test("guest import plan includes personal guest layouts without legacy guest fla
   assert.deepEqual(plan.layoutIds, ["layout-personal"]);
 });
 
-test("guest display preference changes can make automatic demo importable", () => {
+test("guest display preference changes do not import an unedited automatic demo layout", () => {
   const sourceState = {
     itemDisplayMode: "photos",
     showItemMeta: false,
@@ -944,10 +944,37 @@ test("guest display preference changes can make automatic demo importable", () =
     layouts,
     activeLayoutId: "layout-guest-demo-clean",
     isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
-    hasUserEdits: () => guestLocalDisplayPreferencesWereChanged(sourceState)
+    hasUserEdits: () => false
   });
 
-  assert.deepEqual(plan.layoutIds, ["layout-guest-demo-clean"]);
+  assert.deepEqual(plan.layoutIds, []);
+});
+
+test("guest import plan can keep personal layouts while skipping unedited automatic demo", () => {
+  const layouts = {
+    autoClean: {
+      id: "layout-guest-demo-clean",
+      guestDemoCopy: true,
+      demoSourceLanguage: "en",
+      createdAt: "2026-05-24T08:00:00.000Z",
+      updatedAt: "2026-05-24T08:00:00.000Z"
+    },
+    personal: {
+      id: "layout-personal",
+      name: "My guest tab",
+      createdAt: "2026-05-24T09:00:00.000Z",
+      updatedAt: "2026-05-24T09:00:00.000Z"
+    }
+  };
+
+  const plan = guestLocalLayoutImportPlan({
+    layouts,
+    activeLayoutId: "layout-personal",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: (layout) => guestDemoCopyRecordWasEdited(layout, layout)
+  });
+
+  assert.deepEqual(plan.layoutIds, ["layout-personal"]);
 });
 
 test("guest display preferences are copied to imported account state", () => {

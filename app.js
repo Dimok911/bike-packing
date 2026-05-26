@@ -3378,14 +3378,13 @@ function guestLocalLayoutCandidate(sourceState = state) {
   } catch {
     // If normalization fails, continue with the shape checks below.
   }
-  const displayPreferencesWereChanged = guestLocalDisplayPreferencesWereChanged(sourceState);
   const plan = guestLocalLayoutImportPlan({
     layouts: sourceState.layouts,
     activeLayoutId: sourceState.activeLayoutId,
     isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
     isGuestPersonalLayout: isGuestLocalPersonalLayout,
     isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
-    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(sourceState, layout) || displayPreferencesWereChanged
+    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(sourceState, layout)
   });
   if (!plan.layoutIds.length) return null;
   const layouts = plan.layoutIds
