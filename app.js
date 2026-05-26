@@ -3410,6 +3410,7 @@ function guestLocalLayoutCandidate(sourceState = state) {
 }
 
 function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, sourceState = state) {
+  if (isAdminSession()) return false;
   if (previousScope !== GUEST_STORAGE_SCOPE || nextScope === GUEST_STORAGE_SCOPE) return false;
   if (isSharedListLinkRoute() || syncMetaAccountKey(syncMeta)) return false;
   if (currentViewScope() !== VIEW_SCOPE_GUEST_LOCAL && !hasGuestDemoCopyLayoutRecord(sourceState.layouts)) return false;
@@ -3441,6 +3442,7 @@ function consumeGuestLocalLayoutCandidate() {
 }
 
 function storedGuestLocalLayoutCandidate() {
+  if (isAdminSession()) return null;
   if (storedGuestLocalLayoutCandidateOffered || localStorageScopeKey === GUEST_STORAGE_SCOPE) return null;
   if (!hasStoredLocalValue(STORAGE_KEY, GUEST_STORAGE_SCOPE)) return null;
   const candidate = guestLocalLayoutCandidate(loadStateForScope(GUEST_STORAGE_SCOPE));
@@ -7364,15 +7366,6 @@ async function handleRemoteSaveConflict(error, { notify = false, preferredLayout
   if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
 }
 
-function findLayoutByNormalizedName(name) {
-  const normalized = String(name || "").trim().toLowerCase();
-  if (!normalized) return null;
-  return Object.values(state.layouts || {}).find((layout) =>
-    layout && !layout.adminDemo && !layout.adminSharedSourceId &&
-    String(layout.name || "").trim().toLowerCase() === normalized
-  ) || null;
-}
-
 async function confirmGuestImportRemoteState(importedLayoutIds) {
   try {
     const data = await fetchRemoteStateRecord();
@@ -7411,46 +7404,25 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
   return false;
 }
 
-async function offerPendingGuestLocalLayoutsAfterRemoteLoad({ confirm = true } = {}) {
+async function offerPendingGuestLocalLayoutsAfterRemoteLoad() {
+  if (isAdminSession()) {
+    pendingGuestLocalLayoutCandidate = null;
+    return false;
+  }
   const guestCandidate = consumeGuestLocalLayoutCandidate() || storedGuestLocalLayoutCandidate();
   if (!guestCandidate) return false;
   appUnlocked = true;
   initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
   updateSyncUi("Личные укладки загружены · переношу гостевые укладки в аккаунт...");
-  await offerSaveGuestLocalLayouts(guestCandidate, { confirm });
+  await offerSaveGuestLocalLayouts(guestCandidate);
   return true;
 }
 
-function guestImportLayoutListText(layouts) {
-  const names = layouts.map((layout) => `«${layout.layoutName}»`);
-  if (names.length <= 3) return names.join(", ");
-  return `${names.slice(0, 3).join(", ")} и ещё ${names.length - 3}`;
-}
-
-function guestImportNameConflicts(layouts) {
-  return layouts
-    .map((layout) => ({ ...layout, existing: findLayoutByNormalizedName(layout.layoutName) }))
-    .filter((layout) => layout.existing);
-}
-
-async function offerSaveGuestLocalLayouts(candidate, { confirm = true } = {}) {
+async function offerSaveGuestLocalLayouts(candidate) {
+  if (isAdminSession()) return false;
   const layouts = guestCandidateLayouts(candidate);
   if (!candidate?.sourceState || !layouts.length || !currentUser) return false;
-  const conflicts = guestImportNameConflicts(layouts);
-  const confirmed = !confirm || await askConfirmDialog({
-    title: conflicts.length
-      ? "Сохранить гостевые укладки с новыми именами?"
-      : (layouts.length > 1 ? "Сохранить гостевые укладки?" : "Сохранить гостевую укладку?"),
-    text: conflicts.length
-      ? `В аккаунте уже есть укладки с такими именами: ${guestImportLayoutListText(conflicts)}. Сохранить гостевые укладки как отдельные новые укладки с уникальными именами?`
-      : `Сохранить в аккаунте ${layouts.length > 1 ? "гостевые укладки" : "гостевую укладку"} ${guestImportLayoutListText(layouts)}?`,
-    okText: conflicts.length ? "Сохранить с новыми именами" : "Сохранить",
-    cancelText: "Не сохранять",
-    tone: conflicts.length ? "warning" : ""
-  });
-  if (!confirmed) return false;
-
   const importedLayoutIds = importGuestLocalLayouts({ ...candidate, layouts }, { renameConflicts: true });
   if (!importedLayoutIds.length) {
     updateSyncUi("Гостевые укладки уже были перенесены или в них нет данных для импорта");
@@ -7601,7 +7573,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         appUnlocked = true;
         renderPreservingPackingScroll();
         updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-        await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
+        await offerSaveGuestLocalLayouts(guestCandidate);
         return;
       }
       if (canSeedEmptyRemoteFromLocal()) {
@@ -7631,7 +7603,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         appUnlocked = true;
         renderPreservingPackingScroll();
         updateSyncUi("На сервере пока пусто · можно сохранить гостевую укладку в аккаунт");
-        await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
+        await offerSaveGuestLocalLayouts(guestCandidate);
         return;
       }
       replaceState(createEmptyUserState());
@@ -7659,7 +7631,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       appUnlocked = true;
       renderPreservingPackingScroll();
       updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-      await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
+      await offerSaveGuestLocalLayouts(guestCandidate);
       return;
     }
 

@@ -12,7 +12,7 @@ This document fixes the contract for a new user who starts without an account, e
 6. Reopening the app signed out must reuse the same guest demo copy instead of creating another copy.
 7. The guest can edit the layout locally. Those edits stay in the guest storage scope until auth is confirmed.
 8. When `/auth/me` confirms a real user session, the app switches to that user's private storage scope and compares the guest candidate with the account's existing layouts.
-9. If the account already has a layout with the same normalized name, the guest layout is imported under a unique name after user confirmation. New accounts can import without a prompt.
+9. If the account already has a layout with the same normalized name, the guest layout is imported automatically under a unique name.
 10. Imported guest layouts are saved as normal private user layouts and then pushed to the server.
 11. After import, the active layout should be the imported private layout, not the public demo template.
 12. If an older build loaded the account and lost the in-memory pending guest candidate, the app must still recover the candidate from the saved `guest` storage scope after the private account state is loaded. After the guest layouts are successfully saved to the account, the imported guest scope snapshot can be cleared to prevent duplicate imports.
