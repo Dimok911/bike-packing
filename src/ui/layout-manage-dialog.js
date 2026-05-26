@@ -10,6 +10,15 @@ export function publicTemplateOptionLabel({ prefix, name, languageLabel }) {
   return `${prefix}: ${name} (${languageLabel})`;
 }
 
+export function layoutSourceNameFromOptionLabel(label = "") {
+  return String(label || "")
+    .trim()
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .replace(/^[^:]+:\s*/, "")
+    .replace(/\s+\([^)]+\)\s*$/, "")
+    .trim();
+}
+
 export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, isLastLayout }) {
   return {
     title: "Удалить укладку?",

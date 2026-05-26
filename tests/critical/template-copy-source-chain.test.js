@@ -16,7 +16,8 @@ import {
   demoAdminPathForPublicListId,
   demoAdminStatePathForLanguage,
   demoItemKeyForLanguage,
-  demoPublicListIdForLanguage
+  demoPublicListIdForLanguage,
+  shouldClearPackingListContextForPrivateMutation
 } from "../../src/public/scope.js";
 import {
   demoLanguageFromLayoutChoice,
@@ -73,6 +74,7 @@ import {
   publishedTemplateBlockReason,
   readonlyPublicTemplateOptionLabel
 } from "../../src/public/public-template-availability.js";
+import { layoutSourceNameFromOptionLabel } from "../../src/ui/layout-manage-dialog.js";
 import { publicTemplateDeleteBlockReason } from "../../src/public/public-template-delete-guard.js";
 import {
   createSharedLayoutCatalogDiagnostics,
@@ -2010,6 +2012,31 @@ test("readonly public template options get a stable lock marker", () => {
     readonlyPublicTemplateOptionLabel("🔒 Template: Demo", { readonly: true }),
     "🔒 Template: Demo"
   );
+});
+
+test("layout source option labels expose source names for copy suggestions", () => {
+  assert.equal(layoutSourceNameFromOptionLabel("Template: Demo-packing (EN)"), "Demo-packing");
+  assert.equal(layoutSourceNameFromOptionLabel("\u{1F512} Template: New layout 3 (RU)"), "New layout 3");
+  assert.equal(layoutSourceNameFromOptionLabel("Full kit"), "Full kit");
+});
+
+test("private mutations clear stale public list context before sync", () => {
+  const isPublicTemplateListId = (id) => String(id || "").startsWith("public-demo-state");
+  assert.equal(shouldClearPackingListContextForPrivateMutation({
+    listId: "private-list",
+    record: { id: "private-list", itemKey: "bike-packing", visibility: "private" },
+    isPublicTemplateListId
+  }), false);
+  assert.equal(shouldClearPackingListContextForPrivateMutation({
+    listId: "public-demo-state",
+    record: { id: "public-demo-state", itemKey: "demo-state", visibility: "public" },
+    isPublicTemplateListId
+  }), true);
+  assert.equal(shouldClearPackingListContextForPrivateMutation({
+    listId: "private-list",
+    record: { id: "public-demo-state", itemKey: "demo-state", visibility: "public" },
+    isPublicTemplateListId
+  }), true);
 });
 
 test("shared template catalog diagnostics warn when confirmed rows create no options", () => {

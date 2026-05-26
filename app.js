@@ -232,7 +232,8 @@ import {
   isReadOnlyBikePackingRecord,
   isReadOnlyItemKey,
   isReadOnlyScope,
-  sharedLayoutItemKey as sharedLayoutItemKeyFromScope
+  sharedLayoutItemKey as sharedLayoutItemKeyFromScope,
+  shouldClearPackingListContextForPrivateMutation
 } from "./src/public/scope.js";
 import {
   hasContainerDimensions,
@@ -575,6 +576,7 @@ import {
 import {
   layoutCopyTitle,
   layoutEditTitle,
+  layoutSourceNameFromOptionLabel,
   privateLayoutDeleteConfirm,
   publicLayoutDeleteConfirm,
   publicTemplateOptionLabel
@@ -1877,6 +1879,7 @@ async function init() {
   refs.layoutTemplateKind?.addEventListener("change", updateLayoutCreateNameSuggestion);
   refs.layoutTemplateLanguage?.addEventListener("change", updateLayoutCreateNameSuggestion);
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
+  refs.layoutCopyFrom?.addEventListener("change", () => updateLayoutCreateNameSuggestion({ force: true }));
   refs.authBtn.addEventListener("click", handleAuthButton);
   document.querySelector("#signOutBtn")?.addEventListener("click", handleAuthButton);
   refs.authGateBtn.addEventListener("click", handleAuthButton);
@@ -2930,6 +2933,7 @@ function rememberCurrentPackingListRecord(record) {
   const id = remoteRecordId(normalized);
   if (isPublicTemplateListId(id) || isReadOnlyBikePackingRecord(normalized)) {
     saveActivePackingListId("");
+    currentPackingListMeta = null;
     return normalized;
   }
   if (id) saveActivePackingListId(id);
@@ -3531,8 +3535,22 @@ function isPublicLayoutContext() {
   return isReadOnlyStateScope() || currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT || isAdminEditablePublishedLayout();
 }
 
+function clearReadOnlyPackingListContextForPrivateMutation() {
+  if (shouldClearPackingListContextForPrivateMutation({
+    listId: currentPackingListId,
+    record: currentPackingListMeta,
+    isPublicTemplateListId
+  })) {
+    saveActivePackingListId("");
+    currentPackingListMeta = null;
+  }
+}
+
 function setActivePrivateScope() {
-  if (canUsePrivateState()) return setViewScope(VIEW_SCOPE_PRIVATE);
+  if (canUsePrivateState()) {
+    clearReadOnlyPackingListContextForPrivateMutation();
+    return setViewScope(VIEW_SCOPE_PRIVATE);
+  }
   if (isGuestDemoCopyLayout()) return setViewScope(VIEW_SCOPE_GUEST_LOCAL);
   setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
   return false;
@@ -17666,7 +17684,6 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
   layout.rootContainerIds = rootContainerIds;
   layout.arrangement = arrangement;
   state.layouts[id] = layout;
-  markLocalPublicCopyOrigin(layout, "layout", source.sourceId || sourceLayout.id, sourceLayout.id);
   markLayoutPhotosForCurrentListCopy(id);
   if (activate) {
     if (!canUsePrivateState()) setActiveLocalEditableScope(id);
@@ -17718,12 +17735,19 @@ function openLayoutDialog() {
   if (refs.layoutCreateTitle) {
     refs.layoutCreateTitle.textContent = canOpenAdminPublishedEdit() ? "Новая укладка/шаблон" : "Новая укладка";
   }
+  const activePublicChoice = publicLayoutChoiceForLayout(state.layouts?.[state.activeLayoutId]);
+  const shouldSuggestActiveTemplateCopy = Boolean(canOpenAdminPublishedEdit() && activePublicChoice);
   refs.layoutName.value = uniqueLayoutName("Новая укладка");
-  refs.layoutCreateMode.value = "empty";
-  fillSelect(refs.layoutCopyFrom, layoutCreateCopySourceOptions(), state.activeLayoutId);
+  refs.layoutCreateMode.value = shouldSuggestActiveTemplateCopy ? "template-copy" : "empty";
+  fillSelect(
+    refs.layoutCopyFrom,
+    layoutCreateCopySourceOptions({ templates: shouldSuggestActiveTemplateCopy }),
+    shouldSuggestActiveTemplateCopy ? activePublicChoice : state.activeLayoutId
+  );
   if (refs.layoutTemplateKind) refs.layoutTemplateKind.value = "demo";
   if (refs.layoutTemplateLanguage) fillSelect(refs.layoutTemplateLanguage, languageSelectEntries(), normalizeUiLanguage(uiLanguage));
   updateLayoutCopyVisibility();
+  if (shouldSuggestActiveTemplateCopy) updateLayoutCreateNameSuggestion({ force: true });
   openModalDialog(refs.layoutDialog);
 }
 
@@ -17757,7 +17781,7 @@ function updateLayoutCopyVisibility() {
     });
     const activePublicChoice = publicLayoutChoiceForLayout(state.layouts?.[state.activeLayoutId]);
     const selected = shouldCopyTemplate
-      ? refs.layoutCopyFrom.value || activePublicChoice
+      ? activePublicChoice || refs.layoutCopyFrom.value
       : refs.layoutCopyFrom.value || activePublicChoice || state.activeLayoutId;
     fillSelect(refs.layoutCopyFrom, entries, selected);
   }
@@ -17774,16 +17798,43 @@ function updateLayoutCopyVisibility() {
   updateLayoutCreateNameSuggestion();
 }
 
-function updateLayoutCreateNameSuggestion() {
+function layoutCreateSelectedSourceName() {
+  return layoutSourceNameFromOptionLabel(refs.layoutCopyFrom?.selectedOptions?.[0]?.textContent || "");
+}
+
+function isLayoutCreateTemplateSourceChoice(choice) {
+  const value = String(choice || "").trim();
+  return Boolean(templateDraftLayoutId(value) || isDemoLayoutChoice(value) || value.startsWith("shared:"));
+}
+
+function canReplaceLayoutCreateNameSuggestion({ force = false } = {}) {
+  if (force) return true;
+  const value = String(refs.layoutName?.value || "").trim();
+  return !value || /^Новая укладка( \d+)?$/.test(value) || /^Шаблон( \d+)?$/.test(value);
+}
+
+function updateLayoutCreateNameSuggestion({ force = false } = {}) {
   if (!refs.layoutName || !refs.layoutCreateMode) return;
   const mode = refs.layoutCreateMode.value;
+  if (mode === "template-copy") {
+    if (canReplaceLayoutCreateNameSuggestion({ force })) {
+      refs.layoutName.value = uniquePublishedTemplateName(layoutCreateSelectedSourceName() || "Шаблон");
+    }
+    return;
+  }
+  if (mode === "copy" && canOpenAdminPublishedEdit() && isLayoutCreateTemplateSourceChoice(refs.layoutCopyFrom?.value)) {
+    if (canReplaceLayoutCreateNameSuggestion({ force })) {
+      refs.layoutName.value = uniqueLayoutName(layoutCreateSelectedSourceName() || "Новая укладка");
+    }
+    return;
+  }
   if (mode !== "template" && mode !== "demo-template" && mode !== "shared-template") return;
   const language = normalizeUiLanguage(refs.layoutTemplateLanguage?.value || uiLanguage);
   const kind = mode === "shared-template" || refs.layoutTemplateKind?.value === "shared" ? "shared" : "demo";
   const fallback = kind === "demo"
     ? demoTemplateFallbackName(language)
     : "Новый шаблон";
-  if (!refs.layoutName.value.trim() || refs.layoutName.value === "Новая укладка") {
+  if (canReplaceLayoutCreateNameSuggestion({ force })) {
     refs.layoutName.value = uniquePublishedTemplateName(fallback);
   }
 }
@@ -17853,7 +17904,7 @@ async function saveNewLayout(event) {
       const createdId = await createAndPublishTemplateCopy(sourceLayout, requestedName);
       if (!createdId) return;
       refs.layoutDialog.close();
-      switchView("bags");
+      switchView("packing");
       showToast("Шаблон скопирован.", "success");
     } catch (error) {
       showToast(`Не удалось скопировать шаблон: ${error.message}`, "error");
@@ -17868,7 +17919,7 @@ async function saveNewLayout(event) {
       const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName);
       if (!createdId) return;
       refs.layoutDialog.close();
-      switchView("bags");
+      switchView("packing");
       showToast("Укладка создана из шаблона.", "success");
       return;
     }
