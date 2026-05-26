@@ -773,6 +773,29 @@ label,
   order: 6;
 }
 
+#layoutCreateMode option.template-mode-option {
+  background: #fff0c7;
+  color: #5e4510;
+  font-weight: 800;
+}
+
+#layoutCopyFrom option.select-option-demo {
+  background: #fff0c7;
+  color: #5e4510;
+  font-weight: 800;
+}
+
+#layoutCopyFrom option.select-option-shared {
+  background: #dff3ea;
+  color: #185b49;
+  font-weight: 800;
+}
+
+#layoutCopyFrom option.select-option-personal {
+  background: #fff;
+  color: var(--ink);
+}
+
 input,
 select,
 textarea {

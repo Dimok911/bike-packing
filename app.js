@@ -17649,6 +17649,10 @@ function layoutCreateCopySourceOptions({ templates = false, includeTemplates = f
     : personalLayouts.map((layout) => [layout.id, layout.name, "personal"]);
 }
 
+function isLayoutCreateTemplateLayoutMode(mode) {
+  return mode === "from-template-layout";
+}
+
 async function resolveLayoutCreateCopySource(choice) {
   const value = String(choice || "").trim();
   return state.layouts?.[value] || null;
@@ -17827,7 +17831,7 @@ function openLayoutDialog() {
 function updateLayoutCopyVisibility() {
   const mode = refs.layoutCreateMode.value;
   const canCreateTemplates = canOpenAdminPublishedEdit();
-  refs.layoutCreateMode.querySelectorAll("option[value='template'], option[value='template-copy']").forEach((option) => {
+  refs.layoutCreateMode.querySelectorAll("option[value='from-template-layout'], option[value='template'], option[value='template-copy']").forEach((option) => {
     option.hidden = !canCreateTemplates;
     option.disabled = !canCreateTemplates;
   });
@@ -17835,27 +17839,33 @@ function updateLayoutCopyVisibility() {
     option.hidden = true;
     option.disabled = true;
   });
-  if (!canCreateTemplates && (mode === "template" || mode === "template-copy" || mode === "demo-template" || mode === "shared-template")) {
+  if (!canCreateTemplates && (mode === "from-template-layout" || mode === "template" || mode === "template-copy" || mode === "demo-template" || mode === "shared-template")) {
     refs.layoutCreateMode.value = "empty";
   }
   const shouldCopy = refs.layoutCreateMode.value === "copy";
+  const shouldCreateFromTemplate = isLayoutCreateTemplateLayoutMode(refs.layoutCreateMode.value);
   const shouldCopyTemplate = refs.layoutCreateMode.value === "template-copy";
   const shouldPickTemplate = refs.layoutCreateMode.value === "template" || refs.layoutCreateMode.value === "demo-template" || refs.layoutCreateMode.value === "shared-template";
-  refs.layoutCopyLabel.hidden = !shouldCopy && !shouldCopyTemplate;
-  refs.layoutCopyLabel.setAttribute("aria-hidden", String(!shouldCopy && !shouldCopyTemplate));
-  refs.layoutCopyFrom.disabled = !shouldCopy && !shouldCopyTemplate;
+  const shouldPickSource = shouldCopy || shouldCreateFromTemplate || shouldCopyTemplate;
+  refs.layoutCopyLabel.hidden = !shouldPickSource;
+  refs.layoutCopyLabel.setAttribute("aria-hidden", String(!shouldPickSource));
+  refs.layoutCopyFrom.disabled = !shouldPickSource;
   if (refs.layoutCopySourceLabel) {
-    refs.layoutCopySourceLabel.textContent = shouldCopyTemplate ? "Скопировать шаблон из" : "Скопировать укладку из";
+    refs.layoutCopySourceLabel.textContent = shouldCopyTemplate
+      ? "Скопировать шаблон из"
+      : shouldCreateFromTemplate
+        ? "Создать укладку из шаблона"
+        : "Скопировать укладку из";
   }
-  if (shouldCopy || shouldCopyTemplate) {
+  if (shouldPickSource) {
     const entries = layoutCreateCopySourceOptions({
-      templates: shouldCopyTemplate,
-      includeTemplates: shouldCopy && canOpenAdminPublishedEdit()
+      templates: shouldCreateFromTemplate || shouldCopyTemplate,
+      includeTemplates: false
     });
     const activePublicChoice = publicLayoutChoiceForLayout(state.layouts?.[state.activeLayoutId]);
-    const selected = shouldCopyTemplate
+    const selected = shouldCreateFromTemplate || shouldCopyTemplate
       ? activePublicChoice || refs.layoutCopyFrom.value
-      : refs.layoutCopyFrom.value || activePublicChoice || state.activeLayoutId;
+      : refs.layoutCopyFrom.value || state.activeLayoutId;
     fillSelect(refs.layoutCopyFrom, entries, selected);
   }
   if (refs.layoutTemplateKindLabel && refs.layoutTemplateKind) {
@@ -17875,11 +17885,6 @@ function layoutCreateSelectedSourceName() {
   return layoutSourceNameFromOptionLabel(refs.layoutCopyFrom?.selectedOptions?.[0]?.textContent || "");
 }
 
-function isLayoutCreateTemplateSourceChoice(choice) {
-  const value = String(choice || "").trim();
-  return Boolean(templateDraftLayoutId(value) || isDemoLayoutChoice(value) || value.startsWith("shared:"));
-}
-
 function canReplaceLayoutCreateNameSuggestion({ force = false } = {}) {
   if (force) return true;
   const value = String(refs.layoutName?.value || "").trim();
@@ -17895,7 +17900,7 @@ function updateLayoutCreateNameSuggestion({ force = false } = {}) {
     }
     return;
   }
-  if (mode === "copy" && canOpenAdminPublishedEdit() && isLayoutCreateTemplateSourceChoice(refs.layoutCopyFrom?.value)) {
+  if (isLayoutCreateTemplateLayoutMode(mode)) {
     if (canReplaceLayoutCreateNameSuggestion({ force })) {
       refs.layoutName.value = uniqueLayoutName(layoutCreateSelectedSourceName() || "Новая укладка");
     }
@@ -17951,6 +17956,7 @@ async function saveNewLayout(event) {
   captureActiveLayoutArrangement();
   const mode = refs.layoutCreateMode.value;
   const shouldCopy = mode === "copy";
+  const shouldCreateFromTemplate = isLayoutCreateTemplateLayoutMode(mode);
   const shouldCopyTemplate = mode === "template-copy";
   const requestedName = refs.layoutName.value.trim();
   if (!requestedName) return;
@@ -17984,23 +17990,23 @@ async function saveNewLayout(event) {
     }
     return;
   }
-  if (shouldCopy) {
-    const templateSource = canOpenAdminPublishedEdit()
-      ? await resolveLayoutCreateTemplateCopySource(refs.layoutCopyFrom.value)
-      : null;
-    if (templateSource) {
-      const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName);
-      if (!createdId) return;
-      refs.layoutDialog.close();
-      switchView("packing");
-      try {
-        await syncCreatedPrivateLayoutEntities(createdId);
-        showToast("Укладка создана из шаблона.", "success");
-      } catch (error) {
-        showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
-      }
+  if (shouldCreateFromTemplate) {
+    const templateSource = await resolveLayoutCreateTemplateCopySource(refs.layoutCopyFrom.value);
+    if (!templateSource) {
+      showToast("Источник шаблона не найден.", "error");
       return;
     }
+    const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName);
+    if (!createdId) return;
+    refs.layoutDialog.close();
+    switchView("packing");
+    try {
+      await syncCreatedPrivateLayoutEntities(createdId);
+      showToast("Укладка создана из шаблона.", "success");
+    } catch (error) {
+      showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
+    }
+    return;
   }
   const source = shouldCopy
     ? await resolveLayoutCreateCopySource(refs.layoutCopyFrom.value)
