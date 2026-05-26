@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=817" />
+    <link rel="stylesheet" href="./styles.css?v=841" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -186,6 +186,7 @@
             <span id="itemContainerCurrent" class="item-container-current" hidden></span>
             <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
             <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
+            <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Удалить из укладки</button>
           </div>
           <input id="itemContainer" type="hidden" />
         </div>
@@ -202,6 +203,7 @@
               <input id="itemPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
+            <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
           </div>
           <small id="itemPhotoStatus" class="item-photo-status"></small>
         </div>
@@ -277,6 +279,7 @@
               <input id="rootContainerPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
+            <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
           </div>
           <small id="rootContainerPhotoStatus" class="item-photo-status"></small>
         </div>
@@ -381,7 +384,6 @@
           <select id="layoutEditLanguage"></select>
         </label>
         <footer class="layout-edit-actions">
-          <button id="copyEditedLayoutBtn" class="ghost" type="button">Скопировать</button>
           <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Удалить</button>
           <button id="saveEditedLayoutBtn" value="default">Сохранить</button>
         </footer>
@@ -407,7 +409,7 @@
     <dialog id="layoutDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2>Новая укладка</h2>
+          <h2 id="layoutCreateTitle">Новая укладка</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label>
@@ -418,11 +420,26 @@
           Создать
           <select id="layoutCreateMode">
             <option value="empty">Пустую укладку</option>
-            <option value="copy">Копию существующей</option>
+            <option value="copy">Копию укладки</option>
+            <option value="template-copy">Копию шаблона</option>
+            <option value="template">Новый шаблон</option>
+            <option value="demo-template">Demo-шаблон</option>
+            <option value="shared-template">Shared-шаблон</option>
           </select>
         </label>
+        <label id="layoutTemplateKindLabel" hidden>
+          Template type
+          <select id="layoutTemplateKind">
+            <option value="demo">Demo-template</option>
+            <option value="shared">Shared-template</option>
+          </select>
+        </label>
+        <label id="layoutTemplateLanguageLabel" hidden>
+          Язык шаблона
+          <select id="layoutTemplateLanguage"></select>
+        </label>
         <label id="layoutCopyLabel">
-          Скопировать из
+          <span id="layoutCopySourceLabel">Скопировать из</span>
           <select id="layoutCopyFrom"></select>
         </label>
         <footer>
@@ -581,6 +598,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=817" type="module"></script>
+    <script src="./app.js?v=841" type="module"></script>
   </body>
 </html>

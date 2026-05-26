@@ -134,6 +134,15 @@ button.ghost.danger:focus-visible {
   color: #8d3f2a;
 }
 
+button.ghost.delete-blocked:disabled {
+  white-space: normal;
+  text-align: left;
+  color: #6f6f63;
+  border-color: #ddd8ca;
+  background: #f7f4eb;
+  opacity: 1;
+}
+
 button.danger-action {
   background: #b84f3a;
   color: #fffaf7;
@@ -734,8 +743,34 @@ label,
   letter-spacing: 0;
 }
 
-#layoutCopyLabel[hidden] {
+#layoutCopyLabel[hidden],
+#layoutTemplateKindLabel[hidden],
+#layoutTemplateLanguageLabel[hidden] {
   display: none;
+}
+
+#layoutDialog label:has(#layoutCreateMode) {
+  order: 1;
+}
+
+#layoutDialog label:has(#layoutName) {
+  order: 2;
+}
+
+#layoutDialog label:has(#layoutTemplateKind) {
+  order: 3;
+}
+
+#layoutDialog label:has(#layoutTemplateLanguage) {
+  order: 4;
+}
+
+#layoutDialog label:has(#layoutCopyFrom) {
+  order: 5;
+}
+
+#layoutDialog footer {
+  order: 6;
 }
 
 input,
@@ -844,7 +879,7 @@ button.filter-active {
 
 .item-container-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: stretch;
 }
@@ -882,9 +917,10 @@ button.filter-active {
   min-width: 0;
   justify-content: center;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
   padding-left: 10px;
   padding-right: 10px;
+  line-height: 1.2;
 }
 
 .item-container-control .container-picker-button.repack-button.active {
@@ -896,9 +932,10 @@ button.filter-active {
   min-width: 0;
   justify-content: center;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
   padding-left: 10px;
   padding-right: 10px;
+  line-height: 1.2;
 }
 
 .item-container-control .remove-from-layout-button {
@@ -4626,6 +4663,13 @@ dialog::backdrop {
   clip: rect(0, 0, 0, 0);
 }
 
+.item-photo-primary-button:disabled {
+  color: var(--muted);
+  background: #f5f6f4;
+  border-color: var(--line);
+  cursor: default;
+}
+
 .item-photo-status {
   min-height: 16px;
   color: var(--muted);
@@ -4758,7 +4802,7 @@ dialog::backdrop {
   }
 
   .root-container-placement-control {
-    grid-template-columns: minmax(0, 3fr) repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .item-container-control .container-picker-button.repack-button,
@@ -4768,9 +4812,14 @@ dialog::backdrop {
   }
 
   .root-container-placement-control .container-picker-button {
-    padding-left: 5px;
-    padding-right: 5px;
-    font-size: 12px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 14px;
+  }
+
+  dialog.keyboard-focus-active .dialog-card {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom) + 120px);
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 140px);
   }
 
 }

@@ -23,3 +23,13 @@ export function publishedTemplateBlockReason({
     ? "Templates are blocked while there is no internet connection."
     : "Шаблоны заблокированы, пока нет интернета.";
 }
+
+export function readonlyPublicTemplateOptionLabel(label, {
+  readonly = false,
+  marker = "🔒"
+} = {}) {
+  const text = String(label || "");
+  if (!readonly || !text) return text;
+  const prefix = `${marker} `;
+  return text.startsWith(prefix) ? text : `${prefix}${text}`;
+}

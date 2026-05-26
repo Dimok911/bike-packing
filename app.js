@@ -57,6 +57,7 @@ import {
 } from "./src/data/demo-data.js";
 import { guessCategory, guessLocation } from "./src/data/guess.js";
 import {
+  appendCopiedFromTemplateNote,
   cloneIsolatedPublicEntity,
   hasPrivateSyncBlockedPublicOrigin,
   legacySharedRootSnapshot,
@@ -100,17 +101,37 @@ import {
   shouldImportGuestLayoutBeforeRemote,
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
-import { publishedTemplateBlockReason } from "./src/public/public-template-availability.js";
+import { validateGuestImportSyncState } from "./src/public/guest-login-import.js";
 import {
+  publishedTemplateBlockReason,
+  readonlyPublicTemplateOptionLabel
+} from "./src/public/public-template-availability.js";
+import { publicTemplateDeleteBlockReason } from "./src/public/public-template-delete-guard.js";
+import {
+  applyPublicTemplateMetadataToPayload,
+  normalizePublicTemplateMetadataResponse,
+  publicTemplateDeletePath,
+  publicTemplateMetadataPath,
+  publicTemplateMetadataRequest,
+  publicTemplateMetadataTarget
+} from "./src/public/public-template-metadata.js";
+import {
+  buildAdminDemoTemplateOptions,
+  compareDemoTemplateOrder,
   createDemoTemplateListId,
   demoTemplateEntryForLanguage,
   demoTemplateForLanguage,
   demoTemplatesForLanguage,
   findDemoTemplateForLanguage,
   isPublicDemoTemplateRecord,
-  mergePublicTemplateCatalogEntries,
+  mergeServerDemoTemplateCatalog,
+  mergeDemoTemplateEntriesForAdmin,
+  localDemoTemplateEntriesFromLayouts,
   publicDemoTemplateEntryFromRecord,
-  publicTemplateChoice
+  publicDemoTemplatePayloadTarget,
+  publicTemplateChoice,
+  removePublicTemplateCatalogEntry,
+  upsertDemoTemplateCatalogEntry as mergeDemoTemplateCatalogEntry
 } from "./src/public/public-template-catalog.js";
 import {
   demoLanguageFromLayoutChoice as demoLanguageFromLayoutChoiceValue,
@@ -121,7 +142,14 @@ import {
   languageOptionLabel as languageOptionLabelValue
 } from "./src/public/demo-layout-choice.js";
 import {
+  applyGuestLocalDisplayPreferences,
   guestDemoCopyCleanupPlan,
+  guestDemoCopyRecordWasEdited,
+  guestLocalDisplayPreferences,
+  guestLocalDisplayPreferencesWereChanged,
+  guestLocalLayoutImportPlan,
+  isAutomaticGuestDemoCopyLayout,
+  isGuestLocalPersonalLayout,
   normalizeDemoTemplateName,
   normalizePublishedDemoTemplatePayload
 } from "./src/public/demo-template-state.js";
@@ -140,6 +168,7 @@ import {
   findSharedLayoutForLanguage,
   isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
+  isPublicSharedTemplatePayload,
   isTemplateCopySharedLayoutId,
   mergeSharedLayoutCatalogEntries,
   normalizeSharedGearName,
@@ -250,6 +279,7 @@ import {
   normalizePhotoUrlFields,
   photoDraftChanged,
   removePhotoFromDraft,
+  setPrimaryPhotoInDraft,
   primaryItemPhoto
 } from "./src/state/item-photos.js";
 import {
@@ -264,6 +294,7 @@ import {
 } from "./src/state/layout-choice.js";
 import {
   removeLayoutTreeFromState,
+  removeManagedDemoTemplateTreesFromState,
   removeManagedSharedTemplateTreesFromState
 } from "./src/state/layout-delete.js";
 import {
@@ -274,15 +305,19 @@ import {
   applyLayoutManageLanguage,
   adminTemplateDraftChoice,
   collectManagedPublicDraftRecords,
+  createEmptyPublicTemplateDraftRecord,
   createDemoTemplateCopyRecord,
   createManagedLayoutCopyRecord,
   createTemplateCopyRecord,
   editedLayoutName,
   isDisposableManagedPublicDraft,
+  isManagedDemoTemplateLayout,
+  isManagedPublicTemplateDraft,
   layoutManageLanguage,
   managedSharedDraftLanguage,
   mergeManagedPublicDraftRecords,
   publicLayoutChoiceValue,
+  shouldCopyPublicTemplatePhotoReferencesOnServer,
   shouldCreatePublishedTemplateBeforePhotos,
   templateCopySourceRootIds,
   templateDraftLayoutId,
@@ -372,7 +407,7 @@ import {
   normalizeItemQuantity,
   normalizeItemCategories
 } from "./src/state/normalize.js";
-import { makeCopyName, uniqueName } from "./src/state/names.js";
+import { makeCopyName, repairMojibakeLayoutNames, uniqueName } from "./src/state/names.js";
 import { repairContainerMembershipFromItemLinks } from "./src/state/repair.js";
 import {
   annotatePayloadError,
@@ -596,6 +631,7 @@ let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
 const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "publicTemplatePhotoReferenceCopy",
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
   "sharedTemplatePhotoFileValidation",
@@ -609,13 +645,15 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicTemplateCatalogResilientSelect",
   "publicTemplateUnifiedCatalog",
   "publicTemplateLanguageColumn",
+  "publicTemplateMetadataPatch",
+  "publicTemplateDelete",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-26.public-template-language-column-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-26.public-template-photo-reference-copy-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -735,6 +773,8 @@ let lightboxObjectUrl = "";
 let sharedDialogCopyItemId = "";
 let backupImportState = null;
 let pendingGuestLocalLayoutCandidate = null;
+let storedGuestLocalLayoutCandidateOffered = false;
+let localDemoCopyInFlight = null;
 let sharedPickerSourceItemId = "";
 let sharedPickerSourceContainerId = "";
 const photoObjectUrls = new Map();
@@ -924,6 +964,24 @@ function demoTemplatesForUiLanguage(language = uiLanguage) {
   });
 }
 
+function localAdminDemoTemplateEntries() {
+  if (!canOpenAdminPublishedEdit()) return [];
+  return localDemoTemplateEntriesFromLayouts(state.layouts, {
+    fallbackLanguage: uiLanguage
+  });
+}
+
+function adminDemoTemplateCatalogEntries() {
+  return mergeDemoTemplateEntriesForAdmin(serverConfirmedDemoTemplates, localAdminDemoTemplateEntries());
+}
+
+function adminDemoTemplatesForUiLanguage(language = uiLanguage) {
+  const normalized = normalizeUiLanguage(language);
+  return demoTemplatesForLanguage(adminDemoTemplateCatalogEntries(), normalized, {
+    fallbackEntry: fallbackDemoTemplateEntry(normalized)
+  });
+}
+
 function currentDemoTemplate(language = uiLanguage, listId = "") {
   const normalized = normalizeUiLanguage(language);
   return demoTemplateForLanguage(serverConfirmedDemoTemplates, normalized, {
@@ -957,17 +1015,15 @@ function upsertDemoTemplateCatalogEntry(language, {
   missing = false
 } = {}) {
   const normalized = normalizeUiLanguage(language);
-  const existing = demoTemplateForLanguage(serverConfirmedDemoTemplates, normalized, { listId });
-  const resolvedListId = listId || existing?.listId || demoPublicListIdForLanguage(normalized);
-  serverConfirmedDemoTemplates = mergePublicTemplateCatalogEntries(serverConfirmedDemoTemplates, [
-    demoTemplateEntryForLanguage(normalized, {
-      listId: resolvedListId,
-      name: name || existing?.name || demoTemplateFallbackName(normalized),
-      updatedAt: updatedAt || existing?.updatedAt || "",
-      serverConfirmed,
-      missing
-    })
-  ]);
+  serverConfirmedDemoTemplates = mergeDemoTemplateCatalogEntry(serverConfirmedDemoTemplates, normalized, {
+    listId,
+    name,
+    updatedAt,
+    serverConfirmed,
+    missing,
+    fallbackListId: demoPublicListIdForLanguage(normalized),
+    fallbackName: demoTemplateFallbackName(normalized)
+  });
 }
 
 function demoTemplateChoiceForEntry(entry) {
@@ -978,7 +1034,16 @@ function demoTemplateChoiceForEntry(entry) {
 }
 
 function demoTemplateChoiceForLanguage(language = uiLanguage, listId = "") {
-  return demoTemplateChoiceForEntry(currentDemoTemplate(language, listId)) || demoLayoutChoiceForLanguage(language);
+  const normalizedLanguage = normalizeUiLanguage(language);
+  const templateId = String(listId || "").trim();
+  if (templateId) {
+    return demoLayoutChoiceForTemplate({
+      id: templateId,
+      listId: templateId,
+      language: normalizedLanguage
+    });
+  }
+  return demoTemplateChoiceForEntry(currentDemoTemplate(normalizedLanguage)) || demoLayoutChoiceForLanguage(normalizedLanguage);
 }
 
 function demoLayoutChoiceForLanguage(language = uiLanguage) {
@@ -1086,9 +1151,14 @@ function requirePublishedTemplatesAvailable() {
   return false;
 }
 
-function markLayoutOptionsDisabled(options, disabled) {
-  if (!disabled) return options;
-  return options.map(([value, label, kind = ""]) => [value, label, kind, true]);
+function markPublicTemplateOptionsState(options, { disabled = false, readonly = false } = {}) {
+  if (!disabled && !readonly) return options;
+  return options.map(([value, label, kind = ""]) => [
+    value,
+    readonlyPublicTemplateOptionLabel(label, { readonly }),
+    kind,
+    disabled
+  ]);
 }
 
 function serverConfirmedSharedLayoutsByAdminOrder() {
@@ -1106,33 +1176,80 @@ function nextServerConfirmedSharedLayoutAfter(sharedId) {
   return layouts[index + 1] || layouts[index - 1] || null;
 }
 
-function adminPublicLayoutOptions({ disabled = false } = {}) {
+function nextDemoTemplateAfter(listId, language = uiLanguage) {
+  const id = String(listId || "").trim();
+  const templates = demoTemplatesForUiLanguage(language).filter((entry) => entry?.serverConfirmed);
+  if (!templates.length) return null;
+  const index = templates.findIndex((entry) => String(entry?.listId || entry?.id || "").trim() === id);
+  if (index < 0) return templates[0] || null;
+  return templates[index + 1] || templates[index - 1] || null;
+}
+
+function localAdminDemoTemplateDraftLayouts() {
+  if (!canOpenAdminPublishedEdit()) return [];
+  return Object.values(state.layouts || {}).filter((layout) =>
+    layout?.adminDemo &&
+    layout.adminTemplateCopy &&
+    layout.id
+  );
+}
+
+function adminDemoTemplateOptionsForLanguage(language, { disabled = false } = {}) {
+  const normalized = normalizeUiLanguage(language);
+  return buildAdminDemoTemplateOptions({
+    canOpen: canViewAdminPublishedCatalog(),
+    localLayouts: canEditPublishedTemplatesNow()
+      ? localAdminDemoTemplateDraftLayouts().filter((layout) =>
+        normalizeUiLanguage(layout.adminDemoLanguage || layout.language || uiLanguage) === normalized
+      )
+      : [],
+    serverTemplates: demoTemplatesForLanguage(serverConfirmedDemoTemplates, normalized, {
+      fallbackEntry: fallbackDemoTemplateEntry(normalized)
+    }),
+    fallbackLanguage: normalized,
+    isLayoutMeaningful,
+    draftChoice: adminTemplateDraftChoice,
+    demoChoiceForTemplate: demoTemplateChoiceForEntry,
+    normalizeDemoName: normalizeDemoLayoutName,
+    compareEntries: compareDemoTemplateOrder,
+    labels: {
+      templatePrefix: t("template.prefix"),
+      defaultName: demoTemplateFallbackName(normalized),
+      languageOptionLabel,
+      publicTemplateOptionLabel
+    }
+  }).map(([value, label, kind = "demo"]) => [value, label, kind, disabled]);
+}
+
+function adminPublicLayoutOptions({ disabled = false, readonly = false, canView = canOpenAdminPublishedEdit() } = {}) {
   const languageOrder = [
     normalizeUiLanguage(uiLanguage),
     ...SUPPORTED_LANGUAGES.map(normalizeUiLanguage).filter((language) => language !== normalizeUiLanguage(uiLanguage))
   ];
   const demoOptions = languageOrder.flatMap((language) =>
-    demoTemplatesForUiLanguage(language).map((demoTemplate) => [
-      demoTemplateChoiceForEntry(demoTemplate),
-      `${t("template.prefix")}: ${demoTemplate?.name || demoTemplateFallbackName(language)} (${languageOptionLabel(language)})`,
-      "demo",
-      disabled
-    ])
+    markPublicTemplateOptionsState(adminDemoTemplateOptionsForLanguage(language, { disabled }), { readonly })
   );
   return [
     ...demoOptions,
-    ...markLayoutOptionsDisabled(adminSharedTemplateOptions(), disabled)
+    ...markPublicTemplateOptionsState(adminSharedTemplateOptions({
+      canView,
+      includeDrafts: canEditPublishedTemplatesNow()
+    }), { disabled, readonly })
   ];
 }
 
-function adminSharedTemplateOptions() {
+function adminSharedTemplateOptions({
+  canView = canOpenAdminPublishedEdit(),
+  includeDrafts = canOpenAdminPublishedEdit()
+} = {}) {
   const options = buildAdminSharedTemplateOptions({
-    canOpen: canOpenAdminPublishedEdit(),
-    localLayouts: localAdminTemplateCopyLayouts(),
+    canOpen: canView,
+    localLayouts: includeDrafts ? localAdminTemplateCopyLayouts() : [],
     linkedSharedListLayout,
     sharedLayouts: serverConfirmedSharedLayoutsByAdminOrder(),
     serverConfirmedSharedLayouts: serverConfirmedSharedLayoutsByAdminOrder(),
     requireServerConfirmationForSharedTemplates: true,
+    allowUnconfirmedLocalLayouts: includeDrafts,
     isDeletedSharedLayoutId,
     fallbackLanguage: uiLanguage,
     isLayoutMeaningful,
@@ -1363,14 +1480,17 @@ function setDemoStatePayloadForLanguage(language, payload, { listId = "" } = {})
   demoSharedLayout.statePayloadByTemplateId = demoSharedLayout.statePayloadByTemplateId || {};
   demoSharedLayout.statePayloadByLanguage[normalized] = nextPayload;
   if (templateId) demoSharedLayout.statePayloadByTemplateId[templateId] = nextPayload;
-  if (normalized === normalizeUiLanguage(uiLanguage)) demoSharedLayout.statePayload = nextPayload;
+  if ((templateId && templateId === activeDemoTemplateListId) || (!templateId && normalized === normalizeUiLanguage(uiLanguage))) {
+    demoSharedLayout.statePayload = nextPayload;
+  }
 }
 
-function setDemoPublicTemplateMissing(language, missing, { updateCatalog = true } = {}) {
+function setDemoPublicTemplateMissing(language, missing, { updateCatalog = true, listId = "" } = {}) {
   const normalized = normalizeUiLanguage(language);
   missingDemoPublicTemplates[normalized] = Boolean(missing);
   if (!updateCatalog) return;
   upsertDemoTemplateCatalogEntry(normalized, {
+    listId,
     serverConfirmed: !missing,
     missing
   });
@@ -1573,29 +1693,31 @@ async function init() {
     await flushActivePublishedEditSave();
     const value = event.target.value;
     if (isDemoLayoutChoice(value)) {
-      if (!requirePublishedTemplatesAvailable()) {
+      const openReadonly = canViewAdminPublishedCatalog() && !canEditPublishedTemplatesNow();
+      if (!openReadonly && !requirePublishedTemplatesAvailable()) {
         renderFilters();
         return;
       }
       const language = demoLanguageFromLayoutChoice(value);
       const templateId = demoTemplateIdFromLayoutChoice(value);
       if (await confirmPublicLayoutTransition("demo")) {
-        if (canOpenAdminPublishedEdit()) await openAdminDemoLayout({ language, templateId });
-        else await openDemoLayoutFromSelect({ language, templateId });
+        if (canEditPublishedTemplatesNow()) await openAdminDemoLayout({ language, templateId });
+        else await openDemoLayoutFromSelect({ language, templateId, allowOfflineCache: openReadonly });
       } else {
         renderFilters();
       }
       return;
     }
     if (value.startsWith("shared:")) {
-      if (!requirePublishedTemplatesAvailable()) {
+      const openReadonly = canViewAdminPublishedCatalog() && !canEditPublishedTemplatesNow();
+      if (!openReadonly && !requirePublishedTemplatesAvailable()) {
         renderFilters();
         return;
       }
       const layoutId = value.slice("shared:".length);
       if (await confirmPublicLayoutTransition("shared", findSharedLayout(layoutId))) {
-        if (canOpenAdminPublishedEdit()) await openSharedLayoutForAdmin(layoutId);
-        else await openSharedLayoutViewer(layoutId);
+        if (canEditPublishedTemplatesNow()) await openSharedLayoutForAdmin(layoutId);
+        else await openSharedLayoutViewer(layoutId, { allowOfflineCache: openReadonly });
       } else {
         renderFilters();
       }
@@ -1609,8 +1731,12 @@ async function init() {
       }
       const layoutId = templateDraftId;
       const layout = state.layouts?.[layoutId];
-      if (canOpenAdminPublishedEdit() && layout?.adminTemplateCopy) {
-        if (!(await confirmPublicLayoutTransition("shared", findSharedLayout(layout.adminSharedSourceId) || layout))) {
+      if (canOpenAdminPublishedEdit() && isManagedPublicTemplateDraft(layout)) {
+        const transitionKind = layout.adminDemo ? "demo" : "shared";
+        const transitionTarget = layout.adminDemo
+          ? layout
+          : findSharedLayout(layout.adminSharedSourceId) || layout;
+        if (!(await confirmPublicLayoutTransition(transitionKind, transitionTarget))) {
           renderFilters();
           return;
         }
@@ -1666,6 +1792,7 @@ async function init() {
   refs.rootContainerRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingContainerFromActiveLayout);
   refs.itemContainerPickerBtn.addEventListener("click", openItemContainerPickerDialog);
   refs.itemCopyToContainerBtn?.addEventListener("click", openItemCopyContainerPickerDialog);
+  refs.itemRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingItemFromActiveLayout);
   refs.containerPickerLayoutSelect?.addEventListener("change", () => {
     containerPickerLayoutId = refs.containerPickerLayoutSelect.value || getPublishedEditLayoutId();
     renderContainerPicker();
@@ -1699,9 +1826,11 @@ async function init() {
   refs.itemQuantityPlus.addEventListener("click", () => changeItemDialogQuantity(1));
   refs.itemPhotoInput?.addEventListener("change", handleItemPhotoInputChange);
   refs.itemPhotoRemoveBtn?.addEventListener("click", removeItemDialogPhoto);
+  refs.itemPhotoPrimaryBtn?.addEventListener("click", setItemDialogPhotoPrimary);
   refs.copySharedItemDialogBtn?.addEventListener("click", copySharedItemFromReadonlyDialog);
   refs.rootContainerPhotoInput?.addEventListener("change", handleRootContainerPhotoInputChange);
   refs.rootContainerPhotoRemoveBtn?.addEventListener("click", removeRootContainerDialogPhoto);
+  refs.rootContainerPhotoPrimaryBtn?.addEventListener("click", setRootContainerDialogPhotoPrimary);
   refs.dialog.querySelector("form")?.addEventListener("input", updateItemDialogSaveState);
   refs.dialog.querySelector("form")?.addEventListener("change", updateItemDialogSaveState);
   refs.dialog.querySelector("form")?.addEventListener("submit", handleItemFormSubmit);
@@ -1738,11 +1867,15 @@ async function init() {
     openLayoutDialog();
   });
   refs.editLayoutBtn?.addEventListener("click", openLayoutEditDialog);
+  refs.layoutEditLanguage?.addEventListener("change", () => {
+    updateLayoutEditDeleteButton(state.layouts?.[layoutEditTargetId]);
+  });
   refs.saveEditedLayoutBtn?.addEventListener("click", saveEditedLayout);
-  refs.copyEditedLayoutBtn?.addEventListener("click", openLayoutCopyDialog);
   refs.deleteEditedLayoutBtn?.addEventListener("click", confirmDeleteEditedLayout);
   refs.saveLayoutCopyBtn?.addEventListener("click", saveLayoutCopy);
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
+  refs.layoutTemplateKind?.addEventListener("change", updateLayoutCreateNameSuggestion);
+  refs.layoutTemplateLanguage?.addEventListener("change", updateLayoutCreateNameSuggestion);
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
   refs.authBtn.addEventListener("click", handleAuthButton);
   document.querySelector("#signOutBtn")?.addEventListener("click", handleAuthButton);
@@ -2301,13 +2434,23 @@ function loadState() {
   }
 }
 
+function loadStateForScope(scopeKey) {
+  const previousScope = localStorageScopeKey;
+  try {
+    localStorageScopeKey = scopeKey || GUEST_STORAGE_SCOPE;
+    return loadState();
+  } finally {
+    localStorageScopeKey = previousScope;
+  }
+}
+
 function hasLocalSavedState() {
   return Boolean(localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY)));
 }
 
-function hasStoredLocalValue(key) {
+function hasStoredLocalValue(key, scope = localStorageScopeKey) {
   try {
-    return Boolean(localStorage.getItem(scopedLocalStorageKey(key)));
+    return Boolean(localStorage.getItem(scopedLocalStorageKey(key, scope)));
   } catch {
     return false;
   }
@@ -2362,7 +2505,7 @@ function restoreTemplateCopyDraftsFromRecovery() {
   loadRecoverySnapshots().forEach((entry) => {
     const draftRecords = collectManagedPublicDraftRecords(entry?.payload);
     Object.entries(draftRecords?.layouts || {}).forEach(([layoutId, layout]) => {
-      if (!layout?.adminTemplateCopy || state.layouts?.[layoutId] || restored.layouts[layoutId]) return;
+      if (!isManagedPublicTemplateDraft(layout) || state.layouts?.[layoutId] || restored.layouts[layoutId]) return;
       restored.layouts[layoutId] = layout;
       Object.entries(draftRecords.containers || {}).forEach(([containerId, container]) => {
         if (!restored.containers[containerId]) restored.containers[containerId] = container;
@@ -2626,7 +2769,7 @@ function normalizeActiveLayoutChoice(choice) {
     demoLayoutChoiceForLanguage: demoTemplateChoiceForLanguage,
     demoLanguageFromLayoutChoice,
     templateDraftLayoutId,
-    isAdminTemplateCopyChoice: (layoutId) => Boolean(state.layouts?.[layoutId]?.adminTemplateCopy)
+    isAdminTemplateCopyChoice: (layoutId) => isManagedPublicTemplateDraft(state.layouts?.[layoutId])
   });
 }
 
@@ -2761,13 +2904,14 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
   if (templateDraftId) {
     if (privateOnly || publicOnly || !canOpenAdminPublishedEdit()) return false;
     const layoutId = templateDraftId;
-    if (!state.layouts?.[layoutId]?.adminTemplateCopy) return false;
+    if (!isManagedPublicTemplateDraft(state.layouts?.[layoutId])) return false;
     activateAdminPublishedLayout(layoutId, { remember: false });
     return true;
   }
   const savedLayout = state.layouts?.[choice];
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminDemo) {
-    await openAdminDemoLayout({ remember: false, language: savedLayout.adminDemoLanguage || uiLanguage, templateId: savedLayout.adminDemoListId || "" });
+    if (savedLayout.adminTemplateCopy) activateAdminPublishedLayout(savedLayout.id, { remember: false });
+    else await openAdminDemoLayout({ remember: false, language: savedLayout.adminDemoLanguage || uiLanguage, templateId: savedLayout.adminDemoListId || "" });
     return true;
   }
   if (!publicOnly && canOpenAdminPublishedEdit() && savedLayout?.adminSharedSourceId) {
@@ -3185,30 +3329,48 @@ function canSeedEmptyRemoteFromLocal() {
   return hasLocalSavedState() && !isForeignLocalSyncState() && isMeaningfulPackingState(state);
 }
 
-function recordWasEditedAfterCreate(record) {
-  if (!record || typeof record !== "object") return false;
-  const created = timeValue(record.createdAt);
-  const updated = timeValue(record.updatedAt);
-  return Boolean(created && updated && updated > created);
+const GUEST_LAYOUT_FALLBACK_NAME = "\u0413\u043e\u0441\u0442\u0435\u0432\u0430\u044f \u0443\u043a\u043b\u0430\u0434\u043a\u0430";
+
+function guestLayoutImportFallbackName(layout) {
+  const language = normalizeUiLanguage(layout?.demoSourceLanguage || layout?.language || uiLanguage);
+  const listId = String(layout?.demoSourceListId || "").trim();
+  return demoCopyPreferredTemplateName(language, listId) ||
+    demoTemplateFallbackName(language) ||
+    GUEST_LAYOUT_FALLBACK_NAME;
+}
+
+function privateMojibakeLayoutFallbackName(layout) {
+  const language = normalizeUiLanguage(layout?.demoSourceLanguage || layout?.language || uiLanguage);
+  const listId = String(layout?.demoSourceListId || "").trim();
+  return demoCopyPreferredTemplateName(language, listId) ||
+    demoTemplateFallbackName(language);
+}
+
+function repairPrivateMojibakeLayoutNames({ sync = true } = {}) {
+  const changed = repairMojibakeLayoutNames(state, {
+    fallbackNameForLayout: privateMojibakeLayoutFallbackName
+  });
+  if (changed) saveState({ sync });
+  return changed;
 }
 
 function guestLayoutHasUserContentEdits(sourceState, layout) {
   if (!layout) return false;
   if (!isGuestDemoCopyLayoutRecord(layout)) return false;
-  if (recordWasEditedAfterCreate(layout)) return true;
+  if (guestDemoCopyRecordWasEdited(layout, layout)) return true;
   const containerIds = getLayoutContainerIdSetForState(sourceState, layout);
   const itemIds = getLayoutItemIdSetForState(sourceState, layout);
   for (const containerId of containerIds) {
-    if (recordWasEditedAfterCreate(sourceState.containers?.[containerId])) return true;
+    if (guestDemoCopyRecordWasEdited(sourceState.containers?.[containerId], layout)) return true;
   }
   for (const itemId of itemIds) {
-    if (recordWasEditedAfterCreate(sourceState.items?.[itemId])) return true;
+    if (guestDemoCopyRecordWasEdited(sourceState.items?.[itemId], layout)) return true;
   }
   return false;
 }
 
 function guestLocalLayoutCandidate(sourceState = state) {
-  if (!isMeaningfulPackingState(sourceState)) return null;
+  if (!Object.values(sourceState.layouts || {}).some(isGuestLocalPersonalLayout)) return null;
   try {
     if (sameJson(cloneStateForSync(sourceState, { forSync: true }), cloneStateForSync(createEmptyUserState(), { forSync: true }))) {
       return null;
@@ -3216,20 +3378,34 @@ function guestLocalLayoutCandidate(sourceState = state) {
   } catch {
     // If normalization fails, continue with the shape checks below.
   }
-  const personalLayouts = Object.values(sourceState.layouts || {}).filter((layout) =>
-    layout && isGuestDemoCopyLayoutRecord(layout) && !layout.adminDemo && !layout.adminSharedSourceId
-  );
-  if (!personalLayouts.length) return null;
-  const editedLayouts = personalLayouts.filter((layout) => guestLayoutHasUserContentEdits(sourceState, layout));
-  if (!editedLayouts.length) return null;
-  const activeLayout = editedLayouts.find((layout) => layout.id === sourceState.activeLayoutId);
-  const meaningfulLayout = editedLayouts.find((layout) => (layout.rootContainerIds || []).some((id) => sourceState.containers?.[id]));
-  const layout = activeLayout || meaningfulLayout || editedLayouts[0];
-  if (!layout || !(layout.rootContainerIds || []).some((id) => sourceState.containers?.[id])) return null;
+  const displayPreferencesWereChanged = guestLocalDisplayPreferencesWereChanged(sourceState);
+  const plan = guestLocalLayoutImportPlan({
+    layouts: sourceState.layouts,
+    activeLayoutId: sourceState.activeLayoutId,
+    isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
+    isGuestPersonalLayout: isGuestLocalPersonalLayout,
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(sourceState, layout) || displayPreferencesWereChanged
+  });
+  if (!plan.layoutIds.length) return null;
+  const layouts = plan.layoutIds
+    .map((layoutId) => sourceState.layouts?.[layoutId])
+    .filter(Boolean)
+    .map((layout) => {
+      const fallbackName = guestLayoutImportFallbackName(layout);
+      return {
+        layoutId: layout.id,
+        layoutName: readableGuestDemoLayoutName(layout.name, fallbackName),
+        fallbackName
+      };
+    });
+  const primary = layouts.find((entry) => entry.layoutId === plan.primaryLayoutId) || layouts[0];
   return {
     sourceState: clone(sourceState),
-    layoutId: layout.id,
-    layoutName: String(layout.name || "Гостевая укладка").trim() || "Гостевая укладка"
+    displayPreferences: guestLocalDisplayPreferences(sourceState),
+    layouts,
+    layoutId: primary?.layoutId || "",
+    layoutName: primary?.layoutName || GUEST_LAYOUT_FALLBACK_NAME
   };
 }
 
@@ -3240,12 +3416,35 @@ function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, source
   return Boolean(guestLocalLayoutCandidate(sourceState));
 }
 
+function guestCandidateLayouts(candidate) {
+  const entries = Array.isArray(candidate?.layouts) && candidate.layouts.length
+    ? candidate.layouts
+    : (candidate?.layoutId ? [{ layoutId: candidate.layoutId, layoutName: candidate.layoutName }] : []);
+  return entries
+    .map((entry) => ({
+      layoutId: String(entry?.layoutId || "").trim(),
+      layoutName: readableGuestDemoLayoutName(entry?.layoutName, entry?.fallbackName || GUEST_LAYOUT_FALLBACK_NAME),
+      fallbackName: String(entry?.fallbackName || GUEST_LAYOUT_FALLBACK_NAME).trim() || GUEST_LAYOUT_FALLBACK_NAME
+    }))
+    .filter((entry) => entry.layoutId);
+}
+
 function consumeGuestLocalLayoutCandidate() {
   const candidate = pendingGuestLocalLayoutCandidate;
   pendingGuestLocalLayoutCandidate = null;
   if (candidate) {
-    candidate.layoutName = readableGuestDemoLayoutName(candidate.layoutName, "Гостевая укладка");
+    candidate.layouts = guestCandidateLayouts(candidate);
+    candidate.layoutId = candidate.layouts[0]?.layoutId || candidate.layoutId || "";
+    candidate.layoutName = candidate.layouts[0]?.layoutName || readableGuestDemoLayoutName(candidate.layoutName, GUEST_LAYOUT_FALLBACK_NAME);
   }
+  return candidate;
+}
+
+function storedGuestLocalLayoutCandidate() {
+  if (storedGuestLocalLayoutCandidateOffered || localStorageScopeKey === GUEST_STORAGE_SCOPE) return null;
+  if (!hasStoredLocalValue(STORAGE_KEY, GUEST_STORAGE_SCOPE)) return null;
+  const candidate = guestLocalLayoutCandidate(loadStateForScope(GUEST_STORAGE_SCOPE));
+  if (candidate) storedGuestLocalLayoutCandidateOffered = true;
   return candidate;
 }
 
@@ -3422,7 +3621,7 @@ function shouldKeepCurrentReadonlyDemoAfterAuthCheck() {
 
 function readOnlyDemoPayloadNeedsLoad(language = uiLanguage) {
   return activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID &&
-    !isMeaningfulPackingState(demoStatePayloadForLanguage(language));
+    !isPackingStateShape(demoStatePayloadForLanguage(language));
 }
 
 async function ensureReadOnlyDemoPayloadLoaded({ renderAfter = false } = {}) {
@@ -4167,6 +4366,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   rememberRemoteIntegrityMeta(integrityMeta);
   rememberCurrentSyncAccount();
   saveSyncMeta();
+  repairPrivateMojibakeLayoutNames();
   appUnlocked = true;
   initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
@@ -4932,15 +5132,34 @@ function rememberCurrentSyncAccount() {
   syncMeta.accountId = currentUserId() || null;
 }
 
+function isAdminIdentity(user = null) {
+  const email = String(user?.email || user?.mail || user?.login || "").trim().toLowerCase();
+  const userId = String(user?.id || user?.userId || user?.user_id || user?.sub || "").trim().toLowerCase();
+  return ADMIN_EMAILS.includes(email) || ADMIN_USER_IDS.includes(userId);
+}
+
 function isAdminUser() {
   if (!currentUser) return false;
-  const email = currentUserEmail();
-  const userId = currentUserId();
-  return ADMIN_EMAILS.includes(email) || ADMIN_USER_IDS.includes(userId);
+  return isAdminIdentity({
+    id: currentUserId(),
+    email: currentUserEmail()
+  });
 }
 
 function canOpenAdminPublishedEdit() {
   return isAdminSession();
+}
+
+function isOfflineRememberedAdminSession() {
+  return Boolean(!currentUser && offlineRememberedUser && isAdminIdentity(offlineRememberedUser));
+}
+
+function canViewAdminPublishedCatalog() {
+  return canOpenAdminPublishedEdit() || isOfflineRememberedAdminSession();
+}
+
+function canEditPublishedTemplatesNow() {
+  return canOpenAdminPublishedEdit() && !arePublishedTemplatesBlocked();
 }
 
 function currentUsageLimit(name) {
@@ -5297,42 +5516,74 @@ function refreshPublishedLayoutView(target) {
   renderPreservingPackingScroll();
 }
 
-async function savePublishedSharedLayoutMetadata(layout, previousLayout = null) {
-  const target = publishedLayoutTarget(layout);
-  if (target?.type !== "shared" || !target.sharedId) return false;
+async function savePublishedTemplateMetadata(layout, previousLayout = null) {
+  const target = publicTemplateMetadataTarget(publishedLayoutTarget(layout), {
+    previousTarget: previousLayout ? publishedLayoutTarget(previousLayout) : null
+  });
+  const path = publicTemplateMetadataPath(target, { demoAdminPathForPublicListId });
+  if (!target || !path) return false;
   await assertAdminApiCompatibility({ force: true });
   cancelPublishedLayoutSave(layout.id);
-  const previousRuntime = findSharedLayout(target.sharedId);
+  const previousRuntime = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
   const previousRuntimeSnapshot = previousRuntime ? clone(previousRuntime) : null;
+  const previousDemoTemplate = target.type === "demo"
+    ? currentDemoTemplate(target.language || layout.adminDemoLanguage || uiLanguage, target.demoListId || "")
+    : null;
   const payload = previousRuntime?.statePayload || null;
-  const nextLanguage = layout.language || previousRuntime?.language || uiLanguage;
+  const requestBody = publicTemplateMetadataRequest(layout, target, {
+    demoTemplate: previousDemoTemplate,
+    sharedLayout: previousRuntime,
+    uiLanguage,
+    normalizeLanguage: normalizeUiLanguage,
+    normalizeDemoName: normalizeDemoLayoutName,
+    demoFallbackName: demoTemplateFallbackName
+  });
   try {
-    const data = await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/metadata`, {
+    const data = await apiFetch(path, {
       method: "POST",
       timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-      body: JSON.stringify({
-        title: layout.name || previousRuntime?.name || target.sharedId,
-        name: layout.name || previousRuntime?.name || target.sharedId,
-        language: nextLanguage
-      })
+      body: JSON.stringify(requestBody)
     });
-    const confirmedName = data?.name || layout.name || previousRuntime?.name || target.sharedId;
-    const confirmedLanguage = data?.language || nextLanguage;
+    const confirmed = normalizePublicTemplateMetadataResponse(data, requestBody, {
+      normalizeLanguage: normalizeUiLanguage
+    });
+    const confirmedName = confirmed.name;
+    const confirmedLanguage = confirmed.language;
     layout.name = confirmedName;
     layout.language = confirmedLanguage;
-    const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
-      id: target.sharedId,
-      name: confirmedName,
-      language: confirmedLanguage,
-      statePayload: payload,
-      runtimeSharedTemplate: true
-    });
-    if (sharedLayout) sharedLayout.updatedAt = nowIso();
-    serverConfirmedSharedLayouts = updateSharedLayoutCatalogEntryMetadata(serverConfirmedSharedLayouts, target.sharedId, {
-      name: confirmedName,
-      language: confirmedLanguage,
-      updatedAt: sharedLayout?.updatedAt || nowIso()
-    });
+    if (target.type === "demo") {
+      layout.adminDemo = true;
+      layout.adminDemoLanguage = confirmedLanguage;
+      layout.adminDemoListId = data?.listId || target.demoListId || layout.adminDemoListId || demoPublicListIdForLanguage(confirmedLanguage);
+      activeDemoTemplateListId = layout.adminDemoListId;
+      const existingPayload = demoStatePayloadForLanguage(confirmedLanguage, layout.adminDemoListId);
+      if (existingPayload) {
+        setDemoStatePayloadForLanguage(confirmedLanguage, publishedPayloadWithTemplateMetadata(existingPayload, confirmed), {
+          listId: layout.adminDemoListId
+        });
+      }
+      upsertDemoTemplateCatalogEntry(confirmedLanguage, {
+        listId: layout.adminDemoListId,
+        name: confirmedName,
+        updatedAt: nowIso(),
+        serverConfirmed: true,
+        missing: false
+      });
+    } else {
+      const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+        id: target.sharedId,
+        name: confirmedName,
+        language: confirmedLanguage,
+        statePayload: payload ? publishedPayloadWithTemplateMetadata(payload, confirmed) : null,
+        runtimeSharedTemplate: true
+      });
+      if (sharedLayout) sharedLayout.updatedAt = nowIso();
+      serverConfirmedSharedLayouts = updateSharedLayoutCatalogEntryMetadata(serverConfirmedSharedLayouts, target.sharedId, {
+        name: confirmedName,
+        language: confirmedLanguage,
+        updatedAt: sharedLayout?.updatedAt || nowIso()
+      });
+    }
     saveState({ sync: false });
     refreshPublishedLayoutView(target);
     return true;
@@ -6599,6 +6850,10 @@ async function fetchPublishedListStateById(listId) {
   return payload;
 }
 
+function publishedPayloadWithTemplateMetadata(payload, metadata = {}) {
+  return normalizePublishedStatePayload(applyPublicTemplateMetadataToPayload(payload, metadata));
+}
+
 async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
   void renderAfter;
   return 0;
@@ -6630,16 +6885,25 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
       fallbackName: demoTemplateFallbackName(record?.language || uiLanguage)
     }))
     .filter(Boolean);
-  if (data?.unified) {
-    serverConfirmedDemoTemplates = mergePublicTemplateCatalogEntries([], demoEntries);
-    demoMetadataMerged = demoEntries.length;
-  } else if (demoEntries.length) {
-    serverConfirmedDemoTemplates = mergePublicTemplateCatalogEntries(
+  if (demoEntries.length) {
+    serverConfirmedDemoTemplates = mergeServerDemoTemplateCatalog(
       serverConfirmedDemoTemplates,
       demoEntries
     );
     demoMetadataMerged = demoEntries.length;
   }
+  const demoPayloadResults = await Promise.all(demoEntries.map(async (entry) => {
+    try {
+      const loaded = await fetchPublishedDemoTemplateState(entry);
+      if (!loaded?.payload) return null;
+      setDemoPublicTemplateMissing(loaded.language, false, { updateCatalog: false });
+      setDemoStatePayloadForLanguage(loaded.language, loaded.payload, { listId: loaded.demoListId });
+      return loaded;
+    } catch {
+      return null;
+    }
+  }));
+  const demoPayloadMerged = demoPayloadResults.filter(Boolean).length;
   const sharedRecords = records.filter(isPublicSharedLayoutListRecord);
   const concreteRecords = sharedRecords.filter(isConcretePublicSharedLayoutListRecord);
   serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
@@ -6679,13 +6943,17 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
       } catch {
         return;
       }
-      if (!isMeaningfulPackingState(payload)) return;
+      if (!isPublicSharedTemplatePayload(payload)) return;
+      payload = publishedPayloadWithTemplateMetadata(payload, {
+        name: record.name || record.title,
+        language: record.language
+      });
       const activeLayout = sharedPayloadActiveLayout(payload);
       const language = normalizeUiLanguage(record.language || "");
       if (!language) return;
       const layout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
         id: sharedId,
-        name: activeLayout?.name || record.title || sharedId,
+        name: record.name || record.title || activeLayout?.name || sharedId,
         language,
         statePayload: payload,
         runtimeSharedTemplate: true,
@@ -6725,8 +6993,8 @@ async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
     fallbackLanguage: uiLanguage
   });
   if (localDraftReconciled || purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
-  if (renderAfter && (demoMetadataMerged || merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
-  return merged + demoMetadataMerged;
+  if (renderAfter && (demoMetadataMerged || demoPayloadMerged || merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
+  return merged + demoMetadataMerged + demoPayloadMerged;
 }
 
 async function fetchPublicSharedLayoutCatalog() {
@@ -6776,10 +7044,8 @@ async function loadPublishedDemoState(language = uiLanguage, listId = "") {
   const demoTemplate = selectDemoTemplateForLanguage(normalized, listId);
   const demoListId = demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalized);
   try {
-    const demoState = normalizeDemoPayloadForLanguage(
-      await fetchPublishedListStateById(demoListId),
-      normalized
-    );
+    const loaded = await fetchPublishedDemoTemplateState(demoTemplate, { fallbackLanguage: normalized });
+    const demoState = loaded?.payload || null;
     if (isSafePublishedDemoState(demoState)) {
       confirmLoadedDemoPublicTemplate(normalized, demoState);
       return demoState;
@@ -6787,14 +7053,36 @@ async function loadPublishedDemoState(language = uiLanguage, listId = "") {
   } catch {
     // Missing localized demo is a normal isolated state until admin publishes it.
   }
-  setDemoPublicTemplateMissing(normalized, true);
+  setDemoPublicTemplateMissing(normalized, true, { listId: demoListId });
   return null;
+}
+
+async function fetchPublishedDemoTemplateState(demoTemplate, { fallbackLanguage = uiLanguage } = {}) {
+  const target = publicDemoTemplatePayloadTarget(demoTemplate, {
+    fallbackLanguage,
+    demoListIdForLanguage: demoPublicListIdForLanguage
+  });
+  if (!target) return null;
+  const normalized = normalizeUiLanguage(target.language);
+  const demoState = normalizeDemoPayloadForLanguage(
+    publishedPayloadWithTemplateMetadata(await fetchPublishedListStateById(target.listId), {
+      name: target.name,
+      language: normalized
+    }),
+    normalized
+  );
+  if (!isSafePublishedDemoState(demoState)) return null;
+  return {
+    language: normalized,
+    demoListId: target.listId,
+    payload: demoState
+  };
 }
 
 function isSafePublishedDemoState(demoState) {
   if (!isPackingStateShape(demoState)) return false;
-  if (!isMeaningfulPackingState(demoState)) return false;
   const stats = stateStats(demoState);
+  if (stats.layouts < 1) return false;
   if (stats.items > 80 || stats.containers > 60 || stats.layouts > 3 || stats.rootContainers > 10) return false;
   const activeLayout = demoState.layouts?.[demoState.activeLayoutId] || Object.values(demoState.layouts || {})[0];
   if (activeLayout && (activeLayout.rootContainerIds || []).length > 10) return false;
@@ -7018,7 +7306,7 @@ async function handleRemoteSaveConflict(error, { notify = false, preferredLayout
       const message = "Загружена серверная версия · временная локальная копия не отправлена";
       updateSyncUi(message);
       if (notify) showToast(message, "warning");
-      if (guestCandidate) await offerSaveGuestLocalLayout(guestCandidate);
+      if (guestCandidate) await offerSaveGuestLocalLayouts(guestCandidate);
     }
     return;
   }
@@ -7085,97 +7373,174 @@ function findLayoutByNormalizedName(name) {
   ) || null;
 }
 
-async function offerSaveGuestLocalLayout(candidate, { confirm = true } = {}) {
-  if (!candidate?.sourceState || !candidate.layoutId || !currentUser) return false;
-  const confirmed = !confirm || await askConfirmDialog({
-    title: "Сохранить гостевую укладку?",
-    text: `Вы вошли в аккаунт, где уже есть данные. Сохранить укладку «${candidate.layoutName}», которую вы редактировали до входа?`,
-    okText: "Сохранить",
-    cancelText: "Не сохранять"
-  });
-  if (!confirmed) return false;
-
-  const existing = findLayoutByNormalizedName(candidate.layoutName);
-  let replaceLayoutId = "";
-  if (existing) {
-    const replace = await askConfirmDialog({
-      title: "Такая укладка уже есть",
-      text: `В аккаунте уже есть укладка «${existing.name}». Заменить её гостевой версией или создать отдельную новую укладку?`,
-      okText: "Заменить",
-      cancelText: "Создать новую",
-      tone: "warning"
-    });
-    if (replace) replaceLayoutId = existing.id;
+async function confirmGuestImportRemoteState(importedLayoutIds) {
+  try {
+    const data = await fetchRemoteStateRecord();
+    const remoteState = normalizeRemoteState(data.record?.payload || data.payload || data.state);
+    return validateGuestImportSyncState(remoteState, importedLayoutIds);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "remote-read-failed",
+      error,
+      stats: null
+    };
   }
+}
 
-  const importedLayoutId = importGuestLocalLayout(candidate, { replaceLayoutId });
-  if (!importedLayoutId) {
-    updateSyncUi("Гостевая укладка уже была перенесена или в ней нет данных для импорта");
+async function saveGuestImportToRemote(importedLayoutIds = []) {
+  const localValidation = validateGuestImportSyncState(state, importedLayoutIds);
+  if (!localValidation.ok) {
+    syncMeta.dirty = true;
+    syncMeta.localUpdatedAt = nowIso();
+    saveSyncMeta();
+    updateSyncUi("Гостевые укладки перенесены локально, но не отправлены: импорт не содержит вещей или сумок");
     return false;
   }
+  await saveRemoteState({ notify: false, forceOverwrite: true });
+  if (syncMeta.dirty) {
+    updateSyncUi("Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз...");
+    await saveRemoteState({ notify: false, forceOverwrite: false });
+  }
+  const remoteValidation = await confirmGuestImportRemoteState(importedLayoutIds);
+  if (remoteValidation.ok) return true;
+  syncMeta.dirty = true;
+  syncMeta.localUpdatedAt = nowIso();
+  saveSyncMeta();
+  updateSyncUi("Гостевые укладки перенесены локально, но сервер пока не вернул их после сохранения");
+  return false;
+}
+
+async function offerPendingGuestLocalLayoutsAfterRemoteLoad({ confirm = true } = {}) {
+  const guestCandidate = consumeGuestLocalLayoutCandidate() || storedGuestLocalLayoutCandidate();
+  if (!guestCandidate) return false;
+  appUnlocked = true;
+  initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
-  updateSyncUi("Гостевая укладка добавлена в аккаунт · сохраняю на сервер...");
-  const saved = await saveGuestImportToRemote();
-  if (!saved) {
-    updateSyncUi("Гостевая укладка перенесена в аккаунт · сохраню на сервер автоматически при следующей проверке");
-    showToast("Гостевая укладка перенесена в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически.", "warning");
-    scheduleRemoteSave();
-    return false;
-  }
-  showToast(replaceLayoutId ? "Гостевая укладка заменила существующую." : "Гостевая укладка сохранена в аккаунт.", "success");
+  updateSyncUi("Личные укладки загружены · переношу гостевые укладки в аккаунт...");
+  await offerSaveGuestLocalLayouts(guestCandidate, { confirm });
   return true;
 }
 
-async function saveGuestImportToRemote() {
-  await saveRemoteState({ notify: false, forceOverwrite: true });
-  if (!syncMeta.dirty) return true;
-  updateSyncUi("Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз...");
-  await saveRemoteState({ notify: false, forceOverwrite: false });
-  return !syncMeta.dirty;
+function guestImportLayoutListText(layouts) {
+  const names = layouts.map((layout) => `«${layout.layoutName}»`);
+  if (names.length <= 3) return names.join(", ");
+  return `${names.slice(0, 3).join(", ")} и ещё ${names.length - 3}`;
 }
 
-function importGuestLocalLayout(candidate, { replaceLayoutId = "" } = {}) {
-  const source = candidate.sourceState;
-  const sourceLayout = source.layouts?.[candidate.layoutId];
-  if (!sourceLayout) return "";
-  saveRecoverySnapshot("before-guest-layout-import", state);
+function guestImportNameConflicts(layouts) {
+  return layouts
+    .map((layout) => ({ ...layout, existing: findLayoutByNormalizedName(layout.layoutName) }))
+    .filter((layout) => layout.existing);
+}
+
+async function offerSaveGuestLocalLayouts(candidate, { confirm = true } = {}) {
+  const layouts = guestCandidateLayouts(candidate);
+  if (!candidate?.sourceState || !layouts.length || !currentUser) return false;
+  const conflicts = guestImportNameConflicts(layouts);
+  const confirmed = !confirm || await askConfirmDialog({
+    title: conflicts.length
+      ? "Сохранить гостевые укладки с новыми именами?"
+      : (layouts.length > 1 ? "Сохранить гостевые укладки?" : "Сохранить гостевую укладку?"),
+    text: conflicts.length
+      ? `В аккаунте уже есть укладки с такими именами: ${guestImportLayoutListText(conflicts)}. Сохранить гостевые укладки как отдельные новые укладки с уникальными именами?`
+      : `Сохранить в аккаунте ${layouts.length > 1 ? "гостевые укладки" : "гостевую укладку"} ${guestImportLayoutListText(layouts)}?`,
+    okText: conflicts.length ? "Сохранить с новыми именами" : "Сохранить",
+    cancelText: "Не сохранять",
+    tone: conflicts.length ? "warning" : ""
+  });
+  if (!confirmed) return false;
+
+  const importedLayoutIds = importGuestLocalLayouts({ ...candidate, layouts }, { renameConflicts: true });
+  if (!importedLayoutIds.length) {
+    updateSyncUi("Гостевые укладки уже были перенесены или в них нет данных для импорта");
+    return false;
+  }
+  renderPreservingPackingScroll();
+  updateSyncUi(importedLayoutIds.length > 1
+    ? "Гостевые укладки добавлены в аккаунт · сохраняю на сервер..."
+    : "Гостевая укладка добавлена в аккаунт · сохраняю на сервер...");
+  const saved = await saveGuestImportToRemote(importedLayoutIds);
+  if (!saved) {
+    updateSyncUi("Гостевые укладки перенесены в аккаунт · сохраню на сервер автоматически при следующей проверке");
+    showToast("Гостевые укладки перенесены в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически.", "warning");
+    scheduleRemoteSave();
+    return false;
+  }
+  clearLocalStorageScope(GUEST_STORAGE_SCOPE, [
+    STORAGE_KEY,
+    BASE_STATE_KEY,
+    SYNC_META_KEY,
+    RECOVERY_STATE_KEY,
+    ACTIVE_LIST_ID_KEY,
+    ACTIVE_LAYOUT_CHOICE_KEY,
+    ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+    ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY
+  ]);
+  showToast(importedLayoutIds.length > 1
+    ? "Гостевые укладки сохранены в аккаунт."
+    : "Гостевая укладка сохранена в аккаунт.", "success");
+  return true;
+}
+
+function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
+  const source = candidate?.sourceState;
+  const layouts = guestCandidateLayouts(candidate);
+  if (!source || !layouts.length) return [];
+  saveRecoverySnapshot("before-guest-layouts-import", state);
   const changedAt = nowIso();
   addBackupDictionaryValues(state, source);
   const idMap = { containers: new Map(), items: new Map() };
-  const rootContainerIds = (sourceLayout.rootContainerIds || [])
-    .map((id) => copyPublishedContainerToState(source, id, { targetLayoutId: "", changedAt, idMap }))
-    .filter(Boolean);
-  if (!rootContainerIds.length) return "";
-  const layoutId = replaceLayoutId || `layout-guest-import-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const name = replaceLayoutId
-    ? (state.layouts?.[replaceLayoutId]?.name || readableGuestDemoLayoutName(candidate.layoutName, "Гостевая укладка"))
-    : uniqueLayoutName(candidate.layoutName || "Гостевая укладка");
-  const safeName = readableGuestDemoLayoutName(name, "Гостевая укладка");
-  delete state.layouts[layoutId];
-  state.layouts[layoutId] = {
-    ...clone(sourceLayout),
-    id: layoutId,
-    name: safeName,
-    rootContainerIds,
-    arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
-    locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
-    categories: normalizeDictionaryValues(sourceLayout.categories || source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
-    ...currentCreateMeta(changedAt)
-  };
-  delete state.layouts[layoutId][GUEST_DEMO_COPY_FLAG];
-  delete state.layouts[layoutId].demoSourceLanguage;
-  state.activeLayoutId = layoutId;
-  applyLayoutArrangement(layoutId);
+  const importedLayoutIds = [];
+  layouts.forEach((entry, index) => {
+    const sourceLayout = source.layouts?.[entry.layoutId];
+    if (!sourceLayout) return;
+    const sourceRootIds = uniqueLayoutIds([
+      ...(sourceLayout.rootContainerIds || []),
+      ...(sourceLayout.arrangement?.rootContainerIds || [])
+    ]);
+    const rootContainerIds = sourceRootIds
+      .map((id) => copyPublishedContainerToState(source, id, {
+        targetLayoutId: "",
+        changedAt,
+        idMap,
+        sourceLayoutId: sourceLayout.id
+      }))
+      .filter(Boolean);
+    const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
+    const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, GUEST_LAYOUT_FALLBACK_NAME);
+    const safeName = renameConflicts
+      ? uniqueLayoutName(requestedName)
+      : requestedName;
+    state.layouts[layoutId] = {
+      ...clone(sourceLayout),
+      id: layoutId,
+      name: safeName,
+      rootContainerIds,
+      arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
+      locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
+      categories: normalizeDictionaryValues(sourceLayout.categories || source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
+      ...currentCreateMeta(changedAt)
+    };
+    delete state.layouts[layoutId][GUEST_DEMO_COPY_FLAG];
+    delete state.layouts[layoutId].demoSourceLanguage;
+    delete state.layouts[layoutId].guestDemoCopyCreatedAt;
+    importedLayoutIds.push(layoutId);
+  });
+  if (!importedLayoutIds.length) return [];
+  state.activeLayoutId = importedLayoutIds[0];
+  applyLayoutArrangement(state.activeLayoutId);
   setActivePrivateScope();
-  rememberActiveLayoutChoice(layoutId);
+  rememberActiveLayoutChoice(state.activeLayoutId);
   normalizeContainerFields(state);
   normalizeItemFields(state);
   repairContainerMembershipFromItemLinks(state);
   normalizeLayoutFields(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);
+  applyGuestLocalDisplayPreferences(state, candidate.displayPreferences || guestLocalDisplayPreferences(source));
   saveState();
-  return layoutId;
+  return importedLayoutIds;
 }
 
 async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null } = {}) {
@@ -7236,7 +7601,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         appUnlocked = true;
         renderPreservingPackingScroll();
         updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-        await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
+        await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
         return;
       }
       if (canSeedEmptyRemoteFromLocal()) {
@@ -7266,7 +7631,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         appUnlocked = true;
         renderPreservingPackingScroll();
         updateSyncUi("На сервере пока пусто · можно сохранить гостевую укладку в аккаунт");
-        await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
+        await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
         return;
       }
       replaceState(createEmptyUserState());
@@ -7294,7 +7659,7 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       appUnlocked = true;
       renderPreservingPackingScroll();
       updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-      await offerSaveGuestLocalLayout(guestCandidate, { confirm: false });
+      await offerSaveGuestLocalLayouts(guestCandidate, { confirm: false });
       return;
     }
 
@@ -7309,12 +7674,14 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
       if ((isInitialRemotePull || localStateIsNonAuthoritative) && !localStateCanOverrideRemote && isMeaningfulPackingState(remoteState)) {
         const guestCandidate = consumeGuestLocalLayoutCandidate();
         if (applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && guestCandidate) {
-          await offerSaveGuestLocalLayout(guestCandidate);
+          await offerSaveGuestLocalLayouts(guestCandidate);
         }
         return;
       }
       if (!syncMeta.dirty) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
+        if (applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
+          await offerPendingGuestLocalLayoutsAfterRemoteLoad();
+        }
         return;
       }
       if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
@@ -7393,11 +7760,13 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
     rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
+    repairPrivateMojibakeLayoutNames();
     appUnlocked = true;
     if (initialRemoteLoadPending) {
       initialRemoteLoadPending = false;
       renderPreservingPackingScroll();
     }
+    await offerPendingGuestLocalLayoutsAfterRemoteLoad();
     setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {
@@ -7469,8 +7838,16 @@ async function openAdminDemoLayout({ remember = true, language = uiLanguage, tem
     return;
   }
   const normalizedLanguage = normalizeUiLanguage(language);
-  const demoTemplate = selectDemoTemplateForLanguage(normalizedLanguage, templateId);
-  const demoListId = demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalizedLanguage);
+  const requestedTemplateId = String(templateId || "").trim();
+  const demoTemplate = requestedTemplateId
+    ? demoTemplateForLanguage(adminDemoTemplateCatalogEntries(), normalizedLanguage, {
+      fallbackEntry: fallbackDemoTemplateEntry(normalizedLanguage),
+      listId: requestedTemplateId
+    })
+    : selectDemoTemplateForLanguage(normalizedLanguage, "");
+  const demoListId = requestedTemplateId || demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalizedLanguage);
+  activeDemoTemplateListId = demoListId;
+  const demoListConfirmedByServer = Boolean(demoTemplate?.serverConfirmed);
   const layoutChoice = demoTemplateChoiceForLanguage(normalizedLanguage, demoListId);
   const existing = Object.values(state.layouts || {}).find((layout) =>
     layout.adminDemo &&
@@ -7482,7 +7859,7 @@ async function openAdminDemoLayout({ remember = true, language = uiLanguage, tem
   if (existing) {
     existing.adminDemoListId = existing.adminDemoListId || demoListId;
     repairAdminDemoLayout(existing);
-    if (!isLayoutMeaningful(existing.id)) {
+    if (demoListConfirmedByServer && !isLayoutMeaningful(existing.id)) {
       removeLayoutTree(existing.id);
       const demoState = await defaultDemoState(normalizedLanguage, demoListId);
       importDemoStateAsEditableLayout(demoState, { language: normalizedLanguage, listId: demoListId });
@@ -7549,12 +7926,12 @@ function clearActiveAdminDemoStateOnStartup() {
   return removed;
 }
 
-async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage, templateId = "" } = {}) {
-  if (!requirePublishedTemplatesAvailable()) {
+async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage, templateId = "", allowOfflineCache = false } = {}) {
+  if (!allowOfflineCache && !requirePublishedTemplatesAvailable()) {
     renderFilters();
     return;
   }
-  if (canOpenAdminPublishedEdit()) {
+  if (canEditPublishedTemplatesNow()) {
     await openAdminDemoLayout({ remember, language, templateId });
     return;
   }
@@ -7566,6 +7943,18 @@ async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage
   switchView("packing");
   render();
   try {
+    if (allowOfflineCache && arePublishedTemplatesBlocked()) {
+      const cachedDemoState = demoStatePayloadForLanguage(normalizedLanguage, demoListId);
+      if (!isMeaningfulPackingState(cachedDemoState)) {
+        updateSyncUi("Демо-укладка · офлайн, локальная копия не найдена");
+        showToast("Для этого demo-шаблона нет локальной копии. Откройте его один раз онлайн.", "warning");
+        return;
+      }
+      setDemoStatePayloadForLanguage(normalizedLanguage, cachedDemoState, { listId: demoListId });
+      render();
+      updateSyncUi("Демо-укладка · офлайн-просмотр");
+      return;
+    }
     setDemoStatePayloadForLanguage(normalizedLanguage, await defaultDemoState(normalizedLanguage, demoListId), { listId: demoListId });
     render();
     updateSyncUi("Демо-укладка · просмотр");
@@ -7578,7 +7967,7 @@ async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage
 }
 
 async function confirmPublicLayoutTransition(kind, layout = null) {
-  const admin = canOpenAdminPublishedEdit();
+  const admin = canEditPublishedTemplatesNow();
   if (kind === "demo") {
     return askConfirmDialog({
       title: admin ? "Открыть демо-укладку для правки?" : "Открыть демо-укладку?",
@@ -7625,8 +8014,12 @@ function removeLayoutTree(layoutId, targetState = state, { save = true } = {}) {
 function repairActiveEmptyAdminDemoDraft() {
   const layout = state.layouts?.[state.activeLayoutId];
   if (!layout?.adminDemo || isLayoutMeaningful(layout.id)) return false;
+  const language = normalizeUiLanguage(layout.adminDemoLanguage || layout.language || uiLanguage);
+  const listId = String(layout.adminDemoListId || "").trim() || demoPublicListIdForLanguage(language);
+  const confirmedTemplate = demoTemplateForLanguage(serverConfirmedDemoTemplates, language, { listId });
+  if (!confirmedTemplate?.serverConfirmed) return false;
   removeLayoutTree(layout.id);
-  importDemoStateAsEditableLayout(createBlankBikePackingState());
+  importDemoStateAsEditableLayout(createBlankBikePackingState(), { language, listId });
   return true;
 }
 
@@ -7858,7 +8251,7 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   };
   let publishedPayload = null;
   let publishedByServerPhotoCopy = false;
-  if (target.type === "shared" && layout.adminTemplateCopy) {
+  if (shouldCopyPublicTemplatePhotoReferencesOnServer(layout)) {
     try {
       publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
         updateSyncUi("Сохраняю шаблон и копирую фото на сервере...");
@@ -7878,14 +8271,18 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
       publishedByServerPhotoCopy = true;
     } catch (error) {
       if (typeof console !== "undefined" && console.warn) {
-        console.warn("[bike-packing] Server-side shared photo copy failed; falling back to legacy publish flow.", error);
+        console.warn("[bike-packing] Server-side public template photo copy failed; falling back to legacy publish flow.", error);
       }
     }
   }
   if (!publishedByServerPhotoCopy) {
     publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
-      const existingPublishedLayout = target.type === "shared" ? findSharedLayout(target.sharedId) : null;
-      const shouldPrimeTemplate = target.type === "shared" && shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
+      const existingPublishedLayout = target.type === "shared"
+        ? findSharedLayout(target.sharedId)
+        : demoTemplateForLanguage(serverConfirmedDemoTemplates, target.language || layout.language || uiLanguage, {
+          listId: target.demoListId || layout.adminDemoListId || ""
+        });
+      const shouldPrimeTemplate = shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
       if (shouldPrimeTemplate) {
         updateSyncUi("Создаю шаблон перед копированием фото...");
         await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
@@ -7917,6 +8314,10 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
   if (target.type === "demo") {
     const confirmedLanguage = normalizeUiLanguage(target.language || layout.adminDemoLanguage || layout.language || uiLanguage);
     const confirmedName = publishTitle || demoTemplateNameFromPayload(publishedPayload, confirmedLanguage);
+    publishedPayload = publishedPayloadWithTemplateMetadata(publishedPayload, {
+      name: confirmedName,
+      language: confirmedLanguage
+    });
     layout.name = confirmedName;
     layout.adminDemoListId = target.demoListId || layout.adminDemoListId || demoPublicListIdForLanguage(confirmedLanguage);
     activeDemoTemplateListId = layout.adminDemoListId;
@@ -7930,6 +8331,10 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
       missing: false
     });
   } else {
+    publishedPayload = publishedPayloadWithTemplateMetadata(publishedPayload, {
+      name: layout.name || "",
+      language: layout.language || uiLanguage
+    });
     const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
       id: target.sharedId,
       name: layout.name || "",
@@ -8081,14 +8486,14 @@ function openSharedLayoutsDialog() {
   openSharedLayoutViewer(layoutId);
 }
 
-async function openSharedLayoutViewer(layoutId, { remember = true } = {}) {
-  if (!requirePublishedTemplatesAvailable()) {
+async function openSharedLayoutViewer(layoutId, { remember = true, allowOfflineCache = false } = {}) {
+  if (!allowOfflineCache && !requirePublishedTemplatesAvailable()) {
     renderFilters();
     return;
   }
   const layout = findSharedLayout(layoutId);
   if (!layout) return;
-  if (canOpenAdminPublishedEdit()) {
+  if (canEditPublishedTemplatesNow()) {
     await openSharedLayoutForAdmin(layoutId, { remember });
     return;
   }
@@ -8141,16 +8546,22 @@ async function loadSharedLayoutPayload(layoutId) {
       const payload = activateSharedPayloadLayout(record.payload, layout.requestedLayoutId);
       assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record.payload);
       if (!payload) return fallback;
-      layout.statePayload = payload;
+      layout.statePayload = publishedPayloadWithTemplateMetadata(payload, {
+        name: record.title || layout.name,
+        language: layout.language
+      });
       layout.listRecord = record;
-      layout.name = sharedPayloadActiveLayout(payload)?.name || record.title || layout.name;
+      layout.name = record.title || layout.name || sharedPayloadActiveLayout(layout.statePayload)?.name;
       return true;
     } catch {
       return fallback;
     }
   }
-  const remoteState = await fetchStateRecordByItemKey(sharedLayoutItemKey(layoutId));
-  if (!isPackingStateShape(remoteState)) return false;
+  const remoteState = publishedPayloadWithTemplateMetadata(await fetchStateRecordByItemKey(sharedLayoutItemKey(layoutId)), {
+    name: layout.name,
+    language: layout.language
+  });
+  if (!isPublicSharedTemplatePayload(remoteState)) return false;
   layout.statePayload = remoteState;
   return true;
 }
@@ -8802,7 +9213,7 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   });
 }
 
-function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "", sourceSnapshot: providedSnapshot = null } = {}) {
+function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "", sourceSnapshot: providedSnapshot = null, copiedFromTemplateName = "" } = {}) {
   const sourceSnapshot = providedSnapshot || snapshotContainerTree(containerId, { sourceLayoutId, targetState: sourceState });
   if (!sourceSnapshot) return "";
   const publicSourceLayoutId = sourceLayoutId || sourceState?.activeLayoutId || Object.values(sourceState?.layouts || {})[0]?.id || "";
@@ -8838,7 +9249,10 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       sourceItem._publicCopySourceLayoutId || publicSourceLayoutId
     );
     if (preserveSource) state.items[nextId].sharedSourceId = publicSourceId;
-    else stripPublicOriginForPrivateCopy(state.items[nextId]);
+    else {
+      stripPublicOriginForPrivateCopy(state.items[nextId]);
+      appendCopiedFromTemplateNote(state.items[nextId], copiedFromTemplateName);
+    }
     return nextId;
   };
 
@@ -8866,7 +9280,10 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
       sourceContainer._publicCopySourceLayoutId || publicSourceLayoutId
     );
     if (preserveSource) state.containers[nextId].sharedSourceId = publicSourceId;
-    else stripPublicOriginForPrivateCopy(state.containers[nextId]);
+    else {
+      stripPublicOriginForPrivateCopy(state.containers[nextId]);
+      appendCopiedFromTemplateNote(state.containers[nextId], copiedFromTemplateName);
+    }
     state.collapsedContainers[nextId] = false;
 
     const copiedChildren = new Map();
@@ -8999,10 +9416,21 @@ function demoCopyActionText() {
   return uiLanguage === "en" ? "Use as new layout" : "\u0412\u0437\u044f\u0442\u044c \u043a\u0430\u043a \u043d\u043e\u0432\u0443\u044e \u0443\u043a\u043b\u0430\u0434\u043a\u0443";
 }
 
-function demoCopyLayoutName(sourceName = "", { exactTemplateName = false } = {}) {
+function demoCopyPreferredTemplateName(language = uiLanguage, listId = activeDemoTemplateListId) {
+  const template = currentDemoTemplate(language, listId);
+  return template?.serverConfirmed ? String(template.name || "").trim() : "";
+}
+
+function demoCopyTemplateListId(language = uiLanguage, listId = activeDemoTemplateListId) {
+  const template = currentDemoTemplate(language, listId);
+  return String(template?.listId || template?.id || listId || demoPublicListIdForLanguage(language)).trim();
+}
+
+function demoCopyLayoutName(sourceName = "", { exactTemplateName = false, preferredName = "" } = {}) {
   const fallback = uiLanguage === "en" ? "Demo copy" : "\u041c\u043e\u044f \u0434\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
   return guestDemoCopyLayoutNameValue(sourceName, {
     fallbackName: fallback,
+    preferredName,
     normalizeName: (name) => normalizeDemoLayoutName(name, uiLanguage),
     uniqueName: uniqueLayoutName,
     exactTemplateName
@@ -9016,18 +9444,27 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
   const stamp = Date.now();
   const changedAt = nowIso();
   const idMap = { containers: new Map(), items: new Map() };
-  const rootContainerIds = (sourceLayout.rootContainerIds || [])
-    .map((id) => copyPublishedContainerToState(source, id, { targetLayoutId: "", changedAt, idMap }))
+  const rootContainerIds = templateCopySourceRootIds(sourceLayout)
+    .map((id) => copyPublishedContainerToState(source, id, {
+      targetLayoutId: "",
+      changedAt,
+      idMap,
+      sourceLayoutId: sourceLayout.id
+    }))
     .filter(Boolean);
 
   const layoutId = `layout-guest-demo-${stamp}`;
+  const demoListId = demoCopyTemplateListId(uiLanguage, activeDemoTemplateListId);
+  const preferredName = demoCopyPreferredTemplateName(uiLanguage, demoListId);
   state.layouts[layoutId] = {
     id: layoutId,
-    name: demoCopyLayoutName(sourceLayout.name, { exactTemplateName }),
+    name: demoCopyLayoutName(sourceLayout.name, { exactTemplateName, preferredName }),
     rootContainerIds,
     arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
     [GUEST_DEMO_COPY_FLAG]: !canUsePrivateState(),
     demoSourceLanguage: uiLanguage,
+    demoSourceListId: demoListId,
+    guestDemoCopyCreatedAt: changedAt,
     locations: normalizeDictionaryValues(source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
     categories: normalizeDictionaryValues(source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
     ...currentCreateMeta(changedAt)
@@ -9053,6 +9490,7 @@ function pruneUneditedGuestDemoCopies() {
     layouts: state.layouts,
     activeLayoutId: state.activeLayoutId,
     isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
     hasUserEdits: (layout) => guestLayoutHasUserContentEdits(state, layout)
   });
   if (!plan.removeLayoutIds.length) return false;
@@ -9065,28 +9503,63 @@ function pruneUneditedGuestDemoCopies() {
   return true;
 }
 
+function reusableGuestDemoCopyLayout() {
+  const layouts = Object.values(state.layouts || {}).filter((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
+  return layouts.find((layout) => layout.id === state.activeLayoutId) ||
+    layouts.find((layout) => isAutomaticGuestDemoCopyLayout(layout)) ||
+    layouts[0] ||
+    null;
+}
+
+function renameReusableGuestDemoCopy(existing, demoState, { exactTemplateName = false } = {}) {
+  if (!existing || !exactTemplateName || guestLayoutHasUserContentEdits(state, existing)) return false;
+  const sourceLayout = demoState?.layouts?.[demoState.activeLayoutId] || Object.values(demoState?.layouts || {})[0];
+  const language = existing.demoSourceLanguage || uiLanguage;
+  const listId = existing.demoSourceListId || activeDemoTemplateListId;
+  const preferredName = demoCopyPreferredTemplateName(language, listId);
+  const nextName = demoCopyLayoutName(sourceLayout?.name, { exactTemplateName: true, preferredName });
+  if (!nextName || existing.name === nextName) return false;
+  existing.name = nextName;
+  existing.demoSourceListId = demoCopyTemplateListId(language, listId);
+  saveState();
+  return true;
+}
+
 async function createLocalDemoCopy({ forceNew = false, remember = true, exactTemplateName = false } = {}) {
-  if (!forceNew) pruneUneditedGuestDemoCopies();
-  const existing = !forceNew
-    ? Object.values(state.layouts || {}).find((layout) => layout?.[GUEST_DEMO_COPY_FLAG])
-    : null;
-  if (existing) {
-    if (exactTemplateName && !guestLayoutHasUserContentEdits(state, existing)) {
-      const demoState = await defaultDemoState(uiLanguage);
-      const sourceLayout = demoState?.layouts?.[demoState.activeLayoutId] || Object.values(demoState?.layouts || {})[0];
-      const nextName = demoCopyLayoutName(sourceLayout?.name, { exactTemplateName: true });
-      if (nextName && existing.name !== nextName) {
-        existing.name = nextName;
-        saveState();
+  if (!forceNew && localDemoCopyInFlight) return localDemoCopyInFlight;
+  const task = (async () => {
+    if (!forceNew) pruneUneditedGuestDemoCopies();
+    let existing = !forceNew ? reusableGuestDemoCopyLayout() : null;
+    if (existing && !exactTemplateName) {
+      openPrivateLayout(existing.id, { remember });
+      return existing.id;
+    }
+    const demoState = await defaultDemoState(uiLanguage, activeDemoTemplateListId);
+    if (existing) {
+      renameReusableGuestDemoCopy(existing, demoState, { exactTemplateName });
+      openPrivateLayout(existing.id, { remember });
+      return existing.id;
+    }
+    if (!forceNew) {
+      pruneUneditedGuestDemoCopies();
+      existing = reusableGuestDemoCopyLayout();
+      if (existing) {
+        renameReusableGuestDemoCopy(existing, demoState, { exactTemplateName });
+        openPrivateLayout(existing.id, { remember });
+        return existing.id;
       }
     }
-    openPrivateLayout(existing.id, { remember });
-    return existing.id;
+    const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { remember, exactTemplateName });
+    updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));
+    return layoutId;
+  })();
+  if (forceNew) return task;
+  localDemoCopyInFlight = task;
+  try {
+    return await task;
+  } finally {
+    if (localDemoCopyInFlight === task) localDemoCopyInFlight = null;
   }
-  const demoState = await defaultDemoState(uiLanguage);
-  const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { remember, exactTemplateName });
-  updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));
-  return layoutId;
 }
 
 function sharedLayoutPublicSourceId(layout, sourceLayout = null) {
@@ -9255,11 +9728,17 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
   return editableLayout;
 }
 
-async function materializeDemoLayoutForAdminCopy(language = uiLanguage) {
+async function materializeDemoLayoutForAdminCopy(language = uiLanguage, templateId = "") {
   if (!canOpenAdminPublishedEdit()) return null;
   const normalizedLanguage = normalizeUiLanguage(language);
-  const demoTemplate = currentDemoTemplate(normalizedLanguage);
-  const demoListId = demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalizedLanguage);
+  const requestedTemplateId = String(templateId || "").trim();
+  const demoTemplate = requestedTemplateId
+    ? demoTemplateForLanguage(adminDemoTemplateCatalogEntries(), normalizedLanguage, {
+      fallbackEntry: fallbackDemoTemplateEntry(normalizedLanguage),
+      listId: requestedTemplateId
+    })
+    : currentDemoTemplate(normalizedLanguage);
+  const demoListId = requestedTemplateId || demoTemplate?.listId || demoTemplate?.id || demoPublicListIdForLanguage(normalizedLanguage);
   const existing = Object.values(state.layouts || {}).find((layout) =>
     layout?.adminDemo &&
     (
@@ -10349,9 +10828,15 @@ function renderFilters() {
     ? (readonlyLayoutId === DEMO_SHARED_LAYOUT_ID ? demoTemplateChoiceForLanguage(uiLanguage, activeDemoTemplateListId) : `shared:${readonlyLayoutId}`)
     : publicLayoutChoiceForLayout(activeLayout) || state.activeLayoutId;
   const publicTemplatesBlocked = arePublishedTemplatesBlocked();
+  const showAdminCatalog = canViewAdminPublishedCatalog();
+  const adminCatalogReadOnly = showAdminCatalog && !canEditPublishedTemplatesNow();
   const demoTemplates = demoTemplatesForUiLanguage(uiLanguage);
-  let publicOptions = canOpenAdminPublishedEdit()
-    ? adminPublicLayoutOptions({ disabled: publicTemplatesBlocked })
+  let publicOptions = showAdminCatalog
+    ? adminPublicLayoutOptions({
+      disabled: false,
+      readonly: adminCatalogReadOnly,
+      canView: true
+    })
     : [
       ...demoTemplates.map((demoTemplate) => [
         demoTemplateChoiceForEntry(demoTemplate),
@@ -10364,9 +10849,14 @@ function renderFilters() {
     ];
   const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
   if (activeAdminLabel) {
-    publicOptions = publicOptions.map((option) =>
-      option[0] === selectedLayoutValue ? [option[0], activeAdminLabel, option[2]] : option
-    );
+    const label = readonlyPublicTemplateOptionLabel(activeAdminLabel, { readonly: adminCatalogReadOnly });
+    if (publicOptions.some((option) => option[0] === selectedLayoutValue)) {
+      publicOptions = publicOptions.map((option) =>
+        option[0] === selectedLayoutValue ? [option[0], label, option[2], option[3]] : option
+      );
+    } else {
+      publicOptions = [[selectedLayoutValue, label, activeLayout?.adminDemo ? "demo" : "shared", false], ...publicOptions];
+    }
   }
   const layoutOptions = [
     ...publicOptions,
@@ -10374,8 +10864,14 @@ function renderFilters() {
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
   updateLayoutLoadStatusUi();
-  refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue));
-  refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(templateDraftLayoutId(selectedLayoutValue)));
+  const selectedTemplateDraftId = templateDraftLayoutId(selectedLayoutValue);
+  const selectedTemplateDraft = selectedTemplateDraftId ? state.layouts?.[selectedTemplateDraftId] : null;
+  refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue) || Boolean(selectedTemplateDraft?.adminDemo));
+  refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(selectedTemplateDraftId && !selectedTemplateDraft?.adminDemo));
+  refs.layoutSelect.classList.toggle("layout-select-readonly-public", adminCatalogReadOnly);
+  refs.layoutSelect.title = adminCatalogReadOnly
+    ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
+    : "";
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
@@ -11548,6 +12044,7 @@ function selectItemContainer(containerId) {
   itemDialogTargetLayoutId = getPublishedEditLayoutId();
   refs.itemContainer.value = containerId || "";
   updateItemContainerPickerButton();
+  updateItemRemoveFromLayoutButton();
   updateItemDialogSaveState();
   refs.containerPickerDialog.close();
 }
@@ -12062,6 +12559,18 @@ function updateItemContainerPickerButton() {
   refs.itemContainerPickerBtn.setAttribute("aria-label", hasContainer
     ? `Переложить из ${path}`
     : "Положить в укладку");
+}
+
+function updateItemRemoveFromLayoutButton() {
+  if (!refs.itemRemoveFromLayoutBtn) return;
+  const layout = state.layouts?.[itemDialogTargetLayoutId || getPublishedEditLayoutId()];
+  const canRemove = Boolean(
+    editingItemId &&
+    refs.itemContainer.value &&
+    getItemContainerIdInLayout(layout, editingItemId)
+  );
+  refs.itemRemoveFromLayoutBtn.hidden = !canRemove;
+  refs.itemRemoveFromLayoutBtn.disabled = !canRemove;
 }
 
 function cssSafeId(value) {
@@ -13423,8 +13932,14 @@ function bindPhotoGalleries(root = document) {
     if (!track) return;
     const setActive = (index) => {
       dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
-      if (gallery.closest("#itemPhotoPreview")) itemDialogPhotoActiveIndex = index;
-      if (gallery.closest("#rootContainerPhotoPreview")) rootContainerDialogPhotoActiveIndex = index;
+      if (gallery.closest("#itemPhotoPreview")) {
+        itemDialogPhotoActiveIndex = index;
+        updateItemDialogPhotoPrimaryButton();
+      }
+      if (gallery.closest("#rootContainerPhotoPreview")) {
+        rootContainerDialogPhotoActiveIndex = index;
+        updateRootContainerDialogPhotoPrimaryButton();
+      }
     };
     const syncActive = () => {
       const width = track.clientWidth || 1;
@@ -16151,17 +16666,17 @@ function createGroupFromItems(itemId, targetItemId) {
   render();
 }
 
-function removeItemFromActiveLayout(itemId) {
+function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId) {
   const item = state.items[itemId];
-  const layout = state.layouts?.[state.activeLayoutId];
+  const layout = state.layouts?.[layoutId];
   const containerId = getItemContainerIdInLayout(layout, itemId);
   if (!item || !layout || !containerId) return;
   capturePackingScroll();
   const changedAt = nowIso();
   if (!removeItemFromLayoutArrangement(layout, itemId)) return;
   cleanupEmptyContainersInLayoutArrangement(layout, containerId);
-  touchActiveLayout(changedAt);
-  applyLayoutArrangement(state.activeLayoutId);
+  touchLayout(layoutId, changedAt);
+  if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
   saveState();
   scheduleActivePublishedEditSave();
   render();
@@ -16283,6 +16798,25 @@ function confirmRemoveItemFromActiveLayout(itemId) {
     tone: "danger",
     onConfirm: () => removeItemFromActiveLayout(itemId)
   });
+}
+
+async function confirmRemoveEditingItemFromActiveLayout(event) {
+  event?.preventDefault();
+  const itemId = editingItemId;
+  const item = state.items?.[itemId];
+  const layoutId = itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  const layout = state.layouts?.[layoutId];
+  if (!item || !layout || !getItemContainerIdInLayout(layout, itemId)) return;
+  const confirmed = await askConfirmDialog({
+    title: "Убрать вещь из укладки?",
+    text: `«${item.name}» исчезнет из текущей укладки, но останется во вкладке «Вещи».`,
+    highlightText: "Вещь сейчас участвует в текущей укладке.",
+    okText: "Убрать",
+    tone: "danger"
+  });
+  if (!confirmed) return;
+  refs.dialog?.close("remove-from-layout");
+  removeItemFromActiveLayout(itemId, layoutId);
 }
 
 function confirmDeleteItem(itemId) {
@@ -16731,6 +17265,7 @@ function openItemDialog(itemId = null) {
     : "";
   updateItemContainerPickerButton();
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = !itemId;
+  updateItemRemoveFromLayoutButton();
   refs.itemNote.value = item.note || "";
   itemDialogPhotoDraft = null;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -16767,12 +17302,15 @@ function setSharedReadonlyItemDialog(readonly) {
   refs.copySharedItemDialogBtn.hidden = !readonly;
   refs.saveItemBtn.hidden = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = readonly;
+  if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.hidden = readonly || refs.itemRemoveFromLayoutBtn.hidden;
   refs.dialog.querySelectorAll("input, textarea, select").forEach((element) => {
     element.disabled = readonly;
   });
   refs.itemContainerPickerBtn.disabled = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.disabled = readonly;
+  if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.disabled = readonly || refs.itemRemoveFromLayoutBtn.disabled;
   refs.itemPhotoRemoveBtn.disabled = readonly;
+  if (refs.itemPhotoPrimaryBtn) refs.itemPhotoPrimaryBtn.disabled = readonly || refs.itemPhotoPrimaryBtn.disabled;
   refs.itemPhotoInput.disabled = readonly;
   refs.dialog.querySelectorAll(".item-photo-pick").forEach((label) => {
     label.classList.toggle("disabled", readonly);
@@ -16878,6 +17416,13 @@ function templateCopySourceScore(sourceLayout, sourceState = state) {
 
 async function loadPublishedTemplateCopySource(sourceLayout) {
   if (!sourceLayout) return null;
+  if (isManagedDemoTemplateLayout(sourceLayout, DEMO_SHARED_LAYOUT_ID)) {
+    const demoLanguage = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
+    const payload = await loadPublishedDemoState(demoLanguage, sourceLayout.adminDemoListId || "").catch(() => null);
+    const layout = sharedPayloadActiveLayout(payload);
+    if (!payload || !layout) return null;
+    return { state: payload, layout, score: templateCopySourceScore(layout, payload) };
+  }
   if (sourceLayout.adminSharedSourceId) {
     const sharedId = sourceLayout.adminSharedSourceId;
     let payload = null;
@@ -16889,22 +17434,19 @@ async function loadPublishedTemplateCopySource(sourceLayout) {
     if (!payload) {
       payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId)).catch(() => null);
     }
+    payload = publishedPayloadWithTemplateMetadata(payload, {
+      name: sharedLayout?.name,
+      language: sharedLayout?.language || sourceLayout.language || uiLanguage
+    });
     const layout = sharedPayloadActiveLayout(payload);
     if (!payload || !layout) return null;
     upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
       id: sharedId,
-      name: layout.name || sharedLayout?.name || sharedId,
+      name: sharedLayout?.name || layout.name || sharedId,
       language: sharedLayoutLanguageFromPayload(payload, sourceLayout.language || uiLanguage),
       statePayload: payload,
       runtimeSharedTemplate: true
     });
-    return { state: payload, layout, score: templateCopySourceScore(layout, payload) };
-  }
-  if (sourceLayout.adminDemo) {
-    const demoLanguage = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
-    const payload = await loadPublishedDemoState(demoLanguage, sourceLayout.adminDemoListId || "").catch(() => null);
-    const layout = sharedPayloadActiveLayout(payload);
-    if (!payload || !layout) return null;
     return { state: payload, layout, score: templateCopySourceScore(layout, payload) };
   }
   return null;
@@ -16934,6 +17476,38 @@ async function createTemplateCopyFromSource(sourceLayout, requestedName, {
     sourceState = publishedSource.state;
     copySourceLayout = publishedSource.layout;
     rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
+  }
+  if (!rootSnapshots.length) {
+    const changedAt = nowIso();
+    const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const dictionaries = sourceState === state
+      ? ensureLayoutDictionaries(copySourceLayout)
+      : ensureLayoutDictionaries(copySourceLayout, sourceState);
+    const copyLanguage = normalizeUiLanguage(language || copySourceLayout.adminDemoLanguage || copySourceLayout.language || sourceLayout.language || uiLanguage);
+    const isDemoTemplateCopy = Boolean(sourceLayout.adminDemo || copySourceLayout.adminDemo);
+    const layout = createEmptyPublicTemplateDraftRecord({
+      id,
+      name: uniquePublishedTemplateName(requestedName),
+      kind: isDemoTemplateCopy ? "demo" : "shared",
+      language: copyLanguage,
+      arrangement: createEmptyLayoutArrangement(),
+      dictionaries: dictionaries || ensurePrivateDictionaries(state),
+      meta: currentCreateMeta(changedAt),
+      demoListId: isDemoTemplateCopy
+        ? createDemoTemplateListId({
+          language: copyLanguage,
+          takenListIds: [
+            ...serverConfirmedDemoTemplates.map((entry) => entry?.listId || entry?.id),
+            ...Object.values(state.layouts || {}).map((entry) => entry?.adminDemoListId)
+          ].filter(Boolean)
+        })
+        : ""
+    });
+    state.layouts[id] = layout;
+    if (activate) activateAdminPublishedLayout(id);
+    saveLayoutMutation(id);
+    if (renderAfter) render();
+    return id;
   }
   if (!rootSnapshots.length) {
     throw new Error("источник шаблона пустой или не загрузился");
@@ -16992,30 +17566,350 @@ async function createTemplateCopyFromSource(sourceLayout, requestedName, {
   return id;
 }
 
+function layoutCreateCopySourceOptions({ templates = false, includeTemplates = false } = {}) {
+  const personalLayouts = canUsePrivateState()
+    ? Object.values(state.layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId)
+    : Object.values(state.layouts || {}).filter((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
+  const publicOptions = canViewAdminPublishedCatalog()
+    ? adminPublicLayoutOptions({
+      disabled: false,
+      readonly: !canEditPublishedTemplatesNow(),
+      canView: true
+    })
+    : [];
+  return templates
+    ? publicOptions
+    : includeTemplates
+      ? [
+        ...publicOptions,
+        ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"])
+      ]
+    : personalLayouts.map((layout) => [layout.id, layout.name, "personal"]);
+}
+
+async function resolveLayoutCreateCopySource(choice) {
+  const value = String(choice || "").trim();
+  return state.layouts?.[value] || null;
+}
+
+async function resolveLayoutCreateTemplateCopySource(choice) {
+  if (!canOpenAdminPublishedEdit()) return null;
+  const value = String(choice || "").trim();
+  const draftId = templateDraftLayoutId(value);
+  if (draftId) {
+    const layout = state.layouts?.[draftId] || null;
+    return layout ? {
+      sourceState: state,
+      sourceLayout: layout,
+      templateName: layout.name || "",
+      sourceId: layout.adminDemoListId || layout.adminSharedSourceId || layout.id
+    } : null;
+  }
+  if (isDemoLayoutChoice(value)) {
+    const language = demoLanguageFromLayoutChoice(value);
+    const templateId = demoTemplateIdFromLayoutChoice(value);
+    const payload = normalizeDemoPayloadForLanguage(
+      normalizePublishedStatePayload(await loadPublishedDemoState(language, templateId)),
+      language
+    );
+    const sourceLayout = sharedPayloadActiveLayout(payload);
+    if (!payload || !sourceLayout) return null;
+    const template = demoTemplateForLanguage(serverConfirmedDemoTemplates, language, { listId: templateId });
+    return {
+      sourceState: payload,
+      sourceLayout,
+      templateName: template?.name || sourceLayout.name || demoTemplateFallbackName(language),
+      sourceId: template?.listId || templateId || demoPublicListIdForLanguage(language)
+    };
+  }
+  if (value.startsWith("shared:")) {
+    const sharedId = value.slice("shared:".length);
+    const sharedLayout = findSharedLayout(sharedId);
+    await loadSharedLayoutPayload(sharedId).catch(() => false);
+    const loadedSharedLayout = findSharedLayout(sharedId) || sharedLayout;
+    const payload = sharedLayoutStatePayload(loadedSharedLayout);
+    const sourceLayout = sharedPayloadActiveLayout(payload);
+    if (!payload || !sourceLayout) return null;
+    return {
+      sourceState: payload,
+      sourceLayout,
+      templateName: loadedSharedLayout?.name || sourceLayout.name || sharedId,
+      sourceId: sharedId
+    };
+  }
+  return null;
+}
+
+async function resolveLayoutCreateTemplateCopyLayout(choice) {
+  if (!canOpenAdminPublishedEdit()) return null;
+  const value = String(choice || "").trim();
+  const draftId = templateDraftLayoutId(value);
+  if (draftId) {
+    const layout = state.layouts?.[draftId] || null;
+    return layout && isAdminEditablePublishedLayout(layout.id) ? layout : null;
+  }
+  if (isDemoLayoutChoice(value)) {
+    return await materializeDemoLayoutForAdminCopy(
+      demoLanguageFromLayoutChoice(value),
+      demoTemplateIdFromLayoutChoice(value)
+    );
+  }
+  if (value.startsWith("shared:")) {
+    const sharedId = value.slice("shared:".length);
+    await loadSharedLayoutPayload(sharedId).catch(() => false);
+    return materializeSharedLayoutForAdmin(sharedId);
+  }
+  const layout = state.layouts?.[value] || null;
+  return layout && isAdminEditablePublishedLayout(layout.id) ? layout : null;
+}
+
+function createPrivateLayoutFromTemplateSource(source, requestedName, { activate = true } = {}) {
+  if (!source?.sourceLayout || !source?.sourceState || !requestedName) return "";
+  captureActiveLayoutArrangement();
+  const changedAt = nowIso();
+  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const sourceLayout = source.sourceLayout;
+  const sourceState = source.sourceState;
+  const templateName = source.templateName || sourceLayout.name || "";
+  const rootContainerIds = templateCopySourceRootIds(sourceLayout)
+    .map((rootId) => copyPublishedContainerToState(sourceState, rootId, {
+      targetLayoutId: "",
+      changedAt,
+      sourceLayoutId: sourceLayout.id,
+      copiedFromTemplateName: templateName
+    }))
+    .filter(Boolean);
+  const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
+  const dictionaries = ensureLayoutDictionaries(sourceLayout, sourceState) || ensurePrivateDictionaries(state);
+  const layout = createManagedLayoutCopyRecord({
+    id,
+    name: uniqueLayoutName(requestedName),
+    sourceLayout,
+    arrangement,
+    dictionaries,
+    meta: currentCreateMeta(changedAt),
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    guestDemoCopy: !canUsePrivateState(),
+    publicTemplate: false
+  });
+  layout.rootContainerIds = rootContainerIds;
+  layout.arrangement = arrangement;
+  state.layouts[id] = layout;
+  markLocalPublicCopyOrigin(layout, "layout", source.sourceId || sourceLayout.id, sourceLayout.id);
+  markLayoutPhotosForCurrentListCopy(id);
+  if (activate) {
+    if (!canUsePrivateState()) setActiveLocalEditableScope(id);
+    else setActivePrivateScope();
+    switchActiveLayout(id);
+  }
+  saveLayoutMutation(id);
+  render();
+  return id;
+}
+
+async function createAndPublishTemplateCopy(sourceLayout, requestedName) {
+  if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
+  const language = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
+  const createdId = await createTemplateCopyFromSource(sourceLayout, requestedName, {
+    language,
+    activate: false,
+    renderAfter: false
+  });
+  if (!createdId) return "";
+  try {
+    updateSyncUi("Сохраняю копию шаблона на сервере...");
+    await savePublishedLayoutRecord(createdId);
+    const confirmedCopy = state.layouts?.[createdId];
+    if (confirmedCopy?.adminDemo) {
+      const confirmedDemoId = confirmedCopy.adminDemoListId || "";
+      if (!confirmedDemoId || !serverConfirmedDemoTemplates.some((entry) => (entry?.listId || entry?.id) === confirmedDemoId)) {
+        throw new Error("Сервер не подтвердил копию demo-шаблона.");
+      }
+    } else {
+      const confirmedSharedId = confirmedCopy?.adminSharedSourceId || "";
+      if (!confirmedSharedId || !serverConfirmedSharedLayouts.some((entry) => entry?.id === confirmedSharedId)) {
+        throw new Error("Сервер не подтвердил копию шаблона.");
+      }
+    }
+    activateAdminPublishedLayout(createdId);
+    return createdId;
+  } catch (error) {
+    removeLayoutTree(createdId, state, { save: false });
+    saveState({ sync: false });
+    render();
+    throw error;
+  } finally {
+    updateSyncUi();
+  }
+}
+
 function openLayoutDialog() {
+  if (refs.layoutCreateTitle) {
+    refs.layoutCreateTitle.textContent = canOpenAdminPublishedEdit() ? "Новая укладка/шаблон" : "Новая укладка";
+  }
   refs.layoutName.value = uniqueLayoutName("Новая укладка");
   refs.layoutCreateMode.value = "empty";
-  refs.layoutCopyFrom.value = state.activeLayoutId;
+  fillSelect(refs.layoutCopyFrom, layoutCreateCopySourceOptions(), state.activeLayoutId);
+  if (refs.layoutTemplateKind) refs.layoutTemplateKind.value = "demo";
+  if (refs.layoutTemplateLanguage) fillSelect(refs.layoutTemplateLanguage, languageSelectEntries(), normalizeUiLanguage(uiLanguage));
   updateLayoutCopyVisibility();
   openModalDialog(refs.layoutDialog);
 }
 
 function updateLayoutCopyVisibility() {
+  const mode = refs.layoutCreateMode.value;
+  const canCreateTemplates = canOpenAdminPublishedEdit();
+  refs.layoutCreateMode.querySelectorAll("option[value='template'], option[value='template-copy']").forEach((option) => {
+    option.hidden = !canCreateTemplates;
+    option.disabled = !canCreateTemplates;
+  });
+  refs.layoutCreateMode.querySelectorAll("option[value$='-template']").forEach((option) => {
+    option.hidden = true;
+    option.disabled = true;
+  });
+  if (!canCreateTemplates && (mode === "template" || mode === "template-copy" || mode === "demo-template" || mode === "shared-template")) {
+    refs.layoutCreateMode.value = "empty";
+  }
   const shouldCopy = refs.layoutCreateMode.value === "copy";
-  refs.layoutCopyLabel.hidden = !shouldCopy;
-  refs.layoutCopyLabel.setAttribute("aria-hidden", String(!shouldCopy));
-  refs.layoutCopyFrom.disabled = !shouldCopy;
+  const shouldCopyTemplate = refs.layoutCreateMode.value === "template-copy";
+  const shouldPickTemplate = refs.layoutCreateMode.value === "template" || refs.layoutCreateMode.value === "demo-template" || refs.layoutCreateMode.value === "shared-template";
+  refs.layoutCopyLabel.hidden = !shouldCopy && !shouldCopyTemplate;
+  refs.layoutCopyLabel.setAttribute("aria-hidden", String(!shouldCopy && !shouldCopyTemplate));
+  refs.layoutCopyFrom.disabled = !shouldCopy && !shouldCopyTemplate;
+  if (refs.layoutCopySourceLabel) {
+    refs.layoutCopySourceLabel.textContent = shouldCopyTemplate ? "Скопировать шаблон из" : "Скопировать укладку из";
+  }
+  if (shouldCopy || shouldCopyTemplate) {
+    const entries = layoutCreateCopySourceOptions({
+      templates: shouldCopyTemplate,
+      includeTemplates: shouldCopy && canOpenAdminPublishedEdit()
+    });
+    const activePublicChoice = publicLayoutChoiceForLayout(state.layouts?.[state.activeLayoutId]);
+    const selected = shouldCopyTemplate
+      ? refs.layoutCopyFrom.value || activePublicChoice
+      : refs.layoutCopyFrom.value || activePublicChoice || state.activeLayoutId;
+    fillSelect(refs.layoutCopyFrom, entries, selected);
+  }
+  if (refs.layoutTemplateKindLabel && refs.layoutTemplateKind) {
+    refs.layoutTemplateKindLabel.hidden = !shouldPickTemplate;
+    refs.layoutTemplateKindLabel.setAttribute("aria-hidden", String(!shouldPickTemplate));
+    refs.layoutTemplateKind.disabled = !shouldPickTemplate;
+  }
+  if (refs.layoutTemplateLanguageLabel && refs.layoutTemplateLanguage) {
+    refs.layoutTemplateLanguageLabel.hidden = !shouldPickTemplate;
+    refs.layoutTemplateLanguageLabel.setAttribute("aria-hidden", String(!shouldPickTemplate));
+    refs.layoutTemplateLanguage.disabled = !shouldPickTemplate;
+  }
+  updateLayoutCreateNameSuggestion();
 }
 
-function saveNewLayout(event) {
+function updateLayoutCreateNameSuggestion() {
+  if (!refs.layoutName || !refs.layoutCreateMode) return;
+  const mode = refs.layoutCreateMode.value;
+  if (mode !== "template" && mode !== "demo-template" && mode !== "shared-template") return;
+  const language = normalizeUiLanguage(refs.layoutTemplateLanguage?.value || uiLanguage);
+  const kind = mode === "shared-template" || refs.layoutTemplateKind?.value === "shared" ? "shared" : "demo";
+  const fallback = kind === "demo"
+    ? demoTemplateFallbackName(language)
+    : "Новый шаблон";
+  if (!refs.layoutName.value.trim() || refs.layoutName.value === "Новая укладка") {
+    refs.layoutName.value = uniquePublishedTemplateName(fallback);
+  }
+}
+
+function createNewPublicTemplateLayout(requestedName, kind, language) {
+  if (!canOpenAdminPublishedEdit()) {
+    showToast("Шаблоны может создавать только админ.", "error");
+    return "";
+  }
+  const normalizedLanguage = normalizeUiLanguage(language || uiLanguage);
+  const id = `layout-admin-${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const arrangement = createEmptyLayoutArrangement();
+  const name = kind === "demo"
+    ? normalizeDemoLayoutName(uniquePublishedTemplateName(requestedName), normalizedLanguage)
+    : uniquePublishedTemplateName(requestedName);
+  state.layouts[id] = createEmptyPublicTemplateDraftRecord({
+    id,
+    name,
+    kind,
+    language: normalizedLanguage,
+    arrangement,
+    dictionaries: ensurePrivateDictionaries(state),
+    meta: currentCreateMeta(nowIso()),
+    demoListId: kind === "demo"
+      ? createDemoTemplateListId({
+        language: normalizedLanguage,
+        takenListIds: [
+          ...serverConfirmedDemoTemplates.map((entry) => entry?.listId || entry?.id),
+          ...Object.values(state.layouts || {}).map((entry) => entry?.adminDemoListId)
+        ].filter(Boolean)
+      })
+      : ""
+  });
+  activateAdminPublishedLayout(id);
+  saveLayoutMutation(id);
+  return id;
+}
+
+async function saveNewLayout(event) {
   event.preventDefault();
   captureActiveLayoutArrangement();
-  const shouldCopy = refs.layoutCreateMode.value === "copy";
-  const source = state.layouts[refs.layoutCopyFrom.value] || state.layouts[state.activeLayoutId];
+  const mode = refs.layoutCreateMode.value;
+  const shouldCopy = mode === "copy";
+  const shouldCopyTemplate = mode === "template-copy";
   const requestedName = refs.layoutName.value.trim();
   if (!requestedName) return;
-  const sourceLayout = shouldCopy ? source : { arrangement: createEmptyLayoutArrangement(), rootContainerIds: [] };
-  createLayoutCopyFromSource(sourceLayout, requestedName);
+  if (mode === "template" || mode === "demo-template" || mode === "shared-template") {
+    const kind = mode === "shared-template" || refs.layoutTemplateKind?.value === "shared" ? "shared" : "demo";
+    const createdId = createNewPublicTemplateLayout(
+      requestedName,
+      kind,
+      refs.layoutTemplateLanguage?.value || uiLanguage
+    );
+    if (!createdId) return;
+    refs.layoutDialog.close();
+    switchView("bags");
+    showToast(kind === "demo" ? "Demo-template created." : "Shared-template created.", "success");
+    return;
+  }
+  if (shouldCopyTemplate) {
+    const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(refs.layoutCopyFrom.value);
+    if (!sourceLayout) {
+      showToast("Источник шаблона не найден.", "error");
+      return;
+    }
+    try {
+      const createdId = await createAndPublishTemplateCopy(sourceLayout, requestedName);
+      if (!createdId) return;
+      refs.layoutDialog.close();
+      switchView("bags");
+      showToast("Шаблон скопирован.", "success");
+    } catch (error) {
+      showToast(`Не удалось скопировать шаблон: ${error.message}`, "error");
+    }
+    return;
+  }
+  if (shouldCopy) {
+    const templateSource = canOpenAdminPublishedEdit()
+      ? await resolveLayoutCreateTemplateCopySource(refs.layoutCopyFrom.value)
+      : null;
+    if (templateSource) {
+      const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName);
+      if (!createdId) return;
+      refs.layoutDialog.close();
+      switchView("bags");
+      showToast("Укладка создана из шаблона.", "success");
+      return;
+    }
+  }
+  const source = shouldCopy
+    ? await resolveLayoutCreateCopySource(refs.layoutCopyFrom.value)
+    : { arrangement: createEmptyLayoutArrangement(), rootContainerIds: [] };
+  if (shouldCopy && !source) {
+    showToast("Copy source was not found.", "error");
+    return;
+  }
+  createLayoutCopyFromSource(source, requestedName);
   refs.layoutDialog.close();
   switchView("bags");
 }
@@ -17035,14 +17929,37 @@ function openLayoutEditDialog() {
   if (showLanguage) {
     fillSelect(refs.layoutEditLanguage, languageSelectEntries(), normalizeUiLanguage(layoutManageLanguage(layout, uiLanguage)));
   }
-  refs.deleteEditedLayoutBtn.disabled = !canDeleteManagedLayout(layout.id);
-  refs.copyEditedLayoutBtn.disabled = false;
+  updateLayoutEditDeleteButton(layout);
   openModalDialog(refs.layoutEditDialog);
+}
+
+function publicTemplateDeleteBlockReasonForLayout(layout) {
+  if (!layout || !isAdminEditablePublishedLayout(layout.id)) return "";
+  const target = publishedLayoutTarget(layout);
+  return publicTemplateDeleteBlockReason({
+    target,
+    layout,
+    deletePublished: shouldDeletePublishedTemplateForLayout(layout),
+    demoTemplates: serverConfirmedDemoTemplates,
+    sharedTemplates: serverConfirmedSharedLayouts,
+    languageLabel: languageOptionLabel
+  });
+}
+
+function updateLayoutEditDeleteButton(layout) {
+  if (!refs.deleteEditedLayoutBtn) return;
+  const reason = publicTemplateDeleteBlockReasonForLayout(layout);
+  refs.deleteEditedLayoutBtn.textContent = reason || t("buttons.deleteLayout");
+  refs.deleteEditedLayoutBtn.title = reason;
+  refs.deleteEditedLayoutBtn.classList.toggle("delete-blocked", Boolean(reason));
+  refs.deleteEditedLayoutBtn.classList.toggle("danger", !reason);
+  refs.deleteEditedLayoutBtn.disabled = Boolean(reason) || !canDeleteManagedLayout(layout?.id);
 }
 
 function canDeleteManagedLayout(layoutId = layoutEditTargetId || state.activeLayoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout) return false;
+  if (publicTemplateDeleteBlockReasonForLayout(layout)) return false;
   if (isAdminEditablePublishedLayout(layoutId)) return canOpenAdminPublishedEdit();
   return canDeleteActiveLayout() && layoutId === state.activeLayoutId;
 }
@@ -17074,34 +17991,10 @@ async function saveEditedLayout(event) {
     return;
   }
   touchLayout(layout.id, changedAt);
-  if (adminPublished && layout.adminDemo) {
+  if (adminPublished) {
     refs.saveEditedLayoutBtn.disabled = true;
     try {
-      cancelPublishedLayoutSave(layout.id);
-      await savePublishedLayoutRecord(layout.id);
-      refs.layoutEditDialog.close();
-      render();
-      showToast("Метка демо-шаблона обновлена.", "success");
-    } catch (error) {
-      if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
-      saveState({ sync: false });
-      render();
-      if (error?.isAdminApiCompatibilityError) {
-        updateSyncUi();
-        showToast(error.message, "error");
-      } else {
-        updateSyncUi(`Не удалось сохранить метку демо-шаблона: ${error.message}`);
-        showToast(`Не удалось сохранить метку демо-шаблона: ${error.message}`, "error");
-      }
-    } finally {
-      refs.saveEditedLayoutBtn.disabled = false;
-    }
-    return;
-  }
-  if (adminPublished && !layout.adminDemo) {
-    refs.saveEditedLayoutBtn.disabled = true;
-    try {
-      await savePublishedSharedLayoutMetadata(layout, previousLayout);
+      await savePublishedTemplateMetadata(layout, previousLayout);
       refs.layoutEditDialog.close();
       render();
       showToast("Метка шаблона обновлена.", "success");
@@ -17201,6 +18094,12 @@ async function saveLayoutCopy(event) {
 
 async function confirmDeleteEditedLayout() {
   const layout = state.layouts?.[layoutEditTargetId];
+  const blockReason = publicTemplateDeleteBlockReasonForLayout(layout);
+  if (blockReason) {
+    showToast(blockReason, "warning");
+    updateLayoutEditDeleteButton(layout);
+    return;
+  }
   if (!layout || !canDeleteManagedLayout(layout.id)) {
     showToast("Эту укладку нельзя удалить.", "error");
     return;
@@ -17232,9 +18131,15 @@ async function confirmDeleteEditableLayout(layoutId) {
 async function confirmDeleteManagedPublicLayout(layoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
+  const blockReason = publicTemplateDeleteBlockReasonForLayout(layout);
+  if (blockReason) {
+    showToast(blockReason, "warning");
+    updateLayoutEditDeleteButton(layout);
+    return;
+  }
   const containerCount = getLayoutContainerIdSet(layout).size;
   const itemCount = getLayoutItemIdSet(layout).size;
-  const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
+  const shouldDeletePublishedTemplate = shouldDeletePublishedTemplateForLayout(layout);
   const confirmed = await askConfirmDialog(publicLayoutDeleteConfirm({
     layout,
     containerCount,
@@ -17273,8 +18178,38 @@ async function deletePublishedSharedTemplate(sharedId, sourceLayout = null) {
   return deleted;
 }
 
-function shouldDeletePublishedSharedTemplateForLayout(layout) {
+async function deletePublishedDemoTemplate(target, sourceLayout = null) {
+  const path = publicTemplateDeletePath(target, { demoAdminPathForPublicListId });
+  if (!path) return false;
+  await apiFetch(path, {
+    method: "DELETE",
+    timeoutMs: LIST_SAVE_API_TIMEOUT_MS
+  });
+  const listId = target.demoListId || sourceLayout?.adminDemoListId || demoPublicListIdForLanguage(target.language || uiLanguage);
+  const language = normalizeUiLanguage(target.language || sourceLayout?.adminDemoLanguage || sourceLayout?.language || uiLanguage);
+  serverConfirmedDemoTemplates = removePublicTemplateCatalogEntry(serverConfirmedDemoTemplates, {
+    listId,
+    publicTemplateKind: "demo"
+  });
+  if (demoSharedLayout.statePayloadByTemplateId) delete demoSharedLayout.statePayloadByTemplateId[listId];
+  if (activeDemoTemplateListId === listId) activeDemoTemplateListId = nextDemoTemplateAfter(listId, language)?.listId || "";
+  if (!demoTemplatesForUiLanguage(language).some((entry) => entry?.serverConfirmed)) {
+    setDemoPublicTemplateMissing(language, true, { updateCatalog: false });
+    if (demoSharedLayout.statePayloadByLanguage) demoSharedLayout.statePayloadByLanguage[language] = null;
+    if (normalizeUiLanguage(uiLanguage) === language) demoSharedLayout.statePayload = null;
+  }
+  return true;
+}
+
+async function deletePublishedTemplate(target, sourceLayout = null) {
+  if (target?.type === "demo") return await deletePublishedDemoTemplate(target, sourceLayout);
+  if (target?.type === "shared" && target.sharedId) return await deletePublishedSharedTemplate(target.sharedId, sourceLayout);
+  return false;
+}
+
+function shouldDeletePublishedTemplateForLayout(layout) {
   const target = publishedLayoutTarget(layout);
+  if (target?.type === "demo") return Boolean(target.demoListId);
   if (target?.type !== "shared" || !target.sharedId) return false;
   if (layout?.adminTemplateCopy) return true;
   const sharedLayout = findSharedLayout(target.sharedId);
@@ -17284,16 +18219,24 @@ function shouldDeletePublishedSharedTemplateForLayout(layout) {
 async function deleteManagedPublicLayout(layoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || !isAdminEditablePublishedLayout(layoutId)) return;
+  const blockReason = publicTemplateDeleteBlockReasonForLayout(layout);
+  if (blockReason) {
+    showToast(blockReason, "warning");
+    return;
+  }
   const target = publishedLayoutTarget(layout);
-  const shouldDeletePublishedTemplate = shouldDeletePublishedSharedTemplateForLayout(layout);
+  const shouldDeletePublishedTemplate = shouldDeletePublishedTemplateForLayout(layout);
   const nextSharedLayout = shouldDeletePublishedTemplate && target?.type === "shared"
     ? nextServerConfirmedSharedLayoutAfter(target.sharedId)
+    : null;
+  const nextDemoTemplate = shouldDeletePublishedTemplate && target?.type === "demo"
+    ? nextDemoTemplateAfter(target.demoListId, target.language || layout.language || uiLanguage)
     : null;
   if (shouldDeletePublishedTemplate) {
     try {
       await assertAdminApiCompatibility({ force: true });
       updateSyncUi("Удаляю шаблон...");
-      await deletePublishedSharedTemplate(target.sharedId, layout);
+      await deletePublishedTemplate(target, layout);
       updateSyncUi();
     } catch (error) {
       updateSyncUi();
@@ -17301,7 +18244,12 @@ async function deleteManagedPublicLayout(layoutId) {
       return;
     }
   }
-  if (shouldDeletePublishedTemplate && target?.type === "shared") {
+  if (shouldDeletePublishedTemplate && target?.type === "demo") {
+    removeManagedDemoTemplateTreesFromState(state, {
+      listId: target.demoListId,
+      language: target.language || layout.language || uiLanguage
+    });
+  } else if (shouldDeletePublishedTemplate && target?.type === "shared") {
     removeManagedSharedTemplateTreesFromState(state, {
       sharedId: target.sharedId,
       name: layout.name,
@@ -17312,7 +18260,12 @@ async function deleteManagedPublicLayout(layoutId) {
   }
   saveState({ sync: false });
   if (shouldDeletePublishedTemplate) {
-    if (nextSharedLayout?.id) await openSharedLayoutForAdmin(nextSharedLayout.id);
+    if (target?.type === "demo") {
+      await openAdminDemoLayout({
+        language: target.language || layout.language || uiLanguage,
+        templateId: nextDemoTemplate?.listId || nextDemoTemplate?.id || ""
+      });
+    } else if (nextSharedLayout?.id) await openSharedLayoutForAdmin(nextSharedLayout.id);
     else await openAdminDemoLayout({ language: layout.language || uiLanguage });
   } else if (target?.type === "shared" && target.sharedId) {
     await openSharedLayoutForAdmin(target.sharedId);
@@ -17506,6 +18459,17 @@ function removeItemDialogPhoto() {
   updateItemDialogSaveState();
 }
 
+function setItemDialogPhotoPrimary(event) {
+  event?.preventDefault();
+  const source = editingItemId ? state.items[editingItemId] : { photos: [] };
+  const draft = itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  const result = setPrimaryPhotoInDraft(draft, itemDialogPhotoActiveIndex);
+  itemDialogPhotoDraft = result.draft;
+  itemDialogPhotoActiveIndex = result.nextIndex;
+  updateItemDialogPhotoPreview(itemDialogPhotoDraft.photos);
+  if (result.changed) updateItemDialogSaveState();
+}
+
 function resetItemDialogPhotoDraft() {
   itemDialogPhotoDraft = null;
   revokeObjectUrls(itemDialogPhotoObjectUrls);
@@ -17524,6 +18488,7 @@ async function updateItemDialogPhotoPreview(photos) {
     refs.itemPhotoPreview.innerHTML = "";
     refs.itemPhotoPreview.classList.add("empty");
     refs.itemPhotoRemoveBtn.hidden = true;
+    if (refs.itemPhotoPrimaryBtn) refs.itemPhotoPrimaryBtn.hidden = true;
     setItemDialogPhotoStatus("");
     return;
   }
@@ -17535,8 +18500,13 @@ async function updateItemDialogPhotoPreview(photos) {
   refs.itemPhotoPreview.innerHTML = rendered;
   refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
+  updateItemDialogPhotoPrimaryButton();
   bindPhotoGalleries(refs.itemPhotoPreview);
   setItemDialogPhotoStatus(photoStatusText(list));
+}
+
+function updateItemDialogPhotoPrimaryButton() {
+  updatePhotoPrimaryButton(refs.itemPhotoPrimaryBtn, itemDialogPhotoActiveIndex);
 }
 
 async function getLocalPhotoPreviewUrl(photo) {
@@ -17647,6 +18617,17 @@ function removeRootContainerDialogPhoto() {
   updateRootContainerDialogSaveState();
 }
 
+function setRootContainerDialogPhotoPrimary(event) {
+  event?.preventDefault();
+  const source = editingRootContainerId ? state.containers[editingRootContainerId] : { photos: [] };
+  const draft = rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  const result = setPrimaryPhotoInDraft(draft, rootContainerDialogPhotoActiveIndex);
+  rootContainerDialogPhotoDraft = result.draft;
+  rootContainerDialogPhotoActiveIndex = result.nextIndex;
+  updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
+  if (result.changed) updateRootContainerDialogSaveState();
+}
+
 function resetRootContainerDialogPhotoDraft() {
   rootContainerDialogPhotoDraft = null;
   revokeObjectUrls(rootContainerDialogPhotoObjectUrls);
@@ -17665,6 +18646,7 @@ async function updateRootContainerDialogPhotoPreview(photos) {
     refs.rootContainerPhotoPreview.innerHTML = "";
     refs.rootContainerPhotoPreview.classList.add("empty");
     refs.rootContainerPhotoRemoveBtn.hidden = true;
+    if (refs.rootContainerPhotoPrimaryBtn) refs.rootContainerPhotoPrimaryBtn.hidden = true;
     setRootContainerDialogPhotoStatus("");
     return;
   }
@@ -17676,8 +18658,21 @@ async function updateRootContainerDialogPhotoPreview(photos) {
   refs.rootContainerPhotoPreview.innerHTML = rendered;
   refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
+  updateRootContainerDialogPhotoPrimaryButton();
   bindPhotoGalleries(refs.rootContainerPhotoPreview);
   setRootContainerDialogPhotoStatus(photoStatusText(list));
+}
+
+function updateRootContainerDialogPhotoPrimaryButton() {
+  updatePhotoPrimaryButton(refs.rootContainerPhotoPrimaryBtn, rootContainerDialogPhotoActiveIndex);
+}
+
+function updatePhotoPrimaryButton(button, activeIndex = 0) {
+  if (!button) return;
+  button.hidden = false;
+  const isPrimary = Number(activeIndex) <= 0;
+  button.disabled = isPrimary;
+  button.textContent = isPrimary ? "Фото уже главное" : "Сделать главным";
 }
 
 async function getLocalRootContainerPhotoPreviewUrl(photo) {

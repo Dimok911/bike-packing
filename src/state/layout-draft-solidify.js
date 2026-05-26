@@ -1,5 +1,8 @@
 import { createEmptyLayoutArrangement, uniqueLayoutIds } from "./layout-arrangement.js";
-import { templateCopySourceRootIds } from "./layout-manage.js";
+import {
+  isManagedPublicTemplateDraft,
+  templateCopySourceRootIds
+} from "./layout-manage.js";
 import { normalizeLayoutArrangement, snapshotContainerTreeFromLayoutArrangement } from "./layout-normalize.js";
 
 function layoutArrangementRecordScore(arrangement) {
@@ -66,7 +69,7 @@ function layoutArrangementFromContainerSnapshots(targetState, snapshots) {
 
 export function solidifyTemplateDraftLayout(targetState, layoutId, options = {}) {
   const layout = targetState?.layouts?.[layoutId];
-  if (!layout?.adminTemplateCopy) return false;
+  if (!isManagedPublicTemplateDraft(layout)) return false;
   const rootIds = templateCopySourceRootIds(layout).filter((rootId) => targetState.containers?.[rootId]);
   if (!rootIds.length) return false;
   const snapshots = rootIds

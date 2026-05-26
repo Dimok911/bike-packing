@@ -1,4 +1,5 @@
 import { DEMO_SHARED_LAYOUT_ID } from "../config/constants.js";
+import { looksLikeMojibakeText } from "../utils/text.js";
 
 export function shouldRenderGuestDemoPreviewDuringAuthCheck({
   currentUser,
@@ -41,12 +42,6 @@ export function shouldKeepReadonlyDemoAfterAuthCheck(context = {}) {
   return Boolean(context.readOnlyStateScope) && !isStartupGuestDemoPreview(context);
 }
 
-export function looksLikeMojibakeText(value = "") {
-  const text = String(value || "");
-  if (!text) return false;
-  return /(?:Р.|С.|Ð|Ñ|�)/.test(text);
-}
-
 export function readableGuestDemoLayoutName(name = "", fallback = "Моя демо-укладка") {
   const text = String(name || "").trim();
   if (!text || looksLikeMojibakeText(text)) return fallback;
@@ -55,11 +50,14 @@ export function readableGuestDemoLayoutName(name = "", fallback = "Моя дем
 
 export function guestDemoCopyLayoutName(sourceName = "", {
   fallbackName = "Demo copy",
+  preferredName = "",
   normalizeName = (name) => String(name || "").trim(),
   uniqueName = null,
   exactTemplateName = false
 } = {}) {
-  const baseName = normalizeName(readableGuestDemoLayoutName(sourceName, fallbackName)) || fallbackName;
+  const preferred = readableGuestDemoLayoutName(preferredName, "");
+  const source = readableGuestDemoLayoutName(sourceName, fallbackName);
+  const baseName = normalizeName(preferred || source) || fallbackName;
   if (exactTemplateName) return baseName;
   return uniqueName ? uniqueName(baseName) : baseName;
 }

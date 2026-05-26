@@ -38,6 +38,26 @@ export function removeManagedSharedLayoutTreesFromState(targetState, sharedId) {
   return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
 }
 
+export function removeManagedDemoTemplateTreesFromState(targetState, {
+  listId = "",
+  language = "ru"
+} = {}) {
+  const id = String(listId || "").trim();
+  const normalizedLanguage = String(language || "ru").trim().toLowerCase() || "ru";
+  if (!targetState?.layouts || !id) return [];
+  const layoutIds = Object.values(targetState.layouts)
+    .filter((layout) =>
+      layout?.adminDemo &&
+      (
+        String(layout.adminDemoListId || "").trim() === id ||
+        (!layout.adminDemoListId && String(layout.adminDemoLanguage || "").trim().toLowerCase() === normalizedLanguage)
+      )
+    )
+    .map((layout) => layout.id)
+    .filter(Boolean);
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+}
+
 function hasSharedTemplateIdentityOverlap(layout, targetKeys, fallbackLanguage) {
   if (!layout?.adminTemplateCopy || !targetKeys?.size) return false;
   const layoutKeys = adminSharedTemplateIdentityKeys({

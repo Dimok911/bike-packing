@@ -63,6 +63,7 @@ export function buildAdminSharedTemplateOptions({
   serverConfirmedSharedLayouts = [],
   requireServerConfirmationForSharedTemplates = false,
   requireServerConfirmationForTemplateCopies = false,
+  allowUnconfirmedLocalLayouts = false,
   isDeletedSharedLayoutId = () => false,
   fallbackLanguage = "ru",
   isLayoutMeaningful = () => false,
@@ -105,13 +106,18 @@ export function buildAdminSharedTemplateOptions({
       (requireServerConfirmationForSharedTemplates && sharedTemplateCandidate) ||
       (requireServerConfirmationForTemplateCopies && templateCopyCandidate)
     );
-    if (mustBeServerConfirmed && !(candidate.identityKeys || []).some((key) => confirmedSharedTemplateKeys.has(key))) return;
+    if (
+      mustBeServerConfirmed &&
+      !(allowUnconfirmedLocalLayouts && candidate.localDraft) &&
+      !(candidate.identityKeys || []).some((key) => confirmedSharedTemplateKeys.has(key))
+    ) return;
     candidates.push(candidate);
   };
 
   localLayouts.forEach((layout) => {
     pushCandidate({
       layout,
+      localDraft: true,
       priority: isLayoutMeaningful(layout.id) ? 120 : 75,
       contentScore: templateCopySourceScore(layout),
       updatedAt: layout.updatedAt || "",

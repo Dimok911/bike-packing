@@ -7,6 +7,20 @@ export function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId
   record._publicCopySourceLayoutId = sourceLayoutId ? String(sourceLayoutId) : "";
 }
 
+export function copiedFromTemplateNote(templateName = "") {
+  const name = String(templateName || "").trim();
+  return name ? `Скопировано из шаблона: ${name}` : "";
+}
+
+export function appendCopiedFromTemplateNote(record, templateName = "") {
+  const marker = copiedFromTemplateNote(templateName);
+  if (!record || !marker) return false;
+  const note = String(record.note || "").trim();
+  if (note.split(/\r?\n/).map((line) => line.trim()).includes(marker)) return false;
+  record.note = note ? `${note}\n${marker}` : marker;
+  return true;
+}
+
 export const PRIVATE_COPY_PUBLIC_ORIGIN_FIELDS = [
   "scope",
   "entityScope",

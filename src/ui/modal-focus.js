@@ -70,6 +70,7 @@ export function setupDialogKeyboardScrollGuard(dialogs = []) {
       scroller: field.closest(".dialog-card") || dialog,
       pageScroll: currentPageScrollPosition()
     };
+    dialog.classList.add("keyboard-focus-active");
     scheduleRestore();
     window.setTimeout(scheduleRestore, 80);
     window.setTimeout(scheduleRestore, 180);
@@ -79,7 +80,10 @@ export function setupDialogKeyboardScrollGuard(dialogs = []) {
 
   const releaseFocusLock = () => {
     window.setTimeout(() => {
-      if (focusLock && document.activeElement !== focusLock.field) focusLock = null;
+      if (focusLock && document.activeElement !== focusLock.field) {
+        focusLock.dialog?.classList.remove("keyboard-focus-active");
+        focusLock = null;
+      }
     }, 80);
   };
 
@@ -87,6 +91,7 @@ export function setupDialogKeyboardScrollGuard(dialogs = []) {
     dialog.addEventListener("focusin", captureFocusLock);
     dialog.addEventListener("focusout", releaseFocusLock);
     dialog.addEventListener("close", () => {
+      dialog.classList.remove("keyboard-focus-active");
       focusLock = null;
     });
   });
@@ -98,7 +103,11 @@ function scrollFieldIntoDialogViewport({ field, scroller }) {
   if (!field?.isConnected || !scroller) return;
   const viewport = window.visualViewport;
   const visibleTop = (viewport?.offsetTop || 0) + 12;
-  const visibleBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight) - 16;
+  const keyboardOpen = viewport && viewport.height < window.innerHeight - 80;
+  const bottomReserve = keyboardOpen
+    ? (field.matches?.("textarea") ? 96 : 56)
+    : 16;
+  const visibleBottom = (viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight) - bottomReserve;
   const rect = field.getBoundingClientRect();
   if (rect.bottom > visibleBottom) {
     scroller.scrollTop += rect.bottom - visibleBottom;

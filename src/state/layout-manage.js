@@ -202,7 +202,11 @@ export function managedSharedDraftLanguage(layout, sourceLayout, fallbackLanguag
 }
 
 export function shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout = null) {
-  return Boolean(layout?.adminTemplateCopy && layout?.adminSharedSourceId && !existingPublishedLayout);
+  return Boolean(layout?.adminTemplateCopy && (layout?.adminDemo || layout?.adminSharedSourceId) && !existingPublishedLayout);
+}
+
+export function shouldCopyPublicTemplatePhotoReferencesOnServer(layout) {
+  return Boolean(layout?.adminTemplateCopy && (layout?.adminDemo || layout?.adminSharedSourceId));
 }
 
 export function withoutPhotoReferences(payload) {
@@ -220,8 +224,16 @@ export function isManagedPublicLayout(layout) {
   return Boolean(layout?.adminDemo || layout?.adminSharedSourceId || layout?.publicCatalogLayoutId);
 }
 
+export function isManagedPublicTemplateDraft(layout) {
+  return Boolean(layout?.adminDemo || layout?.adminTemplateCopy);
+}
+
+export function isManagedDemoTemplateLayout(layout, demoSharedLayoutId = "") {
+  return Boolean(layout?.adminDemo || (demoSharedLayoutId && layout?.adminSharedSourceId === demoSharedLayoutId));
+}
+
 export function isDisposableManagedPublicDraft(layout) {
-  return Boolean(isManagedPublicLayout(layout) && !layout?.adminTemplateCopy);
+  return Boolean(isManagedPublicLayout(layout) && !isManagedPublicTemplateDraft(layout));
 }
 
 export function collectManagedPublicDraftRecords(sourceState) {
@@ -366,10 +378,51 @@ export function createDemoTemplateCopyRecord({
   });
   const resolvedLanguage = language || layoutManageLanguage(sourceLayout);
   record.adminDemo = true;
+  record.adminTemplateCopy = true;
   record.adminDemoLanguage = resolvedLanguage;
   record.language = resolvedLanguage;
   if (demoListId) record.adminDemoListId = demoListId;
   return record;
+}
+
+export function createEmptyPublicTemplateDraftRecord({
+  id,
+  name,
+  kind = "shared",
+  language = "ru",
+  arrangement = createEmptyLayoutArrangement(),
+  dictionaries = {},
+  meta = {},
+  demoListId = "",
+  sharedSourceId = ""
+} = {}) {
+  const sourceLayout = {
+    id: `${kind || "template"}-blank-source`,
+    name,
+    rootContainerIds: [],
+    arrangement
+  };
+  return kind === "demo"
+    ? createDemoTemplateCopyRecord({
+      id,
+      name,
+      sourceLayout,
+      arrangement,
+      dictionaries,
+      meta,
+      language,
+      demoListId
+    })
+    : createTemplateCopyRecord({
+      id,
+      name,
+      sourceLayout,
+      arrangement,
+      dictionaries,
+      meta,
+      language,
+      sharedSourceId
+    });
 }
 
 export function templateCopySharedSourceId({ language = "", takenIds = [] } = {}) {

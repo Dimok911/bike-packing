@@ -1,11 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyGuestLocalDisplayPreferences,
   guestDemoCopyCleanupPlan,
+  guestDemoCopyRecordWasEdited,
+  guestLocalDisplayPreferences,
+  guestLocalDisplayPreferencesWereChanged,
+  guestLocalLayoutImportPlan,
+  isAutomaticGuestDemoCopyLayout,
+  isGuestLocalPersonalLayout,
   normalizeDemoTemplateName,
   normalizePublishedDemoTemplatePayload
 } from "../../src/public/demo-template-state.js";
 import {
+  demoAdminPathForPublicListId,
   demoAdminStatePathForLanguage,
   demoItemKeyForLanguage,
   demoPublicListIdForLanguage
@@ -17,15 +25,31 @@ import {
   demoTemplateIdFromLayoutChoice
 } from "../../src/public/demo-layout-choice.js";
 import {
+  buildAdminDemoTemplateOptions,
   createDemoTemplateListId,
   demoTemplateEntryForLanguage,
   demoTemplateForLanguage,
   demoTemplatesForLanguage,
   findDemoTemplateForLanguage,
+  localDemoTemplateEntriesFromLayouts,
+  mergeDemoTemplateEntriesForAdmin,
+  mergeServerDemoTemplateCatalog,
   publicDemoTemplateEntryFromRecord,
-  publicTemplateChoice
+  publicDemoTemplatePayloadTarget,
+  publicTemplateChoice,
+  removePublicTemplateCatalogEntry,
+  upsertDemoTemplateCatalogEntry
 } from "../../src/public/public-template-catalog.js";
 import {
+  applyPublicTemplateMetadataToPayload,
+  normalizePublicTemplateMetadataResponse,
+  publicTemplateDeletePath,
+  publicTemplateMetadataPath,
+  publicTemplateMetadataRequest,
+  publicTemplateMetadataTarget
+} from "../../src/public/public-template-metadata.js";
+import {
+  appendCopiedFromTemplateNote,
   cloneIsolatedPublicEntity,
   publicCopySourceIdFromRecord,
   stripPublishedPublicOriginMarkers
@@ -35,6 +59,7 @@ import {
   findSharedLayoutForLanguage,
   isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
+  isPublicSharedTemplatePayload,
   mergeSharedLayoutCatalogEntries,
   pruneRuntimeSharedLayouts,
   serverConfirmedSharedLayoutsFromPublicRecords,
@@ -45,8 +70,10 @@ import {
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
 import {
   isNetworkUnavailable,
-  publishedTemplateBlockReason
+  publishedTemplateBlockReason,
+  readonlyPublicTemplateOptionLabel
 } from "../../src/public/public-template-availability.js";
+import { publicTemplateDeleteBlockReason } from "../../src/public/public-template-delete-guard.js";
 import {
   createSharedLayoutCatalogDiagnostics,
   shouldWarnAboutSharedLayoutCatalog
@@ -55,21 +82,32 @@ import {
   guestDemoCopyLayoutName,
   guestDemoStartupAction
 } from "../../src/public/guest-demo-startup.js";
+import { validateGuestImportSyncState } from "../../src/public/guest-login-import.js";
 import {
   purgeDeletedSharedTemplateFromFrontendState,
   purgeUnconfirmedSharedTemplatesFromFrontendState
 } from "../../src/public/shared-layout-admin.js";
 import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
 import {
+  removeManagedDemoTemplateTreesFromState,
   removeManagedSharedLayoutTreesFromState,
   removeManagedSharedTemplateTreesFromState
 } from "../../src/state/layout-delete.js";
 import {
   adoptTemplateCopySharedSourceId,
   createDemoTemplateCopyRecord,
+  createEmptyPublicTemplateDraftRecord,
   findAdoptableTemplateCopyDraft,
-  isTemplateCopySharedId
+  isDisposableManagedPublicDraft,
+  isManagedDemoTemplateLayout,
+  isManagedPublicTemplateDraft,
+  isTemplateCopySharedId,
+  publicLayoutChoiceValue,
+  shouldCopyPublicTemplatePhotoReferencesOnServer,
+  shouldCreatePublishedTemplateBeforePhotos
 } from "../../src/state/layout-manage.js";
+import { solidifyTemplateDraftLayout } from "../../src/state/layout-draft-solidify.js";
+import { repairMojibakeLayoutNames } from "../../src/state/names.js";
 
 const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
 
@@ -80,6 +118,12 @@ test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
   assert.equal(demoPublicListIdForLanguage("en"), "public-demo-state-en");
   assert.equal(demoItemKeyForLanguage("en"), "demo-state:en");
   assert.equal(demoAdminStatePathForLanguage("en"), "/bike-packing/admin/demo-states/en/state");
+  assert.equal(demoAdminPathForPublicListId("/metadata", "public-demo-state", "ru"), "/bike-packing/admin/demo-state/metadata");
+  assert.equal(demoAdminPathForPublicListId("/metadata", "public-demo-state-en", "en"), "/bike-packing/admin/demo-states/en/metadata");
+  assert.equal(
+    demoAdminPathForPublicListId("/metadata", "public-demo-state-copy-ru-abc", "ru"),
+    "/bike-packing/admin/demo-states/copy-ru-abc/metadata"
+  );
 });
 
 test("demo layout choices encode the selected UI language", () => {
@@ -94,6 +138,116 @@ test("demo layout choices encode the selected UI language", () => {
   assert.equal(demoLayoutChoiceForLanguage("en", options), "demo:default");
   assert.equal(demoLanguageFromLayoutChoice("demo:ru", options), "ru");
   assert.equal(demoLanguageFromLayoutChoice("demo:default", options), "en");
+});
+
+test("demo and shared templates use the same metadata request model", () => {
+  const normalizeLanguage = (language) => String(language || "ru").trim().toLowerCase() || "ru";
+  const normalizeDemoName = (name) => String(name || "").trim();
+  const demoPath = publicTemplateMetadataPath({
+    type: "demo",
+    demoListId: "public-demo-state-en",
+    language: "en"
+  }, {
+    demoAdminPathForPublicListId
+  });
+  const sharedPath = publicTemplateMetadataPath({
+    type: "shared",
+    sharedId: "bikepacking-reference-bags"
+  }, {
+    demoAdminPathForPublicListId
+  });
+  const demoDeletePath = publicTemplateDeletePath({
+    type: "demo",
+    demoListId: "public-demo-state-en",
+    language: "en"
+  }, {
+    demoAdminPathForPublicListId
+  });
+  const sharedDeletePath = publicTemplateDeletePath({
+    type: "shared",
+    sharedId: "bikepacking-reference-bags"
+  }, {
+    demoAdminPathForPublicListId
+  });
+
+  assert.equal(demoPath, "/bike-packing/admin/demo-states/en/metadata");
+  assert.equal(sharedPath, "/bike-packing/admin/shared-layouts/bikepacking-reference-bags/metadata");
+  assert.equal(demoDeletePath, "/bike-packing/admin/demo-states/en");
+  assert.equal(sharedDeletePath, "/bike-packing/admin/shared-layouts/bikepacking-reference-bags");
+  assert.deepEqual(publicTemplateMetadataRequest({
+    name: "Demo-packing 4",
+    adminDemoLanguage: "en"
+  }, {
+    type: "demo",
+    demoListId: "public-demo-state-en",
+    language: "en"
+  }, {
+    normalizeLanguage,
+    normalizeDemoName,
+    demoFallbackName: () => "Demo-packing"
+  }), {
+    title: "Demo-packing 4",
+    name: "Demo-packing 4",
+    language: "en"
+  });
+  assert.deepEqual(publicTemplateMetadataRequest({
+    name: "Bikepacking reference",
+    language: "ru"
+  }, {
+    type: "shared",
+    sharedId: "bikepacking-reference-bags"
+  }, {
+    normalizeLanguage
+  }), {
+    title: "Bikepacking reference",
+    name: "Bikepacking reference",
+    language: "ru"
+  });
+  assert.deepEqual(normalizePublicTemplateMetadataResponse({
+    title: "Bikepacking reference 2",
+    language: "EN"
+  }, {
+    name: "fallback",
+    language: "ru"
+  }, {
+    normalizeLanguage
+  }), {
+    title: "Bikepacking reference 2",
+    name: "Bikepacking reference 2",
+    language: "en"
+  });
+});
+
+test("demo metadata rename keeps the edited public row while changing catalog language", () => {
+  const target = publicTemplateMetadataTarget({
+    type: "demo",
+    demoListId: "public-demo-state-en",
+    language: "en"
+  }, {
+    previousTarget: {
+      type: "demo",
+      demoListId: "public-demo-state",
+      language: "ru"
+    }
+  });
+  const path = publicTemplateMetadataPath(target, { demoAdminPathForPublicListId });
+  const body = publicTemplateMetadataRequest({
+    name: "Renamed demo",
+    adminDemoLanguage: "en"
+  }, target, {
+    normalizeLanguage: (language) => String(language || "ru").trim().toLowerCase() || "ru",
+    normalizeDemoName: (name) => String(name || "").trim(),
+    demoFallbackName: () => "Demo layout"
+  });
+
+  assert.equal(target.demoListId, "public-demo-state");
+  assert.equal(target.language, "en");
+  assert.equal(path, "/bike-packing/admin/demo-state/metadata");
+  assert.deepEqual(body, {
+    title: "Renamed demo",
+    name: "Renamed demo",
+    language: "en"
+  });
 });
 
 test("demo layout choices can target exact public template rows", () => {
@@ -139,6 +293,100 @@ test("demo templates use catalog metadata like shared templates", () => {
   assert.equal(publicTemplateChoice(enEntry, {
     demoChoiceForLanguage: (language) => language === "en" ? "demo:default" : `demo:${language}`
   }), "demo:default");
+});
+
+test("demo template payload cache targets exact public list rows", () => {
+  assert.deepEqual(publicDemoTemplatePayloadTarget({
+    id: "public-demo-state-copy-en-2",
+    title: "Demo-packing 2",
+    language: "en",
+    updated_at: "2026-05-26T00:00:00.000Z"
+  }, {
+    fallbackLanguage: "ru",
+    demoListIdForLanguage: demoPublicListIdForLanguage
+  }), {
+    language: "en",
+    listId: "public-demo-state-copy-en-2",
+    name: "Demo-packing 2",
+    updatedAt: "2026-05-26T00:00:00.000Z"
+  });
+  assert.deepEqual(publicDemoTemplatePayloadTarget({
+    language: "ru"
+  }, {
+    fallbackLanguage: "en",
+    demoListIdForLanguage: demoPublicListIdForLanguage
+  }), {
+    language: "ru",
+    listId: "public-demo-state",
+    name: "",
+    updatedAt: ""
+  });
+});
+
+test("admin demo catalog includes local drafts before server confirmation", () => {
+  const server = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true })
+  ];
+  const local = localDemoTemplateEntriesFromLayouts({
+    "layout-new-demo": {
+      id: "layout-new-demo",
+      name: `${RU_DEMO_NAME} 2`,
+      adminDemo: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state-copy-ru-new",
+      updatedAt: "2026-05-26T00:00:00.000Z"
+    }
+  }, {
+    fallbackLanguage: "ru"
+  });
+  const catalog = mergeDemoTemplateEntriesForAdmin(server, local);
+
+  assert.deepEqual(demoTemplatesForLanguage(catalog, "ru").map((entry) => entry.listId), [
+    "public-demo-state",
+    "public-demo-state-copy-ru-new"
+  ]);
+  assert.equal(catalog.find((entry) => entry.listId === "public-demo-state-copy-ru-new")?.serverConfirmed, false);
+});
+
+test("server demo catalog refresh updates rows without dropping known templates", () => {
+  const current = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "public-demo-state-en", name: "Demo layout", serverConfirmed: true })
+  ];
+  const incoming = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state-copy-ru-new", name: `${RU_DEMO_NAME} 2`, serverConfirmed: true })
+  ];
+
+  const catalog = mergeServerDemoTemplateCatalog(current, incoming);
+
+  assert.deepEqual(new Set(catalog.map((entry) => entry.listId)), new Set([
+    "public-demo-state",
+    "public-demo-state-en",
+    "public-demo-state-copy-ru-new"
+  ]));
+  assert.equal(catalog.find((entry) => entry.listId === "public-demo-state-copy-ru-new")?.serverConfirmed, true);
+});
+
+test("demo catalog updates target the selected public list id", () => {
+  const catalog = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state-copy-ru-3", name: `${RU_DEMO_NAME} 3`, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("en", { listId: "public-demo-state-en", name: "Demo layout", serverConfirmed: true })
+  ];
+
+  const next = upsertDemoTemplateCatalogEntry(catalog, "ru", {
+    listId: "public-demo-state-copy-ru-3",
+    serverConfirmed: false,
+    missing: true,
+    fallbackListId: "public-demo-state",
+    fallbackName: RU_DEMO_NAME
+  });
+
+  assert.equal(next.find((entry) => entry.listId === "public-demo-state")?.missing, false);
+  assert.equal(next.find((entry) => entry.listId === "public-demo-state-copy-ru-3")?.missing, true);
+  assert.deepEqual(demoTemplatesForLanguage(next, "ru").map((entry) => entry.listId), [
+    "public-demo-state"
+  ]);
 });
 
 test("demo catalog supports multiple templates per language and pairs them on language switch", () => {
@@ -209,10 +457,283 @@ test("demo template copies stay demo templates with their own public list id", (
 
   assert.equal(demoListId, "public-demo-state-copy-ru-9ix-12345678");
   assert.equal(record.adminDemo, true);
-  assert.equal(record.adminTemplateCopy, undefined);
+  assert.equal(record.adminTemplateCopy, true);
   assert.equal(record.adminDemoLanguage, "ru");
   assert.equal(record.language, "ru");
   assert.equal(record.adminDemoListId, demoListId);
+});
+
+test("demo template delete removes server catalog entry and local admin drafts", () => {
+  const demoListId = "public-demo-state-copy-ru-delete";
+  const catalog = [
+    demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: demoListId, name: `${RU_DEMO_NAME} 2`, serverConfirmed: true })
+  ];
+  const state = {
+    activeLayoutId: "layout-demo-copy",
+    layouts: {
+      "layout-demo-copy": {
+        id: "layout-demo-copy",
+        adminDemo: true,
+        adminDemoLanguage: "ru",
+        adminDemoListId: demoListId,
+        rootContainerIds: ["bag-a"]
+      },
+      "layout-other": {
+        id: "layout-other",
+        adminDemo: true,
+        adminDemoLanguage: "ru",
+        adminDemoListId: "public-demo-state",
+        rootContainerIds: ["bag-b"]
+      }
+    },
+    containers: {
+      "bag-a": { id: "bag-a", itemIds: ["item-a"], childIds: [] },
+      "bag-b": { id: "bag-b", itemIds: ["item-b"], childIds: [] }
+    },
+    items: {
+      "item-a": { id: "item-a" },
+      "item-b": { id: "item-b" }
+    },
+    collapsedContainers: {
+      "bag-a": true,
+      "bag-b": true
+    }
+  };
+
+  assert.deepEqual(
+    removePublicTemplateCatalogEntry(catalog, { listId: demoListId, publicTemplateKind: "demo" })
+      .map((entry) => entry.listId),
+    ["public-demo-state"]
+  );
+  assert.deepEqual(removeManagedDemoTemplateTreesFromState(state, {
+    listId: demoListId,
+    language: "ru"
+  }), ["layout-demo-copy"]);
+  assert.equal(state.layouts["layout-demo-copy"], undefined);
+  assert.equal(state.layouts["layout-other"].id, "layout-other");
+  assert.equal(state.containers["bag-a"], undefined);
+  assert.equal(state.items["item-a"], undefined);
+  assert.equal(state.collapsedContainers["bag-a"], undefined);
+});
+
+test("public template delete is blocked for the last template of each kind in a language", () => {
+  const label = (language) => language.toUpperCase();
+
+  assert.equal(publicTemplateDeleteBlockReason({
+    target: { type: "demo", demoListId: "public-demo-state", language: "ru" },
+    layout: { adminDemo: true, adminDemoListId: "public-demo-state", adminDemoLanguage: "ru" },
+    deletePublished: true,
+    demoTemplates: [
+      demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", serverConfirmed: true }),
+      demoTemplateEntryForLanguage("en", { listId: "public-demo-state-en", serverConfirmed: true })
+    ],
+    languageLabel: label
+  }), "Нельзя удалить последний demo-шаблон для языка RU.");
+
+  assert.equal(publicTemplateDeleteBlockReason({
+    target: { type: "demo", demoListId: "public-demo-state", language: "ru" },
+    layout: { adminDemo: true, adminDemoListId: "public-demo-state", adminDemoLanguage: "ru" },
+    deletePublished: true,
+    demoTemplates: [
+      demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", serverConfirmed: true }),
+      demoTemplateEntryForLanguage("ru", { listId: "public-demo-state-copy-ru-2", serverConfirmed: true })
+    ],
+    languageLabel: label
+  }), "");
+
+  assert.equal(publicTemplateDeleteBlockReason({
+    target: { type: "shared", sharedId: "template-copy-ru-last" },
+    layout: { adminSharedSourceId: "template-copy-ru-last", language: "ru", adminTemplateCopy: true },
+    deletePublished: true,
+    sharedTemplates: [
+      { id: "template-copy-ru-last", language: "ru", runtimeSharedTemplate: true },
+      { id: "template-copy-en", language: "en", runtimeSharedTemplate: true }
+    ],
+    languageLabel: label
+  }), "Нельзя удалить последний shared-шаблон для языка RU.");
+});
+
+test("empty public template draft records can be created for demo and shared languages", () => {
+  const arrangement = { rootContainerIds: [], containers: {}, items: {}, packedItems: {} };
+  const demo = createEmptyPublicTemplateDraftRecord({
+    id: "layout-demo-new",
+    name: "Demo EN",
+    kind: "demo",
+    language: "en",
+    arrangement,
+    demoListId: "public-demo-state-copy-en-new"
+  });
+  const shared = createEmptyPublicTemplateDraftRecord({
+    id: "layout-shared-new",
+    name: "Shared RU",
+    kind: "shared",
+    language: "ru",
+    arrangement
+  });
+
+  assert.equal(demo.adminDemo, true);
+  assert.equal(demo.adminTemplateCopy, true);
+  assert.equal(demo.adminDemoLanguage, "en");
+  assert.equal(demo.adminDemoListId, "public-demo-state-copy-en-new");
+  assert.equal(shared.adminTemplateCopy, true);
+  assert.equal(shared.language, "ru");
+  assert.equal(isTemplateCopySharedId(shared.adminSharedSourceId), true);
+});
+
+test("demo and shared templates share the persistent draft contract", () => {
+  const arrangement = { rootContainerIds: [], containers: {}, items: {}, packedItems: {} };
+  const demo = createEmptyPublicTemplateDraftRecord({
+    id: "layout-demo-draft",
+    name: "Demo draft",
+    kind: "demo",
+    language: "ru",
+    arrangement,
+    demoListId: "public-demo-state-copy-ru-draft"
+  });
+  const shared = createEmptyPublicTemplateDraftRecord({
+    id: "layout-shared-draft",
+    name: "Shared draft",
+    kind: "shared",
+    language: "ru",
+    arrangement
+  });
+
+  assert.equal(isManagedPublicTemplateDraft(demo), true);
+  assert.equal(isManagedPublicTemplateDraft(shared), true);
+  assert.equal(isDisposableManagedPublicDraft(demo), false);
+  assert.equal(isDisposableManagedPublicDraft(shared), false);
+  assert.equal(publicLayoutChoiceValue(demo, {
+    demoChoiceForLayout: () => "demo-choice",
+    demoChoiceForLanguage: () => "demo-language-choice"
+  }), "template-draft:layout-demo-draft");
+});
+
+test("new demo and shared template copies are primed before photo copy", () => {
+  assert.equal(shouldCreatePublishedTemplateBeforePhotos({
+    adminDemo: true,
+    adminTemplateCopy: true,
+    adminDemoListId: "public-demo-state-copy-ru-new"
+  }, null), true);
+  assert.equal(shouldCreatePublishedTemplateBeforePhotos({
+    adminSharedSourceId: "template-copy-ru-new",
+    adminTemplateCopy: true
+  }, null), true);
+  assert.equal(shouldCreatePublishedTemplateBeforePhotos({
+    adminDemo: true,
+    adminTemplateCopy: true,
+    adminDemoListId: "public-demo-state"
+  }, { listId: "public-demo-state" }), false);
+});
+
+test("demo and shared template copies use the same server photo reference copy path", () => {
+  assert.equal(shouldCopyPublicTemplatePhotoReferencesOnServer({
+    adminDemo: true,
+    adminTemplateCopy: true,
+    adminDemoListId: "public-demo-state-copy-ru-new"
+  }), true);
+  assert.equal(shouldCopyPublicTemplatePhotoReferencesOnServer({
+    adminSharedSourceId: "template-copy-ru-new",
+    adminTemplateCopy: true
+  }), true);
+  assert.equal(shouldCopyPublicTemplatePhotoReferencesOnServer({
+    adminDemo: true,
+    adminTemplateCopy: false
+  }), false);
+  assert.equal(shouldCopyPublicTemplatePhotoReferencesOnServer({
+    adminTemplateCopy: true
+  }), false);
+});
+
+test("legacy demo shared source is treated as a demo template source", () => {
+  assert.equal(isManagedDemoTemplateLayout({
+    adminSharedSourceId: "demo-layout"
+  }, "demo-layout"), true);
+  assert.equal(isManagedDemoTemplateLayout({
+    adminSharedSourceId: "template-copy-ru-1"
+  }, "demo-layout"), false);
+  assert.equal(isManagedDemoTemplateLayout({
+    adminDemo: true,
+    adminSharedSourceId: "template-copy-ru-1"
+  }, "demo-layout"), true);
+});
+
+test("admin demo options use the same draft choice path as shared template drafts", () => {
+  const options = buildAdminDemoTemplateOptions({
+    canOpen: true,
+    localLayouts: [{
+      id: "layout-demo-draft",
+      name: `${RU_DEMO_NAME} 2`,
+      adminDemo: true,
+      adminTemplateCopy: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state-copy-ru-draft",
+      rootContainerIds: []
+    }],
+    serverTemplates: [
+      demoTemplateEntryForLanguage("ru", { listId: "public-demo-state", name: RU_DEMO_NAME, serverConfirmed: true })
+    ],
+    fallbackLanguage: "ru",
+    draftChoice: (layoutId) => `template-draft:${layoutId}`,
+    demoChoiceForTemplate: (entry) => `demo:${entry.language}:${entry.listId}`,
+    labels: {
+      templatePrefix: "Template",
+      languageOptionLabel: (language) => language.toUpperCase()
+    }
+  });
+
+  assert.deepEqual(new Set(options.map((option) => option[0])), new Set([
+    "template-draft:layout-demo-draft",
+    "demo:ru:public-demo-state"
+  ]));
+  assert.equal(options.find((option) => option[0] === "template-draft:layout-demo-draft")?.[2], "demo");
+});
+
+test("demo template drafts are solidified through the same arrangement path as shared drafts", () => {
+  const state = {
+    activeLayoutId: "layout-demo-draft",
+    layouts: {
+      "layout-demo-draft": {
+        id: "layout-demo-draft",
+        name: "Demo draft",
+        adminDemo: true,
+        adminDemoLanguage: "ru",
+        adminDemoListId: "public-demo-state-copy-ru-draft",
+        rootContainerIds: ["bag-root"],
+        arrangement: { rootContainerIds: [], containers: {}, items: {}, packedItems: {} }
+      }
+    },
+    containers: {
+      "bag-root": {
+        id: "bag-root",
+        parentId: "",
+        childIds: [],
+        itemIds: ["item-a"],
+        order: [{ type: "item", id: "item-a" }]
+      }
+    },
+    items: {
+      "item-a": { id: "item-a", containerId: "bag-root" }
+    },
+    packedItems: {
+      "item-a": true
+    }
+  };
+
+  assert.equal(solidifyTemplateDraftLayout(state, "layout-demo-draft", {
+    liveSnapshotForRoot: (rootId) => ({
+      rootId,
+      containers: {
+        [rootId]: state.containers[rootId]
+      },
+      items: {
+        "item-a": state.items["item-a"]
+      }
+    })
+  }), true);
+  assert.deepEqual(state.layouts["layout-demo-draft"].arrangement.rootContainerIds, ["bag-root"]);
+  assert.equal(state.layouts["layout-demo-draft"].arrangement.items["item-a"], "bag-root");
+  assert.equal(state.layouts["layout-demo-draft"].arrangement.packedItems["item-a"], true);
 });
 
 test("demo template name keeps explicit title suffixes", () => {
@@ -268,6 +789,33 @@ test("published demo payload is collapsed to one canonical layout", () => {
   assert.deepEqual(Object.keys(normalized.items), ["item-a"]);
 });
 
+test("published demo payload may be an empty template like shared templates", () => {
+  const payload = {
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: `${RU_DEMO_NAME} 3`,
+        rootContainerIds: []
+      }
+    },
+    activeLayoutId: "layout-main",
+    containers: {},
+    items: {},
+    packedItems: {}
+  };
+
+  const normalized = normalizePublishedDemoTemplatePayload(payload, {
+    fallbackName: RU_DEMO_NAME
+  });
+
+  assert.equal(normalized.activeLayoutId, "layout-main");
+  assert.deepEqual(Object.keys(normalized.layouts), ["layout-main"]);
+  assert.equal(normalized.layouts["layout-main"].name, `${RU_DEMO_NAME} 3`);
+  assert.deepEqual(normalized.layouts["layout-main"].rootContainerIds, []);
+  assert.deepEqual(normalized.containers, {});
+  assert.deepEqual(normalized.items, {});
+});
+
 test("guest demo startup cleanup removes only unedited duplicate auto-copies", () => {
   const layouts = {
     edited: { id: "edited", guestDemoCopy: true, updatedAt: "2026-05-24T10:00:00.000Z" },
@@ -284,6 +832,239 @@ test("guest demo startup cleanup removes only unedited duplicate auto-copies", (
 
   assert.equal(plan.keepLayoutId, "active");
   assert.deepEqual(plan.removeLayoutIds, ["stale"]);
+});
+
+test("guest demo cleanup does not remove user-created guest layouts", () => {
+  const layouts = {
+    auto: { id: "layout-guest-demo-1", guestDemoCopy: true, demoSourceLanguage: "en", updatedAt: "2026-05-24T08:00:00.000Z" },
+    autoStale: { id: "layout-guest-demo-2", guestDemoCopy: true, demoSourceLanguage: "en", updatedAt: "2026-05-24T07:00:00.000Z" },
+    userEmpty: { id: "layout-user-empty", guestDemoCopy: true, name: "My empty plan", updatedAt: "2026-05-24T09:00:00.000Z" },
+    userCopy: { id: "layout-user-copy", guestDemoCopy: true, name: "Copied shared", updatedAt: "2026-05-24T10:00:00.000Z" }
+  };
+
+  const plan = guestDemoCopyCleanupPlan({
+    layouts,
+    activeLayoutId: "layout-user-empty",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: () => false
+  });
+
+  assert.equal(plan.keepLayoutId, "layout-guest-demo-1");
+  assert.deepEqual(plan.removeLayoutIds, ["layout-guest-demo-2"]);
+});
+
+test("guest import plan includes all user-created guest layouts and edited demo", () => {
+  const layouts = {
+    autoClean: {
+      id: "layout-guest-demo-clean",
+      guestDemoCopy: true,
+      demoSourceLanguage: "en",
+      createdAt: "2026-05-24T08:00:00.000Z",
+      updatedAt: "2026-05-24T08:00:00.000Z"
+    },
+    autoEdited: {
+      id: "layout-guest-demo-edited",
+      guestDemoCopy: true,
+      demoSourceLanguage: "en",
+      createdAt: "2026-05-24T08:00:00.000Z",
+      updatedAt: "2026-05-24T08:05:00.000Z"
+    },
+    userEmpty: {
+      id: "layout-user-empty",
+      guestDemoCopy: true,
+      createdAt: "2026-05-24T09:00:00.000Z",
+      updatedAt: "2026-05-24T09:00:00.000Z"
+    },
+    userCopy: {
+      id: "layout-user-copy",
+      guestDemoCopy: true,
+      createdAt: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:00.000Z"
+    }
+  };
+
+  const plan = guestLocalLayoutImportPlan({
+    layouts,
+    activeLayoutId: "layout-user-empty",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: (layout) => guestDemoCopyRecordWasEdited(layout, layout)
+  });
+
+  assert.equal(plan.primaryLayoutId, "layout-user-empty");
+  assert.deepEqual(plan.layoutIds, ["layout-user-empty", "layout-user-copy", "layout-guest-demo-edited"]);
+});
+
+test("guest import plan includes personal guest layouts without legacy guest flag", () => {
+  const layouts = {
+    personal: {
+      id: "layout-personal",
+      name: "My guest tab",
+      createdAt: "2026-05-24T09:00:00.000Z",
+      updatedAt: "2026-05-24T09:00:00.000Z"
+    },
+    publicDraft: {
+      id: "layout-public-draft",
+      name: "Public draft",
+      adminDemo: true,
+      createdAt: "2026-05-24T10:00:00.000Z",
+      updatedAt: "2026-05-24T10:00:00.000Z"
+    }
+  };
+
+  assert.equal(isGuestLocalPersonalLayout(layouts.personal), true);
+  assert.equal(isGuestLocalPersonalLayout(layouts.publicDraft), false);
+  const plan = guestLocalLayoutImportPlan({
+    layouts,
+    activeLayoutId: "layout-personal",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: () => false
+  });
+
+  assert.deepEqual(plan.layoutIds, ["layout-personal"]);
+});
+
+test("guest display preference changes can make automatic demo importable", () => {
+  const sourceState = {
+    itemDisplayMode: "photos",
+    showItemMeta: false,
+    showFilterContext: true
+  };
+  const layouts = {
+    autoClean: {
+      id: "layout-guest-demo-clean",
+      guestDemoCopy: true,
+      demoSourceLanguage: "en",
+      createdAt: "2026-05-24T08:00:00.000Z",
+      updatedAt: "2026-05-24T08:00:00.000Z"
+    }
+  };
+
+  assert.equal(guestLocalDisplayPreferencesWereChanged(sourceState), true);
+  const plan = guestLocalLayoutImportPlan({
+    layouts,
+    activeLayoutId: "layout-guest-demo-clean",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: () => guestLocalDisplayPreferencesWereChanged(sourceState)
+  });
+
+  assert.deepEqual(plan.layoutIds, ["layout-guest-demo-clean"]);
+});
+
+test("guest display preferences are copied to imported account state", () => {
+  const preferences = guestLocalDisplayPreferences({
+    itemDisplayMode: "photos",
+    showItemMeta: false,
+    showFilterContext: true
+  });
+  const targetState = {
+    itemDisplayMode: "none",
+    showItemMeta: false,
+    showFilterContext: false
+  };
+
+  assert.equal(applyGuestLocalDisplayPreferences(targetState, preferences), true);
+  assert.deepEqual(targetState, {
+    itemDisplayMode: "photos",
+    showItemMeta: false,
+    showFilterContext: true
+  });
+});
+
+test("guest import sync validation rejects the empty local import that server save blocks", () => {
+  const emptyImportedState = {
+    layouts: {
+      "layout-imported": {
+        id: "layout-imported",
+        name: "Demo-packing",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {} }
+      }
+    },
+    containers: {},
+    items: {}
+  };
+
+  const validation = validateGuestImportSyncState(emptyImportedState, ["layout-imported"]);
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.reason, "empty-state");
+  assert.equal(validation.stats.totalContainerCount, 0);
+  assert.equal(validation.stats.totalItemCount, 0);
+});
+
+test("guest import sync validation requires saved remote state to return imported layouts with content", () => {
+  const savedState = {
+    layouts: {
+      "layout-imported": {
+        id: "layout-imported",
+        name: "Demo-packing",
+        rootContainerIds: ["container-root"],
+        arrangement: {
+          rootContainerIds: ["container-root"],
+          containers: {
+            "container-root": {
+              parentId: "",
+              itemIds: ["item-a"],
+              childIds: [],
+              order: [{ type: "item", id: "item-a" }]
+            }
+          },
+          items: {
+            "item-a": "container-root"
+          }
+        }
+      }
+    },
+    containers: {
+      "container-root": {
+        id: "container-root",
+        itemIds: ["item-a"],
+        childIds: [],
+        order: [{ type: "item", id: "item-a" }]
+      }
+    },
+    items: {
+      "item-a": {
+        id: "item-a",
+        containerId: "container-root",
+        name: "Tent"
+      }
+    }
+  };
+  const missingRemoteState = {
+    ...savedState,
+    layouts: {}
+  };
+
+  const savedValidation = validateGuestImportSyncState(savedState, ["layout-imported"]);
+  const missingValidation = validateGuestImportSyncState(missingRemoteState, ["layout-imported"]);
+
+  assert.equal(savedValidation.ok, true);
+  assert.equal(savedValidation.stats.importedLayoutCount, 1);
+  assert.equal(savedValidation.stats.importedContainerCount, 1);
+  assert.equal(savedValidation.stats.importedItemCount, 1);
+  assert.equal(missingValidation.ok, false);
+  assert.equal(missingValidation.reason, "missing-layouts");
+});
+
+test("guest demo edit detection uses local copy time as baseline", () => {
+  const layout = {
+    id: "layout-guest-demo-1",
+    guestDemoCopy: true,
+    demoSourceLanguage: "en",
+    guestDemoCopyCreatedAt: "2026-05-24T10:00:00.000Z",
+    createdAt: "2026-05-24T10:00:00.000Z",
+    updatedAt: "2026-05-24T10:00:00.000Z"
+  };
+
+  assert.equal(
+    guestDemoCopyRecordWasEdited({ createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-05-24T09:00:00.000Z" }, layout),
+    false
+  );
+  assert.equal(
+    guestDemoCopyRecordWasEdited({ createdAt: "2026-05-24T10:00:00.000Z", updatedAt: "2026-05-24T10:00:01.000Z" }, layout),
+    true
+  );
 });
 
 test("guest startup creates one automatic demo layout only when startup policy allows it", () => {
@@ -334,6 +1115,54 @@ test("automatic guest demo layout keeps the template title without uniqueness su
     }),
     "Demo-packing 2"
   );
+});
+
+test("automatic guest demo layout prefers confirmed template title over mojibake payload name", () => {
+  const uniqueName = (name) => `${name} 2`;
+
+  assert.equal(
+    guestDemoCopyLayoutName("Р”РµРјРѕ-СѓРєР»Р°РґРєР°", {
+      fallbackName: "Demo copy",
+      preferredName: "Demo-packing",
+      normalizeName: (name) => name.trim(),
+      uniqueName,
+      exactTemplateName: true
+    }),
+    "Demo-packing"
+  );
+  assert.equal(
+    guestDemoCopyLayoutName("Р”РµРјРѕ-СѓРєР»Р°РґРєР°", {
+      fallbackName: "Demo copy",
+      preferredName: "Demo-packing",
+      normalizeName: (name) => name.trim(),
+      uniqueName,
+      exactTemplateName: false
+    }),
+    "Demo-packing 2"
+  );
+});
+
+test("private mojibake layout names are repaired from catalog fallback names", () => {
+  const state = {
+    layouts: {
+      privateLayout: {
+        id: "privateLayout",
+        name: "Р”РµРјРѕ-СѓРєР»Р°РґРєР°",
+        demoSourceLanguage: "en"
+      },
+      publicTemplate: {
+        id: "publicTemplate",
+        name: "Р”РµРјРѕ-СѓРєР»Р°РґРєР°",
+        adminDemo: true
+      }
+    }
+  };
+
+  assert.equal(repairMojibakeLayoutNames(state, {
+    fallbackNameForLayout: (layout) => layout.demoSourceLanguage === "en" ? "Demo-packing" : ""
+  }), true);
+  assert.equal(state.layouts.privateLayout.name, "Demo-packing");
+  assert.equal(state.layouts.publicTemplate.name, "Р”РµРјРѕ-СѓРєР»Р°РґРєР°");
 });
 
 test("template copy uses the original public source id when copying a copy", () => {
@@ -621,13 +1450,13 @@ test("public shared list rows can be reconciled back into the template catalog",
 test("public shared catalog language uses server metadata before payload language", () => {
   const row = {
     id: "public-shared-layout-template-copy-ru-123",
-    title: "Bikepacking reference 2",
+    title: "Renamed shared template",
     language: "en"
   };
   const layoutsByLanguage = {
     ru: [{
       id: "template-copy-ru-123",
-      name: "Bikepacking reference 2",
+      name: "Old payload/runtime name",
       language: "ru",
       runtimeSharedTemplate: true
     }],
@@ -641,7 +1470,32 @@ test("public shared catalog language uses server metadata before payload languag
 
   assert.equal(confirmed.length, 1);
   assert.equal(confirmed[0].id, "template-copy-ru-123");
+  assert.equal(confirmed[0].name, "Renamed shared template");
   assert.equal(confirmed[0].language, "en");
+});
+
+test("public template metadata is applied over stale payload layout titles", () => {
+  const payload = {
+    activeLayoutId: "layout-main",
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Old payload title",
+        language: "ru"
+      }
+    },
+    containers: {},
+    items: {}
+  };
+
+  const next = applyPublicTemplateMetadataToPayload(payload, {
+    title: "Metadata title",
+    language: "en"
+  });
+
+  assert.equal(next.layouts["layout-main"].name, "Metadata title");
+  assert.equal(next.layouts["layout-main"].language, "en");
+  assert.equal(payload.layouts["layout-main"].name, "Old payload title");
 });
 
 test("public shared catalog ignores rows without language metadata", () => {
@@ -657,6 +1511,26 @@ test("public shared catalog ignores rows without language metadata", () => {
   });
 
   assert.deepEqual(confirmed, []);
+});
+
+test("empty public shared payload is a valid template payload", () => {
+  assert.equal(isPublicSharedTemplatePayload({
+    activeLayoutId: "layout-main",
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Empty shared template",
+        rootContainerIds: []
+      }
+    },
+    containers: {},
+    items: {}
+  }), true);
+  assert.equal(isPublicSharedTemplatePayload({
+    activeLayoutId: "layout-main",
+    layouts: {},
+    containers: {}
+  }), false);
 });
 
 test("public shared catalog prunes stale template-copy runtime entries", () => {
@@ -872,6 +1746,18 @@ test("published template-copy row adopts a same-name local draft with an old sou
   assert.equal(findAdoptableTemplateCopyDraft(state.layouts, published), null);
 });
 
+test("private copies from public templates are marked in entity notes", () => {
+  const item = { id: "item-a", note: "Keep dry" };
+  const container = { id: "bag-a", note: "" };
+
+  assert.equal(appendCopiedFromTemplateNote(item, "Demo-packing"), true);
+  assert.equal(item.note, "Keep dry\nСкопировано из шаблона: Demo-packing");
+  assert.equal(appendCopiedFromTemplateNote(item, "Demo-packing"), false);
+  assert.equal(item.note, "Keep dry\nСкопировано из шаблона: Demo-packing");
+  assert.equal(appendCopiedFromTemplateNote(container, "Tristan Kit"), true);
+  assert.equal(container.note, "Скопировано из шаблона: Tristan Kit");
+});
+
 test("admin template options collapse local draft and published template-copy row into one option", () => {
   const confirmed = [{
     id: "template-copy-ru-123",
@@ -941,6 +1827,35 @@ test("admin template options hide local and runtime entries without server confi
   });
 
   assert.deepEqual(options, []);
+});
+
+test("admin template options can show local drafts before server confirmation", () => {
+  const options = buildAdminSharedTemplateOptions({
+    canOpen: true,
+    localLayouts: [{
+      id: "layout-local-draft",
+      name: "New shared template",
+      adminTemplateCopy: true,
+      adminSharedSourceId: "template-copy-ru-new",
+      language: "ru",
+      rootContainerIds: []
+    }],
+    sharedLayouts: [],
+    serverConfirmedSharedLayouts: [],
+    requireServerConfirmationForSharedTemplates: true,
+    allowUnconfirmedLocalLayouts: true,
+    fallbackLanguage: "ru",
+    isLayoutMeaningful: () => false,
+    templateCopySourceScore: () => 0,
+    labels: {
+      templatePrefix: "Template",
+      languageOptionLabel: (language) => language.toUpperCase()
+    }
+  });
+
+  assert.equal(options.length, 1);
+  assert.equal(options[0][0], "template-draft:layout-local-draft");
+  assert.equal(options[0][1], "Template: New shared template (RU)");
 });
 
 test("empty local template-copy draft is hydrated from meaningful published payload", () => {
@@ -1053,6 +1968,21 @@ test("published templates are blocked when offline or forced offline", () => {
     navigatorOnline: false,
     language: "ru"
   }), /нет интернета/);
+});
+
+test("readonly public template options get a stable lock marker", () => {
+  assert.equal(
+    readonlyPublicTemplateOptionLabel("Template: Demo", { readonly: false }),
+    "Template: Demo"
+  );
+  assert.equal(
+    readonlyPublicTemplateOptionLabel("Template: Demo", { readonly: true }),
+    "🔒 Template: Demo"
+  );
+  assert.equal(
+    readonlyPublicTemplateOptionLabel("🔒 Template: Demo", { readonly: true }),
+    "🔒 Template: Demo"
+  );
 });
 
 test("shared template catalog diagnostics warn when confirmed rows create no options", () => {

@@ -108,19 +108,132 @@ export function normalizePublishedDemoTemplatePayload(payload, options = {}) {
   return next;
 }
 
-function updatedTime(layout) {
-  const time = Date.parse(layout?.updatedAt || layout?.createdAt || "");
+function timeValue(value = "") {
+  const time = Date.parse(value || "");
   return Number.isFinite(time) ? time : 0;
+}
+
+function updatedTime(layout) {
+  return timeValue(layout?.updatedAt || layout?.createdAt || "");
+}
+
+export function recordWasEditedAfterCreate(record) {
+  if (!record || typeof record !== "object") return false;
+  const created = timeValue(record.createdAt);
+  const updated = timeValue(record.updatedAt);
+  return Boolean(created && updated && updated > created);
+}
+
+function guestDemoCopyBaselineTime(layout) {
+  return timeValue(layout?.guestDemoCopyCreatedAt || layout?.createdAt || "");
+}
+
+export function guestDemoCopyRecordWasEdited(record, layout) {
+  const baseline = guestDemoCopyBaselineTime(layout);
+  if (baseline) return timeValue(record?.updatedAt || "") > baseline;
+  return recordWasEditedAfterCreate(record);
+}
+
+const GUEST_DISPLAY_MODE_DEFAULT = "meta-photos";
+const GUEST_DISPLAY_MODES = new Set(["none", "meta", "meta-photos", "photos"]);
+
+export function guestLocalDisplayPreferences(sourceState = {}) {
+  const mode = String(sourceState?.itemDisplayMode || "").trim();
+  return {
+    itemDisplayMode: GUEST_DISPLAY_MODES.has(mode) ? mode : GUEST_DISPLAY_MODE_DEFAULT,
+    showItemMeta: Boolean(sourceState?.showItemMeta),
+    showFilterContext: Boolean(sourceState?.showFilterContext)
+  };
+}
+
+export function guestLocalDisplayPreferencesWereChanged(sourceState = {}, {
+  defaultItemDisplayMode = GUEST_DISPLAY_MODE_DEFAULT,
+  defaultShowFilterContext = false
+} = {}) {
+  const preferences = guestLocalDisplayPreferences(sourceState);
+  return preferences.itemDisplayMode !== defaultItemDisplayMode ||
+    preferences.showFilterContext !== Boolean(defaultShowFilterContext);
+}
+
+export function applyGuestLocalDisplayPreferences(targetState, preferences = {}) {
+  if (!targetState || typeof targetState !== "object") return false;
+  const mode = String(preferences.itemDisplayMode || "").trim();
+  const nextMode = GUEST_DISPLAY_MODES.has(mode) ? mode : "";
+  let changed = false;
+  if (nextMode && targetState.itemDisplayMode !== nextMode) {
+    targetState.itemDisplayMode = nextMode;
+    changed = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "showItemMeta")) {
+    const nextShowItemMeta = Boolean(preferences.showItemMeta);
+    if (targetState.showItemMeta !== nextShowItemMeta) {
+      targetState.showItemMeta = nextShowItemMeta;
+      changed = true;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "showFilterContext")) {
+    const nextShowFilterContext = Boolean(preferences.showFilterContext);
+    if (targetState.showFilterContext !== nextShowFilterContext) {
+      targetState.showFilterContext = nextShowFilterContext;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function isAutomaticGuestDemoCopyLayout(layout) {
+  return Boolean(
+    layout?.demoSourceLanguage ||
+    String(layout?.id || "").startsWith("layout-guest-demo-")
+  );
+}
+
+export function isGuestLocalPersonalLayout(layout) {
+  return Boolean(
+    layout?.id &&
+    !layout.adminDemo &&
+    !layout.adminSharedSourceId &&
+    !layout.publicCatalogLayoutId
+  );
+}
+
+export function guestLocalLayoutImportPlan({
+  layouts = {},
+  activeLayoutId = "",
+  isGuestDemoCopy = (layout) => Boolean(layout?.guestDemoCopy),
+  isGuestPersonalLayout = isGuestLocalPersonalLayout,
+  isAutomaticDemoCopy = isAutomaticGuestDemoCopyLayout,
+  hasUserEdits = () => false
+} = {}) {
+  const copies = Object.values(layouts || {}).filter((layout) =>
+    layout?.id && (isGuestDemoCopy(layout) || isGuestPersonalLayout(layout))
+  );
+  const order = new Map(copies.map((layout, index) => [layout.id, index]));
+  const candidates = copies.filter((layout) =>
+    !isAutomaticDemoCopy(layout) || hasUserEdits(layout)
+  );
+  const sorted = [...candidates].sort((a, b) => {
+    if (a.id === activeLayoutId && b.id !== activeLayoutId) return -1;
+    if (b.id === activeLayoutId && a.id !== activeLayoutId) return 1;
+    const updated = updatedTime(b) - updatedTime(a);
+    if (updated) return updated;
+    return (order.get(a.id) || 0) - (order.get(b.id) || 0);
+  });
+  return {
+    primaryLayoutId: sorted[0]?.id || "",
+    layoutIds: sorted.map((layout) => layout.id)
+  };
 }
 
 export function guestDemoCopyCleanupPlan({
   layouts = {},
   activeLayoutId = "",
   isGuestDemoCopy = (layout) => Boolean(layout?.guestDemoCopy),
+  isAutomaticDemoCopy = () => true,
   hasUserEdits = () => false
 } = {}) {
   const copies = Object.values(layouts || {}).filter((layout) => layout?.id && isGuestDemoCopy(layout));
-  const uneditedCopies = copies.filter((layout) => !hasUserEdits(layout));
+  const uneditedCopies = copies.filter((layout) => isAutomaticDemoCopy(layout) && !hasUserEdits(layout));
   if (uneditedCopies.length <= 1) {
     return {
       keepLayoutId: uneditedCopies[0]?.id || "",

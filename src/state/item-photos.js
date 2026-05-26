@@ -102,6 +102,25 @@ export function removePhotoFromDraft(draft, index = 0) {
   };
 }
 
+export function setPrimaryPhotoInDraft(draft, index = 0) {
+  const target = draft || { photos: [], deletedPhotos: [] };
+  const safeIndex = Math.max(0, Math.min(Number(index) || 0, target.photos.length - 1));
+  if (!target.photos.length || safeIndex === 0) {
+    return {
+      draft: target,
+      changed: false,
+      nextIndex: 0
+    };
+  }
+  const [photo] = target.photos.splice(safeIndex, 1);
+  target.photos.unshift(photo);
+  return {
+    draft: target,
+    changed: true,
+    nextIndex: 0
+  };
+}
+
 export function photoDraftChanged(draft, record) {
   if (!draft) return false;
   return itemPhotosSignature({ photos: draft.photos }) !== itemPhotosSignature(record) || draft.deletedPhotos.length > 0;

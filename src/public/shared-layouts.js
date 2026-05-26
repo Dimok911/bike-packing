@@ -73,6 +73,15 @@ export function isConcretePublicSharedLayoutListRecord(record) {
   );
 }
 
+export function isPublicSharedTemplatePayload(payload) {
+  return Boolean(
+    payload &&
+    payload.items && typeof payload.items === "object" &&
+    payload.containers && typeof payload.containers === "object" &&
+    payload.layouts && typeof payload.layouts === "object"
+  );
+}
+
 export function isTemplateCopySharedLayoutId(layoutId) {
   return String(layoutId || "").trim().startsWith("template-copy-");
 }
@@ -90,7 +99,7 @@ export function sharedLayoutCatalogEntryFromPublicRecord(record, {
   return {
     ...(runtimeLayout || {}),
     id,
-    name: runtimeLayout?.name || record?.name || record?.title || id,
+    name: record?.name || record?.title || runtimeLayout?.name || id,
     language,
     runtimeSharedTemplate: true,
     serverConfirmed: true,

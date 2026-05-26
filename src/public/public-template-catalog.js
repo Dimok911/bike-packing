@@ -121,6 +121,65 @@ export function mergePublicTemplateCatalogEntries(catalog = [], entries = []) {
   return [...byKey.values()];
 }
 
+export function mergeServerDemoTemplateCatalog(currentCatalog = [], incomingEntries = []) {
+  const confirmedIncoming = (Array.isArray(incomingEntries) ? incomingEntries : [])
+    .filter((entry) =>
+      (entry?.publicTemplateKind === PUBLIC_TEMPLATE_KIND_DEMO || entry?.role === PUBLIC_TEMPLATE_KIND_DEMO) &&
+      normalizeText(entry?.listId || entry?.id) &&
+      !entry?.missing
+    )
+    .map((entry) => ({
+      ...entry,
+      id: normalizeText(entry.id || entry.listId),
+      listId: normalizeText(entry.listId || entry.id),
+      publicTemplateKind: PUBLIC_TEMPLATE_KIND_DEMO,
+      role: PUBLIC_TEMPLATE_KIND_DEMO,
+      serverConfirmed: true,
+      missing: false
+    }));
+  return mergePublicTemplateCatalogEntries(currentCatalog, confirmedIncoming);
+}
+
+export function upsertDemoTemplateCatalogEntry(catalog = [], language, {
+  listId = "",
+  name = "",
+  updatedAt = "",
+  serverConfirmed = true,
+  missing = false,
+  fallbackListId = "",
+  fallbackName = ""
+} = {}) {
+  const normalized = normalizeLanguage(language);
+  const requestedListId = normalizeText(listId);
+  const existing = demoTemplateForLanguage(catalog, normalized, { listId: requestedListId });
+  const resolvedListId = requestedListId || existing?.listId || normalizeText(fallbackListId) || demoTemplateEntryForLanguage(normalized).listId;
+  return mergePublicTemplateCatalogEntries(catalog, [
+    demoTemplateEntryForLanguage(normalized, {
+      listId: resolvedListId,
+      name: name || existing?.name || fallbackName || resolvedListId,
+      updatedAt: updatedAt || existing?.updatedAt || "",
+      serverConfirmed,
+      missing
+    })
+  ]);
+}
+
+export function removePublicTemplateCatalogEntry(catalog = [], {
+  id = "",
+  listId = "",
+  publicTemplateKind = PUBLIC_TEMPLATE_KIND_DEMO,
+  role = ""
+} = {}) {
+  const targetId = normalizeText(id || listId);
+  const kind = normalizeText(publicTemplateKind || role || PUBLIC_TEMPLATE_KIND_DEMO);
+  if (!targetId) return Array.isArray(catalog) ? catalog : [];
+  return (Array.isArray(catalog) ? catalog : []).filter((entry) => {
+    const entryKind = normalizeText(entry?.publicTemplateKind || entry?.role || PUBLIC_TEMPLATE_KIND_SHARED);
+    const entryId = normalizeText(entry?.id || entry?.listId);
+    return entryKind !== kind || entryId !== targetId;
+  });
+}
+
 export function compareDemoTemplateOrder(a, b) {
   const aName = normalizeComparableName(a?.name || a?.title || a?.id);
   const bName = normalizeComparableName(b?.name || b?.title || b?.id);
@@ -196,4 +255,172 @@ export function publicTemplateChoice(entry, {
     return entry.id ? `shared:${entry.id}` : "";
   }
   return "";
+}
+
+export function publicDemoTemplatePayloadTarget(entry, {
+  fallbackLanguage = "ru",
+  demoListIdForLanguage = (language) => `${PUBLIC_DEMO_LIST_PREFIX}${normalizeLanguage(language)}`
+} = {}) {
+  const language = normalizeLanguage(entry?.language, normalizeLanguage(fallbackLanguage));
+  const listId = normalizeText(entry?.listId || entry?.id) || normalizeText(demoListIdForLanguage(language));
+  if (!listId) return null;
+  const name = normalizeText(entry?.name || entry?.title);
+  return {
+    language,
+    listId,
+    name,
+    updatedAt: normalizeText(entry?.updatedAt || entry?.updated_at)
+  };
+}
+
+export function localDemoTemplateEntriesFromLayouts(layouts = {}, {
+  fallbackLanguage = "ru"
+} = {}) {
+  return Object.values(layouts || {})
+    .filter((layout) => layout?.adminDemo)
+    .map((layout) => {
+      const language = normalizeLanguage(layout.adminDemoLanguage || layout.language, normalizeLanguage(fallbackLanguage));
+      const listId = normalizeText(layout.adminDemoListId) || normalizeText(demoTemplateEntryForLanguage(language).listId);
+      if (!listId) return null;
+      const name = normalizeText(layout.name || layout.title) || listId;
+      return {
+        id: listId,
+        listId,
+        name,
+        title: name,
+        language,
+        publicTemplateKind: PUBLIC_TEMPLATE_KIND_DEMO,
+        role: PUBLIC_TEMPLATE_KIND_DEMO,
+        serverConfirmed: false,
+        localDraftLayoutId: layout.id || "",
+        updatedAt: normalizeText(layout.updatedAt)
+      };
+    })
+    .filter(Boolean);
+}
+
+export function mergeDemoTemplateEntriesForAdmin(serverEntries = [], localEntries = []) {
+  const serverConfirmedIds = new Set(
+    (Array.isArray(serverEntries) ? serverEntries : [])
+      .filter((entry) => entry?.serverConfirmed)
+      .map((entry) => normalizeText(entry.listId || entry.id))
+      .filter(Boolean)
+  );
+  const preparedLocalEntries = (Array.isArray(localEntries) ? localEntries : []).map((entry) => ({
+    ...entry,
+    serverConfirmed: Boolean(entry?.serverConfirmed || serverConfirmedIds.has(normalizeText(entry?.listId || entry?.id)))
+  }));
+  return mergePublicTemplateCatalogEntries(serverEntries, preparedLocalEntries);
+}
+
+function templateCandidateUpdatedAtValue(candidate) {
+  const value = Date.parse(candidate?.updatedAt || candidate?.layout?.updatedAt || candidate?.entry?.updatedAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function compareTemplateCandidateWinner(a, b) {
+  const priority = Number(b?.priority || 0) - Number(a?.priority || 0);
+  if (priority) return priority;
+  const updated = templateCandidateUpdatedAtValue(b) - templateCandidateUpdatedAtValue(a);
+  if (updated) return updated;
+  return Number(a?.order || 0) - Number(b?.order || 0);
+}
+
+export function buildAdminDemoTemplateOptions({
+  canOpen = false,
+  localLayouts = [],
+  serverTemplates = [],
+  fallbackLanguage = "ru",
+  isLayoutMeaningful = () => false,
+  draftChoice = (layoutId) => layoutId ? `template-draft:${layoutId}` : "",
+  demoChoiceForTemplate = (entry) => entry?.listId || entry?.id || "",
+  normalizeDemoName = (name) => normalizeText(name),
+  compareEntries = compareDemoTemplateOrder,
+  labels = {}
+} = {}) {
+  if (!canOpen) return [];
+  const languageLabel = labels.languageOptionLabel || ((language) => String(language || fallbackLanguage).toUpperCase());
+  const optionLabel = labels.publicTemplateOptionLabel || (({ prefix, name, languageLabel: label }) =>
+    `${prefix}: ${name} (${label})`);
+  const templatePrefix = labels.templatePrefix || "Template";
+  const defaultName = labels.defaultName || "Demo";
+  const candidates = [];
+  let order = 0;
+  const pushCandidate = (candidate) => {
+    const key = normalizeText(candidate?.key);
+    if (!key) return;
+    candidates.push({ ...candidate, key });
+  };
+  (Array.isArray(localLayouts) ? localLayouts : []).forEach((layout) => {
+    if (!layout?.id || !layout.adminDemo || !layout.adminTemplateCopy) return;
+    const language = normalizeLanguage(layout.adminDemoLanguage || layout.language, normalizeLanguage(fallbackLanguage));
+    const listId = normalizeText(layout.adminDemoListId) || `draft:${layout.id}`;
+    const name = normalizeText(normalizeDemoName(layout.name || defaultName, language)) || defaultName;
+    pushCandidate({
+      key: listId,
+      layout,
+      entry: {
+        id: listId,
+        listId,
+        name,
+        language,
+        publicTemplateKind: PUBLIC_TEMPLATE_KIND_DEMO,
+        role: PUBLIC_TEMPLATE_KIND_DEMO
+      },
+      priority: isLayoutMeaningful(layout.id) ? 120 : 75,
+      updatedAt: layout.updatedAt || "",
+      order: order++,
+      option: [
+        draftChoice(layout.id),
+        optionLabel({
+          prefix: templatePrefix,
+          name,
+          languageLabel: languageLabel(language),
+          demo: true
+        }),
+        "demo"
+      ]
+    });
+  });
+  (Array.isArray(serverTemplates) ? serverTemplates : []).forEach((entry) => {
+    if (entry?.missing) return;
+    const listId = normalizeText(entry?.listId || entry?.id);
+    if (!listId) return;
+    const language = normalizeLanguage(entry.language, normalizeLanguage(fallbackLanguage));
+    const name = normalizeText(entry.name || entry.title || defaultName) || defaultName;
+    pushCandidate({
+      key: listId,
+      entry: {
+        ...entry,
+        id: listId,
+        listId,
+        name,
+        language
+      },
+      priority: entry.serverConfirmed ? 95 : 40,
+      updatedAt: entry.updatedAt || "",
+      order: order++,
+      option: [
+        demoChoiceForTemplate({ ...entry, id: listId, listId, name, language }),
+        optionLabel({
+          prefix: templatePrefix,
+          name,
+          languageLabel: languageLabel(language),
+          demo: true
+        }),
+        "demo"
+      ]
+    });
+  });
+  const byKey = new Map();
+  candidates.forEach((candidate) => {
+    const current = byKey.get(candidate.key);
+    if (!current || compareTemplateCandidateWinner(current, candidate) > 0) {
+      byKey.set(candidate.key, candidate);
+    }
+  });
+  return [...byKey.values()]
+    .sort((a, b) => compareEntries(a.entry, b.entry))
+    .map((candidate) => candidate.option)
+    .filter((option) => option[0]);
 }

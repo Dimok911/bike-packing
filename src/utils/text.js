@@ -9,3 +9,9 @@ export function formatThingCount(count) {
   if (mod10 === 1 && mod100 !== 11) return `${count} вещи`;
   return `${count} вещей`;
 }
+
+export function looksLikeMojibakeText(value = "") {
+  const text = String(value || "");
+  if (!text) return false;
+  return /(?:Р.|С.|Ð|Ñ|�)/.test(text);
+}
