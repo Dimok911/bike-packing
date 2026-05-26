@@ -423,6 +423,7 @@ import {
   legacyComparableStateForSync as legacyComparableStateForSyncPayload,
   splitEntitySyncEntries as splitEntitySyncEntriesForSync
 } from "./src/sync/entity-sync.js";
+import { assertEntitySyncConfirmed } from "./src/sync/entity-sync-confirmation.js";
 import { isConflictMetaField } from "./src/sync/conflict-meta.js";
 import {
   apiErrorMessage,
@@ -633,6 +634,7 @@ let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
 const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "entitySyncListUpdatedAt",
   "publicTemplatePhotoReferenceCopy",
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
@@ -655,7 +657,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-26.public-template-photo-reference-copy-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-27.entity-sync-list-updated-at-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -3964,6 +3966,49 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
   };
 }
 
+async function syncCreatedPrivateLayoutEntities(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!layout) throw new Error("Created layout was not found locally");
+  saveState({ sync: false });
+  if (!currentUser || !canUsePrivateState()) return;
+  if (isReadOnlyBikePackingContext()) throw createReadOnlyBikePackingError();
+  syncMeta.dirty = true;
+  syncMeta.localUpdatedAt = nowIso();
+  saveSyncMeta();
+  await assertEntitySyncListFreshnessApi();
+
+  const baseState = loadBaseState();
+  const expectedItemIds = [...getLayoutItemIdSet(layout)];
+  const expectedContainerIds = [...getLayoutContainerIdSet(layout)];
+  let listId = currentPackingListId || "";
+  try {
+    const item = await syncChangedEntityType("item", { baseState, listId });
+    if (!listId && currentPackingListId) listId = currentPackingListId;
+    const container = await syncChangedEntityType("container", { baseState, listId });
+    if (!listId && currentPackingListId) listId = currentPackingListId;
+    const layoutResult = await syncChangedEntityType("layout", { baseState, listId });
+    assertEntitySyncConfirmed(item, "items", expectedItemIds);
+    assertEntitySyncConfirmed(container, "containers", expectedContainerIds);
+    assertEntitySyncConfirmed(layoutResult, "layouts", [layoutId]);
+    const integrityMeta = layoutResult.integrityMeta || container.integrityMeta || item.integrityMeta || null;
+    syncMeta.dirty = false;
+    syncMeta.serverUpdatedAt = layoutResult.serverUpdatedAt || container.serverUpdatedAt || item.serverUpdatedAt || syncMeta.serverUpdatedAt;
+    syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt || nowIso();
+    syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
+    rememberRemoteIntegrityMeta(integrityMeta);
+    rememberCurrentSyncAccount();
+    saveBaseState(serializeState({ forSync: true }));
+    saveSyncMeta();
+    updateSyncUi();
+  } catch (error) {
+    syncMeta.dirty = true;
+    syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
+    saveSyncMeta();
+    updateSyncUi(`Не удалось сохранить копию укладки: ${error.message}`);
+    throw error;
+  }
+}
+
 function pruneAdminPublishedDraftsForSync(cloned) {
   const layouts = cloned.layouts || {};
   const publicRecordIds = getPublicLayoutRecordIdsForState(cloned);
@@ -5263,6 +5308,38 @@ function adminApiWarningFromCapabilities(data) {
   });
 }
 
+function apiCapabilitySet(capabilities = []) {
+  return new Set((Array.isArray(capabilities) ? capabilities : [])
+    .map((capability) => String(capability || "").trim())
+    .filter(Boolean));
+}
+
+async function fetchBikePackingApiCapabilities({ timeoutMs = 7000, silentErrors = true } = {}) {
+  const data = await apiFetch("/bike-packing/capabilities", {
+    timeoutMs,
+    silentErrors
+  });
+  const capabilities = Array.isArray(data?.capabilities) ? data.capabilities : [];
+  const warning = adminApiWarningFromCapabilities(data);
+  adminApiCompatibility = {
+    checkedAt: Date.now(),
+    checking: false,
+    ok: !warning,
+    warning,
+    version: String(data?.apiCompatibilityVersion || data?.bikePackingApiCompatibilityVersion || "").trim(),
+    capabilities
+  };
+  updateSyncUi();
+  return adminApiCompatibility;
+}
+
+async function assertEntitySyncListFreshnessApi() {
+  if (apiCapabilitySet(adminApiCompatibility.capabilities).has("entitySyncListUpdatedAt")) return true;
+  const capabilities = await fetchBikePackingApiCapabilities({ timeoutMs: 7000, silentErrors: true });
+  if (apiCapabilitySet(capabilities.capabilities).has("entitySyncListUpdatedAt")) return true;
+  throw new Error("API не обновлен: нет entitySyncListUpdatedAt");
+}
+
 async function checkAdminApiCompatibility({ force = false } = {}) {
   if (!canOpenAdminPublishedEdit() || isForcedOffline()) return;
   if (adminApiCompatibility.checking) {
@@ -5275,19 +5352,7 @@ async function checkAdminApiCompatibility({ force = false } = {}) {
   if (!force && adminApiCompatibility.checkedAt && Date.now() - adminApiCompatibility.checkedAt < 5 * 60 * 1000) return;
   adminApiCompatibility.checking = true;
   try {
-    const data = await apiFetch("/bike-packing/capabilities", {
-      timeoutMs: 7000,
-      silentErrors: true
-    });
-    const warning = adminApiWarningFromCapabilities(data);
-    adminApiCompatibility = {
-      checkedAt: Date.now(),
-      checking: false,
-      ok: !warning,
-      warning,
-      version: String(data?.apiCompatibilityVersion || data?.bikePackingApiCompatibilityVersion || "").trim(),
-      capabilities: Array.isArray(data?.capabilities) ? data.capabilities : []
-    };
+    await fetchBikePackingApiCapabilities({ timeoutMs: 7000, silentErrors: true });
   } catch (error) {
     adminApiCompatibility = {
       checkedAt: Date.now(),
@@ -9463,13 +9528,14 @@ function copyPublishedDemoStateToLocalLayout(demoState, { activate = true, remem
     state.showItemMeta = true;
   }
   if (activate) {
-    setActiveLocalEditableScope(layoutId);
+    if (canUsePrivateState()) setActivePrivateScope();
+    else setActiveLocalEditableScope(layoutId);
     state.activeLayoutId = layoutId;
     applyLayoutArrangement(layoutId);
     if (remember) rememberActiveLayoutChoice(layoutId);
     switchView("packing");
   }
-  saveState();
+  saveState({ sync: false });
   render();
   return layoutId;
 }
@@ -9539,6 +9605,7 @@ async function createLocalDemoCopy({ forceNew = false, remember = true, exactTem
       }
     }
     const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { remember, exactTemplateName });
+    await syncCreatedPrivateLayoutEntities(layoutId);
     updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));
     return layoutId;
   })();
@@ -9617,8 +9684,9 @@ async function copySharedLayout(layoutId) {
   const layout = findSharedLayout(layoutId);
   if (!layout) return;
   if (layout.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()) {
-    createLocalDemoCopy({ forceNew: true }).catch((error) => {
+    await createLocalDemoCopy({ forceNew: true }).catch((error) => {
       updateSyncUi(`Demo copy failed: ${error.message}`);
+      showToast(`Не удалось сохранить демо-копию: ${error.message}`, "error");
     });
     return;
   }
@@ -9644,11 +9712,16 @@ async function copySharedLayout(layoutId) {
   applyLayoutArrangement(nextLayoutId);
   setActivePrivateScope();
   rememberActiveLayoutChoice(nextLayoutId);
-  saveState();
+  saveState({ sync: false });
   if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
   switchView("packing");
   render();
-  showToast(`Укладка «${layout.name}» скопирована.`, "success");
+  try {
+    await syncCreatedPrivateLayoutEntities(nextLayoutId);
+    showToast(`Укладка «${layout.name}» скопирована.`, "success");
+  } catch (error) {
+    showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
+  }
 }
 
 function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
@@ -17690,7 +17763,7 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
     else setActivePrivateScope();
     switchActiveLayout(id);
   }
-  saveLayoutMutation(id);
+  saveState({ sync: false });
   render();
   return id;
 }
@@ -17920,7 +17993,12 @@ async function saveNewLayout(event) {
       if (!createdId) return;
       refs.layoutDialog.close();
       switchView("packing");
-      showToast("Укладка создана из шаблона.", "success");
+      try {
+        await syncCreatedPrivateLayoutEntities(createdId);
+        showToast("Укладка создана из шаблона.", "success");
+      } catch (error) {
+        showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
+      }
       return;
     }
   }

@@ -110,6 +110,7 @@ import {
 } from "../../src/state/layout-manage.js";
 import { solidifyTemplateDraftLayout } from "../../src/state/layout-draft-solidify.js";
 import { repairMojibakeLayoutNames } from "../../src/state/names.js";
+import { assertEntitySyncConfirmed } from "../../src/sync/entity-sync-confirmation.js";
 
 const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
 
@@ -2037,6 +2038,24 @@ test("private mutations clear stale public list context before sync", () => {
     record: { id: "public-demo-state", itemKey: "demo-state", visibility: "public" },
     isPublicTemplateListId
   }), true);
+});
+
+test("created private template copies require confirmed entity upserts", () => {
+  assert.doesNotThrow(() => assertEntitySyncConfirmed({
+    attempted: true,
+    skipped: false,
+    upserted: ["layout-copy", "item-a"]
+  }, "layouts", ["layout-copy"]));
+  assert.throws(() => assertEntitySyncConfirmed({
+    attempted: true,
+    skipped: false,
+    upserted: ["item-a"]
+  }, "layouts", ["layout-copy"]), /layouts sync did not confirm: layout-copy/);
+  assert.throws(() => assertEntitySyncConfirmed({
+    attempted: false,
+    skipped: true,
+    upserted: ["layout-copy"]
+  }, "layouts", ["layout-copy"]), /layouts sync did not run/);
 });
 
 test("shared template catalog diagnostics warn when confirmed rows create no options", () => {
