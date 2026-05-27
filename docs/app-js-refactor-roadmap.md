@@ -319,6 +319,14 @@
 
 | Дата | Размер app.js | Завершенный срез | Последний push |
 | --- | ---: | --- | --- |
+| 2026-05-28 | 13595 | static translation application moved to `src/ui/static-translations.js`; cache bumped to `v917`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 13623 | template copy creation flow moved to `src/public/template-copy-flow.js`; cache bumped to `v916`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 13689 | shared/demo public catalog refresh moved to `src/public/shared-catalog-refresh-flow.js`; cache bumped to `v915`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 13769 | auth load, manual sync routing, and published layout save flows moved to `src/sync/auth-load-flow.js`, `src/sync/run-sync-now-flow.js`, and `src/public/published-layout-save-flow.js`; cache bumped to `v914`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 13977 | remote load/save/conflict flows moved to `src/sync/load-remote-state-flow.js` and `src/sync/save-remote-state-flow.js`; container/item placement state helpers expanded; cache bumped to `v913`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 14316 | guest local layout import state mutation moved to `src/public/guest-login-import.js`; cache bumped to `v912`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 14341 | shared admin materialization moved to `src/public/shared-admin-materialize.js`; cache bumped to `v911`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-28 | 14376 | lightweight list freshness helpers added in `src/sync/list-freshness.js`; backup import/restore flow moved to `src/backup/restore-flow.js`; cache bumped to `v910`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 14993 | restored top-of-container move glue required by `src/ui/packing-drag.js`; cache bumped to `v887`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 14979 | packing drag/events, settings drag, horizontal touch scroll, help limits dialog, and published container copy moved to `src/ui/...`/`src/public/...`; cache bumped to `v886`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 16545 | admin/demo/template draft pruning for sync moved to `src/sync/save-body.js`; cache bumped to `v885`; `check`/`build`/`test:critical` ok | local, not pushed |

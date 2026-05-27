@@ -1,4 +1,9 @@
 import { createItemDuplicateRecord } from "./item-ops.js";
+import {
+  createEmptyLayoutArrangement,
+  uniqueLayoutIds
+} from "./layout-arrangement.js";
+import { ensureLayoutContainerPlacement } from "./layout-ops.js";
 
 export async function createRootContainerDuplicateRecord(container, {
   changedAt = "",
@@ -199,6 +204,66 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
 
   const rootId = await copyContainerTree(sourceSnapshot.rootId, targetParentId || null, true);
   return { rootId, copiedPlacements, copiedItemContainers };
+}
+
+export function placeDuplicatedContainerSnapshotInLayoutState(targetState, targetLayoutId, nextRootId, {
+  changedAt = "",
+  copiedItemContainers = {},
+  copiedPlacements = {},
+  normalizeLayoutArrangement = () => {},
+  targetParentId = "",
+  touchContainer = () => {},
+  touchLayout = () => {}
+} = {}) {
+  const targetLayout = targetState?.layouts?.[targetLayoutId];
+  if (!targetState || !targetLayout || !nextRootId || !targetState.containers?.[nextRootId]) return false;
+
+  targetLayout.arrangement = targetLayout.arrangement && typeof targetLayout.arrangement === "object"
+    ? targetLayout.arrangement
+    : createEmptyLayoutArrangement();
+  const arrangement = targetLayout.arrangement;
+  arrangement.rootContainerIds = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
+  arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
+  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
+  arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
+  Object.assign(arrangement.containers, copiedPlacements);
+  Object.assign(arrangement.items, copiedItemContainers);
+
+  if (targetParentId) {
+    const parent = targetState.containers?.[targetParentId];
+    const parentPlacement = ensureLayoutContainerPlacement(targetState, targetLayout, targetParentId);
+    if (!parent || !parentPlacement || !copiedPlacements[nextRootId]) return false;
+    parent.childIds = Array.isArray(parent.childIds) ? parent.childIds.filter((id) => id !== nextRootId) : [];
+    parent.order = Array.isArray(parent.order)
+      ? parent.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
+      : [];
+    parent.childIds.push(nextRootId);
+    parent.order.push({ type: "container", id: nextRootId });
+    parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds.filter((id) => id !== nextRootId) : [];
+    parentPlacement.order = Array.isArray(parentPlacement.order)
+      ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
+      : [];
+    parentPlacement.childIds.push(nextRootId);
+    parentPlacement.order.push({ type: "container", id: nextRootId });
+    arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== nextRootId);
+    copiedPlacements[nextRootId].parentId = targetParentId;
+    targetState.collapsedContainers[targetParentId] = false;
+    touchContainer(targetParentId, changedAt);
+  } else {
+    if (!copiedPlacements[nextRootId]) return false;
+    copiedPlacements[nextRootId].parentId = "";
+    targetState.containers[nextRootId].parentId = null;
+    arrangement.rootContainerIds = uniqueLayoutIds([
+      ...(arrangement.rootContainerIds || []),
+      ...(targetLayout.rootContainerIds || []),
+      nextRootId
+    ]);
+  }
+
+  targetLayout.rootContainerIds = [...arrangement.rootContainerIds];
+  normalizeLayoutArrangement(targetLayout, targetState);
+  touchLayout(targetLayoutId, changedAt);
+  return true;
 }
 
 export function isContainerUsedInOtherLayouts(targetState, containerId, removedFromLayoutId = "") {

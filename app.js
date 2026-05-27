@@ -112,11 +112,15 @@ import {
   importDemoStateAsEditableLayout as importDemoStateAsEditableLayoutValue,
   repairAdminDemoLayout as repairAdminDemoLayoutValue
 } from "./src/public/admin-demo-layout.js";
-import { validateGuestImportSyncState } from "./src/public/guest-login-import.js";
+import {
+  importGuestLocalLayoutsToState,
+  validateGuestImportSyncState
+} from "./src/public/guest-login-import.js";
 import {
   publishedTemplateBlockReason,
   readonlyPublicTemplateOptionLabel
 } from "./src/public/public-template-availability.js";
+import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
 import {
   publicTemplateDeleteBlockReason,
   shouldDeletePublishedTemplateForLayout as shouldDeletePublishedTemplateForLayoutValue
@@ -176,6 +180,7 @@ import {
   mergePublishedSharedStateIntoAdminLayout as mergePublishedSharedStateIntoAdminLayoutValue,
   syncPublishedEntityPhotos as syncPublishedEntityPhotosValue
 } from "./src/public/shared-admin-merge.js";
+import { materializeSharedLayoutForAdminState } from "./src/public/shared-admin-materialize.js";
 import {
   buildAdminSharedTemplateOptions,
   compareSharedTemplateAdminOrder,
@@ -201,6 +206,7 @@ import {
   upsertRuntimeSharedLayout,
   visibleSharedLayoutsForLanguage
 } from "./src/public/shared-layouts.js";
+import { refreshPublicSharedLayoutCatalogFlow } from "./src/public/shared-catalog-refresh-flow.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
 import {
   deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
@@ -236,6 +242,7 @@ import {
   templateCopyRootSnapshots as getTemplateCopyRootSnapshots,
   templateCopySourceScore as getTemplateCopySourceScore
 } from "./src/public/template-copy.js";
+import { createTemplateCopyFromSourceFlow } from "./src/public/template-copy-flow.js";
 import {
   activeReadOnlyLayoutIdFromScope,
   createReadOnlyBikePackingError,
@@ -264,7 +271,8 @@ import {
   deleteUnusedLayoutContainerEntityFromState,
   duplicateRootContainerInState,
   duplicateContainerSnapshotRecords,
-  getContainerItemIdsDeepForState
+  getContainerItemIdsDeepForState,
+  placeDuplicatedContainerSnapshotInLayoutState
 } from "./src/state/container-ops.js";
 import { cleanupGeneratedCatalogArtifacts } from "./src/state/cleanup.js";
 import {
@@ -460,8 +468,8 @@ import {
 } from "./src/state/normalize.js";
 import {
   copyItemInState,
-  createItemDuplicateRecord,
-  deleteItemFromState
+  deleteItemFromState,
+  duplicateItemToContainerInLayoutState
 } from "./src/state/item-ops.js";
 import {
   makeContainerCopyName as makeContainerCopyNameForState,
@@ -504,7 +512,14 @@ import {
 } from "./src/sync/api-client.js";
 import { adminApiWarningFromCapabilities as adminApiWarningFromCapabilitiesValue } from "./src/sync/admin-api-compat.js";
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
+import { checkAuthAndLoadFlow } from "./src/sync/auth-load-flow.js";
+import {
+  listFreshnessChanged,
+  normalizeListFreshness
+} from "./src/sync/list-freshness.js";
+import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
+import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
   groupHistoryRecords as groupHistoryRecordsForSync,
@@ -551,6 +566,10 @@ import {
   pruneAdminPublishedDraftsForSync as pruneAdminPublishedDraftsForSyncValue,
   rememberConflictRemoteMeta as rememberConflictRemoteMetaForSync
 } from "./src/sync/save-body.js";
+import {
+  handleRemoteSaveConflictFlow,
+  saveRemoteStateFlow
+} from "./src/sync/save-remote-state-flow.js";
 import { registerAppServiceWorker } from "./src/sync/service-worker.js";
 import {
   backupDownloadName,
@@ -566,6 +585,11 @@ import {
   restoreSelectedBackupLayoutsToState,
   summarizeBackupLayouts
 } from "./src/backup/restore.js";
+import {
+  readBackupImportFile,
+  restoreFullBackupFlow,
+  restoreSelectedBackupLayoutsFlow
+} from "./src/backup/restore-flow.js";
 import {
   renderBackupAnalysis as renderBackupAnalysisUi,
   renderBackupRules,
@@ -628,6 +652,7 @@ import {
   bindBoardScroll,
   bindFixedScrollbar
 } from "./src/ui/packing-scroll.js";
+import { applyStaticTranslationsUi } from "./src/ui/static-translations.js";
 import {
   GUEST_STORAGE_SCOPE,
   scopedLocalStorageKey as scopedStorageKey,
@@ -784,6 +809,7 @@ let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entitySyncListUpdatedAt",
+  "lightweightListFreshness",
   "publicTemplatePhotoReferenceCopy",
   "sharedTemplatePhotoReferenceCopy",
   "sharedTemplateDeleteLegacyCleanup",
@@ -806,7 +832,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-27.entity-sync-list-updated-at-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-27.lightweight-list-freshness-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1768,46 +1794,17 @@ async function setUiLanguage(language) {
 }
 
 function applyStaticTranslations() {
-  document.documentElement.lang = uiLanguage;
-  document.title = t("app.title");
-  const appTitle = document.querySelector(".topbar h1");
-  const authGateTitle = document.querySelector(".auth-gate h2");
-  const authGateText = document.querySelector(".auth-gate p");
-  const languageLabel = document.querySelector("#languageSelectLabel");
-  const layoutLabel = document.querySelector(".layout-select-control");
-  const searchLabel = document.querySelector("#searchFilterLabel");
-  const locationLabel = document.querySelector("#locationFilterLabel");
-  const categoryLabel = document.querySelector("#categoryFilterLabel");
-  if (appTitle) appTitle.textContent = t("app.title");
-  if (authGateTitle) authGateTitle.textContent = uiLanguage === "en" ? "Sign in to open your packing lists" : "Войдите, чтобы открыть сборы";
-  if (authGateText) {
-    authGateText.textContent = uiLanguage === "en"
-      ? "Layouts, weight and storage places will be available after signing in with a magic link."
-      : "Укладка, вес и места хранения будут доступны после входа по magic link.";
-  }
-  if (refs.authGateBtn) refs.authGateBtn.textContent = uiLanguage === "en" ? "Get sign-in link" : "Получить ссылку для входа";
-  if (refs.syncBtn) refs.syncBtn.textContent = t("buttons.sync");
-  if (refs.sharedLayoutsBtn) refs.sharedLayoutsBtn.textContent = t("menu.sharedLayouts");
-  if (refs.shareListBtn) refs.shareListBtn.textContent = t("menu.shareList");
-  if (refs.adminReportsBtn) refs.adminReportsBtn.textContent = t("menu.adminReports");
-  if (refs.helpLimitsBtn) refs.helpLimitsBtn.textContent = t("menu.help");
-  document.querySelector("#exportBtn")?.replaceChildren(document.createTextNode(t("menu.print")));
-  if (languageLabel) languageLabel.textContent = t("menu.language");
-  if (layoutLabel?.firstChild) layoutLabel.firstChild.textContent = `${t("labels.layout")}\n          `;
-  refs.newLayoutBtn.textContent = isSharedLayoutView()
-    ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
-    : t("buttons.newLayout");
-  if (refs.editLayoutBtn) refs.editLayoutBtn.textContent = uiLanguage === "en" ? "Edit" : "Редактировать";
-  if (searchLabel?.firstChild) searchLabel.firstChild.textContent = `${t("labels.search")}\n            `;
-  refs.searchInput.placeholder = t("placeholders.search");
-  if (locationLabel?.firstChild) locationLabel.firstChild.textContent = `${t("labels.storage")}\n          `;
-  if (categoryLabel?.firstChild) categoryLabel.firstChild.textContent = `${t("labels.category")}\n          `;
-  document.querySelectorAll(".tabs .tab").forEach((tab) => {
-    const key = `tabs.${tab.dataset.view}`;
-    tab.textContent = t(key);
+  applyStaticTranslationsUi({
+    activeReadOnlyLayoutId,
+    canOpenAdminPublishedEdit,
+    demoCopyActionText,
+    demoSharedLayoutId: DEMO_SHARED_LAYOUT_ID,
+    documentRef: document,
+    isSharedLayoutView,
+    refs,
+    t,
+    uiLanguage
   });
-  if (refs.copySharedLayoutBtn) refs.copySharedLayoutBtn.textContent = uiLanguage === "en" ? "Copy whole layout" : "Скопировать всю укладку";
-  if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
 }
 
 async function init() {
@@ -4839,100 +4836,46 @@ async function ensureCurrentPackingListId() {
   throw new Error("Список для загрузки фото не найден.");
 }
 
-async function checkAuthAndLoad({ syncDirtyNotify = false, restoreLayoutChoice = true, preferredLayout = null } = {}) {
-  if (isSharedListLinkRoute()) return;
-  if (isForcedOffline()) {
-    setLayoutLoadStatus("warning", "Офлайн: показана локальная укладка");
-    if (isExplicitlySignedOut()) {
-      await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
-      return;
+async function checkAuthAndLoad(options = {}) {
+  return checkAuthAndLoadFlow({
+    runtime: {
+      get appUnlocked() { return appUnlocked; },
+      set appUnlocked(value) { appUnlocked = value; },
+      get currentUser() { return currentUser; },
+      set currentUser(value) { currentUser = value; },
+      get syncMeta() { return syncMeta; }
+    },
+    dependencies: {
+      activateLocalStorageScope,
+      activateLocalStorageScopeForCurrentUser,
+      activateOfflineRememberedSession,
+      apiFetch,
+      checkAdminApiCompatibility,
+      clearOfflineRememberedSession,
+      currentPublicTemplateStatusMessage,
+      enterSignedOutPublicMode,
+      hasLocalSavedState,
+      isAdminUser,
+      isExplicitlySignedOut,
+      isForcedOffline,
+      isNetworkError,
+      isSharedListLinkRoute,
+      loadGuestPublishedDemoOnStartup,
+      loadRemoteState,
+      rememberAuthenticatedUser,
+      renderCachedPrivateStateDuringRemoteLoad,
+      renderInitialLocalFallbackIfNeeded,
+      restoreSavedLayoutChoice,
+      restoreTemplateCopyDraftsFromRecovery,
+      setExplicitlySignedOut,
+      setLayoutLoadStatus,
+      setPersonalLayoutsLoadedStatus,
+      shouldKeepCurrentReadonlyDemoAfterAuthCheck,
+      unlockOfflineState,
+      updateSyncUi,
+      GUEST_STORAGE_SCOPE
     }
-    unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
-    return;
-  }
-  let authData = null;
-  try {
-    setLayoutLoadStatus("loading", "Проверяю вход и личные укладки...");
-    updateSyncUi("Проверяю вход...");
-    authData = await apiFetch("/auth/me");
-  } catch (error) {
-    currentUser = null;
-    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
-    if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
-      appUnlocked = true;
-      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
-      updateSyncUi(currentPublicTemplateStatusMessage());
-      return;
-    }
-    if (isNetworkError(error)) {
-      if (activateOfflineRememberedSession("Сервер недоступен · открыта локальная копия личных укладок")) return;
-      await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыта локальная копия демо");
-      return;
-    }
-    appUnlocked = true;
-    await loadGuestPublishedDemoOnStartup({
-      preferLocalCopy: true,
-      allowAutomaticLocalCopy: true,
-      remember: true
-    });
-    updateSyncUi();
-    return;
-  }
-
-  currentUser = authData.user || authData.me || authData.account || null;
-  if (!currentUser && (authData.id || authData.email)) currentUser = { id: authData.id, email: authData.email };
-  if (!currentUser) {
-    clearOfflineRememberedSession();
-    appUnlocked = true;
-    activateLocalStorageScope(GUEST_STORAGE_SCOPE);
-    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
-    if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
-      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
-      updateSyncUi(currentPublicTemplateStatusMessage());
-      return;
-    }
-    await loadGuestPublishedDemoOnStartup({
-      preferLocalCopy: true,
-      allowAutomaticLocalCopy: true,
-      remember: true
-    });
-    updateSyncUi();
-    return;
-  }
-
-  setExplicitlySignedOut(false);
-  clearOfflineRememberedSession();
-  appUnlocked = true;
-  activateLocalStorageScopeForCurrentUser();
-  rememberAuthenticatedUser();
-  restoreTemplateCopyDraftsFromRecovery();
-  if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
-  setLayoutLoadStatus("loading", "Загружаю личные укладки...");
-  updateSyncUi("Вход выполнен · загружаю данные...");
-  await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });
-
-  try {
-    if (syncMeta.dirty && hasLocalSavedState()) {
-      updateSyncUi("Есть локальные изменения · проверяю даты...");
-      await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout });
-      if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
-      setPersonalLayoutsLoadedStatus();
-      return;
-    }
-    await loadRemoteState({ preferredLayout });
-    if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
-    setPersonalLayoutsLoadedStatus();
-  } catch (error) {
-    if (isNetworkError(error)) {
-      renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", "Сервер недоступен, показана локальная укладка");
-      updateSyncUi("Вход выполнен · офлайн, локальная укладка доступна");
-      return;
-    }
-    renderInitialLocalFallbackIfNeeded();
-    setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
-    updateSyncUi(`Вход выполнен · не удалось загрузить данные: ${error.message}`);
-  }
+  }, options);
 }
 
 function handleWindowReturn() {
@@ -5136,119 +5079,55 @@ async function syncNow(options = {}) {
   }
 }
 
-async function runSyncNow({ force = false } = {}) {
-  if (syncTimer) {
-    window.clearTimeout(syncTimer);
-    syncTimer = null;
-  }
-  if (isForcedOffline()) {
-    updateSyncUi("Принудительно офлайн · синхронизация отключена");
-    if (force) showToast("Офлайн-режим включён. Чтобы синхронизироваться, выключите его в меню.", "error");
-    return;
-  }
-  if (isReadOnlyStateScope()) {
-    await refreshActiveReadOnlyPublicTemplate({ notify: force });
-    return;
-  }
-  if (!currentUser && isAdminUser() && isReadOnlyStateScope()) {
-    if (force) {
-      showToast("Для публикации demo/shared нужно войти админом.", "error");
-      handleAuthButton();
+async function runSyncNow(options = {}) {
+  return runSyncNowFlow({
+    runtime: {
+      get activeDemoTemplateListId() { return activeDemoTemplateListId; },
+      get appUnlocked() { return appUnlocked; },
+      get currentUser() { return currentUser; },
+      get publishedLayoutSaveLayoutId() { return publishedLayoutSaveLayoutId; },
+      set publishedLayoutSaveLayoutId(value) { publishedLayoutSaveLayoutId = value; },
+      get publishedLayoutSaveTimer() { return publishedLayoutSaveTimer; },
+      set publishedLayoutSaveTimer(value) { publishedLayoutSaveTimer = value; },
+      get state() { return state; },
+      get syncMeta() { return syncMeta; },
+      get syncTimer() { return syncTimer; },
+      set syncTimer(value) { syncTimer = value; },
+      get uiLanguage() { return uiLanguage; }
+    },
+    dependencies: {
+      activeReadOnlyLayoutId,
+      canOpenAdminPublishedEdit,
+      checkAdminApiCompatibility,
+      checkAuthAndLoad,
+      clearStaleDirtyFlagIfNoLocalChanges,
+      currentPublicTemplateStatusMessage,
+      flushActivePublishedEditSave,
+      getPublishedEditLayoutId,
+      handleAuthButton,
+      isAdminEditablePublishedLayout,
+      isAdminUser,
+      isDemoPublicTemplateMissing,
+      isForcedOffline,
+      isOfflineRememberedSession,
+      isReadOnlyBikePackingContext,
+      isReadOnlyStateScope,
+      loadRemoteState,
+      nowIso,
+      offerLoadServerForTruncatedLocalState,
+      openAdminDemoLayout,
+      openSharedLayoutForAdmin,
+      preferredCurrentLayoutRef,
+      refreshActiveReadOnlyPublicTemplate,
+      savePublishedLayoutRecord,
+      saveRemoteState,
+      saveSyncMeta,
+      showToast,
+      uploadPendingPhotos,
+      updateSyncUi,
+      DEMO_SHARED_LAYOUT_ID
     }
-    return;
-  }
-  if (!currentUser) {
-    const hadLocalChanges = syncMeta.dirty;
-    await checkAuthAndLoad({ syncDirtyNotify: force });
-    if (!currentUser) {
-      if (force) {
-        showToast(
-          isOfflineRememberedSession()
-            ? "Сервер недоступен. Локальная копия сохранена на устройстве."
-            : (appUnlocked ? "Офлайн: войдите, когда появится интернет." : "Нужно войти для синхронизации."),
-          isOfflineRememberedSession() ? "warning" : "error"
-        );
-      }
-      return;
-    }
-    if (force && hadLocalChanges && !syncMeta.dirty) return;
-  }
-  if (canOpenAdminPublishedEdit()) {
-    await checkAdminApiCompatibility({ force }).catch(() => null);
-  }
-  if (canOpenAdminPublishedEdit() && isReadOnlyStateScope()) {
-    if (!currentUser) {
-      if (force) {
-        showToast("Для публикации demo/shared нужно войти админом.", "error");
-        handleAuthButton();
-      }
-      return;
-    }
-    const readonlyId = activeReadOnlyLayoutId();
-    if (readonlyId === DEMO_SHARED_LAYOUT_ID) {
-      await openAdminDemoLayout({ templateId: activeDemoTemplateListId });
-      if (force) showToast("Открыт admin-edit demo. Изменения теперь будут публиковаться автоматически.", "success");
-      return;
-    }
-    if (readonlyId) {
-      await openSharedLayoutForAdmin(readonlyId);
-      if (force) showToast("Открыт шаблон для админ-редактирования. Изменения теперь будут публиковаться автоматически.", "success");
-      return;
-    }
-  }
-  if (publishedLayoutSaveTimer && isAdminEditablePublishedLayout(publishedLayoutSaveLayoutId || getPublishedEditLayoutId())) {
-    await flushActivePublishedEditSave();
-    if (force) showToast("Public-укладка опубликована.", "success");
-    return;
-  }
-  if (publishedLayoutSaveTimer) {
-    window.clearTimeout(publishedLayoutSaveTimer);
-    publishedLayoutSaveTimer = null;
-    publishedLayoutSaveLayoutId = "";
-  }
-  if (isReadOnlyBikePackingContext()) {
-    syncMeta.dirty = false;
-    saveSyncMeta();
-    const message = currentPublicTemplateStatusMessage();
-    updateSyncUi(message);
-    if (force) showToast(message, isDemoPublicTemplateMissing(uiLanguage) ? "warning" : "error");
-    return;
-  }
-  clearStaleDirtyFlagIfNoLocalChanges();
-  if (isAdminEditablePublishedLayout()) {
-    try {
-      await savePublishedLayoutRecord(state.activeLayoutId, { notify: force });
-    } catch (error) {
-      updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
-      if (force) showToast(`Не удалось сохранить public-укладку: ${error.message}`, "error");
-    }
-    return;
-  }
-  if (!force && !syncMeta.dirty) {
-    updateSyncUi();
-    return;
-  }
-  if (force && !syncMeta.dirty) {
-    const uploadedPhotos = await uploadPendingPhotos({ markDirty: false });
-    if (uploadedPhotos) {
-      syncMeta.dirty = true;
-      syncMeta.localUpdatedAt = nowIso();
-      saveSyncMeta();
-      await saveRemoteState({ notify: true });
-      return;
-    }
-    updateSyncUi();
-    showToast("Уже синхронизировано.", "success");
-    return;
-  }
-  if (force && syncMeta.dirty) {
-    const preferredLayout = preferredCurrentLayoutRef();
-    if (await offerLoadServerForTruncatedLocalState({ notify: true, preferredLayout })) return;
-    updateSyncUi("Есть локальные изменения · проверяю даты...");
-    await loadRemoteState({ notifyDirtySave: true, preferredLayout });
-    return;
-  }
-  await saveRemoteState({ notify: force, preferredLayout: force ? preferredCurrentLayoutRef() : null });
+  }, options);
 }
 
 async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
@@ -5395,6 +5274,14 @@ async function fetchRemoteListDetailRecord(listId) {
   const record = normalizeRemoteListRecord(data);
   if (remoteRecordId(record) === String(listId || "")) currentPackingListMeta = record;
   return record;
+}
+
+async function fetchRemoteListFreshnessRecord(listId) {
+  const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/freshness`, {
+    timeoutMs: API_TIMEOUT_MS,
+    silentErrors: true
+  });
+  return normalizeListFreshness(data);
 }
 
 function sharedListIdFromLocation() {
@@ -5762,142 +5649,61 @@ async function refreshPublicSharedLayoutIndex({ renderAfter = false } = {}) {
   return 0;
 }
 
-async function refreshPublicSharedLayoutCatalog({ renderAfter = false } = {}) {
-  let merged = 0;
-  let demoMetadataMerged = 0;
-  let localDraftReconciled = false;
-  let data = null;
-  try {
-    data = await fetchPublicSharedLayoutCatalog();
-  } catch {
-    const confirmedSharedLayouts = serverConfirmedSharedLayoutsByAdminOrder();
-    const purgedUnconfirmed = purgeUnconfirmedSharedTemplatesFromFrontendState({
-      targetState: state,
-      layoutsByLanguage: sharedLayoutsByLanguage,
-      confirmedSharedLayouts,
-      fallbackLanguage: uiLanguage
-    });
-    if (purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
-    if (renderAfter && (purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
-    return 0;
-  }
-  const records = Array.isArray(data?.lists) ? data.lists : [];
-  const demoRecords = records.filter(isPublicDemoTemplateRecord);
-  const demoEntries = demoRecords
-    .map((record) => publicDemoTemplateEntryFromRecord(record, {
-      fallbackName: demoTemplateFallbackName(record?.language || uiLanguage)
-    }))
-    .filter(Boolean);
-  if (demoEntries.length) {
-    serverConfirmedDemoTemplates = mergeServerDemoTemplateCatalog(
-      serverConfirmedDemoTemplates,
-      demoEntries
-    );
-    demoMetadataMerged = demoEntries.length;
-  }
-  const demoPayloadResults = await Promise.all(demoEntries.map(async (entry) => {
-    try {
-      const loaded = await fetchPublishedDemoTemplateState(entry);
-      if (!loaded?.payload) return null;
-      setDemoPublicTemplateMissing(loaded.language, false, { updateCatalog: false });
-      setDemoStatePayloadForLanguage(loaded.language, loaded.payload, { listId: loaded.demoListId });
-      return loaded;
-    } catch {
-      return null;
+async function refreshPublicSharedLayoutCatalog(options = {}) {
+  return refreshPublicSharedLayoutCatalogFlow({
+    runtime: {
+      get serverConfirmedDemoTemplates() { return serverConfirmedDemoTemplates; },
+      set serverConfirmedDemoTemplates(value) { serverConfirmedDemoTemplates = value; },
+      get serverConfirmedSharedLayouts() { return serverConfirmedSharedLayouts; },
+      set serverConfirmedSharedLayouts(value) { serverConfirmedSharedLayouts = value; },
+      get sharedLayoutCatalogDiagnostics() { return sharedLayoutCatalogDiagnostics; },
+      set sharedLayoutCatalogDiagnostics(value) { sharedLayoutCatalogDiagnostics = value; },
+      get sharedLayoutsByLanguage() { return sharedLayoutsByLanguage; },
+      get state() { return state; },
+      get uiLanguage() { return uiLanguage; }
+    },
+    dependencies: {
+      canOpenAdminPublishedEdit,
+      copyPublishedContainerToState,
+      createLayoutArrangementFromCurrentState,
+      createSharedLayoutCatalogDiagnostics,
+      currentEditMeta,
+      demoTemplateFallbackName,
+      ensureLayoutDictionaries,
+      fetchPublicSharedLayoutCatalog,
+      fetchPublishedDemoTemplateState,
+      fetchStateRecordByItemKey,
+      forgetDeletedSharedLayoutId,
+      isConcretePublicSharedLayoutListRecord,
+      isLayoutMeaningful,
+      isPublicDemoTemplateRecord,
+      isPublicSharedLayoutListRecord,
+      isPublicSharedTemplatePayload,
+      mergeServerDemoTemplateCatalog,
+      mergeSharedLayoutCatalogEntries,
+      normalizeLayoutArrangement,
+      normalizeUiLanguage,
+      nowIso,
+      pruneRuntimeSharedLayouts,
+      publicDemoTemplateEntryFromRecord,
+      publishedPayloadWithTemplateMetadata,
+      purgeUnconfirmedSharedTemplatesFromFrontendState,
+      reconcilePublishedTemplateCopyDraft,
+      removeLayoutTree,
+      render,
+      saveState,
+      serverConfirmedSharedLayoutsByAdminOrder,
+      serverConfirmedSharedLayoutsFromPublicRecords,
+      setDemoPublicTemplateMissing,
+      setDemoStatePayloadForLanguage,
+      sharedLayoutIdFromPublicListRecord,
+      sharedLayoutItemKey,
+      sharedLayoutStatePayload,
+      sharedPayloadActiveLayout,
+      templateCopySourceScore,
+      upsertRuntimeSharedLayout
     }
-  }));
-  const demoPayloadMerged = demoPayloadResults.filter(Boolean).length;
-  const sharedRecords = records.filter(isPublicSharedLayoutListRecord);
-  const concreteRecords = sharedRecords.filter(isConcretePublicSharedLayoutListRecord);
-  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
-    layoutsByLanguage: sharedLayoutsByLanguage,
-    fallbackLanguage: uiLanguage
-  }));
-  sharedLayoutCatalogDiagnostics = createSharedLayoutCatalogDiagnostics({
-    source: data?.fallback || (data?.unified ? "/bike-packing/public-templates" : "/bike-packing/public-shared-layouts"),
-    records: concreteRecords,
-    sharedLayoutIdFromRecord: sharedLayoutIdFromPublicListRecord,
-    confirmedLayouts: serverConfirmedSharedLayouts,
-    visibleOptions: []
-  });
-  if (
-    concreteRecords.length &&
-    sharedLayoutCatalogDiagnostics.confirmedCount === 0 &&
-    typeof console !== "undefined" &&
-    console.warn
-  ) {
-    console.warn("[bike-packing] Shared template API returned rows, but none became confirmed shared layouts.", sharedLayoutCatalogDiagnostics);
-  }
-  const publicSharedIds = new Set(concreteRecords
-    .map(sharedLayoutIdFromPublicListRecord)
-    .filter(Boolean));
-  const prunedMissingRuntime = pruneRuntimeSharedLayouts(sharedLayoutsByLanguage, (layout) =>
-    layout?.runtimeSharedTemplate &&
-    !publicSharedIds.has(layout.id)
-  );
-  await Promise.all(concreteRecords
-    .map(async (record) => {
-      const sharedId = sharedLayoutIdFromPublicListRecord(record);
-      if (!sharedId) return;
-      forgetDeletedSharedLayoutId(sharedId);
-      let payload = null;
-      try {
-        payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId));
-      } catch {
-        return;
-      }
-      if (!isPublicSharedTemplatePayload(payload)) return;
-      payload = publishedPayloadWithTemplateMetadata(payload, {
-        name: record.name || record.title,
-        language: record.language
-      });
-      const activeLayout = sharedPayloadActiveLayout(payload);
-      const language = normalizeUiLanguage(record.language || "");
-      if (!language) return;
-      const layout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
-        id: sharedId,
-        name: record.name || record.title || activeLayout?.name || sharedId,
-        language,
-        statePayload: payload,
-        runtimeSharedTemplate: true,
-        updatedAt: record.updatedAt || record.updated_at || ""
-      });
-      if (layout) {
-        merged += 1;
-        if (reconcilePublishedTemplateCopyDraft({
-          state,
-          sharedLayout: layout,
-          fallbackLanguage: uiLanguage,
-          canRepair: canOpenAdminPublishedEdit(),
-          isLayoutMeaningful,
-          sharedLayoutStatePayload,
-          sharedPayloadActiveLayout,
-          templateCopySourceScore,
-          removeLayoutTree,
-          copyPublishedContainerToState,
-          createLayoutArrangementFromCurrentState,
-          normalizeLayoutArrangement,
-          ensureLayoutDictionaries,
-          currentMeta: currentEditMeta(),
-          nowIso
-        })) {
-          localDraftReconciled = true;
-        }
-      }
-    }));
-  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
-    layoutsByLanguage: sharedLayoutsByLanguage,
-    fallbackLanguage: uiLanguage
-  }));
-  const purgedUnconfirmed = purgeUnconfirmedSharedTemplatesFromFrontendState({
-    targetState: state,
-    layoutsByLanguage: sharedLayoutsByLanguage,
-    confirmedSharedLayouts: serverConfirmedSharedLayouts,
-    fallbackLanguage: uiLanguage
-  });
-  if (localDraftReconciled || purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
-  if (renderAfter && (demoMetadataMerged || demoPayloadMerged || merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
-  return merged + demoMetadataMerged + demoPayloadMerged;
+  }, options);
 }
 
 async function fetchPublicSharedLayoutCatalog() {
@@ -6068,207 +5874,87 @@ async function enterSignedOutPublicMode(message = "") {
   updateSyncUi(message || currentPublicTemplateStatusMessage());
 }
 
-async function saveRemoteState({ notify = false, forceOverwrite = false, preferredLayout = null, preferServerOnConflict = false, retryForceConflict = true } = {}) {
-  if (!currentUser) return;
-  if (forceOverwrite) {
-    syncMeta.localUpdatedAt = nowIso();
-    saveSyncMeta();
-  }
-  if (!forceOverwrite && clearStaleDirtyFlagIfNoLocalChanges()) return;
-  if (isReadOnlyBikePackingContext()) {
-    syncMeta.dirty = false;
-    saveSyncMeta();
-    const message = currentPublicTemplateStatusMessage();
-    updateSyncUi(message);
-    if (notify) showToast(message, isDemoPublicTemplateMissing(uiLanguage) ? "warning" : "error");
-    return;
-  }
-  repairCollapsedActiveLayoutBeforeSave();
-  try {
-    await uploadPendingPhotos();
-    if (isSuspiciousEmptyPackingState(state)) {
-      syncMeta.dirty = false;
-      saveSyncMeta();
-      updateSyncUi("Пустая локальная укладка не отправлена на сервер · загрузите восстановленную версию");
-      if (notify) showToast("Пустая локальная укладка не отправлена на сервер.", "error");
-      return;
+async function saveRemoteState(options = {}) {
+  return saveRemoteStateFlow({
+    runtime: {
+      get currentUser() { return currentUser; },
+      get state() { return state; },
+      get syncMeta() { return syncMeta; },
+      get uiLanguage() { return uiLanguage; }
+    },
+    dependencies: {
+      blockDestructiveLocalSave,
+      canLocalStateOverrideRemote,
+      clearStaleDirtyFlagIfNoLocalChanges,
+      currentPublicTemplateStatusMessage,
+      handleRemoteSaveConflict,
+      hasLegacyPayloadChanges,
+      isDemoPublicTemplateMissing,
+      isNetworkError,
+      isReadOnlyBikePackingContext,
+      isReadOnlyBikePackingError,
+      isSuspiciousEmptyPackingState,
+      isTemporaryServerStorageError,
+      isTimeoutError,
+      loadBaseState,
+      nowIso,
+      remoteUpdatedAt,
+      rememberConflictRemoteMeta,
+      rememberCurrentSyncAccount,
+      rememberRemoteIntegrityMeta,
+      repairCollapsedActiveLayoutBeforeSave,
+      saveBaseState,
+      saveRemoteState,
+      saveRemoteStateRecord,
+      saveSyncMeta,
+      serializeState,
+      showToast,
+      stateIntegrityMetaFromResponse,
+      syncChangedBikePackingEntities,
+      updateSyncUi,
+      uploadPendingPhotos
     }
-    if (!forceOverwrite && blockDestructiveLocalSave()) {
-      if (notify) showToast("Локальная версия похожа на усечённую. Я не отправил её на сервер.", "error");
-      return;
-    }
-    updateSyncUi("Сохраняю на сервер...");
-    const baseBeforeSave = loadBaseState();
-    const entitySync = await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
-    const hasLegacyChanges = hasLegacyPayloadChanges(baseBeforeSave, state, entitySync);
-    if (!forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
-      syncMeta.dirty = false;
-      syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt || syncMeta.serverUpdatedAt;
-      syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || entitySync.serverUpdatedAt || new Date().toISOString();
-      syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-      rememberRemoteIntegrityMeta(entitySync.integrityMeta);
-      rememberCurrentSyncAccount();
-      saveBaseState(serializeState({ forSync: true }));
-      saveSyncMeta();
-      updateSyncUi();
-      if (notify) showToast("Синхронизация завершена.", "success");
-      return;
-    }
-    const data = await saveRemoteStateRecord({ forceOverwrite });
-    syncMeta.dirty = false;
-    syncMeta.serverUpdatedAt = remoteUpdatedAt(data.record || data.list || data) || new Date().toISOString();
-    syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
-    syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-    rememberRemoteIntegrityMeta(data.record || data.list || data, data);
-    rememberCurrentSyncAccount();
-    saveBaseState(serializeState({ forSync: true }));
-    saveSyncMeta();
-    updateSyncUi();
-    if (notify) showToast("Синхронизация завершена.", "success");
-  } catch (error) {
-    if (isReadOnlyBikePackingError(error)) {
-      syncMeta.dirty = false;
-      saveSyncMeta();
-      const message = currentPublicTemplateStatusMessage();
-      updateSyncUi(message);
-      if (notify) showToast(message, isDemoPublicTemplateMissing(uiLanguage) ? "warning" : "error");
-      return;
-    }
-    syncMeta.dirty = true;
-    saveSyncMeta();
-    if (error.status === 409) {
-      if (forceOverwrite) {
-        if (retryForceConflict) {
-          const conflictRecord = error.data?.record || error.data?.currentRecord || error.data || null;
-          const conflictMeta = stateIntegrityMetaFromResponse(conflictRecord, error.data);
-          const conflictUpdatedAt = remoteUpdatedAt(conflictRecord) || error.data?.serverUpdatedAt || "";
-          if (conflictMeta?.stateRevision != null || conflictUpdatedAt) {
-            rememberConflictRemoteMeta(conflictRecord, conflictMeta, conflictUpdatedAt);
-            await saveRemoteState({
-              notify,
-              forceOverwrite: true,
-              preferredLayout,
-              preferServerOnConflict,
-              retryForceConflict: false
-            });
-            return;
-          }
-        }
-        updateSyncUi("Сервер всё ещё отклоняет принудительное сохранение · локальная версия оставлена");
-        if (notify) showToast("Сервер не принял принудительное сохранение. Локальная версия не потеряна.", "error");
-        return;
-      }
-      await handleRemoteSaveConflict(error, {
-        notify,
-        preferredLayout,
-        preferServerWithoutPrompt: preferServerOnConflict || !canLocalStateOverrideRemote()
-      });
-      return;
-    }
-    if (isTemporaryServerStorageError(error)) {
-      updateSyncUi("Серверная синхронизация временно недоступна · изменения сохранены на устройстве");
-      if (notify) showToast("Серверная синхронизация временно недоступна. Изменения остались на устройстве.", "error");
-      return;
-    }
-    if (isTimeoutError(error)) {
-      updateSyncUi("Сервер долго отвечает · изменения сохранены на устройстве");
-      if (notify) showToast("Сервер долго отвечает. Изменения остались на устройстве.", "error");
-      return;
-    }
-    if (isNetworkError(error)) {
-      updateSyncUi("Офлайн · изменения сохранены на устройстве");
-      if (notify) showToast("Нет соединения. Изменения остались на устройстве.", "error");
-      return;
-    }
-    updateSyncUi(`Не удалось синхронизировать: ${error.message}`);
-    if (notify) showToast(`Не удалось синхронизировать: ${error.message}`, "error");
-  }
+  }, options);
 }
 
-async function handleRemoteSaveConflict(error, { notify = false, preferredLayout = null, preferServerWithoutPrompt = false } = {}) {
-  const record = error.data?.record || error.data?.currentRecord || null;
-  const remoteState = normalizeRemoteState(record?.payload || error.data?.payload || error.data?.serverPayload);
-  const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, error.data);
-  const updatedAt = remoteUpdatedAt(record) || error.data?.serverUpdatedAt || null;
-  rememberConflictRemoteMeta(record, remoteIntegrityMeta, updatedAt);
-  appUnlocked = true;
-  updateSyncUi("Сервер изменился · нужно выбрать версию...");
-  const remoteRawPayload = record?.payload || error.data?.payload || error.data?.serverPayload || null;
-  if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
-  if (!remoteState) {
-    if (notify) showToast("Сервер сообщил о конфликте. Локальные изменения не отправлены.", "error");
-    return;
-  }
-  if (preferServerWithoutPrompt || !canLocalStateOverrideRemote()) {
-    const guestCandidate = consumeGuestLocalLayoutCandidate();
-    if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
-      const message = "Загружена серверная версия · временная локальная копия не отправлена";
-      updateSyncUi(message);
-      if (notify) showToast(message, "warning");
-      if (guestCandidate) await offerSaveGuestLocalLayouts(guestCandidate);
+async function handleRemoteSaveConflict(error, options = {}) {
+  return handleRemoteSaveConflictFlow(error, {
+    runtime: {
+      get appUnlocked() { return appUnlocked; },
+      set appUnlocked(value) { appUnlocked = value; },
+      get state() { return state; },
+      get syncMeta() { return syncMeta; }
+    },
+    dependencies: {
+      applyConflictChoices,
+      applyRemoteState,
+      askConflictResolution,
+      blockRemoteIntegrityFailureIfNeeded,
+      canLocalStateOverrideRemote,
+      consumeGuestLocalLayoutCandidate,
+      filterAutoResolvedMergeConflicts,
+      isOwnLayoutEchoConflict,
+      loadBaseState,
+      mergeStateFromBase,
+      normalizeRemoteState,
+      nowIso,
+      offerSaveGuestLocalLayouts,
+      remoteUpdatedAt,
+      rememberConflictRemoteMeta,
+      rememberCurrentSyncAccount,
+      rememberRemoteIntegrityMeta,
+      renderPreservingPackingScroll,
+      replaceState,
+      sameJson,
+      saveBaseState,
+      saveRemoteState,
+      saveSyncMeta,
+      serializeState,
+      showToast,
+      stateIntegrityMetaFromResponse,
+      updateSyncUi
     }
-    return;
-  }
-  const baseState = loadBaseState();
-  const mergeResult = baseState ? mergeStateFromBase(baseState, state, remoteState) : null;
-  if (mergeResult?.merged) {
-    mergeResult.conflicts = filterAutoResolvedMergeConflicts(mergeResult.conflicts, {
-      baseState,
-      localState: state,
-      remoteState,
-      valuesEqual: sameJson
-    });
-  }
-  if (mergeResult?.merged && mergeResult.conflicts.length) {
-    if (isOwnLayoutEchoConflict(mergeResult.conflicts)) {
-      updateSyncUi("Р Р°СЃРєР»Р°РґРєР° РёР·РјРµРЅРµРЅР° РЅР° СЌС‚РѕРј СѓСЃС‚СЂРѕР№СЃС‚РІРµ В· РѕС‚РїСЂР°РІР»СЏСЋ Р±РµР· РѕРєРЅР° РєРѕРЅС„Р»РёРєС‚Р°...");
-      await saveRemoteState({ notify, forceOverwrite: true });
-      return;
-    }
-    const resolution = await askConflictResolution(mergeResult.conflicts);
-    if (resolution === "server") {
-      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
-      return;
-    }
-    if (resolution === "cancel") {
-      syncMeta.dirty = true;
-      syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
-      saveSyncMeta();
-      updateSyncUi("Конфликты не применены · локальные изменения сохранены на устройстве");
-      return;
-    }
-    applyConflictChoices(mergeResult.merged, mergeResult.conflicts, resolution);
-    replaceState(mergeResult.merged);
-    syncMeta.dirty = true;
-    syncMeta.localUpdatedAt = nowIso();
-    syncMeta.serverUpdatedAt = updatedAt || syncMeta.serverUpdatedAt;
-    saveSyncMeta();
-    renderPreservingPackingScroll();
-    updateSyncUi("Конфликты объединены · отправляю на сервер...");
-    await saveRemoteState({ notify, forceOverwrite: true });
-    return;
-  }
-  if (mergeResult?.merged && !mergeResult.conflicts.length) {
-    replaceState(mergeResult.merged);
-    syncMeta.dirty = true;
-    syncMeta.localUpdatedAt = nowIso();
-    syncMeta.serverUpdatedAt = updatedAt || syncMeta.serverUpdatedAt;
-    saveSyncMeta();
-    renderPreservingPackingScroll();
-    await saveRemoteState({ notify, forceOverwrite: true });
-    return;
-  }
-  const useLocal = await askConfirmDialog({
-    title: "Список меняли на другом устройстве",
-    text: "Серверная версия изменилась после последней загрузки. Оставить локальные изменения и отправить их поверх серверной версии?",
-    okText: "Оставить локальную",
-    cancelText: "Загрузить серверную"
-  });
-  if (useLocal) {
-    await saveRemoteState({ notify, forceOverwrite: true });
-    return;
-  }
-  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
+  }, options);
 }
 
 async function confirmGuestImportRemoteState(importedLayoutIds) {
@@ -6361,328 +6047,104 @@ async function offerSaveGuestLocalLayouts(candidate) {
 }
 
 function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
-  const source = candidate?.sourceState;
-  const layouts = guestCandidateLayouts(candidate);
-  if (!source || !layouts.length) return [];
-  saveRecoverySnapshot("before-guest-layouts-import", state);
-  const changedAt = nowIso();
-  addBackupDictionaryValues(state, source);
-  const idMap = { containers: new Map(), items: new Map() };
-  const importedLayoutIds = [];
-  layouts.forEach((entry, index) => {
-    const sourceLayout = source.layouts?.[entry.layoutId];
-    if (!sourceLayout) return;
-    const sourceRootIds = uniqueLayoutIds([
-      ...(sourceLayout.rootContainerIds || []),
-      ...(sourceLayout.arrangement?.rootContainerIds || [])
-    ]);
-    const rootContainerIds = sourceRootIds
-      .map((id) => copyPublishedContainerToState(source, id, {
-        targetLayoutId: "",
-        changedAt,
-        idMap,
-        sourceLayoutId: sourceLayout.id
-      }))
-      .filter(Boolean);
-    const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
-    const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, GUEST_LAYOUT_FALLBACK_NAME);
-    const safeName = renameConflicts
-      ? uniqueLayoutName(requestedName)
-      : requestedName;
-    state.layouts[layoutId] = {
-      ...clone(sourceLayout),
-      id: layoutId,
-      name: safeName,
-      rootContainerIds,
-      arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
-      locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
-      categories: normalizeDictionaryValues(sourceLayout.categories || source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
-      ...currentCreateMeta(changedAt)
-    };
-    delete state.layouts[layoutId][GUEST_DEMO_COPY_FLAG];
-    delete state.layouts[layoutId].demoSourceLanguage;
-    delete state.layouts[layoutId].guestDemoCopyCreatedAt;
-    importedLayoutIds.push(layoutId);
+  return importGuestLocalLayoutsToState(state, candidate, {
+    addBackupDictionaryValues,
+    applyGuestLocalDisplayPreferences,
+    applyLayoutArrangement,
+    cloneValue: clone,
+    copyPublishedContainerToState,
+    createLayoutArrangementFromCurrentState,
+    currentCreateMeta,
+    guestCandidateLayouts,
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    guestLayoutFallbackName: GUEST_LAYOUT_FALLBACK_NAME,
+    guestLocalDisplayPreferences,
+    layoutDictionaryValues,
+    migrateContainerOrder,
+    normalizeContainerFields,
+    normalizeDictionaryValues,
+    normalizeItemCategories,
+    normalizeItemFields,
+    normalizeLayoutFields,
+    nowIso,
+    readableGuestDemoLayoutName,
+    rememberActiveLayoutChoice,
+    renameConflicts,
+    repairContainerMembershipFromItemLinks,
+    saveRecoverySnapshot,
+    saveState,
+    setActivePrivateScope,
+    uniqueLayoutName
   });
-  if (!importedLayoutIds.length) return [];
-  state.activeLayoutId = importedLayoutIds[0];
-  applyLayoutArrangement(state.activeLayoutId);
-  setActivePrivateScope();
-  rememberActiveLayoutChoice(state.activeLayoutId);
-  normalizeContainerFields(state);
-  normalizeItemFields(state);
-  repairContainerMembershipFromItemLinks(state);
-  normalizeLayoutFields(state);
-  normalizeItemCategories(state);
-  migrateContainerOrder(state);
-  applyGuestLocalDisplayPreferences(state, candidate.displayPreferences || guestLocalDisplayPreferences(source));
-  saveState();
-  return importedLayoutIds;
 }
-
-async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null } = {}) {
-  if (!currentUser) return;
-  if (isSharedListLinkRoute()) return;
-  if (isPublicLayoutContext()) {
-    appUnlocked = true;
-    renderInitialLocalFallbackIfNeeded();
-    updateSyncUi();
-    return;
-  }
-  if (initialRemoteLoadPending || !remoteRefreshInFlight) {
-    setLayoutLoadStatus("loading", initialRemoteLoadPending ? "Загружаю личные укладки..." : "Проверяю личные укладки...");
-  }
-  clearStaleDirtyFlagIfNoLocalChanges();
-  try {
-    let data = await fetchRemoteStateRecord();
-    let record = data.record;
-    let remoteState = normalizeRemoteState(record?.payload);
-    if (!remoteState && data.source === "list") {
-      saveActivePackingListId("");
-      setLayoutLoadProgress({ loaded: 0, total: null, prefix: "Повторно запрашиваю личные укладки" });
-      data = await fetchRemoteStateRecord();
-      record = data.record;
-      remoteState = normalizeRemoteState(record?.payload);
+async function loadRemoteState(options = {}) {
+  return loadRemoteStateFlow({
+    runtime: {
+      get appUnlocked() { return appUnlocked; },
+      set appUnlocked(value) { appUnlocked = value; },
+      get currentUser() { return currentUser; },
+      get initialRemoteLoadPending() { return initialRemoteLoadPending; },
+      set initialRemoteLoadPending(value) { initialRemoteLoadPending = value; },
+      get pendingGuestLocalLayoutCandidate() { return pendingGuestLocalLayoutCandidate; },
+      get remoteRefreshInFlight() { return remoteRefreshInFlight; },
+      get state() { return state; },
+      get syncMeta() { return syncMeta; }
+    },
+    dependencies: {
+      applyConflictChoices,
+      applyRemoteState,
+      askConfirmDialog,
+      askConflictResolution,
+      blockRemoteIntegrityFailureIfNeeded,
+      canLocalStateOverrideRemote,
+      canSeedEmptyRemoteFromLocal,
+      clearStaleDirtyFlagIfNoLocalChanges,
+      cloneStateForSync,
+      consumeGuestLocalLayoutCandidate,
+      createBlankBikePackingState,
+      createEmptyUserState,
+      fetchRemoteStateRecord,
+      filterAutoResolvedMergeConflicts,
+      formatMergeConflicts,
+      hasLocalSavedState,
+      isMeaningfulPackingState,
+      isNetworkError,
+      isPublicLayoutContext,
+      isSharedListLinkRoute,
+      isSuspiciousEmptyPackingState,
+      isTemporaryServerStorageError,
+      isTimeoutError,
+      loadBaseState,
+      mergeStateFromBase,
+      normalizeRemoteState,
+      nowIso,
+      offerPendingGuestLocalLayoutsAfterRemoteLoad,
+      offerSaveGuestLocalLayouts,
+      remoteUpdatedAt,
+      rememberCurrentSyncAccount,
+      rememberRemoteIntegrityMeta,
+      renderInitialLocalFallbackIfNeeded,
+      renderPreservingPackingScroll,
+      repairPrivateMojibakeLayoutNames,
+      replaceState,
+      sameJson,
+      saveActivePackingListId,
+      saveBaseState,
+      saveRemoteState,
+      saveSyncMeta,
+      serializeState,
+      serverChangedSinceLastSync,
+      setLayoutLoadProgress,
+      setLayoutLoadStatus,
+      setPersonalLayoutsLoadedStatus,
+      shouldImportGuestLayoutBeforeRemote,
+      showToast,
+      stateIntegrityMetaFromResponse,
+      statePrivateLayoutCount,
+      timeValue,
+      updateSyncUi
     }
-    const remoteLayoutCount = statePrivateLayoutCount(remoteState);
-    if (remoteState) {
-      setLayoutLoadProgress({
-        loaded: remoteLayoutCount,
-        total: remoteLayoutCount,
-        prefix: "Личные укладки получены"
-      });
-    }
-    const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
-    const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
-    if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
-    const serverTimeText = remoteUpdatedAt(record);
-    const serverTime = timeValue(serverTimeText);
-    const localTime = timeValue(syncMeta.localUpdatedAt);
-    const isInitialRemotePull = initialRemoteLoadPending;
-    const hasSavedLocalStateNow = hasLocalSavedState();
-    const localStateCanOverrideRemote = canLocalStateOverrideRemote();
-    const localStateIsNonAuthoritative = hasSavedLocalStateNow && !localStateCanOverrideRemote;
-    const hasFreshLocalDirtyState = syncMeta.dirty && localStateCanOverrideRemote && Boolean(localTime) && (!serverTime || localTime > serverTime);
-    const shouldPreferLocalDirtyState = syncMeta.dirty && localStateCanOverrideRemote && (
-      hasFreshLocalDirtyState ||
-      isInitialRemotePull ||
-      (!isInitialRemotePull && !syncMeta.serverUpdatedAt)
-    );
-    if (!remoteState) {
-      if (pendingGuestLocalLayoutCandidate && !localStateCanOverrideRemote) {
-        const guestCandidate = consumeGuestLocalLayoutCandidate();
-        replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
-        syncMeta.dirty = false;
-        saveSyncMeta();
-        initialRemoteLoadPending = false;
-        appUnlocked = true;
-        renderPreservingPackingScroll();
-        updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-        await offerSaveGuestLocalLayouts(guestCandidate);
-        return;
-      }
-      if (canSeedEmptyRemoteFromLocal()) {
-        if (isSuspiciousEmptyPackingState(state)) {
-          appUnlocked = true;
-          syncMeta.dirty = false;
-          saveSyncMeta();
-          renderInitialLocalFallbackIfNeeded();
-          updateSyncUi("На сервере пусто · локальная пустая укладка не отправлена");
-          return;
-        }
-        appUnlocked = true;
-        renderInitialLocalFallbackIfNeeded();
-        updateSyncUi("На сервере пока пусто · сохраняю локальные изменения...");
-        syncMeta.dirty = true;
-        syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
-        saveSyncMeta();
-        await saveRemoteState({ notify: notifyDirtySave, preferServerOnConflict: !localStateCanOverrideRemote });
-        return;
-      }
-      const guestCandidate = consumeGuestLocalLayoutCandidate();
-      if (guestCandidate) {
-        replaceState(createEmptyUserState());
-        syncMeta.dirty = false;
-        saveSyncMeta();
-        initialRemoteLoadPending = false;
-        appUnlocked = true;
-        renderPreservingPackingScroll();
-        updateSyncUi("На сервере пока пусто · можно сохранить гостевую укладку в аккаунт");
-        await offerSaveGuestLocalLayouts(guestCandidate);
-        return;
-      }
-      replaceState(createEmptyUserState());
-      syncMeta.dirty = true;
-      saveSyncMeta();
-      initialRemoteLoadPending = false;
-      renderPreservingPackingScroll();
-      appUnlocked = true;
-      updateSyncUi("На сервере пока пусто · отправляю локальные данные...");
-      await saveRemoteState({ preferServerOnConflict: true });
-      return;
-    }
-
-    const remoteStateMeaningful = isMeaningfulPackingState(remoteState);
-    if (shouldImportGuestLayoutBeforeRemote({
-      candidate: pendingGuestLocalLayoutCandidate,
-      remoteStateMeaningful,
-      localStateCanOverrideRemote
-    })) {
-      const guestCandidate = consumeGuestLocalLayoutCandidate();
-      replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
-      syncMeta.dirty = false;
-      saveSyncMeta();
-      initialRemoteLoadPending = false;
-      appUnlocked = true;
-      renderPreservingPackingScroll();
-      updateSyncUi("Новый аккаунт · переношу гостевую укладку...");
-      await offerSaveGuestLocalLayouts(guestCandidate);
-      return;
-    }
-
-    const localJson = JSON.stringify(serializeState({ forSync: true }));
-    const remoteJson = JSON.stringify(cloneStateForSync(remoteState, { forSync: true }));
-    if (localJson !== remoteJson) {
-      if (isSuspiciousEmptyPackingState(state) && isMeaningfulPackingState(remoteState)) {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
-        if (notifyDirtySave) showToast("Загружена восстановленная версия с сервера.", "success");
-        return;
-      }
-      if ((isInitialRemotePull || localStateIsNonAuthoritative) && !localStateCanOverrideRemote && isMeaningfulPackingState(remoteState)) {
-        const guestCandidate = consumeGuestLocalLayoutCandidate();
-        if (applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && guestCandidate) {
-          await offerSaveGuestLocalLayouts(guestCandidate);
-        }
-        return;
-      }
-      if (!syncMeta.dirty) {
-        if (applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
-          await offerPendingGuestLocalLayoutsAfterRemoteLoad();
-        }
-        return;
-      }
-      if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
-        appUnlocked = true;
-        renderInitialLocalFallbackIfNeeded();
-        updateSyncUi("Локальные изменения новее · отправляю на сервер...");
-        await saveRemoteState({ notify: notifyDirtySave });
-        return;
-      }
-      const baseState = loadBaseState();
-      const localState = serializeState();
-      const mergeResult = mergeStateFromBase(baseState, localState, remoteState);
-      if (mergeResult?.merged) {
-        mergeResult.conflicts = filterAutoResolvedMergeConflicts(mergeResult.conflicts, {
-          baseState,
-          localState,
-          remoteState,
-          valuesEqual: sameJson
-        });
-      }
-      if (mergeResult.merged && !mergeResult.conflicts.length) {
-        replaceState(mergeResult.merged);
-        syncMeta.dirty = true;
-        syncMeta.localUpdatedAt = nowIso();
-        saveSyncMeta();
-        appUnlocked = true;
-        initialRemoteLoadPending = false;
-        renderPreservingPackingScroll();
-        updateSyncUi("Изменения объединены · отправляю на сервер...");
-        await saveRemoteState({ notify: notifyDirtySave });
-        return;
-      }
-      if (!mergeResult.merged) {
-        appUnlocked = true;
-        renderInitialLocalFallbackIfNeeded();
-        updateSyncUi("Найдены разные версии укладки...");
-        const useServer = await askConfirmDialog({
-          title: "Есть конфликты изменений",
-          text: `Некоторые элементы менялись и здесь, и на другом устройстве:\n\n${formatMergeConflicts(mergeResult.conflicts)}\n\nЗагрузить серверную версию? Если оставить локальную, она будет отправлена на сервер.`,
-          okText: "Загрузить серверную",
-          cancelText: "Оставить локальную"
-        });
-        if (useServer) {
-          applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
-          return;
-        }
-        syncMeta.dirty = true;
-        saveSyncMeta();
-        await saveRemoteState({ notify: notifyDirtySave });
-        return;
-      }
-      appUnlocked = true;
-      renderInitialLocalFallbackIfNeeded();
-      updateSyncUi("Есть конфликты изменений...");
-      const resolution = await askConflictResolution(mergeResult.conflicts);
-      if (resolution === "server") {
-        applyRemoteState(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
-        return;
-      }
-      if (resolution === "cancel") {
-        syncMeta.dirty = true;
-        syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
-        saveSyncMeta();
-        appUnlocked = true;
-        renderInitialLocalFallbackIfNeeded();
-        updateSyncUi("Конфликты не применены · локальные изменения сохранены на устройстве");
-        return;
-      }
-      applyConflictChoices(mergeResult.merged, mergeResult.conflicts, resolution);
-      replaceState(mergeResult.merged);
-      syncMeta.dirty = true;
-      syncMeta.localUpdatedAt = nowIso();
-      saveSyncMeta();
-      initialRemoteLoadPending = false;
-      renderPreservingPackingScroll();
-      updateSyncUi("Конфликты объединены · отправляю на сервер...");
-      await saveRemoteState({ notify: notifyDirtySave });
-      return;
-    }
-
-    syncMeta.dirty = false;
-    syncMeta.serverUpdatedAt = serverTimeText || null;
-    syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
-    syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-    rememberRemoteIntegrityMeta(remoteIntegrityMeta);
-    rememberCurrentSyncAccount();
-    saveBaseState(serializeState({ forSync: true }));
-    saveSyncMeta();
-    repairPrivateMojibakeLayoutNames();
-    appUnlocked = true;
-    if (initialRemoteLoadPending) {
-      initialRemoteLoadPending = false;
-      renderPreservingPackingScroll();
-    }
-    await offerPendingGuestLocalLayoutsAfterRemoteLoad();
-    setPersonalLayoutsLoadedStatus();
-    updateSyncUi();
-  } catch (error) {
-    if (isTemporaryServerStorageError(error)) {
-      appUnlocked = true;
-      renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", "Синхронизация временно недоступна, показана локальная укладка");
-      updateSyncUi("Серверная синхронизация временно недоступна · локальная укладка доступна");
-      return;
-    }
-    if (isTimeoutError(error)) {
-      appUnlocked = true;
-      renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", "Сервер долго отвечает, показана локальная укладка");
-      updateSyncUi("Сервер долго отвечает · локальная укладка доступна");
-      return;
-    }
-    if (isNetworkError(error)) {
-      appUnlocked = true;
-      renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", "Офлайн: показана локальная укладка");
-      updateSyncUi("Офлайн · локальная укладка доступна");
-      return;
-    }
-    appUnlocked = true;
-    renderInitialLocalFallbackIfNeeded();
-    setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
-    updateSyncUi(`Сервер недоступен: ${error.message}`);
-  }
+  }, options);
 }
 
 function startRemoteStateWatcher() {
@@ -6703,6 +6165,19 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
   try {
     remoteRefreshInFlight = true;
+    const listId = currentPackingListId || remoteRecordId(currentPackingListMeta);
+    if (listId) {
+      try {
+        const freshness = await fetchRemoteListFreshnessRecord(listId);
+        if (!listFreshnessChanged(syncMeta, freshness)) {
+          updateSyncUi();
+          return;
+        }
+      } catch {
+        // Older API processes do not have the lightweight endpoint; fall back
+        // to the full refresh path so compatibility stays intact during deploys.
+      }
+    }
     await loadRemoteState({ preferredLayout: preferredLayout || preferredCurrentLayoutRef() });
     const serverChanged = previousServerUpdatedAt &&
       syncMeta.serverUpdatedAt &&
@@ -6930,153 +6405,60 @@ function repairAdminDemoLayout(layout) {
     uniqueLayoutIds
   });
 }
-async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { notify = false } = {}) {
-  const layout = state.layouts?.[layoutId];
-  if (!layout) return;
-  if (!canOpenAdminPublishedEdit()) {
-    showToast("Public-укладки может сохранять только админ.", "error");
-    return;
-  }
-  if (!currentUser) {
-    showToast("Нужно войти админом, чтобы сохранить public-укладку.", "error");
-    return;
-  }
-  await checkAdminApiCompatibility({ force: true }).catch(() => null);
-  const target = publishedLayoutTarget(layout, { defaultToDemo: true });
-  if (!target) return;
-  updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю шаблон...");
-  const publicListId = publicListIdForPublishedTarget(target);
-  const publishTitle = target.type === "demo"
-    ? normalizeDemoLayoutName(layout.name || "", target.language || uiLanguage)
-    : layout.name || "";
-  const publishPayload = async (payload, extraBody = {}) => {
-    const path = target.type === "demo"
-      ? demoAdminStatePathForPublicListId(target.demoListId || "", target.language || uiLanguage)
-      : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
-    try {
-      return await apiFetch(path, {
-        method: "POST",
-        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-        body: JSON.stringify({
-          title: publishTitle,
-          description: layout.note || "",
-          visibility: "public",
-          listVisibility: "public",
-          language: target.language || layout.language || uiLanguage,
-          ...extraBody,
-          payload
-        })
-      });
-    } catch (error) {
-      const targetLabel = target.type === "demo"
-        ? `demo:${target.language || uiLanguage}`
-        : `shared:${target.sharedId || ""}`;
-      const publishError = new Error(`${error.message || "publish failed"} [${targetLabel} ${path}]`);
-      publishError.cause = error;
-      publishError.path = path;
-      publishError.target = target;
-      throw publishError;
+async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, options = {}) {
+  return savePublishedLayoutRecordFlow({
+    runtime: {
+      get activeDemoTemplateListId() { return activeDemoTemplateListId; },
+      set activeDemoTemplateListId(value) { activeDemoTemplateListId = value; },
+      get currentUser() { return currentUser; },
+      get serverConfirmedDemoTemplates() { return serverConfirmedDemoTemplates; },
+      get sharedLayoutsByLanguage() { return sharedLayoutsByLanguage; },
+      get state() { return state; },
+      get syncMeta() { return syncMeta; },
+      get uiLanguage() { return uiLanguage; }
+    },
+    dependencies: {
+      apiFetch,
+      applyPublishedPayloadPhotosToLayoutState,
+      canOpenAdminPublishedEdit,
+      checkAdminApiCompatibility,
+      cleanPublishedEntityId,
+      clone,
+      demoAdminStatePathForPublicListId,
+      demoPublicListIdForLanguage,
+      demoTemplateForLanguage,
+      demoTemplateNameFromPayload,
+      exportLayoutAsDemoState,
+      findSharedLayout,
+      getLayoutContainerIdSetForState,
+      getLayoutItemIdSetForState,
+      getUnsyncedPhotoEntries,
+      getUploadablePhotoEntries,
+      normalizeDemoLayoutName,
+      normalizeDemoPayloadForLanguage,
+      normalizeUiLanguage,
+      nowIso,
+      persistStateSnapshot,
+      publicListIdForPublishedTarget,
+      publishedLayoutTarget,
+      publishedPayloadWithTemplateMetadata,
+      refreshPublishedLayoutView,
+      refreshPublicSharedLayoutCatalog,
+      saveSyncMeta,
+      setDemoPublicTemplateMissing,
+      setDemoStatePayloadForLanguage,
+      shouldCopyPublicTemplatePhotoReferencesOnServer,
+      shouldCreatePublishedTemplateBeforePhotos,
+      showToast,
+      updateSyncUi,
+      uploadPublishedLayoutPhotos,
+      upsertDemoTemplateCatalogEntry,
+      upsertRuntimeSharedLayout,
+      withLayoutArrangementAppliedAsync,
+      withoutPhotoReferences,
+      LIST_SAVE_API_TIMEOUT_MS
     }
-  };
-  let publishedPayload = null;
-  let publishedByServerPhotoCopy = false;
-  if (shouldCopyPublicTemplatePhotoReferencesOnServer(layout)) {
-    try {
-      publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
-        updateSyncUi("Сохраняю шаблон и копирую фото на сервере...");
-        const localPayload = exportLayoutAsDemoState(layoutId);
-        const result = await publishPayload(localPayload, { copyPhotoReferences: true });
-        const serverPayload = result?.record?.payload || result?.payload || localPayload;
-        if (applyPublishedPayloadPhotosToLayoutState(state, layoutId, serverPayload, {
-          clone,
-          getLayoutContainerIdSet: getLayoutContainerIdSetForState,
-          getLayoutItemIdSet: getLayoutItemIdSetForState,
-          publishedEntityId: cleanPublishedEntityId
-        })) {
-          persistStateSnapshot(state);
-        }
-        return serverPayload;
-      });
-      publishedByServerPhotoCopy = true;
-    } catch (error) {
-      if (typeof console !== "undefined" && console.warn) {
-        console.warn("[bike-packing] Server-side public template photo copy failed; falling back to legacy publish flow.", error);
-      }
-    }
-  }
-  if (!publishedByServerPhotoCopy) {
-    publishedPayload = await withLayoutArrangementAppliedAsync(layoutId, async () => {
-      const existingPublishedLayout = target.type === "shared"
-        ? findSharedLayout(target.sharedId)
-        : demoTemplateForLanguage(serverConfirmedDemoTemplates, target.language || layout.language || uiLanguage, {
-          listId: target.demoListId || layout.adminDemoListId || ""
-        });
-      const shouldPrimeTemplate = shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
-      if (shouldPrimeTemplate) {
-        updateSyncUi("Создаю шаблон перед копированием фото...");
-        await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
-      }
-      const uploadablePhotos = getUploadablePhotoEntries({
-        layoutId,
-        listId: publicListId,
-        allowRemoteOnlyReferences: false
-      });
-      if (uploadablePhotos.length) {
-        updateSyncUi(target.type === "demo" ? "Загружаю фото демо-укладки..." : "Загружаю фото шаблона...");
-        await uploadPublishedLayoutPhotos(layoutId, target, uploadablePhotos);
-      }
-      const unsyncedPhotos = getUnsyncedPhotoEntries({ layoutId, listId: publicListId });
-      if (unsyncedPhotos.length) {
-        const firstError = unsyncedPhotos.find((entry) => entry.photo?.error)?.photo?.error || "";
-        throw new Error(firstError || `Не удалось загрузить фото (${unsyncedPhotos.length}). Public-укладка не сохранена, чтобы не опубликовать локальные ссылки.`);
-      }
-      return exportLayoutAsDemoState(layoutId);
-    });
-    if (target.type === "demo") {
-      publishedPayload = normalizeDemoPayloadForLanguage(publishedPayload, target.language || uiLanguage) || publishedPayload;
-    }
-    await publishPayload(publishedPayload);
-  }
-  syncMeta.dirty = false;
-  syncMeta.serverUpdatedAt = nowIso();
-  saveSyncMeta();
-  if (target.type === "demo") {
-    const confirmedLanguage = normalizeUiLanguage(target.language || layout.adminDemoLanguage || layout.language || uiLanguage);
-    const confirmedName = publishTitle || demoTemplateNameFromPayload(publishedPayload, confirmedLanguage);
-    publishedPayload = publishedPayloadWithTemplateMetadata(publishedPayload, {
-      name: confirmedName,
-      language: confirmedLanguage
-    });
-    layout.name = confirmedName;
-    layout.adminDemoListId = target.demoListId || layout.adminDemoListId || demoPublicListIdForLanguage(confirmedLanguage);
-    activeDemoTemplateListId = layout.adminDemoListId;
-    setDemoStatePayloadForLanguage(confirmedLanguage, publishedPayload, { listId: layout.adminDemoListId });
-    setDemoPublicTemplateMissing(confirmedLanguage, false, { updateCatalog: false });
-    upsertDemoTemplateCatalogEntry(confirmedLanguage, {
-      listId: layout.adminDemoListId,
-      name: confirmedName,
-      updatedAt: syncMeta.serverUpdatedAt,
-      serverConfirmed: true,
-      missing: false
-    });
-  } else {
-    publishedPayload = publishedPayloadWithTemplateMetadata(publishedPayload, {
-      name: layout.name || "",
-      language: layout.language || uiLanguage
-    });
-    const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
-      id: target.sharedId,
-      name: layout.name || "",
-      language: layout.language || uiLanguage,
-      statePayload: publishedPayload,
-      runtimeSharedTemplate: true
-    }) || findSharedLayout(target.sharedId);
-    if (sharedLayout) sharedLayout.statePayload = publishedPayload;
-    await refreshPublicSharedLayoutCatalog().catch(() => null);
-  }
-  refreshPublishedLayoutView(target);
-  updateSyncUi();
-  if (notify) showToast(target.type === "demo" ? "Демо-укладка сохранена." : "Шаблон сохранен.", "success");
+  }, layoutId, options);
 }
 
 function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
@@ -7860,69 +7242,34 @@ async function copySharedLayout(layoutId) {
 }
 
 function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
-  const layout = findSharedLayout(layoutId);
-  if (!layout) return null;
-  let editableLayout = Object.values(state.layouts || {}).find((entry) => entry.adminSharedSourceId === layout.id);
-  if (!editableLayout) {
-    const changedAt = nowIso();
-    const idMap = { containers: new Map(), items: new Map() };
-    const sourceState = sharedLayoutStatePayload(layout);
-    const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
-    const rootIds = sourceState
-      ? (sourceLayout?.rootContainerIds || []).map((id) =>
-          copyPublishedContainerToState(sourceState, id, { targetLayoutId: "", changedAt, idMap, preserveSource: true })
-        )
-      : sharedLayoutRoots(layout).map((root) =>
-          copySharedRootToState(root, { targetLayoutId: "", changedAt, idMap, preserveSource: true })
-        );
-    const nextLayoutId = `layout-admin-shared-${layout.id}-${Date.now()}`;
-    editableLayout = {
-      id: nextLayoutId,
-      name: sourceLayout?.name || layout.name,
-      rootContainerIds: rootIds,
-      arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
-      adminSharedSourceId: layout.id,
-      language: layout.language || uiLanguage,
-      locations: normalizeDictionaryValues(sourceState?.locations, locations),
-      categories: normalizeDictionaryValues(sourceState?.categories, categories),
-      ...currentCreateMeta(changedAt)
-    };
-    state.layouts[nextLayoutId] = editableLayout;
-    saveState({ sync: false });
-  } else {
-    const repaired = repairEmptyTemplateCopyDraftFromPublishedLayout({
-      state,
-      sharedLayout: layout,
-      editableLayout,
-      fallbackLanguage: uiLanguage,
-      canRepair: canOpenAdminPublishedEdit(),
-      isLayoutMeaningful,
-      sharedLayoutStatePayload,
-      sharedPayloadActiveLayout,
-      templateCopySourceScore,
-      removeLayoutTree,
-      copyPublishedContainerToState,
-      createLayoutArrangementFromCurrentState,
-      normalizeLayoutArrangement,
-      ensureLayoutDictionaries,
-      currentMeta: currentEditMeta(),
-      nowIso
-    });
-    if (repaired) {
-      saveState({ sync: false });
-      return repaired;
-    }
-    const sourceLanguage = normalizeUiLanguage(layout.language || uiLanguage);
-    let languageChanged = false;
-    if (!editableLayout.adminTemplateCopy && editableLayout.language !== sourceLanguage) {
-      editableLayout.language = sourceLanguage;
-      languageChanged = true;
-    }
-    const syncedPublished = mergePublishedSharedStateIntoAdminLayout(layout, editableLayout);
-    const syncedBuiltIn = sharedLayoutStatePayload(layout) ? false : mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout);
-    if (syncedPublished || syncedBuiltIn || languageChanged) saveState({ sync: false });
-  }
-  return editableLayout;
+  return materializeSharedLayoutForAdminState(layoutId, {
+    canOpenAdminPublishedEdit,
+    copyPublishedContainerToState,
+    copySharedRootToState,
+    createLayoutArrangementFromCurrentState,
+    currentCreateMeta,
+    currentEditMeta,
+    ensureLayoutDictionaries,
+    findSharedLayout,
+    isLayoutMeaningful,
+    locations,
+    categories,
+    mergeBuiltInSharedEntriesIntoAdminLayout,
+    mergePublishedSharedStateIntoAdminLayout,
+    normalizeDictionaryValues,
+    normalizeLayoutArrangement,
+    normalizeUiLanguage,
+    nowIso,
+    removeLayoutTree,
+    repairEmptyTemplateCopyDraftFromPublishedLayout,
+    saveState,
+    sharedLayoutRoots,
+    sharedLayoutStatePayload,
+    sharedPayloadActiveLayout,
+    state,
+    templateCopySourceScore,
+    uiLanguage
+  });
 }
 
 async function materializeDemoLayoutForAdminCopy(language = uiLanguage, templateId = "") {
@@ -9893,25 +9240,27 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
     Boolean(publicCopySourceIdFromRecord(sourceSnapshot, "item", itemId));
   const copyId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const record = await createItemDuplicateRecord(sourceSnapshot, {
+  const copied = await duplicateItemToContainerInLayoutState(state, itemId, targetContainerId, targetLayoutId, {
+    activeLayoutId: state.activeLayoutId,
+    applyLayoutArrangement,
     changedAt,
     cloneEntity: cloneIsolatedPublicEntity,
     copyName: makeItemCopyName,
     copyPhotos: copyRecordPhotosForLocalDuplicate,
     currentEditMeta,
     id: copyId,
+    mapRecordToTarget: (record) => {
+      if (targetIsPublic) {
+        record.publicCatalogLayoutId = targetLayoutId;
+      } else {
+        markRecordPhotosForCurrentListCopy(record);
+        stripPublicOriginForPrivateCopy(record);
+      }
+    },
+    markRecordOrigin: markPrivateCopyOriginFromSource,
     preserveName: sourceIsPublicCopy
   });
-  if (!record) return;
-  state.items[copyId] = record;
-  markPrivateCopyOriginFromSource(state.items[copyId], sourceSnapshot, "item", itemId);
-  if (targetIsPublic) {
-    state.items[copyId].publicCatalogLayoutId = targetLayoutId;
-  } else {
-    markRecordPhotosForCurrentListCopy(state.items[copyId]);
-    stripPublicOriginForPrivateCopy(state.items[copyId]);
-  }
-  if (!placeExistingItemInLayout(copyId, targetContainerId, targetLayoutId, { changedAt })) {
+  if (!copied) {
     delete state.items[copyId];
     return;
   }
@@ -10047,48 +9396,16 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
   });
   if (!nextRootId) return "";
 
-  targetLayout.arrangement = targetLayout.arrangement && typeof targetLayout.arrangement === "object"
-    ? targetLayout.arrangement
-    : createEmptyLayoutArrangement();
-  const arrangement = targetLayout.arrangement;
-  arrangement.rootContainerIds = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
-  arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
-  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
-  arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
-  Object.assign(arrangement.containers, copiedPlacements);
-  Object.assign(arrangement.items, copiedItemContainers);
-  if (targetParentId) {
-    const parent = state.containers[targetParentId];
-    const parentPlacement = ensureLayoutContainerPlacement(targetLayout, targetParentId);
-    if (!parent || !parentPlacement) return "";
-    parent.childIds = Array.isArray(parent.childIds) ? parent.childIds.filter((id) => id !== nextRootId) : [];
-    parent.order = Array.isArray(parent.order)
-      ? parent.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
-      : [];
-    parent.childIds.push(nextRootId);
-    parent.order.push({ type: "container", id: nextRootId });
-    parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds.filter((id) => id !== nextRootId) : [];
-    parentPlacement.order = Array.isArray(parentPlacement.order)
-      ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
-      : [];
-    parentPlacement.childIds.push(nextRootId);
-    parentPlacement.order.push({ type: "container", id: nextRootId });
-    arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== nextRootId);
-    copiedPlacements[nextRootId].parentId = targetParentId;
-    state.collapsedContainers[targetParentId] = false;
-    touchContainer(targetParentId, changedAt);
-  } else {
-    copiedPlacements[nextRootId].parentId = "";
-    state.containers[nextRootId].parentId = null;
-    arrangement.rootContainerIds = uniqueLayoutIds([
-      ...(arrangement.rootContainerIds || []),
-      ...(targetLayout.rootContainerIds || []),
-      nextRootId
-    ]);
-  }
-  targetLayout.rootContainerIds = [...arrangement.rootContainerIds];
-  normalizeLayoutArrangement(targetLayout, state);
-  touchLayout(targetLayoutId, changedAt);
+  const placed = placeDuplicatedContainerSnapshotInLayoutState(state, targetLayoutId, nextRootId, {
+    changedAt,
+    copiedItemContainers,
+    copiedPlacements,
+    normalizeLayoutArrangement,
+    targetParentId,
+    touchContainer,
+    touchLayout
+  });
+  if (!placed) return "";
   if (targetLayoutId === state.activeLayoutId) applyLayoutArrangement(targetLayoutId);
   markRecentlyAddedContainer(nextRootId, targetLayoutId);
   saveLayoutMutation(targetLayoutId);
@@ -12591,109 +11908,42 @@ async function loadPublishedTemplateCopySource(sourceLayout) {
   });
 }
 
-async function createTemplateCopyFromSource(sourceLayout, requestedName, {
-  language = "",
-  activate = true,
-  renderAfter = true
-} = {}) {
-  if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
-  captureActiveLayoutArrangement();
-  normalizeLayoutArrangement(sourceLayout, state);
-  let sourceState = state;
-  let copySourceLayout = sourceLayout;
-  let rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
-  if (!rootSnapshots.length || rootSnapshots.every((snapshot) => containerTreeSnapshotScore(snapshot) <= 1)) {
-    withLayoutArrangementApplied(sourceLayout.id, () => {
-      captureActiveLayoutArrangement();
-      normalizeLayoutArrangement(sourceLayout, state);
-      rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
-    });
-  }
-  const localScore = rootSnapshots.reduce((sum, snapshot) => sum + containerTreeSnapshotScore(snapshot), 0);
-  const publishedSource = await loadPublishedTemplateCopySource(sourceLayout);
-  if (publishedSource?.score > localScore) {
-    sourceState = publishedSource.state;
-    copySourceLayout = publishedSource.layout;
-    rootSnapshots = templateCopyRootSnapshots(copySourceLayout, sourceState);
-  }
-  if (!rootSnapshots.length) {
-    const changedAt = nowIso();
-    const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const layout = createTemplateCopyLayoutRecordValue({
-      id,
-      requestedName,
-      sourceLayout,
-      copySourceLayout,
-      sourceState,
-      currentState: state,
-      rootSnapshots,
-      changedAt,
-      language,
-      uiLanguage,
-      normalizeUiLanguage,
-      createEmptyLayoutArrangement,
-      createEmptyPublicTemplateDraftRecord,
-      createDemoTemplateListId,
-      currentCreateMeta,
-      ensureLayoutDictionaries,
-      ensurePrivateDictionaries,
-      uniquePublishedTemplateName,
-      serverConfirmedDemoTemplates
-    });
-    if (!layout) return "";
-    state.layouts[id] = layout;
-    if (activate) activateAdminPublishedLayout(id);
-    saveLayoutMutation(id);
-    if (renderAfter) render();
-    return id;
-  }
-  if (!rootSnapshots.length) {
-    throw new Error("источник шаблона пустой или не загрузился");
-  }
-  const changedAt = nowIso();
-  const id = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const idMap = { containers: new Map(), items: new Map() };
-  const rootContainerIds = rootSnapshots
-    .map((snapshot) => copyPublishedContainerToState(sourceState, snapshot.rootId, {
-      targetLayoutId: "",
-      changedAt,
-      idMap,
-      preserveSource: true,
-      sourceLayoutId: copySourceLayout.id,
-      sourceSnapshot: snapshot
-    }))
-    .filter(Boolean);
-  const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
-  const layout = createTemplateCopyLayoutRecordValue({
-      id,
-      requestedName,
-      sourceLayout,
-      copySourceLayout,
-      sourceState,
-      currentState: state,
-      rootSnapshots,
-      arrangement,
-      changedAt,
-      language,
-      uiLanguage,
-      normalizeUiLanguage,
+async function createTemplateCopyFromSource(sourceLayout, requestedName, options = {}) {
+  return createTemplateCopyFromSourceFlow({
+    runtime: {
+      get serverConfirmedDemoTemplates() { return serverConfirmedDemoTemplates; },
+      get state() { return state; },
+      get uiLanguage() { return uiLanguage; }
+    },
+    dependencies: {
+      activateAdminPublishedLayout,
+      captureActiveLayoutArrangement,
+      containerTreeSnapshotScore,
+      copyPublishedContainerToState,
       createDemoTemplateCopyRecord,
       createDemoTemplateListId,
+      createEmptyLayoutArrangement,
+      createEmptyPublicTemplateDraftRecord,
+      createLayoutArrangementFromCurrentState,
+      createTemplateCopyLayoutRecordValue,
       createTemplateCopyRecord,
       currentCreateMeta,
       ensureLayoutDictionaries,
       ensurePrivateDictionaries,
+      isAdminEditablePublishedLayout,
+      loadPublishedTemplateCopySource,
+      markLayoutPhotosForCurrentListCopy,
+      normalizeLayoutArrangement,
+      normalizeUiLanguage,
+      nowIso,
+      render,
+      saveLayoutMutation,
+      solidifyTemplateDraftLayout,
+      templateCopyRootSnapshots,
       uniquePublishedTemplateName,
-      serverConfirmedDemoTemplates
-    });
-  if (!layout) return "";
-  state.layouts[id] = layout;
-  solidifyTemplateDraftLayout(id);
-  markLayoutPhotosForCurrentListCopy(id);
-  if (activate) activateAdminPublishedLayout(id);
-  saveLayoutMutation(id);
-  if (renderAfter) render();
-  return id;
+      withLayoutArrangementApplied
+    }
+  }, sourceLayout, requestedName, options);
 }
 
 function layoutCreateCopySourceOptions({ templates = false, includeTemplates = false } = {}) {
@@ -14150,23 +13400,17 @@ async function createBackupArchive() {
 }
 
 async function handleBackupFileSelected(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  try {
-    setBackupStatus("Читаю архив...");
-    const { manifest, photoFiles } = await readBackupArchiveFile(file);
-    const backupState = normalizeRemoteState(manifest.data?.state || manifest.state);
-    if (!backupState) throw new Error("В архиве нет корректного состояния.");
-    backupImportState = { manifest, state: backupState, photoFiles, selectedLayoutIds: new Set() };
-    renderBackupAnalysis();
-    setBackupStatus(`Архив прочитан: ${Object.keys(backupState.layouts || {}).length} укладок, ${photoFiles.size} фото.`, "success");
-  } catch (error) {
-    backupImportState = null;
-    resetBackupImportUi(refs);
-    setBackupStatus(`Не удалось прочитать архив: ${error.message}`, "error");
-  }
+  const nextImportState = await readBackupImportFile(event, {
+    normalizeRemoteState,
+    readBackupArchiveFile,
+    refs,
+    resetBackupImportUi,
+    setBackupStatus
+  });
+  if (nextImportState === undefined) return;
+  backupImportState = nextImportState;
+  if (backupImportState) renderBackupAnalysis();
 }
-
 function backupLayoutRows() {
   return backupImportState ? buildBackupLayoutRows(backupImportState.state, state) : [];
 }
@@ -14238,32 +13482,16 @@ async function prepareBackupPhotosForState(targetState, photoIds = null) {
 }
 
 async function restoreSelectedBackupLayouts() {
-  if (!backupImportState) return;
-  const selectedIds = selectedBackupLayoutIds();
-  if (!selectedIds.size) return;
-  const summary = summarizeSelectedBackupLayouts(selectedIds);
-  const confirmed = await askConfirmDialog(selectedBackupRestoreConfirm(summary));
-  if (!confirmed) return;
-  try {
-    setBackupStatus("Восстанавливаю выбранные укладки...");
-    saveRecoverySnapshot("before-backup-layout-restore", state);
-    const source = backupImportState.state;
-    const changedAt = nowIso();
-    const { importedPhotoIds } = restoreSelectedBackupLayoutsToState({
-      backupRows: backupLayoutRows(),
-      changedAt,
-      cloneValue: clone,
-      getLayoutContainerIdSet: getLayoutContainerIdSetForState,
-      getLayoutItemIdSet: getLayoutItemIdSetForState,
-      markEdited,
-      normalizePhotos: normalizeItemPhotos,
-      selectedIds,
-      sourceState: source,
-      targetState: state,
-      uniqueLayoutId: () => `layout-backup-${Date.now()}-${Math.random().toString(16).slice(2)}`
-    });
-    await prepareBackupPhotosForState(state, importedPhotoIds);
-    normalizeRestoredBackupState(state, {
+  await restoreSelectedBackupLayoutsFlow({
+    askConfirmDialog,
+    backupImportState,
+    backupLayoutRows,
+    cloneValue: clone,
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState,
+    markEdited,
+    normalizePhotos: normalizeItemPhotos,
+    normalizeRestoredBackupState: (targetState) => normalizeRestoredBackupState(targetState, {
       applyLayoutArrangement,
       migrateContainerOrder,
       normalizeContainerFields,
@@ -14271,42 +13499,43 @@ async function restoreSelectedBackupLayouts() {
       normalizeItemFields,
       normalizeLayoutFields,
       repairContainerMembershipFromItemLinks
-    });
-    saveState();
-    render();
-    await uploadPendingPhotos({ markDirty: true }).catch(() => null);
-    await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
-    setBackupStatus("Выбранные укладки восстановлены.", "success");
-    showToast("Выбранные укладки восстановлены.", "success");
-  } catch (error) {
-    setBackupStatus(`Не удалось восстановить укладки: ${error.message}`, "error");
-  }
+    }),
+    nowIso,
+    prepareBackupPhotosForState,
+    render,
+    restoreSelectedBackupLayoutsToState,
+    saveRecoverySnapshot,
+    saveRemoteState,
+    saveState,
+    selectedBackupLayoutIds,
+    selectedBackupRestoreConfirm,
+    setBackupStatus,
+    showToast,
+    state,
+    summarizeSelectedBackupLayouts,
+    uploadPendingPhotos,
+    uniqueLayoutId: () => `layout-backup-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  });
 }
-
 async function restoreFullBackup() {
-  if (!backupImportState) return;
-  const stats = stateStats(backupImportState.state);
-  const confirmed = await askConfirmDialog(fullBackupRestoreConfirm(stats));
-  if (!confirmed) return;
-  try {
-    setBackupStatus("Восстанавливаю полное состояние...");
-    const nextState = normalizeRemoteState(backupImportState.state);
-    if (!nextState) throw new Error("Состояние из архива повреждено.");
-    await prepareBackupPhotosForState(nextState);
-    replaceState(nextState, { preserveLocalUi: false });
-    syncMeta.dirty = true;
-    syncMeta.localUpdatedAt = nowIso();
-    saveSyncMeta();
-    render();
-    await uploadPendingPhotos({ markDirty: true }).catch(() => null);
-    await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
-    setBackupStatus("Полное состояние восстановлено.", "success");
-    showToast("Полное состояние восстановлено.", "success");
-  } catch (error) {
-    setBackupStatus(`Не удалось восстановить состояние: ${error.message}`, "error");
-  }
+  await restoreFullBackupFlow({
+    askConfirmDialog,
+    backupImportState,
+    fullBackupRestoreConfirm,
+    normalizeRemoteState,
+    nowIso,
+    prepareBackupPhotosForState,
+    render,
+    replaceState,
+    saveRemoteState,
+    saveSyncMeta,
+    setBackupStatus,
+    showToast,
+    stateStats,
+    syncMeta,
+    uploadPendingPhotos
+  });
 }
-
 async function exportData() {
   const { html, printTarget } = await buildPrintableHtmlFromChoice();
   printHtmlDocument(html, { printTarget });

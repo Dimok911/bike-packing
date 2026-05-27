@@ -1,7 +1,8 @@
 import {
   addItemToLayoutArrangement,
   ensureLayoutContainerPlacement,
-  getItemContainerIdInLayout
+  getItemContainerIdInLayout,
+  placeExistingItemInLayoutInState
 } from "./layout-ops.js";
 
 export async function createItemDuplicateRecord(item, {
@@ -60,6 +61,49 @@ export async function copyItemInState(targetState, itemId, {
   }
   delete targetState.packedItems?.[id];
   return { id, containerId, placed: Boolean(placement) };
+}
+
+export async function duplicateItemToContainerInLayoutState(targetState, itemId, targetContainerId, targetLayoutId, {
+  activeLayoutId = "",
+  applyLayoutArrangement = () => {},
+  changedAt = "",
+  cloneEntity = (record) => ({ ...(record || {}) }),
+  copyName = (name) => name,
+  copyPhotos = async () => [],
+  currentEditMeta = () => ({}),
+  id = "",
+  mapRecordToTarget = () => {},
+  markRecordOrigin = () => {},
+  preserveName = false,
+  touchLayout = () => {}
+} = {}) {
+  const source = targetState?.items?.[itemId];
+  const targetLayout = targetState?.layouts?.[targetLayoutId];
+  if (!source || !targetLayout || !id) return null;
+  const record = await createItemDuplicateRecord(source, {
+    changedAt,
+    cloneEntity,
+    copyName,
+    copyPhotos,
+    currentEditMeta,
+    id,
+    preserveName
+  });
+  if (!record) return null;
+  targetState.items[id] = record;
+  markRecordOrigin(targetState.items[id], source, "item", itemId);
+  mapRecordToTarget(targetState.items[id]);
+  const placed = placeExistingItemInLayoutInState(targetState, id, targetContainerId, targetLayoutId, {
+    activeLayoutId,
+    applyLayoutArrangement,
+    changedAt,
+    touchLayout
+  });
+  if (!placed) {
+    delete targetState.items[id];
+    return null;
+  }
+  return { id };
 }
 
 export function deleteItemFromState(targetState, itemId, {

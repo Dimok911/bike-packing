@@ -1,6 +1,6 @@
 # Bike Packing Project Map
 
-Last updated: 2026-05-27, app cache v908.
+Last updated: 2026-05-28, app cache v917.
 
 Use this as the quick orientation layer before editing. `AGENTS.md` remains the source of rules; this file is the map of where code should live during the ongoing `app.js` split.
 
@@ -33,10 +33,20 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/state/regression-repair.js`: destructive sync/save regression repair from reference state.
 - `src/public/admin-demo-layout.js`: importing and repairing published demo state as editable admin layouts.
 - `src/public/published-state-export.js`: published/demo state export, generated/public id cleanup, and canonical published ids.
+- `src/public/published-layout-save-flow.js`: admin demo/shared published layout save and photo publish orchestration.
+- `src/public/shared-catalog-refresh-flow.js`: public shared/demo catalog refresh, runtime template reconciliation, and unconfirmed draft pruning.
 - `src/public/shared-admin-merge.js`: admin-side merge of published/shared state and built-in shared entries.
+- `src/public/shared-admin-materialize.js`: materializing shared templates into editable admin layouts.
+- `src/public/guest-login-import.js`: guest local layout import planning, validation, and state mutation.
 - `src/public/template-copy.js`: public/template copy source scoring and record builders.
+- `src/public/template-copy-flow.js`: admin template-copy creation flow from local or published template sources.
 - `src/public/copy-published-container.js`: published/shared container tree copy into editable state.
 - `src/sync/save-body.js`: save payload preparation and admin/demo/template draft pruning for sync.
+- `src/sync/list-freshness.js`: lightweight sync freshness metadata normalization/comparison.
+- `src/sync/auth-load-flow.js`: auth check, offline fallback, and private remote load orchestration.
+- `src/sync/load-remote-state-flow.js`: remote state load/merge orchestration flow with app runtime dependencies injected.
+- `src/sync/run-sync-now-flow.js`: manual/queued sync orchestration and admin/public save routing.
+- `src/sync/save-remote-state-flow.js`: remote save and save-conflict orchestration flow with app runtime dependencies injected.
 - `src/sync/state-merge.js` and `src/sync/conflict-merge.js`: sync conflict and merge rules.
 - `src/data/default-user-state.js`: built-in first-run/demo private user state.
 - `src/ui/history-diff.js`: history comparison diff building and history diff HTML sections.
@@ -46,6 +56,7 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/ui/dictionary-bindings.js`: dictionary editor event binding and rename orchestration helpers.
 - `src/ui/shared-layout-render.js`: shared layout presentation HTML and shared layout weight helpers.
 - `src/ui/shared-virtual-events.js`: readonly/shared/template virtual layout event binding.
+- `src/ui/static-translations.js`: static top-level UI translation application.
 - `src/ui/sync-ui.js`: auth/sync/menu status DOM updates and sync visual-state application.
 - `src/ui/filter-controls.js`: main filter/select/scoped-control DOM updates.
 - `src/ui/item-dialog-save.js`: item/root-container dialog save state mutations and placement orchestration.
@@ -55,6 +66,7 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/ui/packing-scroll.js`: packing board scroll sync and fixed horizontal scrollbar binding.
 - `src/ui/settings-pointer-drag.js` and `src/ui/horizontal-touch-scroll.js`: settings drag reordering and horizontal touch scroll behavior.
 - `src/ui/help-limits-dialog.js`: help/limits dialog content.
+- `src/backup/restore-flow.js`: backup file import and restore orchestration helpers.
 
 ## Before Editing
 

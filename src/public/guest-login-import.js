@@ -2,6 +2,7 @@ import {
   getLayoutContainerIdSet,
   getLayoutItemIdSet
 } from "../state/layout-ops.js";
+import { uniqueLayoutIds } from "../state/layout-arrangement.js";
 
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
@@ -56,4 +57,92 @@ export function validateGuestImportSyncState(targetState, importedLayoutIds) {
     return { ok: false, reason: "empty-imported-layouts", stats };
   }
   return { ok: true, reason: "", stats };
+}
+
+export function importGuestLocalLayoutsToState(targetState, candidate, {
+  addBackupDictionaryValues = () => {},
+  applyGuestLocalDisplayPreferences = () => {},
+  applyLayoutArrangement = () => {},
+  cloneValue = (value) => value,
+  copyPublishedContainerToState = () => "",
+  createLayoutArrangementFromCurrentState = () => ({}),
+  currentCreateMeta = () => ({}),
+  guestCandidateLayouts = () => [],
+  guestLocalDisplayPreferences = () => ({}),
+  layoutDictionaryValues = () => [],
+  normalizeContainerFields = () => {},
+  normalizeDictionaryValues = (values) => values,
+  normalizeItemCategories = () => {},
+  normalizeItemFields = () => {},
+  normalizeLayoutFields = () => {},
+  migrateContainerOrder = () => {},
+  nowIso = () => new Date().toISOString(),
+  readableGuestDemoLayoutName = (name) => name,
+  rememberActiveLayoutChoice = () => {},
+  repairContainerMembershipFromItemLinks = () => {},
+  saveRecoverySnapshot = () => {},
+  saveState = () => {},
+  setActivePrivateScope = () => {},
+  uniqueLayoutName = (name) => name,
+  renameConflicts = true,
+  guestDemoCopyFlag = "",
+  guestLayoutFallbackName = ""
+} = {}) {
+  const source = candidate?.sourceState;
+  const layouts = guestCandidateLayouts(candidate);
+  if (!source || !layouts.length) return [];
+  saveRecoverySnapshot("before-guest-layouts-import", targetState);
+  const changedAt = nowIso();
+  addBackupDictionaryValues(targetState, source);
+  const idMap = { containers: new Map(), items: new Map() };
+  const importedLayoutIds = [];
+  layouts.forEach((entry, index) => {
+    const sourceLayout = source.layouts?.[entry.layoutId];
+    if (!sourceLayout) return;
+    const sourceRootIds = uniqueLayoutIds([
+      ...(sourceLayout.rootContainerIds || []),
+      ...(sourceLayout.arrangement?.rootContainerIds || [])
+    ]);
+    const rootContainerIds = sourceRootIds
+      .map((id) => copyPublishedContainerToState(source, id, {
+        targetLayoutId: "",
+        changedAt,
+        idMap,
+        sourceLayoutId: sourceLayout.id
+      }))
+      .filter(Boolean);
+    const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
+    const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, guestLayoutFallbackName);
+    const safeName = renameConflicts
+      ? uniqueLayoutName(requestedName)
+      : requestedName;
+    targetState.layouts[layoutId] = {
+      ...cloneValue(sourceLayout),
+      id: layoutId,
+      name: safeName,
+      rootContainerIds,
+      arrangement: createLayoutArrangementFromCurrentState(targetState, rootContainerIds),
+      locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),
+      categories: normalizeDictionaryValues(sourceLayout.categories || source.categories, layoutDictionaryValues(sourceLayout, "category", source)),
+      ...currentCreateMeta(changedAt)
+    };
+    if (guestDemoCopyFlag) delete targetState.layouts[layoutId][guestDemoCopyFlag];
+    delete targetState.layouts[layoutId].demoSourceLanguage;
+    delete targetState.layouts[layoutId].guestDemoCopyCreatedAt;
+    importedLayoutIds.push(layoutId);
+  });
+  if (!importedLayoutIds.length) return [];
+  targetState.activeLayoutId = importedLayoutIds[0];
+  applyLayoutArrangement(targetState.activeLayoutId);
+  setActivePrivateScope();
+  rememberActiveLayoutChoice(targetState.activeLayoutId);
+  normalizeContainerFields(targetState);
+  normalizeItemFields(targetState);
+  repairContainerMembershipFromItemLinks(targetState);
+  normalizeLayoutFields(targetState);
+  normalizeItemCategories(targetState);
+  migrateContainerOrder(targetState);
+  applyGuestLocalDisplayPreferences(targetState, candidate.displayPreferences || guestLocalDisplayPreferences(source));
+  saveState();
+  return importedLayoutIds;
 }

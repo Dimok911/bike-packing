@@ -57,6 +57,10 @@ to `npm.cmd run check`.
 - Local changes made offline must remain dirty and should not be overwritten by
   remote state until auth and server freshness are checked.
 - Suspicious empty local states must not be uploaded over meaningful server data.
+- Background freshness polling must not fetch the full list payload. Use a
+  lightweight metadata endpoint first, and fetch `/state` only after
+  `updatedAt`/`stateRevision` changes or when the lightweight check is
+  unavailable.
 
 ## CRITICAL: template-copy-delete
 
