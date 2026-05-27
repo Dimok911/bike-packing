@@ -1,6 +1,6 @@
 # Bike Packing Project Map
 
-Last updated: 2026-05-27, app cache v887.
+Last updated: 2026-05-27, app cache v903.
 
 Use this as the quick orientation layer before editing. `AGENTS.md` remains the source of rules; this file is the map of where code should live during the ongoing `app.js` split.
 
@@ -28,7 +28,11 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/state/container-ops.js`: container duplicate/delete/cleanup/deep traversal operations.
 - `src/state/catalog-lists.js`: item/root-container catalog list assembly before rendering.
 - `src/state/layout-ops.js`: layout arrangement operations, active placement/removal state mutations, grouping, root column moves.
+- `src/state/layout-arrangement.js`: layout arrangement snapshots and state application helpers.
 - `src/state/layout-normalize.js`: arrangement repair/normalization and layout snapshot extraction.
+- `src/public/admin-demo-layout.js`: importing and repairing published demo state as editable admin layouts.
+- `src/public/published-state-export.js`: published/demo state export, generated/public id cleanup, and canonical published ids.
+- `src/public/shared-admin-merge.js`: admin-side merge of published/shared state and built-in shared entries.
 - `src/public/template-copy.js`: public/template copy source scoring and record builders.
 - `src/public/copy-published-container.js`: published/shared container tree copy into editable state.
 - `src/sync/save-body.js`: save payload preparation and admin/demo/template draft pruning for sync.
@@ -37,10 +41,13 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/ui/history-diff.js`: history comparison diff building and history diff HTML sections.
 - `src/ui/photo-gallery.js`: item/container photo gallery HTML, preview slides, dots, lightbox behavior, hydration, and photo status labels.
 - `src/ui/settings-render.js`: settings/root-container/dictionary HTML render helpers.
+- `src/ui/settings-editor-bindings.js`: layout/root-container settings editor event binding.
+- `src/ui/dictionary-bindings.js`: dictionary editor event binding and rename orchestration helpers.
 - `src/ui/shared-layout-render.js`: shared layout presentation HTML and shared layout weight helpers.
 - `src/ui/items-view-render.js`: items tab list and catalog card HTML render helpers.
 - `src/ui/packing-board-render.js`: packing board container/subcontainer/item card HTML render helpers.
 - `src/ui/packing-drag.js` and `src/ui/packing-events.js`: packing board drag, drop, edge-scroll, and card event binding.
+- `src/ui/packing-scroll.js`: packing board scroll sync and fixed horizontal scrollbar binding.
 - `src/ui/settings-pointer-drag.js` and `src/ui/horizontal-touch-scroll.js`: settings drag reordering and horizontal touch scroll behavior.
 - `src/ui/help-limits-dialog.js`: help/limits dialog content.
 

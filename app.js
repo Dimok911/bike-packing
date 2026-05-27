@@ -35,7 +35,6 @@ import {
   SUPPORTED_LANGUAGES,
   ADMIN_EMAILS,
   ADMIN_USER_IDS,
-  COLLAPSE_DEFAULTS_VERSION,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
   POINTER_DRAG_START_DISTANCE,
@@ -86,6 +85,10 @@ import {
   copyPublishedContainerToState as copyPublishedContainerToStateValue
 } from "./src/public/copy-published-container.js";
 import {
+  cleanPublishedEntityId,
+  exportLayoutAsPublishedState
+} from "./src/public/published-state-export.js";
+import {
   generatedCatalogString,
   hasPublicOriginMarker,
   isGeneratedCatalogContainerStateArtifact,
@@ -105,6 +108,10 @@ import {
   shouldImportGuestLayoutBeforeRemote,
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
+import {
+  importDemoStateAsEditableLayout as importDemoStateAsEditableLayoutValue,
+  repairAdminDemoLayout as repairAdminDemoLayoutValue
+} from "./src/public/admin-demo-layout.js";
 import { validateGuestImportSyncState } from "./src/public/guest-login-import.js";
 import {
   publishedTemplateBlockReason,
@@ -164,6 +171,11 @@ import {
   createSharedLayoutCatalogDiagnostics,
   shouldWarnAboutSharedLayoutCatalog
 } from "./src/public/shared-layout-catalog-diagnostics.js";
+import {
+  mergeBuiltInSharedEntriesIntoAdminLayout as mergeBuiltInSharedEntriesIntoAdminLayoutValue,
+  mergePublishedSharedStateIntoAdminLayout as mergePublishedSharedStateIntoAdminLayoutValue,
+  syncPublishedEntityPhotos as syncPublishedEntityPhotosValue
+} from "./src/public/shared-admin-merge.js";
 import {
   buildAdminSharedTemplateOptions,
   compareSharedTemplateAdminOrder,
@@ -300,6 +312,7 @@ import {
   primaryItemPhoto
 } from "./src/state/item-photos.js";
 import {
+  applyLayoutArrangementToState,
   createEmptyLayoutArrangement,
   createLayoutArrangementFromCurrentState,
   uniqueLayoutIds
@@ -565,6 +578,14 @@ import {
   fullBackupRestoreConfirm
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
+import {
+  bindDictionaryControls,
+  renameDictionaryEntry as renameDictionaryEntryValue
+} from "./src/ui/dictionary-bindings.js";
+import {
+  bindLayoutEditorControls,
+  bindRootContainersEditorControls
+} from "./src/ui/settings-editor-bindings.js";
 import { openHelpLimitsDialogUi } from "./src/ui/help-limits-dialog.js";
 import { bindHorizontalTouchScroll } from "./src/ui/horizontal-touch-scroll.js";
 import { renderEmptyState } from "./src/ui/empty-state.js";
@@ -596,6 +617,10 @@ import {
 } from "./src/ui/packing-board-render.js";
 import { createPackingDragController } from "./src/ui/packing-drag.js";
 import { bindPackingEvents as bindPackingEventsUi } from "./src/ui/packing-events.js";
+import {
+  bindBoardScroll,
+  bindFixedScrollbar
+} from "./src/ui/packing-scroll.js";
 import {
   GUEST_STORAGE_SCOPE,
   scopedLocalStorageKey as scopedStorageKey,
@@ -2784,81 +2809,13 @@ function persistActiveLayoutSelection({ sync = false } = {}) {
 }
 
 function applyLayoutArrangement(layoutId = state.activeLayoutId, targetState = state) {
-  const layout = targetState.layouts?.[layoutId];
-  if (!layout) return;
-  const hadStoredArrangement = Boolean(
-    layout.arrangement &&
-    typeof layout.arrangement === "object" &&
-    layout.arrangement.containers &&
-    typeof layout.arrangement.containers === "object" &&
-    layout.arrangement.items &&
-    typeof layout.arrangement.items === "object"
-  );
   applyingLayoutArrangement = true;
   try {
-    repairContainerMembershipFromItemLinks(targetState);
-    const previousItemContainers = {};
-    const previousContainerParents = {};
-    Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
-      if (item?.containerId && targetState.containers?.[item.containerId]) previousItemContainers[itemId] = item.containerId;
+    applyLayoutArrangementToState(targetState, layoutId, {
+      migrateContainerOrder,
+      normalizeLayoutArrangement,
+      repairContainerMembershipFromItemLinks
     });
-    Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
-      if (container?.parentId && targetState.containers?.[container.parentId]) {
-        previousContainerParents[containerId] = container.parentId;
-      }
-    });
-    const arrangement = normalizeLayoutArrangement(layout, targetState);
-    const arrangedContainerIds = new Set(Object.keys(arrangement.containers || {}));
-    Object.values(targetState.items || {}).forEach((item) => {
-      item.containerId = "";
-    });
-    Object.values(targetState.containers || {}).forEach((container) => {
-      container.parentId = null;
-      container.childIds = [];
-      container.itemIds = [];
-      container.order = [];
-    });
-    layout.rootContainerIds = [...arrangement.rootContainerIds];
-    Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
-      const container = targetState.containers?.[containerId];
-      if (!container) return;
-      container.parentId = placement.parentId || null;
-      container.childIds = [...(placement.childIds || [])].filter((id) => targetState.containers?.[id]);
-      container.itemIds = [...(placement.itemIds || [])].filter((id) => targetState.items?.[id]);
-      container.order = [...(placement.order || [])]
-        .filter((entry) => entry.type === "item" ? targetState.items?.[entry.id] : targetState.containers?.[entry.id])
-        .map((entry) => ({ type: entry.type, id: entry.id }));
-    });
-    Object.entries(arrangement.items).forEach(([itemId, containerId]) => {
-      if (targetState.items?.[itemId] && targetState.containers?.[containerId]) {
-        targetState.items[itemId].containerId = containerId;
-      }
-    });
-    if (!hadStoredArrangement) {
-      Object.entries(previousItemContainers).forEach(([itemId, containerId]) => {
-        const item = targetState.items?.[itemId];
-        const container = targetState.containers?.[containerId];
-        if (!item || item.containerId || !container) return;
-        item.containerId = containerId;
-        if (!container.itemIds.includes(itemId)) container.itemIds.push(itemId);
-        if (!container.order.some((entry) => entry?.type === "item" && entry.id === itemId)) {
-          container.order.push({ type: "item", id: itemId });
-        }
-      });
-      Object.entries(previousContainerParents).forEach(([containerId, parentId]) => {
-        const container = targetState.containers?.[containerId];
-        const parent = targetState.containers?.[parentId];
-        if (!container || !parent || container.parentId || arrangedContainerIds.has(containerId)) return;
-        container.parentId = parentId;
-        if (!parent.childIds.includes(containerId)) parent.childIds.push(containerId);
-        if (!parent.order.some((entry) => entry?.type === "container" && entry.id === containerId)) {
-          parent.order.push({ type: "container", id: containerId });
-        }
-      });
-    }
-    targetState.packedItems = { ...(arrangement.packedItems || {}) };
-    repairContainerMembershipFromItemLinks(targetState);
-    migrateContainerOrder(targetState);
   } finally {
     applyingLayoutArrangement = false;
   }
@@ -7086,144 +7043,42 @@ function repairActiveEmptyAdminDemoDraft() {
 }
 
 function importDemoStateAsEditableLayout(demoState, { language = uiLanguage, listId = "", activate = true, renderAfter = true } = {}) {
-  const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language) || createBlankBikePackingState();
-  const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
-  if (!sourceLayout) throw new Error("В демо нет укладки.");
-  const normalizedLanguage = normalizeUiLanguage(language);
-  const demoTemplate = currentDemoTemplate(normalizedLanguage, listId);
-  const demoListId = listId || demoTemplate?.listId || demoPublicListIdForLanguage(normalizedLanguage);
-  const stamp = Date.now();
-  const layoutId = `layout-admin-demo-${stamp}`;
-  const containerMap = {};
-  const changedAt = nowIso();
-  const itemMap = {};
-
-  const copyContainer = (containerId, parentId = null) => {
-    if (containerMap[containerId]) return containerMap[containerId];
-    const container = source.containers?.[containerId];
-    if (!container) return "";
-    const nextId = `admin-demo-container-${stamp}-${containerId}`;
-    containerMap[containerId] = nextId;
-    state.containers[nextId] = {
-      ...clone(container),
-      id: nextId,
-      parentId,
-      childIds: [],
-      itemIds: [],
-      order: [],
-      adminDemo: true,
-      publicCatalogLayoutId: layoutId,
-      ...currentCreateMeta(changedAt)
-    };
-    (container.childIds || []).forEach((id) => copyContainer(id, nextId));
-    return nextId;
-  };
-
-  const rootContainerIds = (sourceLayout.rootContainerIds || []).map((id) => copyContainer(id, null)).filter(Boolean);
-  Object.values(source.items || {}).forEach((item) => {
-    const nextContainerId = item.containerId ? containerMap[item.containerId] : "";
-    const nextId = `admin-demo-item-${stamp}-${item.id}`;
-    itemMap[item.id] = nextId;
-    state.items[nextId] = {
-      ...clone(item),
-      id: nextId,
-      containerId: nextContainerId,
-      adminDemo: true,
-      publicCatalogLayoutId: layoutId,
-      ...currentCreateMeta(changedAt)
-    };
+  return importDemoStateAsEditableLayoutValue(state, demoState, {
+    activate,
+    applyLayoutArrangement,
+    categories,
+    clone,
+    createBlankBikePackingState,
+    createLayoutArrangementFromCurrentState,
+    currentCreateMeta,
+    currentDemoTemplate,
+    demoPublicListIdForLanguage,
+    language,
+    listId,
+    locations,
+    normalizeDemoLayoutName,
+    normalizeDemoPayloadForLanguage,
+    normalizeDictionaryValues,
+    normalizePublishedStatePayload,
+    normalizeUiLanguage,
+    nowIso,
+    render,
+    renderAfter,
+    saveState,
+    setActivePrivateScope,
+    switchView
   });
-  Object.entries(containerMap).forEach(([sourceId, nextId]) => {
-    const sourceContainer = source.containers[sourceId];
-    const targetContainer = state.containers[nextId];
-    if (!sourceContainer || !targetContainer) return;
-    targetContainer.childIds = (sourceContainer.childIds || []).map((id) => containerMap[id]).filter(Boolean);
-    targetContainer.itemIds = (sourceContainer.itemIds || []).map((id) => itemMap[id]).filter(Boolean);
-    targetContainer.order = (sourceContainer.order || []).map((entry) => {
-      if (entry.type === "container") {
-        const id = containerMap[entry.id];
-        return id ? { type: "container", id } : null;
-      }
-      const id = itemMap[entry.id];
-      return id ? { type: "item", id } : null;
-    }).filter(Boolean);
-  });
-  state.layouts[layoutId] = {
-    id: layoutId,
-    name: demoTemplate?.name || normalizeDemoLayoutName(sourceLayout.name, normalizedLanguage),
-    rootContainerIds,
-    arrangement: createLayoutArrangementFromCurrentState(state, rootContainerIds),
-    adminDemo: true,
-    adminDemoLanguage: normalizedLanguage,
-    adminDemoListId: demoListId,
-    language: normalizedLanguage,
-    locations: normalizeDictionaryValues(source.locations, locations),
-    categories: normalizeDictionaryValues(source.categories, categories),
-    ...currentCreateMeta(changedAt)
-  };
-  saveState({ sync: false });
-  if (activate) {
-    state.activeLayoutId = layoutId;
-    applyLayoutArrangement(layoutId);
-    setActivePrivateScope();
-    switchView("packing");
-    if (renderAfter) render();
-  }
-  return state.layouts[layoutId];
 }
 
 function repairAdminDemoLayout(layout) {
-  if (!layout?.adminDemo) return false;
-  let changed = false;
-  const normalizedName = normalizeDemoLayoutName(layout.name, layout.adminDemoLanguage || uiLanguage);
-  if (layout.name !== normalizedName) {
-    layout.name = normalizedName;
-    changed = true;
-  }
-  const stamp = String(layout.id || "").match(/^layout-admin-demo-(\d+)/)?.[1] || "";
-  const prefix = stamp ? `admin-demo-container-${stamp}-` : "admin-demo-container-";
-  const arrangement = normalizeLayoutArrangement(layout, state);
-  const arrangedChildIds = new Set();
-  Object.values(arrangement.containers || {}).forEach((placement) => {
-    (placement?.childIds || []).forEach((childId) => arrangedChildIds.add(childId));
+  return repairAdminDemoLayoutValue(layout, {
+    normalizeDemoLayoutName,
+    normalizeLayoutArrangement,
+    state,
+    uiLanguage,
+    uniqueLayoutIds
   });
-  const arrangedRootIds = uniqueLayoutIds([
-    ...(arrangement.rootContainerIds || []),
-    ...(layout.rootContainerIds || [])
-  ]).filter((containerId) => state.containers?.[containerId]);
-  const prefixedRootIds = Object.values(state.containers || {})
-    .filter((container) =>
-      String(container.id || "").startsWith(prefix) &&
-      !arrangedChildIds.has(container.id) &&
-      (!arrangement.containers?.[container.id] || !arrangement.containers[container.id].parentId)
-    )
-    .map((container) => container.id);
-  const rootContainerIds = uniqueLayoutIds([...arrangedRootIds, ...prefixedRootIds]);
-  if (!rootContainerIds.length) return changed;
-  const itemPrefix = stamp ? `admin-demo-item-${stamp}-` : "admin-demo-item-";
-  Object.values(state.items || {})
-    .filter((item) => String(item.id || "").startsWith(itemPrefix))
-    .forEach((item) => {
-      const arrangedContainerId = arrangement.items?.[item.id] || "";
-      if (arrangedContainerId && state.containers[arrangedContainerId]) {
-        item.containerId = arrangedContainerId;
-        return;
-      }
-      if (!item.containerId || !state.containers[item.containerId]) {
-        const sourceId = String(item.id).slice(itemPrefix.length);
-        const fallbackContainer = Object.values(state.containers || {}).find((container) =>
-          String(container.id || "").startsWith(prefix) &&
-          String(container.itemIds || []).includes(sourceId)
-        );
-        if (fallbackContainer) item.containerId = fallbackContainer.id;
-      }
-    });
-  layout.rootContainerIds = rootContainerIds;
-  arrangement.rootContainerIds = rootContainerIds;
-  normalizeLayoutArrangement(layout, state);
-  return true;
 }
-
 async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { notify = false } = {}) {
   const layout = state.layouts?.[layoutId];
   if (!layout) return;
@@ -7375,130 +7230,18 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, { noti
 
 function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {
   captureActiveLayoutArrangement();
-  const layout = state.layouts?.[layoutId];
-  if (!layout) throw new Error("Укладка не найдена.");
-  const containers = {};
-  const items = {};
-  const containerIdMap = new Map();
-  const itemIdMap = new Map();
-  const mapContainerId = (containerId) => {
-    if (containerIdMap.has(containerId)) return containerIdMap.get(containerId);
-    const container = state.containers?.[containerId];
-    const nextId = uniquePublishedRecordId(containers, cleanPublishedEntityId("container", container, containerId));
-    containerIdMap.set(containerId, nextId);
-    return nextId;
-  };
-  const mapItemId = (itemId) => {
-    if (itemIdMap.has(itemId)) return itemIdMap.get(itemId);
-    const item = state.items?.[itemId];
-    const nextId = uniquePublishedRecordId(items, cleanPublishedEntityId("item", item, itemId));
-    itemIdMap.set(itemId, nextId);
-    return nextId;
-  };
-  const remapOrder = (order = []) => order.map((entry) => {
-    if (entry?.type === "container") {
-      const id = containerIdMap.get(entry.id);
-      return id ? { type: "container", id } : null;
-    }
-    if (entry?.type === "item") {
-      const id = itemIdMap.get(entry.id);
-      return id ? { type: "item", id } : null;
-    }
-    return null;
-  }).filter(Boolean);
-  const walk = (containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container) return "";
-    const nextContainerId = mapContainerId(containerId);
-    if (containers[nextContainerId]) return nextContainerId;
-    containers[nextContainerId] = clone(container);
-    containers[nextContainerId].id = nextContainerId;
-    containers[nextContainerId].parentId = container.parentId ? mapContainerId(container.parentId) : null;
-    delete containers[nextContainerId].adminDemo;
-    delete containers[nextContainerId].adminSharedSourceId;
-    delete containers[nextContainerId].publicCatalogLayoutId;
-    (container.itemIds || []).forEach((itemId) => {
-      if (state.items?.[itemId]) {
-        const nextItemId = mapItemId(itemId);
-        items[nextItemId] = clone(state.items[itemId]);
-        items[nextItemId].id = nextItemId;
-        items[nextItemId].containerId = nextContainerId;
-        stripPublishedPublicOriginMarkers(items[nextItemId]);
-      }
-    });
-    (container.childIds || []).forEach(walk);
-    containers[nextContainerId].childIds = (container.childIds || []).map((id) => containerIdMap.get(id)).filter(Boolean);
-    containers[nextContainerId].itemIds = (container.itemIds || []).map((id) => itemIdMap.get(id)).filter(Boolean);
-    containers[nextContainerId].order = remapOrder(container.order || []);
-    if (!containers[nextContainerId].order.length) {
-      containers[nextContainerId].order = [
-        ...containers[nextContainerId].itemIds.map((id) => ({ type: "item", id })),
-        ...containers[nextContainerId].childIds.map((id) => ({ type: "container", id }))
-      ];
-    }
-    stripPublishedPublicOriginMarkers(containers[nextContainerId]);
-    return nextContainerId;
-  };
-  const rootContainerIds = (layout.rootContainerIds || []).map(walk).filter(Boolean);
-  const dictionaryOwner = ensureLayoutDictionaries(layout);
-  const demoLayout = {
-    ...clone(layout),
-    id: "layout-main",
-    name: layout.name || "Демо-укладка",
-    rootContainerIds
-  };
-  delete demoLayout.adminDemo;
-  delete demoLayout.adminSharedSourceId;
-  delete demoLayout.sharedSourceId;
-  delete demoLayout.publicCatalogLayoutId;
-  stripPublishedPublicOriginMarkers(demoLayout);
-  const demoState = {
-    locations: [...(dictionaryOwner?.locations || locations)],
-    categories: [...(dictionaryOwner?.categories || categories)],
-    containers,
-    items,
-    layouts: { "layout-main": demoLayout },
-    activeLayoutId: "layout-main",
-    collapsedContainers: {},
-    collapseDefaultsVersion: COLLAPSE_DEFAULTS_VERSION,
-    showItemMeta: true,
-    showFilterContext: false,
-    collectionMode: false,
-    showOnlyUnpacked: false,
-    packedItems: {}
-  };
-  demoLayout.arrangement = createLayoutArrangementFromCurrentState(demoState, demoLayout.rootContainerIds);
-  return normalizePublishedStatePayload(demoState) || demoState;
+  return exportLayoutAsPublishedState(state, layoutId, {
+    categories,
+    clone,
+    createLayoutArrangementFromCurrentState,
+    cssSafeId,
+    ensureLayoutDictionaries,
+    fallbackName: "Демо-укладка",
+    locations,
+    normalizePublishedStatePayload,
+    stripPublishedPublicOriginMarkers
+  });
 }
-
-function cleanPublishedEntityId(type, entity, fallbackId = "") {
-  const prefix = type === "container" ? "container" : "item";
-  const sourceSeed = cleanGeneratedEntityId(entity?.sharedSourceId || entity?.id || fallbackId);
-  const nameSeed = entity?.name ? cssSafeId(entity.name) : "";
-  let seed = sourceSeed || nameSeed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  seed = String(seed).trim();
-  if (!seed.startsWith(`${prefix}-`)) seed = `${prefix}-${seed}`;
-  seed = seed.replace(/[^a-zа-я0-9_-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  return seed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function cleanGeneratedEntityId(value) {
-  let id = String(value || "").trim();
-  if (!id) return "";
-  let previous = "";
-  while (id && id !== previous) {
-    previous = id;
-    id = id
-      .replace(/^admin-demo-container-\d+-/, "")
-      .replace(/^admin-demo-item-\d+-/, "")
-      .replace(/^container-shared-/, "")
-      .replace(/^item-shared-/, "")
-      .replace(/^shared-virtual-container-/, "")
-      .replace(/^shared-virtual-item-/, "");
-  }
-  return id;
-}
-
 function openSharedLayoutsDialog() {
   if (!requirePublishedTemplatesAvailable()) return;
   const layoutId = currentSharedLayouts()[0]?.id;
@@ -7587,13 +7330,6 @@ async function loadSharedLayoutPayload(layoutId) {
   if (!isPublicSharedTemplatePayload(remoteState)) return false;
   layout.statePayload = remoteState;
   return true;
-}
-
-function uniquePublishedRecordId(records, preferredId) {
-  if (!records?.[preferredId]) return preferredId;
-  let index = 2;
-  while (records[`${preferredId}-${index}`]) index += 1;
-  return `${preferredId}-${index}`;
 }
 
 function renderSharedLayouts() {
@@ -8507,160 +8243,44 @@ async function ensureAdminPublicCopyTargetsAvailable() {
 }
 
 function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
-  const sourceState = sharedLayoutStatePayload(layout);
-  const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
-  if (!sourceState || !sourceLayout || !editableLayout) return false;
-  ensureLayoutDictionaries(editableLayout, sourceState);
-  const changedAt = nowIso();
-  const layoutContainerIds = new Set();
-  const collectContainer = (containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container || layoutContainerIds.has(containerId)) return;
-    layoutContainerIds.add(containerId);
-    (container.childIds || []).forEach(collectContainer);
-  };
-  (editableLayout.rootContainerIds || []).forEach(collectContainer);
-
-  const containersBySource = new Map();
-  const containersByName = new Map();
-  layoutContainerIds.forEach((containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container) return;
-    if (container.sharedSourceId) containersBySource.set(container.sharedSourceId, container);
-    if (container.name) containersByName.set(normalizeSharedGearName(container.name), container);
+  return mergePublishedSharedStateIntoAdminLayoutValue(layout, editableLayout, {
+    changedAt: nowIso(),
+    clone,
+    ensureLayoutDictionaries,
+    hasRemotePhotoUrl,
+    normalizeLayoutArrangement,
+    normalizePhotoUrlFields,
+    normalizeSharedGearName,
+    sameJson,
+    sourceState: sharedLayoutStatePayload(layout),
+    state,
+    touchLayout
   });
-
-  const itemsBySource = new Map();
-  const itemsByName = new Map();
-  Object.values(state.items || {}).forEach((item) => {
-    if (!item || !layoutContainerIds.has(item.containerId)) return;
-    if (item.sharedSourceId) itemsBySource.set(item.sharedSourceId, item);
-    if (item.name) itemsByName.set(normalizeSharedGearName(item.name), item);
-  });
-
-  let changed = false;
-  const syncEntity = (target, source, sourceId) => {
-    if (!target || !source) return;
-    if (sourceId && target.sharedSourceId !== sourceId) {
-      target.sharedSourceId = sourceId;
-      changed = true;
-    }
-    if (syncPublishedEntityPhotos(target, source)) {
-      target.updatedAt = source.updatedAt || changedAt;
-      changed = true;
-    }
-  };
-  const syncContainerTree = (sourceContainerId) => {
-    const sourceContainer = sourceState.containers?.[sourceContainerId];
-    if (!sourceContainer) return;
-    const targetContainer =
-      containersBySource.get(sourceContainerId) ||
-      containersByName.get(normalizeSharedGearName(sourceContainer.name));
-    syncEntity(targetContainer, sourceContainer, sourceContainerId);
-    (sourceContainer.itemIds || []).forEach((sourceItemId) => {
-      const sourceItem = sourceState.items?.[sourceItemId];
-      if (!sourceItem) return;
-      const targetItem =
-        itemsBySource.get(sourceItemId) ||
-        itemsByName.get(normalizeSharedGearName(sourceItem.name));
-      syncEntity(targetItem, sourceItem, sourceItemId);
-    });
-    (sourceContainer.childIds || []).forEach(syncContainerTree);
-  };
-
-  (sourceLayout.rootContainerIds || []).forEach(syncContainerTree);
-  if (changed) {
-    normalizeLayoutArrangement(editableLayout, state);
-    touchLayout(editableLayout.id, changedAt);
-  }
-  return changed;
 }
 
 function syncPublishedEntityPhotos(target, source) {
-  const sourcePhotos = (Array.isArray(source?.photos) ? source.photos : [])
-    .map((photo) => normalizePhotoUrlFields(clone(photo)))
-    .filter(hasRemotePhotoUrl);
-  if (!sourcePhotos.length) return false;
-  const currentPhotos = (Array.isArray(target?.photos) ? target.photos : [])
-    .map((photo) => normalizePhotoUrlFields(clone(photo)))
-    .filter(hasRemotePhotoUrl);
-  if (sameJson(currentPhotos, sourcePhotos)) return false;
-  target.photos = sourcePhotos;
-  return true;
+  return syncPublishedEntityPhotosValue(target, source, {
+    clone,
+    hasRemotePhotoUrl,
+    normalizePhotoUrlFields,
+    sameJson
+  });
 }
 
 function mergeBuiltInSharedEntriesIntoAdminLayout(layout, editableLayout) {
-  if (!layout || !editableLayout || !Array.isArray(layout.roots) || !layout.roots.length) return false;
-  ensureLayoutDictionaries(editableLayout);
-  const changedAt = nowIso();
-  const layoutContainerIds = new Set();
-  const collectContainer = (containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container || layoutContainerIds.has(containerId)) return;
-    layoutContainerIds.add(containerId);
-    (container.childIds || []).forEach(collectContainer);
-  };
-  (editableLayout.rootContainerIds || []).forEach(collectContainer);
-
-  const rootBySource = new Map();
-  const rootByName = new Map();
-  (editableLayout.rootContainerIds || []).forEach((containerId) => {
-    const container = state.containers?.[containerId];
-    if (!container) return;
-    if (container.sharedSourceId) rootBySource.set(container.sharedSourceId, containerId);
-    if (container.name) rootByName.set(normalizeSharedGearName(container.name), containerId);
+  return mergeBuiltInSharedEntriesIntoAdminLayoutValue(layout, editableLayout, {
+    addItemToLayoutArrangement,
+    changedAt: nowIso(),
+    copySharedItemToState,
+    copySharedRootToState,
+    ensureLayoutDictionaries,
+    normalizeLayoutArrangement,
+    normalizeSharedGearName,
+    state,
+    touchLayout,
+    writeContainerTreeToLayoutArrangement
   });
-
-  const itemKeys = new Set();
-  Object.values(state.items || {}).forEach((item) => {
-    if (!item || !layoutContainerIds.has(item.containerId)) return;
-    if (item.sharedSourceId) itemKeys.add(`source:${item.sharedSourceId}`);
-    if (item.name) itemKeys.add(`name:${normalizeSharedGearName(item.name)}`);
-  });
-
-  let changed = false;
-  layout.roots.forEach((root) => {
-    let containerId =
-      rootBySource.get(root.id) ||
-      rootBySource.get(`shared-root-${root.id}`) ||
-      rootByName.get(normalizeSharedGearName(root.name));
-
-    if (!containerId) {
-      containerId = copySharedRootToState(root, { targetLayoutId: "", changedAt, preserveSource: true });
-      editableLayout.rootContainerIds = [...(editableLayout.rootContainerIds || []), containerId];
-      writeContainerTreeToLayoutArrangement(state, editableLayout.id, containerId);
-      changed = true;
-      (root.items || []).forEach((item) => {
-        itemKeys.add(`source:${item.id}`);
-        itemKeys.add(`source:shared-item-${item.id}`);
-        itemKeys.add(`name:${normalizeSharedGearName(item.name)}`);
-      });
-      return;
-    }
-
-    const container = state.containers?.[containerId];
-    if (!container) return;
-    (root.items || []).forEach((item) => {
-      const sourceKey = `source:${item.id}`;
-      const publishedSourceKey = `source:shared-item-${item.id}`;
-      const nameKey = `name:${normalizeSharedGearName(item.name)}`;
-      if (itemKeys.has(sourceKey) || itemKeys.has(publishedSourceKey) || itemKeys.has(nameKey)) return;
-      const copiedItemId = copySharedItemToState(item, { containerId, changedAt, preserveSource: true });
-      if (copiedItemId) addItemToLayoutArrangement(editableLayout, copiedItemId, containerId);
-      itemKeys.add(sourceKey);
-      itemKeys.add(publishedSourceKey);
-      itemKeys.add(nameKey);
-      changed = true;
-    });
-  });
-
-  if (changed) {
-    normalizeLayoutArrangement(editableLayout, state);
-    touchLayout(editableLayout.id, changedAt);
-  }
-  return changed;
 }
-
 function findMaterializedSharedItemId(sourceId) {
   return Object.values(state.items || {}).find((item) => item.sharedSourceId === sourceId)?.id || "";
 }
@@ -12035,124 +11655,6 @@ function removeDropzoneDragOver(zone) {
 function markDropzoneDragOver(root, zone) {
   getPackingDragController().markDropzoneDragOver(root, zone);
 }
-function bindBoardScroll(board) {
-  if (!board) return;
-  let isDown = false;
-  let startX = 0;
-  let scrollLeft = 0;
-
-  const isInteractiveTarget = (target) =>
-    target.closest(".item-card, .subcontainer-title, .container-header, button, input, select, textarea, label, dialog, .drag-handle, .subcontainer-drag-handle");
-
-  board.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
-    isDown = true;
-    startX = event.clientX;
-    scrollLeft = board.scrollLeft;
-    board.classList.add("drag-scroll");
-    board.setPointerCapture(event.pointerId);
-  });
-
-  board.addEventListener("pointermove", (event) => {
-    if (!isDown) return;
-    const walk = event.clientX - startX;
-    board.scrollLeft = scrollLeft - walk;
-  });
-
-  const stop = (event) => {
-    if (!isDown) return;
-    isDown = false;
-    board.classList.remove("drag-scroll");
-    if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId);
-  };
-
-  board.addEventListener("pointerup", stop);
-  board.addEventListener("pointercancel", stop);
-  board.addEventListener("pointerleave", () => {
-    isDown = false;
-    board.classList.remove("drag-scroll");
-  });
-}
-
-function bindFixedScrollbar(board) {
-  const bar = document.querySelector("#kanbanScrollbar");
-  const track = document.querySelector("#kanbanScrollTrack");
-  const thumb = document.querySelector("#kanbanScrollThumb");
-  if (!board || !bar || !track || !thumb) return;
-
-  let isDragging = false;
-  let startX = 0;
-  let startLeft = 0;
-  let thumbFrame = null;
-
-  const getGeometry = () => {
-    const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
-    const trackWidth = track.clientWidth;
-    const ratio = board.scrollWidth ? board.clientWidth / board.scrollWidth : 1;
-    const thumbWidth = Math.max(48, Math.min(trackWidth, trackWidth * ratio));
-    const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
-    return { maxScroll, trackWidth, thumbWidth, maxThumbLeft };
-  };
-
-  const updateThumb = () => {
-    thumbFrame = null;
-    const { maxScroll, thumbWidth, maxThumbLeft } = getGeometry();
-    const progress = maxScroll ? board.scrollLeft / maxScroll : 0;
-    thumb.style.width = `${thumbWidth}px`;
-    thumb.style.transform = `translate3d(${progress * maxThumbLeft}px, 0, 0)`;
-  };
-
-  const requestThumbUpdate = () => {
-    if (thumbFrame) return;
-    thumbFrame = requestAnimationFrame(updateThumb);
-  };
-
-  const updateWidth = () => {
-    updateThumb();
-  };
-
-  board.addEventListener("scroll", requestThumbUpdate, { passive: true });
-
-  thumb.addEventListener("pointerdown", (event) => {
-    isDragging = true;
-    startX = event.clientX;
-    startLeft = board.scrollLeft;
-    thumb.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  });
-
-  thumb.addEventListener("pointermove", (event) => {
-    if (!isDragging) return;
-    const { maxScroll, maxThumbLeft } = getGeometry();
-    const dx = event.clientX - startX;
-    const scrollDx = maxThumbLeft ? (dx / maxThumbLeft) * maxScroll : 0;
-    board.scrollLeft = startLeft + scrollDx;
-  });
-
-  const stopDrag = (event) => {
-    if (!isDragging) return;
-    isDragging = false;
-    if (thumb.hasPointerCapture(event.pointerId)) thumb.releasePointerCapture(event.pointerId);
-  };
-
-  thumb.addEventListener("pointerup", stopDrag);
-  thumb.addEventListener("pointercancel", stopDrag);
-
-  track.addEventListener("pointerdown", (event) => {
-    if (event.target === thumb) return;
-    const { maxScroll, maxThumbLeft, thumbWidth } = getGeometry();
-    const rect = track.getBoundingClientRect();
-    const thumbLeft = Math.max(0, Math.min(event.clientX - rect.left - thumbWidth / 2, maxThumbLeft));
-    board.scrollTo({
-      left: maxThumbLeft ? (thumbLeft / maxThumbLeft) * maxScroll : 0,
-      behavior: "smooth"
-    });
-  });
-
-  updateWidth();
-  window.addEventListener("resize", updateWidth, { passive: true });
-}
-
 function getPackingScrollHost() {
   return refs.packingView.querySelector(".board") || getBike3dPackingScrollHost(refs.packingView);
 }
@@ -12553,68 +12055,20 @@ function renderLayoutEditor() {
 }
 
 function bindLayoutEditor() {
-  const layoutPlaceholder = document.createElement("div");
-  layoutPlaceholder.className = "drop-placeholder";
-
-  document.querySelector("#addLayoutRootBtn")?.addEventListener("click", openLayoutRootDialog);
-
-  document.querySelectorAll("[data-remove-layout-root]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const containerId = button.dataset.removeLayoutRoot;
-      const container = state.containers[containerId];
-      const itemCount = getContainerItemIdsDeep(containerId).length;
-      openConfirmDialog({
-        title: "Удалить из укладки?",
-        text: `«${container.name}» будет убран из текущей укладки и останется в списке сумок и мест как пустая заготовка.`,
-        highlightText: itemCount
-          ? `${formatThingCount(itemCount)} из этой сумки/места будут вынуты из укладки и станут вне укладки. Вложенные пакеты внутри этой сумки/места будут удалены.`
-          : "Эта сумка/место уже пустая, поэтому из текущей укладки уйдёт только пустая заготовка.",
-        tone: itemCount ? "danger" : "safe",
-        okText: "Удалить",
-        onConfirm: () => removeRootContainerFromActiveLayout(containerId)
-      });
-    });
-  });
-
-  const dropList = document.querySelector("#layoutDropList");
-  document.querySelectorAll("[data-layout-member-drag]").forEach((handle) => {
-    handle.addEventListener("dragstart", (event) => {
-      const row = handle.closest(".layout-member-row");
-      row?.classList.add("dragging");
-      event.dataTransfer.setData("text/layout-container-id", handle.dataset.layoutMemberDrag);
-      event.dataTransfer.effectAllowed = "move";
-    });
-    handle.addEventListener("dragend", () => {
-      handle.closest(".layout-member-row")?.classList.remove("dragging");
-      cleanupLayoutDropState(dropList, layoutPlaceholder);
-    });
-  });
-
-  dropList.addEventListener("dragover", (event) => {
-    if (!isLayoutDrag(event)) return;
-    event.preventDefault();
-    dropList.classList.add("drag-over");
-    const afterRow = getLayoutRowAfterPointer(dropList, event.clientY);
-    if (afterRow) dropList.insertBefore(layoutPlaceholder, afterRow);
-    else dropList.appendChild(layoutPlaceholder);
-  });
-  dropList.addEventListener("dragleave", (event) => {
-    if (dropList.contains(event.relatedTarget)) return;
-    cleanupLayoutDropState(dropList, layoutPlaceholder);
-  });
-  dropList.addEventListener("drop", (event) => {
-    if (!isLayoutDrag(event)) return;
-    const containerId =
-      event.dataTransfer.getData("text/layout-container-id") ||
-      event.dataTransfer.getData("text/root-container-id");
-    if (!containerId || !state.containers[containerId]) return;
-    event.preventDefault();
-    const targetIndex = getLayoutPlaceholderIndex(dropList, layoutPlaceholder);
-    cleanupLayoutDropState(dropList, layoutPlaceholder);
-    addRootContainerToActiveLayout(containerId, targetIndex);
+  bindLayoutEditorControls({
+    addRootContainerToActiveLayout,
+    cleanupLayoutDropState,
+    formatThingCount,
+    getContainerItemIdsDeep,
+    getLayoutPlaceholderIndex,
+    getLayoutRowAfterPointer,
+    isLayoutDrag,
+    openConfirmDialog,
+    openLayoutRootDialog,
+    removeRootContainerFromActiveLayout,
+    state
   });
 }
-
 function isLayoutDrag(event) {
   return event.dataTransfer.types.includes("text/root-container-id") ||
     event.dataTransfer.types.includes("text/layout-container-id");
@@ -12731,233 +12185,94 @@ function renderRootContainerCard(container) {
 }
 
 function bindRootContainersEditor() {
-  document.querySelector("#rootContainerUsageFilter")?.addEventListener("change", (event) => {
-    rootContainerUsageFilter = event.target.value;
-    render();
+  bindRootContainersEditorControls({
+    bindRootCatalogSelection,
+    catalogRootActionIds,
+    confirmDeleteCatalogRootContainers,
+    copyCatalogRootContainers,
+    getLastRootContainerTitleTap: () => lastRootContainerTitleTap,
+    getRootContainerSortMode: () => rootContainerSortMode,
+    openRootContainerDialog,
+    parseWeightInput,
+    render,
+    saveState,
+    saveUiSettings,
+    setEditingRootContainerId: (value) => {
+      editingRootContainerId = value;
+    },
+    setLastRootContainerTitleTap: (value) => {
+      lastRootContainerTitleTap = value;
+    },
+    setRootContainerSortMode: (value) => {
+      rootContainerSortMode = value;
+    },
+    setRootContainerUsageFilter: (value) => {
+      rootContainerUsageFilter = value;
+    },
+    state,
+    touchContainer
   });
-
-  document.querySelector("#rootContainerSortBtn")?.addEventListener("click", () => {
-    rootContainerSortMode = rootContainerSortMode === "none" ? "asc" : rootContainerSortMode === "asc" ? "desc" : "none";
-    saveUiSettings();
-    render();
-  });
-
-  document.querySelectorAll("[data-save-root]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const containerId = button.dataset.saveRoot;
-      const input = document.querySelector(`[data-root-name="${containerId}"]`);
-      const weightInput = document.querySelector(`[data-root-weight="${containerId}"]`);
-      const name = input.value.trim();
-      if (!name) return;
-      state.containers[containerId].name = name;
-      state.containers[containerId].weight = parseWeightInput(weightInput.value);
-      touchContainer(containerId);
-      editingRootContainerId = null;
-      saveState();
-      render();
-    });
-  });
-
-  document.querySelectorAll("[data-copy-root]").forEach((button) => {
-    button.addEventListener("click", () => copyCatalogRootContainers(catalogRootActionIds(button.dataset.copyRoot)));
-  });
-
-  document.querySelectorAll("[data-edit-root]").forEach((button) => {
-    button.addEventListener("click", () => {
-      openRootContainerDialog(button.dataset.editRoot);
-    });
-  });
-
-  document.querySelectorAll("[data-delete-root]").forEach((button) => {
-    button.addEventListener("click", () => confirmDeleteCatalogRootContainers(catalogRootActionIds(button.dataset.deleteRoot)));
-  });
-
-  document.querySelectorAll("[data-root-title]").forEach((title) => {
-    const edit = (event) => {
-      if (event.target.closest("button, input")) return;
-      if (document.body.classList.contains("dragging-ui")) return;
-      const card = title.closest(".root-container-card");
-      if (card?.dataset.justDragged === "true") return;
-      event.preventDefault();
-      openRootContainerDialog(title.dataset.rootTitle);
-    };
-    title.addEventListener("click", (event) => {
-      const containerId = title.dataset.rootTitle;
-      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const now = Date.now();
-      const isDoubleTap = event.detail === 2 || (lastRootContainerTitleTap.id === containerId && now - lastRootContainerTitleTap.time < 360);
-      if (isDoubleTap) {
-        lastRootContainerTitleTap = { id: "", time: 0 };
-        edit(event);
-        return;
-      }
-      lastRootContainerTitleTap = { id: containerId, time: now };
-    });
-    title.addEventListener("dblclick", edit);
-  });
-  bindRootCatalogSelection();
-
-  document.querySelectorAll(".root-container-card.editing input").forEach((input) => {
-    if (input.matches("[data-root-name]")) {
-      input.focus({ preventScroll: true });
-      input.select();
-    }
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        input.closest(".root-container-card")?.querySelector("[data-save-root]")?.click();
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        editingRootContainerId = null;
-        render();
-      }
-    });
-  });
-
-  document.querySelector("#addRootContainerBtn")?.addEventListener("click", () => openRootContainerDialog());
 }
-
 function renderDictionary(title, type, values) {
   return renderDictionaryHtml(title, type, values, { editingEntry: editingDictionaryEntry });
 }
 
+function dictionaryRenameSideEffects(type, oldValue, newValue) {
+  if (type === "location") {
+    if (refs.locationFilter.value === oldValue) refs.locationFilter.value = newValue;
+    return;
+  }
+  selectedCategoryFilters = selectedCategoryFilters.map((category) => category === oldValue ? newValue : category)
+    .filter((category, index, list) => list.indexOf(category) === index);
+}
+
 function bindDictionary(type, owner = activeDictionaryOwner()) {
-  const scope = dictionaryEditScope(owner);
-  const input = document.querySelector(`#${type}Input`);
-  document.querySelector(`#${type}Add`).addEventListener("click", () => {
-    const value = input.value.trim();
-    if (!value || dictionaryOptionsForOwner(type, owner).includes(value)) return;
-    if (!requireUsageCapacity(type === "location" ? "locations" : "categories")) return;
-    addCustomDictionaryValue(owner, type, value);
-    editingDictionaryEntry = null;
-    input.value = "";
-    saveDictionaryOwner(owner);
-  });
-  document.querySelectorAll(`[data-edit-${type}]`).forEach((button) => {
-    button.addEventListener("click", () => {
-      editingDictionaryEntry = { type, value: button.dataset[`edit${capitalize(type)}`] };
-      render();
-    });
-  });
-  document.querySelectorAll(`[data-cancel-${type}]`).forEach((button) => {
-    button.addEventListener("click", () => {
-      editingDictionaryEntry = null;
-      render();
-    });
-  });
-  document.querySelectorAll(`[data-save-${type}]`).forEach((button) => {
-    button.addEventListener("click", () => {
-      const oldValue = button.dataset[`save${capitalize(type)}`];
-      const editInput = button.closest(".dictionary-chip")?.querySelector(`[data-dictionary-edit-input="${type}"]`);
-      renameDictionaryEntry(type, oldValue, editInput?.value || "", owner);
-    });
-  });
-  document.querySelectorAll(`[data-dictionary-edit-input="${type}"]`).forEach((editInput) => {
-    editInput.focus({ preventScroll: true });
-    editInput.select();
-    editInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value, owner);
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        editingDictionaryEntry = null;
-        render();
-      }
-    });
-  });
-  document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
-    button.addEventListener("click", () => {
-      const value = button.dataset[`remove${capitalize(type)}`];
-      const dictionaryValues = dictionaryOptionsForOwner(type, owner);
-      if (dictionaryValues.length <= 1) return;
-      const affectedCount = scope.items.filter((item) => {
-        if (type === "location") return item.location === value;
-        return itemCategories(item).includes(value);
-      }).length;
-      const fallback = dictionaryValues.find((item) => item !== value);
-      const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
-      const subject = type === "location" ? "место хранения" : "категорию";
-      openConfirmDialog({
-        title,
-        text: `Если удалить ${subject} «${value}», связанные вещи будут перенесены в «${fallback}».`,
-        highlightText: affectedCount
-          ? `Сейчас применяется к ${formatThingCount(affectedCount)}.`
-          : "Сейчас не применяется ни к одной вещи.",
-        okText: "Удалить",
-        tone: affectedCount ? "danger" : "safe",
-        onConfirm: () => {
-          const changedAt = nowIso();
-          removeCustomDictionaryValue(owner, type, value);
-          scope.items.forEach((item) => {
-            if (type === "location" && item.location === value) {
-              item.location = fallback;
-              markEdited(item, changedAt);
-            }
-            if (type === "category" && itemCategories(item).includes(value)) {
-              item.categories = itemCategories(item).map((category) => category === value ? fallback : category)
-                .filter((category, index, list) => list.indexOf(category) === index);
-              item.category = item.categories[0];
-              markEdited(item, changedAt);
-            }
-          });
-          if (type === "location") {
-            scope.containers.forEach((container) => {
-              if (container.location !== value) return;
-              container.location = fallback;
-              touchContainer(container.id, changedAt);
-            });
-          }
-          saveDictionaryOwner(owner);
-        }
-      });
-    });
+  bindDictionaryControls(type, {
+    activeDictionaryOwner,
+    addCustomDictionaryValue,
+    capitalize,
+    dictionaryEditScope,
+    dictionaryOptionsForOwner,
+    editingDictionaryEntry,
+    formatThingCount,
+    itemCategories,
+    markEdited,
+    nowIso,
+    onRenamed: dictionaryRenameSideEffects,
+    openConfirmDialog,
+    owner,
+    removeCustomDictionaryValue,
+    renameCustomDictionaryValue,
+    render,
+    requireUsageCapacity,
+    saveDictionaryOwner,
+    setEditingDictionaryEntry: (value) => {
+      editingDictionaryEntry = value;
+    },
+    showToast,
+    touchContainer
   });
 }
 
 function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictionaryOwner()) {
-  const scope = dictionaryEditScope(owner);
-  const newValue = String(rawNewValue || "").trim();
-  if (!oldValue || !newValue) return;
-  if (newValue === oldValue) {
-    editingDictionaryEntry = null;
-    render();
-    return;
-  }
-  if (dictionaryOptionsForOwner(type, owner).includes(newValue)) {
-    showToast("Такое значение уже есть.", "warning");
-    return;
-  }
-  const changedAt = nowIso();
-  renameCustomDictionaryValue(owner, type, oldValue, newValue);
-  if (type === "location") {
-    scope.items.forEach((item) => {
-      if (item.location !== oldValue) return;
-      item.location = newValue;
-      markEdited(item, changedAt);
-    });
-    scope.containers.forEach((container) => {
-      if (container.location !== oldValue) return;
-      container.location = newValue;
-      touchContainer(container.id, changedAt);
-    });
-    if (refs.locationFilter.value === oldValue) refs.locationFilter.value = newValue;
-  } else {
-    scope.items.forEach((item) => {
-      if (!itemCategories(item).includes(oldValue)) return;
-      item.categories = itemCategories(item).map((category) => category === oldValue ? newValue : category)
-        .filter((category, index, list) => list.indexOf(category) === index);
-      item.category = item.categories[0];
-      markEdited(item, changedAt);
-    });
-    selectedCategoryFilters = selectedCategoryFilters.map((category) => category === oldValue ? newValue : category)
-      .filter((category, index, list) => list.indexOf(category) === index);
-  }
-  saveDictionaryOwner(owner);
+  return renameDictionaryEntryValue(type, oldValue, rawNewValue, {
+    dictionaryEditScope,
+    dictionaryOptionsForOwner,
+    itemCategories,
+    markEdited,
+    nowIso,
+    onRenamed: dictionaryRenameSideEffects,
+    owner,
+    renameCustomDictionaryValue,
+    render,
+    saveDictionaryOwner,
+    setEditingDictionaryEntry: (value) => {
+      editingDictionaryEntry = value;
+    },
+    showToast,
+    touchContainer
+  });
 }
-
 function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];

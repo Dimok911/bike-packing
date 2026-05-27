@@ -324,6 +324,7 @@
 | 2026-05-27 | 16545 | admin/demo/template draft pruning for sync moved to `src/sync/save-body.js`; cache bumped to `v885`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 16643 | built-in default user/demo state moved to `src/data/default-user-state.js`; cache bumped to `v884`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 16981 | unreachable shared render branches and now-unused shared render helpers removed after UI module split; cache bumped to `v883`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 14771 | published/demo export, admin shared merge, admin demo layout import/repair, dictionary/settings bindings, packing scroll, and layout arrangement apply moved to `src/public/...`, `src/ui/...`, and `src/state/layout-arrangement.js`; cache bumped to `v903`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 17117 | items tab and packing board HTML helpers moved to `src/ui/items-view-render.js` and `src/ui/packing-board-render.js`; cache bumped to `v882`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 17255 | settings/root-container/dictionary and shared-layout render helpers moved to `src/ui/settings-render.js` and `src/ui/shared-layout-render.js`; cache bumped to `v881`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 17450 | photo gallery hydration/lightbox/binding moved to `src/ui/photo-gallery.js`; cache bumped to `v880`; `check`/`build`/`test:critical` ok | local, not pushed |
