@@ -1,6 +1,6 @@
 # Bike Packing Project Map
 
-Last updated: 2026-05-27, app cache v907.
+Last updated: 2026-05-27, app cache v908.
 
 Use this as the quick orientation layer before editing. `AGENTS.md` remains the source of rules; this file is the map of where code should live during the ongoing `app.js` split.
 
@@ -30,6 +30,7 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/state/layout-ops.js`: layout arrangement operations, active placement/removal state mutations, grouping, root column moves.
 - `src/state/layout-arrangement.js`: layout arrangement snapshots and state application helpers.
 - `src/state/layout-normalize.js`: arrangement repair/normalization and layout snapshot extraction.
+- `src/state/regression-repair.js`: destructive sync/save regression repair from reference state.
 - `src/public/admin-demo-layout.js`: importing and repairing published demo state as editable admin layouts.
 - `src/public/published-state-export.js`: published/demo state export, generated/public id cleanup, and canonical published ids.
 - `src/public/shared-admin-merge.js`: admin-side merge of published/shared state and built-in shared entries.
