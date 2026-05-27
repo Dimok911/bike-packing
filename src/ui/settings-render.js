@@ -1,4 +1,5 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
+import { renderEmptyState } from "./empty-state.js";
 import { escapeHtml } from "../utils/html.js";
 import { formatWeight } from "../utils/weight.js";
 
@@ -28,6 +29,8 @@ export function renderLayoutEditorHtml({ layout, containers, containerWeight }) 
 
 export function renderRootContainersEditorHtml({
   counts,
+  emptyFiltered = false,
+  emptyText = "Ничего не найдено",
   renderRootContainerCard,
   rootContainerSortMode,
   rootContainerUsageFilter,
@@ -55,7 +58,7 @@ export function renderRootContainersEditorHtml({
         </div>
       </div>
       <div class="root-container-list ${showPhotos ? "with-photo-slots" : ""} ${showLabels ? "with-meta-slots" : ""}">
-        ${roots.map(renderRootContainerCard).join("") || `<div class="empty">Ничего не найдено</div>`}
+        ${roots.map(renderRootContainerCard).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}
       </div>
     </section>
   `;
@@ -87,6 +90,7 @@ export function renderRootContainerCardHtml({
   inCurrentLayout,
   location,
   photoHtml,
+  selected = false,
   showLabels
 }) {
   const placementText = inCurrentLayout ? "В текущей укладке" : "Вне текущей укладки";
@@ -102,11 +106,13 @@ export function renderRootContainerCardHtml({
     classes: [
       "root-container-card",
       inCurrentLayout ? "in-current-layout" : "",
+      selected ? "catalog-selected" : "",
       filterMatch ? "filter-match" : ""
     ],
     attributes: {
       "data-root-card": container.id,
       "data-root-drag": container.id,
+      "aria-selected": selected ? "true" : "false",
       ...(filterMatch ? { "data-filter-match-id": `root-${container.id}` } : {})
     },
     title: [

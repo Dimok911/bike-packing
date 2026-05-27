@@ -27,23 +27,23 @@ export function rootContainerCopyConfirm({ container, inLayout = false }) {
 }
 
 export function itemDeleteConfirm({ item, placementText = "", hasPlacements = false }) {
-  const name = item?.name || "РІРµС‰СЊ";
+  const name = item?.name || "вещь";
   return {
-    title: "РЈРґР°Р»РёС‚СЊ РІРµС‰СЊ РЅР°РІСЃРµРіРґР°?",
-    text: `В«${name}В» Р±СѓРґРµС‚ СѓРґР°Р»РµРЅР° РёР· СЃРїРёСЃРєР° РІРµС‰РµР№ Рё РёР· РІСЃРµС… СѓРєР»Р°РґРѕРє. Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµР»СЊР·СЏ РѕС‚РјРµРЅРёС‚СЊ.`,
+    title: "Удалить вещь навсегда?",
+    text: `«${name}» будет удалена из списка вещей и из всех укладок. Это действие нельзя отменить.`,
     highlightText: placementText,
-    okText: "РЈРґР°Р»РёС‚СЊ",
+    okText: "Удалить",
     tone: hasPlacements ? "danger" : "safe"
   };
 }
 
 export function rootContainerDeleteConfirm({ container, layoutText = "", itemsText = "", risky = false }) {
-  const name = container?.name || "СЃСѓРјРєР° РёР»Рё РјРµСЃС‚Рѕ";
+  const name = container?.name || "сумка или место";
   return {
-    title: "РЈРґР°Р»РёС‚СЊ СЃСѓРјРєСѓ РёР»Рё РјРµСЃС‚Рѕ?",
-    text: `В«${name}В» Р±СѓРґРµС‚ СѓРґР°Р»РµРЅРѕ РёР· СЃРїРёСЃРєР° СЃСѓРјРѕРє Рё РјРµСЃС‚ Рё РёР· РІСЃРµС… СѓРєР»Р°РґРѕРє.`,
+    title: "Удалить сумку или место?",
+    text: `«${name}» будет удалено из списка сумок и мест и из всех укладок.`,
     highlightText: `${layoutText}${itemsText}`,
-    okText: "РЈРґР°Р»РёС‚СЊ",
+    okText: "Удалить",
     tone: risky ? "danger" : "safe"
   };
 }

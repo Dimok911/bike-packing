@@ -73,6 +73,86 @@ export function isOwnLayoutEchoConflict(conflicts, device = {}, {
   );
 }
 
+export function filterAutoResolvedMergeConflicts(conflicts, {
+  baseState = null,
+  localState = null,
+  remoteState = null,
+  valuesEqual = snapshotsEqual
+} = {}) {
+  return conflicts.filter((conflict) => !isAutoResolvedMergeConflict(conflict, {
+    baseState,
+    localState,
+    remoteState,
+    valuesEqual
+  }));
+}
+
+export function isAutoResolvedMergeConflict(conflict, {
+  localState = null,
+  remoteState = null,
+  valuesEqual = snapshotsEqual
+} = {}) {
+  if (isEmptyEquivalentLayoutConflict(conflict, { valuesEqual })) return true;
+  if (isEmptyEquivalentActiveLayoutConflict(conflict, { localState, remoteState })) return true;
+  return false;
+}
+
+export function isEmptyEquivalentLayoutConflict(conflict, {
+  valuesEqual = snapshotsEqual
+} = {}) {
+  if (!conflict || conflict.type !== "layout" || !conflict.localHas || !conflict.remoteHas) return false;
+  if (!isEffectivelyEmptyLayout(conflict.localValue) || !isEffectivelyEmptyLayout(conflict.remoteValue)) return false;
+  const localComparable = comparableValueForMerge("layout", normalizeEmptyLayoutForCompare(conflict.localValue));
+  const remoteComparable = comparableValueForMerge("layout", normalizeEmptyLayoutForCompare(conflict.remoteValue));
+  return valuesEqual(localComparable, remoteComparable);
+}
+
+export function isEmptyEquivalentActiveLayoutConflict(conflict, {
+  localState = null,
+  remoteState = null
+} = {}) {
+  if (!conflict || conflict.type !== "setting" || conflict.id !== "activeLayoutId") return false;
+  if (!conflict.localHas || !conflict.remoteHas) return false;
+  const localLayoutId = String(conflict.localValue || "");
+  const remoteLayoutId = String(conflict.remoteValue || "");
+  if (!localLayoutId || !remoteLayoutId || localLayoutId === remoteLayoutId) return false;
+  const localLayout = localState?.layouts?.[localLayoutId];
+  const remoteLayout = remoteState?.layouts?.[remoteLayoutId];
+  return isEffectivelyEmptyLayout(localLayout) && isEffectivelyEmptyLayout(remoteLayout);
+}
+
+export function isEffectivelyEmptyLayout(layout) {
+  if (!layout || typeof layout !== "object") return false;
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : {};
+  return !arrayLength(layout.rootContainerIds) &&
+    !arrayLength(arrangement.rootContainerIds) &&
+    !objectKeyCount(arrangement.containers) &&
+    !objectKeyCount(arrangement.items) &&
+    !objectKeyCount(arrangement.packedItems);
+}
+
+function normalizeEmptyLayoutForCompare(layout) {
+  if (!layout || typeof layout !== "object") return layout;
+  return {
+    ...layout,
+    rootContainerIds: [],
+    arrangement: {
+      rootContainerIds: [],
+      containers: {},
+      items: {},
+      packedItems: {}
+    }
+  };
+}
+
+function arrayLength(value) {
+  return Array.isArray(value) ? value.filter(Boolean).length : 0;
+}
+
+function objectKeyCount(value) {
+  return value && typeof value === "object" ? Object.keys(value).length : 0;
+}
+
 function comparablePhotoForMerge(photo) {
   if (!photo || typeof photo !== "object") return null;
   normalizePhotoUrlFields(photo);

@@ -109,11 +109,15 @@ export function removeUnconfirmedManagedSharedTemplateTreesFromState(targetState
     })
   ));
   const layoutIds = Object.values(targetState.layouts)
-    .filter((layout) =>
-      layout?.adminSharedSourceId &&
-      !layout.adminDemo &&
-      !hasSharedTemplateIdentityOverlap(layout, confirmedKeys, normalizedFallbackLanguage)
-    )
+    .filter((layout) => {
+      if (!layout?.adminSharedSourceId || layout.adminDemo) return false;
+      if (!layout.adminTemplateCopy) {
+        return !confirmedSharedLayouts.some((confirmed) =>
+          String(confirmed?.id || "").trim() === String(layout.adminSharedSourceId || "").trim()
+        );
+      }
+      return !hasSharedTemplateIdentityOverlap(layout, confirmedKeys, normalizedFallbackLanguage);
+    })
     .map((layout) => layout.id)
     .filter(Boolean);
   return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));

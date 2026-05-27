@@ -118,6 +118,39 @@ export function serverConfirmedSharedLayoutsFromPublicRecords(records = [], opti
   return [...byId.values()];
 }
 
+export function localSharedLayoutCatalogEntriesFromLayouts(layouts = {}, {
+  fallbackLanguage = "ru"
+} = {}) {
+  const byId = new Map();
+  Object.values(layouts || {}).forEach((layout) => {
+    const id = String(layout?.adminSharedSourceId || "").trim();
+    if (!id || layout?.adminDemo || layout?.adminTemplateCopy) return;
+    if (!byId.has(id)) {
+      byId.set(id, {
+        id,
+        name: layout.name || id,
+        language: String(layout.language || fallbackLanguage || "ru").trim().toLowerCase() || "ru",
+        runtimeSharedTemplate: true,
+        serverConfirmed: true,
+        updatedAt: layout.updatedAt || ""
+      });
+      return;
+    }
+    const previous = byId.get(id);
+    const previousUpdated = Date.parse(previous.updatedAt || "");
+    const nextUpdated = Date.parse(layout.updatedAt || "");
+    if ((Number.isFinite(nextUpdated) ? nextUpdated : 0) > (Number.isFinite(previousUpdated) ? previousUpdated : 0)) {
+      byId.set(id, {
+        ...previous,
+        name: layout.name || previous.name,
+        language: String(layout.language || previous.language || fallbackLanguage || "ru").trim().toLowerCase() || "ru",
+        updatedAt: layout.updatedAt || previous.updatedAt || ""
+      });
+    }
+  });
+  return [...byId.values()];
+}
+
 export function mergeSharedLayoutCatalogEntries(catalog = [], entries = []) {
   const byId = new Map();
   (Array.isArray(catalog) ? catalog : []).forEach((entry) => {

@@ -61,6 +61,7 @@ import {
   isConcretePublicSharedLayoutListRecord,
   isPublicSharedLayoutListRecord,
   isPublicSharedTemplatePayload,
+  localSharedLayoutCatalogEntriesFromLayouts,
   mergeSharedLayoutCatalogEntries,
   pruneRuntimeSharedLayouts,
   serverConfirmedSharedLayoutsFromPublicRecords,
@@ -93,8 +94,10 @@ import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/publi
 import {
   removeManagedDemoTemplateTreesFromState,
   removeManagedSharedLayoutTreesFromState,
-  removeManagedSharedTemplateTreesFromState
+  removeManagedSharedTemplateTreesFromState,
+  removeUnconfirmedManagedSharedTemplateTreesFromState
 } from "../../src/state/layout-delete.js";
+import { activeEditableLayoutId } from "../../src/state/layout-selectors.js";
 import {
   adoptTemplateCopySharedSourceId,
   createDemoTemplateCopyRecord,
@@ -610,6 +613,115 @@ test("demo and shared templates share the persistent draft contract", () => {
     demoChoiceForLayout: () => "demo-choice",
     demoChoiceForLanguage: () => "demo-language-choice"
   }), "template-draft:layout-demo-draft");
+});
+
+test("admin shared edit context prefers the managed template over a private active layout", () => {
+  const targetState = {
+    activeLayoutId: "layout-private",
+    layouts: {
+      "layout-private": {
+        id: "layout-private",
+        name: "Private layout"
+      },
+      "layout-admin-shared": {
+        id: "layout-admin-shared",
+        name: "Shared template draft",
+        adminSharedSourceId: "bikepacking-reference-bags"
+      }
+    }
+  };
+
+  assert.equal(activeEditableLayoutId(targetState, {
+    adminLayoutId: "layout-admin-shared",
+    isAdminEditableLayout: (layout) => Boolean(layout?.adminSharedSourceId)
+  }), "layout-admin-shared");
+  assert.equal(activeEditableLayoutId(targetState, {
+    adminLayoutId: "",
+    isAdminEditableLayout: (layout) => Boolean(layout?.adminSharedSourceId)
+  }), "layout-private");
+});
+
+test("confirmed shared admin edit drafts survive catalog refresh cleanup", () => {
+  const targetState = {
+    activeLayoutId: "layout-admin-shared",
+    layouts: {
+      "layout-private": {
+        id: "layout-private",
+        name: "Private layout"
+      },
+      "layout-admin-shared": {
+        id: "layout-admin-shared",
+        name: "Shared template draft",
+        adminSharedSourceId: "bikepacking-reference-bags"
+      },
+      "layout-stale-shared": {
+        id: "layout-stale-shared",
+        name: "Stale shared draft",
+        adminSharedSourceId: "missing-shared-template"
+      }
+    },
+    containers: {},
+    items: {},
+    collapsedContainers: {}
+  };
+
+  const removed = removeUnconfirmedManagedSharedTemplateTreesFromState(targetState, {
+    confirmedSharedLayouts: [{
+      id: "bikepacking-reference-bags",
+      name: "Bikepacking reference",
+      language: "ru"
+    }],
+    fallbackLanguage: "ru"
+  });
+
+  assert.deepEqual(removed, ["layout-stale-shared"]);
+  assert.ok(targetState.layouts["layout-admin-shared"]);
+  assert.equal(targetState.activeLayoutId, "layout-admin-shared");
+});
+
+test("local shared admin drafts can seed the shared template catalog before server refresh", () => {
+  const layoutsByLanguage = createSharedLayoutsByLanguage([], { languages: ["ru", "en"] });
+  const localEntries = localSharedLayoutCatalogEntriesFromLayouts({
+    "layout-admin-shared-ru": {
+      id: "layout-admin-shared-ru",
+      name: "Tristan Ridley Список снаряжения",
+      adminSharedSourceId: "tristan-ridley-kit-list",
+      language: "ru",
+      updatedAt: "2026-01-02T00:00:00.000Z"
+    },
+    "layout-admin-shared-en": {
+      id: "layout-admin-shared-en",
+      name: "Tristan Ridley Kit List",
+      adminSharedSourceId: "tristan-ridley-kit-list-en",
+      language: "en",
+      updatedAt: "2026-01-02T00:00:00.000Z"
+    },
+    "layout-unpublished-copy": {
+      id: "layout-unpublished-copy",
+      name: "Unpublished copy",
+      adminSharedSourceId: "template-copy-local-only",
+      adminTemplateCopy: true,
+      language: "ru"
+    }
+  }, { fallbackLanguage: "ru" });
+
+  localEntries.forEach((entry) => {
+    layoutsByLanguage[entry.language].push(entry);
+  });
+  const serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries([], localEntries);
+
+  assert.deepEqual(localEntries.map((entry) => entry.id), [
+    "tristan-ridley-kit-list",
+    "tristan-ridley-kit-list-en"
+  ]);
+  assert.deepEqual(
+    visibleSharedLayoutsForLanguage(layoutsByLanguage, "ru", { serverConfirmedSharedLayouts }).map((layout) => layout.id),
+    ["tristan-ridley-kit-list"]
+  );
+  assert.deepEqual(
+    visibleSharedLayoutsForLanguage(layoutsByLanguage, "en", { serverConfirmedSharedLayouts }).map((layout) => layout.id),
+    ["tristan-ridley-kit-list-en"]
+  );
 });
 
 test("new demo and shared template copies are primed before photo copy", () => {

@@ -177,6 +177,7 @@ import {
   isPublicSharedLayoutListRecord,
   isPublicSharedTemplatePayload,
   isTemplateCopySharedLayoutId,
+  localSharedLayoutCatalogEntriesFromLayouts,
   mergeSharedLayoutCatalogEntries,
   normalizeSharedGearName,
   pruneRuntimeSharedLayouts,
@@ -396,6 +397,7 @@ import {
   touchLayoutsReferencingItemInState
 } from "./src/state/layout-ops.js";
 import {
+  activeEditableLayoutId as activeEditableLayoutIdForState,
   getDescendantContainerIds as getDescendantContainerIdsForState,
   getVisibleLayoutRootIds as getVisibleLayoutRootIdsForState,
   isItemInCatalog as isItemInCatalogForState,
@@ -403,6 +405,7 @@ import {
   isRootContainerForEditor as isRootContainerForEditorForState,
   isRootContainerInCatalog as isRootContainerInCatalogForState,
   isRootContainerInLayout as isRootContainerInLayoutForState,
+  layoutContainerPath as layoutContainerPathForState,
   visibleItemLayoutPlacementLabels,
   userEditableLayouts as userEditableLayoutsForState,
   canDeleteActiveLayout as canDeleteActiveLayoutForState
@@ -415,6 +418,11 @@ import {
   rootContainersForEditor as rootContainersForEditorForState,
   rootContainersForSettings as rootContainersForSettingsForState
 } from "./src/state/catalog-lists.js";
+import {
+  catalogActionTargetIds,
+  normalizeCatalogSelection,
+  updateCatalogSelection
+} from "./src/state/catalog-selection.js";
 import {
   isItemAwayFromHomeAndBike as isItemAwayFromHomeAndBikeValue,
   isItemWithoutWeight as isItemWithoutWeightValue,
@@ -468,6 +476,7 @@ import { assertEntitySyncConfirmed } from "./src/sync/entity-sync-confirmation.j
 import { isConflictMetaField } from "./src/sync/conflict-meta.js";
 import {
   comparableValueForMerge,
+  filterAutoResolvedMergeConflicts,
   isOwnLayoutEchoConflict as isOwnLayoutEchoConflictValue
 } from "./src/sync/conflict-merge.js";
 import {
@@ -477,6 +486,7 @@ import {
 import {
   apiErrorMessage,
   apiFetchRequest,
+  apiUploadFormDataRequest,
   isNetworkError,
   isTemporaryServerStorageError,
   isTimeoutError
@@ -557,6 +567,7 @@ import {
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
 import { openHelpLimitsDialogUi } from "./src/ui/help-limits-dialog.js";
 import { bindHorizontalTouchScroll } from "./src/ui/horizontal-touch-scroll.js";
+import { renderEmptyState } from "./src/ui/empty-state.js";
 import {
   renderCatalogCard,
   renderCatalogPills
@@ -783,6 +794,7 @@ const startupSyncMeta = loadSyncMeta();
 let hadRemoteBaselineAtStartup = hasStoredLocalValue(BASE_STATE_KEY) ||
   Boolean(startupSyncMeta.serverUpdatedAt || startupSyncMeta.stateRevision || startupSyncMeta.payloadHash);
 const state = loadState();
+hydrateLocalSharedTemplateCatalogFromState(state);
 let startupLocalStateWasFallback = hadLocalStateAtStartup && !hadRemoteBaselineAtStartup && isGeneratedStartupFallbackState(state);
 let hadAuthoritativeLocalStateAtStartup = hadLocalStateAtStartup && !startupLocalStateWasFallback;
 const uiSettings = loadUiSettings();
@@ -806,6 +818,10 @@ let itemUsageFilter = "all";
 let itemSortMode = normalizeSortMode(uiSettings.itemSortMode);
 let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
+let selectedCatalogItemIds = new Set();
+let selectedCatalogItemAnchorId = "";
+let selectedCatalogRootIds = new Set();
+let selectedCatalogRootAnchorId = "";
 let packingVisualStyle = normalizePackingVisualStyle(uiSettings.packingVisualStyle);
 let packingVisualStylePanelVisible = false;
 let packingViewMode = normalizePackingViewMode(uiSettings.packingViewMode);
@@ -900,6 +916,7 @@ let sharedPickerSourceItemId = "";
 let sharedPickerSourceContainerId = "";
 const photoObjectUrls = new Map();
 let photoUploadInFlight = false;
+let photoUploadProgressRenderFrame = null;
 let adminApiCompatibility = {
   checkedAt: 0,
   checking: false,
@@ -962,6 +979,7 @@ function applyLoadedStateToCurrentScope(nextState) {
   migrateContainerOrder(state);
   applyLayoutArrangement(state.activeLayoutId, state);
   applyDefaultCollapsedContainers(state);
+  hydrateLocalSharedTemplateCatalogFromState(state);
 }
 
 function activateLocalStorageScope(scopeKey) {
@@ -1059,6 +1077,17 @@ function currentSharedLayouts(language = uiLanguage) {
     defaultLanguage: DEFAULT_LANGUAGE,
     serverConfirmedSharedLayouts
   });
+}
+
+function hydrateLocalSharedTemplateCatalogFromState(targetState = state) {
+  const entries = localSharedLayoutCatalogEntriesFromLayouts(targetState.layouts, {
+    fallbackLanguage: uiLanguage
+  });
+  entries.forEach((entry) => {
+    upsertRuntimeSharedLayout(sharedLayoutsByLanguage, entry);
+  });
+  serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, entries);
+  return entries.length;
 }
 
 function demoTemplateFallbackName(language = uiLanguage) {
@@ -1883,9 +1912,11 @@ async function init() {
   refs.rootContainerPlacementBtn.addEventListener("click", openRootContainerPlacementAction);
   refs.rootContainerCopyToContainerBtn?.addEventListener("click", openRootContainerCopyPickerDialog);
   refs.rootContainerRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingContainerFromActiveLayout);
+  refs.rootContainerDeleteForeverBtn?.addEventListener("click", confirmDeleteEditingRootContainerForever);
   refs.itemContainerPickerBtn.addEventListener("click", openItemContainerPickerDialog);
   refs.itemCopyToContainerBtn?.addEventListener("click", openItemCopyContainerPickerDialog);
   refs.itemRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingItemFromActiveLayout);
+  refs.itemDeleteForeverBtn?.addEventListener("click", confirmDeleteEditingItemForever);
   refs.containerPickerLayoutSelect?.addEventListener("change", () => {
     containerPickerLayoutId = refs.containerPickerLayoutSelect.value || getPublishedEditLayoutId();
     renderContainerPicker();
@@ -1918,10 +1949,12 @@ async function init() {
   refs.itemQuantityMinus.addEventListener("click", () => changeItemDialogQuantity(-1));
   refs.itemQuantityPlus.addEventListener("click", () => changeItemDialogQuantity(1));
   refs.itemPhotoInput?.addEventListener("change", handleItemPhotoInputChange);
+  refs.itemPhotoCameraInput?.addEventListener("change", handleItemPhotoInputChange);
   refs.itemPhotoRemoveBtn?.addEventListener("click", removeItemDialogPhoto);
   refs.itemPhotoPrimaryBtn?.addEventListener("click", setItemDialogPhotoPrimary);
   refs.copySharedItemDialogBtn?.addEventListener("click", copySharedItemFromReadonlyDialog);
   refs.rootContainerPhotoInput?.addEventListener("change", handleRootContainerPhotoInputChange);
+  refs.rootContainerPhotoCameraInput?.addEventListener("change", handleRootContainerPhotoInputChange);
   refs.rootContainerPhotoRemoveBtn?.addEventListener("click", removeRootContainerDialogPhoto);
   refs.rootContainerPhotoPrimaryBtn?.addEventListener("click", setRootContainerDialogPhotoPrimary);
   refs.dialog.querySelector("form")?.addEventListener("input", updateItemDialogSaveState);
@@ -2012,6 +2045,7 @@ async function init() {
     refreshHistoryDialog();
   });
   document.addEventListener("click", (event) => {
+    resetCatalogSelectionOnPlainClick(event);
     if (event.target.closest(".top-menu-wrap")) return;
     closeTopMenu();
   });
@@ -2874,13 +2908,7 @@ function openPrivateLayout(layoutId, options = {}) {
 }
 
 function activateAdminPublishedLayout(layoutId, { remember = true } = {}) {
-  if (!layoutId || !isAdminEditablePublishedLayout(layoutId)) return false;
-  if (state.activeLayoutId && state.activeLayoutId !== layoutId && state.layouts?.[state.activeLayoutId]) {
-    captureActiveLayoutArrangement();
-  }
-  if (!setViewScope(VIEW_SCOPE_ADMIN_PUBLIC_EDIT, { adminLayoutId: layoutId })) return false;
-  state.activeLayoutId = layoutId;
-  applyLayoutArrangement(layoutId);
+  if (!restoreAdminPublishedLayoutContext(layoutId)) return false;
   if (remember) {
     const layout = state.layouts?.[layoutId];
     if (layout?.adminDemo) rememberActiveLayoutChoice(demoTemplateChoiceForLayout(layout));
@@ -2890,6 +2918,17 @@ function activateAdminPublishedLayout(layoutId, { remember = true } = {}) {
   saveState({ sync: false });
   switchView("packing");
   render();
+  return true;
+}
+
+function restoreAdminPublishedLayoutContext(layoutId) {
+  if (!layoutId || !isAdminEditablePublishedLayout(layoutId)) return false;
+  if (state.activeLayoutId && state.activeLayoutId !== layoutId && state.layouts?.[state.activeLayoutId]) {
+    captureActiveLayoutArrangement();
+  }
+  if (!setViewScope(VIEW_SCOPE_ADMIN_PUBLIC_EDIT, { adminLayoutId: layoutId })) return false;
+  state.activeLayoutId = layoutId;
+  applyLayoutArrangement(layoutId);
   return true;
 }
 
@@ -3438,6 +3477,13 @@ function getPublishedEditLayoutId() {
   return isAdminEditablePublishedLayout(modeState.adminPublishedEditLayoutId)
     ? modeState.adminPublishedEditLayoutId
     : state.activeLayoutId;
+}
+
+function getActiveEditableLayoutId() {
+  return activeEditableLayoutIdForState(state, {
+    adminLayoutId: currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT ? getPublishedEditLayoutId() : "",
+    isAdminEditableLayout: isPublishedLayoutEditable
+  });
 }
 
 function getPublishedWorkLayout(layoutId = getPublishedEditLayoutId()) {
@@ -4084,7 +4130,7 @@ function conflictLabel(type, id, localValue, remoteValue, baseValue) {
 
 function settingLabel(key) {
   const labels = {
-    activeLayoutId: "Текущая укладка",
+    activeLayoutId: "Какая укладка открыта",
     showItemMeta: "Показ меток",
     itemDisplayMode: "Режим меток и фото",
     collapseDefaultsVersion: "Состояние сворачивания"
@@ -4198,6 +4244,7 @@ function conflictKindLabel(conflict) {
   }
   if (conflict.type === "layout") return "Укладка";
   if (conflict.type === "packed") return "Собранность вещи";
+  if (conflict.type === "setting" && conflict.id === "activeLayoutId") return "Выбор открытой укладки";
   if (conflict.type === "setting") return "Настройка";
   return "Конфликт";
 }
@@ -4228,6 +4275,11 @@ function renderConflictDetails(conflict) {
 }
 
 function conflictSummary(conflict) {
+  if (conflict.type === "setting" && conflict.id === "activeLayoutId") {
+    const localText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, "нет локально");
+    const remoteText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, "нет в серверной укладке");
+    return `Это не содержимое укладки: отличается только то, какую укладку приложение откроет активной. Моё: ${localText}. Сервер: ${remoteText}.`;
+  }
   const localText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, "нет локально");
   const remoteText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, "нет в серверной укладке");
   const localStamp = conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, "нет локально");
@@ -4566,6 +4618,10 @@ async function apiFetch(path, options = {}) {
   return apiFetchRequest(path, options, { isForcedOffline });
 }
 
+async function apiUploadFormData(path, options = {}) {
+  return apiUploadFormDataRequest(path, options, { isForcedOffline });
+}
+
 function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOnlyReferences = true } = {}) {
   return getUploadablePhotoEntriesForSync(state, {
     layoutId,
@@ -4745,21 +4801,33 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
 }
 
 async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item") {
+  const sourcePhoto = photo;
+  let activePhoto = photo;
+  const resolvePhoto = () => {
+    activePhoto = findEntityPhotoForUpload(entity, sourcePhoto) || activePhoto;
+    return activePhoto;
+  };
   const localId = photo.localId || photo.id;
   const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType, { uploadPath: path });
   if (copiedOnServer) return true;
+  setPhotoUploadProgress(resolvePhoto(), 0);
+  schedulePhotoUploadProgressRender();
   const uploadSource = await getPhotoUploadSource(photo, localId);
   if (!uploadSource?.blob) {
-    photo.status = "missing-local-file";
-    photo.error = "Локальный файл фото не найден.";
-    photo.updatedAt = nowIso();
+    const targetPhoto = resolvePhoto();
+    targetPhoto.status = "missing-local-file";
+    targetPhoto.error = "Локальный файл фото не найден.";
+    targetPhoto.updatedAt = nowIso();
+    clearPhotoUploadProgress(targetPhoto);
     return true;
   }
 
-  photo.status = "uploading";
-  photo.error = "";
-  photo.updatedAt = nowIso();
+  const uploadPhoto = resolvePhoto();
+  uploadPhoto.status = "uploading";
+  uploadPhoto.error = "";
+  uploadPhoto.updatedAt = nowIso();
   persistStateSnapshot(state);
+  schedulePhotoUploadProgressRender();
 
   try {
     const formData = new FormData();
@@ -4769,33 +4837,75 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     formData.append("photoId", photo.id);
     formData.append("file", uploadSource.blob, uploadSource.fileName || photo.fileName || `${photo.id}.jpg`);
     if (uploadSource.thumbBlob) formData.append("thumb", uploadSource.thumbBlob, `thumb-${photo.id}.jpg`);
-    const data = await apiFetch(path, {
+    const data = await apiUploadFormData(path, {
       method: "POST",
       body: formData,
-      timeoutMs: 30000
+      timeoutMs: 30000,
+      onUploadProgress: (progress) => {
+        setPhotoUploadProgress(resolvePhoto(), progress);
+        schedulePhotoUploadProgressRender();
+      }
     });
     const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, path, photo.id);
-    Object.assign(photo, {
-      ...photo,
+    const targetPhoto = resolvePhoto();
+    setPhotoUploadProgress(targetPhoto, 100);
+    Object.assign(targetPhoto, {
+      ...targetPhoto,
       ...serverPhoto,
-      id: serverPhoto.id || photo.id,
+      id: serverPhoto.id || targetPhoto.id,
       localId,
       listId: String(serverPhoto.listId || serverPhoto.list_id || listId || ""),
       status: "synced",
       error: "",
       updatedAt: serverPhoto.updatedAt || nowIso()
     });
-    delete photo._copyToCurrentList;
-    delete photo.copyToCurrentList;
-    if (entityType === "container") touchContainer(entity.id, photo.updatedAt);
-    else touchItem(entity.id, photo.updatedAt);
+    clearPhotoUploadProgress(targetPhoto);
+    delete targetPhoto._copyToCurrentList;
+    delete targetPhoto.copyToCurrentList;
+    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+    else touchItem(entity.id, targetPhoto.updatedAt);
     return true;
   } catch (error) {
-    photo.status = "error";
-    photo.error = error.message || "Не удалось загрузить фото.";
-    photo.updatedAt = nowIso();
+    const targetPhoto = resolvePhoto();
+    targetPhoto.status = "error";
+    targetPhoto.error = error.message || "Не удалось загрузить фото.";
+    targetPhoto.updatedAt = nowIso();
+    clearPhotoUploadProgress(targetPhoto);
     return true;
   }
+}
+
+function findEntityPhotoForUpload(entity, sourcePhoto) {
+  const photos = Array.isArray(entity?.photos) ? entity.photos : [];
+  const sourceId = String(sourcePhoto?.id || "");
+  const sourceLocalId = String(sourcePhoto?.localId || "");
+  return photos.find((photo) =>
+    (sourceId && String(photo?.id || "") === sourceId) ||
+    (sourceLocalId && String(photo?.localId || "") === sourceLocalId)
+  ) || null;
+}
+
+function setPhotoUploadProgress(photo, progress) {
+  if (!photo) return;
+  Object.defineProperty(photo, "uploadProgress", {
+    value: Math.max(0, Math.min(100, Number(progress) || 0)),
+    writable: true,
+    configurable: true,
+    enumerable: false
+  });
+}
+
+function clearPhotoUploadProgress(photo) {
+  if (!photo || !Object.prototype.hasOwnProperty.call(photo, "uploadProgress")) return;
+  delete photo.uploadProgress;
+}
+
+function schedulePhotoUploadProgressRender() {
+  if (photoUploadProgressRenderFrame) return;
+  photoUploadProgressRenderFrame = requestAnimationFrame(() => {
+    photoUploadProgressRenderFrame = null;
+    renderPreservingPackingScroll();
+  });
 }
 
 async function getPhotoUploadSource(photo, localId) {
@@ -6293,6 +6403,14 @@ async function handleRemoteSaveConflict(error, { notify = false, preferredLayout
   }
   const baseState = loadBaseState();
   const mergeResult = baseState ? mergeStateFromBase(baseState, state, remoteState) : null;
+  if (mergeResult?.merged) {
+    mergeResult.conflicts = filterAutoResolvedMergeConflicts(mergeResult.conflicts, {
+      baseState,
+      localState: state,
+      remoteState,
+      valuesEqual: sameJson
+    });
+  }
   if (mergeResult?.merged && mergeResult.conflicts.length) {
     if (isOwnLayoutEchoConflict(mergeResult.conflicts)) {
       updateSyncUi("Р Р°СЃРєР»Р°РґРєР° РёР·РјРµРЅРµРЅР° РЅР° СЌС‚РѕРј СѓСЃС‚СЂРѕР№СЃС‚РІРµ В· РѕС‚РїСЂР°РІР»СЏСЋ Р±РµР· РѕРєРЅР° РєРѕРЅС„Р»РёРєС‚Р°...");
@@ -6642,7 +6760,17 @@ async function loadRemoteState({ notifyDirtySave = false, preferredLayout = null
         await saveRemoteState({ notify: notifyDirtySave });
         return;
       }
-      const mergeResult = mergeStateFromBase(loadBaseState(), serializeState(), remoteState);
+      const baseState = loadBaseState();
+      const localState = serializeState();
+      const mergeResult = mergeStateFromBase(baseState, localState, remoteState);
+      if (mergeResult?.merged) {
+        mergeResult.conflicts = filterAutoResolvedMergeConflicts(mergeResult.conflicts, {
+          baseState,
+          localState,
+          remoteState,
+          valuesEqual: sameJson
+        });
+      }
       if (mergeResult.merged && !mergeResult.conflicts.length) {
         replaceState(mergeResult.merged);
         syncMeta.dirty = true;
@@ -8773,7 +8901,7 @@ function renderHistoryRecords(records) {
         <div class="history-group-records">
           ${group.records.map((record, index) => renderHistoryRecordArticleHtml(record, index, group.records, {
             activeSource: activeHistorySource,
-            currentComparisonState,
+            currentComparisonState: currentHistoryComparisonState,
             expandedRecordId: expandedHistoryRecordId,
             formatDateTime: formatHistoryDateTime,
             recordKey: historyRecordKey,
@@ -9193,10 +9321,11 @@ function renderFilters() {
     ? Object.values(state.layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId)
     : Object.values(state.layouts || {}).filter((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
   const readonlyLayoutId = activeReadOnlyLayoutId();
-  const activeLayout = state.layouts?.[state.activeLayoutId];
+  const activeEditableLayoutId = getActiveEditableLayoutId();
+  const activeLayout = state.layouts?.[activeEditableLayoutId];
   const selectedLayoutValue = isReadOnlyStateScope()
     ? (readonlyLayoutId === DEMO_SHARED_LAYOUT_ID ? demoTemplateChoiceForLanguage(uiLanguage, activeDemoTemplateListId) : `shared:${readonlyLayoutId}`)
-    : publicLayoutChoiceForLayout(activeLayout) || state.activeLayoutId;
+    : publicLayoutChoiceForLayout(activeLayout) || activeEditableLayoutId;
   const publicTemplatesBlocked = arePublishedTemplatesBlocked();
   const showAdminCatalog = canViewAdminPublishedCatalog();
   const adminCatalogReadOnly = showAdminCatalog && !canEditPublishedTemplatesNow();
@@ -9247,12 +9376,12 @@ function renderFilters() {
     : t("buttons.newLayout");
   if (refs.editLayoutBtn) {
     const canManageLayout = canManageActiveLayout();
-    const hideManageLayout = isReadOnlyStateScope() || isSharedLayoutView() || !state.layouts?.[state.activeLayoutId];
+    const hideManageLayout = isReadOnlyStateScope() || isSharedLayoutView() || !state.layouts?.[activeEditableLayoutId];
     refs.editLayoutBtn.hidden = hideManageLayout;
     refs.editLayoutBtn.disabled = !canManageLayout;
     refs.editLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideManageLayout);
   }
-  fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), state.activeLayoutId);
+  fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), activeEditableLayoutId);
   selectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
   const locationOptions = dictionaryOptionsForUi("location");
   fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, loc])], refs.locationFilter.value);
@@ -9329,10 +9458,16 @@ function commitSearchInputForNavigation() {
 }
 
 function toggleItemDisplayMode() {
+  const viewport = hasActiveContentFilter() ? captureViewportSnapshot() : null;
+  const anchor = viewport
+    ? (isFilterContextActive() ? captureCurrentFilterMatchAnchor() : null) || captureVisibleContentAnchor()
+    : null;
+  keepAnchorContainersOpen(anchor);
   state.itemDisplayMode = nextItemDisplayModeValue(itemDisplayMode());
   ensureItemDisplayModeState(state);
   saveLocalUiState();
   render();
+  if (viewport) restoreViewportSnapshot(viewport, null, anchor);
 }
 
 function toggleActiveLayoutNestedContainers() {
@@ -9635,6 +9770,7 @@ function clearLayoutRootSearch() {
 function updateRootContainerPlacementButton() {
   const containerId = editingRootContainerId;
   const container = state.containers[containerId];
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
   if (!containerId || !container) {
     refs.rootContainerPlacementField.hidden = true;
     return;
@@ -9642,7 +9778,7 @@ function updateRootContainerPlacementButton() {
   const isPackage = Boolean(container.parentId);
   const active = isPackage || getRootContainerDialogLayoutRootIds().includes(containerId);
   const currentText = isPackage
-    ? containerPath(getRootContainerDialogParentId())
+    ? layoutContainerPath(layout, getRootContainerDialogParentId())
     : (active ? "Текущая укладка" : "Вне текущей укладки");
   refs.rootContainerPlacementField.hidden = false;
   if (refs.rootContainerPlacementLabel) refs.rootContainerPlacementLabel.textContent = "Находится в";
@@ -9661,9 +9797,31 @@ function updateRootContainerPlacementButton() {
 
 function updateRootContainerRemoveFromLayoutButton() {
   if (!refs.rootContainerRemoveFromLayoutBtn) return;
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  const isNested = Boolean(layout && editingRootContainerId && !getLayoutContainerRootStatus(layout, editingRootContainerId));
   const canRemove = canRemoveContainerFromActiveLayout(editingRootContainerId);
+  refs.rootContainerRemoveFromLayoutBtn.textContent = isNested ? "Удалить навсегда" : "Удалить из укладки";
+  refs.rootContainerRemoveFromLayoutBtn.setAttribute(
+    "aria-label",
+    isNested ? "Удалить вложенную сумку или место навсегда" : "Удалить сумку или место из укладки"
+  );
+  refs.rootContainerRemoveFromLayoutBtn.title = isNested ? "Удалить навсегда" : "Удалить из укладки";
   refs.rootContainerRemoveFromLayoutBtn.hidden = !canRemove;
   refs.rootContainerRemoveFromLayoutBtn.disabled = !canRemove;
+}
+
+function updateRootContainerDeleteForeverButton() {
+  if (!refs.rootContainerDeleteForeverBtn) return;
+  const container = state.containers?.[editingRootContainerId];
+  const canDelete = Boolean(
+    editingRootContainerId &&
+    container &&
+    !container.parentId &&
+    !isReadOnlyStateScope() &&
+    !isSharedLayoutView()
+  );
+  refs.rootContainerDeleteForeverBtn.hidden = !canDelete;
+  refs.rootContainerDeleteForeverBtn.disabled = !canDelete;
 }
 
 function canRemoveContainerFromActiveLayout(containerId) {
@@ -9685,16 +9843,19 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
   if (!container || !layout || !canRemoveContainerFromActiveLayout(containerId)) return;
   const itemCount = getLayoutSubtreeItemCount(layout, containerId);
   const isRoot = getLayoutContainerRootStatus(layout, containerId);
+  const nestedSubject = "Этот вложенный пакет будет удалён навсегда.";
   const confirmed = await askConfirmDialog({
-    title: "Удалить из укладки?",
-    text: `«${container.name}» будет убран из текущей укладки.`,
+    title: isRoot ? "Удалить из укладки?" : "Удалить навсегда?",
+    text: isRoot
+      ? `«${container.name}» будет убран из текущей укладки.`
+      : `«${container.name}» будет удалён навсегда как вложенная сумка/место.`,
     highlightText: itemCount
-      ? `${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут вынуты из укладки и станут вне укладки. Вложенные пакеты внутри будут удалены.`
+      ? `${isRoot ? "" : `${nestedSubject}\n`}${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут вынуты из укладки и станут вне укладки. Вложенные пакеты внутри будут удалены.`
       : isRoot
         ? "Эта сумка/место уже пустая, поэтому из текущей укладки уйдёт только пустая заготовка."
-        : "Этот пакет уже пустой, поэтому из текущей укладки уйдёт только пустой пакет.",
-    tone: itemCount ? "danger" : "safe",
-    okText: "Удалить"
+        : nestedSubject,
+    tone: itemCount || !isRoot ? "danger" : "safe",
+    okText: isRoot ? "Удалить" : "Удалить навсегда"
   });
   if (confirmed) removeContainerFromLayoutWithAnimation(containerId);
 }
@@ -10671,8 +10832,9 @@ function selectRootContainerParent(parentId, targetIndex = null) {
 
 function updateItemContainerPickerButton() {
   const containerId = refs.itemContainer.value;
+  const layout = state.layouts?.[itemDialogTargetLayoutId || getPublishedEditLayoutId()];
   const hasContainer = Boolean(containerId && state.containers[containerId]);
-  const path = hasContainer ? containerPath(containerId) : "Вне укладки";
+  const path = hasContainer ? layoutContainerPath(layout, containerId) : "Вне укладки";
   if (refs.itemContainerLabel) refs.itemContainerLabel.textContent = hasContainer ? "Лежит в" : "Положить в";
   if (refs.itemContainerCurrent) {
     refs.itemContainerCurrent.hidden = false;
@@ -10697,6 +10859,13 @@ function updateItemRemoveFromLayoutButton() {
   );
   refs.itemRemoveFromLayoutBtn.hidden = !canRemove;
   refs.itemRemoveFromLayoutBtn.disabled = !canRemove;
+}
+
+function updateItemDeleteForeverButton() {
+  if (!refs.itemDeleteForeverBtn) return;
+  const canDelete = Boolean(editingItemId && state.items?.[editingItemId]);
+  refs.itemDeleteForeverBtn.hidden = !canDelete;
+  refs.itemDeleteForeverBtn.disabled = !canDelete;
 }
 
 function cssSafeId(value) {
@@ -10993,7 +11162,9 @@ function renderPacking() {
   const columns = hasActiveContentFilter() && !isFilterContextActive()
     ? rootIds.filter(containerHasVisibleFilterResult).map(renderFilteredContainer)
     : rootIds.map(renderContainer);
-  refs.packingView.innerHTML = `<div class="board">${columns.join("") || `<div class="empty board-empty">${escapeHtml(t("empty.notFound"))}</div>`}</div>`;
+  const filteredEmpty = hasActiveContentFilter();
+  const emptyText = t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound");
+  refs.packingView.innerHTML = `<div class="board">${columns.join("") || renderEmptyState(emptyText, { extraClass: "board-empty", filtered: filteredEmpty })}</div>`;
   bindPackingEvents(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
@@ -11147,9 +11318,11 @@ function renderSharedPacking() {
     const columns = hasActiveContentFilter() && !isFilterContextActive()
       ? rootIds.filter(containerHasVisibleFilterResult).map(renderFilteredContainer)
       : rootIds.map(renderContainer);
+    const filteredEmpty = hasActiveContentFilter();
+    const emptyText = t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound");
     refs.packingView.innerHTML = `
       ${renderSharedModeBanner(currentSharedLayout())}
-      <div class="board">${columns.join("") || `<div class="empty board-empty">Ничего не найдено</div>`}</div>
+      <div class="board">${columns.join("") || renderEmptyState(emptyText, { extraClass: "board-empty", filtered: filteredEmpty })}</div>
     `;
   });
   bindSharedVirtualEvents(refs.packingView);
@@ -11230,17 +11403,37 @@ function stickyViewportBottom() {
 
 function captureVisibleContentAnchor() {
   const view = getCurrentView();
-  const root = view === "items" ? refs.itemsView : refs.packingView;
+  const root = view === "items"
+    ? refs.itemsView
+    : view === "bags"
+      ? refs.bagsView
+      : view === "packing"
+        ? refs.packingView
+        : null;
   if (!root || root.classList.contains("hidden")) return null;
   const top = stickyViewportBottom() + 1;
   const topContext = view === "packing" ? getTopPackingContextAnchor(root, top) : null;
   if (topContext) return buildVisibleContentAnchor(topContext);
-  const itemCandidates = getVisibleAnchorCandidates(root, "[data-item-id], [data-list-item-id]", top);
+  const itemCandidates = getVisibleAnchorCandidates(
+    root,
+    view === "bags" ? "[data-root-card]" : "[data-item-id], [data-list-item-id]",
+    top
+  );
   const candidates = itemCandidates.length
     ? itemCandidates
     : getVisibleAnchorCandidates(root, "[data-subcontainer-id], [data-root-container-id]", top);
   const first = candidates[0];
   return first ? buildVisibleContentAnchor(first) : null;
+}
+
+function captureCurrentFilterMatchAnchor() {
+  if (!isFilterContextActive()) return null;
+  const target = getFilterMatchElements()[filterMatchIndex];
+  if (!target || target.offsetParent === null) return null;
+  return buildVisibleContentAnchor({
+    element: target,
+    rect: target.getBoundingClientRect()
+  });
 }
 
 function buildVisibleContentAnchor(candidate) {
@@ -11281,6 +11474,7 @@ function anchorKey(element) {
   if (element.dataset.listItemId) return `list-item:${element.dataset.listItemId}`;
   if (element.dataset.subcontainerId) return `container:${element.dataset.subcontainerId}`;
   if (element.dataset.rootContainerId) return `root:${element.dataset.rootContainerId}`;
+  if (element.dataset.rootCard) return `root:${element.dataset.rootCard}`;
   return "";
 }
 
@@ -11291,7 +11485,15 @@ function findAnchorElement(anchor) {
   if (type === "item") return refs.packingView.querySelector(`[data-item-id="${escapedId}"]`);
   if (type === "list-item") return refs.itemsView.querySelector(`[data-list-item-id="${escapedId}"]`);
   if (type === "container") return refs.packingView.querySelector(`[data-subcontainer-id="${escapedId}"]`);
-  if (type === "root") return refs.packingView.querySelector(`[data-root-container-id="${escapedId}"]`);
+  if (type === "root") {
+    const view = getCurrentView();
+    if (view === "bags") {
+      return refs.bagsView.querySelector(`[data-root-card="${escapedId}"]`) ||
+        refs.packingView.querySelector(`[data-root-container-id="${escapedId}"]`);
+    }
+    return refs.packingView.querySelector(`[data-root-container-id="${escapedId}"]`) ||
+      refs.bagsView.querySelector(`[data-root-card="${escapedId}"]`);
+  }
   return null;
 }
 
@@ -11993,17 +12195,26 @@ function scheduleFixedScrollbarRefresh() {
 
 function renderItems() {
   if (isSharedLayoutView()) {
+    selectedCatalogItemIds = new Set();
+    selectedCatalogItemAnchorId = "";
     renderSharedItemsView();
     return;
   }
   const items = getItemsForItemsView();
+  selectedCatalogItemIds = normalizeCatalogSelection(selectedCatalogItemIds, items.map((item) => item.id));
+  if (selectedCatalogItemAnchorId && !items.some((item) => item.id === selectedCatalogItemAnchorId)) selectedCatalogItemAnchorId = "";
   const counts = getItemsUsageCounts();
+  const filteredEmpty = hasActiveContentFilter();
   refs.itemsView.innerHTML = renderItemsViewHtml({
     counts,
+    emptyFiltered: filteredEmpty,
+    emptyText: t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound"),
     itemSortMode,
     itemUsageFilter,
     items,
-    renderListItem
+    renderListItem,
+    showLabels: shouldShowItemLabels(),
+    showPhotos: shouldShowItemPhotos()
   });
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
   refs.itemsView.querySelector("#itemUsageFilter").addEventListener("change", (event) => {
@@ -12019,17 +12230,19 @@ function renderItems() {
     button.addEventListener("click", () => openItemDialog(button.dataset.editItem));
   });
   refs.itemsView.querySelectorAll("[data-copy-item]").forEach((button) => {
-    button.addEventListener("click", () => copyItem(button.dataset.copyItem, { keepPlacement: false }));
+    button.addEventListener("click", () => copyCatalogItems(catalogItemActionIds(button.dataset.copyItem)));
   });
   refs.itemsView.querySelectorAll("[data-delete-item]").forEach((button) => {
-    button.addEventListener("click", () => confirmDeleteItem(button.dataset.deleteItem));
+    button.addEventListener("click", () => confirmDeleteCatalogItems(catalogItemActionIds(button.dataset.deleteItem)));
   });
+  bindItemCatalogSelection();
 }
 
 function renderSharedItemsView() {
   withSharedVirtualState(() => {
     const items = getItemsForItemsView();
     const counts = getItemsUsageCounts();
+    const filteredEmpty = hasActiveContentFilter();
     const copyText = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()
       ? demoCopyActionText()
       : t("buttons.copyAll");
@@ -12037,10 +12250,14 @@ function renderSharedItemsView() {
       bannerHtml: renderSharedModeBanner(currentSharedLayout(), { compact: true }),
       copyAllButtonHtml: `<button type="button" data-copy-shared-layout="${escapeHtml(activeReadOnlyLayoutId())}">${escapeHtml(copyText)}</button>`,
       counts,
+      emptyFiltered: filteredEmpty,
+      emptyText: t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound"),
       itemSortMode,
       itemUsageFilter,
       items,
-      renderListItem
+      renderListItem,
+      showLabels: shouldShowItemLabels(),
+      showPhotos: shouldShowItemPhotos()
     });
   });
   refs.itemsView.querySelector("#itemUsageFilter")?.addEventListener("change", (event) => {
@@ -12070,6 +12287,7 @@ function renderListItem(item) {
     highlightText: highlight,
     inCurrentLayout,
     item,
+    selected: selectedCatalogItemIds.has(item.id),
     photoHtml: photoSlot,
     placementText,
     quantityText: itemQuantity(item) > 1 ? `${itemQuantity(item)} шт.` : "",
@@ -12077,8 +12295,191 @@ function renderListItem(item) {
   });
 }
 
+function isCatalogSelectionClick(event) {
+  return Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
+}
+
+function isCatalogActionTarget(target) {
+  return Boolean(target?.closest?.("button, input, select, textarea, label, a, [data-photo-open]"));
+}
+
+function hasCatalogSelection() {
+  return selectedCatalogItemIds.size > 0 || selectedCatalogRootIds.size > 0;
+}
+
+function clearCatalogSelection() {
+  selectedCatalogItemIds = new Set();
+  selectedCatalogItemAnchorId = "";
+  selectedCatalogRootIds = new Set();
+  selectedCatalogRootAnchorId = "";
+}
+
+function resetCatalogSelectionOnPlainClick(event) {
+  if (!hasCatalogSelection()) return;
+  if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const target = event.target;
+  if (target.closest?.("dialog")) return;
+  if (target.closest?.("[data-copy-item], [data-delete-item], [data-copy-root], [data-delete-root]")) return;
+  const view = getCurrentView();
+  clearCatalogSelection();
+  if (view === "items") renderItems();
+  else if (view === "bags") renderBags();
+}
+
+function bindItemCatalogSelection() {
+  const list = refs.itemsView.querySelector(".items-list");
+  if (!list) return;
+  list.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-list-item-id]");
+    if (!card || !list.contains(card) || isCatalogActionTarget(event.target) || !isCatalogSelectionClick(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const result = updateCatalogSelection({
+      anchorId: selectedCatalogItemAnchorId,
+      range: event.shiftKey,
+      selectedIds: selectedCatalogItemIds,
+      targetId: card.dataset.listItemId,
+      toggle: event.ctrlKey || event.metaKey,
+      visibleIds: getItemsForItemsView().map((item) => item.id)
+    });
+    selectedCatalogItemIds = result.selectedIds;
+    selectedCatalogItemAnchorId = result.anchorId;
+    renderItems();
+  }, { capture: true });
+}
+
+function bindRootCatalogSelection() {
+  const list = refs.bagsView.querySelector(".root-container-list");
+  if (!list) return;
+  list.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-root-card]");
+    if (!card || !list.contains(card) || isCatalogActionTarget(event.target) || !isCatalogSelectionClick(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const result = updateCatalogSelection({
+      anchorId: selectedCatalogRootAnchorId,
+      range: event.shiftKey,
+      selectedIds: selectedCatalogRootIds,
+      targetId: card.dataset.rootCard,
+      toggle: event.ctrlKey || event.metaKey,
+      visibleIds: getRootContainersForSettings().map((container) => container.id)
+    });
+    selectedCatalogRootIds = result.selectedIds;
+    selectedCatalogRootAnchorId = result.anchorId;
+    renderBags();
+  }, { capture: true });
+}
+
+function catalogItemActionIds(itemId) {
+  return catalogActionTargetIds(selectedCatalogItemIds, itemId).filter((id) => state.items?.[id]);
+}
+
+function catalogRootActionIds(containerId) {
+  return catalogActionTargetIds(selectedCatalogRootIds, containerId).filter((id) => {
+    const container = state.containers?.[id];
+    return container && !container.parentId;
+  });
+}
+
+function selectionNames(records, limit = 8) {
+  const names = records.map((record) => record?.name).filter(Boolean);
+  const visible = names.slice(0, limit).map((name) => `- ${name}`).join("\n");
+  return names.length > limit ? `${visible}\n- ещё ${names.length - limit}` : visible;
+}
+
+function formatRootContainerCount(count) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} сумка/место`;
+  return `${count} сумок/мест`;
+}
+
+async function copyCatalogItems(itemIds) {
+  const ids = [...new Set(itemIds)].filter((id) => state.items?.[id]);
+  if (ids.length <= 1) {
+    if (ids[0]) copyItem(ids[0], { keepPlacement: false });
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: "Скопировать выбранные вещи?",
+    text: `Будет создано ${formatThingCount(ids.length)} во вкладке «Вещи».`,
+    highlightText: selectionNames(ids.map((id) => state.items[id])),
+    okText: "Скопировать",
+    tone: "safe"
+  });
+  if (!confirmed) return;
+  for (const id of ids) await copyItem(id, { keepPlacement: false, confirm: false });
+  selectedCatalogItemIds = new Set();
+  selectedCatalogItemAnchorId = "";
+  renderItems();
+}
+
+async function confirmDeleteCatalogItems(itemIds) {
+  const ids = [...new Set(itemIds)].filter((id) => state.items?.[id]);
+  if (ids.length <= 1) {
+    if (ids[0]) confirmDeleteItem(ids[0]);
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: "Удалить выбранные вещи навсегда?",
+    text: `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`,
+    highlightText: selectionNames(ids.map((id) => state.items[id])),
+    okText: "Удалить",
+    tone: "danger"
+  });
+  if (!confirmed) return;
+  ids.forEach((id) => deleteItemForever(id, { cleanupContainers: false, renderAfter: false }));
+  selectedCatalogItemIds = new Set();
+  selectedCatalogItemAnchorId = "";
+  saveState();
+  scheduleActivePublishedEditSave();
+  render();
+}
+
+async function copyCatalogRootContainers(containerIds) {
+  const ids = [...new Set(containerIds)].filter((id) => state.containers?.[id] && !state.containers[id].parentId);
+  if (ids.length <= 1) {
+    if (ids[0]) copyRootContainer(ids[0]);
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: "Скопировать выбранные сумки и места?",
+    text: `Будет создано ${formatRootContainerCount(ids.length)} без вещей внутри.`,
+    highlightText: selectionNames(ids.map((id) => state.containers[id])),
+    okText: "Скопировать",
+    tone: "safe"
+  });
+  if (!confirmed) return;
+  for (const id of ids) await duplicateRootContainer(id);
+  selectedCatalogRootIds = new Set();
+  selectedCatalogRootAnchorId = "";
+  renderBags();
+}
+
+async function confirmDeleteCatalogRootContainers(containerIds) {
+  const ids = [...new Set(containerIds)].filter((id) => state.containers?.[id] && !state.containers[id].parentId);
+  if (ids.length <= 1) {
+    if (ids[0]) confirmDeleteRootContainer(ids[0]);
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: "Удалить выбранные сумки и места?",
+    text: `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`,
+    highlightText: selectionNames(ids.map((id) => state.containers[id])),
+    okText: "Удалить",
+    tone: "danger"
+  });
+  if (!confirmed) return;
+  ids.forEach((id) => deleteRootContainer(id));
+  selectedCatalogRootIds = new Set();
+  selectedCatalogRootAnchorId = "";
+  renderBags();
+}
+
 function renderBags() {
   if (isSharedLayoutView()) {
+    selectedCatalogRootIds = new Set();
+    selectedCatalogRootAnchorId = "";
     renderSharedBagsView();
     return;
   }
@@ -12143,10 +12544,11 @@ function renderSharedSettingsView() {
 }
 
 function renderLayoutEditor() {
+  const layoutId = getActiveEditableLayoutId();
   return renderLayoutEditorHtml({
     containerWeight,
     containers: state.containers,
-    layout: state.layouts[state.activeLayoutId]
+    layout: state.layouts[layoutId]
   });
 }
 
@@ -12286,6 +12688,8 @@ function showToast(message, type = "") {
 
 function renderRootContainersEditor() {
   const roots = getRootContainersForSettings();
+  selectedCatalogRootIds = normalizeCatalogSelection(selectedCatalogRootIds, roots.map((container) => container.id));
+  if (selectedCatalogRootAnchorId && !roots.some((container) => container.id === selectedCatalogRootAnchorId)) selectedCatalogRootAnchorId = "";
   const counts = rootContainerUsageCountsForCatalog(state, {
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
@@ -12294,6 +12698,8 @@ function renderRootContainersEditor() {
   });
   return renderRootContainersEditorHtml({
     counts,
+    emptyFiltered: hasActiveContentFilter(),
+    emptyText: t(hasActiveContentFilter() ? "empty.notFoundByFilter" : "empty.notFound"),
     renderRootContainerCard,
     rootContainerSortMode,
     rootContainerUsageFilter,
@@ -12318,6 +12724,7 @@ function renderRootContainerCard(container) {
     highlightText: highlight,
     inCurrentLayout,
     location,
+    selected: selectedCatalogRootIds.has(container.id),
     photoHtml: photoSlot,
     showLabels: shouldShowItemLabels()
   });
@@ -12352,7 +12759,7 @@ function bindRootContainersEditor() {
   });
 
   document.querySelectorAll("[data-copy-root]").forEach((button) => {
-    button.addEventListener("click", () => copyRootContainer(button.dataset.copyRoot));
+    button.addEventListener("click", () => copyCatalogRootContainers(catalogRootActionIds(button.dataset.copyRoot)));
   });
 
   document.querySelectorAll("[data-edit-root]").forEach((button) => {
@@ -12362,7 +12769,7 @@ function bindRootContainersEditor() {
   });
 
   document.querySelectorAll("[data-delete-root]").forEach((button) => {
-    button.addEventListener("click", () => confirmDeleteRootContainer(button.dataset.deleteRoot));
+    button.addEventListener("click", () => confirmDeleteCatalogRootContainers(catalogRootActionIds(button.dataset.deleteRoot)));
   });
 
   document.querySelectorAll("[data-root-title]").forEach((title) => {
@@ -12376,6 +12783,7 @@ function bindRootContainersEditor() {
     };
     title.addEventListener("click", (event) => {
       const containerId = title.dataset.rootTitle;
+      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
       const now = Date.now();
       const isDoubleTap = event.detail === 2 || (lastRootContainerTitleTap.id === containerId && now - lastRootContainerTitleTap.time < 360);
       if (isDoubleTap) {
@@ -12387,6 +12795,7 @@ function bindRootContainersEditor() {
     });
     title.addEventListener("dblclick", edit);
   });
+  bindRootCatalogSelection();
 
   document.querySelectorAll(".root-container-card.editing input").forEach((input) => {
     if (input.matches("[data-root-name]")) {
@@ -12695,7 +13104,16 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   removeItemFromActiveLayout(itemId, layoutId);
 }
 
-function confirmDeleteItem(itemId) {
+function confirmDeleteEditingItemForever(event) {
+  event?.preventDefault();
+  const itemId = editingItemId;
+  if (!itemId || !state.items?.[itemId]) return;
+  confirmDeleteItem(itemId, {
+    afterConfirm: () => refs.dialog?.close("delete-item")
+  });
+}
+
+function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   const item = state.items[itemId];
   if (!item) return;
   const placements = describeVisibleItemLayoutPlacements(item);
@@ -12709,7 +13127,10 @@ function confirmDeleteItem(itemId) {
     okText: "Удалить",
     tone: placements.length ? "danger" : "safe",
     ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length) }),
-    onConfirm: () => deleteItemForever(itemId)
+    onConfirm: () => {
+      deleteItemForever(itemId);
+      afterConfirm?.();
+    }
   });
 }
 
@@ -12724,12 +13145,12 @@ function deleteItemPhotos(item, itemId) {
   });
 }
 
-function deleteItemForever(itemId) {
+function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = true } = {}) {
   const changedAt = nowIso();
   const deleted = deleteItemFromState(state, itemId, {
     beforeDeleteItem: deleteItemPhotos,
     changedAt,
-    cleanupEmptyContainers,
+    cleanupEmptyContainers: cleanupContainers ? cleanupEmptyContainers : () => {},
     markEdited,
     removeItemFromLayoutArrangement,
     touchLayoutsReferencingItem
@@ -12737,7 +13158,7 @@ function deleteItemForever(itemId) {
   if (!deleted) return;
   saveState();
   scheduleActivePublishedEditSave();
-  render();
+  if (renderAfter) render();
 }
 
 async function copyItem(itemId, options = {}) {
@@ -12809,7 +13230,16 @@ function makeContainerCopyName(name) {
   return makeContainerCopyNameForState(name, state.containers);
 }
 
-function confirmDeleteRootContainer(containerId) {
+function confirmDeleteEditingRootContainerForever(event) {
+  event?.preventDefault();
+  const containerId = editingRootContainerId;
+  if (!containerId || !state.containers?.[containerId]) return;
+  confirmDeleteRootContainer(containerId, {
+    afterConfirm: () => refs.rootContainerDialog?.close("delete-container")
+  });
+}
+
+function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
   const itemCount = getContainerItemIdsDeep(containerId).length;
@@ -12834,7 +13264,10 @@ function confirmDeleteRootContainer(containerId) {
       itemsText,
       risky: Boolean(layoutNames.length || itemCount)
     }),
-    onConfirm: () => deleteRootContainer(containerId)
+    onConfirm: () => {
+      deleteRootContainer(containerId);
+      afterConfirm?.();
+    }
   });
 }
 
@@ -12949,10 +13382,12 @@ function openRootContainerDialog(containerId = null) {
   fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
   updateRootContainerPlacementButton();
   updateRootContainerRemoveFromLayoutButton();
+  updateRootContainerDeleteForeverButton();
   if (refs.rootContainerCopyToContainerBtn) refs.rootContainerCopyToContainerBtn.hidden = !containerId;
   refs.rootContainerNote.value = container?.note || "";
   rootContainerDialogPhotoDraft = null;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
+  if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview(normalizeItemPhotos(container || { photos: [] }));
   rootContainerDialogInitialSnapshot = getRootContainerDialogSnapshot();
   updateRootContainerDialogSaveState();
@@ -12994,9 +13429,11 @@ function openItemDialog(itemId = null) {
   updateItemContainerPickerButton();
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = !itemId;
   updateItemRemoveFromLayoutButton();
+  updateItemDeleteForeverButton();
   refs.itemNote.value = item.note || "";
   itemDialogPhotoDraft = null;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
+  if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(normalizeItemPhotos(item));
   itemDialogInitialSnapshot = getItemDialogSnapshot();
   updateItemDialogSaveState();
@@ -13018,9 +13455,11 @@ function openSharedReadonlyItemDialog(sourceItemId) {
   renderItemCategoryPicker(["Прочее"], { fallbackDefault: true });
   refs.itemContainer.value = "";
   updateItemContainerPickerButton();
+  updateItemDeleteForeverButton();
   refs.itemNote.value = item.description || "";
   itemDialogPhotoDraft = null;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
+  if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(sharedGearPhotos(item));
   setSharedReadonlyItemDialog(true);
   openModalDialog(refs.dialog);
@@ -13031,15 +13470,18 @@ function setSharedReadonlyItemDialog(readonly) {
   refs.saveItemBtn.hidden = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = readonly;
   if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.hidden = readonly || refs.itemRemoveFromLayoutBtn.hidden;
+  if (refs.itemDeleteForeverBtn) refs.itemDeleteForeverBtn.hidden = readonly || refs.itemDeleteForeverBtn.hidden;
   refs.dialog.querySelectorAll("input, textarea, select").forEach((element) => {
     element.disabled = readonly;
   });
   refs.itemContainerPickerBtn.disabled = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.disabled = readonly;
   if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.disabled = readonly || refs.itemRemoveFromLayoutBtn.disabled;
+  if (refs.itemDeleteForeverBtn) refs.itemDeleteForeverBtn.disabled = readonly || refs.itemDeleteForeverBtn.disabled;
   refs.itemPhotoRemoveBtn.disabled = readonly;
   if (refs.itemPhotoPrimaryBtn) refs.itemPhotoPrimaryBtn.disabled = readonly || refs.itemPhotoPrimaryBtn.disabled;
   refs.itemPhotoInput.disabled = readonly;
+  if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.disabled = readonly;
   refs.dialog.querySelectorAll(".item-photo-pick").forEach((label) => {
     label.classList.toggle("disabled", readonly);
   });
@@ -13087,7 +13529,7 @@ function canManageLayout(layoutId = state.activeLayoutId) {
 }
 
 function canManageActiveLayout() {
-  return canManageLayout(state.activeLayoutId);
+  return canManageLayout(getActiveEditableLayoutId());
 }
 
 function languageSelectEntries() {
@@ -13606,10 +14048,14 @@ async function saveNewLayout(event) {
 }
 
 function openLayoutEditDialog() {
-  const layout = state.layouts?.[state.activeLayoutId];
+  const layoutId = getActiveEditableLayoutId();
+  const layout = state.layouts?.[layoutId];
   if (!layout || !canManageActiveLayout()) {
     showToast("Эту укладку нельзя редактировать.", "error");
     return;
+  }
+  if (isAdminEditablePublishedLayout(layout.id) && state.activeLayoutId !== layout.id) {
+    restoreAdminPublishedLayoutContext(layout.id);
   }
   layoutEditTargetId = layout.id;
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
@@ -14034,6 +14480,7 @@ async function handleItemPhotoInputChange(event) {
     showToast(error.message || "Не удалось подготовить фото.", "error");
   } finally {
     if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
+    if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   }
 }
 
@@ -14044,6 +14491,7 @@ function removeItemDialogPhoto() {
   itemDialogPhotoDraft = result.draft;
   itemDialogPhotoActiveIndex = result.nextIndex;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
+  if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(itemDialogPhotoDraft.photos);
   updateItemDialogSaveState();
 }
@@ -14065,6 +14513,7 @@ function resetItemDialogPhotoDraft() {
   itemDialogPhotoObjectUrls = [];
   itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
+  if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview([]);
 }
 
@@ -14134,6 +14583,7 @@ async function handleRootContainerPhotoInputChange(event) {
     showToast(error.message || "Не удалось подготовить фото.", "error");
   } finally {
     if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
+    if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   }
 }
 
@@ -14144,6 +14594,7 @@ function removeRootContainerDialogPhoto() {
   rootContainerDialogPhotoDraft = result.draft;
   rootContainerDialogPhotoActiveIndex = result.nextIndex;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
+  if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
   updateRootContainerDialogSaveState();
 }
@@ -14165,6 +14616,7 @@ function resetRootContainerDialogPhotoDraft() {
   rootContainerDialogPhotoObjectUrls = [];
   rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
+  if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview([]);
 }
 
@@ -14338,7 +14790,9 @@ function saveRootContainerDialog(event) {
     };
     markRecordActivePublicCatalog(state.containers[id]);
     closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
-    saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
+    const layoutId = getPublishedEditLayoutId();
+    restoreAdminPublishedLayoutContext(layoutId);
+    saveLayoutMutation(layoutId, { publishDelay: 500 });
     render();
     return;
   }
@@ -14355,7 +14809,9 @@ function saveRootContainerDialog(event) {
   applyRootContainerDialogParent(changedAt);
   applyRootContainerDialogPlacement();
   closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
-  saveLayoutMutation(getPublishedEditLayoutId(), { publishDelay: 500 });
+  const layoutId = getPublishedEditLayoutId();
+  restoreAdminPublishedLayoutContext(layoutId);
+  saveLayoutMutation(layoutId, { publishDelay: 500 });
   render();
 }
 
@@ -14391,6 +14847,7 @@ function saveDialogItem(event) {
           showToast("Не удалось добавить вещь в эту укладку.", "error");
           return;
         }
+        restoreAdminPublishedLayoutContext(layoutId);
         saveLayoutMutation(layoutId);
         render();
         return;
@@ -14399,6 +14856,7 @@ function saveDialogItem(event) {
       cleanupEmptyContainersInLayoutArrangement(layout, previousContainerId);
       touchLayout(layoutId, changedAt);
       if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+      restoreAdminPublishedLayoutContext(layoutId);
       saveLayoutMutation(layoutId);
       render();
       return;
@@ -14429,6 +14887,7 @@ function saveDialogItem(event) {
     }
   }
 
+  restoreAdminPublishedLayoutContext(layoutId);
   saveLayoutMutation(layoutId);
   closeDialogWithoutRestoringFocus(refs.dialog);
   render();
@@ -14682,6 +15141,10 @@ function containerCreatedTime(container) {
 
 function containerPath(containerId) {
   return containerPathForState(state, containerId);
+}
+
+function layoutContainerPath(layout, containerId) {
+  return layoutContainerPathForState(state, layout, containerId);
 }
 
 function containerWeight(containerId) {

@@ -1,12 +1,17 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
+import { renderEmptyState } from "./empty-state.js";
 import { formatItemWeight, renderItemQuantityText } from "./item-format.js";
 
 export function renderItemsViewHtml({
   counts,
+  emptyFiltered = false,
+  emptyText = "Ничего не найдено",
   itemSortMode,
   itemUsageFilter,
   items,
-  renderListItem
+  renderListItem,
+  showLabels = false,
+  showPhotos = false
 }) {
   const { label, title } = itemSortMeta(itemSortMode);
   return `
@@ -29,7 +34,7 @@ export function renderItemsViewHtml({
           </button>
         </div>
       </div>
-      <div class="items-list">${items.map(renderListItem).join("") || `<div class="empty">Ничего не найдено</div>`}</div>
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}</div>
     </section>
   `;
 }
@@ -38,10 +43,14 @@ export function renderSharedItemsViewHtml({
   bannerHtml,
   copyAllButtonHtml,
   counts,
+  emptyFiltered = false,
+  emptyText = "Ничего не найдено",
   itemSortMode,
   itemUsageFilter,
   items,
-  renderListItem
+  renderListItem,
+  showLabels = false,
+  showPhotos = false
 }) {
   const { label } = itemSortMeta(itemSortMode);
   return `
@@ -61,9 +70,17 @@ export function renderSharedItemsViewHtml({
           <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button">${label}</button>
         </div>
       </div>
-      <div class="items-list">${items.map(renderListItem).join("") || `<div class="empty">Ничего не найдено</div>`}</div>
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}</div>
     </section>
   `;
+}
+
+function itemsListClassName({ showLabels = false, showPhotos = false } = {}) {
+  return [
+    "items-list",
+    showPhotos ? "with-photo-slots" : "",
+    showLabels ? "with-meta-slots" : ""
+  ].filter(Boolean).join(" ");
 }
 
 function itemSortMeta(mode) {
@@ -94,6 +111,7 @@ export function renderListItemHtml({
   photoHtml,
   placementText,
   quantityText = "",
+  selected = false,
   showLabels
 }) {
   const cardTitle = [
@@ -107,10 +125,12 @@ export function renderListItemHtml({
   return renderCatalogCard({
     classes: [
       inCurrentLayout ? "in-current-layout" : "",
+      selected ? "catalog-selected" : "",
       filterMatch ? "filter-match" : ""
     ],
     attributes: {
       "data-list-item-id": item.id,
+      "aria-selected": selected ? "true" : "false",
       ...(filterMatch ? { "data-filter-match-id": item.id } : {})
     },
     title: cardTitle,

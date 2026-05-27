@@ -45,7 +45,8 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   if (!photos.length) return "";
   const slides = photos.map((photo) => renderPhotoSlide(photo, { photoObjectUrls })).join("");
   const dots = renderPhotoDots(photos.length);
-  const pending = photos.some((photo) => !photoRemoteSrc(photo) && ["pending", "uploading", "error", "missing-local-file"].includes(photo.status));
+  const uploadState = photoUploadState(photos);
+  const pending = uploadState.active || photos.some((photo) => !photoRemoteSrc(photo) && ["error", "missing-local-file"].includes(photo.status));
   const statusText = pending ? photoStatusText(photos) : "";
   return `
     <div class="item-photo ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
@@ -53,6 +54,7 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
         ${slides}
       </div>
       ${dots}
+      ${renderPhotoUploadProgress(uploadState)}
       ${statusText ? `<span>${escapeHtml(statusText)}</span>` : ""}
     </div>
   `;
@@ -63,12 +65,16 @@ export async function renderPhotoGalleryHtml(photos, { objectUrls = [], activeIn
   for (const photo of photos) {
     slides.push(await renderPhotoPreviewSlide(photo, objectUrls));
   }
+  const uploadState = photoUploadState(photos);
+  const statusText = uploadState.active ? photoStatusText(photos) : "";
   return `
-    <div class="item-photo ${className}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
+    <div class="item-photo ${className} ${uploadState.active ? "item-photo-pending" : ""}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
       <div class="photo-gallery-track">
         ${slides.join("")}
       </div>
       ${renderPhotoDots(photos.length, activeIndex)}
+      ${renderPhotoUploadProgress(uploadState)}
+      ${statusText ? `<span>${escapeHtml(statusText)}</span>` : ""}
     </div>
   `;
 }
@@ -103,8 +109,33 @@ export function photoStatusText(photos) {
   if (list.some((photo) => photo.status === "error")) return "Ошибка загрузки фото";
   if (list.some((photo) => photo.status === "missing-local-file")) return "Нет локального файла фото";
   if (list.some((photo) => photo.status === "uploading")) return "Фото загружается";
-  if (list.some((photo) => photo.status === "pending")) return "Фото сохранено локально и ждёт синхронизации";
+  if (list.some((photo) => photo.status === "pending")) return "Ждём загрузки";
   return list.length > 1 ? `${list.length} фото загружено` : "Фото загружено";
+}
+
+function photoUploadState(photos) {
+  const list = Array.isArray(photos) ? photos : [];
+  const active = list.some((photo) => photo.status === "pending" || photo.status === "uploading");
+  if (!active) return { active: false, progress: 0 };
+  const uploading = list.filter((photo) => photo.status === "uploading");
+  const source = uploading.find((photo) => Number.isFinite(Number(photo.uploadProgress))) ||
+    list.find((photo) => Number.isFinite(Number(photo.uploadProgress)));
+  const progress = source ? Number(source.uploadProgress) : (uploading.length ? 8 : 0);
+  return {
+    active: true,
+    progress: Math.max(0, Math.min(100, progress))
+  };
+}
+
+function renderPhotoUploadProgress({ active = false, progress = 0 } = {}) {
+  if (!active) return "";
+  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
+  const angle = Math.round(safeProgress * 3.6);
+  return `
+    <div class="photo-upload-progress" style="--photo-upload-angle: ${angle}deg" aria-hidden="true">
+      <span>${Math.round(safeProgress)}</span>
+    </div>
+  `;
 }
 
 export async function hydrateItemPhotos(root = document, { photoObjectUrls = new Map() } = {}) {

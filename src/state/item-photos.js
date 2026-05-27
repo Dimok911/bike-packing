@@ -20,7 +20,7 @@ export function normalizeItemPhotos(item) {
     .filter((photo) => photo && typeof photo === "object")
     .map((photo) => {
       normalizePhotoUrlFields(photo);
-      return {
+      const normalized = {
         id: String(photo.id || photo.localId || `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         localId: photo.localId ? String(photo.localId) : "",
         status: normalizePhotoStatus(photo.status),
@@ -40,6 +40,15 @@ export function normalizeItemPhotos(item) {
         ...(photo.publicCopySourceId ? { publicCopySourceId: String(photo.publicCopySourceId) } : {}),
         ...(photo.sharedSourceId ? { sharedSourceId: String(photo.sharedSourceId) } : {})
       };
+      if (Number.isFinite(Number(photo.uploadProgress))) {
+        Object.defineProperty(normalized, "uploadProgress", {
+          value: Math.max(0, Math.min(100, Number(photo.uploadProgress))),
+          writable: true,
+          configurable: true,
+          enumerable: false
+        });
+      }
+      return normalized;
     });
   return item.photos;
 }

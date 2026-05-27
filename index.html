@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=887" />
+    <link rel="stylesheet" href="./styles.css?v=902" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -187,6 +187,7 @@
             <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
             <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
             <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Удалить из укладки</button>
+            <button id="itemDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить вещь навсегда</button>
           </div>
           <input id="itemContainer" type="hidden" />
         </div>
@@ -201,6 +202,10 @@
             <label class="ghost item-photo-pick">
               Выбрать фото
               <input id="itemPhotoInput" type="file" accept="image/*" multiple />
+            </label>
+            <label class="ghost item-photo-pick">
+              Снять фото
+              <input id="itemPhotoCameraInput" type="file" accept="image/*" capture="environment" />
             </label>
             <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
             <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
@@ -264,6 +269,7 @@
             <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переложить в пределах укладки</button>
             <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
             <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Удалить</button>
+            <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить навсегда</button>
           </div>
         </div>
         <label>
@@ -277,6 +283,10 @@
             <label class="ghost item-photo-pick">
               Выбрать фото
               <input id="rootContainerPhotoInput" type="file" accept="image/*" multiple />
+            </label>
+            <label class="ghost item-photo-pick">
+              Снять фото
+              <input id="rootContainerPhotoCameraInput" type="file" accept="image/*" capture="environment" />
             </label>
             <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
             <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
@@ -583,6 +593,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=887" type="module"></script>
+    <script src="./app.js?v=902" type="module"></script>
   </body>
 </html>

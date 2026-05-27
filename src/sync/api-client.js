@@ -83,3 +83,72 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
   }
   return data;
 }
+
+export function apiUploadFormDataRequest(
+  path,
+  {
+    body,
+    headers = {},
+    method = "POST",
+    timeoutMs = API_TIMEOUT_MS,
+    silentErrors = false,
+    onUploadProgress = null
+  } = {},
+  { isForcedOffline = () => false } = {}
+) {
+  if (isForcedOffline()) {
+    return Promise.reject(createNetworkError("принудительный офлайн-режим"));
+  }
+  if ("onLine" in navigator && !navigator.onLine) {
+    return Promise.reject(createNetworkError("нет соединения с сервером"));
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${API_BASE}${path}`, true);
+    xhr.withCredentials = true;
+    xhr.timeout = timeoutMs;
+    Object.entries(headers || {}).forEach(([name, value]) => {
+      if (value !== undefined && value !== null) xhr.setRequestHeader(name, String(value));
+    });
+    if (typeof onUploadProgress === "function") {
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || !event.total) return;
+        onUploadProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))));
+      };
+    }
+    xhr.onload = () => {
+      const data = parseApiJsonResponse(xhr.responseText);
+      if (xhr.status < 200 || xhr.status >= 300 || data?.ok === false) {
+        const apiError = new Error(data?.message || data?.error || data?.code || `HTTP ${xhr.status}`);
+        apiError.status = xhr.status;
+        apiError.data = data;
+        apiError.path = path;
+        apiError.method = method;
+        if (!silentErrors && typeof console !== "undefined" && console.warn) {
+          console.warn("[bike-packing] API error", {
+            method,
+            path,
+            status: xhr.status,
+            response: data
+          });
+        }
+        reject(apiError);
+        return;
+      }
+      resolve(data);
+    };
+    xhr.onerror = () => reject(createNetworkError("нет соединения с сервером"));
+    xhr.ontimeout = () => reject(createNetworkError("сервер не ответил вовремя", null, { timeout: true }));
+    xhr.onabort = () => reject(createNetworkError("загрузка фото отменена"));
+    xhr.send(body);
+  });
+}
+
+function parseApiJsonResponse(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}

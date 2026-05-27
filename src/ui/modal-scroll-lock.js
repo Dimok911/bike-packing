@@ -80,7 +80,7 @@ export function createModalScrollLockController() {
   function preventBackgroundModalScroll(event) {
     if (!modalScrollLock) return;
     const dialog = event.target.closest?.("dialog");
-    if (dialog?.open && event.target !== dialog) {
+    if (dialog?.open) {
       const currentY = event.touches?.[0]?.clientY || modalTouchStartY;
       const deltaY = currentY - modalTouchStartY;
       if (canScrollInsideOpenDialog(event.target, dialog, deltaY)) return;
@@ -91,7 +91,7 @@ export function createModalScrollLockController() {
   function preventBackgroundModalWheel(event) {
     if (!modalScrollLock) return;
     const dialog = event.target.closest?.("dialog");
-    if (dialog?.open && event.target !== dialog && canScrollInsideOpenDialog(event.target, dialog, -event.deltaY)) return;
+    if (dialog?.open && canScrollInsideOpenDialog(event.target, dialog, -event.deltaY)) return;
     event.preventDefault();
   }
 
@@ -107,11 +107,12 @@ export function createModalScrollLockController() {
 
   function findModalScrollableAncestor(target, dialog) {
     let element = target;
-    while (element && element !== dialog && element !== document.body) {
+    while (element && element !== document.body) {
       if (element.scrollHeight > element.clientHeight + 1) {
         const overflowY = window.getComputedStyle(element).overflowY;
         if (overflowY === "auto" || overflowY === "scroll") return element;
       }
+      if (element === dialog) break;
       element = element.parentElement;
     }
     return null;

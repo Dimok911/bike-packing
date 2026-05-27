@@ -53,8 +53,41 @@ export function visibleItemLayoutPlacementLabels(targetState, item, {
   });
 }
 
+export function layoutContainerPath(targetState, layout, containerId, { separator = " / " } = {}) {
+  const names = [];
+  const seen = new Set();
+  let currentId = containerId || "";
+  const arrangement = layout?.arrangement && typeof layout.arrangement === "object"
+    ? layout.arrangement
+    : null;
+
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const container = targetState?.containers?.[currentId];
+    if (!container) break;
+    names.unshift(container.name || currentId);
+    const placementParentId = arrangement?.containers?.[currentId]?.parentId || "";
+    const fallbackParentId = !arrangement ? container.parentId || "" : "";
+    const parentId = placementParentId || fallbackParentId;
+    currentId = parentId && targetState?.containers?.[parentId] ? parentId : "";
+  }
+
+  return names.join(separator);
+}
+
 export function isRootContainerInLayout(layout, containerId) {
   return Boolean(layout?.rootContainerIds?.includes(containerId));
+}
+
+export function activeEditableLayoutId(targetState, {
+  adminLayoutId = "",
+  isAdminEditableLayout = () => false
+} = {}) {
+  const adminId = String(adminLayoutId || "").trim();
+  if (adminId && targetState?.layouts?.[adminId] && isAdminEditableLayout(targetState.layouts[adminId], adminId)) {
+    return adminId;
+  }
+  return targetState?.activeLayoutId || "";
 }
 
 export function isNestedContainerInAnyLayoutArrangement(targetState, containerId) {

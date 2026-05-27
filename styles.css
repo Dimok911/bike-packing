@@ -878,6 +878,8 @@ button.filter-active {
 
 .container-picker-button {
   width: 100%;
+  display: inline-flex;
+  align-items: center;
   justify-content: flex-start;
   text-align: left;
   background: #fbfcfa;
@@ -902,16 +904,17 @@ button.filter-active {
 
 .item-container-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .root-container-placement-control {
-  grid-template-columns: minmax(0, 3fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .item-container-current {
+  grid-column: 1 / -1;
   min-width: 0;
   min-height: 40px;
   display: flex;
@@ -938,6 +941,8 @@ button.filter-active {
 .item-container-control .container-picker-button.repack-button {
   width: 100%;
   min-width: 0;
+  height: 82px;
+  max-height: 82px;
   justify-content: center;
   text-align: center;
   white-space: normal;
@@ -953,6 +958,8 @@ button.filter-active {
 .item-container-control .copy-to-container-button {
   width: 100%;
   min-width: 0;
+  height: 82px;
+  max-height: 82px;
   justify-content: center;
   text-align: center;
   white-space: normal;
@@ -962,15 +969,33 @@ button.filter-active {
 }
 
 .item-container-control .remove-from-layout-button {
-  width: auto;
+  width: 100%;
   min-width: 0;
+  height: 82px;
+  max-height: 82px;
   justify-content: center;
   text-align: center;
-  white-space: nowrap;
-  padding-left: 14px;
-  padding-right: 14px;
+  white-space: normal;
+  padding-left: 10px;
+  padding-right: 10px;
   color: #9c4d36;
   border-color: rgba(156, 77, 54, 0.22);
+}
+
+.item-container-control .delete-forever-button {
+  width: 100%;
+  min-width: 0;
+  height: 82px;
+  max-height: 82px;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  padding-left: 10px;
+  padding-right: 10px;
+  background: #b83a2d;
+  color: #fff;
+  border-color: #b83a2d;
+  box-shadow: 0 10px 20px rgba(184, 58, 45, 0.16);
 }
 
 .item-container-control .container-picker-button.repack-button:hover,
@@ -986,6 +1011,13 @@ button.filter-active {
 .item-container-control .remove-from-layout-button:focus-visible {
   background: #fde9dd;
   color: #8d3f2a;
+}
+
+.item-container-control .delete-forever-button:hover,
+.item-container-control .delete-forever-button:focus-visible {
+  background: #982f25;
+  color: #fff;
+  border-color: #982f25;
 }
 
 .root-container-placement-control .container-picker-button {
@@ -2861,6 +2893,41 @@ button.ghost.context-toggle.active:focus-visible {
   font-weight: 700;
 }
 
+.photo-upload-progress {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--photo-upload-angle, 0deg), rgba(220, 236, 230, 0.7) 0);
+  box-shadow: 0 3px 12px rgba(29, 37, 34, 0.16);
+}
+
+.photo-upload-progress::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.photo-upload-progress span {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  z-index: 1;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1;
+}
+
 .item-photo-pending {
   border-style: dashed;
 }
@@ -2889,6 +2956,19 @@ button.ghost.context-toggle.active:focus-visible {
   border-color: rgba(31, 111, 91, 0.32);
   background: rgba(220, 236, 230, 0.3);
   box-shadow: 0 0 0 1px rgba(31, 111, 91, 0.08);
+}
+
+.item-card.catalog-selected {
+  border-color: rgba(18, 96, 145, 0.82);
+  background: #e5f2f8;
+  box-shadow:
+    inset 5px 0 0 rgba(18, 96, 145, 0.74),
+    0 0 0 2px rgba(18, 96, 145, 0.18),
+    0 8px 18px rgba(18, 96, 145, 0.12);
+}
+
+.item-card.catalog-selected .item-title {
+  color: #174c72;
 }
 
 .item-card.filter-match {
@@ -3500,7 +3580,7 @@ mark {
     overflow: hidden;
   }
 
-  .items-list:has(.item-photo) .item-card,
+  .items-list.with-photo-slots .item-card,
   .root-container-list:has(.item-photo) .root-container-card,
   .root-container-list.with-photo-slots .root-container-card {
     height: var(--photo-card-height);
@@ -3510,7 +3590,7 @@ mark {
     grid-template-rows: minmax(0, var(--photo-top-row-height)) var(--photo-frame-height);
   }
 
-  .items-list:has(.item-photo) .item-photo,
+  .items-list.with-photo-slots .item-photo,
   .root-container-list:has(.item-photo) .item-photo,
   .root-container-list.with-photo-slots .item-photo {
     height: var(--photo-frame-height);
@@ -3518,7 +3598,7 @@ mark {
     align-self: end;
   }
 
-  .items-list:has(.item-photo) .item-card .item-photo {
+  .items-list.with-photo-slots .item-card .item-photo {
     grid-row: 2;
   }
 
@@ -3543,7 +3623,7 @@ mark {
     overflow: hidden;
   }
 
-  .items-list:has(.item-photo) .item-card:not(:has(.item-photo))::after,
+  .items-list.with-photo-slots .item-card:not(:has(.item-photo))::after,
   .root-container-list:has(.item-photo) .root-container-card:not(:has(.item-photo))::after {
     content: "Без фото";
     display: grid;
@@ -3558,7 +3638,7 @@ mark {
     align-self: end;
   }
 
-  .items-list:has(.item-photo) .item-card:not(:has(.item-photo))::after {
+  .items-list.with-photo-slots .item-card:not(:has(.item-photo))::after {
     grid-row: 2;
   }
 
@@ -3582,13 +3662,13 @@ mark {
     white-space: nowrap;
   }
 
-  .items-list:has(.item-photo) .item-card .item-card-top {
-    max-height: 5em;
+  .items-list.with-photo-slots .item-card .item-card-top {
+    max-height: var(--photo-top-row-height);
     overflow: hidden;
   }
 
-  .items-list:has(.item-photo) .item-card .meta,
-  .items-list:has(.item-photo) .item-card small {
+  .items-list.with-photo-slots:not(.with-meta-slots) .item-card .meta,
+  .items-list.with-photo-slots .item-card small {
     display: none;
   }
 
@@ -3916,6 +3996,10 @@ dialog {
   border-radius: 10px;
   padding: 0;
   width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 #containerPickerDialog,
@@ -4830,8 +4914,12 @@ dialog::backdrop {
 
   .item-container-control .container-picker-button.repack-button,
   .item-container-control .copy-to-container-button,
-  .item-container-control .remove-from-layout-button {
+  .item-container-control .remove-from-layout-button,
+  .item-container-control .delete-forever-button {
     width: 100%;
+    height: auto;
+    max-height: none;
+    min-height: 52px;
   }
 
   .root-container-placement-control .container-picker-button {
@@ -5941,6 +6029,14 @@ dialog::backdrop {
   border: 1px dashed var(--line);
   border-radius: 8px;
   text-align: center;
+}
+
+.empty-filtered {
+  border-color: rgba(211, 133, 0, 0.62);
+  background: #fff4c7;
+  color: #654600;
+  box-shadow: inset 4px 0 0 rgba(255, 174, 0, 0.86);
+  font-weight: 750;
 }
 
 @media (max-width: 800px) {
