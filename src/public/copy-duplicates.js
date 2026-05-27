@@ -169,3 +169,17 @@ export function summarizeLayoutIdDuplicates({
     itemIds: targetItemIds.filter((id) => sourceItemIds.has(id))
   };
 }
+
+export function summarizeLayoutTreeIdDuplicates({
+  sourceSnapshot,
+  targetLayout,
+  getLayoutContainerIdSet = () => new Set(),
+  getLayoutItemIdSet = () => new Set()
+}) {
+  if (!targetLayout) return { containerIds: [], itemIds: [] };
+  return summarizeLayoutIdDuplicates({
+    sourceSnapshot,
+    targetContainerIds: [...getLayoutContainerIdSet(targetLayout)],
+    targetItemIds: [...getLayoutItemIdSet(targetLayout)]
+  });
+}

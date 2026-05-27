@@ -75,3 +75,14 @@ export function publicTemplateDeleteBlockReason({
   }
   return "";
 }
+
+export function shouldDeletePublishedTemplateForLayout({
+  layout = null,
+  target = null,
+  sharedLayout = null
+} = {}) {
+  if (target?.type === "demo") return Boolean(target.demoListId);
+  if (target?.type !== "shared" || !target.sharedId) return false;
+  if (layout?.adminTemplateCopy) return true;
+  return Boolean(sharedLayout?.runtimeSharedTemplate);
+}

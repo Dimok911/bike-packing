@@ -82,3 +82,66 @@ export function addBackupDictionaryValues(targetState, sourceState) {
     }
   }
 }
+
+export function restoreSelectedBackupLayoutsToState({
+  backupRows = [],
+  changedAt = "",
+  cloneValue = clonePlain,
+  getLayoutContainerIdSet,
+  getLayoutItemIdSet,
+  markEdited = () => {},
+  normalizePhotos,
+  selectedIds = new Set(),
+  sourceState = null,
+  targetState = null,
+  uniqueLayoutId = () => `layout-backup-${Date.now()}-${Math.random().toString(16).slice(2)}`
+} = {}) {
+  if (!sourceState || !targetState) return { importedPhotoIds: new Set(), restoredLayoutIds: [] };
+  const importedPhotoIds = new Set();
+  const restoredLayoutIds = [];
+  addBackupDictionaryValues(targetState, sourceState);
+  backupRows
+    .filter((row) => selectedIds.has(row.layout?.id))
+    .forEach(({ layout, existing }) => {
+      const targetLayoutId = existing?.id || (!targetState.layouts?.[layout.id] ? layout.id : uniqueLayoutId(layout));
+      if (existing?.id) delete targetState.layouts[existing.id];
+      getLayoutContainerIdSet(sourceState, layout).forEach((containerId) => {
+        const result = mergeBackupRecordWithExisting(targetState.containers, sourceState.containers?.[containerId], { normalizePhotos });
+        result.photoIds.forEach((id) => importedPhotoIds.add(id));
+        if (result.created) markEdited(targetState.containers[containerId], changedAt);
+      });
+      getLayoutItemIdSet(sourceState, layout).forEach((itemId) => {
+        const result = mergeBackupRecordWithExisting(targetState.items, sourceState.items?.[itemId], { normalizePhotos });
+        result.photoIds.forEach((id) => importedPhotoIds.add(id));
+        if (result.created) markEdited(targetState.items[itemId], changedAt);
+      });
+      targetState.layouts[targetLayoutId] = {
+        ...cloneValue(layout),
+        id: targetLayoutId,
+        updatedAt: changedAt
+      };
+      targetState.activeLayoutId = targetLayoutId;
+      restoredLayoutIds.push(targetLayoutId);
+    });
+  return { importedPhotoIds, restoredLayoutIds };
+}
+
+export function normalizeRestoredBackupState(targetState, {
+  activeLayoutId = targetState?.activeLayoutId || "",
+  applyLayoutArrangement = () => {},
+  migrateContainerOrder = () => {},
+  normalizeContainerFields = () => {},
+  normalizeItemCategories = () => {},
+  normalizeItemFields = () => {},
+  normalizeLayoutFields = () => {},
+  repairContainerMembershipFromItemLinks = () => {}
+} = {}) {
+  normalizeContainerFields(targetState);
+  normalizeItemFields(targetState);
+  repairContainerMembershipFromItemLinks(targetState);
+  normalizeLayoutFields(targetState);
+  normalizeItemCategories(targetState);
+  migrateContainerOrder(targetState);
+  applyLayoutArrangement(activeLayoutId, targetState);
+  return targetState;
+}

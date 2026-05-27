@@ -9,6 +9,19 @@ export function makeCopyName(name, existingNames, suffix = "копия") {
   return `${baseName} ${index}`;
 }
 
+export function makeContainerCopyName(name, containers = {}) {
+  return makeCopyName(
+    name,
+    Object.values(containers || {})
+      .filter((container) => !container?.parentId)
+      .map((container) => container.name)
+  );
+}
+
+export function makeItemCopyName(name, items = {}) {
+  return makeCopyName(name, Object.values(items || {}).map((item) => item?.name));
+}
+
 export function uniqueName(baseName, existingNames, { fallback = "Новая укладка" } = {}) {
   const base = String(baseName || fallback).trim() || fallback;
   const existing = new Set([...existingNames].map((value) => String(value || "").trim().toLowerCase()));

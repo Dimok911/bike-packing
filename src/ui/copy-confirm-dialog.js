@@ -25,3 +25,25 @@ export function rootContainerCopyConfirm({ container, inLayout = false }) {
     tone: "safe"
   };
 }
+
+export function itemDeleteConfirm({ item, placementText = "", hasPlacements = false }) {
+  const name = item?.name || "РІРµС‰СЊ";
+  return {
+    title: "РЈРґР°Р»РёС‚СЊ РІРµС‰СЊ РЅР°РІСЃРµРіРґР°?",
+    text: `В«${name}В» Р±СѓРґРµС‚ СѓРґР°Р»РµРЅР° РёР· СЃРїРёСЃРєР° РІРµС‰РµР№ Рё РёР· РІСЃРµС… СѓРєР»Р°РґРѕРє. Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµР»СЊР·СЏ РѕС‚РјРµРЅРёС‚СЊ.`,
+    highlightText: placementText,
+    okText: "РЈРґР°Р»РёС‚СЊ",
+    tone: hasPlacements ? "danger" : "safe"
+  };
+}
+
+export function rootContainerDeleteConfirm({ container, layoutText = "", itemsText = "", risky = false }) {
+  const name = container?.name || "СЃСѓРјРєР° РёР»Рё РјРµСЃС‚Рѕ";
+  return {
+    title: "РЈРґР°Р»РёС‚СЊ СЃСѓРјРєСѓ РёР»Рё РјРµСЃС‚Рѕ?",
+    text: `В«${name}В» Р±СѓРґРµС‚ СѓРґР°Р»РµРЅРѕ РёР· СЃРїРёСЃРєР° СЃСѓРјРѕРє Рё РјРµСЃС‚ Рё РёР· РІСЃРµС… СѓРєР»Р°РґРѕРє.`,
+    highlightText: `${layoutText}${itemsText}`,
+    okText: "РЈРґР°Р»РёС‚СЊ",
+    tone: risky ? "danger" : "safe"
+  };
+}

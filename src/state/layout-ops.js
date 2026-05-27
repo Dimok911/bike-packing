@@ -1,4 +1,6 @@
 import { createEmptyLayoutArrangement } from "./layout-arrangement.js";
+import { normalizeLayoutArrangement } from "./layout-normalize.js";
+import { clonePlain } from "../utils/json.js";
 
 export function getItemContainerIdInLayout(targetState, layout, itemId) {
   const arrangement = layout?.arrangement;
@@ -198,6 +200,233 @@ export function moveContainerInLayoutArrangement(targetState, layout, containerI
   return true;
 }
 
+export function removeItemFromLayoutInState(targetState, layoutId, itemId, {
+  changedAt = "",
+  touchLayout = () => {}
+} = {}) {
+  const item = targetState?.items?.[itemId];
+  const layout = targetState?.layouts?.[layoutId];
+  const containerId = getItemContainerIdInLayout(targetState, layout, itemId);
+  if (!item || !layout || !containerId) return false;
+  if (!removeItemFromLayoutArrangement(layout, itemId)) return false;
+  cleanupEmptyContainersInLayoutArrangement(layout, containerId);
+  touchLayout(layoutId, changedAt);
+  return true;
+}
+
+export function placeExistingItemInLayoutInState(targetState, itemId, containerId, layoutId, {
+  activeLayoutId = "",
+  applyLayoutArrangement = () => {},
+  changedAt = "",
+  targetIndex = null,
+  touchLayout = () => {}
+} = {}) {
+  const layout = targetState?.layouts?.[layoutId];
+  if (!targetState?.items?.[itemId] || !layout || !targetState?.containers?.[containerId]) return false;
+  const previousArrangement = clonePlain(layout.arrangement || createEmptyLayoutArrangement());
+  const previousRootContainerIds = [...(layout.rootContainerIds || [])];
+  const rollback = () => {
+    layout.arrangement = previousArrangement;
+    layout.rootContainerIds = previousRootContainerIds;
+    if (layoutId === activeLayoutId) applyLayoutArrangement(layoutId);
+    return false;
+  };
+  if (!addItemToLayoutArrangement(targetState, layout, itemId, containerId, targetIndex)) return rollback();
+  normalizeLayoutArrangement(layout, targetState);
+  if (getItemContainerIdInLayout(targetState, layout, itemId) !== containerId) return rollback();
+  touchLayout(layoutId, changedAt);
+  if (layoutId === activeLayoutId) {
+    applyLayoutArrangement(layoutId);
+    const activeItemContainerId = targetState.items?.[itemId]?.containerId || "";
+    const activeContainerHasItem = Boolean(targetState.containers?.[containerId]?.itemIds?.includes(itemId));
+    if (activeItemContainerId !== containerId || !activeContainerHasItem) return rollback();
+  }
+  return true;
+}
+
+export function placeExistingContainerInLayoutInState(targetState, containerId, parentId, layoutId, {
+  activeLayoutId = "",
+  applyLayoutArrangement = () => {},
+  changedAt = "",
+  targetIndex = null,
+  touchLayout = () => {}
+} = {}) {
+  const layout = targetState?.layouts?.[layoutId];
+  if (!targetState?.containers?.[containerId] || !layout) return false;
+  if (parentId && !targetState.containers?.[parentId]) return false;
+  const previousArrangement = clonePlain(layout.arrangement || createEmptyLayoutArrangement());
+  const previousRootContainerIds = [...(layout.rootContainerIds || [])];
+  const previousParentId = targetState.containers[containerId].parentId || null;
+  const rollback = () => {
+    layout.arrangement = previousArrangement;
+    layout.rootContainerIds = previousRootContainerIds;
+    targetState.containers[containerId].parentId = previousParentId;
+    if (layoutId === activeLayoutId) applyLayoutArrangement(layoutId);
+    return false;
+  };
+  targetState.containers[containerId].parentId = parentId || null;
+  if (!ensureLayoutContainerPlacement(targetState, layout, containerId)) return rollback();
+  if (parentId) {
+    if (!moveContainerInLayoutArrangement(targetState, layout, containerId, parentId, targetIndex)) return rollback();
+    targetState.collapsedContainers[parentId] = false;
+  } else {
+    const arrangement = layout.arrangement || createEmptyLayoutArrangement();
+    arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => id !== containerId);
+    arrangement.rootContainerIds.push(containerId);
+    if (arrangement.containers?.[containerId]) arrangement.containers[containerId].parentId = "";
+    layout.rootContainerIds = [...arrangement.rootContainerIds];
+  }
+  normalizeLayoutArrangement(layout, targetState);
+  touchLayout(layoutId, changedAt);
+  if (layoutId === activeLayoutId) applyLayoutArrangement(layoutId);
+  return true;
+}
+
+export function detachItemFromContainerInState(targetState, itemId, containerId, {
+  activeLayoutId = "",
+  changedAt = "",
+  cleanupEmptyContainers = () => {},
+  touchContainer = () => {},
+  touchItem = () => {},
+  touchLayout = () => {}
+} = {}) {
+  const item = targetState?.items?.[itemId];
+  const container = containerId ? targetState?.containers?.[containerId] : null;
+  if (!item || !container) return false;
+  container.itemIds = (container.itemIds || []).filter((id) => id !== itemId);
+  container.order = (container.order || []).filter((entry) => !(entry.type === "item" && entry.id === itemId));
+  item.containerId = null;
+  touchItem(itemId, changedAt);
+  touchContainer(containerId, changedAt);
+  touchLayout(activeLayoutId, changedAt);
+  removeItemFromLayoutArrangement(targetState.layouts?.[activeLayoutId], itemId);
+  delete targetState.packedItems?.[itemId];
+  cleanupEmptyContainers(containerId);
+  return true;
+}
+
+export function removeContainerFromLayoutOnlyInState(targetState, layout, containerId, {
+  changedAt = "",
+  deleteUnusedLayoutContainerEntity = () => {},
+  markEdited = () => {},
+  markRecordActivePublicCatalog = () => {}
+} = {}) {
+  if (!layout || !targetState?.containers?.[containerId]) return false;
+  const arrangement = normalizeLayoutArrangement(layout, targetState);
+  const placement = arrangement.containers?.[containerId];
+  if (!placement && !(arrangement.rootContainerIds || []).includes(containerId)) return false;
+  const removedContainerIds = new Set();
+  const collect = (id) => {
+    if (!id || removedContainerIds.has(id)) return;
+    removedContainerIds.add(id);
+    (arrangement.containers?.[id]?.childIds || []).forEach(collect);
+  };
+  collect(containerId);
+  const isRoot = (arrangement.rootContainerIds || []).includes(containerId);
+  const parentId = placement?.parentId || "";
+  if (isRoot) {
+    arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => id !== containerId);
+    layout.rootContainerIds = [...arrangement.rootContainerIds];
+    markRecordActivePublicCatalog(targetState.containers[containerId]);
+    markEdited(targetState.containers[containerId], changedAt);
+  } else if (parentId && arrangement.containers?.[parentId]) {
+    const parent = arrangement.containers[parentId];
+    parent.childIds = (parent.childIds || []).filter((id) => id !== containerId);
+    parent.order = (parent.order || []).filter((entry) => !(entry?.type === "container" && entry.id === containerId));
+  }
+  Object.entries(arrangement.items || {}).forEach(([itemId, itemContainerId]) => {
+    if (!removedContainerIds.has(itemContainerId)) return;
+    delete arrangement.items[itemId];
+    delete arrangement.packedItems?.[itemId];
+    if (targetState.items?.[itemId]) {
+      markRecordActivePublicCatalog(targetState.items[itemId]);
+      markEdited(targetState.items[itemId], changedAt);
+    }
+  });
+  removedContainerIds.forEach((id) => {
+    delete arrangement.containers[id];
+    delete targetState.collapsedContainers?.[id];
+    if (id === containerId && isRoot) return;
+    deleteUnusedLayoutContainerEntity(id, layout.id);
+  });
+  if (parentId) cleanupEmptyContainersInLayoutArrangement(layout, parentId);
+  return true;
+}
+
+export function moveRootColumnInState(targetState, layoutId, containerId, targetIndex, {
+  touchLayout = () => {}
+} = {}) {
+  const layout = targetState?.layouts?.[layoutId];
+  if (!layout || !(layout.rootContainerIds || []).includes(containerId)) return false;
+  layout.rootContainerIds = layout.rootContainerIds.filter((id) => id !== containerId);
+  const index = Math.max(0, Math.min(Number(targetIndex) || 0, layout.rootContainerIds.length));
+  layout.rootContainerIds.splice(index, 0, containerId);
+  touchLayout(layoutId);
+  return true;
+}
+
+export function createGroupFromItemsInState(targetState, layoutId, itemId, targetItemId, {
+  changedAt = "",
+  currentEditMeta = () => ({}),
+  groupId = "",
+  groupName = "РќРѕРІС‹Р№ РїР°РєРµС‚",
+  markRecordActivePublicCatalog = () => {},
+  touchLayout = () => {}
+} = {}) {
+  if (!groupId || itemId === targetItemId) return null;
+  const layout = targetState?.layouts?.[layoutId];
+  const item = targetState?.items?.[itemId];
+  const targetItem = targetState?.items?.[targetItemId];
+  const sourceContainerId = getItemContainerIdInLayout(targetState, layout, itemId);
+  const targetContainerId = getItemContainerIdInLayout(targetState, layout, targetItemId);
+  const targetParent = ensureLayoutContainerPlacement(targetState, layout, targetContainerId);
+  if (!layout || !item || !targetItem || !sourceContainerId || !targetContainerId || !targetParent) return null;
+
+  const targetIndex = (targetParent.order || []).findIndex((entry) => entry.type === "item" && entry.id === targetItemId);
+  const sourceIndexInTarget = sourceContainerId === targetContainerId
+    ? (targetParent.order || []).findIndex((entry) => entry.type === "item" && entry.id === itemId)
+    : -1;
+  const insertIndex = Math.max(0, targetIndex - (sourceIndexInTarget >= 0 && sourceIndexInTarget < targetIndex ? 1 : 0));
+
+  targetState.containers[groupId] = {
+    id: groupId,
+    name: groupName,
+    parentId: null,
+    childIds: [],
+    itemIds: [targetItemId, itemId],
+    order: [
+      { type: "item", id: targetItemId },
+      { type: "item", id: itemId }
+    ],
+    ...currentEditMeta(changedAt)
+  };
+  markRecordActivePublicCatalog(targetState.containers[groupId]);
+
+  removeItemFromLayoutArrangement(layout, itemId);
+  removeItemFromLayoutArrangement(layout, targetItemId);
+  layout.arrangement.containers[groupId] = {
+    parentId: targetContainerId,
+    itemIds: [targetItemId, itemId],
+    childIds: [],
+    order: [
+      { type: "item", id: targetItemId },
+      { type: "item", id: itemId }
+    ]
+  };
+  layout.arrangement.items[targetItemId] = groupId;
+  layout.arrangement.items[itemId] = groupId;
+  targetParent.childIds = Array.isArray(targetParent.childIds) ? targetParent.childIds.filter((id) => id !== groupId) : [];
+  targetParent.childIds.push(groupId);
+  targetParent.order = Array.isArray(targetParent.order)
+    ? targetParent.order.filter((entry) => !(entry?.type === "container" && entry.id === groupId))
+    : [];
+  targetParent.order.splice(Math.min(insertIndex, targetParent.order.length), 0, { type: "container", id: groupId });
+  touchLayout(layoutId, changedAt);
+  targetState.collapsedContainers[groupId] = false;
+  if (sourceContainerId !== targetContainerId) cleanupEmptyContainersInLayoutArrangement(layout, sourceContainerId);
+  return { groupId, sourceContainerId, targetContainerId };
+}
+
 export function cleanupEmptyContainersInLayoutArrangement(layout, containerId) {
   const arrangement = layout?.arrangement;
   if (!arrangement || typeof arrangement !== "object") return false;
@@ -222,4 +451,22 @@ export function cleanupEmptyContainersInLayoutArrangement(layout, containerId) {
     currentId = parentId;
   }
   return changed;
+}
+
+export function touchLayoutsReferencingItemInState(targetState, itemId, {
+  changedAt = "",
+  markEdited = () => {}
+} = {}) {
+  Object.values(targetState?.layouts || {}).forEach((layout) => {
+    const arrangement = layout?.arrangement;
+    const hasItem = Boolean(
+      arrangement?.items?.[itemId] ||
+      Object.values(arrangement?.containers || {}).some((placement) => {
+        if (!placement || typeof placement !== "object") return false;
+        if ((placement.itemIds || []).includes(itemId)) return true;
+        return (placement.order || []).some((entry) => entry?.type === "item" && entry.id === itemId);
+      })
+    );
+    if (hasItem) markEdited(layout, changedAt);
+  });
 }

@@ -65,3 +65,23 @@ export function renderBackupSelectionSummary(refs, { selectedCount, summary }) {
   }
   if (refs.backupRestoreSelectedBtn) refs.backupRestoreSelectedBtn.disabled = selectedCount === 0;
 }
+
+export function selectedBackupRestoreConfirm(summary) {
+  return {
+    title: "Восстановить выбранные укладки?",
+    text: "При восстановлении отдельных укладок заменяются только укладки с совпадающим именем, новые создаются, недостающие вещи/сумки/фото добавляются.",
+    highlightText: `Будет заменено: ${summary.replace}; создано: ${summary.create}; новые вещи: ${summary.newItems.length}; новые сумки/места: ${summary.newContainers.length}; фото к проверке: ${summary.photos.length}.`,
+    okText: "Восстановить выбранные",
+    tone: "warning"
+  };
+}
+
+export function fullBackupRestoreConfirm(stats) {
+  return {
+    title: "Восстановить всё из архива?",
+    text: "При полном восстановлении всё текущее состояние пользователя будет потеряно и заменено данными из архива.",
+    highlightText: `Будет восстановлено: ${stats.layouts} укладок, ${stats.items} вещей, ${stats.containers} сумок/мест. Текущее состояние будет потеряно.`,
+    okText: "Восстановить всё",
+    tone: "danger"
+  };
+}

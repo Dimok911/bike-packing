@@ -104,3 +104,59 @@ export function writeContainerTreeToLayoutArrangement(targetState, layoutId, con
   layout.rootContainerIds = [...new Set([...(layout.rootContainerIds || []), ...(arrangement.rootContainerIds || [])])];
   return true;
 }
+
+export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapshot, targetLayoutId, targetParentId = "", {
+  changedAt = "",
+  normalizeLayoutArrangement = () => {},
+  targetContainerIds = [],
+  touchLayout = () => {}
+} = {}) {
+  const targetLayout = targetState?.layouts?.[targetLayoutId];
+  if (!targetState || !sourceSnapshot || !targetLayout) return "";
+  const targetContainerSet = new Set(targetContainerIds);
+  if (targetParentId && (!targetState.containers?.[targetParentId] || !targetContainerSet.has(targetParentId))) return "";
+
+  const applySourceContainer = (sourceContainerId, parentId = null) => {
+    const sourceContainer = sourceSnapshot.containers?.[sourceContainerId];
+    const targetContainer = targetState.containers?.[sourceContainerId];
+    if (!sourceContainer || !targetContainer) return "";
+    targetContainer.parentId = parentId || null;
+    targetContainer.childIds = (sourceContainer.childIds || []).filter((id) => targetState.containers?.[id]);
+    targetContainer.itemIds = (sourceContainer.itemIds || []).filter((id) => targetState.items?.[id]);
+    targetContainer.order = (sourceContainer.order || [])
+      .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
+      .filter((entry) => entry.type === "item" ? targetContainer.itemIds.includes(entry.id) : targetContainer.childIds.includes(entry.id))
+      .map((entry) => ({ type: entry.type, id: entry.id }));
+    if (!targetContainer.order.length) {
+      targetContainer.order = [
+        ...targetContainer.itemIds.map((id) => ({ type: "item", id })),
+        ...targetContainer.childIds.map((id) => ({ type: "container", id }))
+      ];
+    }
+    targetContainer.itemIds.forEach((itemId) => {
+      if (targetState.items?.[itemId]) targetState.items[itemId].containerId = sourceContainerId;
+    });
+    targetContainer.childIds.forEach((childId) => applySourceContainer(childId, sourceContainerId));
+    targetState.collapsedContainers[sourceContainerId] = false;
+    return sourceContainerId;
+  };
+
+  const rootId = applySourceContainer(sourceSnapshot.rootId, targetParentId || null);
+  if (!rootId) return "";
+  if (targetParentId) {
+    const parent = targetState.containers[targetParentId];
+    parent.childIds = parent.childIds || [];
+    if (!parent.childIds.includes(rootId)) parent.childIds.push(rootId);
+    parent.order = parent.order || [];
+    if (!parent.order.some((entry) => entry?.type === "container" && entry.id === rootId)) {
+      parent.order.push({ type: "container", id: rootId });
+    }
+    targetState.collapsedContainers[targetParentId] = false;
+  } else {
+    targetLayout.rootContainerIds = [...new Set([...(targetLayout.rootContainerIds || []), rootId])];
+  }
+  writeContainerTreeToLayoutArrangement(targetState, targetLayoutId, rootId);
+  normalizeLayoutArrangement(targetLayout, targetState);
+  touchLayout(targetLayoutId, changedAt);
+  return rootId;
+}

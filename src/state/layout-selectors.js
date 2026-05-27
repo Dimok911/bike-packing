@@ -3,9 +3,11 @@ import {
   isGeneratedCatalogContainerSyncArtifact
 } from "../public/generated-artifacts.js";
 import {
+  getLayoutDescendantContainerIds,
   getItemContainerIdInLayout,
   getLayoutContainerIdSet
 } from "./layout-ops.js";
+import { normalizeLayoutArrangement } from "./layout-normalize.js";
 
 export function getDescendantContainerIds(targetState, containerId) {
   const container = targetState.containers?.[containerId];
@@ -30,6 +32,25 @@ export function getVisibleLayoutRootIds(targetState, layout, { includeGenerated 
 export function isItemInLayout(targetState, layout, item) {
   if (!item?.id || !layout) return false;
   return Boolean(getItemContainerIdInLayout(targetState, layout, item.id));
+}
+
+export function visibleItemLayoutPlacementLabels(targetState, item, {
+  containerPath = (containerId) => containerId
+} = {}) {
+  if (!item?.id) return [];
+  return Object.values(targetState?.layouts || {}).flatMap((layout) => {
+    normalizeLayoutArrangement(layout, targetState);
+    const containerId = getItemContainerIdInLayout(targetState, layout, item.id);
+    if (!containerId || !targetState.containers?.[containerId]) return [];
+    const rootId = getVisibleLayoutRootIds(targetState, layout).find((id) =>
+      id === containerId || getLayoutDescendantContainerIds(layout, id).includes(containerId)
+    );
+    const root = rootId ? targetState.containers[rootId] : null;
+    if (!root) return [];
+    const path = containerPath(containerId);
+    const place = rootId === containerId ? "" : `, \u043c\u0435\u0441\u0442\u043e \u00ab${path}\u00bb`;
+    return [`${layout.name}: \u0441\u0442\u043e\u043b\u0431\u0435\u0446 \u00ab${root.name}\u00bb${place}`];
+  });
 }
 
 export function isRootContainerInLayout(layout, containerId) {
@@ -68,4 +89,27 @@ export function isRootContainerInCatalog(targetState, layout, container, { scope
   if (!scoped) return true;
   if (!container) return false;
   return isRootContainerInLayout(layout, container.id) || container.publicCatalogLayoutId === catalogLayoutId;
+}
+
+export function userEditableLayouts(targetState, { canUseLocalEditableState = () => false } = {}) {
+  return Object.values(targetState?.layouts || {}).filter((layout) =>
+    layout &&
+    canUseLocalEditableState(layout.id) &&
+    !layout.adminDemo &&
+    !layout.adminSharedSourceId
+  );
+}
+
+export function canDeleteActiveLayout(targetState, {
+  canUseLocalEditableState = () => false,
+  isReadOnlyStateScope = () => false,
+  isSharedLayoutView = () => false
+} = {}) {
+  const layout = targetState?.layouts?.[targetState?.activeLayoutId];
+  return Boolean(
+    layout &&
+    userEditableLayouts(targetState, { canUseLocalEditableState }).some((entry) => entry.id === layout.id) &&
+    !isReadOnlyStateScope() &&
+    !isSharedLayoutView()
+  );
 }

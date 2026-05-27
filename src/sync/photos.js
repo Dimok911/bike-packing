@@ -15,6 +15,53 @@ export function hasRemotePhotoUrl(photo) {
   return Boolean(syncSafePhotoUrl(photo?.url) || syncSafePhotoUrl(photo?.thumbUrl));
 }
 
+export function photoShouldBeCopiedToCurrentList(photo) {
+  return Boolean(photo?._copyToCurrentList || photo?.copyToCurrentList || photo?.publicCopySourceId || photo?.sharedSourceId);
+}
+
+export function keepRemoteOnlyPhotoReference(photo) {
+  if (!hasRemotePhotoUrl(photo) || photo.localId) return false;
+  photo.status = "synced";
+  photo.error = "";
+  return true;
+}
+
+export function isPhotoUsableFromServer(photo, listId = "") {
+  if (!hasRemotePhotoUrl(photo)) return false;
+  if (listId && !isPhotoStoredForList(photo, listId)) return false;
+  photo.status = "synced";
+  photo.error = "";
+  return true;
+}
+
+export function remotePhotoSourceFromRecord(photo, {
+  baseUrl = globalThis.location?.href
+} = {}) {
+  const fromUrl = remotePhotoSourceFromUrl(photo?.url, { baseUrl }) || remotePhotoSourceFromUrl(photo?.thumbUrl, { baseUrl });
+  return {
+    sourceListId: String(fromUrl?.sourceListId || photo?.listId || "").trim(),
+    sourcePhotoId: String(fromUrl?.sourcePhotoId || photo?.id || photo?.photoId || "").trim()
+  };
+}
+
+export function remotePhotoSourceFromUrl(src, {
+  baseUrl = globalThis.location?.href
+} = {}) {
+  if (!src) return null;
+  try {
+    const url = new URL(src, baseUrl);
+    const parts = url.pathname.split("/").map((part) => decodeURIComponent(part));
+    const listsIndex = parts.indexOf("lists");
+    const photosIndex = parts.indexOf("photos");
+    if (listsIndex < 0 || photosIndex < 0 || photosIndex <= listsIndex + 1) return null;
+    const sourceListId = parts[listsIndex + 1] || "";
+    const sourcePhotoId = parts[photosIndex + 1] || "";
+    return sourceListId && sourcePhotoId ? { sourceListId, sourcePhotoId } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function syncSafePhotoUrl(src) {
   if (typeof src !== "string") return "";
   const value = src.trim();

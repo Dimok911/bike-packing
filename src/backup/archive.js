@@ -107,6 +107,40 @@ export function buildBackupManifest({
   };
 }
 
+export function buildCurrentBackupManifest({
+  appVersion = "",
+  canIncludeAdmin = false,
+  currentSharedLayouts = () => [],
+  demoStatePayloadForLanguage = () => null,
+  language = "",
+  languages = [],
+  now = new Date().toISOString(),
+  photos = [],
+  snapshot = null,
+  cloneValue = (value) => JSON.parse(JSON.stringify(value))
+} = {}) {
+  const admin = canIncludeAdmin
+    ? {
+        demoStates: languages.map((entryLanguage) => ({
+          language: entryLanguage,
+          payload: demoStatePayloadForLanguage(entryLanguage)
+        })).filter((entry) => entry.payload),
+        sharedLayouts: languages.map((entryLanguage) => ({
+          language: entryLanguage,
+          layouts: cloneValue(currentSharedLayouts(entryLanguage))
+        }))
+      }
+    : null;
+  return buildBackupManifest({
+    state: snapshot,
+    photos,
+    appVersion,
+    language,
+    admin,
+    now
+  });
+}
+
 export function isBikePackingBackupManifest(manifest) {
   return manifest?.format === BACKUP_FORMAT;
 }

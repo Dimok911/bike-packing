@@ -425,6 +425,70 @@ export function createEmptyPublicTemplateDraftRecord({
     });
 }
 
+export function createLayoutCopyRecordFromSource({
+  canUsePrivateState = () => true,
+  changedAt = "",
+  createLayoutArrangementFromCurrentState = null,
+  currentCreateMeta = () => ({}),
+  ensureLayoutDictionaries = () => null,
+  ensurePrivateDictionaries = () => null,
+  guestDemoCopyFlag = "",
+  id = "",
+  language = "",
+  publicTemplate = false,
+  requestedName = "",
+  sourceLayout = null,
+  state = null,
+  uniqueLayoutName = (value) => value
+} = {}) {
+  if (!sourceLayout || !requestedName || !id) return null;
+  const sourceArrangement = sourceLayout.arrangement ||
+    (typeof createLayoutArrangementFromCurrentState === "function"
+      ? createLayoutArrangementFromCurrentState(state, sourceLayout.rootContainerIds || [])
+      : createEmptyLayoutArrangement());
+  const arrangement = clonePlain(sourceArrangement);
+  const dictionaries = ensureLayoutDictionaries(sourceLayout) || ensurePrivateDictionaries(state);
+  return createManagedLayoutCopyRecord({
+    id,
+    name: uniqueLayoutName(requestedName),
+    sourceLayout,
+    arrangement,
+    dictionaries,
+    meta: currentCreateMeta(changedAt),
+    guestDemoCopyFlag,
+    guestDemoCopy: !canUsePrivateState(),
+    language,
+    publicTemplate
+  });
+}
+
+export function applyLayoutEditFields(layout, {
+  adminPublished = false,
+  editedLayoutName = (targetLayout, name) => name,
+  language = "",
+  normalizeDemoLayoutName = (name) => name,
+  normalizeUiLanguage = (value) => value,
+  requestedName = "",
+  uiLanguage = "",
+  uniqueLayoutName = (value) => value
+} = {}) {
+  if (!layout || !requestedName) return false;
+  let changed = false;
+  const nextName = layout.adminDemo
+    ? normalizeDemoLayoutName(requestedName, language || layoutManageLanguage(layout, uiLanguage))
+    : requestedName;
+  const savedName = editedLayoutName(layout, nextName, (name) => uniqueLayoutName(name, { exceptLayoutId: layout.id }));
+  if (layout.name !== savedName) {
+    layout.name = savedName;
+    changed = true;
+  }
+  if (adminPublished) {
+    const nextLanguage = normalizeUiLanguage(language || layoutManageLanguage(layout, uiLanguage));
+    changed = applyLayoutManageLanguage(layout, nextLanguage) || changed;
+  }
+  return changed;
+}
+
 export function templateCopySharedSourceId({ language = "", takenIds = [] } = {}) {
   const normalizedLanguage = String(language || "template").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "template";
   const taken = new Set(takenIds.map((id) => String(id || "")));

@@ -97,8 +97,13 @@
 - [x] Sync visual UI: help text, state resolver, DOM apply helper.
 - [x] Conflict formatting: version stamp, changed fields, arrangement summary.
 - [x] Sync list records: choose richer remote record.
-- [ ] Conflict formatting: `formatConflictFieldValue`, `formatConflictCountValue`, `conflictValueSummary`.
-- [ ] Conflict merge pure helpers: `changedComparableKeys`, `comparableValueForMerge`, scalar merge helpers.
+- [x] Conflict formatting: `formatConflictFieldValue`, `formatConflictCountValue`, `conflictValueSummary`.
+- [x] Conflict merge pure helpers: `changedComparableKeys`, `comparableValueForMerge`, placement-only delete guard.
+- [x] Conflict merge scalar helpers: `mergeStringList`, `mergeScalarField`.
+- [x] Conflict merge record helper: `mergeRecordMap`.
+- [x] Conflict resolution apply helper: `applyConflictChoices`.
+- [x] Conflict merge state helper: `mergeStateFromBase`.
+- [x] Photo upload/copy scope helpers: uploadable/unsynced traversal, copy markers, remote photo source parsing.
 - [ ] Catalog wrappers cleanup: reduce remaining tiny wrappers once call sites are clear.
 
 Целевые модули:
@@ -124,6 +129,7 @@
 - `buildRemoteSaveBody`
 - `buildListSaveBody`
 - `rememberConflictRemoteMeta`
+- `isOwnLayoutEchoConflict`
 
 Планируемые модули:
 
@@ -182,10 +188,18 @@
 - `deleteManagedPublicLayout`
 - `shouldDeletePublishedSharedTemplateForLayout`
 
+Готово в текущем локальном срезе:
+
+- `templateCopyRootSnapshots`, `templateCopySourceScore`, `loadPublishedTemplateCopySource`, template-copy record builders, source/layout resolvers and server confirmation guard moved to `src/public/template-copy.js`.
+- shared virtual state creation moved to `src/public/shared-virtual-state.js`.
+- template delete guard moved to `src/public/public-template-delete-guard.js`.
+- live container tree snapshot/score shared by template copy and draft solidify moved to `src/state/container-tree-snapshot.js`.
+- existing container tree link core moved to `src/public/copy-public-layout-target.js`; layout duplicate summary helper moved to `src/public/copy-duplicates.js`.
+
 Планируемые модули:
 
 - продолжить `src/public/shared-virtual-state.js`
-- `src/public/template-copy-source.js`
+- продолжить `src/public/template-copy.js`
 - `src/public/shared-template-delete.js`
 
 Проверки:
@@ -233,12 +247,12 @@
 
 Кандидаты:
 
-- `buildCurrentBackupManifest`
-- `backupLayoutRows`
-- `summarizeSelectedBackupLayouts`
+- `buildCurrentBackupManifest` - moved to `src/backup/archive.js`.
+- `backupLayoutRows` - already in `src/backup/restore.js`.
+- `summarizeSelectedBackupLayouts` - wrapper over `src/backup/restore.js`.
 - `resolveExistingBackupPhotos`
 - `prepareBackupPhotosForState`
-- `restoreSelectedBackupLayouts`
+- `restoreSelectedBackupLayouts` state merge core moved to `src/backup/restore.js`.
 - `restoreFullBackup`
 
 Планируемые модули:
@@ -305,6 +319,44 @@
 
 | Дата | Размер app.js | Завершенный срез | Последний push |
 | --- | ---: | --- | --- |
+| 2026-05-27 | 14993 | restored top-of-container move glue required by `src/ui/packing-drag.js`; cache bumped to `v887`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 14979 | packing drag/events, settings drag, horizontal touch scroll, help limits dialog, and published container copy moved to `src/ui/...`/`src/public/...`; cache bumped to `v886`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 16545 | admin/demo/template draft pruning for sync moved to `src/sync/save-body.js`; cache bumped to `v885`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 16643 | built-in default user/demo state moved to `src/data/default-user-state.js`; cache bumped to `v884`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 16981 | unreachable shared render branches and now-unused shared render helpers removed after UI module split; cache bumped to `v883`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17117 | items tab and packing board HTML helpers moved to `src/ui/items-view-render.js` and `src/ui/packing-board-render.js`; cache bumped to `v882`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17255 | settings/root-container/dictionary and shared-layout render helpers moved to `src/ui/settings-render.js` and `src/ui/shared-layout-render.js`; cache bumped to `v881`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17450 | photo gallery hydration/lightbox/binding moved to `src/ui/photo-gallery.js`; cache bumped to `v880`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17628 | photo gallery rendering/status helpers moved to `src/ui/photo-gallery.js`; cache bumped to `v879`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17703 | history record article/comparison rendering moved to `src/ui/history-diff.js`; cache bumped to `v878`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17742 | history diff building and diff HTML sections moved to `src/ui/history-diff.js`; cache bumped to `v877`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17927 | conflict formatter wrapper functions collapsed to direct module calls/imports in `app.js`; cache bumped to `v876`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17955 | unreachable conflict placement label branch removed from `app.js`; cache bumped to `v875`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 17999 | unused scope/dictionary/admin demo wrapper functions collapsed in `app.js`; cache bumped to `v874`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18049 | unused public record save helper removed from `app.js`; cache bumped to `v873`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18077 | unused read-only demo load and remote list id refresh helpers removed from `app.js`; cache bumped to `v872`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18119 | unused admin demo/shared entry points and an unreachable startup refresh branch removed from `app.js`; cache bumped to `v871`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18192 | unused sync/container/photo-preview helper wrappers removed from `app.js`; cache bumped to `v870`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18222 | orphan layout copy dialog handler, markup, refs and title helper removed after the live create-layout copy flow stayed on `layoutCopyFrom`; cache bumped to `v869`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18276 | dead shared publish converters and obsolete layout copy/delete wrappers removed from `app.js`; orphan `layoutCopyTargetId` state removed; cache bumped to `v868`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18361 | catalog usage count wrappers moved into `src/state/catalog-lists.js`; cache bumped to `v867`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18364 | catalog list assembly for items/root containers moved to `src/state/catalog-lists.js`; cache bumped to `v866`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18358 | unused demo/shared/drag/readonly helper functions removed from `app.js`; cache bumped to `v865`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18475 | unused catalog/layout helper wrappers removed from `app.js`; cache bumped to `v864`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18505 | visible item layout placement labels moved to `src/state/layout-selectors.js`; cache bumped to `v863`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18517 | unused `placeExistingContainerInLayout`/`detachItemFromContainer` app wrappers removed after their state logic moved to `src/state/layout-ops.js`; cache bumped to `v862`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18547 | delete confirm configs moved to `src/ui/copy-confirm-dialog.js`; dead container wrapper functions removed from `app.js`; cache bumped to `v861`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18563 | item copy state operation moved to `src/state/item-ops.js`; root container duplicate/delete state operations moved to `src/state/container-ops.js`; cache bumped to `v860`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18581 | active layout item/container placement and removal state operations moved to `src/state/layout-ops.js`; project map added in `docs/project-map.md`; cache bumped to `v859`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18654 | item delete state cleanup moved to `src/state/item-ops.js`; root column move and group-from-items state operation moved to `src/state/layout-ops.js`; cache bumped to `v858`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18698 | container delete/cleanup helpers and deep item traversal moved to `src/state/container-ops.js`; layout item-reference touch helper moved to `src/state/layout-ops.js`; cache bumped to `v855`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18732 | item duplicate record builder moved to `src/state/item-ops.js`; recursive container snapshot duplicate records moved to `src/state/container-ops.js`; cache bumped to `v851`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18844 | backup photo restore helpers moved to `src/sync/backup-photos.js`; empty root container duplicate builder moved to `src/state/container-ops.js`; cache bumped to `v849`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18844 | layout-create/edit selectors and builders moved to `src/ui/layout-manage-dialog.js`/`src/state/layout-manage.js`; backup manifest and selected restore state merge moved to `src/backup/archive.js`/`src/backup/restore.js`; backup confirm configs moved to `src/ui/backup-dialog.js`; cache bumped to `v848`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 18900 | template copy/source helpers, template record builders/resolvers, server confirmation guard, container tree snapshot/link helpers moved to `src/public/template-copy.js`, `src/state/container-tree-snapshot.js`, `src/public/copy-public-layout-target.js`, `src/public/copy-duplicates.js`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 19197 | photo upload/copy scope helpers в `src/sync/photo-upload-scope.js` и `src/sync/photos.js`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 19023 | shared virtual state creation moved to `src/public/shared-virtual-state.js`; template delete guard helper in `src/public/public-template-delete-guard.js`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 19310 | conflict value formatting в `src/ui/conflict-format.js`, comparable/echo helpers в `src/sync/conflict-merge.js`, state merge helpers в `src/sync/state-merge.js`, save body helpers в `src/sync/save-body.js`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-24 | ~17853 | storage, catalog helpers, sync visual, conflict helpers, admin API warning, remote list selector | `d2d436b` |
 
 Формат заметки по срезу:

@@ -4,15 +4,11 @@ import {
   templateCopySourceRootIds
 } from "./layout-manage.js";
 import { normalizeLayoutArrangement, snapshotContainerTreeFromLayoutArrangement } from "./layout-normalize.js";
+import { containerTreeSnapshotScore } from "./container-tree-snapshot.js";
 
 function layoutArrangementRecordScore(arrangement) {
   if (!arrangement || typeof arrangement !== "object") return 0;
   return Object.keys(arrangement.containers || {}).length + Object.keys(arrangement.items || {}).length * 2;
-}
-
-function containerTreeSnapshotScore(snapshot) {
-  if (!snapshot) return 0;
-  return Object.keys(snapshot.containers || {}).length + Object.keys(snapshot.items || {}).length * 2;
 }
 
 function templateDraftRootSnapshot(targetState, layoutId, rootId, { liveSnapshotForRoot = null } = {}) {
