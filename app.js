@@ -707,10 +707,7 @@ import {
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
-import {
-  applySyncVisualState,
-  resolveSyncVisualState
-} from "./src/ui/sync-visual-state.js";
+import { updateSyncUiControls } from "./src/ui/sync-ui.js";
 import {
   canReplaceLayoutCreateNameSuggestion as canReplaceLayoutCreateNameSuggestionValue,
   isLayoutCreateTemplateLayoutMode as isLayoutCreateTemplateLayoutModeValue,
@@ -886,7 +883,6 @@ let publishedLayoutSaveLayoutId = "";
 let applyingRemoteState = false;
 let appUnlocked = true;
 let initialRemoteLoadPending = false;
-let syncVisualState = "local";
 let sharedLayoutCatalogDiagnostics = null;
 let remoteRefreshTimer = null;
 let remoteRefreshInFlight = false;
@@ -4484,89 +4480,32 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 }
 
 function updateSyncUi(message = "") {
-  const rememberedOffline = isOfflineRememberedSession();
-  const loggedIn = Boolean(currentUser || rememberedOffline);
-  const unlocked = loggedIn || appUnlocked;
-  const forcedOffline = isForcedOffline();
-  const privateStateAvailable = canUseLocalEditableState() && !isReadOnlyStateScope();
-  if (!privateStateAvailable && unlocked && !initialRemoteLoadPending) ensureGuestPublicScope();
-  document.body.classList.toggle("auth-gated", !unlocked);
-  document.body.classList.toggle("admin-session", canOpenAdminPublishedEdit());
-  document.body.classList.toggle("readonly-template", isReadonlyTemplateView());
-  if (!canOpenAdminPublishedEdit()) packingVisualStylePanelVisible = false;
-  syncPackingVisualStyleControls();
-  adminReportsDialogController?.syncVisibility();
-  refs.authBtn.textContent = t("menu.signIn");
-  refs.authBtn.hidden = loggedIn;
-  refs.authBtn.classList.remove("danger");
-  const signOutBtn = document.querySelector("#signOutBtn");
-  if (signOutBtn) {
-    signOutBtn.textContent = t("menu.signOut");
-    signOutBtn.hidden = !loggedIn;
-  }
-  refs.forceOfflineBtn.textContent = forcedOffline ? t("menu.online") : t("menu.offline");
-  refs.forceOfflineBtn.classList.toggle("active", forcedOffline);
-  refs.collectionMenuBtn.textContent = state.collectionMode ? t("menu.collectionOn") : t("menu.collectionOff");
-  refs.collectionMenuBtn.classList.toggle("active", state.collectionMode);
-  if (refs.syncUserEmail) {
-    const email = loggedIn ? currentUserEmail() : "";
-    const accountLabel = email || t("auth.notSignedIn");
-    refs.syncUserEmail.hidden = !unlocked;
-    refs.syncUserEmail.textContent = accountLabel;
-    refs.syncUserEmail.title = accountLabel;
-    refs.syncUserEmail.classList.toggle("admin-user-email", canOpenAdminPublishedEdit());
-    refs.syncUserEmail.classList.toggle("guest-user-email", !loggedIn);
-  }
-  refs.syncBtn.hidden = !loggedIn;
-  refs.syncBtn.disabled = !loggedIn || !appUnlocked;
-  const adminApiWarning = currentAdminApiWarning();
-  const showAdminApiWarning = Boolean(adminApiWarning);
-  refs.syncStatus.classList.toggle("admin-api-warning", showAdminApiWarning);
-  if (refs.mobileAdminApiWarning) {
-    refs.mobileAdminApiWarning.hidden = !showAdminApiWarning;
-    refs.mobileAdminApiWarning.textContent = adminApiWarning || "";
-  }
-  updateSyncVisualState({ loggedIn, unlocked, message, adminApiWarning: showAdminApiWarning });
-  if (adminApiWarning) {
-    refs.syncStatus.textContent = adminApiWarning;
-    return;
-  }
-  if (message) {
-    refs.syncStatus.textContent = message;
-    return;
-  }
-  if (forcedOffline && appUnlocked) {
-    refs.syncStatus.textContent = t("sync.forcedOffline");
-    return;
-  }
-  if (rememberedOffline && appUnlocked && !message) {
-    refs.syncStatus.textContent = syncMeta.dirty
-      ? "Офлайн · локальные изменения сохранены на устройстве"
-      : "Офлайн · локальная копия личных укладок";
-    return;
-  }
-  if (!loggedIn && appUnlocked) {
-    refs.syncStatus.textContent = privateStateAvailable ? t("sync.localUnlocked") : currentPublicTemplateStatusMessage();
-    return;
-  }
-  if (!loggedIn) {
-    refs.syncStatus.textContent = t("sync.localUnlocked");
-    return;
-  }
-  refs.syncStatus.textContent = syncMeta.dirty ? t("sync.dirty") : t("sync.synced");
-}
-
-function updateSyncVisualState({ loggedIn, unlocked, message = "", adminApiWarning = false }) {
-  syncVisualState = resolveSyncVisualState({
-    loggedIn,
-    unlocked,
+  updateSyncUiControls({
+    adminReportsDialogController,
+    appUnlocked,
+    canOpenAdminPublishedEdit,
+    canUseLocalEditableState,
+    currentAdminApiWarning,
+    currentPublicTemplateStatusMessage,
+    currentUser,
+    currentUserEmail,
+    disablePackingVisualStylePanel: () => {
+      packingVisualStylePanelVisible = false;
+    },
+    document,
+    ensureGuestPublicScope,
+    initialRemoteLoadPending,
+    isForcedOffline,
+    isOfflineRememberedSession,
+    isReadOnlyStateScope,
+    isReadonlyTemplateView,
     message,
-    adminApiWarning,
-    forcedOffline: isForcedOffline(),
-    readOnlyScope: isReadOnlyStateScope(),
-    dirty: syncMeta.dirty
+    refs,
+    state,
+    syncMeta,
+    syncPackingVisualStyleControls,
+    t
   });
-  applySyncVisualState({ syncButton: refs.syncBtn, stateName: syncVisualState });
 }
 
 async function apiFetch(path, options = {}) {
