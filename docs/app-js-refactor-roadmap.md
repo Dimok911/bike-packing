@@ -324,6 +324,7 @@
 | 2026-05-27 | 16545 | admin/demo/template draft pruning for sync moved to `src/sync/save-body.js`; cache bumped to `v885`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 16643 | built-in default user/demo state moved to `src/data/default-user-state.js`; cache bumped to `v884`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 16981 | unreachable shared render branches and now-unused shared render helpers removed after UI module split; cache bumped to `v883`; `check`/`build`/`test:critical` ok | local, not pushed |
+| 2026-05-27 | 14526 | main filter/select/scoped-control DOM updates moved to `src/ui/filter-controls.js`; cache bumped to `v906`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 14594 | auth/sync menu/status DOM updates moved to `src/ui/sync-ui.js`; cache bumped to `v905`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 14656 | shared/template virtual layout event binding moved to `src/ui/shared-virtual-events.js`; cache bumped to `v904`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-27 | 14771 | published/demo export, admin shared merge, admin demo layout import/repair, dictionary/settings bindings, packing scroll, and layout arrangement apply moved to `src/public/...`, `src/ui/...`, and `src/state/layout-arrangement.js`; cache bumped to `v903`; `check`/`build`/`test:critical` ok | local, not pushed |

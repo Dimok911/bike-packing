@@ -1,6 +1,6 @@
 # Bike Packing Project Map
 
-Last updated: 2026-05-27, app cache v905.
+Last updated: 2026-05-27, app cache v906.
 
 Use this as the quick orientation layer before editing. `AGENTS.md` remains the source of rules; this file is the map of where code should live during the ongoing `app.js` split.
 
@@ -46,6 +46,7 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/ui/shared-layout-render.js`: shared layout presentation HTML and shared layout weight helpers.
 - `src/ui/shared-virtual-events.js`: readonly/shared/template virtual layout event binding.
 - `src/ui/sync-ui.js`: auth/sync/menu status DOM updates and sync visual-state application.
+- `src/ui/filter-controls.js`: main filter/select/scoped-control DOM updates.
 - `src/ui/items-view-render.js`: items tab list and catalog card HTML render helpers.
 - `src/ui/packing-board-render.js`: packing board container/subcontainer/item card HTML render helpers.
 - `src/ui/packing-drag.js` and `src/ui/packing-events.js`: packing board drag, drop, edge-scroll, and card event binding.
