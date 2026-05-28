@@ -6446,17 +6446,28 @@ dialog.photo-lightbox::backdrop {
 
   body.compact-sticky-controls #locationFilterLabel,
   body.compact-sticky-controls #categoryFilterLabel {
-    grid-column: auto;
+    grid-column: span 2;
+    min-width: 0;
+  }
+
+  body.compact-sticky-controls #categoryFilter {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .tabs-row {
-    position: static;
-    top: auto;
+    position: sticky;
+    top: 0;
     z-index: 57;
+    background: rgba(248, 247, 243, 0.94);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(31, 111, 91, 0.08);
+    padding-bottom: 6px;
   }
 
   body.filter-sticky-controls .tabs-row {
-    position: sticky;
     top: var(--sticky-controls-height, 0px);
   }
 

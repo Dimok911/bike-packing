@@ -89,6 +89,102 @@ export function getBike3dPackingScrollHost(root) {
   return root?.querySelector("[data-bike3d-shell]") || null;
 }
 
+export function captureBike3dDetailViewport(root, { documentRef = globalThis.document } = {}) {
+  const detail = root?.querySelector(".bike3d-detail:not([hidden])");
+  if (!detail) return null;
+  const activeElement = detail.contains(documentRef.activeElement) ? documentRef.activeElement : null;
+  return {
+    scrollTop: detail.scrollTop || 0,
+    anchor: bike3dDetailAnchor(detail),
+    focus: bike3dFocusSelector(activeElement)
+  };
+}
+
+export function restoreBike3dDetailViewport(root, snapshot) {
+  if (!snapshot) return;
+  const restore = () => {
+    const detail = root?.querySelector(".bike3d-detail:not([hidden])");
+    if (!detail) return;
+    detail.scrollTop = snapshot.scrollTop || 0;
+    const anchor = snapshot.anchor;
+    const anchorElement = anchor ? detail.querySelector(anchor.selector) : null;
+    if (anchorElement) {
+      const detailRect = detail.getBoundingClientRect();
+      const anchorRect = anchorElement.getBoundingClientRect();
+      detail.scrollTop += anchorRect.top - detailRect.top - anchor.top;
+    }
+    const focusTarget = snapshot.focus ? detail.querySelector(snapshot.focus) : null;
+    focusTarget?.focus?.({ preventScroll: true });
+  };
+  restore();
+  const raf = globalThis.requestAnimationFrame || ((callback) => callback());
+  const timeout = globalThis.setTimeout || (() => {});
+  raf(restore);
+  timeout(restore, 120);
+}
+
+function bike3dDetailAnchor(detail) {
+  const detailRect = detail.getBoundingClientRect();
+  const stickyBottom = detail.querySelector(".bike3d-detail-actions")?.getBoundingClientRect().bottom || detailRect.top;
+  const top = Math.max(stickyBottom, detailRect.top) + 1;
+  const candidates = [...detail.querySelectorAll("[data-item-id], [data-subcontainer-id], [data-root-container-id]")]
+    .filter((element) => element.offsetParent !== null)
+    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.bottom > top && rect.top < detailRect.bottom)
+    .sort((a, b) => Math.max(a.rect.top, top) - Math.max(b.rect.top, top));
+  const candidate = candidates[0];
+  const selector = candidate ? bike3dAnchorSelector(candidate.element) : "";
+  return selector ? { selector, top: candidate.rect.top - detailRect.top } : null;
+}
+
+function bike3dAnchorSelector(element) {
+  if (element.dataset.itemId) return `[data-item-id="${escapeSelectorValue(element.dataset.itemId)}"]`;
+  if (element.dataset.subcontainerId) return `[data-subcontainer-id="${escapeSelectorValue(element.dataset.subcontainerId)}"]`;
+  if (element.dataset.rootContainerId) return `[data-root-container-id="${escapeSelectorValue(element.dataset.rootContainerId)}"]`;
+  return "";
+}
+
+function bike3dFocusSelector(element) {
+  const target = element?.closest?.([
+    "[data-toggle-container]",
+    "[data-toggle-column]",
+    "[data-edit-container]",
+    "[data-add-to-container]",
+    "[data-remove-from-layout]",
+    "[data-copy-layout-item]",
+    "[data-edit-item]",
+    "[data-bike3d-settings]",
+    "[data-bike3d-close]",
+    "[data-bike3d-adjust]",
+    "[data-bike3d-color]"
+  ].join(","));
+  if (!target) return "";
+  for (const name of [
+    "toggleContainer",
+    "toggleColumn",
+    "editContainer",
+    "addToContainer",
+    "removeFromLayout",
+    "copyLayoutItem",
+    "editItem",
+    "bike3dSettings",
+    "bike3dAdjust",
+    "bike3dColor"
+  ]) {
+    if (target.dataset[name]) return `[data-${dataAttributeName(name)}="${escapeSelectorValue(target.dataset[name])}"]`;
+  }
+  if (target.dataset.bike3dClose !== undefined) return "[data-bike3d-close]";
+  return "";
+}
+
+function dataAttributeName(name) {
+  return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function escapeSelectorValue(value) {
+  return globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/["\\]/g, "\\$&");
+}
+
 export function defaultBike3dTransform() {
   return { x: 0, y: 0, z: 0, sx: 1, sy: 1, sz: 1, rx: 0, ry: 0, rz: 0, color: "" };
 }

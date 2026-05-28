@@ -71,7 +71,10 @@ import {
   stripPublicOriginForPrivateCopy
 } from "./src/public/copy-public-to-private.js";
 import {
+  planLayoutTreeMissingItems,
+  planPublicCopyMissingItems,
   publicCopyComparableText,
+  publicCopyRecordContentHash,
   summarizeLayoutTreeIdDuplicates,
   summarizePublicCopyDuplicates
 } from "./src/public/copy-duplicates.js";
@@ -371,7 +374,7 @@ import {
   containerWeight as containerWeightForState,
   itemQuantity as itemQuantityForState,
   itemTotalWeight as itemTotalWeightForState,
-  rootContainerOwnWeight as rootContainerOwnWeightForState
+  layoutContainersOwnWeight as layoutContainersOwnWeightForState
 } from "./src/state/metrics.js";
 import {
   containerCreatedTime as containerCreatedTimeForState,
@@ -459,6 +462,7 @@ import {
 } from "./src/state/layout-collapse.js";
 import {
   applyDefaultCollapsedContainers,
+  containerCategories,
   defaultRootContainerLocation,
   itemCategories,
   migrateContainerOrder,
@@ -470,6 +474,7 @@ import {
 import {
   copyItemInState,
   deleteItemFromState,
+  duplicateSnapshotItemToContainerInLayoutState,
   duplicateItemToContainerInLayoutState
 } from "./src/state/item-ops.js";
 import {
@@ -669,6 +674,7 @@ import {
   loadStoredActivePrivateLayoutChoice,
   normalizeActiveLayoutChoice as normalizeActiveLayoutChoiceValue,
   resolveStoredPrivateLayoutChoice,
+  resolveStoredPrivateLayoutChoiceForState,
   saveStoredActiveLayoutChoice,
   saveStoredActivePackingListId
 } from "./src/storage/active-choice.js";
@@ -783,11 +789,13 @@ import { createConfirmDialogController } from "./src/ui/confirm-dialog.js";
 import { normalizeSortMode } from "./src/ui/sort-mode.js";
 import {
   defaultBike3dViewState,
+  captureBike3dDetailViewport,
   getBike3dPackingScrollHost,
   isBike3dPackingView,
   normalizeBike3dViewState,
   normalizeBike3dTransform,
   normalizeBike3dTransforms,
+  restoreBike3dDetailViewport,
   normalizePackingViewMode,
   renderBike3dPackingView
 } from "./src/ui/packing-bike3d.js";
@@ -1035,6 +1043,7 @@ function applyLoadedStateToCurrentScope(nextState) {
   normalizeLayoutFields(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);
+  restorePrivateLayoutChoiceInState(state);
   applyLayoutArrangement(state.activeLayoutId, state);
   applyDefaultCollapsedContainers(state);
   hydrateLocalSharedTemplateCatalogFromState(state);
@@ -2206,6 +2215,7 @@ function loadState() {
     normalizeLayoutFields(initial);
     normalizeItemCategories(initial);
     migrateContainerOrder(initial);
+    restorePrivateLayoutChoiceInState(initial);
     applyLayoutArrangement(initial.activeLayoutId, initial);
     applyDefaultCollapsedContainers(initial);
     installRuntimeActiveLayoutId(initial, initial.activeLayoutId);
@@ -2226,10 +2236,13 @@ function loadState() {
     normalizeLayoutFields(parsed);
     normalizeItemCategories(parsed);
     migrateContainerOrder(parsed);
+    restorePrivateLayoutChoiceInState(parsed);
     applyLayoutArrangement(parsed.activeLayoutId, parsed);
     applyDefaultCollapsedContainers(parsed);
     const recovered = recoverBetterLocalSnapshotIfNeeded(parsed);
     if (recovered) {
+      restorePrivateLayoutChoiceInState(recovered);
+      applyLayoutArrangement(recovered.activeLayoutId, recovered);
       installRuntimeActiveLayoutId(recovered, recovered.activeLayoutId);
       persistStateSnapshot(recovered);
       return recovered;
@@ -2243,6 +2256,7 @@ function loadState() {
       normalizeLayoutFields(fallback);
       normalizeItemCategories(fallback);
       migrateContainerOrder(fallback);
+      restorePrivateLayoutChoiceInState(fallback);
       applyLayoutArrangement(fallback.activeLayoutId, fallback);
       applyDefaultCollapsedContainers(fallback);
       installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
@@ -2477,7 +2491,7 @@ function syncPackingVisualStyleControls() {
   if (refs.visualStyleMenuBtn) {
     refs.visualStyleMenuBtn.hidden = !canOpenAdminPublishedEdit();
     refs.visualStyleMenuBtn.classList.toggle("active", packingVisualStylePanelVisible);
-    refs.visualStyleMenuBtn.textContent = packingVisualStylePanelVisible ? "Скрыть варианты вида" : "Варианты вида";
+    refs.visualStyleMenuBtn.textContent = packingVisualStylePanelVisible ? t("menu.hideViewOptions") : t("menu.viewOptions");
   }
 }
 
@@ -2628,6 +2642,47 @@ function loadActivePrivateLayoutChoice() {
   });
 }
 
+function normalizePrivateLayoutChoiceForStateRestore(choice) {
+  return String(choice || "").trim();
+}
+
+function isPrivateLayoutChoiceForStateRestore(choice) {
+  return isPrivateLayoutChoiceValue(choice, {
+    normalizeChoice: normalizePrivateLayoutChoiceForStateRestore,
+    isDemoLayoutChoice,
+    templateDraftLayoutId
+  });
+}
+
+function restorePrivateLayoutChoiceInState(targetState) {
+  const isPrivateUserLayoutIdForTarget = (choice) => {
+    const layout = targetState?.layouts?.[choice];
+    return Boolean(layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout?.[GUEST_DEMO_COPY_FLAG]);
+  };
+  const storedChoice = loadStoredActiveLayoutChoice({
+    storageKey: ACTIVE_LAYOUT_CHOICE_KEY,
+    scopedKey: scopedLocalStorageKey,
+    normalizeChoice: normalizePrivateLayoutChoiceForStateRestore
+  });
+  const storedPrivateChoice = loadStoredActivePrivateLayoutChoice({
+    storageKey: ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+    scopedKey: scopedLocalStorageKey,
+    normalizeChoice: normalizePrivateLayoutChoiceForStateRestore,
+    isPrivateChoice: isPrivateLayoutChoiceForStateRestore,
+    isPrivateUserLayoutId: isPrivateUserLayoutIdForTarget
+  });
+  const layoutId = resolveStoredPrivateLayoutChoiceForState(targetState, {
+    storedChoice,
+    storedPrivateChoice,
+    normalizeChoice: normalizePrivateLayoutChoiceForStateRestore,
+    isPrivateChoice: isPrivateLayoutChoiceForStateRestore,
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG
+  });
+  if (!layoutId || targetState.activeLayoutId === layoutId) return false;
+  targetState.activeLayoutId = layoutId;
+  return true;
+}
+
 function isActiveLayoutChoiceExplicit() {
   return isStoredActiveLayoutChoiceExplicit({
     storageKey: ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
@@ -2699,6 +2754,41 @@ function preferredCurrentLayoutRef() {
     name: layout?.name || "",
     allowEmpty: Boolean(state.activeLayoutId && state.layouts?.[state.activeLayoutId])
   };
+}
+
+function restorableStoredPrivateLayoutChoiceId() {
+  return resolveStoredPrivateLayoutChoice({
+    activeLayoutId: "",
+    storedChoice: loadActiveLayoutChoice(),
+    storedPrivateChoice: loadActivePrivateLayoutChoice(),
+    normalizeChoice: normalizeActiveLayoutChoice,
+    isPrivateChoice: isPrivateLayoutChoice,
+    isPrivateUserLayoutId
+  });
+}
+
+function storedPrivateLayoutChoiceRef() {
+  const layoutId = restorableStoredPrivateLayoutChoiceId();
+  const layout = state.layouts?.[layoutId];
+  if (!layout) return null;
+  return {
+    id: layoutId,
+    name: layout.name || "",
+    allowEmpty: true
+  };
+}
+
+function applyPreferredPrivateLayoutChoice(preferredLayout = null, { remember = true } = {}) {
+  const layoutId = resolvePreferredLayoutId(state, preferredLayout?.id, preferredLayout?.name, {
+    allowEmptyPreferred: Boolean(preferredLayout?.allowEmpty)
+  });
+  if (!layoutId || !isPrivateUserLayoutId(layoutId)) return false;
+  if (state.activeLayoutId !== layoutId) {
+    state.activeLayoutId = layoutId;
+    applyLayoutArrangement(layoutId);
+  }
+  if (remember) saveActiveLayoutChoice(layoutId);
+  return true;
 }
 
 async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = false } = {}) {
@@ -4885,8 +4975,10 @@ async function checkAuthAndLoad(options = {}) {
       activateLocalStorageScopeForCurrentUser,
       activateOfflineRememberedSession,
       apiFetch,
+      applyPreferredPrivateLayoutChoice,
       checkAdminApiCompatibility,
       clearOfflineRememberedSession,
+      currentPrivateLayoutRef: preferredCurrentLayoutRef,
       currentPublicTemplateStatusMessage,
       enterSignedOutPublicMode,
       hasLocalSavedState,
@@ -4906,6 +4998,7 @@ async function checkAuthAndLoad(options = {}) {
       setLayoutLoadStatus,
       setPersonalLayoutsLoadedStatus,
       shouldKeepCurrentReadonlyDemoAfterAuthCheck,
+      storedPrivateLayoutChoiceRef,
       unlockOfflineState,
       updateSyncUi,
       GUEST_STORAGE_SCOPE
@@ -6910,7 +7003,13 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   const sourceSnapshot = published
     ? snapshotContainerTree(rootId, { targetState: published.sourceState })
     : root ? legacySharedRootSnapshot(root) : null;
-  if (!sourceName || !(await confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, sourceName, { publicSource: true }))) return;
+  if (!sourceName) return;
+  const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName, { publicSource: true });
+  if (copyAction === "cancel") return;
+  if (copyAction === "copy-missing" || copyAction === "copy-missing-local") {
+    await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    return;
+  }
   await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: rootId,
     publicSource: true
@@ -6933,6 +7032,7 @@ function copyPublishedContainerToState(sourceState, containerId, { targetLayoutI
     createLayoutArrangementFromCurrentState,
     currentCreateMeta,
     markLocalPublicCopyOrigin,
+    publicCopyRecordContentHash,
     publicCopySourceIdFromRecord,
     snapshotContainerTree,
     stripPublicOriginForPrivateCopy,
@@ -6954,7 +7054,13 @@ function copyPublishedItemToState(sourceState, itemId, { containerId = "", chang
     containerId,
     ...currentCreateMeta(changedAt)
   };
-  markLocalPublicCopyOrigin(state.items[id], "item", publicSourceId, source._publicCopySourceLayoutId || sourceLayoutId);
+  markLocalPublicCopyOrigin(
+    state.items[id],
+    "item",
+    publicSourceId,
+    source._publicCopySourceLayoutId || sourceLayoutId,
+    publicCopyRecordContentHash(source, "item")
+  );
   if (preserveSource) state.items[id].sharedSourceId = publicSourceId;
   else stripPublicOriginForPrivateCopy(state.items[id]);
   if (containerId && state.containers[containerId]) {
@@ -7002,6 +7108,42 @@ function publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot) {
     hasPrivateSyncBlockedPublicOrigin
   });
   return result;
+}
+
+function publicCopyMissingItemPlanForSnapshot(targetLayoutId, sourceSnapshot) {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!targetLayout) return { missingItems: [], targetContainerIds: [], canCopyMissingItems: false };
+  const targetContainerIds = [...getLayoutContainerIdSet(targetLayout)];
+  const targetContainerSet = new Set(targetContainerIds);
+  const targetItemIds = new Set(getLayoutItemIdSet(targetLayout));
+  Object.entries(state.items || {}).forEach(([itemId, item]) => {
+    if (!item) return;
+    if (item.publicCatalogLayoutId === targetLayoutId) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    const arrangedContainerId = targetLayout.arrangement?.items?.[itemId] || "";
+    if (arrangedContainerId && targetContainerSet.has(arrangedContainerId)) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    if (item.containerId && targetContainerSet.has(item.containerId)) {
+      targetItemIds.add(itemId);
+      return;
+    }
+    const container = item.containerId ? state.containers?.[item.containerId] : null;
+    if (container?.publicCatalogLayoutId === targetLayoutId) targetItemIds.add(itemId);
+  });
+  return planPublicCopyMissingItems({
+    sourceSnapshot,
+    targetContainerIds,
+    targetItemIds: [...targetItemIds],
+    containers: state.containers,
+    items: state.items,
+    itemCategories,
+    itemQuantity,
+    hasPrivateSyncBlockedPublicOrigin
+  });
 }
 
 async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourceName = "") {
@@ -7236,6 +7378,124 @@ async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, 
   return false;
 }
 
+async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false } = {}) {
+  const targetLayout = state.layouts[targetLayoutId];
+  if (!targetLayout || !sourceSnapshot) return "cancel";
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
+  const sourceIsPublicCopy = publicSource ||
+    snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
+    snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
+  if (!(targetIsPublic || sourceIsPublicCopy) || !publicSourceSnapshot) {
+    if (targetIsPublic) return "copy-all";
+    const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
+    if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
+    const missingPlan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
+    const duplicate = await askConfirmDialog({
+      title: "Такие элементы уже есть в укладке",
+      text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
+      okText: "Дублировать",
+      alternateText: missingPlan.canCopyMissingItems ? "Только недостающие" : "",
+      cancelText: "Не копировать",
+      highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
+      tone: "safe"
+    });
+    if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing-local";
+    if (duplicate) return "copy-all";
+    refs.containerPickerDialog.close();
+    showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
+    return "cancel";
+  }
+  const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, publicSourceSnapshot);
+  if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
+  const missingPlan = publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
+  const duplicate = await askConfirmDialog({
+    title: "Уже скопировано в эту укладку",
+    text: `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`,
+    okText: "Дублировать всё",
+    alternateText: missingPlan.canCopyMissingItems ? "Только недостающие" : "",
+    cancelText: "Не копировать",
+    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
+    tone: "safe"
+  });
+  if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing";
+  if (duplicate) return "copy-all";
+  showToast("Копирование пропущено: такая demo/shared копия уже есть в целевой укладке.", "success");
+  return "cancel";
+}
+
+async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId) {
+  const targetLayout = state.layouts[targetLayoutId];
+  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
+  const plan = publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
+  if (!targetLayout || !plan.canCopyMissingItems) return 0;
+  const changedAt = nowIso();
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
+  let copiedCount = 0;
+  for (const entry of plan.missingItems) {
+    const sourceItem = publicSourceSnapshot.items?.[entry.sourceItemId] || sourceSnapshot.items?.[entry.sourceItemId];
+    if (!sourceItem || !state.containers?.[entry.targetContainerId]) continue;
+    const copyId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const copied = await duplicateSnapshotItemToContainerInLayoutState(state, sourceItem, entry.sourceItemId, entry.targetContainerId, targetLayoutId, {
+      activeLayoutId: state.activeLayoutId,
+      applyLayoutArrangement,
+      changedAt,
+      cloneEntity: cloneIsolatedPublicEntity,
+      copyPhotos: copyRecordPhotosForLocalDuplicate,
+      currentEditMeta,
+      id: copyId,
+      mapRecordToTarget: (record) => {
+        if (targetIsPublic) {
+          record.publicCatalogLayoutId = targetLayoutId;
+        } else {
+          markRecordPhotosForCurrentListCopy(record);
+          stripPublicOriginForPrivateCopy(record);
+        }
+      },
+      markRecordOrigin: markPrivateCopyOriginFromSource,
+      touchLayout
+    });
+    if (!copied) {
+      delete state.items[copyId];
+      continue;
+    }
+    markRecentlyAddedItem(copyId, targetLayoutId);
+    copiedCount += 1;
+  }
+  if (!copiedCount) return 0;
+  saveLayoutMutation(targetLayoutId);
+  openCopiedTargetLayout(targetLayoutId);
+  refs.containerPickerDialog.close();
+  render();
+  renderSharedLayouts();
+  showToast(`${copiedCount} вещей добавлено без дублей.`, "success");
+  return copiedCount;
+}
+
+function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId) {
+  const targetLayout = state.layouts[targetLayoutId];
+  const plan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
+  if (!targetLayout || !plan.canCopyMissingItems) return 0;
+  ensureWritableTargetLayoutContext(targetLayoutId);
+  const changedAt = nowIso();
+  let copiedCount = 0;
+  plan.missingItems.forEach((entry) => {
+    if (!state.items?.[entry.sourceItemId] || !state.containers?.[entry.targetContainerId]) return;
+    if (!placeExistingItemInLayout(entry.sourceItemId, entry.targetContainerId, targetLayoutId, { changedAt })) return;
+    markRecentlyAddedItem(entry.sourceItemId, targetLayoutId);
+    copiedCount += 1;
+  });
+  if (!copiedCount) return 0;
+  saveLayoutMutation(targetLayoutId);
+  openCopiedTargetLayout(targetLayoutId);
+  refs.containerPickerDialog.close();
+  render();
+  renderSharedLayouts();
+  showToast(`${copiedCount} вещей добавлено без дублей.`, "success");
+  return copiedCount;
+}
+
 async function copySharedLayout(layoutId) {
   const layout = findSharedLayout(layoutId);
   if (!layout) return;
@@ -7456,7 +7716,7 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
     photos: sharedGearPhotos(root, changedAt),
     ...currentCreateMeta(changedAt)
   };
-  markLocalPublicCopyOrigin(state.containers[id], "container", root.id, "legacy-shared");
+  markLocalPublicCopyOrigin(state.containers[id], "container", root.id, "legacy-shared", publicCopyRecordContentHash(state.containers[id], "container"));
   if (preserveSource) state.containers[id].sharedSourceId = root.id;
   else {
     markRecordPhotosForCurrentListCopy(state.containers[id]);
@@ -7492,7 +7752,7 @@ function copySharedItemToState(item, { containerId = "", changedAt = nowIso(), i
     photos: sharedGearPhotos(item, changedAt),
     ...currentCreateMeta(changedAt)
   };
-  markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared");
+  markLocalPublicCopyOrigin(state.items[id], "item", item.id, "legacy-shared", publicCopyRecordContentHash(state.items[id], "item"));
   if (preserveSource) state.items[id].sharedSourceId = item.id;
   else {
     markRecordPhotosForCurrentListCopy(state.items[id]);
@@ -8082,6 +8342,7 @@ function renderFilters() {
     selectedCategoryFilters,
     state,
     t,
+    normalizeDemoName: normalizeDemoLayoutName,
     templateDraftLayoutId,
     uiLanguage,
     updateCategoryFilterButton,
@@ -8440,6 +8701,7 @@ function matchesLayoutRootSearch(container, query) {
   if (!query) return true;
   return [
     container.name,
+    containerCategories(container).join(" "),
     container.location || "",
     container.note || ""
   ].join(" ").toLowerCase().includes(query);
@@ -8830,12 +9092,13 @@ function fillSelect(select, entries, selected = "") {
   if (entries.some(([value]) => value === current)) select.value = current;
 }
 
-function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
-  const selectedSet = new Set(selected || getDialogSelectedCategories());
+function renderCategoryPicker(target, selected = null, { fallbackDefault = true, idPrefix = "category" } = {}) {
+  if (!target) return;
+  const selectedSet = new Set(selected || getCheckedCategoriesFromList(target));
   const categoryOptions = dictionaryOptionsForUi("category", { selected: [...selectedSet] });
   if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
-  refs.itemCategoryList.innerHTML = categoryOptions.map((category) => {
-    const id = `item-category-${cssSafeId(category)}`;
+  target.innerHTML = categoryOptions.map((category) => {
+    const id = `${idPrefix}-${cssSafeId(category)}`;
     return `
       <label class="category-option" for="${id}">
         <input id="${id}" type="checkbox" value="${escapeHtml(category)}" ${selectedSet.has(category) ? "checked" : ""} />
@@ -8845,9 +9108,28 @@ function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = 
   }).join("");
 }
 
+function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
+  renderCategoryPicker(refs.itemCategoryList, selected, { fallbackDefault, idPrefix: "item-category" });
+}
+
+function renderRootContainerCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
+  renderCategoryPicker(refs.rootContainerCategoryList, selected, { fallbackDefault, idPrefix: "root-container-category" });
+}
+
+function getCheckedCategoriesFromList(target) {
+  return [...target?.querySelectorAll?.("input:checked") || []].map((input) => input.value);
+}
+
+function getSelectedCategoriesFromPicker(target) {
+  return getCheckedCategoriesFromList(target);
+}
+
 function getDialogSelectedCategories() {
-  const checked = [...refs.itemCategoryList.querySelectorAll("input:checked")].map((input) => input.value);
-  return checked.length ? checked : [dictionaryOptionsForUi("category")[0] || "Прочее"];
+  return getSelectedCategoriesFromPicker(refs.itemCategoryList);
+}
+
+function getRootContainerDialogSelectedCategories() {
+  return getSelectedCategoriesFromPicker(refs.rootContainerCategoryList);
 }
 
 function isContainerPickerCopyMode() {
@@ -9347,7 +9629,16 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, excludeLayoutId: targetLayoutId });
   if (!sourceSnapshot || !targetLayout) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  if (!(await confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || ""))) return;
+  const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
+  if (copyAction === "cancel") return;
+  if (copyAction === "copy-missing") {
+    await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    return;
+  }
+  if (copyAction === "copy-missing-local") {
+    copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    return;
+  }
   if (!targetIsPublic) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     if (duplicates.containerIds.length || duplicates.itemIds.length) {
@@ -9365,6 +9656,15 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
 
 function layoutDuplicateSummaryForContainerTree(layoutId, sourceSnapshot) {
   return summarizeLayoutTreeIdDuplicates({
+    sourceSnapshot,
+    targetLayout: state.layouts[layoutId],
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet
+  });
+}
+
+function layoutMissingItemPlanForContainerTree(layoutId, sourceSnapshot) {
+  return planLayoutTreeMissingItems({
     sourceSnapshot,
     targetLayout: state.layouts[layoutId],
     getLayoutContainerIdSet,
@@ -9415,7 +9715,15 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
   const mapPublicOrigin = (record, sourceRecord, kind, sourceId) => {
     const publicSourceId = publicCopySourceIdFromRecord(sourceRecord, kind, sourceId) || sourceId;
     const marked = markPrivateCopyOriginFromSource(record, sourceRecord, kind, sourceId);
-    if (!marked && publicSource) markLocalPublicCopyOrigin(record, kind, publicSourceId, sourceRecord?._publicCopySourceLayoutId || "");
+    if (!marked && publicSource) {
+      markLocalPublicCopyOrigin(
+        record,
+        kind,
+        publicSourceId,
+        sourceRecord?._publicCopySourceLayoutId || "",
+        publicCopyRecordContentHash(sourceRecord, kind)
+      );
+    }
     if (targetIsPublic && publicSource && !record.sharedSourceId) record.sharedSourceId = publicSourceId;
   };
   const mapRecordToTarget = (record) => {
@@ -9677,10 +9985,9 @@ function getSummaryItems(view = getCurrentView()) {
 }
 
 function getSummaryWeight(view, items, isFiltered) {
-  if (view === "packing") {
-    const layout = state.layouts[state.activeLayoutId];
-    const rootWeight = (layout?.rootContainerIds || []).reduce((sum, containerId) => sum + rootContainerOwnWeight(containerId), 0);
-    return rootWeight + items.reduce((sum, item) => sum + itemTotalWeight(item), 0);
+  const layout = state.layouts[state.activeLayoutId];
+  if (view === "packing" || view === "settings") {
+    return layoutContainersOwnWeightForState(state, layout) + items.reduce((sum, item) => sum + itemTotalWeight(item), 0);
   }
   return items.reduce((sum, item) => sum + itemTotalWeight(item), 0);
 }
@@ -9882,6 +10189,7 @@ function selectBike3dContainer(containerId) {
 }
 
 function closeBike3dDetail() {
+  capturePackingScroll();
   selectedBike3dContainerId = "";
   adjustingBike3dContainerId = "";
   renderPacking();
@@ -9889,6 +10197,7 @@ function closeBike3dDetail() {
 
 function toggleBike3dAdjusting(containerId) {
   if (!containerId) return;
+  capturePackingScroll();
   adjustingBike3dContainerId = adjustingBike3dContainerId === containerId ? "" : containerId;
   selectedBike3dContainerId = containerId;
   renderPacking();
@@ -9900,6 +10209,7 @@ function getBike3dTransform(containerId) {
 
 function adjustBike3dTransform(action) {
   if (!selectedBike3dContainerId) return;
+  capturePackingScroll();
   const current = getBike3dTransform(selectedBike3dContainerId);
   const next = { ...current };
   const moveStep = 0.12;
@@ -9930,6 +10240,7 @@ function adjustBike3dTransform(action) {
 
 function setBike3dColor(color) {
   if (!selectedBike3dContainerId || !/^#[0-9a-f]{6}$/i.test(String(color || ""))) return;
+  capturePackingScroll();
   bike3dTransforms[selectedBike3dContainerId] = normalizeBike3dTransform({
     ...getBike3dTransform(selectedBike3dContainerId),
     color
@@ -9944,6 +10255,7 @@ function setBike3dViewState(nextViewState) {
 }
 
 function resetBike3dViewState() {
+  capturePackingScroll();
   bike3dViewState = defaultBike3dViewState();
   saveUiSettings();
   renderPacking();
@@ -10000,7 +10312,8 @@ function capturePackingScroll() {
   pendingPackingScroll = {
     boardLeft: board?.scrollLeft || 0,
     windowX: pageScroll.x,
-    windowY: pageScroll.y
+    windowY: pageScroll.y,
+    bike3dDetail: isBike3dPackingView(packingViewMode) ? captureBike3dDetailViewport(refs.packingView) : null
   };
   if (!packingHidden) {
     lastPackingScrollSnapshot = { ...pendingPackingScroll };
@@ -10187,14 +10500,16 @@ function keepAnchorContainersOpen(anchor) {
 function restorePendingPackingScroll(board) {
   if (!pendingPackingScroll || !board) return;
   if (refs.packingView.classList.contains("hidden")) return;
-  const { boardLeft, windowX, windowY } = pendingPackingScroll;
+  const { boardLeft, windowX, windowY, bike3dDetail = null } = pendingPackingScroll;
   pendingPackingScroll = null;
-  lastPackingScrollSnapshot = { boardLeft, windowX, windowY };
+  lastPackingScrollSnapshot = { boardLeft, windowX, windowY, bike3dDetail };
   board.scrollLeft = boardLeft;
   window.scrollTo({ left: windowX, top: windowY, behavior: "auto" });
+  restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
   requestAnimationFrame(() => {
     board.scrollLeft = boardLeft;
     window.scrollTo({ left: windowX, top: windowY, behavior: "auto" });
+    restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
     syncFixedScrollbarVisibility();
   });
 }
@@ -10329,8 +10644,7 @@ function renderFilteredContainerContents(containerId) {
 }
 
 function hasActiveContentFilter(view = getCurrentView()) {
-  const categoryActive = view === "bags" ? false : selectedCategoryFilters.length > 0;
-  return Boolean(refs.searchInput.value.trim() || refs.locationFilter.value || categoryActive);
+  return Boolean(refs.searchInput.value.trim() || refs.locationFilter.value || selectedCategoryFilters.length);
 }
 
 function isFilterContextActive() {
@@ -10350,7 +10664,7 @@ function contentFilterSignature() {
     state.activeLayoutId,
     refs.searchInput.value.trim().toLowerCase(),
     refs.locationFilter.value,
-    view === "bags" ? "" : selectedCategoryFilters.join(","),
+    selectedCategoryFilters.join(","),
     state.collectionMode && state.showOnlyUnpacked ? "unpacked" : ""
   ].join("\u001f");
 }
@@ -10379,9 +10693,7 @@ function toggleFilterViewCollapsed(containerId) {
 }
 
 function containerTitleMatchesSearch(container) {
-  const query = refs.searchInput.value.trim().toLowerCase();
-  if (!query) return false;
-  return container.name.toLowerCase().includes(query);
+  return matchesContainerFieldsFilter(container);
 }
 
 function containerHasVisibleFilterResult(containerId) {
@@ -10753,7 +11065,8 @@ function renderItems() {
     items,
     renderListItem,
     showLabels: shouldShowItemLabels(),
-    showPhotos: shouldShowItemPhotos()
+    showPhotos: shouldShowItemPhotos(),
+    t
   });
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
   refs.itemsView.querySelector("#itemUsageFilter").addEventListener("change", (event) => {
@@ -10793,7 +11106,8 @@ function renderSharedItemsView() {
       items,
       renderListItem,
       showLabels: shouldShowItemLabels(),
-      showPhotos: shouldShowItemPhotos()
+      showPhotos: shouldShowItemPhotos(),
+      t
     });
   });
   refs.itemsView.querySelector("#itemUsageFilter")?.addEventListener("change", (event) => {
@@ -10811,11 +11125,11 @@ function renderSharedItemsView() {
 function renderListItem(item) {
   const filterMatch = isFilterContextActive() && matchesItemsViewFilters(item);
   const inCurrentLayout = isItemInActiveLayout(item);
-  const placementText = item.containerId ? containerPath(item.containerId) : "Вне укладки";
+  const placementText = item.containerId ? containerPath(item.containerId) : t("items.outsideLayout");
   const photoSlot = shouldShowItemPhotos()
     ? primaryItemPhoto(item)
       ? renderItemPhoto(item)
-      : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
+      : `<div class="item-photo item-photo-empty" aria-hidden="true">${t("labels.noPhoto")}</div>`
     : "";
   return renderListItemHtml({
     categories: itemCategories(item),
@@ -10826,8 +11140,9 @@ function renderListItem(item) {
     selected: selectedCatalogItemIds.has(item.id),
     photoHtml: photoSlot,
     placementText,
-    quantityText: itemQuantity(item) > 1 ? `${itemQuantity(item)} шт.` : "",
-    showLabels: shouldShowItemLabels()
+    quantityText: itemQuantity(item) > 1 ? t("items.quantitySuffix", { count: itemQuantity(item) }) : "",
+    showLabels: shouldShowItemLabels(),
+    t
   });
 }
 
@@ -11060,8 +11375,8 @@ function renderSettings() {
   const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
     <div class="settings-grid">
-      ${renderDictionary("Места хранения", "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
-      ${renderDictionary("Категории", "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
+      ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
+      ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
     </div>
   `;
   bindDictionary("location", dictionaryOwner);
@@ -11073,8 +11388,8 @@ function renderSharedSettingsView() {
     refs.settingsView.innerHTML = `
       ${renderSharedModeBanner(currentSharedLayout(), { compact: true })}
       <div class="settings-grid">
-        ${renderDictionary("Места хранения", "location", dictionaryOptionsForUi("location"))}
-        ${renderDictionary("Категории", "category", dictionaryOptionsForUi("category"))}
+        ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForUi("location"))}
+        ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForUi("category"))}
       </div>
     `;
   });
@@ -11086,7 +11401,8 @@ function renderLayoutEditor() {
   return renderLayoutEditorHtml({
     containerWeight,
     containers: state.containers,
-    layout: state.layouts[layoutId]
+    layout: state.layouts[layoutId],
+    t
   });
 }
 
@@ -11195,7 +11511,8 @@ function renderRootContainersEditor() {
     rootContainerUsageFilter,
     roots,
     showLabels: shouldShowItemLabels(),
-    showPhotos: shouldShowItemPhotos()
+    showPhotos: shouldShowItemPhotos(),
+    t
   });
 }
 
@@ -11206,9 +11523,10 @@ function renderRootContainerCard(container) {
   const photoSlot = shouldShowItemPhotos()
     ? primaryItemPhoto(container)
       ? renderItemPhoto(container)
-      : `<div class="item-photo item-photo-empty" aria-hidden="true">Без фото</div>`
+      : `<div class="item-photo item-photo-empty" aria-hidden="true">${t("labels.noPhoto")}</div>`
     : "";
   return renderRootContainerCardHtml({
+    categories: containerCategories(container),
     container,
     filterMatch,
     highlightText: highlight,
@@ -11216,7 +11534,8 @@ function renderRootContainerCard(container) {
     location,
     selected: selectedCatalogRootIds.has(container.id),
     photoHtml: photoSlot,
-    showLabels: shouldShowItemLabels()
+    showLabels: shouldShowItemLabels(),
+    t
   });
 }
 
@@ -11250,7 +11569,7 @@ function bindRootContainersEditor() {
   });
 }
 function renderDictionary(title, type, values) {
-  return renderDictionaryHtml(title, type, values, { editingEntry: editingDictionaryEntry });
+  return renderDictionaryHtml(title, type, values, { editingEntry: editingDictionaryEntry, t });
 }
 
 function dictionaryRenameSideEffects(type, oldValue, newValue) {
@@ -11271,6 +11590,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
     dictionaryOptionsForOwner,
     editingDictionaryEntry,
     formatThingCount,
+    containerCategories,
     itemCategories,
     markEdited,
     nowIso,
@@ -11294,6 +11614,7 @@ function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictio
   return renameDictionaryEntryValue(type, oldValue, rawNewValue, {
     dictionaryEditScope,
     dictionaryOptionsForOwner,
+    containerCategories,
     itemCategories,
     markEdited,
     nowIso,
@@ -11731,6 +12052,7 @@ function openRootContainerDialog(containerId = null) {
   if (refs.rootContainerHeight) refs.rootContainerHeight.value = dimensions.height ? String(dimensions.height).replace(".", ",") : "";
   if (refs.rootContainerDepth) refs.rootContainerDepth.value = dimensions.depth ? String(dimensions.depth).replace(".", ",") : "";
   fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
+  renderRootContainerCategoryPicker(container ? containerCategories(container) : [], { fallbackDefault: false });
   updateRootContainerPlacementButton();
   updateRootContainerRemoveFromLayoutButton();
   updateRootContainerDeleteForeverButton();
@@ -11767,13 +12089,13 @@ function openItemDialog(itemId = null) {
     note: "",
     photos: []
   };
-  refs.dialogTitle.textContent = itemId ? "Редактировать вещь" : "Добавить вещь";
+  refs.dialogTitle.textContent = itemId ? t("items.editItem") : t("items.addItem");
   refs.itemName.value = item.name;
   refs.itemWeight.value = item.weight || 0;
   refs.itemQuantity.value = itemQuantity(item);
   updateItemQuantityUi();
   fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map((location) => [location, location]), item.location);
-  renderItemCategoryPicker(itemId ? itemCategories(item) : [], { fallbackDefault: Boolean(itemId) });
+  renderItemCategoryPicker(itemCategories(item), { fallbackDefault: false });
   refs.itemContainer.value = itemId
     ? getItemContainerIdInLayout(state.layouts?.[itemDialogTargetLayoutId], itemId)
     : "";
@@ -12729,7 +13051,7 @@ function getItemDialogSnapshot() {
     weight: parseWeightInput(refs.itemWeight.value),
     quantity: readItemDialogQuantity(),
     location: refs.itemLocation.value,
-    categories: getDialogCheckedCategories().join("\u0000"),
+    categories: getDialogSelectedCategories().join("\u0000"),
     containerId: refs.itemContainer.value || "",
     note: refs.itemNote.value.trim(),
     photo: getItemDialogPhotoSnapshot()
@@ -13087,6 +13409,7 @@ function getRootContainerDialogSnapshot() {
     height: dimensions.height,
     depth: dimensions.depth,
     location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
+    categories: getRootContainerDialogSelectedCategories().join("\u0000"),
     note: refs.rootContainerNote.value.trim(),
     photo: getRootContainerDialogPhotoSnapshot(),
     parentId: editingRootContainerId && state.containers[editingRootContainerId]?.parentId
@@ -13099,10 +13422,6 @@ function getRootContainerDialogSnapshot() {
       ? getRootContainerDialogLayoutRootIds().join("\u0000")
       : ""
   };
-}
-
-function getDialogCheckedCategories() {
-  return [...refs.itemCategoryList.querySelectorAll("input:checked")].map((input) => input.value);
 }
 
 function updateItemDialogSaveState() {
@@ -13163,6 +13482,7 @@ function saveRootContainerDialog(event) {
     currentCreateMeta,
     defaultRootContainerLocation,
     editingRootContainerId,
+    getRootContainerSelectedCategories: getRootContainerDialogSelectedCategories,
     getPublishedEditLayoutId,
     hasContainerDimensions,
     markRecordActivePublicCatalog,
@@ -13431,11 +13751,18 @@ function getRootContainersForSettings() {
 }
 
 function matchesRootContainerFieldsFilter(container, { ignoreLocation = false } = {}) {
+  return matchesContainerFieldsFilter(container, { ignoreLocation });
+}
+
+function matchesContainerFieldsFilter(container, { ignoreLocation = false, ignoreCategories = false } = {}) {
   const containerLocation = container.location || defaultRootContainerLocation(state);
   return matchesRootContainerFieldsFilterValue(container, {
     query: refs.searchInput.value,
     location: refs.locationFilter.value,
+    categories: selectedCategoryFilters,
     containerLocation,
+    containerCategories,
+    ignoreCategories,
     ignoreLocation
   });
 }
@@ -13470,10 +13797,6 @@ function layoutContainerPath(layout, containerId) {
 
 function containerWeight(containerId) {
   return containerWeightForState(state, containerId);
-}
-
-function rootContainerOwnWeight(containerId) {
-  return rootContainerOwnWeightForState(state, containerId);
 }
 
 function itemQuantity(item) {

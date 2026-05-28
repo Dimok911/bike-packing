@@ -8,7 +8,41 @@ export function publicCopyPhotoKey(record) {
   return publicCopyComparableText(photo.id || photo.photoId || photo.url || photo.thumbUrl).replace(/[?#].*$/, "");
 }
 
-export function publicCopyItemFingerprint(item, { itemCategories, itemQuantity }) {
+export function publicCopyPhotoFingerprint(record) {
+  return (Array.isArray(record?.photos) ? record.photos : [])
+    .map((photo) => publicCopyComparableText(photo?.id || photo?.photoId || photo?.url || photo?.thumbUrl).replace(/[?#].*$/, ""))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+export function publicCopyRecordContentHash(record, kind = "item", { containerCategories, itemCategories, itemQuantity } = {}) {
+  const content = kind === "container"
+    ? [
+      publicCopyContainerFingerprint(record, { containerCategories }),
+      publicCopyComparableText(record?.note),
+      publicCopyComparableText(record?.color),
+      publicCopyPhotoFingerprint(record)
+    ].join("\u001f")
+    : [
+      publicCopyItemContentFingerprint(record, { itemCategories, itemQuantity }),
+      publicCopyComparableText(record?.note),
+      publicCopyPhotoFingerprint(record)
+    ].join("\u001f");
+  return publicCopyStableHash(content);
+}
+
+export function publicCopyStableHash(value) {
+  const text = String(value || "");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export function publicCopyItemFingerprint(item, { itemCategories = (record) => record?.categories || (record?.category ? [record.category] : []), itemQuantity = (record) => record?.quantity ?? 1 } = {}) {
   if (!item) return "";
   return [
     publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity }),
@@ -16,7 +50,7 @@ export function publicCopyItemFingerprint(item, { itemCategories, itemQuantity }
   ].join("\u001f");
 }
 
-export function publicCopyItemContentFingerprint(item, { itemCategories, itemQuantity }) {
+export function publicCopyItemContentFingerprint(item, { itemCategories = (record) => record?.categories || (record?.category ? [record.category] : []), itemQuantity = (record) => record?.quantity ?? 1 } = {}) {
   if (!item) return "";
   const categories = itemCategories(item).map(publicCopyComparableText).sort().join("|");
   return [
@@ -28,13 +62,15 @@ export function publicCopyItemContentFingerprint(item, { itemCategories, itemQua
   ].join("\u001f");
 }
 
-export function publicCopyContainerFingerprint(container) {
+export function publicCopyContainerFingerprint(container, { containerCategories = (record) => record?.categories || (record?.category ? [record.category] : []) } = {}) {
   if (!container) return "";
+  const categories = containerCategories(container).map(publicCopyComparableText).sort().join("|");
   return [
     publicCopyComparableText(container.name),
     Number(container.weight || 0),
     Number(container.volume || 0),
     publicCopyComparableText(container.location),
+    categories,
     publicCopyPhotoKey(container)
   ].join("\u001f");
 }
@@ -78,11 +114,31 @@ function copySourceIds(record, kind, fallbackId = "") {
   return ids;
 }
 
+function recordSourceContentHash(record, kind, options = {}) {
+  return String(record?._publicCopySourceKind === kind ? record?._publicCopySourceContentHash || "" : "").trim();
+}
+
 function setsIntersect(left, right) {
   for (const value of left) {
     if (right.has(value)) return true;
   }
   return false;
+}
+
+function recordIsEditedAfterPublicCopy(record, kind, options = {}) {
+  const sourceHash = recordSourceContentHash(record, kind, options);
+  if (!sourceHash) return false;
+  return publicCopyRecordContentHash(record, kind, options) !== sourceHash;
+}
+
+function copiedFromSameSourceWithCompatibleContent(record, kind, fallbackId, sourceIds, sourceContentHashes, options = {}) {
+  const copiedFromSameSource = setsIntersect(copySourceIds(record, kind, fallbackId), sourceIds);
+  if (!copiedFromSameSource) return false;
+  if (!sourceContentHashes.size) return true;
+  const targetSourceHash = recordSourceContentHash(record, kind, options);
+  if (!targetSourceHash) return true;
+  if (!sourceContentHashes.has(targetSourceHash)) return false;
+  return !recordIsEditedAfterPublicCopy(record, kind, options);
 }
 
 export function summarizePublicCopyDuplicates({
@@ -103,6 +159,16 @@ export function summarizePublicCopyDuplicates({
   Object.entries(sourceSnapshot?.items || {}).forEach(([id, item]) => {
     copySourceIds(item, "item", id).forEach((sourceId) => sourceItemIds.add(sourceId));
   });
+  const sourceContainerContentHashes = new Set(
+    Object.values(sourceSnapshot?.containers || {}).map((container) =>
+      publicCopyRecordContentHash(container, "container")
+    ).filter(Boolean)
+  );
+  const sourceItemContentHashes = new Set(
+    Object.values(sourceSnapshot?.items || {}).map((item) =>
+      publicCopyRecordContentHash(item, "item", { itemCategories, itemQuantity })
+    ).filter(Boolean)
+  );
   const sourceContainerFingerprints = new Set(
     Object.values(sourceSnapshot?.containers || {}).map(publicCopyContainerFingerprint).filter(Boolean)
   );
@@ -124,8 +190,13 @@ export function summarizePublicCopyDuplicates({
   targetContainerIds.forEach((containerId) => {
     const container = containers[containerId];
     if (!container) return;
-    const targetSourceIds = copySourceIds(container, "container", containerId);
-    const copiedFromSameSource = setsIntersect(targetSourceIds, sourceContainerIds);
+    const copiedFromSameSource = copiedFromSameSourceWithCompatibleContent(
+      container,
+      "container",
+      containerId,
+      sourceContainerIds,
+      sourceContainerContentHashes
+    );
     const sameId = sourceContainerIds.has(String(containerId));
     const looksLikeSamePublicContainer =
       sourceContainerFingerprints.size &&
@@ -136,8 +207,14 @@ export function summarizePublicCopyDuplicates({
   targetItemIds.forEach((itemId) => {
     const item = items[itemId];
     if (!item) return;
-    const targetSourceIds = copySourceIds(item, "item", itemId);
-    const copiedFromSameSource = setsIntersect(targetSourceIds, sourceItemIds);
+    const copiedFromSameSource = copiedFromSameSourceWithCompatibleContent(
+      item,
+      "item",
+      itemId,
+      sourceItemIds,
+      sourceItemContentHashes,
+      { itemCategories, itemQuantity }
+    );
     const sameId = sourceItemIds.has(String(itemId));
     const blockedPublicOrigin = typeof hasPrivateSyncBlockedPublicOrigin === "function" &&
       hasPrivateSyncBlockedPublicOrigin(item, itemId);
@@ -154,6 +231,83 @@ export function summarizePublicCopyDuplicates({
   return {
     containerIds: [...new Set(result.containerIds)],
     itemIds: [...new Set(result.itemIds)]
+  };
+}
+
+export function planPublicCopyMissingItems({
+  sourceSnapshot,
+  targetContainerIds = [],
+  targetItemIds = [],
+  containers = {},
+  items = {},
+  itemCategories,
+  itemQuantity,
+  hasPrivateSyncBlockedPublicOrigin
+}) {
+  const targetContainerIdSet = new Set(targetContainerIds);
+  const sourceContainers = Object.entries(sourceSnapshot?.containers || {});
+  const sourceItems = Object.entries(sourceSnapshot?.items || {});
+  const containerMatches = new Map();
+
+  sourceContainers.forEach(([sourceContainerId, sourceContainer]) => {
+    const sourceIds = copySourceIds(sourceContainer, "container", sourceContainerId);
+    const sourceHashes = new Set([publicCopyRecordContentHash(sourceContainer, "container")].filter(Boolean));
+    const sourceFingerprint = publicCopyContainerFingerprint(sourceContainer);
+    const match = targetContainerIds.find((targetContainerId) => {
+      const targetContainer = containers[targetContainerId];
+      if (!targetContainer) return false;
+      if (copiedFromSameSourceWithCompatibleContent(targetContainer, "container", targetContainerId, sourceIds, sourceHashes)) return true;
+      if (sourceIds.has(String(targetContainerId))) return true;
+      return Boolean(sourceFingerprint && publicCopyContainerFingerprint(targetContainer) === sourceFingerprint);
+    });
+    if (match) containerMatches.set(sourceContainerId, match);
+  });
+
+  const sourceParentByItemId = new Map();
+  sourceContainers.forEach(([sourceContainerId, sourceContainer]) => {
+    (sourceContainer.itemIds || []).forEach((itemId) => sourceParentByItemId.set(itemId, sourceContainerId));
+    (sourceContainer.order || []).forEach((entry) => {
+      if (entry?.type === "item" && entry.id) sourceParentByItemId.set(entry.id, sourceContainerId);
+    });
+  });
+
+  const missingItems = [];
+  sourceItems.forEach(([sourceItemId, sourceItem]) => {
+    const sourceIds = copySourceIds(sourceItem, "item", sourceItemId);
+    const sourceHashes = new Set([
+      publicCopyRecordContentHash(sourceItem, "item", { itemCategories, itemQuantity })
+    ].filter(Boolean));
+    const sourceFingerprint = publicCopyItemFingerprint(sourceItem, { itemCategories, itemQuantity });
+    const sourceContentFingerprint = publicCopyItemContentFingerprint(sourceItem, { itemCategories, itemQuantity });
+    const hasDuplicate = targetItemIds.some((targetItemId) => {
+      const targetItem = items[targetItemId];
+      if (!targetItem) return false;
+      if (copiedFromSameSourceWithCompatibleContent(
+        targetItem,
+        "item",
+        targetItemId,
+        sourceIds,
+        sourceHashes,
+        { itemCategories, itemQuantity }
+      )) return true;
+      if (sourceIds.has(String(targetItemId))) return true;
+      const blockedPublicOrigin = typeof hasPrivateSyncBlockedPublicOrigin === "function" &&
+        hasPrivateSyncBlockedPublicOrigin(targetItem, targetItemId);
+      if (!blockedPublicOrigin && sourceFingerprint && publicCopyItemFingerprint(targetItem, { itemCategories, itemQuantity }) === sourceFingerprint) return true;
+      return Boolean(sourceContentFingerprint && publicCopyItemContentFingerprint(targetItem, { itemCategories, itemQuantity }) === sourceContentFingerprint);
+    });
+    if (hasDuplicate) return;
+    const sourceParentId = sourceParentByItemId.get(sourceItemId) || sourceSnapshot?.rootId || "";
+    const targetContainerId = containerMatches.get(sourceParentId) || containerMatches.get(sourceSnapshot?.rootId || "");
+    if (!targetContainerId || !targetContainerIdSet.has(targetContainerId)) return;
+    missingItems.push({ sourceItemId, targetContainerId });
+  });
+
+  return {
+    targetContainerIds: [...new Set([...containerMatches.values()])],
+    missingItems,
+    duplicateItemCount: Math.max(0, sourceItems.length - missingItems.length),
+    canCopyMissingItems: missingItems.length > 0
   };
 }
 
@@ -182,4 +336,38 @@ export function summarizeLayoutTreeIdDuplicates({
     targetContainerIds: [...getLayoutContainerIdSet(targetLayout)],
     targetItemIds: [...getLayoutItemIdSet(targetLayout)]
   });
+}
+
+export function planLayoutTreeMissingItems({
+  sourceSnapshot,
+  targetLayout,
+  getLayoutContainerIdSet = () => new Set(),
+  getLayoutItemIdSet = () => new Set()
+}) {
+  if (!sourceSnapshot || !targetLayout) {
+    return { missingItems: [], duplicateItemCount: 0, canCopyMissingItems: false };
+  }
+  const targetContainerIds = getLayoutContainerIdSet(targetLayout);
+  const targetItemIds = getLayoutItemIdSet(targetLayout);
+  const sourceContainers = sourceSnapshot.containers || {};
+  const sourceItems = sourceSnapshot.items || {};
+  const sourceParentByItemId = new Map();
+  Object.entries(sourceContainers).forEach(([containerId, container]) => {
+    (container.itemIds || []).forEach((itemId) => sourceParentByItemId.set(itemId, containerId));
+    (container.order || []).forEach((entry) => {
+      if (entry?.type === "item" && entry.id) sourceParentByItemId.set(entry.id, containerId);
+    });
+  });
+  const missingItems = Object.keys(sourceItems)
+    .filter((itemId) => !targetItemIds.has(itemId))
+    .map((itemId) => ({
+      sourceItemId: itemId,
+      targetContainerId: sourceParentByItemId.get(itemId) || sourceSnapshot.rootId || ""
+    }))
+    .filter((entry) => entry.targetContainerId && targetContainerIds.has(entry.targetContainerId));
+  return {
+    missingItems,
+    duplicateItemCount: Math.max(0, Object.keys(sourceItems).length - missingItems.length),
+    canCopyMissingItems: missingItems.length > 0
+  };
 }

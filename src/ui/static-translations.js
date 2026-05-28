@@ -32,6 +32,9 @@ export function applyStaticTranslationsUi({
   if (refs.shareListBtn) refs.shareListBtn.textContent = t("menu.shareList");
   if (refs.adminReportsBtn) refs.adminReportsBtn.textContent = t("menu.adminReports");
   if (refs.helpLimitsBtn) refs.helpLimitsBtn.textContent = t("menu.help");
+  documentRef.querySelector("#historyBtn")?.replaceChildren(documentRef.createTextNode(t("menu.history")));
+  documentRef.querySelector("#backupBtn")?.replaceChildren(documentRef.createTextNode(t("menu.backups")));
+  documentRef.querySelector("#visualStyleMenuBtn")?.replaceChildren(documentRef.createTextNode(t("menu.viewOptions")));
   documentRef.querySelector("#exportBtn")?.replaceChildren(documentRef.createTextNode(t("menu.print")));
   if (languageLabel) languageLabel.textContent = t("menu.language");
   if (layoutLabel?.firstChild) layoutLabel.firstChild.textContent = `${t("labels.layout")}\n          `;

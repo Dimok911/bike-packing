@@ -13,6 +13,7 @@ export function copyPublishedContainerToState(targetState, sourceState, containe
   createLayoutArrangementFromCurrentState,
   currentCreateMeta,
   markLocalPublicCopyOrigin,
+  publicCopyRecordContentHash = () => "",
   publicCopySourceIdFromRecord,
   snapshotContainerTree,
   stripPublicOriginForPrivateCopy,
@@ -50,7 +51,8 @@ export function copyPublishedContainerToState(targetState, sourceState, containe
       targetState.items[nextId],
       "item",
       publicSourceId,
-      sourceItem._publicCopySourceLayoutId || publicSourceLayoutId
+      sourceItem._publicCopySourceLayoutId || publicSourceLayoutId,
+      publicCopyRecordContentHash(sourceItem, "item")
     );
     if (preserveSource) targetState.items[nextId].sharedSourceId = publicSourceId;
     else {
@@ -81,7 +83,8 @@ export function copyPublishedContainerToState(targetState, sourceState, containe
       targetState.containers[nextId],
       "container",
       publicSourceId,
-      sourceContainer._publicCopySourceLayoutId || publicSourceLayoutId
+      sourceContainer._publicCopySourceLayoutId || publicSourceLayoutId,
+      publicCopyRecordContentHash(sourceContainer, "container")
     );
     if (preserveSource) targetState.containers[nextId].sharedSourceId = publicSourceId;
     else {

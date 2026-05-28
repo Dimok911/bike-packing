@@ -15,21 +15,34 @@ export function normalizeItemCategories(targetState) {
     targetState.categories.push(REQUIRED_CHARGE_CATEGORY);
   }
   Object.values(targetState.items || {}).forEach((item) => {
-    const values = Array.isArray(item.categories) ? item.categories : [];
-    const legacy = typeof item.category === "string" ? item.category : "";
-    const normalized = [...values, legacy]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .filter((value, index, list) => list.indexOf(value) === index);
-    item.categories = normalized.length ? normalized : [targetState.categories[0] || "Прочее"];
-    item.category = item.categories[0];
+    item.categories = normalizeRecordCategories(item, targetState.categories[0] || "Прочее");
+    item.category = item.categories[0] || "";
   });
+}
+
+function normalizeRecordCategories(record, fallbackCategory = "") {
+  const hasCategoryList = Array.isArray(record?.categories);
+  const values = hasCategoryList ? record.categories : [];
+  const legacy = !hasCategoryList && typeof record?.category === "string" ? record.category : "";
+  const normalized = [...values, legacy]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+  if (normalized.length) return normalized;
+  if (hasCategoryList) return [];
+  return fallbackCategory ? [fallbackCategory] : [];
 }
 
 export function itemCategories(item) {
   if (!item) return [];
   if (Array.isArray(item.categories) && item.categories.length) return item.categories;
   return item.category ? [item.category] : [];
+}
+
+export function containerCategories(container) {
+  if (!container) return [];
+  if (Array.isArray(container.categories) && container.categories.length) return container.categories;
+  return container.category ? [container.category] : [];
 }
 
 export function normalizeItemQuantity(value) {
@@ -56,6 +69,8 @@ export function normalizeContainerFields(targetState) {
     const location = typeof container.location === "string" ? container.location.trim() : "";
     container.location = location || fallbackLocation;
     container.note = typeof container.note === "string" ? container.note : "";
+    container.categories = normalizeRecordCategories(container, targetState.categories?.[0] || categories[0] || "Прочее");
+    container.category = container.categories[0] || "";
     container.color = normalizeContainerColor(container.color);
     const dimensions = normalizeContainerDimensions(container.dimensions);
     if (hasContainerDimensions(dimensions)) container.dimensions = dimensions;

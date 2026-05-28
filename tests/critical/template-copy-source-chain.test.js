@@ -56,6 +56,12 @@ import {
   stripPublishedPublicOriginMarkers
 } from "../../src/public/copy-public-to-private.js";
 import {
+  planLayoutTreeMissingItems,
+  planPublicCopyMissingItems,
+  publicCopyRecordContentHash,
+  summarizePublicCopyDuplicates
+} from "../../src/public/copy-duplicates.js";
+import {
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
   isConcretePublicSharedLayoutListRecord,
@@ -1330,6 +1336,133 @@ test("template copy uses the original public source id when copying a copy", () 
   assert.equal(nextContainerId.includes("container-shared-container-shared"), false);
 });
 
+test("public copy content hash separates edited descendants from exact source copies", () => {
+  const sourceItem = {
+    id: "item-tent",
+    name: "Tent",
+    weight: 1200,
+    quantity: 1,
+    location: "Frame bag",
+    categories: ["Shelter"],
+    note: "Original"
+  };
+  const sourceHash = publicCopyRecordContentHash(sourceItem, "item");
+  const editedCopy = {
+    ...sourceItem,
+    id: "item-copy",
+    name: "Tent repaired",
+    _publicCopySourceKind: "item",
+    _publicCopySourceId: "item-tent",
+    _publicCopySourceContentHash: sourceHash
+  };
+
+  assert.notEqual(publicCopyRecordContentHash(editedCopy, "item"), sourceHash);
+  assert.deepEqual(summarizePublicCopyDuplicates({
+    sourceSnapshot: { rootId: "", containers: {}, items: { "item-tent": sourceItem } },
+    targetItemIds: ["item-copy"],
+    items: { "item-copy": editedCopy }
+  }).itemIds, []);
+});
+
+test("public copy missing item plan targets existing copied container without duplicating present items", () => {
+  const sourceBag = {
+    id: "container-bag",
+    name: "Handlebar bag",
+    itemIds: ["item-tent", "item-stove"],
+    childIds: [],
+    order: [
+      { type: "item", id: "item-tent" },
+      { type: "item", id: "item-stove" }
+    ]
+  };
+  const sourceTent = { id: "item-tent", name: "Tent", weight: 1200, quantity: 1, categories: ["Shelter"] };
+  const sourceStove = { id: "item-stove", name: "Stove", weight: 90, quantity: 1, categories: ["Kitchen"] };
+  const copiedBag = {
+    id: "container-copy",
+    name: "Handlebar bag",
+    _publicCopySourceKind: "container",
+    _publicCopySourceId: "container-bag",
+    _publicCopySourceContentHash: publicCopyRecordContentHash(sourceBag, "container")
+  };
+  const copiedTent = {
+    id: "item-copy-tent",
+    name: "Tent",
+    weight: 1200,
+    quantity: 1,
+    categories: ["Shelter"],
+    _publicCopySourceKind: "item",
+    _publicCopySourceId: "item-tent",
+    _publicCopySourceContentHash: publicCopyRecordContentHash(sourceTent, "item")
+  };
+
+  const plan = planPublicCopyMissingItems({
+    sourceSnapshot: {
+      rootId: "container-bag",
+      containers: { "container-bag": sourceBag },
+      items: {
+        "item-tent": sourceTent,
+        "item-stove": sourceStove
+      }
+    },
+    targetContainerIds: ["container-copy"],
+    targetItemIds: ["item-copy-tent"],
+    containers: { "container-copy": copiedBag },
+    items: { "item-copy-tent": copiedTent }
+  });
+
+  assert.equal(plan.canCopyMissingItems, true);
+  assert.deepEqual(plan.missingItems, [{ sourceItemId: "item-stove", targetContainerId: "container-copy" }]);
+});
+
+test("layout copy missing item plan can restore items removed from a copied bag", () => {
+  const sourceSnapshot = {
+    rootId: "container-bag",
+    containers: {
+      "container-bag": {
+        id: "container-bag",
+        itemIds: ["item-tent", "item-stove"],
+        childIds: [],
+        order: [
+          { type: "item", id: "item-tent" },
+          { type: "item", id: "item-stove" }
+        ]
+      }
+    },
+    items: {
+      "item-tent": { id: "item-tent", name: "Tent" },
+      "item-stove": { id: "item-stove", name: "Stove" }
+    }
+  };
+  const targetLayout = {
+    id: "layout-target",
+    arrangement: {
+      rootContainerIds: ["container-bag"],
+      containers: {
+        "container-bag": {
+          parentId: "",
+          itemIds: ["item-tent"],
+          childIds: [],
+          order: [{ type: "item", id: "item-tent" }]
+        }
+      },
+      items: {
+        "item-tent": "container-bag"
+      },
+      packedItems: {}
+    }
+  };
+
+  const plan = planLayoutTreeMissingItems({
+    sourceSnapshot,
+    targetLayout,
+    getLayoutContainerIdSet: () => new Set(["container-bag"]),
+    getLayoutItemIdSet: () => new Set(["item-tent"])
+  });
+
+  assert.equal(plan.canCopyMissingItems, true);
+  assert.deepEqual(plan.missingItems, [{ sourceItemId: "item-stove", targetContainerId: "container-bag" }]);
+});
+
 test("published template payloads drop local public-copy markers", () => {
   const item = {
     id: "item-tent",
@@ -1338,6 +1471,7 @@ test("published template payloads drop local public-copy markers", () => {
     _publicCopySourceKind: "item",
     _publicCopySourceId: "item-tent",
     _publicCopySourceLayoutId: "layout-source",
+    _publicCopySourceContentHash: "fnv1a:test",
     publicCatalogLayoutId: "layout-admin-shared",
     photos: [{ id: "photo-1", url: "/photos/photo-1/file" }]
   };
@@ -1347,6 +1481,7 @@ test("published template payloads drop local public-copy markers", () => {
   assert.equal(item._publicCopySourceKind, undefined);
   assert.equal(item._publicCopySourceId, undefined);
   assert.equal(item._publicCopySourceLayoutId, undefined);
+  assert.equal(item._publicCopySourceContentHash, undefined);
   assert.equal(item.publicCatalogLayoutId, undefined);
   assert.deepEqual(item.photos, [{ id: "photo-1", url: "/photos/photo-1/file" }]);
 });

@@ -7,6 +7,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     checkAdminApiCompatibility,
     clearOfflineRememberedSession,
     currentPublicTemplateStatusMessage,
+    currentPrivateLayoutRef,
     enterSignedOutPublicMode,
     hasLocalSavedState,
     isAdminUser,
@@ -21,6 +22,8 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     renderInitialLocalFallbackIfNeeded,
     restoreSavedLayoutChoice,
     restoreTemplateCopyDraftsFromRecovery,
+    applyPreferredPrivateLayoutChoice,
+    storedPrivateLayoutChoiceRef,
     setExplicitlySignedOut,
     setLayoutLoadStatus,
     setPersonalLayoutsLoadedStatus,
@@ -92,7 +95,17 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   setExplicitlySignedOut(false);
   clearOfflineRememberedSession();
   runtime.appUnlocked = true;
+  const startupPreferredLayout = preferredLayout || currentPrivateLayoutRef?.() || null;
   activateLocalStorageScopeForCurrentUser();
+  const storedPreferredLayout = storedPrivateLayoutChoiceRef?.() || null;
+  if (startupPreferredLayout && !storedPreferredLayout) {
+    applyPreferredPrivateLayoutChoice?.(startupPreferredLayout, { remember: true });
+  }
+  const remotePreferredLayout = preferredLayout ||
+    storedPreferredLayout ||
+    (!storedPreferredLayout ? startupPreferredLayout : null) ||
+    currentPrivateLayoutRef?.() ||
+    null;
   rememberAuthenticatedUser();
   restoreTemplateCopyDraftsFromRecovery();
   if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
@@ -103,12 +116,12 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   try {
     if (runtime.syncMeta.dirty && hasLocalSavedState()) {
       updateSyncUi("Есть локальные изменения · проверяю даты...");
-      await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout });
+      await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout: remotePreferredLayout });
       if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
       setPersonalLayoutsLoadedStatus();
       return;
     }
-    await loadRemoteState({ preferredLayout });
+    await loadRemoteState({ preferredLayout: remotePreferredLayout });
     if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
     setPersonalLayoutsLoadedStatus();
   } catch (error) {

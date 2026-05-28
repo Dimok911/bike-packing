@@ -25,27 +25,27 @@ function baseState(overrides = {}) {
   };
 }
 
-test("sync payload keeps collection mode and unpacked filter", () => {
+test("sync payload treats collection mode and unpacked filter as local UI state", () => {
   const payload = cloneStateForSyncPayload(baseState({
     collectionMode: true,
     showOnlyUnpacked: true
   }), { forSync: true });
 
-  assert.equal(payload.collectionMode, true);
-  assert.equal(payload.showOnlyUnpacked, true);
+  assert.equal(payload.collectionMode, undefined);
+  assert.equal(payload.showOnlyUnpacked, undefined);
   assert.equal(payload.itemDisplayMode, undefined);
   assert.equal(payload.showFilterContext, undefined);
   assert.equal(payload.collapsedContainers, undefined);
 });
 
-test("unpacked filter cannot sync as enabled while collection mode is off", () => {
+test("unpacked filter does not sync even when normalized locally", () => {
   const payload = cloneStateForSyncPayload(baseState({
     collectionMode: false,
     showOnlyUnpacked: true
   }), { forSync: true });
 
-  assert.equal(payload.collectionMode, false);
-  assert.equal(payload.showOnlyUnpacked, false);
+  assert.equal(payload.collectionMode, undefined);
+  assert.equal(payload.showOnlyUnpacked, undefined);
 });
 
 test("collection mode normalization repairs missing booleans", () => {

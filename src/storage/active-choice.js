@@ -137,3 +137,34 @@ export function resolveStoredPrivateLayoutChoice({
   }
   return "";
 }
+
+export function isPrivateUserLayoutIdForState(targetState, layoutId, { guestDemoCopyFlag = "" } = {}) {
+  const layout = targetState?.layouts?.[layoutId];
+  return Boolean(
+    layout &&
+    !layout.adminDemo &&
+    !layout.adminSharedSourceId &&
+    !(guestDemoCopyFlag && layout?.[guestDemoCopyFlag])
+  );
+}
+
+export function resolveStoredPrivateLayoutChoiceForState(targetState, {
+  guestDemoCopyFlag = "",
+  isPrivateChoice,
+  normalizeChoice,
+  storedChoice = "",
+  storedPrivateChoice = ""
+} = {}) {
+  if (!targetState || typeof targetState !== "object") return "";
+  const activeLayoutId = targetState.layouts?.[targetState.activeLayoutId]
+    ? targetState.activeLayoutId
+    : Object.values(targetState.layouts || {})[0]?.id || "";
+  return resolveStoredPrivateLayoutChoice({
+    activeLayoutId,
+    storedChoice,
+    storedPrivateChoice,
+    normalizeChoice,
+    isPrivateChoice,
+    isPrivateUserLayoutId: (layoutId) => isPrivateUserLayoutIdForState(targetState, layoutId, { guestDemoCopyFlag })
+  });
+}

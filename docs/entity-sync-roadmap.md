@@ -111,10 +111,16 @@ Entity sync сейчас является record-level sync: если меняе
 
 - `categories`;
 - `locations`;
-- `activeLayoutId`;
 - `packedItems`, если состояние упаковки ещё живёт вне layout arrangement;
 - пользовательские настройки режима/представления, если они попали в sync-state;
 - другие top-level поля, которые не являются локальным UI-state.
+
+Проверка текущего кода:
+
+- `activeLayoutId` уже вычищается из `cloneStateForSyncPayload(..., { forSync: true })`, поэтому одно только переключение активной укладки больше не должно включать full payload;
+- `collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked` тоже вычищаются из sync payload;
+- после удаления `items`, `containers`, `layouts` из legacy-compare реально остаются `categories`, `locations`, `packedItems`;
+- изменение `items`/`containers`/`layouts` само по себе проходит через entity sync и не должно требовать full payload, если соответствующий endpoint доступен и подтвердил записи.
 
 ## Важное различие
 
@@ -143,7 +149,7 @@ Entity sync сейчас является record-level sync: если меняе
 - две entity `categories` и `locations`;
 - отдельная entity на каждое значение справочника.
 
-Предпочтительный первый шаг: одна record-level entity для справочников, потому что это проще мигрировать и конфликтовать.
+Решение для первого шага: одна record-level entity для справочников. Справочники небольшие, поэтому отдельные записи на каждое значение сейчас добавят больше конфликтной и миграционной сложности, чем пользы.
 
 ### 2. Packed State
 
@@ -158,6 +164,8 @@ Entity sync сейчас является record-level sync: если меняе
 - отдельной entity по layout id;
 - локально на устройстве, если это не должно быть общей серверной правдой.
 
+Решение: packed state должен быть общим между устройствами. Сейчас он уже синхронизируется как часть server payload, а для entity sync его нужно оставить серверной правдой. Ближайший вопрос реализации - где держать canonical source: верхнеуровневый `packedItems`, `layout.arrangement.packedItems` или отдельная layout-scoped entity.
+
 ### 3. Active Layout Choice
 
 Поля:
@@ -165,27 +173,34 @@ Entity sync сейчас является record-level sync: если меняе
 - `activeLayoutId`;
 - связанные persisted choice keys.
 
-Скорее всего это не доменная серверная истина, а локальная навигация пользователя. Кандидат не на entity sync, а на вынос из серверного payload или хранение как per-device preference.
+Решение: active layout choice не нужен на сервере. Это runtime-указатель текущей рабочей укладки и per-device память выбора, а не доменная серверная истина. В server sync должны уходить сами `layouts` и их содержимое, но не выбор открытой укладки.
 
 ### 4. User Preferences
 
 Примеры:
 
-- режим отображения;
-- фильтры;
-- collapse state;
+- `collapsedContainers`;
+- `itemDisplayMode`;
+- `showItemMeta`;
+- `showFilterContext`;
+- `collectionMode`;
+- `showOnlyUnpacked`;
 - язык интерфейса;
+- сортировка вещей/сумок;
+- режим/стиль packing view, включая 3D-view state;
 - локальные настройки карточек.
 
 Большинство таких полей не должны попадать в общий server payload. Если понадобится серверная синхронизация, лучше делать отдельную `preferences` entity с мягкими конфликтами или last-write-wins.
 
+Смысл вопроса про UI-настройки: нужно проверить, не попадают ли локальные предпочтения в `serializeState({ forSync: true })` случайно. "Случайно попадают" здесь означает: пользователь поменял только вид экрана на одном устройстве, а это поле оказалось в server payload и начало менять состояние на других устройствах. Сейчас `collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked`, `activeLayoutId`, сортировки, язык и 3D-view settings в общий server sync не уходят.
+
 ## Предлагаемый порядок работы
 
-1. Инструментировать/проверить, какие обычные действия сейчас включают full payload.
-2. Составить список top-level diff после успешного entity sync.
-3. Разделить найденные поля на `server domain`, `local UI`, `user preferences`, `legacy only`.
-4. Для первого server-domain кандидата добавить entity-модель и backend endpoint.
-5. Добавить critical/contract tests: обычные действия не должны уходить в full payload без причины.
+1. Закрыть справочники: добавить одну entity `dictionary-state` для `categories`/`locations`, backend endpoint и frontend entity sync.
+2. Добавить contract tests, что изменение справочников не включает full payload при доступном entity endpoint.
+3. Закрыть packed state: выбрать canonical source и вынести `packedItems` в layout-scoped sync без full payload.
+4. Добавить контракт на локальность UI-настроек: `collectionMode` / `showOnlyUnpacked` и остальные UI-поля не должны включать full payload и не должны попадать в server sync.
+5. Добавить diagnostic/contract test для legacy-compare: после удаления `items`, `containers`, `layouts` не должно оставаться неожиданных top-level diff.
 6. Оставить full payload как recovery/fallback, а не как обычный путь.
 
 ## Что считать успехом
@@ -202,17 +217,17 @@ Entity sync сейчас является record-level sync: если меняе
 
 Full payload допустим:
 
-- при force overwrite;
-- после conflict merge, когда нужна каноническая замена;
-- при старом/недоступном API;
-- при recovery/history restore;
-- при миграции данных;
-- для legacy compatibility.
+- при force overwrite (принудительной перезаписи серверной версии текущим локальным состоянием);
+- после conflict merge (разбора и объединения конфликтующих локальных/серверных изменений), когда нужна каноническая замена (запись одной итоговой версии как новой серверной правды);
+- при старом/недоступном API (когда сервер не поддерживает нужные entity-sync endpoints или временно не отвечает);
+- при recovery/history restore (восстановлении состояния из истории, резервной копии или аварийного fallback);
+- при миграции данных (переводе старого формата хранения в новый);
+- для legacy compatibility (совместимости со старым API, старыми клиентами и прежним full-payload форматом).
 
-## Открытые вопросы
+## Закрытые решения и оставшийся аудит
 
-- Какие top-level поля реально чаще всего включают full payload сейчас?
-- Нужно ли синхронизировать справочники как одну запись или как отдельные значения?
-- Должен ли packed state быть общим между устройствами или локальным?
-- Нужно ли хранить active layout choice на сервере?
-- Какие UI-настройки сейчас случайно попадают в sync payload?
+- Сейчас full payload после entity sync включают изменения в `categories`, `locations`, `packedItems`.
+- Справочники синхронизируем одной записью на список.
+- Packed state должен быть общим между устройствами.
+- Active layout choice на сервере хранить не нужно.
+- UI-аудит: текущие явные UI-поля (`collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked`, `activeLayoutId`) из sync payload вычищаются.

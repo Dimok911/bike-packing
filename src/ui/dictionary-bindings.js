@@ -6,6 +6,7 @@ export function bindDictionaryControls(type, {
   dictionaryOptionsForOwner,
   editingDictionaryEntry,
   formatThingCount,
+  containerCategories = () => [],
   itemCategories,
   markEdited,
   nowIso,
@@ -50,6 +51,7 @@ export function bindDictionaryControls(type, {
       const editInput = button.closest(".dictionary-chip")?.querySelector(`[data-dictionary-edit-input="${type}"]`);
       renameDictionaryEntry(type, oldValue, editInput?.value || "", {
         addCustomDictionaryValue,
+        containerCategories,
         dictionaryEditScope,
         dictionaryOptionsForOwner,
         itemCategories,
@@ -73,6 +75,7 @@ export function bindDictionaryControls(type, {
       if (event.key === "Enter") {
         event.preventDefault();
         renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value, {
+          containerCategories,
           dictionaryEditScope,
           dictionaryOptionsForOwner,
           itemCategories,
@@ -103,6 +106,9 @@ export function bindDictionaryControls(type, {
       const affectedCount = scope.items.filter((item) => {
         if (type === "location") return item.location === value;
         return itemCategories(item).includes(value);
+      }).length + scope.containers.filter((container) => {
+        if (type === "location") return container.location === value;
+        return containerCategories(container).includes(value);
       }).length;
       const fallback = dictionaryValues.find((item) => item !== value);
       const title = type === "location" ? "РЈРґР°Р»РёС‚СЊ РјРµСЃС‚Рѕ С…СЂР°РЅРµРЅРёСЏ?" : "РЈРґР°Р»РёС‚СЊ РєР°С‚РµРіРѕСЂРёСЋ?";
@@ -136,6 +142,14 @@ export function bindDictionaryControls(type, {
               container.location = fallback;
               touchContainer(container.id, changedAt);
             });
+          } else {
+            scope.containers.forEach((container) => {
+              if (!containerCategories(container).includes(value)) return;
+              container.categories = containerCategories(container).map((category) => category === value ? fallback : category)
+                .filter((category, index, list) => list.indexOf(category) === index);
+              container.category = container.categories[0];
+              touchContainer(container.id, changedAt);
+            });
           }
           saveDictionaryOwner(owner);
         }
@@ -145,6 +159,7 @@ export function bindDictionaryControls(type, {
 }
 
 export function renameDictionaryEntry(type, oldValue, rawNewValue, {
+  containerCategories = () => [],
   dictionaryEditScope,
   dictionaryOptionsForOwner,
   itemCategories,
@@ -191,6 +206,13 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
         .filter((category, index, list) => list.indexOf(category) === index);
       item.category = item.categories[0];
       markEdited(item, changedAt);
+    });
+    scope.containers.forEach((container) => {
+      if (!containerCategories(container).includes(oldValue)) return;
+      container.categories = containerCategories(container).map((category) => category === oldValue ? newValue : category)
+        .filter((category, index, list) => list.indexOf(category) === index);
+      container.category = container.categories[0];
+      touchContainer(container.id, changedAt);
     });
   }
   onRenamed(type, oldValue, newValue);

@@ -8,6 +8,7 @@ export function saveRootContainerDialogAction({
   currentCreateMeta = () => ({}),
   defaultRootContainerLocation = () => "",
   editingRootContainerId = "",
+  getRootContainerSelectedCategories = () => [],
   getPublishedEditLayoutId = () => "",
   hasContainerDimensions = () => false,
   markRecordActivePublicCatalog = () => {},
@@ -31,6 +32,7 @@ export function saveRootContainerDialogAction({
   if (editingRootContainerId && !container) return;
   if (!container && !requireUsageCapacity("containers")) return;
   const dimensions = readRootContainerDialogDimensions();
+  const selectedCategories = getRootContainerSelectedCategories();
   if (!container) {
     const id = `container-${Date.now()}`;
     state.containers[id] = {
@@ -43,6 +45,8 @@ export function saveRootContainerDialogAction({
       weight: parseWeightInput(refs.rootContainerWeight.value),
       volume: parseVolumeInput(refs.rootContainerVolume.value),
       color: normalizeContainerColor(refs.rootContainerColor?.value),
+      category: selectedCategories[0] || "",
+      categories: selectedCategories,
       ...(hasContainerDimensions(dimensions) ? { dimensions } : {}),
       location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
       note: refs.rootContainerNote.value.trim(),
@@ -61,6 +65,8 @@ export function saveRootContainerDialogAction({
   container.weight = parseWeightInput(refs.rootContainerWeight.value);
   container.volume = parseVolumeInput(refs.rootContainerVolume.value);
   container.color = normalizeContainerColor(refs.rootContainerColor?.value);
+  container.category = selectedCategories[0] || "";
+  container.categories = selectedCategories;
   applyRootContainerDimensions(container, dimensions);
   container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
   container.note = refs.rootContainerNote.value.trim();
@@ -120,7 +126,7 @@ export function saveItemDialogAction({
     item.quantity = readItemDialogQuantity();
     item.location = refs.itemLocation.value;
     item.categories = selectedCategories;
-    item.category = selectedCategories[0];
+    item.category = selectedCategories[0] || "";
     item.note = refs.itemNote.value.trim();
     applyItemDialogPhotoDraft(item, changedAt);
     markRecordActivePublicCatalog(item);
@@ -155,7 +161,7 @@ export function saveItemDialogAction({
       weight: parseWeightInput(refs.itemWeight.value),
       quantity: readItemDialogQuantity(),
       location: refs.itemLocation.value,
-      category: selectedCategories[0],
+      category: selectedCategories[0] || "",
       categories: selectedCategories,
       containerId: "",
       note: refs.itemNote.value.trim(),

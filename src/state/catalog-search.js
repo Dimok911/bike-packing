@@ -26,16 +26,22 @@ export function matchesItemFieldsFilter(item, {
 }
 
 export function matchesRootContainerFieldsFilter(container, {
+  categories = [],
+  containerCategories = () => [],
   query = "",
   location = "",
   containerLocation = "",
+  ignoreCategories = false,
   ignoreLocation = false
 } = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
   if (!ignoreLocation && location && containerLocation !== location) return false;
+  const containerCategoryValues = containerCategories(container);
+  if (!ignoreCategories && categories.length && !categories.some((category) => containerCategoryValues.includes(category))) return false;
   if (!normalizedQuery) return true;
   return [
     container?.name,
+    containerCategoryValues.join(" "),
     container?.color || "",
     containerLocation,
     container?.note || ""

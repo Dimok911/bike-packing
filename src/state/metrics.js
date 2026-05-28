@@ -22,6 +22,21 @@ export function rootContainerOwnWeight(targetState, containerId) {
   return container && !container.parentId ? Number(container.weight || 0) : 0;
 }
 
+export function layoutContainersOwnWeight(targetState, layout = targetState.layouts?.[targetState.activeLayoutId]) {
+  const containerIds = new Set();
+  const addContainer = (containerId) => {
+    if (!containerId || containerIds.has(containerId)) return;
+    const container = targetState.containers?.[containerId];
+    if (!container) return;
+    containerIds.add(containerId);
+    (container.childIds || []).forEach(addContainer);
+  };
+  (layout?.rootContainerIds || []).forEach(addContainer);
+  Object.keys(layout?.arrangement?.containers || {}).forEach(addContainer);
+  return [...containerIds].reduce((sum, containerId) =>
+    sum + Number(targetState.containers?.[containerId]?.weight || 0), 0);
+}
+
 export function countItemsInContainer(targetState, containerId) {
   const container = targetState.containers?.[containerId];
   if (!container) return 0;

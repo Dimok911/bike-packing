@@ -21,6 +21,8 @@ export function cloneStateForSyncPayload(sourceState, {
     delete cloned.itemDisplayMode;
     delete cloned.showItemMeta;
     delete cloned.showFilterContext;
+    delete cloned.collectionMode;
+    delete cloned.showOnlyUnpacked;
     delete cloned.activeLayoutId;
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
@@ -39,6 +41,7 @@ export function stripLocalPublicCopyOrigin(record) {
   delete record._publicCopySourceKind;
   delete record._publicCopySourceId;
   delete record._publicCopySourceLayoutId;
+  delete record._publicCopySourceContentHash;
 }
 
 export function stripAppliedArrangementFieldsForSync(cloned) {

@@ -1,4 +1,4 @@
-import { itemCategories } from "./normalize.js";
+import { containerCategories, itemCategories } from "./normalize.js";
 import { collectPublicLayoutRecordIds, isPublicLayoutRecord } from "./public-layout-scope.js";
 
 const PUBLIC_DICTIONARY_CLEANUP_VERSION = "public-dictionaries-v1";
@@ -35,6 +35,9 @@ export function layoutDictionaryValues(layout, type, sourceState, {
       if (value) values.push(value);
     });
   } else {
+    containerIds.forEach((id) => {
+      containerCategories(sourceState.containers?.[id] || {}).forEach((value) => values.push(value));
+    });
     itemIds.forEach((id) => {
       itemCategories(sourceState.items?.[id] || {}).forEach((value) => values.push(value));
     });
@@ -53,6 +56,10 @@ export function privateDictionaryValues(type, sourceState, helpers = {}) {
       if (!publicIds.itemIds.has(id) && isPrivateDictionaryRecord(item) && item.location) values.push(item.location);
     });
   } else {
+    Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
+      if (publicIds.containerIds.has(id) || !isPrivateDictionaryRecord(container)) return;
+      containerCategories(container).forEach((value) => values.push(value));
+    });
     Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
       if (publicIds.itemIds.has(id) || !isPrivateDictionaryRecord(item)) return;
       itemCategories(item).forEach((value) => values.push(value));
@@ -79,6 +86,9 @@ export function publicDictionaryValues(type, sourceState, helpers = {}) {
       if (value) values.push(value);
     });
   } else {
+    publicIds.containerIds.forEach((id) => {
+      containerCategories(sourceState?.containers?.[id] || {}).forEach((value) => values.push(value));
+    });
     publicIds.itemIds.forEach((id) => {
       itemCategories(sourceState?.items?.[id] || {}).forEach((value) => values.push(value));
     });

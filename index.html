@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=928" />
+    <link rel="stylesheet" href="./styles.css?v=941" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -262,6 +262,10 @@
           Где хранится
           <select id="rootContainerLocation"></select>
         </label>
+        <div class="field-label">
+          Категории
+          <div id="rootContainerCategoryList" class="category-picker"></div>
+        </div>
         <div id="rootContainerPlacementField" class="field-label item-container-field">
           <span id="rootContainerPlacementLabel">Находится в</span>
           <div class="item-container-control root-container-placement-control">
@@ -451,6 +455,7 @@
         <p id="confirmText"></p>
         <footer>
           <button id="confirmOkBtn" type="button" value="default">Удалить</button>
+          <button id="confirmAlternateBtn" type="button" value="alternate" class="ghost" hidden>Другой вариант</button>
           <button id="confirmCancelBtn" type="button" value="cancel" class="ghost">Отмена</button>
         </footer>
       </form>
@@ -593,6 +598,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=928" type="module"></script>
+    <script src="./app.js?v=941" type="module"></script>
   </body>
 </html>

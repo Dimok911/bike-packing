@@ -2,6 +2,11 @@ import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
 import { renderEmptyState } from "./empty-state.js";
 import { formatItemWeight, renderItemQuantityText } from "./item-format.js";
 
+function tr(t, key, fallback, values = {}) {
+  const value = t(key, values);
+  return value === key ? fallback : value;
+}
+
 export function renderItemsViewHtml({
   counts,
   emptyFiltered = false,
@@ -11,22 +16,23 @@ export function renderItemsViewHtml({
   items,
   renderListItem,
   showLabels = false,
-  showPhotos = false
+  showPhotos = false,
+  t = (key) => key
 }) {
-  const { label, title } = itemSortMeta(itemSortMode);
+  const { label, title } = itemSortMeta(itemSortMode, t);
   return `
     <section class="items-panel">
       <div class="items-toolbar">
-        <button id="addItemBtn">Добавить вещь</button>
+        <button id="addItemBtn">${tr(t, "items.addItem", "Добавить вещь")}</button>
         <div class="items-filter-row">
           <label>
-            Участие в укладке
+            ${tr(t, "items.usageLabel", "Участие в укладке")}
             <select id="itemUsageFilter">
-              <option value="all"${itemUsageFilter === "all" ? " selected" : ""}>Все вещи (${counts.all})</option>
-              <option value="current"${itemUsageFilter === "current" ? " selected" : ""}>В текущей укладке (${counts.current})</option>
-              <option value="away"${itemUsageFilter === "away" ? " selected" : ""}>Не дома и не на веле (${counts.away})</option>
-              <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>Без веса (${counts.noWeight})</option>
-              <option value="unused"${itemUsageFilter === "unused" ? " selected" : ""}>Вне текущей укладки (${counts.unused})</option>
+              <option value="all"${itemUsageFilter === "all" ? " selected" : ""}>${tr(t, "items.usage.all", `Все вещи (${counts.all})`, { count: counts.all })}</option>
+              <option value="current"${itemUsageFilter === "current" ? " selected" : ""}>${tr(t, "items.usage.current", `В текущей укладке (${counts.current})`, { count: counts.current })}</option>
+              <option value="away"${itemUsageFilter === "away" ? " selected" : ""}>${tr(t, "items.usage.away", `Не дома и не на веле (${counts.away})`, { count: counts.away })}</option>
+              <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>${tr(t, "items.usage.noWeight", `Без веса (${counts.noWeight})`, { count: counts.noWeight })}</option>
+              <option value="unused"${itemUsageFilter === "unused" ? " selected" : ""}>${tr(t, "items.usage.unused", `Вне текущей укладки (${counts.unused})`, { count: counts.unused })}</option>
             </select>
           </label>
           <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">
@@ -50,9 +56,10 @@ export function renderSharedItemsViewHtml({
   items,
   renderListItem,
   showLabels = false,
-  showPhotos = false
+  showPhotos = false,
+  t = (key) => key
 }) {
-  const { label } = itemSortMeta(itemSortMode);
+  const { label, title } = itemSortMeta(itemSortMode, t);
   const toolbarClass = [
     "items-toolbar",
     copyAllButtonHtml ? "" : "items-toolbar-single"
@@ -64,14 +71,14 @@ export function renderSharedItemsViewHtml({
         ${copyAllButtonHtml}
         <div class="items-filter-row">
           <label>
-            Участие в укладке
+            ${tr(t, "items.usageLabel", "Участие в укладке")}
             <select id="itemUsageFilter">
-              <option value="all"${itemUsageFilter === "all" ? " selected" : ""}>Все вещи (${counts.all})</option>
-              <option value="current"${itemUsageFilter === "current" ? " selected" : ""}>В текущей укладке (${counts.current})</option>
-              <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>Без веса (${counts.noWeight})</option>
+              <option value="all"${itemUsageFilter === "all" ? " selected" : ""}>${tr(t, "items.usage.all", `Все вещи (${counts.all})`, { count: counts.all })}</option>
+              <option value="current"${itemUsageFilter === "current" ? " selected" : ""}>${tr(t, "items.usage.current", `В текущей укладке (${counts.current})`, { count: counts.current })}</option>
+              <option value="no-weight"${itemUsageFilter === "no-weight" ? " selected" : ""}>${tr(t, "items.usage.noWeight", `Без веса (${counts.noWeight})`, { count: counts.noWeight })}</option>
             </select>
           </label>
-          <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button">${label}</button>
+          <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">${label}</button>
         </div>
       </div>
       <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}</div>
@@ -87,22 +94,22 @@ function itemsListClassName({ showLabels = false, showPhotos = false } = {}) {
   ].filter(Boolean).join(" ");
 }
 
-function itemSortMeta(mode) {
+function itemSortMeta(mode, t = (key) => key) {
   if (mode === "asc") {
     return {
-      label: "А-Я",
-      title: "Сортировка А-Я. Нажмите для Я-А"
+      label: tr(t, "sort.ascLabel", "А-Я"),
+      title: tr(t, "sort.ascTitle", "Сортировка А-Я. Нажмите для Я-А")
     };
   }
   if (mode === "desc") {
     return {
-      label: "Я-А",
-      title: "Сортировка Я-А. Нажмите, чтобы сбросить"
+      label: tr(t, "sort.descLabel", "Я-А"),
+      title: tr(t, "sort.descTitle", "Сортировка Я-А. Нажмите, чтобы сбросить")
     };
   }
   return {
-    label: "Без",
-    title: "Без сортировки. Нажмите для А-Я"
+    label: tr(t, "sort.noneLabel", "Без"),
+    title: tr(t, "sort.noneTitle", "Без сортировки. Нажмите для А-Я")
   };
 }
 
@@ -116,8 +123,12 @@ export function renderListItemHtml({
   placementText,
   quantityText = "",
   selected = false,
-  showLabels
+  showLabels,
+  t = (key) => key
 }) {
+  const copyLabel = tr(t, "buttons.copy", "Скопировать");
+  const editLabel = tr(t, "buttons.edit", "Редактировать");
+  const deleteLabel = tr(t, "buttons.deleteForever", "Удалить навсегда");
   const cardTitle = [
     item.name,
     quantityText,
@@ -147,13 +158,13 @@ export function renderListItemHtml({
     statusHtml: highlightText(placementText),
     photoHtml,
     actionsHtml: `
-      <button class="copy-item-button" data-copy-item="${item.id}" aria-label="Скопировать" title="Скопировать">
+      <button class="copy-item-button" data-copy-item="${item.id}" aria-label="${copyLabel}" title="${copyLabel}">
         <span aria-hidden="true">⧉</span>
       </button>
-      <button class="edit-button" data-edit-item="${item.id}" aria-label="Редактировать" title="Редактировать">
+      <button class="edit-button" data-edit-item="${item.id}" aria-label="${editLabel}" title="${editLabel}">
         <span aria-hidden="true">&#9998;</span>
       </button>
-      <button class="delete-item-button" data-delete-item="${item.id}" aria-label="Удалить навсегда" title="Удалить навсегда">
+      <button class="delete-item-button" data-delete-item="${item.id}" aria-label="${deleteLabel}" title="${deleteLabel}">
         <span aria-hidden="true">&times;</span>
       </button>
     `

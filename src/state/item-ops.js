@@ -106,6 +106,46 @@ export async function duplicateItemToContainerInLayoutState(targetState, itemId,
   return { id };
 }
 
+export async function duplicateSnapshotItemToContainerInLayoutState(targetState, sourceItem, sourceItemId, targetContainerId, targetLayoutId, {
+  activeLayoutId = "",
+  applyLayoutArrangement = () => {},
+  changedAt = "",
+  cloneEntity = (record) => ({ ...(record || {}) }),
+  copyPhotos = async () => [],
+  currentEditMeta = () => ({}),
+  id = "",
+  mapRecordToTarget = () => {},
+  markRecordOrigin = () => {},
+  touchLayout = () => {}
+} = {}) {
+  const targetLayout = targetState?.layouts?.[targetLayoutId];
+  if (!sourceItem || !targetLayout || !id) return null;
+  const record = await createItemDuplicateRecord(sourceItem, {
+    changedAt,
+    cloneEntity,
+    containerId: targetContainerId,
+    copyPhotos,
+    currentEditMeta,
+    id,
+    preserveName: true
+  });
+  if (!record) return null;
+  targetState.items[id] = record;
+  markRecordOrigin(targetState.items[id], sourceItem, "item", sourceItemId);
+  mapRecordToTarget(targetState.items[id]);
+  const placed = placeExistingItemInLayoutInState(targetState, id, targetContainerId, targetLayoutId, {
+    activeLayoutId,
+    applyLayoutArrangement,
+    changedAt,
+    touchLayout
+  });
+  if (!placed) {
+    delete targetState.items[id];
+    return null;
+  }
+  return { id };
+}
+
 export function deleteItemFromState(targetState, itemId, {
   beforeDeleteItem = () => {},
   changedAt = "",

@@ -30,7 +30,7 @@ export function updateViewScopedControlsUi({
 } = {}) {
   const sharedView = isSharedLayoutView();
   const filtersVisible = view === "packing" || view === "items" || view === "bags";
-  const categoryVisible = view === "packing" || view === "items";
+  const categoryVisible = view === "packing" || view === "items" || view === "bags";
   document.querySelectorAll("[data-main-filter-control]").forEach((element) => {
     const isCollectionActions = element === refs.collectionActions;
     const isCategoryFilter = element === refs.categoryFilterLabel;
@@ -69,6 +69,7 @@ export function renderFilterControls({
   demoTemplateChoiceForEntry = () => "",
   demoTemplateChoiceForLanguage = () => "",
   demoTemplateFallbackName = () => "",
+  normalizeDemoName = (name) => name,
   demoTemplatesForUiLanguage = () => [],
   dictionaryOptionsForUi = () => [],
   fillSelect = () => {},
@@ -115,7 +116,7 @@ export function renderFilterControls({
     : [
       ...demoTemplates.map((demoTemplate) => [
         demoTemplateChoiceForEntry(demoTemplate),
-        `${t("template.prefix")}: ${demoTemplate?.name || demoTemplateFallbackName(uiLanguage)}`,
+        `${t("template.prefix")}: ${normalizeDemoName(demoTemplate?.name || demoTemplateFallbackName(uiLanguage), demoTemplate?.language || uiLanguage)}`,
         "demo",
         publicTemplatesBlocked
       ]),

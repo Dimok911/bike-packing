@@ -1,10 +1,14 @@
 import { clonePlain } from "../utils/json.js";
+import { publicCopyRecordContentHash } from "./copy-duplicates.js";
 
-export function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId = "") {
+export function markLocalPublicCopyOrigin(record, kind, sourceId, sourceLayoutId = "", sourceContentHash = "") {
   if (!record || !sourceId) return;
   record._publicCopySourceKind = kind;
   record._publicCopySourceId = String(sourceId);
   record._publicCopySourceLayoutId = sourceLayoutId ? String(sourceLayoutId) : "";
+  const hash = String(sourceContentHash || "").trim();
+  if (hash) record._publicCopySourceContentHash = hash;
+  else delete record._publicCopySourceContentHash;
 }
 
 export function copiedFromTemplateNote(templateName = "") {
@@ -151,7 +155,8 @@ export function stripPublishedPublicOriginMarkers(record) {
   [
     "_publicCopySourceKind",
     "_publicCopySourceId",
-    "_publicCopySourceLayoutId"
+    "_publicCopySourceLayoutId",
+    "_publicCopySourceContentHash"
   ].forEach((key) => {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
       delete record[key];
@@ -182,7 +187,13 @@ export function publicCopySourceIdFromRecord(record, kind, fallbackId = "") {
 export function markPrivateCopyOriginFromSource(target, source, kind, fallbackId = "") {
   const sourceId = publicCopySourceIdFromRecord(source, kind, fallbackId);
   if (!sourceId) return false;
-  markLocalPublicCopyOrigin(target, kind, sourceId, source?._publicCopySourceLayoutId || source?.publicCatalogLayoutId || "");
+  markLocalPublicCopyOrigin(
+    target,
+    kind,
+    sourceId,
+    source?._publicCopySourceLayoutId || source?.publicCatalogLayoutId || "",
+    publicCopyRecordContentHash(source, kind)
+  );
   return true;
 }
 
