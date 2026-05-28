@@ -17,6 +17,7 @@ import {
   demoAdminStatePathForLanguage,
   demoItemKeyForLanguage,
   demoPublicListIdForLanguage,
+  isAdminPublicEditScope,
   shouldClearPackingListContextForPrivateMutation
 } from "../../src/public/scope.js";
 import {
@@ -55,6 +56,7 @@ import {
   publicCopySourceIdFromRecord,
   stripPublishedPublicOriginMarkers
 } from "../../src/public/copy-public-to-private.js";
+import { cleanPublishedEntityId } from "../../src/public/published-state-export.js";
 import {
   planLayoutTreeMissingItems,
   planPublicCopyMissingItems,
@@ -122,6 +124,17 @@ import { repairMojibakeLayoutNames } from "../../src/state/names.js";
 import { assertEntitySyncConfirmed } from "../../src/sync/entity-sync-confirmation.js";
 
 const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
+
+test("published entity id cleanup works when used as a callback without cssSafeId", () => {
+  assert.equal(
+    cleanPublishedEntityId("container", { id: "container-shared-front-bag", name: "Front bag" }, "fallback"),
+    "container-front-bag"
+  );
+  assert.equal(
+    cleanPublishedEntityId("item", { name: "First Aid Kit" }, ""),
+    "item-first-aid-kit"
+  );
+});
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
   assert.equal(demoPublicListIdForLanguage("ru"), "public-demo-state");
@@ -2285,6 +2298,23 @@ test("private mutations clear stale public list context before sync", () => {
     record: { id: "public-demo-state", itemKey: "demo-state", visibility: "public" },
     isPublicTemplateListId
   }), true);
+});
+
+test("private scope with template markers is not treated as admin public edit", () => {
+  assert.equal(
+    isAdminPublicEditScope({
+      viewScope: "private",
+      adminPublishedEditLayoutId: "layout-from-template"
+    }),
+    false
+  );
+  assert.equal(
+    isAdminPublicEditScope({
+      viewScope: "admin-public-edit",
+      adminPublishedEditLayoutId: "layout-from-template"
+    }),
+    true
+  );
 });
 
 test("created private template copies require confirmed entity upserts", () => {

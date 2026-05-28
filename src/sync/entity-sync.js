@@ -5,6 +5,7 @@ import {
 import { jsonUtf8ByteLength } from "../utils/json.js";
 import { nowIso } from "../utils/time.js";
 import {
+  compactDictionaryForEntitySync,
   compactContainerForEntitySync,
   compactItemForEntitySync,
   compactLayoutForEntitySync
@@ -34,6 +35,20 @@ export const ENTITY_SYNC_CONFIG = {
     compact: compactLayoutForEntitySync,
     tableName: "bike_packing_layouts",
     fallbackText: "failed to sync list layouts"
+  },
+  dictionary: {
+    bodyKey: "dictionaries",
+    endpoint: "dictionaries",
+    compact: compactDictionaryForEntitySync,
+    records: (state) => ({
+      "dictionary-state": {
+        id: "dictionary-state",
+        categories: state?.categories,
+        locations: state?.locations
+      }
+    }),
+    tableName: "bike_packing_dictionaries",
+    fallbackText: "failed to sync list dictionaries"
   }
 };
 
@@ -51,8 +66,11 @@ export function buildChangedEntitySyncEntries(type, baseState, localState, {
   if (!config) return [];
   const normalizedBase = normalizedEntitySyncState(baseState, { cloneStateForSync, createEmptyUserState });
   const normalizedLocal = normalizedEntitySyncState(localState, { cloneStateForSync, createEmptyUserState });
-  const baseRecords = normalizedBase?.[config.mapKey] && typeof normalizedBase[config.mapKey] === "object" ? normalizedBase[config.mapKey] : {};
-  const localRecords = normalizedLocal?.[config.mapKey] && typeof normalizedLocal[config.mapKey] === "object" ? normalizedLocal[config.mapKey] : {};
+  const recordsForState = typeof config.records === "function"
+    ? config.records
+    : (state) => state?.[config.mapKey] && typeof state[config.mapKey] === "object" ? state[config.mapKey] : {};
+  const baseRecords = recordsForState(normalizedBase);
+  const localRecords = recordsForState(normalizedLocal);
   const changedAt = forceOverwrite ? nowIso() : (localUpdatedAt || nowIso());
   const ids = new Set([...Object.keys(baseRecords), ...Object.keys(localRecords)]);
   const entries = [];
@@ -84,15 +102,29 @@ export function legacyComparableStateForSync(sourceState, entitySync = null, dep
   if (!entitySync || entitySync.item?.safeForLegacyCompare !== false) delete cloned.items;
   if (entitySync?.container?.safeForLegacyCompare !== false) delete cloned.containers;
   if (entitySync?.layout?.safeForLegacyCompare !== false) delete cloned.layouts;
+  if (entitySync?.dictionary?.safeForLegacyCompare !== false) {
+    delete cloned.categories;
+    delete cloned.locations;
+  }
   return cloned;
 }
 
 export function hasLegacyPayloadChanges(baseState, localState, entitySync = null, deps = {}) {
   if (!baseState) return true;
-  return !sameJson(
-    legacyComparableStateForSync(baseState, entitySync, deps),
-    legacyComparableStateForSync(localState, entitySync, deps)
-  );
+  return legacyComparableTopLevelDiffKeys(baseState, localState, entitySync, deps).length > 0;
+}
+
+export function legacyComparableTopLevelDiffKeys(baseState, localState, entitySync = null, deps = {}) {
+  if (!baseState) return ["<missing-base-state>"];
+  const baseComparable = legacyComparableStateForSync(baseState, entitySync, deps);
+  const localComparable = legacyComparableStateForSync(localState, entitySync, deps);
+  const keys = new Set([
+    ...Object.keys(baseComparable || {}),
+    ...Object.keys(localComparable || {})
+  ]);
+  return [...keys]
+    .filter((key) => !sameJson(baseComparable?.[key], localComparable?.[key]))
+    .sort();
 }
 
 export function isEntitySyncUnavailableError(error, type = "item") {

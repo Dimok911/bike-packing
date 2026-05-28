@@ -6,6 +6,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     currentPublicTemplateStatusMessage,
     handleRemoteSaveConflict,
     hasLegacyPayloadChanges,
+    legacyComparableTopLevelDiffKeys,
     isDemoPublicTemplateMissing,
     isNetworkError,
     isReadOnlyBikePackingContext,
@@ -62,7 +63,12 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     updateSyncUi("Сохраняю на сервер...");
     const baseBeforeSave = loadBaseState();
     const entitySync = await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
-    const hasLegacyChanges = hasLegacyPayloadChanges(baseBeforeSave, runtime.state, entitySync);
+    const legacyDiffKeys = typeof legacyComparableTopLevelDiffKeys === "function"
+      ? legacyComparableTopLevelDiffKeys(baseBeforeSave, runtime.state, entitySync)
+      : [];
+    const hasLegacyChanges = legacyDiffKeys.length
+      ? true
+      : hasLegacyPayloadChanges(baseBeforeSave, runtime.state, entitySync);
     if (!forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
       runtime.syncMeta.dirty = false;
       runtime.syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt || runtime.syncMeta.serverUpdatedAt;
@@ -75,6 +81,13 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       updateSyncUi();
       if (notify) showToast("Синхронизация завершена.", "success");
       return;
+    }
+    if (!forceOverwrite && entitySync.attempted && hasLegacyChanges) {
+      const fallbackReason = legacyPayloadFallbackReasonText(legacyDiffKeys);
+      updateSyncUi(`Сохраняю полный payload · ${fallbackReason}`);
+      console.info("[bike-packing] Full payload fallback after entity sync", {
+        legacyDiffKeys
+      });
     }
     const data = await saveRemoteStateRecord({ forceOverwrite });
     runtime.syncMeta.dirty = false;
@@ -145,6 +158,13 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     updateSyncUi(`Не удалось синхронизировать: ${error.message}`);
     if (notify) showToast(`Не удалось синхронизировать: ${error.message}`, "error");
   }
+}
+
+export function legacyPayloadFallbackReasonText(diffKeys = []) {
+  if (!Array.isArray(diffKeys) || !diffKeys.length) return "legacy diff";
+  const visibleKeys = diffKeys.slice(0, 4);
+  const suffix = diffKeys.length > visibleKeys.length ? ` +${diffKeys.length - visibleKeys.length}` : "";
+  return `legacy diff: ${visibleKeys.join(", ")}${suffix}`;
 }
 
 
@@ -262,4 +282,3 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
   }
   if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
 }
-

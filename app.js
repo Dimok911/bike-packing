@@ -35,6 +35,7 @@ import {
   SUPPORTED_LANGUAGES,
   ADMIN_EMAILS,
   ADMIN_USER_IDS,
+  API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
   POINTER_DRAG_START_DISTANCE,
@@ -253,6 +254,7 @@ import {
   demoAdminStatePathForPublicListId as demoAdminStatePathForPublicListIdFromScope,
   demoPublicListIdForLanguage as demoPublicListIdForLanguageFromScope,
   hasGuestDemoCopyLayoutRecord,
+  isAdminPublicEditScope,
   isGuestDemoCopyLayoutRecord,
   isPublishedLayoutEditable,
   isReadOnlyBikePackingError,
@@ -495,6 +497,7 @@ import {
   hasLegacyPayloadChanges as hasLegacyPayloadChangesForSync,
   isEntitySyncUnavailableError,
   legacyComparableStateForSync as legacyComparableStateForSyncPayload,
+  legacyComparableTopLevelDiffKeys as legacyComparableTopLevelDiffKeysForSync,
   splitEntitySyncEntries as splitEntitySyncEntriesForSync
 } from "./src/sync/entity-sync.js";
 import { assertEntitySyncConfirmed } from "./src/sync/entity-sync-confirmation.js";
@@ -521,9 +524,11 @@ import { fetchAdminReports } from "./src/sync/admin-reports.js";
 import { checkAuthAndLoadFlow } from "./src/sync/auth-load-flow.js";
 import {
   canUseCachedStartupState,
+  hasListFreshnessSignal,
   listFreshnessChanged,
   normalizeListFreshness
 } from "./src/sync/list-freshness.js";
+import { shouldRecoverUnsyncedLocalChanges } from "./src/sync/local-dirty.js";
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
@@ -819,6 +824,7 @@ let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
 const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "dictionaryStateEntitySync",
   "entitySyncListUpdatedAt",
   "lightweightListFreshness",
   "publicTemplatePhotoReferenceCopy",
@@ -843,7 +849,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-27.lightweight-list-freshness-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-28.dictionary-state-entity-sync-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -936,6 +942,7 @@ let personalListApiUnavailable = false;
 let itemEntitySyncUnavailable = false;
 let containerEntitySyncUnavailable = false;
 let layoutEntitySyncUnavailable = false;
+let dictionaryEntitySyncUnavailable = false;
 let historyRecords = [];
 let expandedHistoryRecordId = "";
 let expandedHistoryGroups = {};
@@ -2557,7 +2564,7 @@ function bestCatalogListRecord(lists) {
 }
 
 function setLoadedRemoteListProgress(record, prefix = "Личные укладки получены", { final = false } = {}) {
-  const count = remoteRecordPrivateLayoutCount(record);
+  const count = Math.max(remoteRecordPrivateLayoutCount(record), privateLayoutCount());
   setLayoutLoadProgress({ loaded: count, total: final || count > 1 ? count : null, prefix });
 }
 
@@ -3111,7 +3118,7 @@ function saveState({ sync = true } = {}) {
     }
     return;
   }
-  if (sync && !applyingRemoteState && isAdminEditablePublishedLayout()) {
+  if (sync && !applyingRemoteState && isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout()) {
     scheduleActivePublishedEditSave();
     updateSyncUi("Public-укладка изменена · публикую...");
     return;
@@ -3140,7 +3147,7 @@ function saveState({ sync = true } = {}) {
 
 function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900 } = {}) {
   solidifyTemplateDraftLayout(layoutId);
-  const targetIsPublic = isAdminEditablePublishedLayout(layoutId);
+  const targetIsPublic = isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout(layoutId);
   saveState({ sync: !targetIsPublic });
   if (targetIsPublic) schedulePublishedLayoutSave(layoutId, publishDelay);
 }
@@ -3148,6 +3155,27 @@ function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 90
 function hasLocalSyncChanges(baseState = loadBaseState()) {
   if (!baseState) return true;
   return !sameJson(serializeState({ forSync: true }), cloneStateForSync(baseState, { forSync: true }));
+}
+
+function recoverUnsyncedLocalChanges(reason = "local-dirty-recovery") {
+  if (!shouldRecoverUnsyncedLocalChanges({
+    applyingRemoteState,
+    currentUser,
+    canUsePrivateState: canUsePrivateState(),
+    readOnlyStateScope: isReadOnlyStateScope(),
+    adminPublicEditScope: isAdminPublicEditScope(modeState),
+    syncMeta,
+    hasLocalSyncChanges
+  })) {
+    return false;
+  }
+  syncMeta.dirty = true;
+  syncMeta.localUpdatedAt = nowIso();
+  saveSyncMeta();
+  updateSyncUi();
+  console.info("[bike-packing] Recovered unsynced local changes", { reason });
+  scheduleRemoteSave();
+  return true;
 }
 
 function clearStaleDirtyFlagIfNoLocalChanges() {
@@ -3400,7 +3428,7 @@ function canUseLocalEditableState(layoutId = state.activeLayoutId) {
 }
 
 function isPublicLayoutContext() {
-  return isReadOnlyStateScope() || currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT || isAdminEditablePublishedLayout();
+  return isReadOnlyStateScope() || isAdminPublicEditScope(modeState);
 }
 
 function clearReadOnlyPackingListContextForPrivateMutation() {
@@ -3676,6 +3704,10 @@ function hasLegacyPayloadChanges(baseState, localState, entitySync = null) {
   return hasLegacyPayloadChangesForSync(baseState, localState, entitySync, entitySyncStateDeps());
 }
 
+function legacyComparableTopLevelDiffKeys(baseState, localState, entitySync = null) {
+  return legacyComparableTopLevelDiffKeysForSync(baseState, localState, entitySync, entitySyncStateDeps());
+}
+
 function buildEntitySyncBody(type, entries, { forceOverwrite = false } = {}) {
   return buildEntitySyncBodyForSync(type, entries, {
     forceOverwrite,
@@ -3766,6 +3798,7 @@ function isEntitySyncTypeUnavailable(type) {
   if (type === "item") return itemEntitySyncUnavailable;
   if (type === "container") return containerEntitySyncUnavailable;
   if (type === "layout") return layoutEntitySyncUnavailable;
+  if (type === "dictionary") return dictionaryEntitySyncUnavailable;
   return true;
 }
 
@@ -3773,6 +3806,7 @@ function markEntitySyncTypeUnavailable(type) {
   if (type === "item") itemEntitySyncUnavailable = true;
   else if (type === "container") containerEntitySyncUnavailable = true;
   else if (type === "layout") layoutEntitySyncUnavailable = true;
+  else if (type === "dictionary") dictionaryEntitySyncUnavailable = true;
 }
 
 async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite = false } = {}) {
@@ -3782,7 +3816,9 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
   const container = await syncChangedEntityType("container", { baseState, forceOverwrite, listId });
   if (!listId && currentPackingListId) listId = currentPackingListId;
   const layout = await syncChangedEntityType("layout", { baseState, forceOverwrite, listId });
-  const results = [item, container, layout];
+  if (!listId && currentPackingListId) listId = currentPackingListId;
+  const dictionary = await syncChangedEntityType("dictionary", { baseState, forceOverwrite, listId });
+  const results = [item, container, layout, dictionary];
   const integrityMeta = [...results].reverse().map((result) => result.integrityMeta).find(hasStateIntegrityMeta) || null;
   return {
     attempted: results.some((result) => result.attempted),
@@ -3793,6 +3829,7 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
     item,
     container,
     layout,
+    dictionary,
     upserted: results.flatMap((result) => Array.isArray(result.upserted) ? result.upserted : []),
     deleted: results.flatMap((result) => Array.isArray(result.deleted) ? result.deleted : [])
   };
@@ -5573,7 +5610,7 @@ async function fetchRemoteListStateSnapshot(listId) {
     try {
       const detailRecord = await fetchRemoteListDetailRecord(listId);
       const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
-      setLoadedRemoteListProgress(bestRecord, "Данные укладок получены");
+      setLoadedRemoteListProgress(bestRecord, "Данные укладок получены", { final: true });
       return bestRecord;
     } catch {
       throw stateError;
@@ -5587,10 +5624,10 @@ async function fetchRemoteListStateSnapshot(listId) {
   try {
     const detailRecord = await fetchRemoteListDetailRecord(listId);
     const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
-    setLoadedRemoteListProgress(bestRecord, "Данные укладок получены");
+    setLoadedRemoteListProgress(bestRecord, "Данные укладок получены", { final: true });
     return bestRecord;
   } catch {
-    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены");
+    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены", { final: true });
     return stateRecord;
   }
 }
@@ -6017,6 +6054,7 @@ async function saveRemoteState(options = {}) {
       currentPublicTemplateStatusMessage,
       handleRemoteSaveConflict,
       hasLegacyPayloadChanges,
+      legacyComparableTopLevelDiffKeys,
       isDemoPublicTemplateMissing,
       isNetworkError,
       isReadOnlyBikePackingContext,
@@ -6291,24 +6329,37 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   if (isForcedOffline()) return;
   if (isSharedListLinkRoute()) return;
   if (isPublicLayoutContext()) return;
-  if (!currentUser || syncMeta.dirty || remoteRefreshInFlight) return;
+  if (!currentUser || remoteRefreshInFlight) return;
+  if (recoverUnsyncedLocalChanges("remote-freshness")) return;
+  if (syncMeta.dirty) return;
   if (document.hidden) return;
   if ("onLine" in navigator && !navigator.onLine) return;
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
   try {
     remoteRefreshInFlight = true;
-    const listId = currentPackingListId || remoteRecordId(currentPackingListMeta);
-    if (listId) {
-      try {
-        const freshness = await fetchRemoteListFreshnessRecord(listId);
-        if (!listFreshnessChanged(syncMeta, freshness)) {
-          updateSyncUi();
-          return;
-        }
-      } catch {
-        // Older API processes do not have the lightweight endpoint; fall back
-        // to the full refresh path so compatibility stays intact during deploys.
-      }
+    const listId = currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId;
+    if (!listId) return;
+    let freshness = null;
+    try {
+      freshness = await fetchRemoteListFreshnessRecord(listId);
+    } catch (error) {
+      console.info("[bike-packing] Remote freshness check skipped full state polling", {
+        status: error?.status || null,
+        message: error?.message || String(error || "")
+      });
+      updateSyncUi();
+      return;
+    }
+    if (!hasListFreshnessSignal(freshness)) {
+      console.info("[bike-packing] Remote freshness check returned no revision/hash; skipped full state polling", {
+        listId
+      });
+      updateSyncUi();
+      return;
+    }
+    if (!listFreshnessChanged(syncMeta, freshness)) {
+      updateSyncUi();
+      return;
     }
     await loadRemoteState({ preferredLayout: preferredLayout || preferredCurrentLayoutRef() });
     const serverChanged = previousServerUpdatedAt &&

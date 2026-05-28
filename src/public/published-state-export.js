@@ -109,13 +109,23 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
 
 export function cleanPublishedEntityId(type, entity, fallbackId = "", { cssSafeId } = {}) {
   const prefix = type === "container" ? "container" : "item";
+  const toSafeId = typeof cssSafeId === "function" ? cssSafeId : fallbackSafeId;
   const sourceSeed = cleanGeneratedEntityId(entity?.sharedSourceId || entity?.id || fallbackId);
-  const nameSeed = entity?.name ? cssSafeId(entity.name) : "";
+  const nameSeed = entity?.name ? toSafeId(entity.name) : "";
   let seed = sourceSeed || nameSeed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   seed = String(seed).trim();
   if (!seed.startsWith(`${prefix}-`)) seed = `${prefix}-${seed}`;
   seed = seed.replace(/[^a-zР°-СЏ0-9_-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
   return seed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function fallbackSafeId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-zР°-СЏ0-9_-]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 export function cleanGeneratedEntityId(value) {

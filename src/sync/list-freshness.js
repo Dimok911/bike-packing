@@ -28,7 +28,7 @@ export function normalizeListFreshness(data = {}) {
 
 export function listFreshnessChanged(localMeta = {}, remoteFreshness = {}) {
   const remote = normalizeListFreshness(remoteFreshness);
-  if (!remote.updatedAt && remote.stateRevision == null && !remote.payloadHash && !remote.entityHash) return true;
+  if (!hasListFreshnessSignal(remote)) return true;
 
   const localRevision = normalizeRevision(localMeta.stateRevision);
   if (localRevision != null && remote.stateRevision != null && localRevision !== remote.stateRevision) return true;
@@ -44,6 +44,16 @@ export function listFreshnessChanged(localMeta = {}, remoteFreshness = {}) {
 
   if (!localUpdatedAt && localRevision == null && !localPayloadHash && !localEntityHash) return true;
   return false;
+}
+
+export function hasListFreshnessSignal(freshness = {}) {
+  const normalized = normalizeListFreshness(freshness);
+  return Boolean(
+    normalized.updatedAt ||
+    normalized.stateRevision != null ||
+    normalized.payloadHash ||
+    normalized.entityHash
+  );
 }
 
 export function canUseCachedStartupState({

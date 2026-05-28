@@ -17,17 +17,43 @@ export function cloneStateForSyncPayload(sourceState, {
   normalizeCollectionModeState(cloned);
   if (forSync) {
     cleanupGeneratedCatalogArtifacts?.(cloned, { forSync: true });
+    mirrorTopLevelPackedItemsToActiveLayoutArrangement(cloned);
     delete cloned.collapsedContainers;
     delete cloned.itemDisplayMode;
     delete cloned.showItemMeta;
     delete cloned.showFilterContext;
     delete cloned.collectionMode;
     delete cloned.showOnlyUnpacked;
+    delete cloned.packedItems;
     delete cloned.activeLayoutId;
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
     stripAppliedArrangementFieldsForSync(cloned);
   }
+  return cloned;
+}
+
+export function mirrorTopLevelPackedItemsToActiveLayoutArrangement(cloned) {
+  if (!cloned || typeof cloned !== "object") return cloned;
+  const packedItems = cloned.packedItems && typeof cloned.packedItems === "object" && !Array.isArray(cloned.packedItems)
+    ? cloned.packedItems
+    : null;
+  const activeLayoutId = typeof cloned.activeLayoutId === "string" ? cloned.activeLayoutId : "";
+  const layout = activeLayoutId ? cloned.layouts?.[activeLayoutId] : null;
+  const arrangement = layout?.arrangement;
+  if (!packedItems || !arrangement || typeof arrangement !== "object" || Array.isArray(arrangement)) return cloned;
+  const arrangedItems = arrangement.items && typeof arrangement.items === "object" && !Array.isArray(arrangement.items)
+    ? arrangement.items
+    : {};
+  arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" && !Array.isArray(arrangement.packedItems)
+    ? arrangement.packedItems
+    : {};
+  Object.keys(arrangement.packedItems).forEach((itemId) => {
+    if (!packedItems[itemId] || !arrangedItems[itemId]) delete arrangement.packedItems[itemId];
+  });
+  Object.entries(packedItems).forEach(([itemId, packed]) => {
+    if (packed && arrangedItems[itemId]) arrangement.packedItems[itemId] = true;
+  });
   return cloned;
 }
 
@@ -115,6 +141,24 @@ export function compactContainerForEntitySync(container) {
 
 export function compactLayoutForEntitySync(layout) {
   return compactRecordForEntitySync(layout);
+}
+
+export function compactDictionaryForEntitySync(record) {
+  if (!record || typeof record !== "object") return null;
+  return {
+    id: "dictionary-state",
+    categories: normalizeDictionaryValues(record.categories),
+    locations: normalizeDictionaryValues(record.locations)
+  };
+}
+
+function normalizeDictionaryValues(values) {
+  const result = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    if (normalized && !result.includes(normalized)) result.push(normalized);
+  });
+  return result;
 }
 
 export function remoteUpdatedAt(record) {

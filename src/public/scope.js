@@ -4,6 +4,7 @@ import {
   GUEST_DEMO_COPY_FLAG,
   PUBLIC_LEGACY_RECORD_SOURCE,
   SHARED_ITEM_KEY_PREFIX,
+  VIEW_SCOPE_ADMIN_PUBLIC_EDIT,
   VIEW_SCOPE_DEMO,
   VIEW_SCOPE_SHARED
 } from "../config/constants.js";
@@ -25,6 +26,10 @@ export function hasGuestDemoCopyLayoutRecord(layouts) {
 
 export function isReadOnlyScope(modeState) {
   return [VIEW_SCOPE_DEMO, VIEW_SCOPE_SHARED].includes(modeState?.viewScope) && Boolean(modeState?.readonlyLayoutId);
+}
+
+export function isAdminPublicEditScope(modeState) {
+  return modeState?.viewScope === VIEW_SCOPE_ADMIN_PUBLIC_EDIT && Boolean(modeState?.adminPublishedEditLayoutId);
 }
 
 export function activeReadOnlyLayoutIdFromScope(modeState) {

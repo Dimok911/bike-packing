@@ -111,7 +111,7 @@ Entity sync сейчас является record-level sync: если меняе
 
 - `categories`;
 - `locations`;
-- `packedItems`, если состояние упаковки ещё живёт вне layout arrangement;
+- `packedItems`, только если состояние упаковки ещё не зеркалировано в `layout.arrangement.packedItems`;
 - пользовательские настройки режима/представления, если они попали в sync-state;
 - другие top-level поля, которые не являются локальным UI-state.
 
@@ -119,7 +119,7 @@ Entity sync сейчас является record-level sync: если меняе
 
 - `activeLayoutId` уже вычищается из `cloneStateForSyncPayload(..., { forSync: true })`, поэтому одно только переключение активной укладки больше не должно включать full payload;
 - `collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked` тоже вычищаются из sync payload;
-- после удаления `items`, `containers`, `layouts` из legacy-compare реально остаются `categories`, `locations`, `packedItems`;
+- после удаления `items`, `containers`, `layouts`, `categories`, `locations` из legacy-compare не должны оставаться обычные доменные изменения; top-level `packedItems` перед sync зеркалится в `layout.arrangement.packedItems` и удаляется из server payload;
 - изменение `items`/`containers`/`layouts` само по себе проходит через entity sync и не должно требовать full payload, если соответствующий endpoint доступен и подтвердил записи.
 
 ## Важное различие
@@ -164,7 +164,7 @@ Entity sync сейчас является record-level sync: если меняе
 - отдельной entity по layout id;
 - локально на устройстве, если это не должно быть общей серверной правдой.
 
-Решение: packed state должен быть общим между устройствами. Сейчас он уже синхронизируется как часть server payload, а для entity sync его нужно оставить серверной правдой. Ближайший вопрос реализации - где держать canonical source: верхнеуровневый `packedItems`, `layout.arrangement.packedItems` или отдельная layout-scoped entity.
+Решение: packed state должен быть общим между устройствами. Canonical source для entity sync - `layout.arrangement.packedItems`; верхнеуровневый `packedItems` остается runtime/UI mirror текущей укладки и не должен уходить в server payload.
 
 ### 3. Active Layout Choice
 
@@ -194,14 +194,21 @@ Entity sync сейчас является record-level sync: если меняе
 
 Смысл вопроса про UI-настройки: нужно проверить, не попадают ли локальные предпочтения в `serializeState({ forSync: true })` случайно. "Случайно попадают" здесь означает: пользователь поменял только вид экрана на одном устройстве, а это поле оказалось в server payload и начало менять состояние на других устройствах. Сейчас `collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked`, `activeLayoutId`, сортировки, язык и 3D-view settings в общий server sync не уходят.
 
-## Предлагаемый порядок работы
+## Уже сделано
 
-1. Закрыть справочники: добавить одну entity `dictionary-state` для `categories`/`locations`, backend endpoint и frontend entity sync.
-2. Добавить contract tests, что изменение справочников не включает full payload при доступном entity endpoint.
-3. Закрыть packed state: выбрать canonical source и вынести `packedItems` в layout-scoped sync без full payload.
-4. Добавить контракт на локальность UI-настроек: `collectionMode` / `showOnlyUnpacked` и остальные UI-поля не должны включать full payload и не должны попадать в server sync.
-5. Добавить diagnostic/contract test для legacy-compare: после удаления `items`, `containers`, `layouts` не должно оставаться неожиданных top-level diff.
-6. Оставить full payload как recovery/fallback, а не как обычный путь.
+- Справочники: добавлена одна entity `dictionary-state` для `categories`/`locations`, backend endpoint `/dictionaries/sync`, frontend entity sync и contract test.
+- Packed state: top-level `packedItems` перед sync зеркалится в `layout.arrangement.packedItems`, а server payload хранит его через layout entity.
+- UI-настройки: `collectionMode` / `showOnlyUnpacked` и остальные явные UI-поля не попадают в server sync payload.
+- `activeLayoutId` остается runtime/per-device указателем и не уходит на сервер.
+- Legacy-compare diagnostic: `legacyComparableTopLevelDiffKeys(...)` показывает неожиданные top-level поля, которые остались после успешного entity sync; при fallback на full payload sync status и console теперь показывают эти поля.
+- Частые действия покрыты contract test harness: категория вещи, категория сумки, место хранения, packed toggle, перемещение вещи и порядок корневых сумок проходят через entity sync без full payload fallback.
+- Background polling: watcher больше не использует полный `/state` как fallback-проверку; сначала нужен валидный `/freshness` сигнал (`updatedAt`, `stateRevision`, `payloadHash` или `entityHash`), и только изменившаяся свежесть разрешает загрузить full state.
+
+## Следующие шаги
+
+1. Добить ручную проверку на реальном UI/устройстве для тех же частых действий, потому что в текущем Codex окружении нет in-app browser.
+2. Сузить оставшиеся причины full payload до явных recovery/fallback сценариев.
+3. Оставить full payload как recovery/fallback, а не как обычный путь.
 
 ## Что считать успехом
 
@@ -226,7 +233,7 @@ Full payload допустим:
 
 ## Закрытые решения и оставшийся аудит
 
-- Сейчас full payload после entity sync включают изменения в `categories`, `locations`, `packedItems`.
+- Сейчас full payload после entity sync не должен включаться из-за `categories`, `locations` или `packedItems`, если соответствующие entity sync endpoints доступны.
 - Справочники синхронизируем одной записью на список.
 - Packed state должен быть общим между устройствами.
 - Active layout choice на сервере хранить не нужно.
