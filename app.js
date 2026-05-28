@@ -328,6 +328,7 @@ import {
   layoutArrangementContentScore,
   resolvePreferredLayoutId
 } from "./src/state/layout-choice.js";
+import { installRuntimeActiveLayoutId } from "./src/state/active-layout-runtime.js";
 import {
   removeLayoutTreeFromState,
   removeManagedDemoTemplateTreesFromState,
@@ -514,6 +515,7 @@ import { adminApiWarningFromCapabilities as adminApiWarningFromCapabilitiesValue
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
 import { checkAuthAndLoadFlow } from "./src/sync/auth-load-flow.js";
 import {
+  canUseCachedStartupState,
   listFreshnessChanged,
   normalizeListFreshness
 } from "./src/sync/list-freshness.js";
@@ -666,6 +668,7 @@ import {
   loadStoredActivePackingListId,
   loadStoredActivePrivateLayoutChoice,
   normalizeActiveLayoutChoice as normalizeActiveLayoutChoiceValue,
+  resolveStoredPrivateLayoutChoice,
   saveStoredActiveLayoutChoice,
   saveStoredActivePackingListId
 } from "./src/storage/active-choice.js";
@@ -1024,6 +1027,7 @@ function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
 function applyLoadedStateToCurrentScope(nextState) {
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
+  installRuntimeActiveLayoutId(state, nextState?.activeLayoutId || state.activeLayoutId);
   normalizeContainerFields(state);
   normalizeItemFields(state);
   cleanupGeneratedCatalogArtifacts(state);
@@ -2204,6 +2208,7 @@ function loadState() {
     migrateContainerOrder(initial);
     applyLayoutArrangement(initial.activeLayoutId, initial);
     applyDefaultCollapsedContainers(initial);
+    installRuntimeActiveLayoutId(initial, initial.activeLayoutId);
     return initial;
   }
   try {
@@ -2225,6 +2230,7 @@ function loadState() {
     applyDefaultCollapsedContainers(parsed);
     const recovered = recoverBetterLocalSnapshotIfNeeded(parsed);
     if (recovered) {
+      installRuntimeActiveLayoutId(recovered, recovered.activeLayoutId);
       persistStateSnapshot(recovered);
       return recovered;
     }
@@ -2239,12 +2245,16 @@ function loadState() {
       migrateContainerOrder(fallback);
       applyLayoutArrangement(fallback.activeLayoutId, fallback);
       applyDefaultCollapsedContainers(fallback);
+      installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
       return fallback;
     }
+    installRuntimeActiveLayoutId(parsed, parsed.activeLayoutId);
     persistStateSnapshot(parsed);
     return parsed;
   } catch {
-    return createEmptyUserState();
+    const fallback = createEmptyUserState();
+    installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
+    return fallback;
   }
 }
 
@@ -2657,13 +2667,23 @@ function rememberActiveLayoutChoice(choice = currentLayoutChoice()) {
 }
 
 function rememberPrivateServerLayoutChoice({ preferStored = true } = {}) {
-  const storedLayoutId = preferStored ? loadActivePrivateLayoutChoice() : "";
-  const layoutId = storedLayoutId ||
-    (state.layouts?.[state.activeLayoutId] ? state.activeLayoutId : Object.values(state.layouts || {})[0]?.id || "");
+  const storedPrivateLayoutId = preferStored ? loadActivePrivateLayoutChoice() : "";
+  const storedLayoutId = preferStored ? loadActiveLayoutChoice() : "";
+  const activeLayoutId = state.layouts?.[state.activeLayoutId]
+    ? state.activeLayoutId
+    : Object.values(state.layouts || {})[0]?.id || "";
+  const layoutId = resolveStoredPrivateLayoutChoice({
+    activeLayoutId,
+    storedChoice: storedLayoutId,
+    storedPrivateChoice: storedPrivateLayoutId,
+    normalizeChoice: normalizeActiveLayoutChoice,
+    isPrivateChoice: isPrivateLayoutChoice,
+    isPrivateUserLayoutId
+  });
   if (!layoutId || !isPrivateUserLayoutId(layoutId)) return;
-  if (storedLayoutId && state.activeLayoutId !== storedLayoutId) {
-    state.activeLayoutId = storedLayoutId;
-    applyLayoutArrangement(storedLayoutId);
+  if (state.activeLayoutId !== layoutId) {
+    state.activeLayoutId = layoutId;
+    applyLayoutArrangement(layoutId);
   }
   saveActiveLayoutChoice(layoutId);
 }
@@ -2686,14 +2706,24 @@ async function restoreSavedLayoutChoice({ publicOnly = false, privateOnly = fals
   const activePrivateChoice = !publicOnly && isPrivateUserLayoutId(state.activeLayoutId)
     ? state.activeLayoutId
     : "";
-  const privateChoice = !publicOnly ? loadActivePrivateLayoutChoice() || activePrivateChoice : "";
-  let choice = loadActiveLayoutChoice();
+  const storedChoice = loadActiveLayoutChoice();
+  const privateChoice = !publicOnly
+    ? resolveStoredPrivateLayoutChoice({
+      activeLayoutId: activePrivateChoice,
+      storedChoice,
+      storedPrivateChoice: loadActivePrivateLayoutChoice(),
+      normalizeChoice: normalizeActiveLayoutChoice,
+      isPrivateChoice: isPrivateLayoutChoice,
+      isPrivateUserLayoutId
+    })
+    : "";
+  let choice = storedChoice;
   const adminPublicChoice = !publicOnly && canOpenAdminPublishedEdit() && (
     isDemoLayoutChoice(choice) ||
     String(choice || "").startsWith("shared:") ||
     Boolean(templateDraftLayoutId(choice))
   );
-  if (privateOnly && adminPublicChoice) choice = privateChoice;
+  if (privateOnly) choice = privateChoice;
   if (!privateOnly && !adminPublicChoice && !publicOnly && isDemoLayoutChoice(choice) && !explicitChoice && privateChoice) choice = privateChoice;
   if (!publicOnly && isPrivateLayoutChoice(choice) && !isPrivateUserLayoutId(choice) && privateChoice) choice = privateChoice;
   if (!choice) choice = privateChoice;
@@ -2893,6 +2923,10 @@ function rememberRemoteIntegrityMeta(...sources) {
   const meta = sources.length === 1 && sources[0]?.payloadHash !== undefined
     ? sources[0]
     : stateIntegrityMetaFromResponse(...sources);
+  const listId = sources
+    .map((source) => source?.listId || source?.id || source?.record?.listId || source?.record?.id || source?.list?.listId || source?.list?.id)
+    .find(Boolean);
+  if (listId) syncMeta.listId = String(listId);
   if (!hasStateIntegrityMeta(meta)) return;
   syncMeta.payloadHash = meta.payloadHash || syncMeta.payloadHash || null;
   syncMeta.entityHash = meta.entityHash || syncMeta.entityHash || null;
@@ -3785,6 +3819,7 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   applyingRemoteState = true;
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
+  installRuntimeActiveLayoutId(state, nextState?.activeLayoutId || state.activeLayoutId);
   mergeManagedPublicDraftRecords(state, managedPublicDrafts);
   normalizeContainerFields(state);
   normalizeItemFields(state);
@@ -6103,10 +6138,14 @@ async function loadRemoteState(options = {}) {
       consumeGuestLocalLayoutCandidate,
       createBlankBikePackingState,
       createEmptyUserState,
+      canUseCachedStartupState,
+      currentPackingListId: () => currentPackingListId || remoteRecordId(currentPackingListMeta),
+      fetchRemoteListFreshnessRecord,
       fetchRemoteStateRecord,
       filterAutoResolvedMergeConflicts,
       formatMergeConflicts,
       hasLocalSavedState,
+      isForeignLocalSyncState,
       isMeaningfulPackingState,
       isNetworkError,
       isPublicLayoutContext,
@@ -7970,6 +8009,20 @@ function renderPreservingPackingScroll() {
     capturePackingScroll();
   }
   render();
+  refreshOpenPhotoDialogPreviews();
+}
+
+function refreshOpenPhotoDialogPreviews() {
+  if (refs.dialog?.open) {
+    const itemPhotos = itemDialogPhotoDraft?.photos ||
+      (editingItemId && state.items?.[editingItemId] ? normalizeItemPhotos(state.items[editingItemId]) : null);
+    if (itemPhotos) updateItemDialogPhotoPreview(itemPhotos).catch(() => null);
+  }
+  if (refs.rootContainerDialog?.open) {
+    const containerPhotos = rootContainerDialogPhotoDraft?.photos ||
+      (editingRootContainerId && state.containers?.[editingRootContainerId] ? normalizeItemPhotos(state.containers[editingRootContainerId]) : null);
+    if (containerPhotos) updateRootContainerDialogPhotoPreview(containerPhotos).catch(() => null);
+  }
 }
 
 function renderInitialLocalFallbackIfNeeded() {
@@ -9896,7 +9949,7 @@ function resetBike3dViewState() {
   renderPacking();
 }
 
-function renderSharedModeBanner(layout = currentSharedLayout(), { compact = false } = {}) {
+function renderSharedModeBanner(layout = currentSharedLayout(), { compact = false, showCopyButton = true } = {}) {
   const demoSource = layout?.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
   const buttonText = demoSource ? demoCopyActionText() : t("buttons.copyAll");
   const viewerText = demoSource
@@ -9906,9 +9959,11 @@ function renderSharedModeBanner(layout = currentSharedLayout(), { compact = fals
     : t("shared.viewerText");
   return `
     <div class="shared-mode-banner ${compact ? "shared-mode-banner-compact" : ""}">
-      <strong>${escapeHtml(layout?.name || t("shared.layout"))}</strong>
-      <span>${escapeHtml(viewerText)}</span>
-      <button type="button" class="ghost" data-copy-shared-layout="${escapeHtml(layout?.id || "")}">${escapeHtml(buttonText)}</button>
+      <div class="shared-mode-banner-text">
+        <strong>${escapeHtml(layout?.name || t("shared.layout"))}</strong>
+        <span>${escapeHtml(viewerText)}</span>
+      </div>
+      ${showCopyButton ? `<button type="button" class="ghost" data-copy-shared-layout="${escapeHtml(layout?.id || "")}">${escapeHtml(buttonText)}</button>` : ""}
     </div>
   `;
 }
@@ -10727,12 +10782,9 @@ function renderSharedItemsView() {
     const items = getItemsForItemsView();
     const counts = getItemsUsageCounts();
     const filteredEmpty = hasActiveContentFilter();
-    const copyText = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()
-      ? demoCopyActionText()
-      : t("buttons.copyAll");
     refs.itemsView.innerHTML = renderSharedItemsViewHtml({
       bannerHtml: renderSharedModeBanner(currentSharedLayout(), { compact: true }),
-      copyAllButtonHtml: `<button type="button" data-copy-shared-layout="${escapeHtml(activeReadOnlyLayoutId())}">${escapeHtml(copyText)}</button>`,
+      copyAllButtonHtml: "",
       counts,
       emptyFiltered: filteredEmpty,
       emptyText: t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound"),
@@ -10981,6 +11033,7 @@ function renderBags() {
 function renderSharedBagsView() {
   withSharedVirtualState(() => {
     refs.bagsView.innerHTML = `
+      ${renderSharedModeBanner(currentSharedLayout(), { compact: true })}
       <div class="settings-grid">
         ${renderRootContainersEditor()}
         ${renderLayoutEditor()}
@@ -11018,6 +11071,7 @@ function renderSettings() {
 function renderSharedSettingsView() {
   withSharedVirtualState(() => {
     refs.settingsView.innerHTML = `
+      ${renderSharedModeBanner(currentSharedLayout(), { compact: true })}
       <div class="settings-grid">
         ${renderDictionary("Места хранения", "location", dictionaryOptionsForUi("location"))}
         ${renderDictionary("Категории", "category", dictionaryOptionsForUi("category"))}
@@ -12705,6 +12759,7 @@ async function handleItemPhotoInputChange(event) {
     itemDialogPhotoActiveIndex = Math.max(0, itemDialogPhotoDraft.photos.length - result.accepted.length);
     updateItemDialogPhotoPreview(itemDialogPhotoDraft.photos);
     updateItemDialogSaveState();
+    uploadItemDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
     setItemDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
     showToast(error.message || "Не удалось подготовить фото.", "error");
@@ -12714,9 +12769,12 @@ async function handleItemPhotoInputChange(event) {
   }
 }
 
-function removeItemDialogPhoto() {
+async function removeItemDialogPhoto() {
   const source = editingItemId ? state.items[editingItemId] : { photos: [] };
   const draft = itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  if (!draft.photos.length) return;
+  const confirmed = await confirmDialogPhotoDelete("item");
+  if (!confirmed) return;
   const result = removePhotoFromDraft(draft, itemDialogPhotoActiveIndex);
   itemDialogPhotoDraft = result.draft;
   itemDialogPhotoActiveIndex = result.nextIndex;
@@ -12738,6 +12796,7 @@ function setItemDialogPhotoPrimary(event) {
 }
 
 function resetItemDialogPhotoDraft() {
+  cleanupUnsavedItemDialogPhotoDraft();
   itemDialogPhotoDraft = null;
   revokeObjectUrls(itemDialogPhotoObjectUrls);
   itemDialogPhotoObjectUrls = [];
@@ -12745,6 +12804,16 @@ function resetItemDialogPhotoDraft() {
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
   if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview([]);
+}
+
+function cleanupUnsavedItemDialogPhotoDraft() {
+  if (!itemDialogPhotoDraft || !editingItemId) return;
+  const sourcePhotoIds = photoIdentitySet(normalizeItemPhotos(state.items?.[editingItemId] || { photos: [] }));
+  itemDialogPhotoDraft.photos.forEach((photo) => {
+    if (photoIdentityMatches(sourcePhotoIds, photo)) return;
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(editingItemId, photo);
+    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+  });
 }
 
 async function updateItemDialogPhotoPreview(photos) {
@@ -12808,6 +12877,7 @@ async function handleRootContainerPhotoInputChange(event) {
     rootContainerDialogPhotoActiveIndex = Math.max(0, rootContainerDialogPhotoDraft.photos.length - result.accepted.length);
     updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
     updateRootContainerDialogSaveState();
+    uploadRootContainerDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
     setRootContainerDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
     showToast(error.message || "Не удалось подготовить фото.", "error");
@@ -12817,9 +12887,12 @@ async function handleRootContainerPhotoInputChange(event) {
   }
 }
 
-function removeRootContainerDialogPhoto() {
+async function removeRootContainerDialogPhoto() {
   const source = editingRootContainerId ? state.containers[editingRootContainerId] : { photos: [] };
   const draft = rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
+  if (!draft.photos.length) return;
+  const confirmed = await confirmDialogPhotoDelete("container");
+  if (!confirmed) return;
   const result = removePhotoFromDraft(draft, rootContainerDialogPhotoActiveIndex);
   rootContainerDialogPhotoDraft = result.draft;
   rootContainerDialogPhotoActiveIndex = result.nextIndex;
@@ -12827,6 +12900,83 @@ function removeRootContainerDialogPhoto() {
   if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft.photos);
   updateRootContainerDialogSaveState();
+}
+
+function confirmDialogPhotoDelete(kind = "item") {
+  const targetText = kind === "container" ? "этой сумки или места" : "этой вещи";
+  return askConfirmDialog({
+    title: "Удалить фото?",
+    text: `Фото будет удалено из ${targetText} после сохранения изменений.`,
+    okText: "Удалить фото",
+    cancelText: "Оставить",
+    tone: "danger"
+  });
+}
+
+async function uploadItemDialogDraftPhotos(photos = []) {
+  const item = editingItemId ? state.items?.[editingItemId] : null;
+  await uploadDialogDraftPhotos({
+    entity: item,
+    entityType: "item",
+    photos,
+    onAfterUpload: () => {
+      updateItemDialogPhotoPreview(itemDialogPhotoDraft?.photos || normalizeItemPhotos(item)).catch(() => null);
+      updateItemDialogSaveState();
+    }
+  });
+}
+
+async function uploadRootContainerDialogDraftPhotos(photos = []) {
+  const container = editingRootContainerId ? state.containers?.[editingRootContainerId] : null;
+  await uploadDialogDraftPhotos({
+    entity: container,
+    entityType: "container",
+    photos,
+    onAfterUpload: () => {
+      updateRootContainerDialogPhotoPreview(rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container)).catch(() => null);
+      updateRootContainerDialogSaveState();
+    }
+  });
+}
+
+async function uploadDialogDraftPhotos({ entity = null, entityType = "item", photos = [], onAfterUpload = () => {} } = {}) {
+  const uploadPhotos = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
+  if (!entity?.id || !uploadPhotos.length || photoUploadInFlight || !currentUser || isForcedOffline()) return;
+  if (isReadOnlyBikePackingContext()) return;
+  photoUploadInFlight = true;
+  let uploaded = false;
+  try {
+    const targetListId = await ensureCurrentPackingListId();
+    if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
+    if (isReadOnlyBikePackingContext()) return;
+    for (const photo of uploadPhotos) {
+      uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType) || uploaded;
+    }
+  } finally {
+    photoUploadInFlight = false;
+    onAfterUpload();
+  }
+  if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(entity, photo))) saveState();
+}
+
+function entityHasPhoto(entity, photo) {
+  return photoIdentityMatches(photoIdentitySet(normalizeItemPhotos(entity)), photo);
+}
+
+function photoIdentitySet(photos = []) {
+  const ids = new Set();
+  (Array.isArray(photos) ? photos : []).forEach((photo) => {
+    if (photo?.id) ids.add(String(photo.id));
+    if (photo?.localId) ids.add(String(photo.localId));
+  });
+  return ids;
+}
+
+function photoIdentityMatches(ids, photo) {
+  return Boolean(
+    (photo?.id && ids.has(String(photo.id))) ||
+    (photo?.localId && ids.has(String(photo.localId)))
+  );
 }
 
 function setRootContainerDialogPhotoPrimary(event) {
@@ -12841,6 +12991,7 @@ function setRootContainerDialogPhotoPrimary(event) {
 }
 
 function resetRootContainerDialogPhotoDraft() {
+  cleanupUnsavedRootContainerDialogPhotoDraft();
   rootContainerDialogPhotoDraft = null;
   revokeObjectUrls(rootContainerDialogPhotoObjectUrls);
   rootContainerDialogPhotoObjectUrls = [];
@@ -12848,6 +12999,16 @@ function resetRootContainerDialogPhotoDraft() {
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
   if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview([]);
+}
+
+function cleanupUnsavedRootContainerDialogPhotoDraft() {
+  if (!rootContainerDialogPhotoDraft || !editingRootContainerId) return;
+  const sourcePhotoIds = photoIdentitySet(normalizeItemPhotos(state.containers?.[editingRootContainerId] || { photos: [] }));
+  rootContainerDialogPhotoDraft.photos.forEach((photo) => {
+    if (photoIdentityMatches(sourcePhotoIds, photo)) return;
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(editingRootContainerId, photo, "container");
+    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+  });
 }
 
 async function updateRootContainerDialogPhotoPreview(photos) {

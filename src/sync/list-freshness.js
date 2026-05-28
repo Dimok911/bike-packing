@@ -45,3 +45,25 @@ export function listFreshnessChanged(localMeta = {}, remoteFreshness = {}) {
   if (!localUpdatedAt && localRevision == null && !localPayloadHash && !localEntityHash) return true;
   return false;
 }
+
+export function canUseCachedStartupState({
+  accountMatches = true,
+  currentListId = "",
+  hasLocalState = false,
+  remoteFreshness = {},
+  syncMeta = {}
+} = {}) {
+  if (!hasLocalState) return false;
+  if (syncMeta?.dirty) return false;
+  if (accountMatches === false) return false;
+
+  const remote = normalizeListFreshness(remoteFreshness);
+  const activeListId = normalizeText(currentListId);
+  const knownListId = normalizeText(syncMeta.listId || syncMeta.currentListId);
+  const remoteListId = normalizeText(remote.listId || remote.id);
+
+  if (knownListId && activeListId && knownListId !== activeListId) return false;
+  if (activeListId && remoteListId && remoteListId !== activeListId) return false;
+
+  return !listFreshnessChanged(syncMeta, remote);
+}

@@ -7,6 +7,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     askConfirmDialog,
     askConflictResolution,
     blockRemoteIntegrityFailureIfNeeded,
+    canUseCachedStartupState,
     canLocalStateOverrideRemote,
     canSeedEmptyRemoteFromLocal,
     clearStaleDirtyFlagIfNoLocalChanges,
@@ -14,10 +15,12 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     consumeGuestLocalLayoutCandidate,
     createBlankBikePackingState,
     createEmptyUserState,
+    fetchRemoteListFreshnessRecord,
     fetchRemoteStateRecord,
     filterAutoResolvedMergeConflicts,
     formatMergeConflicts,
     hasLocalSavedState,
+    isForeignLocalSyncState,
     isMeaningfulPackingState,
     isNetworkError,
     isPublicLayoutContext,
@@ -26,6 +29,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     isTemporaryServerStorageError,
     isTimeoutError,
     loadBaseState,
+    currentPackingListId,
     mergeStateFromBase,
     normalizeRemoteState,
     nowIso,
@@ -68,6 +72,45 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
   }
   clearStaleDirtyFlagIfNoLocalChanges();
   try {
+    const startupListId = typeof currentPackingListId === "function" ? currentPackingListId() : "";
+    if (
+      runtime.initialRemoteLoadPending &&
+      fetchRemoteListFreshnessRecord &&
+      startupListId &&
+      !runtime.pendingGuestLocalLayoutCandidate
+    ) {
+      try {
+        const freshness = await fetchRemoteListFreshnessRecord(startupListId);
+        if (canUseCachedStartupState?.({
+          accountMatches: isForeignLocalSyncState ? !isForeignLocalSyncState() : true,
+          currentListId: startupListId,
+          hasLocalState: hasLocalSavedState(),
+          remoteFreshness: freshness,
+          syncMeta
+        })) {
+          syncMeta.dirty = false;
+          syncMeta.serverUpdatedAt = freshness.serverUpdatedAt || freshness.updatedAt || syncMeta.serverUpdatedAt || null;
+          syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
+          syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
+          syncMeta.listId = startupListId;
+          rememberRemoteIntegrityMeta(freshness);
+          rememberCurrentSyncAccount();
+          saveBaseState(serializeState({ forSync: true }));
+          saveSyncMeta();
+          repairPrivateMojibakeLayoutNames();
+          runtime.appUnlocked = true;
+          runtime.initialRemoteLoadPending = false;
+          renderPreservingPackingScroll();
+          await offerPendingGuestLocalLayoutsAfterRemoteLoad();
+          setPersonalLayoutsLoadedStatus();
+          updateSyncUi();
+          return;
+        }
+      } catch {
+        // Older API processes do not have the lightweight endpoint; fall back
+        // to the full state load so startup stays compatible during deploys.
+      }
+    }
     let data = await fetchRemoteStateRecord();
     let record = data.record;
     let remoteState = normalizeRemoteState(record?.payload);

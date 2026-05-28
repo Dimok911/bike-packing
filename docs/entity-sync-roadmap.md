@@ -1,5 +1,19 @@
 # Entity Sync Roadmap
 
+## Startup freshness gate
+
+При открытии страницы клиент больше не должен сразу грузить полный `/state`, если локальная копия уже есть и серверная freshness-мета не изменилась.
+
+Нормальный startup-путь:
+
+1. `/auth/me`;
+2. показать cached state из localStorage;
+3. `/bike-packing/lists/:id/freshness`;
+4. если `stateRevision` / `payloadHash` / `entityHash` / `updatedAt` совпадают с `syncMeta`, полный payload не грузится;
+5. если freshness отличается или endpoint недоступен, клиент идет в обычный full load path.
+
+Полный payload при старте всё еще нужен, если нет локального state, нет сохраненной sync-меты, есть `syncMeta.dirty`, поменялся аккаунт/list id, freshness отличается, старый API не умеет `/freshness`, либо нужен conflict/recovery flow.
+
 Рабочий документ для постепенного уменьшения случаев, когда bike-packing отправляет полный payload вместо мелкой синхронизации сущностей.
 
 ## Термины
@@ -61,6 +75,12 @@
 - защитная логика перед сохранением переключает пустую/сломавшуюся активную укладку на более содержательную.
 
 Именно поэтому `activeLayoutId` спорный для server sync: иногда это часть старого общего state, а по смыслу часто просто локальный выбор экрана на конкретном устройстве.
+
+Решение: `activeLayoutId` не должен уходить в server sync payload. Серверные данные должны хранить сами укладки (`layouts`) и их содержимое, а выбор “какую укладку открыть на этом устройстве” должен жить в localStorage (`ACTIVE_LAYOUT_CHOICE_KEY` / `ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY`).
+
+В рантайме `state.activeLayoutId` пока остается как технический указатель для старого UI-кода: по нему рендер, drag/drop, редактирование и удаление понимают, с какой укладкой работает экран. Но это поле сделано runtime-only: оно читается и меняется в памяти, но не сериализуется в local snapshot/server sync payload как часть данных.
+
+До этого `activeLayoutId` мог попасть на сервер только через full payload save: `serializeState({ forSync: true })` -> `buildListSaveBody(...)` -> `PUT /bike-packing/lists/:id`. Entity sync для `items`, `containers`, `layouts` сам по себе `activeLayoutId` не отправляет.
 
 ## Текущее состояние
 

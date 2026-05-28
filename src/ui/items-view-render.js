@@ -53,10 +53,14 @@ export function renderSharedItemsViewHtml({
   showPhotos = false
 }) {
   const { label } = itemSortMeta(itemSortMode);
+  const toolbarClass = [
+    "items-toolbar",
+    copyAllButtonHtml ? "" : "items-toolbar-single"
+  ].filter(Boolean).join(" ");
   return `
+    ${bannerHtml}
     <section class="items-panel">
-      ${bannerHtml}
-      <div class="items-toolbar">
+      <div class="${toolbarClass}">
         ${copyAllButtonHtml}
         <div class="items-filter-row">
           <label>

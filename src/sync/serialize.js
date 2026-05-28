@@ -21,6 +21,7 @@ export function cloneStateForSyncPayload(sourceState, {
     delete cloned.itemDisplayMode;
     delete cloned.showItemMeta;
     delete cloned.showFilterContext;
+    delete cloned.activeLayoutId;
     prunePhotoPayloadForSync(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
     stripAppliedArrangementFieldsForSync(cloned);

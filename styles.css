@@ -2906,6 +2906,20 @@ button.ghost.context-toggle.active:focus-visible {
   box-shadow: 0 3px 12px rgba(29, 37, 34, 0.16);
 }
 
+.photo-upload-progress-indeterminate {
+  background: rgba(220, 236, 230, 0.86);
+}
+
+.photo-upload-progress-indeterminate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(31, 111, 91, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: photo-upload-spin 0.8s linear infinite;
+}
+
 .photo-upload-progress::after {
   content: "";
   position: absolute;
@@ -2926,6 +2940,12 @@ button.ghost.context-toggle.active:focus-visible {
   color: var(--accent);
   font-size: 10px;
   line-height: 1;
+}
+
+@keyframes photo-upload-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .item-photo-pending {
@@ -3418,6 +3438,11 @@ mark {
   grid-template-columns: auto minmax(220px, 340px);
   gap: 12px;
   align-items: end;
+}
+
+.items-toolbar-single {
+  grid-template-columns: minmax(220px, 340px);
+  justify-content: end;
 }
 
 .items-filter-row {
@@ -4229,16 +4254,24 @@ dialog::backdrop {
 }
 
 .shared-mode-banner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
   align-items: center;
+  justify-content: flex-start;
   margin-bottom: 12px;
   padding: 12px 14px;
   border: 1px solid #bfd5ca;
   border-left: 4px solid var(--accent);
   border-radius: 8px;
   background: #eef6f1;
+}
+
+.shared-mode-banner-text {
+  display: grid;
+  gap: 5px;
+  min-width: min(100%, 320px);
+  max-width: min(100%, 980px);
 }
 
 .shared-mode-banner strong {
@@ -4249,14 +4282,12 @@ dialog::backdrop {
 }
 
 .shared-mode-banner span {
-  grid-column: 1 / 2;
   color: var(--muted);
   line-height: 1.25;
 }
 
 .shared-mode-banner button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+  flex: 0 0 auto;
   min-height: 38px;
 }
 
@@ -4570,13 +4601,7 @@ dialog::backdrop {
   }
 
   .shared-mode-banner {
-    grid-template-columns: 1fr;
-  }
-
-  .shared-mode-banner span,
-  .shared-mode-banner button {
-    grid-column: 1;
-    grid-row: auto;
+    align-items: flex-start;
   }
 
   .shared-gear-card {
@@ -4659,15 +4684,33 @@ dialog::backdrop {
   overflow: hidden;
 }
 
-.photo-lightbox {
+dialog.photo-lightbox {
   position: fixed;
   inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 200;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  transform: none;
+  overflow: hidden;
   display: grid;
   place-items: center;
   background: rgba(10, 15, 14, 0.92);
   cursor: zoom-out;
   touch-action: none;
+}
+
+dialog.photo-lightbox::backdrop {
+  background: transparent;
 }
 
 .photo-lightbox-image {
@@ -4874,6 +4917,14 @@ dialog::backdrop {
     max-height: inherit;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  #confirmDialog {
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-height: calc(100dvh - 24px);
   }
 
   .dialog-two-columns {

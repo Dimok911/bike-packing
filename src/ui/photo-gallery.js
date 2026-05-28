@@ -120,20 +120,26 @@ function photoUploadState(photos) {
   const uploading = list.filter((photo) => photo.status === "uploading");
   const source = uploading.find((photo) => Number.isFinite(Number(photo.uploadProgress))) ||
     list.find((photo) => Number.isFinite(Number(photo.uploadProgress)));
-  const progress = source ? Number(source.uploadProgress) : (uploading.length ? 8 : 0);
+  const hasProgress = Boolean(source);
+  const progress = hasProgress ? Number(source.uploadProgress) : (uploading.length ? 8 : 0);
   return {
     active: true,
+    indeterminate: !hasProgress && !uploading.length,
     progress: Math.max(0, Math.min(100, progress))
   };
 }
 
-function renderPhotoUploadProgress({ active = false, progress = 0 } = {}) {
+function renderPhotoUploadProgress({ active = false, indeterminate = false, progress = 0 } = {}) {
   if (!active) return "";
   const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
   const angle = Math.round(safeProgress * 3.6);
+  const className = [
+    "photo-upload-progress",
+    indeterminate ? "photo-upload-progress-indeterminate" : ""
+  ].filter(Boolean).join(" ");
   return `
-    <div class="photo-upload-progress" style="--photo-upload-angle: ${angle}deg" aria-hidden="true">
-      <span>${Math.round(safeProgress)}</span>
+    <div class="${className}" style="--photo-upload-angle: ${angle}deg" aria-hidden="true">
+      ${indeterminate ? "" : `<span>${Math.round(safeProgress)}</span>`}
     </div>
   `;
 }
@@ -219,16 +225,23 @@ export async function openPhotoLightbox(sourceImage) {
     }
   }
   if (!src) return;
-  const overlay = document.createElement("div");
+  const overlay = document.createElement("dialog");
   overlay.className = "photo-lightbox";
   overlay.innerHTML = `
     <button class="photo-lightbox-close" type="button" aria-label="Закрыть">×</button>
     <img class="photo-lightbox-image" src="${escapeHtml(src)}" alt="" />
   `;
   document.body.append(overlay);
+  if (typeof overlay.showModal === "function") {
+    overlay.showModal();
+  }
   document.body.classList.add("photo-lightbox-open");
   const image = overlay.querySelector(".photo-lightbox-image");
   const close = () => closePhotoLightbox();
+  overlay.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    close();
+  });
   overlay.querySelector(".photo-lightbox-close")?.addEventListener("click", close);
   let scale = 1;
   let panX = 0;
@@ -309,7 +322,9 @@ function closePhotoLightboxOnEscape(event) {
 }
 
 export function closePhotoLightbox() {
-  document.querySelector(".photo-lightbox")?.remove();
+  const overlay = document.querySelector(".photo-lightbox");
+  if (overlay?.open && typeof overlay.close === "function") overlay.close();
+  overlay?.remove();
   document.body.classList.remove("photo-lightbox-open");
   if (lightboxObjectUrl) URL.revokeObjectURL(lightboxObjectUrl);
   lightboxObjectUrl = "";

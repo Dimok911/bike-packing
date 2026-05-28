@@ -118,3 +118,22 @@ export function saveStoredActiveLayoutChoice(choice, {
   }
   return normalized;
 }
+
+export function resolveStoredPrivateLayoutChoice({
+  activeLayoutId = "",
+  isPrivateChoice,
+  isPrivateUserLayoutId,
+  normalizeChoice,
+  storedChoice = "",
+  storedPrivateChoice = ""
+} = {}) {
+  const candidates = [storedPrivateChoice, storedChoice, activeLayoutId];
+  for (const candidate of candidates) {
+    const normalized = normalizeChoice(candidate);
+    if (!normalized) continue;
+    if (!isPrivateChoice(normalized)) continue;
+    if (!isPrivateUserLayoutId(normalized)) continue;
+    return normalized;
+  }
+  return "";
+}
