@@ -1,17 +1,17 @@
 import { escapeHtml } from "../utils/html.js";
 
-export function renderBackupRules(target) {
+export function renderBackupRules(target, { t = (key) => key } = {}) {
   if (!target) return;
   target.innerHTML = `
     <section class="backup-rule-section">
-      <h3>Создать архив</h3>
-      <p>Архив скачивается ZIP-файлом и содержит полное состояние: укладки, вещи, сумки/контейнеры, настройки и фото. У администратора дополнительно попадают demo и публичные шаблоны.</p>
-      <p>Такой архив можно загрузить в другом аккаунте, чтобы перенести данные. Файл не привязан к email, поэтому храните его как приватный экспорт данных.</p>
+      <h3>${escapeHtml(t("backup.createTitle"))}</h3>
+      <p>${escapeHtml(t("backup.createText1"))}</p>
+      <p>${escapeHtml(t("backup.createText2"))}</p>
     </section>
     <section class="backup-rule-section">
-      <h3>Восстановить</h3>
-      <p><strong>Выбранные укладки</strong> добавляют недостающие вещи/сумки/фото и заменяют только укладки с совпадающим именем.</p>
-      <p><strong>Восстановить всё</strong> полностью заменяет текущее состояние аккаунта данными из архива.</p>
+      <h3>${escapeHtml(t("backup.restoreTitle"))}</h3>
+      <p><strong>${escapeHtml(t("backup.restoreSelected"))}</strong> ${escapeHtml(t("backup.restoreSelectedText"))}</p>
+      <p><strong>${escapeHtml(t("backup.restoreFull"))}</strong> ${escapeHtml(t("backup.restoreFullText"))}</p>
     </section>
   `;
 }

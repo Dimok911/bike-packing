@@ -21,8 +21,12 @@ import {
   layoutContainersOwnWeight
 } from "../../src/state/metrics.js";
 import {
-  checkAuthAndLoadFlow
+  checkAuthAndLoadFlow,
+  isAuthCheckUnavailableError
 } from "../../src/sync/auth-load-flow.js";
+import {
+  updateSyncUiControls
+} from "../../src/ui/sync-ui.js";
 
 const privateIds = new Set(["layout-a", "layout-b", "layout-c"]);
 const normalizeChoice = (choice) => String(choice || "").trim();
@@ -220,6 +224,196 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
   assert.equal(activeLayoutId, "layout-last");
   assert.equal(remoteLoads.length, 1);
   assert.equal(remoteLoads[0].preferredLayout.id, "layout-last");
+});
+
+test("CRITICAL offline-auth-scope: auth network failure prefers remembered private offline over readonly demo", async () => {
+  const runtime = {
+    appUnlocked: false,
+    currentUser: { id: "user-1", email: "u@example.test" },
+    syncMeta: { dirty: false }
+  };
+  let offlineActivated = false;
+  let enteredPublic = false;
+  let keptReadonly = false;
+  const dependencies = {
+    activateLocalStorageScope: () => {},
+    activateLocalStorageScopeForCurrentUser: () => {},
+    activateOfflineRememberedSession: () => {
+      offlineActivated = true;
+      return true;
+    },
+    apiFetch: async () => {
+      const error = new Error("network");
+      error.isNetworkError = true;
+      throw error;
+    },
+    applyPreferredPrivateLayoutChoice: () => false,
+    checkAdminApiCompatibility: () => ({ catch: () => null }),
+    clearOfflineRememberedSession: () => {},
+    currentPrivateLayoutRef: () => null,
+    currentPublicTemplateStatusMessage: () => "Demo/public read-only",
+    enterSignedOutPublicMode: async () => {
+      enteredPublic = true;
+    },
+    hasLocalSavedState: () => false,
+    isAdminUser: () => false,
+    isExplicitlySignedOut: () => false,
+    isForcedOffline: () => false,
+    isNetworkError: (error) => Boolean(error?.isNetworkError),
+    isSharedListLinkRoute: () => false,
+    loadGuestPublishedDemoOnStartup: async () => {
+      keptReadonly = true;
+    },
+    loadRemoteState: async () => {},
+    rememberAuthenticatedUser: () => {},
+    renderCachedPrivateStateDuringRemoteLoad: async () => {},
+    renderInitialLocalFallbackIfNeeded: () => {},
+    restoreSavedLayoutChoice: async () => {},
+    restoreTemplateCopyDraftsFromRecovery: () => {},
+    setExplicitlySignedOut: () => {},
+    setLayoutLoadStatus: () => {},
+    setPersonalLayoutsLoadedStatus: () => {},
+    shouldKeepCurrentReadonlyDemoAfterAuthCheck: () => true,
+    storedPrivateLayoutChoiceRef: () => null,
+    unlockOfflineState: () => {},
+    updateSyncUi: () => {},
+    GUEST_STORAGE_SCOPE: "guest"
+  };
+
+  await checkAuthAndLoadFlow({ runtime, dependencies });
+
+  assert.equal(offlineActivated, true);
+  assert.equal(enteredPublic, false);
+  assert.equal(keptReadonly, false);
+});
+
+test("CRITICAL offline-auth-scope: empty auth response keeps remembered private scope", async () => {
+  const runtime = {
+    appUnlocked: false,
+    currentUser: null,
+    syncMeta: { dirty: false }
+  };
+  let offlineActivated = false;
+  let clearedOffline = false;
+  let guestScopeActivated = false;
+  let loadedGuestDemo = false;
+  const dependencies = {
+    activateLocalStorageScope: () => {
+      guestScopeActivated = true;
+    },
+    activateLocalStorageScopeForCurrentUser: () => {},
+    activateOfflineRememberedSession: () => {
+      offlineActivated = true;
+      return true;
+    },
+    apiFetch: async () => ({ user: null, session: null }),
+    applyPreferredPrivateLayoutChoice: () => false,
+    checkAdminApiCompatibility: () => ({ catch: () => null }),
+    clearOfflineRememberedSession: () => {
+      clearedOffline = true;
+    },
+    currentPrivateLayoutRef: () => null,
+    currentPublicTemplateStatusMessage: () => "Demo/public read-only",
+    enterSignedOutPublicMode: async () => {},
+    hasLocalSavedState: () => false,
+    isAdminUser: () => false,
+    isExplicitlySignedOut: () => false,
+    isForcedOffline: () => false,
+    isNetworkError: () => false,
+    isSharedListLinkRoute: () => false,
+    loadGuestPublishedDemoOnStartup: async () => {
+      loadedGuestDemo = true;
+    },
+    loadRemoteState: async () => {},
+    rememberAuthenticatedUser: () => {},
+    renderCachedPrivateStateDuringRemoteLoad: async () => {},
+    renderInitialLocalFallbackIfNeeded: () => {},
+    restoreSavedLayoutChoice: async () => {},
+    restoreTemplateCopyDraftsFromRecovery: () => {},
+    setExplicitlySignedOut: () => {},
+    setLayoutLoadStatus: () => {},
+    setPersonalLayoutsLoadedStatus: () => {},
+    shouldKeepCurrentReadonlyDemoAfterAuthCheck: () => true,
+    storedPrivateLayoutChoiceRef: () => null,
+    unlockOfflineState: () => {},
+    updateSyncUi: () => {},
+    GUEST_STORAGE_SCOPE: "guest"
+  };
+
+  await checkAuthAndLoadFlow({ runtime, dependencies });
+
+  assert.equal(offlineActivated, true);
+  assert.equal(clearedOffline, false);
+  assert.equal(guestScopeActivated, false);
+  assert.equal(loadedGuestDemo, false);
+});
+
+test("CRITICAL offline-auth-scope: temporary auth HTTP failures are treated as offline-capable", () => {
+  assert.equal(isAuthCheckUnavailableError({ status: 503 }, () => false), true);
+  assert.equal(isAuthCheckUnavailableError({ status: 502 }, () => false), true);
+  assert.equal(isAuthCheckUnavailableError({ status: 429 }, () => false), true);
+  assert.equal(isAuthCheckUnavailableError({ status: 401 }, () => false), false);
+  assert.equal(isAuthCheckUnavailableError({ status: 403 }, () => false), false);
+});
+
+test("CRITICAL offline-auth-scope: public readonly status cannot mask an active private login", () => {
+  const createElement = () => ({
+    classList: { toggle: () => {}, remove: () => {} },
+    dataset: {},
+    hidden: false,
+    textContent: "",
+    title: "",
+    disabled: false,
+    setAttribute: () => {}
+  });
+  const refs = {
+    authBtn: createElement(),
+    collectionMenuBtn: createElement(),
+    forceOfflineBtn: createElement(),
+    mobileAdminApiWarning: createElement(),
+    syncBtn: createElement(),
+    syncStatus: createElement(),
+    syncUserEmail: createElement()
+  };
+  const signOutBtn = createElement();
+  const documentRef = {
+    body: { classList: { toggle: () => {} } },
+    querySelector: (selector) => selector === "#signOutBtn" ? signOutBtn : null
+  };
+
+  const previousDocument = globalThis.document;
+  globalThis.document = documentRef;
+  try {
+    updateSyncUiControls({
+      appUnlocked: true,
+      canUseLocalEditableState: () => true,
+      currentPublicTemplateStatusMessage: () => "Demo/public read-only",
+      currentUser: { id: "user-1", email: "u@example.test" },
+      currentUserEmail: () => "u@example.test",
+      document: documentRef,
+      isCurrentPrivateLayout: () => true,
+      message: "Demo/public read-only",
+      refs,
+      state: { collectionMode: false },
+      syncMeta: { dirty: false },
+      t: (key) => ({
+        "auth.notSignedIn": "not signed in",
+        "menu.collectionOff": "collection off",
+        "menu.offline": "offline",
+        "menu.signIn": "sign in",
+        "menu.signOut": "sign out",
+        "sync.dirty": "dirty",
+        "sync.synced": "synced"
+      }[key] || key)
+    });
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+
+  assert.equal(refs.syncStatus.textContent, "synced");
+  assert.equal(refs.syncUserEmail.textContent, "u@example.test");
+  assert.equal(refs.syncBtn.hidden, false);
 });
 
 test("container category edits can save an explicitly empty category list", () => {

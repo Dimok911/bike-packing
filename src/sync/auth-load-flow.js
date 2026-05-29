@@ -49,16 +49,23 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     authData = await apiFetch("/auth/me");
   } catch (error) {
     runtime.currentUser = null;
+    if (isAuthCheckUnavailableError(error, isNetworkError)) {
+      setLayoutLoadStatus("warning", "Сервер недоступен, пробую локальную копию");
+      if (activateOfflineRememberedSession("Сервер недоступен · открыта локальная копия личных укладок")) return;
+      if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
+        runtime.appUnlocked = true;
+        await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
+        updateSyncUi(currentPublicTemplateStatusMessage());
+        return;
+      }
+      await enterSignedOutPublicMode("Сервер недоступен · личные списки скрыты, открыта локальная копия демо");
+      return;
+    }
     setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       runtime.appUnlocked = true;
       await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
       updateSyncUi(currentPublicTemplateStatusMessage());
-      return;
-    }
-    if (isNetworkError(error)) {
-      if (activateOfflineRememberedSession("Сервер недоступен · открыта локальная копия личных укладок")) return;
-      await enterSignedOutPublicMode("Вход не подтверждён · личные списки скрыты, открыта локальная копия демо");
       return;
     }
     runtime.appUnlocked = true;
@@ -74,6 +81,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   runtime.currentUser = authData.user || authData.me || authData.account || null;
   if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
   if (!runtime.currentUser) {
+    if (activateOfflineRememberedSession("Вход не подтверждён · открыта локальная копия личных укладок")) return;
     clearOfflineRememberedSession();
     runtime.appUnlocked = true;
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
@@ -135,5 +143,11 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
     updateSyncUi(`Вход выполнен · не удалось загрузить данные: ${error.message}`);
   }
+}
+
+export function isAuthCheckUnavailableError(error, isNetworkError = () => false) {
+  if (isNetworkError(error)) return true;
+  const status = Number(error?.status || error?.data?.status || 0);
+  return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 

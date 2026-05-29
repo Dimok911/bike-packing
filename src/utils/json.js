@@ -2,8 +2,25 @@ export function clonePlain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function sortJsonValue(value) {
+  if (Array.isArray(value)) return value.map((entry) => entry === undefined ? null : sortJsonValue(entry));
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value)
+    .sort()
+    .reduce((result, key) => {
+      const entry = value[key];
+      if (entry === undefined || typeof entry === "function" || typeof entry === "symbol") return result;
+      result[key] = sortJsonValue(entry);
+      return result;
+    }, {});
+}
+
+export function stableStringify(value) {
+  return JSON.stringify(sortJsonValue(value));
+}
+
 export function snapshotsEqual(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return stableStringify(left) === stableStringify(right);
 }
 
 export function jsonUtf8ByteLength(value) {

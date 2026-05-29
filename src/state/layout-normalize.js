@@ -10,7 +10,7 @@ import {
 } from "./layout-arrangement.js";
 import { repairContainerMembershipFromItemLinks } from "./repair.js";
 
-const DEFAULT_LAYOUT_NAME = "РўРµРєСѓС‰Р°СЏ СѓРєР»Р°РґРєР°";
+const DEFAULT_LAYOUT_NAME = "Текущая укладка";
 
 export function normalizeLayoutFields(targetState) {
   const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};

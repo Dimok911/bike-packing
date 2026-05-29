@@ -824,6 +824,10 @@ let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
 const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "dictionaryPhysicalEntityRows",
+  "assembledConflictPayload",
+  "assembledStatePayloadResponses",
+  "rawListPayloadContractGuard",
   "dictionaryStateEntitySync",
   "entitySyncListUpdatedAt",
   "lightweightListFreshness",
@@ -849,7 +853,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-28.dictionary-state-entity-sync-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-29.dictionary-physical-rows-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1144,6 +1148,61 @@ function t(key, values = {}) {
   const dictionary = I18N[uiLanguage] || I18N[DEFAULT_LANGUAGE] || {};
   const fallback = I18N[DEFAULT_LANGUAGE]?.[key] || key;
   return String(dictionary[key] || fallback).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+}
+
+const DICTIONARY_VALUE_LABELS = {
+  en: {
+    "Дом": "Home",
+    "Дача": "Cabin",
+    "Уже на велосипеде": "Already on bike",
+    "Надо купить": "Need to buy",
+    "Не знаю где": "Unknown location",
+    "Сон": "Sleep",
+    "Одежда": "Clothing",
+    "Кухня": "Kitchen",
+    "Еда": "Food",
+    "Вода": "Water",
+    "Ремонт": "Repair",
+    "Медицина": "Medicine",
+    "Электроника": "Electronics",
+    "Документы": "Documents",
+    "Гигиена": "Hygiene",
+    "Навигация": "Navigation",
+    "Велозапчасти": "Bike parts",
+    "Инструменты": "Tools",
+    "Требует заряда": "Requires charging",
+    "Прочее": "Other"
+  },
+  ru: {
+    "Home": "Дом",
+    "Cabin": "Дача",
+    "Already on bike": "Уже на велосипеде",
+    "Need to buy": "Надо купить",
+    "Unknown location": "Не знаю где",
+    "Sleep": "Сон",
+    "Clothing": "Одежда",
+    "Kitchen": "Кухня",
+    "Food": "Еда",
+    "Water": "Вода",
+    "Repair": "Ремонт",
+    "Medicine": "Медицина",
+    "Electronics": "Электроника",
+    "Documents": "Документы",
+    "Hygiene": "Гигиена",
+    "Navigation": "Навигация",
+    "Bike parts": "Велозапчасти",
+    "Tools": "Инструменты",
+    "Requires charging": "Требует заряда",
+    "Other": "Прочее"
+  }
+};
+
+function dictionaryValueLabel(value) {
+  return DICTIONARY_VALUE_LABELS[uiLanguage]?.[value] || value;
+}
+
+function dictionarySelectEntry(value) {
+  return [value, dictionaryValueLabel(value)];
 }
 
 function currentSharedLayouts(language = uiLanguage) {
@@ -4120,7 +4179,7 @@ function clone(value) {
 }
 
 function sameJson(a, b) {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  return snapshotsEqual(a ?? null, b ?? null);
 }
 
 function mergeStateFromBase(baseState, localState, remoteState) {
@@ -4568,6 +4627,7 @@ function updateSyncUi(message = "") {
     document,
     ensureGuestPublicScope,
     initialRemoteLoadPending,
+    isCurrentPrivateLayout: () => isPrivateUserLayoutId(state.activeLayoutId),
     isForcedOffline,
     isOfflineRememberedSession,
     isReadOnlyStateScope,
@@ -8380,6 +8440,7 @@ function renderFilters() {
     demoTemplateFallbackName,
     demoTemplatesForUiLanguage,
     dictionaryOptionsForUi,
+    dictionaryValueLabel,
     fillSelect,
     getActiveEditableLayoutId,
     isDemoLayoutChoice,
@@ -8609,7 +8670,7 @@ function updateCategoryFilterButton() {
   if (!count) {
     refs.categoryFilter.textContent = t("filters.allCategories");
   } else if (count === 1) {
-    refs.categoryFilter.textContent = selectedCategoryFilters[0];
+    refs.categoryFilter.textContent = dictionaryValueLabel(selectedCategoryFilters[0]);
   } else {
     refs.categoryFilter.textContent = uiLanguage === "en" ? `${count} categories` : `${count} категории`;
   }
@@ -8625,10 +8686,10 @@ function openCategoryFilterDialog() {
     return `
       <label class="category-option category-filter-option" for="${id}">
         <input id="${id}" type="checkbox" value="${escapeHtml(category)}" ${selectedSet.has(category) ? "checked" : ""} />
-        <span>${escapeHtml(category)}</span>
+        <span>${escapeHtml(dictionaryValueLabel(category))}</span>
       </label>
     `;
-  }).join("") || `<div class="empty">Нет категорий для текущего поиска</div>`;
+  }).join("") || `<div class="empty">${escapeHtml(t("empty.noCategoriesForSearch"))}</div>`;
   openModalDialog(refs.categoryFilterDialog);
 }
 
@@ -8647,7 +8708,7 @@ function openAddToContainerDialog(containerId) {
   if (!state.containers[containerId]) return;
   addToContainerTargetId = containerId;
   addToContainerTargetLayoutId = resolveEditableLayoutIdForContainer(containerId);
-  refs.addToContainerTitle.textContent = "Добавить";
+  refs.addToContainerTitle.textContent = t("buttons.add");
   refs.addToContainerPath.textContent = containerPath(containerId);
   refs.addToContainerSearch.value = "";
   refs.clearAddToContainerSearchBtn.hidden = true;
@@ -8694,7 +8755,7 @@ function renderAddToContainerResults() {
         <strong>${highlightSearchText(item.name, query)}</strong>
       </button>
     `;
-  }).join("") || `<div class="empty">Ничего не найдено</div>`;
+  }).join("") || `<div class="empty">${escapeHtml(t("empty.notFound"))}</div>`;
 
   refs.addToContainerResults.querySelectorAll("[data-add-existing-item]").forEach((button) => {
     button.addEventListener("click", () => addExistingItemToContainer(button.dataset.addExistingItem));
@@ -8709,7 +8770,7 @@ function matchesAddToContainerSearch(item, query) {
     itemCategories(item).join(" "),
     item.location,
     item.note || "",
-    item.containerId ? containerPath(item.containerId) : "Вне укладки"
+    item.containerId ? containerPath(item.containerId) : t("forms.outsideLayout")
   ].join(" ").toLowerCase().includes(query);
 }
 
@@ -9153,7 +9214,7 @@ function renderCategoryPicker(target, selected = null, { fallbackDefault = true,
     return `
       <label class="category-option" for="${id}">
         <input id="${id}" type="checkbox" value="${escapeHtml(category)}" ${selectedSet.has(category) ? "checked" : ""} />
-        <span>${escapeHtml(category)}</span>
+        <span>${escapeHtml(dictionaryValueLabel(category))}</span>
       </label>
     `;
   }).join("");
@@ -9993,32 +10054,31 @@ function renderSummary() {
   if (view === "bags") {
     const containers = getSummaryRootContainers();
     const totalWeight = containers.reduce((sum, container) => sum + Number(container.weight || 0), 0);
-    const notHome = containers.filter((container) => {
-      const location = container.location || defaultRootContainerLocation(state);
-      return location !== "Дом" && location !== "Уже на велосипеде";
-    }).length;
+    const notHome = containers.filter((container) =>
+      isItemAwayFromHomeAndBike({ location: container.location || defaultRootContainerLocation(state) })
+    ).length;
     const unknownWeight = containers.filter((container) => !Number(container.weight || 0)).length;
     refs.summary.innerHTML = [
-      metric(formatWeight(totalWeight), filteredLabel("общий вес сумок", isFiltered)),
-      metric(String(containers.length), filteredLabel("сумок показано", isFiltered)),
-      metric(String(notHome), filteredLabel("не дома и не на веле", isFiltered)),
-      metric(String(unknownWeight), filteredLabel("без веса", isFiltered))
+      metric(formatWeight(totalWeight), filteredLabel(t("summary.totalBagWeight"), isFiltered)),
+      metric(String(containers.length), filteredLabel(t("summary.bagsShown"), isFiltered)),
+      metric(String(notHome), filteredLabel(t("summary.notPacked"), isFiltered)),
+      metric(String(unknownWeight), filteredLabel(t("summary.withoutWeight"), isFiltered))
     ].join("");
     return;
   }
   const visibleItems = getSummaryItems(view);
   const totalWeight = getSummaryWeight(view, visibleItems, isFiltered);
   const unknownWeight = visibleItems.filter((item) => !Number(item.weight)).length;
-  const notHome = visibleItems.filter((item) => item.location !== "Дом" && item.location !== "Уже на велосипеде").length;
+  const notHome = visibleItems.filter(isItemAwayFromHomeAndBike).length;
   if (isPackingView && state.collectionMode) {
     const activeItems = getActiveLayoutItems().filter(matchesBaseFilters);
     const packedCount = activeItems.filter((item) => isItemPacked(item.id)).length;
     const unpackedCount = Math.max(0, activeItems.length - packedCount);
     refs.summary.innerHTML = [
-      metric(`${packedCount} / ${activeItems.length}`, "собрано"),
-      metric(String(unpackedCount), "осталось собрать"),
-      metric(String(notHome), filteredLabel("не дома и не на веле", isFiltered)),
-      metric(String(unknownWeight), filteredLabel("без веса", isFiltered))
+      metric(`${packedCount} / ${activeItems.length}`, t("summary.packed")),
+      metric(String(unpackedCount), t("summary.leftToPack")),
+      metric(String(notHome), filteredLabel(t("summary.notPacked"), isFiltered)),
+      metric(String(unknownWeight), filteredLabel(t("summary.withoutWeight"), isFiltered))
     ].join("");
     return;
   }
@@ -10845,13 +10905,13 @@ function renderItemCard(item) {
     : `<strong class="item-title">${highlight(item.name)}${renderItemQuantityText(item)}</strong>`;
   const titleDragAttr = isEditingTitle ? "" : ` data-item-drag="${item.id}"`;
   return renderPackingItemCardHtml({
-    categoriesHtml: itemCategories(item).map((category) => `<span class="pill">${highlight(category)}</span>`).join(""),
+    categoriesHtml: itemCategories(item).map((category) => `<span class="pill">${highlight(dictionaryValueLabel(category))}</span>`).join(""),
     collection,
     filterMatch,
     item,
     justAdded,
     labelsVisible: shouldShowItemLabels(),
-    locationHtml: highlight(item.location),
+    locationHtml: highlight(dictionaryValueLabel(item.location)),
     packed,
     packedVisible,
     photoHtml: renderItemPhoto(item),
@@ -11816,10 +11876,10 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   const layout = state.layouts?.[layoutId];
   if (!item || !layout || !getItemContainerIdInLayout(layout, itemId)) return;
   const confirmed = await askConfirmDialog({
-    title: "Убрать вещь из укладки?",
-    text: `«${item.name}» исчезнет из текущей укладки, но останется во вкладке «Вещи».`,
-    highlightText: "Вещь сейчас участвует в текущей укладке.",
-    okText: "Убрать",
+    title: t("items.removeFromLayoutTitle"),
+    text: t("items.removeFromLayoutText", { name: item.name }),
+    highlightText: t("items.removeFromLayoutHighlight"),
+    okText: t("items.removeFromLayoutOk"),
     tone: "danger"
   });
   if (!confirmed) return;
@@ -11841,15 +11901,15 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   if (!item) return;
   const placements = describeVisibleItemLayoutPlacements(item);
   const placementText = placements.length
-    ? `Сейчас используется:\n${placements.map((placement) => `- ${placement}`).join("\n")}`
-    : "Сейчас вещь вне укладок.";
+    ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement}`).join("\n")}`
+    : t("items.deleteOutside");
   openConfirmDialog({
     title: "Удалить вещь навсегда?",
     text: `«${item.name}» будет удалена из списка вещей и из всех укладок. Это действие нельзя отменить.`,
     highlightText: placementText,
     okText: "Удалить",
     tone: placements.length ? "danger" : "safe",
-    ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length) }),
+    ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length), t }),
     onConfirm: () => {
       deleteItemForever(itemId);
       afterConfirm?.();
@@ -11890,7 +11950,7 @@ async function copyItem(itemId, options = {}) {
   if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
   if (options.confirm !== false) {
-    const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement }));
+    const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement, t }));
     if (!confirmed) return;
   }
   const changedAt = nowIso();
@@ -11912,13 +11972,13 @@ async function copyItem(itemId, options = {}) {
   scheduleActivePublishedEditSave();
   render();
   const container = copied.placed;
-  showToast(container ? "Вещь скопирована рядом с исходной." : "Вещь скопирована вне укладки.", "success");
+  showToast(container ? t("items.copyPlaced") : t("items.copyOutside"), "success");
 }
 
 async function copyRootContainer(containerId) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
-  const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: false }));
+  const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: false, t }));
   if (!confirmed) return;
   await duplicateRootContainer(containerId);
 }
@@ -11945,8 +12005,8 @@ async function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) 
   scheduleActivePublishedEditSave();
   render();
   showToast(copied.addedToLayout
-    ? "Сумка или место продублированы в текущей укладке."
-    : "Сумка или место скопированы пустыми вне укладки.", "success");
+    ? t("rootContainers.copyPlaced")
+    : t("rootContainers.copyOutside"), "success");
 }
 
 function makeContainerCopyName(name) {
@@ -11970,10 +12030,10 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
     .filter((layout) => (layout.rootContainerIds || []).includes(containerId))
     .map((layout) => layout.name);
   const layoutText = layoutNames.length
-    ? `Используется в укладках:\n${layoutNames.map((name) => `- ${name}`).join("\n")}`
-    : "Сейчас не используется ни в одной укладке.";
+    ? `${t("rootContainers.deleteUsedInLayouts")}\n${layoutNames.map((name) => `- ${name}`).join("\n")}`
+    : t("rootContainers.deleteUnused");
   const itemsText = itemCount
-    ? `\n${formatThingCount(itemCount)} из этой сумки/места останутся во вкладке «Вещи» как вне укладки.`
+    ? `\n${t("rootContainers.deleteItemsRemain", { count: formatThingCount(itemCount) })}`
     : "";
   openConfirmDialog({
     title: "Удалить сумку или место?",
@@ -11985,7 +12045,8 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
       container,
       layoutText,
       itemsText,
-      risky: Boolean(layoutNames.length || itemCount)
+      risky: Boolean(layoutNames.length || itemCount),
+      t
     }),
     onConfirm: () => {
       deleteRootContainer(containerId);
@@ -12093,7 +12154,7 @@ function openRootContainerDialog(containerId = null) {
   rootContainerDialogPendingRootIds = null;
   rootContainerDialogPendingParentId = undefined;
   rootContainerDialogPendingParentIndex = null;
-  refs.rootContainerDialogTitle.textContent = containerId ? "Редактировать сумку или место" : "Добавить сумку или место";
+  refs.rootContainerDialogTitle.textContent = containerId ? t("rootContainers.edit") : t("rootContainers.add");
   refs.rootContainerName.value = container?.name || "";
   refs.rootContainerWeight.value = Number(container?.weight || 0);
   refs.rootContainerVolume.value = container?.volume ? String(container.volume).replace(".", ",") : "";
@@ -12121,7 +12182,7 @@ function openRootContainerDialog(containerId = null) {
 function fillRootContainerLocationSelect(selected = "") {
   const options = dictionaryOptionsForUi("location", { selected: selected ? [selected] : [] });
   const fallback = options[0] || defaultRootContainerLocation(state);
-  const entries = options.map((location) => [location, location]);
+  const entries = options.map(dictionarySelectEntry);
   fillSelect(refs.rootContainerLocation, entries, selected || fallback);
 }
 
@@ -12129,13 +12190,14 @@ function openItemDialog(itemId = null) {
   resetSharedReadonlyItemDialog();
   editingItemId = itemId;
   itemDialogTargetLayoutId = getPublishedEditLayoutId();
+  const defaultCategory = dictionaryOptionsForUi("category")[0] || "";
   const item = itemId ? state.items[itemId] : {
     name: "",
     weight: 0,
     quantity: 1,
     location: dictionaryOptionsForUi("location")[0] || defaultRootContainerLocation(state),
-    category: "Прочее",
-    categories: ["Прочее"],
+    category: defaultCategory,
+    categories: defaultCategory ? [defaultCategory] : [],
     containerId: "",
     note: "",
     photos: []
@@ -12145,7 +12207,7 @@ function openItemDialog(itemId = null) {
   refs.itemWeight.value = item.weight || 0;
   refs.itemQuantity.value = itemQuantity(item);
   updateItemQuantityUi();
-  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map((location) => [location, location]), item.location);
+  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map(dictionarySelectEntry), item.location);
   renderItemCategoryPicker(itemCategories(item), { fallbackDefault: false });
   refs.itemContainer.value = itemId
     ? getItemContainerIdInLayout(state.layouts?.[itemDialogTargetLayoutId], itemId)
@@ -13419,7 +13481,7 @@ function updatePhotoPrimaryButton(button, activeIndex = 0) {
   button.hidden = false;
   const isPrimary = Number(activeIndex) <= 0;
   button.disabled = isPrimary;
-  button.textContent = isPrimary ? "Фото уже главное" : "Сделать главным";
+  button.textContent = isPrimary ? t("buttons.primaryPhotoDone") : t("buttons.primaryPhoto");
 }
 
 function setRootContainerDialogPhotoStatus(message) {
@@ -13500,18 +13562,18 @@ function updateModalSaveButton(button, { hasName, changed }) {
   button.disabled = !hasName || !changed;
   button.classList.toggle("muted-save", button.disabled);
   if (!changed) {
-    button.textContent = "Изменений нет";
-    button.title = "Изменений нет, всё сохранено";
-    button.setAttribute("aria-label", "Изменений нет, всё сохранено");
+    button.textContent = t("buttons.noChanges");
+    button.title = t("buttons.noChangesTitle");
+    button.setAttribute("aria-label", t("buttons.noChangesTitle"));
     return;
   }
   if (!hasName) {
-    button.textContent = "Введите название";
-    button.title = "Введите название, чтобы сохранить";
-    button.setAttribute("aria-label", "Введите название, чтобы сохранить");
+    button.textContent = t("buttons.enterName");
+    button.title = t("buttons.enterNameTitle");
+    button.setAttribute("aria-label", t("buttons.enterNameTitle"));
     return;
   }
-  button.textContent = "Сохранить";
+  button.textContent = t("buttons.save");
   button.removeAttribute("title");
   button.removeAttribute("aria-label");
 }
@@ -13861,7 +13923,7 @@ function itemTotalWeight(item) {
 function openBackupDialog() {
   backupImportState = null;
   if (refs.backupFileInput) refs.backupFileInput.value = "";
-  renderBackupRules(refs.backupRules);
+  renderBackupRules(refs.backupRules, { t });
   setBackupStatus("");
   resetBackupImportUi(refs);
   openModalDialog(refs.backupDialog);

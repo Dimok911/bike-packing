@@ -369,7 +369,7 @@ export function createGroupFromItemsInState(targetState, layoutId, itemId, targe
   changedAt = "",
   currentEditMeta = () => ({}),
   groupId = "",
-  groupName = "РќРѕРІС‹Р№ РїР°РєРµС‚",
+  groupName = "Новый пакет",
   markRecordActivePublicCatalog = () => {},
   touchLayout = () => {}
 } = {}) {

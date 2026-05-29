@@ -1,4 +1,4 @@
-const HOME_OR_BIKE_LOCATIONS = new Set(["Дом", "Уже на велосипеде"]);
+const HOME_OR_BIKE_LOCATIONS = new Set(["Дом", "Уже на велосипеде", "Home", "Already on bike"]);
 
 export function isItemAwayFromHomeAndBike(item, {
   homeOrBikeLocations = HOME_OR_BIKE_LOCATIONS

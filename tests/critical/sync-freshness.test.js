@@ -7,6 +7,8 @@ import {
   normalizeListFreshness
 } from "../../src/sync/list-freshness.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
+import { mergeStateFromBase } from "../../src/sync/state-merge.js";
+import { snapshotsEqual } from "../../src/utils/json.js";
 
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {
   const freshness = normalizeListFreshness({
@@ -167,4 +169,72 @@ test("CRITICAL offline-start: startup must fetch full state when list/account ch
     }),
     false
   );
+});
+
+test("CRITICAL sync-save: assembled payload key order and service meta do not create merge conflicts", () => {
+  const baseState = {
+    items: {
+      "item-1": { id: "item-1", name: "Pump", weight: 100, categories: ["Tools"] }
+    },
+    containers: {
+      "bag-1": { id: "bag-1", name: "Repair kit", weight: 50, location: "Home" }
+    },
+    layouts: {},
+    packedItems: {},
+    locations: [],
+    categories: []
+  };
+  const localState = {
+    ...baseState,
+    items: {
+      "item-1": {
+        categories: ["Tools"],
+        weight: 100,
+        name: "Pump",
+        id: "item-1",
+        updatedAt: "2026-05-29T15:26:54.746Z",
+        updatedByDeviceName: "Windows"
+      }
+    },
+    containers: {
+      "bag-1": {
+        location: "Home",
+        weight: 50,
+        name: "Repair kit",
+        id: "bag-1",
+        updatedAt: "2026-05-29T15:26:54.746Z",
+        updatedByDeviceName: "Windows"
+      }
+    }
+  };
+  const remoteState = {
+    ...baseState,
+    items: {
+      "item-1": {
+        weight: 100,
+        id: "item-1",
+        categories: ["Tools"],
+        name: "Pump",
+        updatedAt: "2026-05-29T15:26:56.782Z",
+        sourceDeviceName: "Windows"
+      }
+    },
+    containers: {
+      "bag-1": {
+        id: "bag-1",
+        weight: 50,
+        location: "Home",
+        name: "Repair kit",
+        updatedAt: "2026-05-29T15:26:56.782Z",
+        sourceDeviceName: "Windows"
+      }
+    }
+  };
+
+  const result = mergeStateFromBase(baseState, localState, remoteState, {
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    valuesEqual: snapshotsEqual
+  });
+
+  assert.deepEqual(result.conflicts, []);
 });

@@ -8,16 +8,16 @@ export async function readBackupImportFile(event, {
   const file = event.target.files?.[0];
   if (!file) return undefined;
   try {
-    setBackupStatus("Р§РёС‚Р°СЋ Р°СЂС…РёРІ...");
+    setBackupStatus("Читаю архив...");
     const { manifest, photoFiles } = await readBackupArchiveFile(file);
     const backupState = normalizeRemoteState(manifest.data?.state || manifest.state);
-    if (!backupState) throw new Error("Р’ Р°СЂС…РёРІРµ РЅРµС‚ РєРѕСЂСЂРµРєС‚РЅРѕРіРѕ СЃРѕСЃС‚РѕСЏРЅРёСЏ.");
+    if (!backupState) throw new Error("В архиве нет корректного состояния.");
     const nextImportState = { manifest, state: backupState, photoFiles, selectedLayoutIds: new Set() };
-    setBackupStatus(`РђСЂС…РёРІ РїСЂРѕС‡РёС‚Р°РЅ: ${Object.keys(backupState.layouts || {}).length} СѓРєР»Р°РґРѕРє, ${photoFiles.size} С„РѕС‚Рѕ.`, "success");
+    setBackupStatus(`Архив прочитан: ${Object.keys(backupState.layouts || {}).length} укладок, ${photoFiles.size} фото.`, "success");
     return nextImportState;
   } catch (error) {
     resetBackupImportUi(refs);
-    setBackupStatus(`РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ Р°СЂС…РёРІ: ${error.message}`, "error");
+    setBackupStatus(`Не удалось прочитать архив: ${error.message}`, "error");
     return null;
   }
 }
@@ -55,7 +55,7 @@ export async function restoreSelectedBackupLayoutsFlow({
   const confirmed = await askConfirmDialog(selectedBackupRestoreConfirm(summary));
   if (!confirmed) return;
   try {
-    setBackupStatus("Р’РѕСЃСЃС‚Р°РЅР°РІР»РёРІР°СЋ РІС‹Р±СЂР°РЅРЅС‹Рµ СѓРєР»Р°РґРєРё...");
+    setBackupStatus("Восстанавливаю выбранные укладки...");
     saveRecoverySnapshot("before-backup-layout-restore", state);
     const source = backupImportState.state;
     const changedAt = nowIso();
@@ -78,10 +78,10 @@ export async function restoreSelectedBackupLayoutsFlow({
     render();
     await uploadPendingPhotos({ markDirty: true }).catch(() => null);
     await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
-    setBackupStatus("Р’С‹Р±СЂР°РЅРЅС‹Рµ СѓРєР»Р°РґРєРё РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅС‹.", "success");
-    showToast("Р’С‹Р±СЂР°РЅРЅС‹Рµ СѓРєР»Р°РґРєРё РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅС‹.", "success");
+    setBackupStatus("Выбранные укладки восстановлены.", "success");
+    showToast("Выбранные укладки восстановлены.", "success");
   } catch (error) {
-    setBackupStatus(`РќРµ СѓРґР°Р»РѕСЃСЊ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ СѓРєР»Р°РґРєРё: ${error.message}`, "error");
+    setBackupStatus(`Не удалось восстановить укладки: ${error.message}`, "error");
   }
 }
 
@@ -107,9 +107,9 @@ export async function restoreFullBackupFlow({
   const confirmed = await askConfirmDialog(fullBackupRestoreConfirm(stats));
   if (!confirmed) return;
   try {
-    setBackupStatus("Р’РѕСЃСЃС‚Р°РЅР°РІР»РёРІР°СЋ РїРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ...");
+    setBackupStatus("Восстанавливаю полное состояние...");
     const nextState = normalizeRemoteState(backupImportState.state);
-    if (!nextState) throw new Error("РЎРѕСЃС‚РѕСЏРЅРёРµ РёР· Р°СЂС…РёРІР° РїРѕРІСЂРµР¶РґРµРЅРѕ.");
+    if (!nextState) throw new Error("Состояние из архива повреждено.");
     await prepareBackupPhotosForState(nextState);
     replaceState(nextState, { preserveLocalUi: false });
     syncMeta.dirty = true;
@@ -118,9 +118,9 @@ export async function restoreFullBackupFlow({
     render();
     await uploadPendingPhotos({ markDirty: true }).catch(() => null);
     await saveRemoteState({ notify: false, forceOverwrite: true }).catch(() => null);
-    setBackupStatus("РџРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРѕ.", "success");
-    showToast("РџРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРѕ.", "success");
+    setBackupStatus("Полное состояние восстановлено.", "success");
+    showToast("Полное состояние восстановлено.", "success");
   } catch (error) {
-    setBackupStatus(`РќРµ СѓРґР°Р»РѕСЃСЊ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРѕСЃС‚РѕСЏРЅРёРµ: ${error.message}`, "error");
+    setBackupStatus(`Не удалось восстановить состояние: ${error.message}`, "error");
   }
 }

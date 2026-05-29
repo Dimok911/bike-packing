@@ -233,7 +233,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
   }
   if (mergeResult?.merged && mergeResult.conflicts.length) {
     if (isOwnLayoutEchoConflict(mergeResult.conflicts)) {
-      updateSyncUi("Р Р°СЃРєР»Р°РґРєР° РёР·РјРµРЅРµРЅР° РЅР° СЌС‚РѕРј СѓСЃС‚СЂРѕР№СЃС‚РІРµ В· РѕС‚РїСЂР°РІР»СЏСЋ Р±РµР· РѕРєРЅР° РєРѕРЅС„Р»РёРєС‚Р°...");
+      updateSyncUi("Раскладка изменена на этом устройстве · отправляю без окна конфликта...");
       await saveRemoteState({ notify, forceOverwrite: true });
       return;
     }

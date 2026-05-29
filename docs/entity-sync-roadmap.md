@@ -203,6 +203,7 @@ Entity sync сейчас является record-level sync: если меняе
 - Legacy-compare diagnostic: `legacyComparableTopLevelDiffKeys(...)` показывает неожиданные top-level поля, которые остались после успешного entity sync; при fallback на full payload sync status и console теперь показывают эти поля.
 - Частые действия покрыты contract test harness: категория вещи, категория сумки, место хранения, packed toggle, перемещение вещи и порядок корневых сумок проходят через entity sync без full payload fallback.
 - Background polling: watcher больше не использует полный `/state` как fallback-проверку; сначала нужен валидный `/freshness` сигнал (`updatedAt`, `stateRevision`, `payloadHash` или `entityHash`), и только изменившаяся свежесть разрешает загрузить full state.
+- Raw `bike_packing_lists.payload` зафиксирован как legacy/base snapshot, а не current state: API current-state ответы должны использовать assembled state, общий `mapListRow` больше не умеет вклеивать raw payload, а backend `check` ловит случайный `serverPayload`/`list.payload` из raw list payload.
 
 ## Следующие шаги
 

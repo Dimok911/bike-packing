@@ -25,7 +25,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
 } = {}) {
   const source = normalizeDemoPayloadForLanguage(normalizePublishedStatePayload(demoState), language) || createBlankBikePackingState();
   const sourceLayout = source.layouts?.[source.activeLayoutId] || Object.values(source.layouts || {})[0];
-  if (!sourceLayout) throw new Error("Р’ РґРµРјРѕ РЅРµС‚ СѓРєР»Р°РґРєРё.");
+  if (!sourceLayout) throw new Error("В демо нет укладки.");
   const normalizedLanguage = normalizeUiLanguage(language);
   const demoTemplate = currentDemoTemplate(normalizedLanguage, listId);
   const demoListId = listId || demoTemplate?.listId || demoPublicListIdForLanguage(normalizedLanguage);

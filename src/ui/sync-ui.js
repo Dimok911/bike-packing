@@ -16,6 +16,7 @@ export function updateSyncUiControls({
   document,
   ensureGuestPublicScope = () => {},
   initialRemoteLoadPending = false,
+  isCurrentPrivateLayout = () => false,
   isForcedOffline = () => false,
   isOfflineRememberedSession = () => false,
   isReadOnlyStateScope = () => false,
@@ -32,6 +33,11 @@ export function updateSyncUiControls({
   const unlocked = loggedIn || appUnlocked;
   const forcedOffline = isForcedOffline();
   const privateStateAvailable = canUseLocalEditableState() && !isReadOnlyStateScope();
+  const publicTemplateMessage = currentPublicTemplateStatusMessage();
+  const messageText = String(message || "");
+  const effectiveMessage = loggedIn && isCurrentPrivateLayout() && messageText === publicTemplateMessage
+    ? ""
+    : messageText;
   if (!privateStateAvailable && unlocked && !initialRemoteLoadPending) ensureGuestPublicScope();
   document.body.classList.toggle("auth-gated", !unlocked);
   document.body.classList.toggle("admin-session", canOpenAdminPublishedEdit());
@@ -83,8 +89,8 @@ export function updateSyncUiControls({
     refs.syncStatus.textContent = adminApiWarning;
     return syncVisualState;
   }
-  if (message) {
-    refs.syncStatus.textContent = message;
+  if (effectiveMessage) {
+    refs.syncStatus.textContent = effectiveMessage;
     return syncVisualState;
   }
   if (forcedOffline && appUnlocked) {
@@ -93,12 +99,12 @@ export function updateSyncUiControls({
   }
   if (rememberedOffline && appUnlocked && !message) {
     refs.syncStatus.textContent = syncMeta.dirty
-      ? "РћС„Р»Р°Р№РЅ В· Р»РѕРєР°Р»СЊРЅС‹Рµ РёР·РјРµРЅРµРЅРёСЏ СЃРѕС…СЂР°РЅРµРЅС‹ РЅР° СѓСЃС‚СЂРѕР№СЃС‚РІРµ"
-      : "РћС„Р»Р°Р№РЅ В· Р»РѕРєР°Р»СЊРЅР°СЏ РєРѕРїРёСЏ Р»РёС‡РЅС‹С… СѓРєР»Р°РґРѕРє";
+      ? "Офлайн · локальные изменения сохранены на устройстве"
+      : "Офлайн · локальная копия личных укладок";
     return syncVisualState;
   }
   if (!loggedIn && appUnlocked) {
-    refs.syncStatus.textContent = privateStateAvailable ? t("sync.localUnlocked") : currentPublicTemplateStatusMessage();
+    refs.syncStatus.textContent = privateStateAvailable ? t("sync.localUnlocked") : publicTemplateMessage;
     return syncVisualState;
   }
   if (!loggedIn) {

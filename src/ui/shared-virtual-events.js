@@ -30,9 +30,9 @@ function addSharedReadOnlyCopyButtons(root = document) {
     button.className = "header-icon-button copy-item-button";
     button.type = "button";
     button.dataset.copyRoot = virtualId;
-    button.title = "РЎРєРѕРїРёСЂРѕРІР°С‚СЊ";
-    button.setAttribute("aria-label", "РЎРєРѕРїРёСЂРѕРІР°С‚СЊ");
-    button.innerHTML = '<span aria-hidden="true">в§‰</span>';
+    button.title = "Скопировать";
+    button.setAttribute("aria-label", "Скопировать");
+    button.innerHTML = '<span aria-hidden="true">⧉</span>';
     tools.insertBefore(button, tools.firstChild);
   });
 }
@@ -137,7 +137,7 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     });
   });
   root.querySelectorAll("#addRootContainerBtn").forEach((button) => {
-    button.textContent = "РЎРєРѕРїРёСЂРѕРІР°С‚СЊ РІСЃСЋ СѓРєР»Р°РґРєСѓ";
+    button.textContent = "Скопировать всю укладку";
     if (demoSource) button.textContent = demoCopyActionText();
     button.addEventListener("click", () => copySharedLayout(activeReadOnlyLayoutId()));
   });
@@ -145,10 +145,10 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     if (readonlyTemplate) markReadonlyTemplateActionButtons(root);
     root.querySelectorAll("[data-edit-item]").forEach((button) => {
       if (readonlyTemplate) {
-        button.setAttribute("aria-label", "РЎРѕР·РґР°С‚СЊ СѓРєР»Р°РґРєСѓ РЅР° РѕСЃРЅРѕРІРµ С€Р°Р±Р»РѕРЅР°");
+        button.setAttribute("aria-label", "Создать укладку на основе шаблона");
       } else {
-        button.title = "РћС‚РєСЂС‹С‚СЊ Рё СЃРєРѕРїРёСЂРѕРІР°С‚СЊ";
-        button.setAttribute("aria-label", "РћС‚РєСЂС‹С‚СЊ Рё СЃРєРѕРїРёСЂРѕРІР°С‚СЊ");
+        button.title = "Открыть и скопировать";
+        button.setAttribute("aria-label", "Открыть и скопировать");
       }
     });
     if (!readonlyTemplate) {

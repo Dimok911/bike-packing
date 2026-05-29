@@ -12,7 +12,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   stripPublishedPublicOriginMarkers
 } = {}) {
   const layout = targetState.layouts?.[layoutId];
-  if (!layout) throw new Error("РЈРєР»Р°РґРєР° РЅРµ РЅР°Р№РґРµРЅР°.");
+  if (!layout) throw new Error("Укладка не найдена.");
   const containers = {};
   const items = {};
   const containerIdMap = new Map();
@@ -115,7 +115,7 @@ export function cleanPublishedEntityId(type, entity, fallbackId = "", { cssSafeI
   let seed = sourceSeed || nameSeed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   seed = String(seed).trim();
   if (!seed.startsWith(`${prefix}-`)) seed = `${prefix}-${seed}`;
-  seed = seed.replace(/[^a-zР°-СЏ0-9_-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  seed = seed.replace(/[^a-zа-я0-9_-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
   return seed || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
@@ -123,7 +123,7 @@ function fallbackSafeId(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-zР°-СЏ0-9_-]+/gi, "-")
+    .replace(/[^a-zа-я0-9_-]+/gi, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 }

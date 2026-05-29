@@ -135,7 +135,7 @@ export function saveItemDialogAction({
       closeDialogWithoutRestoringFocus(refs.dialog);
       if (containerId) {
         if (!placeExistingItemInLayout(editingItemId, containerId, layoutId, { changedAt })) {
-          showToast("РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ РІРµС‰СЊ РІ СЌС‚Сѓ СѓРєР»Р°РґРєСѓ.", "error");
+          showToast("Не удалось добавить вещь в эту укладку.", "error");
           return;
         }
         restoreAdminPublishedLayoutContext(layoutId);
@@ -172,7 +172,7 @@ export function saveItemDialogAction({
     if (containerId && state.containers[containerId] && layout) {
       if (!placeExistingItemInLayout(id, containerId, layoutId, { changedAt })) {
         delete state.items[id];
-        showToast("РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ РІРµС‰СЊ РІ СЌС‚Сѓ СѓРєР»Р°РґРєСѓ.", "error");
+        showToast("Не удалось добавить вещь в эту укладку.", "error");
         return;
       }
     }

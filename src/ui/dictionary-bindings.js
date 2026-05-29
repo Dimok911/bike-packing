@@ -111,15 +111,15 @@ export function bindDictionaryControls(type, {
         return containerCategories(container).includes(value);
       }).length;
       const fallback = dictionaryValues.find((item) => item !== value);
-      const title = type === "location" ? "РЈРґР°Р»РёС‚СЊ РјРµСЃС‚Рѕ С…СЂР°РЅРµРЅРёСЏ?" : "РЈРґР°Р»РёС‚СЊ РєР°С‚РµРіРѕСЂРёСЋ?";
-      const subject = type === "location" ? "РјРµСЃС‚Рѕ С…СЂР°РЅРµРЅРёСЏ" : "РєР°С‚РµРіРѕСЂРёСЋ";
+      const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
+      const subject = type === "location" ? "место хранения" : "категорию";
       openConfirmDialog({
         title,
-        text: `Р•СЃР»Рё СѓРґР°Р»РёС‚СЊ ${subject} В«${value}В», СЃРІСЏР·Р°РЅРЅС‹Рµ РІРµС‰Рё Р±СѓРґСѓС‚ РїРµСЂРµРЅРµСЃРµРЅС‹ РІ В«${fallback}В».`,
+        text: `Если удалить ${subject} «${value}», связанные вещи будут перенесены в «${fallback}».`,
         highlightText: affectedCount
-          ? `РЎРµР№С‡Р°СЃ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ Рє ${formatThingCount(affectedCount)}.`
-          : "РЎРµР№С‡Р°СЃ РЅРµ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ РЅРё Рє РѕРґРЅРѕР№ РІРµС‰Рё.",
-        okText: "РЈРґР°Р»РёС‚СЊ",
+          ? `Сейчас применяется к ${formatThingCount(affectedCount)}.`
+          : "Сейчас не применяется ни к одной вещи.",
+        okText: "Удалить",
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
           const changedAt = nowIso();
@@ -183,7 +183,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
     return;
   }
   if (dictionaryOptionsForOwner(type, owner).includes(newValue)) {
-    showToast("РўР°РєРѕРµ Р·РЅР°С‡РµРЅРёРµ СѓР¶Рµ РµСЃС‚СЊ.", "warning");
+    showToast("Такое значение уже есть.", "warning");
     return;
   }
   const changedAt = nowIso();

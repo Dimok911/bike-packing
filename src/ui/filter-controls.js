@@ -69,6 +69,7 @@ export function renderFilterControls({
   demoTemplateChoiceForEntry = () => "",
   demoTemplateChoiceForLanguage = () => "",
   demoTemplateFallbackName = () => "",
+  dictionaryValueLabel = (value) => value,
   normalizeDemoName = (name) => name,
   demoTemplatesForUiLanguage = () => [],
   dictionaryOptionsForUi = () => [],
@@ -146,7 +147,7 @@ export function renderFilterControls({
   refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(selectedTemplateDraftId && !selectedTemplateDraft?.adminDemo));
   refs.layoutSelect.classList.toggle("layout-select-readonly-public", adminCatalogReadOnly);
   refs.layoutSelect.title = adminCatalogReadOnly
-    ? (uiLanguage === "en" ? "Offline: templates are read-only" : "РћС„Р»Р°Р№РЅ: С€Р°Р±Р»РѕРЅС‹ РґРѕСЃС‚СѓРїРЅС‹ С‚РѕР»СЊРєРѕ РґР»СЏ РїСЂРѕСЃРјРѕС‚СЂР°")
+    ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
   refs.newLayoutBtn.textContent = isSharedLayoutView()
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
@@ -161,9 +162,9 @@ export function renderFilterControls({
   fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), activeEditableLayoutId);
   const nextSelectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
   const locationOptions = dictionaryOptionsForUi("location");
-  fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, loc])], refs.locationFilter.value);
+  fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, dictionaryValueLabel(loc)])], refs.locationFilter.value);
   updateCategoryFilterButton();
-  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location").map((loc) => [loc, loc]));
+  fillSelect(refs.itemLocation, dictionaryOptionsForUi("location").map((loc) => [loc, dictionaryValueLabel(loc)]));
   renderItemCategoryPicker();
   refs.clearSearchBtn.hidden = !refs.searchInput.value.trim();
   const locationFilterActive = Boolean(refs.locationFilter.value);
@@ -177,10 +178,10 @@ export function renderFilterControls({
   updateLayoutCollapseAllToggle();
   updateFilterContextToggle();
   refs.collectionModeBtn.closest(".collection-panel")?.classList.toggle("collection-panel-active", state.collectionMode);
-  refs.collectionModeBtn.textContent = state.collectionMode ? "вњ“ РЎР±РѕСЂ РІРєР»СЋС‡РµРЅ" : "Р РµР¶РёРј СЃР±РѕСЂР°";
+  refs.collectionModeBtn.textContent = state.collectionMode ? t("collection.enabled") : t("collection.mode");
   refs.collectionModeBtn.classList.toggle("active", state.collectionMode);
   refs.unpackedOnlyBtn.hidden = !state.collectionMode;
-  refs.unpackedOnlyBtn.textContent = state.showOnlyUnpacked ? "Р¤РёР»СЊС‚СЂ: РЅРµ СЃРѕР±СЂР°РЅРѕ" : "РџРѕРєР°Р·Р°С‚СЊ РЅРµ СЃРѕР±СЂР°РЅРѕ";
+  refs.unpackedOnlyBtn.textContent = state.showOnlyUnpacked ? t("collection.filterUnpacked") : t("collection.showUnpacked");
   refs.unpackedOnlyBtn.classList.toggle("active", state.showOnlyUnpacked);
   refs.unpackAllBtn.hidden = !state.collectionMode || !Object.values(state.packedItems || {}).some(Boolean);
   return {
