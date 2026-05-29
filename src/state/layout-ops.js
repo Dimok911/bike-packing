@@ -33,6 +33,9 @@ export function getLayoutContainerIdSet(targetState, layout = targetState.layout
     ids.add(containerId);
     const placement = arrangement.containers?.[containerId];
     (placement?.childIds || []).forEach(walk);
+    (placement?.order || []).forEach((entry) => {
+      if (entry?.type === "container") walk(entry.id);
+    });
   };
   (arrangement.rootContainerIds || layout?.rootContainerIds || []).forEach(walk);
   return ids;
@@ -41,9 +44,20 @@ export function getLayoutContainerIdSet(targetState, layout = targetState.layout
 export function getLayoutItemIdSet(targetState, layout = targetState.layouts?.[targetState.activeLayoutId]) {
   const arrangement = layout?.arrangement;
   if (arrangement && typeof arrangement === "object") {
-    return new Set(Object.keys(arrangement.items || {}).filter((itemId) =>
-      targetState.items?.[itemId] && targetState.containers?.[arrangement.items[itemId]]
-    ));
+    const ids = new Set();
+    Object.entries(arrangement.items || {}).forEach(([itemId, containerId]) => {
+      if (targetState.items?.[itemId] && targetState.containers?.[containerId]) ids.add(itemId);
+    });
+    Object.entries(arrangement.containers || {}).forEach(([containerId, placement]) => {
+      if (!targetState.containers?.[containerId] || !placement || typeof placement !== "object") return;
+      (placement.itemIds || []).forEach((itemId) => {
+        if (targetState.items?.[itemId]) ids.add(itemId);
+      });
+      (placement.order || []).forEach((entry) => {
+        if (entry?.type === "item" && targetState.items?.[entry.id]) ids.add(entry.id);
+      });
+    });
+    return ids;
   }
   const ids = new Set();
   const walk = (containerId) => {

@@ -117,11 +117,17 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
       const sharedId = sharedLayoutIdFromPublicListRecord(record);
       if (!sharedId) return;
       forgetDeletedSharedLayoutId(sharedId);
-      let payload = null;
-      try {
-        payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId));
-      } catch {
-        return;
+      const recordUpdatedAt = publicRecordUpdatedAt(record);
+      let payload = isPublicSharedTemplatePayload(record?.payload) ? record.payload : cachedRuntimeSharedPayload(runtime.sharedLayoutsByLanguage, sharedId, recordUpdatedAt);
+      if (!payload) {
+        try {
+          payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId), {
+            cacheKey: `shared:${sharedId}`,
+            updatedAt: recordUpdatedAt
+          });
+        } catch {
+          return;
+        }
       }
       if (!isPublicSharedTemplatePayload(payload)) return;
       payload = publishedPayloadWithTemplateMetadata(payload, {
@@ -175,4 +181,20 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
   if (localDraftReconciled || purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
   if (renderAfter && (demoMetadataMerged || demoPayloadMerged || merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
   return merged + demoMetadataMerged + demoPayloadMerged;
+}
+
+function publicRecordUpdatedAt(record = {}) {
+  return String(record?.updatedAt || record?.updated_at || "").trim();
+}
+
+function cachedRuntimeSharedPayload(layoutsByLanguage, sharedId, updatedAt = "") {
+  const id = String(sharedId || "").trim();
+  if (!id) return null;
+  const layout = Object.values(layoutsByLanguage || {})
+    .flat()
+    .find((entry) => entry?.id === id) || null;
+  if (!layout?.statePayload) return null;
+  const expectedUpdatedAt = publicRecordUpdatedAt({ updatedAt });
+  if (expectedUpdatedAt && String(layout.updatedAt || "").trim() !== expectedUpdatedAt) return null;
+  return layout.statePayload;
 }

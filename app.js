@@ -305,10 +305,12 @@ import {
   ensureLayoutDictionaries as ensureLayoutDictionariesForState,
   ensurePrivateDictionaries as ensurePrivateDictionariesForState,
   layoutDictionaryValues,
+  normalizePrivateDictionariesForSync as normalizePrivateDictionariesForSyncState,
   normalizeDictionaryValues,
   readOnlyLayoutDictionaries as readOnlyLayoutDictionariesForState,
   removeCustomDictionaryValue,
-  renameCustomDictionaryValue
+  renameCustomDictionaryValue,
+  sortDictionaryValues
 } from "./src/state/dictionaries.js";
 import { createBlankBikePackingState } from "./src/state/empty-state.js";
 import {
@@ -823,8 +825,13 @@ const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: S
 let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
 let activeDemoTemplateListId = "";
+const PUBLIC_TEMPLATE_STATE_CACHE_TTL_MS = 60_000;
+const publishedListStateCache = new Map();
+const publishedItemKeyStateCache = new Map();
 const REQUIRED_ADMIN_API_CAPABILITIES = [
   "dictionaryPhysicalEntityRows",
+  "dictionaryCustomEntityRows",
+  "dictionaryHiddenDefaultRows",
   "assembledConflictPayload",
   "assembledStatePayloadResponses",
   "rawListPayloadContractGuard",
@@ -853,7 +860,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-29.dictionary-physical-rows-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-29.dictionary-hidden-defaults-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -894,6 +901,8 @@ let itemUsageFilter = "all";
 let itemSortMode = normalizeSortMode(uiSettings.itemSortMode);
 let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
+let dictionaryLocationSortMode = normalizeSortMode(uiSettings.dictionaryLocationSortMode);
+let dictionaryCategorySortMode = normalizeSortMode(uiSettings.dictionaryCategorySortMode);
 let selectedCatalogItemIds = new Set();
 let selectedCatalogItemAnchorId = "";
 let selectedCatalogRootIds = new Set();
@@ -1623,7 +1632,9 @@ function ensurePrivateDictionaries(sourceState = state) {
     locations,
     categories,
     getLayoutContainerIdSet: getLayoutContainerIdSetForState,
-    getLayoutItemIdSet: getLayoutItemIdSetForState
+    getLayoutItemIdSet: getLayoutItemIdSetForState,
+    isPublicSyncContainer,
+    isPublicSyncItem
   });
 }
 
@@ -1659,9 +1670,8 @@ function activeDictionaryOwner() {
 }
 
 function dictionaryListForOwner(owner, type) {
-  const fallbackValues = type === "location" ? locations : categories;
   const ownerValues = normalizeDictionaryValues(owner?.[type === "location" ? "locations" : "categories"]);
-  return ownerValues.length ? ownerValues : normalizeDictionaryValues(fallbackValues);
+  return ownerValues;
 }
 
 function activeDictionaryList(type) {
@@ -1669,11 +1679,37 @@ function activeDictionaryList(type) {
 }
 
 function dictionaryOptionsForOwner(type, owner, { selected = [] } = {}) {
-  return dictionaryOptionsForUiValues(type, dictionaryListForOwner(owner, type), { selected });
+  return sortedDictionaryValues(
+    dictionaryOptionsForUiValues(type, dictionaryListForOwner(owner, type), { selected }),
+    dictionarySortModeForType(type)
+  );
 }
 
 function dictionaryOptionsForUi(type, { selected = [] } = {}) {
-  return dictionaryOptionsForUiValues(type, activeDictionaryList(type), { selected });
+  return sortedDictionaryValues(
+    dictionaryOptionsForUiValues(type, activeDictionaryList(type), { selected }),
+    dictionarySortModeForType(type)
+  );
+}
+
+function dictionarySortModeForType(type) {
+  return type === "location" ? dictionaryLocationSortMode : dictionaryCategorySortMode;
+}
+
+function setDictionarySortModeForType(type, value) {
+  if (type === "location") dictionaryLocationSortMode = normalizeSortMode(value);
+  else dictionaryCategorySortMode = normalizeSortMode(value);
+}
+
+function cycleDictionarySortMode(type) {
+  const current = dictionarySortModeForType(type);
+  setDictionarySortModeForType(type, current === "none" ? "asc" : current === "asc" ? "desc" : "none");
+  saveUiSettings();
+  render();
+}
+
+function sortedDictionaryValues(values, sortMode = "none") {
+  return sortDictionaryValues(values, sortMode, uiLanguage || "ru");
 }
 
 function dictionaryEditScope(owner = activeDictionaryOwner()) {
@@ -2500,6 +2536,8 @@ function saveUiSettings() {
   saveStoredUiSettings({
     itemSortMode,
     rootContainerSortMode,
+    dictionaryLocationSortMode,
+    dictionaryCategorySortMode,
     packingVisualStyle,
     packingViewMode,
     bike3dTransforms,
@@ -3744,6 +3782,12 @@ function cloneStateForSync(sourceState, { forSync = false } = {}) {
   return cloneStateForSyncPayload(sourceState, {
     forSync,
     cleanupGeneratedCatalogArtifacts,
+    normalizeDictionariesForSync: (targetState) => normalizePrivateDictionariesForSyncState(targetState, {
+      locations,
+      categories,
+      getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+      getLayoutItemIdSet: getLayoutItemIdSetForState
+    }),
     pruneAdminPublishedDraftsForSync
   });
 }
@@ -5833,9 +5877,8 @@ function createSkippedPersonalListApiError() {
   return error;
 }
 
-async function fetchStateRecordByItemKey(itemKey) {
-  const record = await fetchStateRecordMetaByItemKey(itemKey);
-  return normalizePublishedStatePayload(record?.payload || null);
+async function fetchStateRecordByItemKey(itemKey, options = {}) {
+  return fetchStateRecordPayloadByItemKey(itemKey, options);
 }
 
 async function fetchStateRecordMetaByItemKey(itemKey) {
@@ -5843,6 +5886,43 @@ async function fetchStateRecordMetaByItemKey(itemKey) {
   const data = await apiFetch(`/bike-packing-data.json?${params.toString()}`, { timeoutMs: LIST_API_TIMEOUT_MS });
   const record = data.record || data.list || data;
   return normalizeRemoteListRecord({ ...record, payload: record?.payload || data.payload || null });
+}
+
+function normalizedCacheStamp(value = "") {
+  return String(value || "").trim();
+}
+
+function cachedPublishedPayload(cache, key, { updatedAt = "" } = {}) {
+  const entry = cache.get(String(key || ""));
+  if (!entry?.payload) return null;
+  const expectedUpdatedAt = normalizedCacheStamp(updatedAt);
+  if (expectedUpdatedAt) {
+    return entry.updatedAt === expectedUpdatedAt ? clone(entry.payload) : null;
+  }
+  return Date.now() - entry.cachedAt <= PUBLIC_TEMPLATE_STATE_CACHE_TTL_MS
+    ? clone(entry.payload)
+    : null;
+}
+
+function rememberPublishedPayload(cache, key, payload, { updatedAt = "" } = {}) {
+  const normalized = normalizePublishedStatePayload(payload);
+  if (!normalized) return null;
+  cache.set(String(key || ""), {
+    cachedAt: Date.now(),
+    payload: clone(normalized),
+    updatedAt: normalizedCacheStamp(updatedAt)
+  });
+  return clone(normalized);
+}
+
+async function fetchStateRecordPayloadByItemKey(itemKey, { cacheKey = "", updatedAt = "" } = {}) {
+  const key = cacheKey || itemKey;
+  const cached = cachedPublishedPayload(publishedItemKeyStateCache, key, { updatedAt });
+  if (cached) return cached;
+  const record = await fetchStateRecordMetaByItemKey(itemKey);
+  return rememberPublishedPayload(publishedItemKeyStateCache, key, record?.payload || null, {
+    updatedAt: updatedAt || remoteUpdatedAt(record)
+  });
 }
 
 function remoteRecordId(record, fallbackId = "") {
@@ -5858,11 +5938,15 @@ function remoteRecordId(record, fallbackId = "") {
   );
 }
 
-async function fetchPublishedListStateById(listId) {
+async function fetchPublishedListStateById(listId, { updatedAt = "" } = {}) {
+  const cached = cachedPublishedPayload(publishedListStateCache, listId, { updatedAt });
+  if (cached) return cached;
   const record = await fetchRemoteListStateSnapshot(listId);
   const payload = normalizePublishedStatePayload(record?.payload || null);
   assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record?.payload || null);
-  return payload;
+  return rememberPublishedPayload(publishedListStateCache, listId, payload, {
+    updatedAt: updatedAt || remoteUpdatedAt(record)
+  });
 }
 
 function publishedPayloadWithTemplateMetadata(payload, metadata = {}) {
@@ -5999,7 +6083,7 @@ async function fetchPublishedDemoTemplateState(demoTemplate, { fallbackLanguage 
   if (!target) return null;
   const normalized = normalizeUiLanguage(target.language);
   const demoState = normalizeDemoPayloadForLanguage(
-    publishedPayloadWithTemplateMetadata(await fetchPublishedListStateById(target.listId), {
+    publishedPayloadWithTemplateMetadata(await fetchPublishedListStateById(target.listId, { updatedAt: target.updatedAt }), {
       name: target.name,
       language: normalized
     }),
@@ -11680,7 +11764,11 @@ function bindRootContainersEditor() {
   });
 }
 function renderDictionary(title, type, values) {
-  return renderDictionaryHtml(title, type, values, { editingEntry: editingDictionaryEntry, t });
+  return renderDictionaryHtml(title, type, values, {
+    editingEntry: editingDictionaryEntry,
+    sortMode: dictionarySortModeForType(type),
+    t
+  });
 }
 
 function dictionaryRenameSideEffects(type, oldValue, newValue) {
@@ -11693,6 +11781,9 @@ function dictionaryRenameSideEffects(type, oldValue, newValue) {
 }
 
 function bindDictionary(type, owner = activeDictionaryOwner()) {
+  document.querySelector(`[data-dictionary-sort="${type}"]`)?.addEventListener("click", () => {
+    cycleDictionarySortMode(type);
+  });
   bindDictionaryControls(type, {
     activeDictionaryOwner,
     addCustomDictionaryValue,

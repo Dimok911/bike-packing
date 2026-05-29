@@ -45,6 +45,8 @@ export function saveStoredUiSettings(settings, {
     safeSetLocalStorage(storageKey, JSON.stringify({
       itemSortMode: normalizeSortMode(settings.itemSortMode),
       rootContainerSortMode: normalizeSortMode(settings.rootContainerSortMode),
+      dictionaryLocationSortMode: normalizeSortMode(settings.dictionaryLocationSortMode),
+      dictionaryCategorySortMode: normalizeSortMode(settings.dictionaryCategorySortMode),
       packingVisualStyleVersion,
       packingVisualStyle: normalizePackingVisualStyle(settings.packingVisualStyle),
       packingViewMode: normalizePackingViewMode(settings.packingViewMode),
@@ -70,6 +72,8 @@ function normalizeUiSettings(parsed, options) {
   return {
     itemSortMode: normalizeSortMode(parsed.itemSortMode),
     rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode),
+    dictionaryLocationSortMode: normalizeSortMode(parsed.dictionaryLocationSortMode),
+    dictionaryCategorySortMode: normalizeSortMode(parsed.dictionaryCategorySortMode),
     packingVisualStyle: parsed.packingVisualStyleVersion === packingVisualStyleVersion && parsed.packingVisualStyle
       ? normalizePackingVisualStyle(parsed.packingVisualStyle)
       : defaultPackingVisualStyle,
@@ -87,6 +91,8 @@ function defaultUiSettings({
   return {
     itemSortMode: "asc",
     rootContainerSortMode: "asc",
+    dictionaryLocationSortMode: "asc",
+    dictionaryCategorySortMode: "asc",
     packingVisualStyle: defaultPackingVisualStyle,
     packingViewMode: defaultPackingViewMode,
     bike3dTransforms: {},

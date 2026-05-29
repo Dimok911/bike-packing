@@ -3464,6 +3464,17 @@ mark {
   padding-inline: 10px;
 }
 
+.dictionary-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.dictionary-heading h2 {
+  margin: 0;
+}
+
 .items-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

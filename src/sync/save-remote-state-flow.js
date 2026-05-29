@@ -88,6 +88,11 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       console.info("[bike-packing] Full payload fallback after entity sync", {
         legacyDiffKeys
       });
+      if (entitySync.serverUpdatedAt) {
+        runtime.syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt;
+        runtime.syncMeta.stateRevision = entitySync.integrityMeta?.stateRevision ?? runtime.syncMeta.stateRevision ?? null;
+        saveSyncMeta();
+      }
     }
     const data = await saveRemoteStateRecord({ forceOverwrite });
     runtime.syncMeta.dirty = false;

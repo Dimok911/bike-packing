@@ -155,10 +155,16 @@ export function renderRootContainerCardHtml({
   });
 }
 
-export function renderDictionaryHtml(title, type, values, { editingEntry = null, t = (key) => key } = {}) {
+export function renderDictionaryHtml(title, type, values, { editingEntry = null, sortMode = "none", t = (key) => key } = {}) {
+  const { label, title: sortTitle } = dictionarySortMeta(sortMode, t);
   return `
     <section class="settings-panel">
-      <h2>${escapeHtml(title)}</h2>
+      <div class="dictionary-heading">
+        <h2>${escapeHtml(title)}</h2>
+        <button class="ghost item-sort-button ${sortMode !== "none" ? "active" : ""}" type="button" data-dictionary-sort="${type}" title="${sortTitle}" aria-label="${sortTitle}">
+          ${label}
+        </button>
+      </div>
       <div class="chips dictionary-list">
         ${values.map((value) => renderDictionaryEntryHtml(type, value, { editingEntry, t })).join("")}
       </div>
@@ -168,6 +174,25 @@ export function renderDictionaryHtml(title, type, values, { editingEntry = null,
       </div>
     </section>
   `;
+}
+
+function dictionarySortMeta(mode, t = (key) => key) {
+  if (mode === "asc") {
+    return {
+      label: tr(t, "sort.ascLabel", "Рђ-РЇ"),
+      title: tr(t, "sort.ascTitle", "РЎРѕСЂС‚РёСЂРѕРІРєР° Рђ-РЇ. РќР°Р¶РјРёС‚Рµ РґР»СЏ РЇ-Рђ")
+    };
+  }
+  if (mode === "desc") {
+    return {
+      label: tr(t, "sort.descLabel", "РЇ-Рђ"),
+      title: tr(t, "sort.descTitle", "РЎРѕСЂС‚РёСЂРѕРІРєР° РЇ-Рђ. РќР°Р¶РјРёС‚Рµ, С‡С‚РѕР±С‹ СЃР±СЂРѕСЃРёС‚СЊ")
+    };
+  }
+  return {
+    label: tr(t, "sort.noneLabel", "Р‘РµР·"),
+    title: tr(t, "sort.noneTitle", "Р‘РµР· СЃРѕСЂС‚РёСЂРѕРІРєРё. РќР°Р¶РјРёС‚Рµ РґР»СЏ Рђ-РЇ")
+  };
 }
 
 export function renderDictionaryEntryHtml(type, value, { editingEntry = null, t = (key) => key } = {}) {

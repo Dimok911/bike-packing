@@ -438,7 +438,7 @@ test("container category edits can save an explicitly empty category list", () =
   assert.equal(targetState.containers["container-a"].category, "");
 });
 
-test("legacy containers without a category list still receive a default category", () => {
+test("legacy containers without a category list do not receive built-in categories", () => {
   const targetState = {
     categories: ["Кемпинг", "Прочее"],
     locations: ["Уже на велосипеде"],
@@ -454,7 +454,8 @@ test("legacy containers without a category list still receive a default category
 
   normalizeContainerFields(targetState);
 
-  assert.deepEqual(containerCategories(targetState.containers["container-a"]), ["Кемпинг"]);
+  assert.deepEqual(containerCategories(targetState.containers["container-a"]), []);
+  assert.equal(targetState.containers["container-a"].category, "");
 });
 
 test("item category edits can save an explicitly empty category list", () => {
@@ -476,7 +477,7 @@ test("item category edits can save an explicitly empty category list", () => {
   assert.equal(targetState.items["item-a"].category, "");
 });
 
-test("legacy items without a category list still receive a default category", () => {
+test("legacy items without a category list do not receive built-in categories", () => {
   const targetState = {
     categories: ["Кемпинг", "Прочее"],
     items: {
@@ -489,7 +490,8 @@ test("legacy items without a category list still receive a default category", ()
 
   normalizeItemCategories(targetState);
 
-  assert.deepEqual(itemCategories(targetState.items["item-a"]), ["Кемпинг"]);
+  assert.deepEqual(itemCategories(targetState.items["item-a"]), []);
+  assert.equal(targetState.items["item-a"].category, "");
 });
 
 test("settings summary weight can include every bag in the active layout", () => {

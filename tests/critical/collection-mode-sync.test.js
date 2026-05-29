@@ -13,6 +13,19 @@ import {
   legacyComparableTopLevelDiffKeys
 } from "../../src/sync/entity-sync.js";
 import { legacyPayloadFallbackReasonText } from "../../src/sync/save-remote-state-flow.js";
+import { pruneAdminPublishedDraftsForSync } from "../../src/sync/save-body.js";
+import {
+  ensurePrivateDictionaries,
+  normalizePrivateDictionariesForSync,
+  removeCustomDictionaryValue,
+  renameCustomDictionaryValue,
+  sortDictionaryValues
+} from "../../src/state/dictionaries.js";
+import {
+  getLayoutContainerIdSet,
+  getLayoutItemIdSet
+} from "../../src/state/layout-ops.js";
+import { renderDictionaryHtml } from "../../src/ui/settings-render.js";
 
 function baseState(overrides = {}) {
   return {
@@ -169,11 +182,15 @@ test("packed visual state is hidden when collection mode is off", () => {
 test("dictionary changes can be covered by entity sync without full payload fallback", () => {
   const base = baseState({
     categories: ["Gear"],
-    locations: ["Home"]
+    locations: ["Home"],
+    customCategories: ["Gear"],
+    customLocations: ["Home"]
   });
   const local = baseState({
     categories: ["Gear", "Food"],
-    locations: ["Home", "Bike"]
+    locations: ["Home", "Bike"],
+    customCategories: ["Gear", "Food"],
+    customLocations: ["Home", "Bike"]
   });
   const deps = {
     cloneStateForSync: (state, options) => cloneStateForSyncPayload(state, options),
@@ -186,7 +203,205 @@ test("dictionary changes can be covered by entity sync without full payload fall
   assert.equal(entries[0].id, "dictionary-state");
   assert.deepEqual(entries[0].payload.categories, ["Gear", "Food"]);
   assert.deepEqual(entries[0].payload.locations, ["Home", "Bike"]);
+  assert.deepEqual(entries[0].payload.customCategories, ["Gear", "Food"]);
+  assert.deepEqual(entries[0].payload.customLocations, ["Home", "Bike"]);
   assert.equal(hasLegacyPayloadChanges(base, local, { dictionary: { safeForLegacyCompare: true } }, deps), false);
+});
+
+test("private dictionary sync drops template-only values after public draft pruning", () => {
+  const stateWithTemplate = baseState({
+    categories: ["Gear", "Template only"],
+    locations: ["Home", "Template camp"],
+    containers: {
+      "private-bag": { id: "private-bag", categories: ["Gear"], location: "Home", childIds: [], itemIds: [], order: [] },
+      "template-bag": { id: "template-bag", categories: ["Template only"], location: "Template camp", childIds: [], itemIds: ["template-item"], order: [{ type: "item", id: "template-item" }] }
+    },
+    items: {
+      "template-item": { id: "template-item", categories: ["Template only"], location: "Template camp", containerId: "template-bag" }
+    },
+    layouts: {
+      "private-layout": { id: "private-layout", rootContainerIds: ["private-bag"] },
+      "template-layout": { id: "template-layout", adminDemo: true, rootContainerIds: ["template-bag"] }
+    }
+  });
+  const payload = cloneStateForSyncPayload(stateWithTemplate, {
+    forSync: true,
+    normalizeDictionariesForSync: (targetState) => normalizePrivateDictionariesForSync(targetState, {
+      categories: ["Gear"],
+      locations: ["Home"],
+      getLayoutContainerIdSet: (targetStateValue, layout) => new Set(layout.rootContainerIds || []),
+      getLayoutItemIdSet: (targetStateValue, layout) => {
+        const ids = new Set();
+        (layout.rootContainerIds || []).forEach((containerId) => {
+          (targetStateValue.containers?.[containerId]?.itemIds || []).forEach((itemId) => ids.add(itemId));
+        });
+        return ids;
+      }
+    }),
+    pruneAdminPublishedDraftsForSync: (targetState) => pruneAdminPublishedDraftsForSync(targetState, {
+      getPublicLayoutRecordIds: () => ({
+        containerIds: new Set(["template-bag"]),
+        itemIds: new Set(["template-item"])
+      }),
+      guestDemoCopyFlag: "__guestDemoCopy"
+    })
+  });
+
+  assert.deepEqual(payload.categories, ["Gear"]);
+  assert.deepEqual(payload.locations, ["Home"]);
+  assert.equal(payload.containers["template-bag"], undefined);
+  assert.equal(payload.items["template-item"], undefined);
+  assert.equal(payload.layouts["template-layout"], undefined);
+});
+
+test("private dictionaries ignore template items stored only in layout arrangement placements", () => {
+  const state = baseState({
+    categories: ["Gear", "Template only"],
+    locations: ["Home", "Template camp"],
+    containers: {
+      "private-bag": { id: "private-bag", categories: ["Gear"], location: "Home", childIds: [], itemIds: [], order: [] },
+      "template-bag": { id: "template-bag", categories: [], location: "", childIds: [], itemIds: [], order: [] }
+    },
+    items: {
+      "template-item": { id: "template-item", categories: ["Template only"], location: "Template camp" }
+    },
+    layouts: {
+      "private-layout": { id: "private-layout", rootContainerIds: ["private-bag"] },
+      "template-layout": {
+        id: "template-layout",
+        adminDemo: true,
+        arrangement: {
+          rootContainerIds: ["template-bag"],
+          containers: {
+            "template-bag": {
+              itemIds: ["template-item"],
+              childIds: [],
+              order: [{ type: "item", id: "template-item" }]
+            }
+          },
+          items: {}
+        }
+      }
+    }
+  });
+
+  ensurePrivateDictionaries(state, {
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet
+  });
+
+  assert.deepEqual(state.categories, ["Gear"]);
+  assert.deepEqual(state.locations, ["Home"]);
+});
+
+test("private dictionaries ignore public sync records that dictionary editing also skips", () => {
+  const state = baseState({
+    categories: ["Gear", "Sleep", "Manual"],
+    locations: ["Home", "Camp", "Manual shelf"],
+    customCategories: ["Sleep", "Manual"],
+    customLocations: ["Camp", "Manual shelf"],
+    containers: {
+      "private-bag": { id: "private-bag", categories: ["Gear"], location: "Home", childIds: [], itemIds: [], order: [] }
+    },
+    items: {
+      "public-item": { id: "public-item", categories: ["Sleep"], location: "Camp", sourceType: "public-template" }
+    }
+  });
+
+  removeCustomDictionaryValue(state, "category", "Sleep");
+  removeCustomDictionaryValue(state, "location", "Camp");
+  ensurePrivateDictionaries(state, {
+    isPublicSyncItem: (itemId, item) => item?.sourceType === "public-template"
+  });
+
+  assert.deepEqual(state.categories, ["Manual", "Gear"]);
+  assert.deepEqual(state.locations, ["Manual shelf", "Home"]);
+});
+
+test("default dictionary values are not mixed into private dictionaries", () => {
+  const state = baseState({
+    categories: [],
+    locations: []
+  });
+  const defaults = {
+    categories: ["Sleep", "Food"],
+    locations: ["Home", "Bike"]
+  };
+
+  ensurePrivateDictionaries(state, defaults);
+
+  assert.deepEqual(state.categories, []);
+  assert.deepEqual(state.locations, []);
+});
+
+test("renaming a dictionary value adds only the replacement value", () => {
+  const state = baseState({
+    categories: ["Sleep"],
+    locations: ["Home"],
+    customCategories: ["Sleep"],
+    customLocations: ["Home"]
+  });
+
+  removeCustomDictionaryValue(state, "category", "Sleep");
+  renameCustomDictionaryValue(state, "location", "Home", "Home test");
+  ensurePrivateDictionaries(state, {
+    categories: ["Sleep", "Food"],
+    locations: ["Home", "Bike"]
+  });
+
+  assert.deepEqual(state.categories, []);
+  assert.deepEqual(state.locations, ["Home test"]);
+
+  const entries = buildChangedEntitySyncEntries("dictionary", baseState(), state, entitySyncDeps());
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0].payload.categories, []);
+  assert.deepEqual(entries[0].payload.locations, ["Home test"]);
+});
+
+test("empty custom dictionary values survive even when templates use the same value", () => {
+  const state = baseState({
+    categories: ["Gear", "Camping", "Manual"],
+    locations: ["Home", "Template camp", "Manual shelf"],
+    customCategories: ["Camping", "Manual"],
+    customLocations: ["Template camp", "Manual shelf"],
+    containers: {
+      "private-bag": { id: "private-bag", categories: ["Gear"], location: "Home", childIds: [], itemIds: [], order: [] },
+      "template-bag": { id: "template-bag", categories: ["Camping"], location: "Template camp", childIds: [], itemIds: [], order: [] }
+    },
+    layouts: {
+      "private-layout": { id: "private-layout", rootContainerIds: ["private-bag"] },
+      "template-layout": { id: "template-layout", adminDemo: true, rootContainerIds: ["template-bag"] }
+    }
+  });
+  const helpers = {
+    getLayoutContainerIdSet: (targetStateValue, layout) => new Set(layout.rootContainerIds || []),
+    getLayoutItemIdSet: () => new Set()
+  };
+
+  ensurePrivateDictionaries(state, helpers);
+
+  assert.deepEqual(state.customCategories, ["Camping", "Manual"]);
+  assert.deepEqual(state.customLocations, ["Template camp", "Manual shelf"]);
+  assert.deepEqual(state.categories, ["Camping", "Manual", "Gear"]);
+  assert.deepEqual(state.locations, ["Template camp", "Manual shelf", "Home"]);
+});
+
+test("dictionary values can be sorted without changing the stored order", () => {
+  const values = ["Camping", "Bike", "Other"];
+
+  assert.deepEqual(sortDictionaryValues(values, "asc", "en"), ["Bike", "Camping", "Other"]);
+  assert.deepEqual(sortDictionaryValues(values, "desc", "en"), ["Other", "Camping", "Bike"]);
+  assert.deepEqual(values, ["Camping", "Bike", "Other"]);
+});
+
+test("dictionary renderer exposes the sort control", () => {
+  const html = renderDictionaryHtml("Categories", "category", ["Camping"], {
+    sortMode: "asc",
+    t: (key) => key
+  });
+
+  assert.match(html, /data-dictionary-sort="category"/);
+  assert.match(html, /item-sort-button active/);
 });
 
 test("dictionary changes still require full payload when dictionary entity sync is unavailable", () => {

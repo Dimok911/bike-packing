@@ -102,7 +102,6 @@ export function bindDictionaryControls(type, {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
       const dictionaryValues = dictionaryOptionsForOwner(type, owner);
-      if (dictionaryValues.length <= 1) return;
       const affectedCount = scope.items.filter((item) => {
         if (type === "location") return item.location === value;
         return itemCategories(item).includes(value);
@@ -110,12 +109,13 @@ export function bindDictionaryControls(type, {
         if (type === "location") return container.location === value;
         return containerCategories(container).includes(value);
       }).length;
-      const fallback = dictionaryValues.find((item) => item !== value);
+      const fallback = dictionaryValues.find((item) => item !== value) || "";
       const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
       const subject = type === "location" ? "место хранения" : "категорию";
+      const fallbackText = fallback ? `«${fallback}»` : "пустое значение";
       openConfirmDialog({
         title,
-        text: `Если удалить ${subject} «${value}», связанные вещи будут перенесены в «${fallback}».`,
+        text: `Если удалить ${subject} «${value}», связанные вещи будут перенесены в ${fallbackText}.`,
         highlightText: affectedCount
           ? `Сейчас применяется к ${formatThingCount(affectedCount)}.`
           : "Сейчас не применяется ни к одной вещи.",
@@ -131,8 +131,9 @@ export function bindDictionaryControls(type, {
             }
             if (type === "category" && itemCategories(item).includes(value)) {
               item.categories = itemCategories(item).map((category) => category === value ? fallback : category)
+                .filter(Boolean)
                 .filter((category, index, list) => list.indexOf(category) === index);
-              item.category = item.categories[0];
+              item.category = item.categories[0] || "";
               markEdited(item, changedAt);
             }
           });
@@ -146,8 +147,9 @@ export function bindDictionaryControls(type, {
             scope.containers.forEach((container) => {
               if (!containerCategories(container).includes(value)) return;
               container.categories = containerCategories(container).map((category) => category === value ? fallback : category)
+                .filter(Boolean)
                 .filter((category, index, list) => list.indexOf(category) === index);
-              container.category = container.categories[0];
+              container.category = container.categories[0] || "";
               touchContainer(container.id, changedAt);
             });
           }

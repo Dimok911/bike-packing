@@ -47,21 +47,27 @@ export function layoutDictionaryValues(layout, type, sourceState, {
 
 export function privateDictionaryValues(type, sourceState, helpers = {}) {
   const publicIds = collectPublicLayoutRecordIds(sourceState, helpers);
+  const isPublicSyncContainer = typeof helpers.isPublicSyncContainer === "function"
+    ? helpers.isPublicSyncContainer
+    : () => false;
+  const isPublicSyncItem = typeof helpers.isPublicSyncItem === "function"
+    ? helpers.isPublicSyncItem
+    : () => false;
   const values = [];
   if (type === "location") {
     Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
-      if (!publicIds.containerIds.has(id) && isPrivateDictionaryRecord(container) && container.location) values.push(container.location);
+      if (!publicIds.containerIds.has(id) && !isPublicSyncContainer(id, container) && isPrivateDictionaryRecord(container) && container.location) values.push(container.location);
     });
     Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
-      if (!publicIds.itemIds.has(id) && isPrivateDictionaryRecord(item) && item.location) values.push(item.location);
+      if (!publicIds.itemIds.has(id) && !isPublicSyncItem(id, item) && isPrivateDictionaryRecord(item) && item.location) values.push(item.location);
     });
   } else {
     Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
-      if (publicIds.containerIds.has(id) || !isPrivateDictionaryRecord(container)) return;
+      if (publicIds.containerIds.has(id) || isPublicSyncContainer(id, container) || !isPrivateDictionaryRecord(container)) return;
       containerCategories(container).forEach((value) => values.push(value));
     });
     Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
-      if (publicIds.itemIds.has(id) || !isPrivateDictionaryRecord(item)) return;
+      if (publicIds.itemIds.has(id) || isPublicSyncItem(id, item) || !isPrivateDictionaryRecord(item)) return;
       itemCategories(item).forEach((value) => values.push(value));
     });
   }
@@ -70,6 +76,12 @@ export function privateDictionaryValues(type, sourceState, helpers = {}) {
 
 export function publicDictionaryValues(type, sourceState, helpers = {}) {
   const publicIds = collectPublicLayoutRecordIds(sourceState, helpers);
+  const isPublicSyncContainer = typeof helpers.isPublicSyncContainer === "function"
+    ? helpers.isPublicSyncContainer
+    : () => false;
+  const isPublicSyncItem = typeof helpers.isPublicSyncItem === "function"
+    ? helpers.isPublicSyncItem
+    : () => false;
   const values = [];
   Object.values(sourceState?.layouts || {}).forEach((layout) => {
     if (!isPublicLayoutRecord(layout)) return;
@@ -85,12 +97,28 @@ export function publicDictionaryValues(type, sourceState, helpers = {}) {
       const value = sourceState?.items?.[id]?.location;
       if (value) values.push(value);
     });
+    Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
+      if (!publicIds.containerIds.has(id) && isPublicSyncContainer(id, container) && container.location) values.push(container.location);
+    });
+    Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
+      if (!publicIds.itemIds.has(id) && isPublicSyncItem(id, item) && item.location) values.push(item.location);
+    });
   } else {
     publicIds.containerIds.forEach((id) => {
       containerCategories(sourceState?.containers?.[id] || {}).forEach((value) => values.push(value));
     });
     publicIds.itemIds.forEach((id) => {
       itemCategories(sourceState?.items?.[id] || {}).forEach((value) => values.push(value));
+    });
+    Object.entries(sourceState?.containers || {}).forEach(([id, container]) => {
+      if (!publicIds.containerIds.has(id) && isPublicSyncContainer(id, container)) {
+        containerCategories(container).forEach((value) => values.push(value));
+      }
+    });
+    Object.entries(sourceState?.items || {}).forEach(([id, item]) => {
+      if (!publicIds.itemIds.has(id) && isPublicSyncItem(id, item)) {
+        itemCategories(item).forEach((value) => values.push(value));
+      }
     });
   }
   return normalizeDictionaryValues(values);
@@ -125,21 +153,19 @@ function setLegacyDictionaryValues(owner, type, values) {
 function migratePrivateCustomDictionary(owner, type, defaults = {}, helpers = {}) {
   if (!owner || hasCustomDictionary(owner, type)) return;
   const legacyValues = legacyDictionaryValues(owner, type);
-  const defaultValues = new Set(normalizeDictionaryValues(defaults[type === "location" ? "locations" : "categories"]));
   const privateValues = new Set(privateDictionaryValues(type, owner, helpers));
   const publicValues = new Set(publicDictionaryValues(type, owner, helpers));
   const customValues = legacyValues.filter((value) =>
-    !defaultValues.has(value) && (!publicValues.has(value) || privateValues.has(value))
+    !publicValues.has(value) || privateValues.has(value)
   );
   setCustomDictionaryValues(owner, type, customValues);
 }
 
 function migrateLayoutCustomDictionary(layout, type, sourceState, defaults = {}, helpers = {}) {
   if (!layout || hasCustomDictionary(layout, type)) return;
-  const defaultValues = new Set(normalizeDictionaryValues(defaults[type === "location" ? "locations" : "categories"]));
   const usedValues = new Set(layoutDictionaryValues(layout, type, sourceState, helpers));
   const customValues = legacyDictionaryValues(layout, type).filter((value) =>
-    !defaultValues.has(value) || !usedValues.has(value)
+    !usedValues.has(value)
   );
   setCustomDictionaryValues(layout, type, customValues);
 }
@@ -151,11 +177,10 @@ function prunePublicLayoutCustomDictionary(layout, type, usedValues = []) {
 }
 
 function layoutDictionaryList(owner, type, usedValues = [], defaults = {}) {
-  const values = normalizeDictionaryValues([
+  return normalizeDictionaryValues([
     ...customDictionaryValues(owner, type),
     ...normalizeDictionaryValues(usedValues)
   ]);
-  return values.length ? values : normalizeDictionaryValues(defaults[type === "location" ? "locations" : "categories"]);
 }
 
 export function setCustomDictionaryValues(owner, type, values) {
@@ -182,8 +207,14 @@ export function removeCustomDictionaryValue(owner, type, value) {
 
 export function renameCustomDictionaryValue(owner, type, oldValue, newValue) {
   if (!owner) return owner;
-  setCustomDictionaryValues(owner, type, customDictionaryValues(owner, type).map((item) => item === oldValue ? newValue : item));
-  setLegacyDictionaryValues(owner, type, legacyDictionaryValues(owner, type).map((item) => item === oldValue ? newValue : item));
+  const normalizedNewValue = normalizeDictionaryValues([newValue])[0];
+  if (!normalizedNewValue) return owner;
+  const customValues = customDictionaryValues(owner, type).map((item) => item === oldValue ? normalizedNewValue : item);
+  if (!customValues.includes(normalizedNewValue)) customValues.push(normalizedNewValue);
+  setCustomDictionaryValues(owner, type, customValues);
+  const legacyValues = legacyDictionaryValues(owner, type).map((item) => item === oldValue ? normalizedNewValue : item);
+  if (!legacyValues.includes(normalizedNewValue)) legacyValues.push(normalizedNewValue);
+  setLegacyDictionaryValues(owner, type, legacyValues);
   return owner;
 }
 
@@ -191,19 +222,23 @@ export function ensurePrivateDictionaries(sourceState, defaults = {}) {
   if (!sourceState) return sourceState;
   const helpers = {
     getLayoutContainerIdSet: defaults.getLayoutContainerIdSet,
-    getLayoutItemIdSet: defaults.getLayoutItemIdSet
+    getLayoutItemIdSet: defaults.getLayoutItemIdSet,
+    isPublicSyncContainer: defaults.isPublicSyncContainer,
+    isPublicSyncItem: defaults.isPublicSyncItem
   };
   migratePrivateCustomDictionary(sourceState, "location", defaults, helpers);
   migratePrivateCustomDictionary(sourceState, "category", defaults, helpers);
   sourceState.locations = normalizeDictionaryValues(customDictionaryValues(sourceState, "location"), [
-    ...(defaults.locations || []),
     ...privateDictionaryValues("location", sourceState, helpers)
   ]);
   sourceState.categories = normalizeDictionaryValues(customDictionaryValues(sourceState, "category"), [
-    ...(defaults.categories || []),
     ...privateDictionaryValues("category", sourceState, helpers)
   ]);
   return sourceState;
+}
+
+export function normalizePrivateDictionariesForSync(sourceState, defaults = {}) {
+  return ensurePrivateDictionaries(sourceState, defaults);
 }
 
 export function ensureLayoutDictionaries(layout, {
@@ -235,7 +270,7 @@ export function readOnlyLayoutDictionaries(layout, {
   getLayoutContainerIdSet,
   getLayoutItemIdSet
 } = {}) {
-  if (!layout) return { locations: normalizeDictionaryValues(defaults.locations), categories: normalizeDictionaryValues(defaults.categories) };
+  if (!layout) return { locations: [], categories: [] };
   const source = sourceState || {};
   const helpers = { getLayoutContainerIdSet, getLayoutItemIdSet };
   return {
@@ -247,4 +282,11 @@ export function readOnlyLayoutDictionaries(layout, {
 export function dictionaryOptionsForUi(type, activeValues, { selected = [] } = {}) {
   const selectedValues = Array.isArray(selected) ? selected : [...selected || []];
   return normalizeDictionaryValues(activeValues, selectedValues);
+}
+
+export function sortDictionaryValues(values, sortMode = "none", locale = "ru") {
+  const list = [...(Array.isArray(values) ? values : [])];
+  if (sortMode === "asc") return list.sort((a, b) => String(a).localeCompare(String(b), locale));
+  if (sortMode === "desc") return list.sort((a, b) => String(b).localeCompare(String(a), locale));
+  return list;
 }

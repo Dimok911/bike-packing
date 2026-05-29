@@ -1,5 +1,4 @@
 import { COLLAPSE_DEFAULTS_VERSION } from "../config/constants.js";
-import { REQUIRED_CHARGE_CATEGORY, categories } from "../data/demo-data.js";
 import { hasContainerDimensions, normalizeContainerColor, normalizeContainerDimensions } from "./container-fields.js";
 import { normalizeItemPhotos } from "./item-photos.js";
 import { parseWeightInput } from "../utils/weight.js";
@@ -10,12 +9,9 @@ export function defaultRootContainerLocation(targetState) {
 }
 
 export function normalizeItemCategories(targetState) {
-  targetState.categories = Array.isArray(targetState.categories) ? targetState.categories : [...categories];
-  if (!targetState.categories.includes(REQUIRED_CHARGE_CATEGORY)) {
-    targetState.categories.push(REQUIRED_CHARGE_CATEGORY);
-  }
+  targetState.categories = Array.isArray(targetState.categories) ? targetState.categories : [];
   Object.values(targetState.items || {}).forEach((item) => {
-    item.categories = normalizeRecordCategories(item, targetState.categories[0] || "Прочее");
+    item.categories = normalizeRecordCategories(item);
     item.category = item.categories[0] || "";
   });
 }
@@ -69,7 +65,7 @@ export function normalizeContainerFields(targetState) {
     const location = typeof container.location === "string" ? container.location.trim() : "";
     container.location = location || fallbackLocation;
     container.note = typeof container.note === "string" ? container.note : "";
-    container.categories = normalizeRecordCategories(container, targetState.categories?.[0] || categories[0] || "Прочее");
+    container.categories = normalizeRecordCategories(container);
     container.category = container.categories[0] || "";
     container.color = normalizeContainerColor(container.color);
     const dimensions = normalizeContainerDimensions(container.dimensions);

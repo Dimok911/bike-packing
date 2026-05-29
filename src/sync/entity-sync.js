@@ -44,13 +44,30 @@ export const ENTITY_SYNC_CONFIG = {
       "dictionary-state": {
         id: "dictionary-state",
         categories: state?.categories,
-        locations: state?.locations
+        locations: state?.locations,
+        customCategories: state?.customCategories,
+        customLocations: state?.customLocations,
+        hiddenCategories: state?.hiddenCategories,
+        hiddenLocations: state?.hiddenLocations,
+        categoryDictionary: state?.categoryDictionary,
+        locationDictionary: state?.locationDictionary
       }
     }),
     tableName: "bike_packing_dictionaries",
     fallbackText: "failed to sync list dictionaries"
   }
 };
+
+const DICTIONARY_SYNC_STATE_KEYS = [
+  "categories",
+  "locations",
+  "customCategories",
+  "customLocations",
+  "hiddenCategories",
+  "hiddenLocations",
+  "categoryDictionary",
+  "locationDictionary"
+];
 
 export function normalizedEntitySyncState(sourceState, { cloneStateForSync, createEmptyUserState }) {
   return cloneStateForSync(sourceState || createEmptyUserState(), { forSync: true });
@@ -103,8 +120,7 @@ export function legacyComparableStateForSync(sourceState, entitySync = null, dep
   if (entitySync?.container?.safeForLegacyCompare !== false) delete cloned.containers;
   if (entitySync?.layout?.safeForLegacyCompare !== false) delete cloned.layouts;
   if (entitySync?.dictionary?.safeForLegacyCompare !== false) {
-    delete cloned.categories;
-    delete cloned.locations;
+    DICTIONARY_SYNC_STATE_KEYS.forEach((key) => delete cloned[key]);
   }
   return cloned;
 }

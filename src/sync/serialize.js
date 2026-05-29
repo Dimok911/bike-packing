@@ -11,6 +11,7 @@ import {
 export function cloneStateForSyncPayload(sourceState, {
   forSync = false,
   cleanupGeneratedCatalogArtifacts = null,
+  normalizeDictionariesForSync = null,
   pruneAdminPublishedDraftsForSync = null
 } = {}) {
   const cloned = JSON.parse(JSON.stringify(sourceState));
@@ -27,7 +28,9 @@ export function cloneStateForSyncPayload(sourceState, {
     delete cloned.packedItems;
     delete cloned.activeLayoutId;
     prunePhotoPayloadForSync(cloned);
+    normalizeDictionariesForSync?.(cloned);
     pruneAdminPublishedDraftsForSync?.(cloned);
+    normalizeDictionariesForSync?.(cloned);
     stripAppliedArrangementFieldsForSync(cloned);
   }
   return cloned;
@@ -148,7 +151,11 @@ export function compactDictionaryForEntitySync(record) {
   return {
     id: "dictionary-state",
     categories: normalizeDictionaryValues(record.categories),
-    locations: normalizeDictionaryValues(record.locations)
+    locations: normalizeDictionaryValues(record.locations),
+    customCategories: normalizeDictionaryValues(record.customCategories || record.categoryDictionary),
+    customLocations: normalizeDictionaryValues(record.customLocations || record.locationDictionary),
+    hiddenCategories: normalizeDictionaryValues(record.hiddenCategories),
+    hiddenLocations: normalizeDictionaryValues(record.hiddenLocations)
   };
 }
 
