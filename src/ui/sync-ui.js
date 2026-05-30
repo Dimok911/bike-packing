@@ -99,8 +99,8 @@ export function updateSyncUiControls({
   }
   if (rememberedOffline && appUnlocked && !message) {
     refs.syncStatus.textContent = syncMeta.dirty
-      ? "Офлайн · локальные изменения сохранены на устройстве"
-      : "Офлайн · локальная копия личных укладок";
+      ? "Offline · local changes are saved on this device"
+      : "Offline · local copy of personal layouts";
     return syncVisualState;
   }
   if (!loggedIn && appUnlocked) {

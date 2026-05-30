@@ -133,66 +133,14 @@ Entity sync сейчас является record-level sync: если меняе
 - пользовательские настройки: могут синхронизироваться отдельно, но не должны конфликтовать с доменными данными;
 - recovery/compat data: может оставаться в полном payload как страховка.
 
-## Кандидаты на вынос в entity sync
+## Принятые решения baseline
 
-### 1. Dictionaries
-
-Поля:
-
-- `categories`;
-- `locations`;
-- layout-specific custom dictionaries, если они реально должны быть серверной правдой.
-
-Возможные модели:
-
-- одна entity `dictionary-state` на список;
-- две entity `categories` и `locations`;
-- отдельная entity на каждое значение справочника.
-
-Решение для первого шага: одна record-level entity для справочников. Справочники небольшие, поэтому отдельные записи на каждое значение сейчас добавят больше конфликтной и миграционной сложности, чем пользы.
-
-### 2. Packed State
-
-Поля:
-
-- `packedItems`;
-- `layout.arrangement.packedItems`.
-
-Нужно решить, где canonical source:
-
-- внутри конкретной укладки;
-- отдельной entity по layout id;
-- локально на устройстве, если это не должно быть общей серверной правдой.
-
-Решение: packed state должен быть общим между устройствами. Canonical source для entity sync - `layout.arrangement.packedItems`; верхнеуровневый `packedItems` остается runtime/UI mirror текущей укладки и не должен уходить в server payload.
-
-### 3. Active Layout Choice
-
-Поля:
-
-- `activeLayoutId`;
-- связанные persisted choice keys.
-
-Решение: active layout choice не нужен на сервере. Это runtime-указатель текущей рабочей укладки и per-device память выбора, а не доменная серверная истина. В server sync должны уходить сами `layouts` и их содержимое, но не выбор открытой укладки.
-
-### 4. User Preferences
-
-Примеры:
-
-- `collapsedContainers`;
-- `itemDisplayMode`;
-- `showItemMeta`;
-- `showFilterContext`;
-- `collectionMode`;
-- `showOnlyUnpacked`;
-- язык интерфейса;
-- сортировка вещей/сумок;
-- режим/стиль packing view, включая 3D-view state;
-- локальные настройки карточек.
-
-Большинство таких полей не должны попадать в общий server payload. Если понадобится серверная синхронизация, лучше делать отдельную `preferences` entity с мягкими конфликтами или last-write-wins.
-
-Смысл вопроса про UI-настройки: нужно проверить, не попадают ли локальные предпочтения в `serializeState({ forSync: true })` случайно. "Случайно попадают" здесь означает: пользователь поменял только вид экрана на одном устройстве, а это поле оказалось в server payload и начало менять состояние на других устройствах. Сейчас `collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked`, `activeLayoutId`, сортировки, язык и 3D-view settings в общий server sync не уходят.
+- `items`, `containers` и `layouts` синхронизируются как record-level entities.
+- `categories` и `locations` синхронизируются одной entity `dictionary-state` на список. Встроенные frontend defaults для словарей удалены: значения должны приходить из БД/API, payload шаблона или реально использованных записей.
+- Layout-specific custom dictionaries остаются частью соответствующего layout, когда речь идет о public/template layout, guest demo copy или пользовательской укладке с собственным словарем.
+- Packed state является общей серверной правдой внутри `layout.arrangement.packedItems`. Верхнеуровневый `packedItems` остается runtime/UI mirror текущей укладки и не уходит в server payload.
+- `activeLayoutId` не синхронизируется как серверная доменная истина. Это runtime-указатель текущей рабочей укладки и per-device persisted choice.
+- UI preferences (`collapsedContainers`, `itemDisplayMode`, `showItemMeta`, `showFilterContext`, `collectionMode`, `showOnlyUnpacked`, сортировки, язык, 3D-view settings) не входят в общий server sync payload. Если для них понадобится серверная синхронизация, это должна быть отдельная `preferences` entity.
 
 ## Уже сделано
 
@@ -204,14 +152,28 @@ Entity sync сейчас является record-level sync: если меняе
 - Частые действия покрыты contract test harness: категория вещи, категория сумки, место хранения, packed toggle, перемещение вещи и порядок корневых сумок проходят через entity sync без full payload fallback.
 - Background polling: watcher больше не использует полный `/state` как fallback-проверку; сначала нужен валидный `/freshness` сигнал (`updatedAt`, `stateRevision`, `payloadHash` или `entityHash`), и только изменившаяся свежесть разрешает загрузить full state.
 - Raw `bike_packing_lists.payload` зафиксирован как legacy/base snapshot, а не current state: API current-state ответы должны использовать assembled state, общий `mapListRow` больше не умеет вклеивать raw payload, а backend `check` ловит случайный `serverPayload`/`list.payload` из raw list payload.
+- Ручная prod-проверка на `v969` пройдена в отдельном Chrome для списка `list-c20abef5-43fb-4747-9b35-04174f2a0a65`: переименование вещи, категории/места хранения, контейнеры, layouts, dictionaries, readonly templates, повторное переключение шаблонов и 65 секунд background refresh прошли без `POST /bike-packing-data.json`.
+- Template payload cache: повторный refresh каталога шаблонов в рамках сессии переиспользует уже загруженный payload при неизменном `updatedAt`, поэтому повторные переключения шаблонов не должны заново плодить full `/state` или legacy `bike-packing-data.json`.
+- Public template payload endpoint: backend capability `publicTemplatePayloadEndpoint` и endpoint `/bike-packing/public-template-payloads/:itemKey` добавлены; frontend сначала читает demo/shared payload шаблона через него и использует `/bike-packing-data.json` только как compatibility fallback для старого API.
+- Startup freshness на `v974`: `syncMeta.listId` сохраняется в scoped localStorage, поэтому повторный старт залогиненного пользователя с неизменной `/freshness` не должен тянуть тяжёлый `/bike-packing/lists/:id/state`. Первый full state после обновления может быть миграционным, чтобы записать недостающую мету.
+- Ручная prod-проверка на `v974`: после повторной загрузки личный `/lists/list-c20abef5-43fb-4747-9b35-04174f2a0a65/state` исчез из обычного старта; остались только небольшие demo payload-запросы через `public-template-payloads`.
+- Entity pull / changes feed: backend capability `entityChangesFeed` и endpoint `/bike-packing/lists/:id/changes?sinceRevision=N` добавлены как API-first шаг. Frontend `v975` подключён к этому feed для startup refresh и background refresh: если `/freshness` изменилась и локальная `syncMeta.stateRevision` известна, приложение сначала применяет changed/deleted rows для `items`, `containers`, `layouts`, `dictionaries`; full `/state` остаётся fallback для старого API, слишком старой/неполной revision или неуспешного применения.
+- Встроенные demo/default dictionary seeds удалены из frontend runtime: новые состояния и guest/demo копии больше не получают категории/места из `demo-data.js`, `default-user-state.js`, `guess.js` или hardcoded translation defaults. Словари должны приходить из БД/API, из layout payload или из реально использованных значений.
+- Full-payload audit вынесен в отдельный документ [`legacy-fallback-retirement-plan.md`](legacy-fallback-retirement-plan.md): допустимые пути подписаны как force overwrite, conflict merge, history/backup restore, migration/recovery и old API compatibility.
 
 ## Следующие шаги
 
-1. Добить ручную проверку на реальном UI/устройстве для тех же частых действий, потому что в текущем Codex окружении нет in-app browser.
-2. Сузить оставшиеся причины full payload до явных recovery/fallback сценариев.
-3. Оставить full payload как recovery/fallback, а не как обычный путь.
+1. Поддерживать автотесты, которые фиксируют отсутствие full payload fallback для частых действий, повторного startup freshness и повторного template payload refresh.
+2. Поддерживать [`legacy-fallback-retirement-plan.md`](legacy-fallback-retirement-plan.md) как отдельный план удаления `/bike-packing-data.json`.
+3. Прогнать ручную prod-проверку `v975`: на втором устройстве/второй вкладке изменить вещь/сумку/словарь, затем проверить и startup, и background refresh. При известной локальной `stateRevision` после `/freshness` должен уходить `GET /changes?sinceRevision=...`, а не full `/state`.
+4. Проработать dirty offline rebase поверх changes feed: если устройство было offline, локально изменило entity A, а сервер за это время получил изменение entity B, то при stale `baseStateRevision` фронт должен запросить `/changes?sinceRevision=baseStateRevision`, применить непересекающиеся remote changes к base/local diff и отправить только свои entity changes без full `/state`. Full state остаётся fallback только для пересекающихся конфликтов, слишком старой revision или непокрытых legacy-полей.
+5. Ужесточить retirement gate: при отсутствии list/entity API не превращать обычные сохранения в молчаливый legacy write; вместо этого показывать compatibility warning и оставлять локальное dirty-состояние.
+6. Оптимизировать eager template loading: на старте личной укладки не загружать оба demo payload (`demo-state`, `demo-state:en`), пока пользователь не открывает demo/template контекст или пока catalog `updatedAt` не поменялся.
+7. После одного-двух стабильных релизов удалить automatic legacy writer из `saveRemoteStateRecord`, оставив full payload только для явно выбранного force overwrite/conflict/history/recovery.
 
 ## Что считать успехом
+
+Статус `entity sync baseline complete`: обычные пользовательские действия на `v969` подтверждены ручным prod-прогоном и critical-тестами как работающие через entity sync без legacy full payload fallback. На `v974` дополнительно подтверждено, что повторный залогиненный startup уходит через freshness/cache без тяжёлого личного `/state`, а demo/shared payload читается через dedicated endpoint. Дальнейшая работа по `/bike-packing-data.json` должна идти отдельным legacy fallback retirement plan, а не как часть базового entity sync.
 
 Обычные частые действия должны проходить без full payload:
 

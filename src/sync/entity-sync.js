@@ -175,6 +175,16 @@ export function buildEntitySyncBody(type, entries, {
   return body;
 }
 
+export function rememberEntitySyncResultMeta(result, {
+  rememberRemoteIntegrityMeta = () => {},
+  syncMeta
+} = {}) {
+  if (!result?.attempted || !syncMeta) return false;
+  if (result.serverUpdatedAt) syncMeta.serverUpdatedAt = result.serverUpdatedAt;
+  rememberRemoteIntegrityMeta(result.integrityMeta);
+  return true;
+}
+
 export function buildItemSyncBody(entries, options = {}) {
   return buildEntitySyncBody("item", entries, options);
 }

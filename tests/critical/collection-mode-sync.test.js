@@ -15,8 +15,10 @@ import {
 import { legacyPayloadFallbackReasonText } from "../../src/sync/save-remote-state-flow.js";
 import { pruneAdminPublishedDraftsForSync } from "../../src/sync/save-body.js";
 import {
+  ensureLayoutDictionaries,
   ensurePrivateDictionaries,
   normalizePrivateDictionariesForSync,
+  pruneUnusedLayoutCustomDictionaries,
   removeCustomDictionaryValue,
   renameCustomDictionaryValue,
   sortDictionaryValues
@@ -332,6 +334,61 @@ test("default dictionary values are not mixed into private dictionaries", () => 
 
   assert.deepEqual(state.categories, []);
   assert.deepEqual(state.locations, []);
+});
+
+test("layout dictionaries can preserve unused custom values", () => {
+  const state = baseState({
+    containers: {
+      "bag-a": { id: "bag-a", categories: ["Gear"], location: "Home", childIds: [], itemIds: ["item-a"], order: [] }
+    },
+    items: {
+      "item-a": { id: "item-a", categories: ["Food"], location: "Bike", containerId: "bag-a" }
+    }
+  });
+  const layout = {
+    id: "layout-a",
+    rootContainerIds: ["bag-a"],
+    customCategories: ["Future category"],
+    customLocations: ["Future shelf"]
+  };
+
+  ensureLayoutDictionaries(layout, {
+    sourceState: state,
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet
+  });
+
+  assert.deepEqual(layout.categories, ["Future category", "Gear", "Food"]);
+  assert.deepEqual(layout.locations, ["Future shelf", "Home", "Bike"]);
+});
+
+test("unedited guest demo copies can prune stale unused layout dictionary values", () => {
+  const state = baseState({
+    containers: {
+      "bag-a": { id: "bag-a", categories: ["Gear"], location: "Home", childIds: [], itemIds: ["item-a"], order: [] }
+    },
+    items: {
+      "item-a": { id: "item-a", categories: ["Food"], location: "Bike", containerId: "bag-a" }
+    }
+  });
+  const layout = {
+    id: "layout-a",
+    rootContainerIds: ["bag-a"],
+    customCategories: ["Future category", "Gear"],
+    customLocations: ["Future shelf", "Home"]
+  };
+
+  const changed = pruneUnusedLayoutCustomDictionaries(layout, {
+    sourceState: state,
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet
+  });
+
+  assert.equal(changed, true);
+  assert.deepEqual(layout.customCategories, ["Gear"]);
+  assert.deepEqual(layout.customLocations, ["Home"]);
+  assert.deepEqual(layout.categories, ["Gear", "Food"]);
+  assert.deepEqual(layout.locations, ["Home", "Bike"]);
 });
 
 test("renaming a dictionary value adds only the replacement value", () => {

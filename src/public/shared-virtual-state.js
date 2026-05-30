@@ -92,8 +92,8 @@ export function createSharedVirtualState(layout, {
         weight: Number(item.weightGrams || 0),
         quantity: 1,
         location: fallbackLocation,
-        category: "Прочее",
-        categories: ["Прочее"],
+        category: "",
+        categories: [],
         containerId,
         note: item.description || "",
         photos: sharedGearPhotos(item, changedAt),
@@ -130,7 +130,7 @@ export function createSharedVirtualState(layout, {
     locations: [fallbackLocation],
     itemDisplayMode: "meta-photos",
     showItemMeta: true,
-    categories: ["Прочее"]
+    categories: []
   };
 }
 
@@ -241,7 +241,7 @@ export function createSharedVirtualStateFromPublishedState(layout, sourceState, 
     locations: [...(sourceState.locations || [locations[0] || ""])],
     itemDisplayMode: displayMode,
     showItemMeta: shouldShowItemLabelsForMode(displayMode),
-    categories: [...(sourceState.categories || ["Прочее"])],
+    categories: [...(sourceState.categories || [])],
     collectionMode: false,
     showOnlyUnpacked: false
   };

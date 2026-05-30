@@ -22,13 +22,13 @@ export function bindLayoutEditorControls({
       const container = state.containers[containerId];
       const itemCount = getContainerItemIdsDeep(containerId).length;
       openConfirmDialog({
-        title: "Удалить из укладки?",
-        text: `«${container.name}» будет убран из текущей укладки и останется в списке сумок и мест как пустая заготовка.`,
+        title: "Remove from layout?",
+        text: `“${container.name}” will be removed from the current layout and will stay in the bags and places list as an empty shell.`,
         highlightText: itemCount
-          ? `${formatThingCount(itemCount)} из этой сумки/места будут вынуты из укладки и станут вне укладки. Вложенные пакеты внутри этой сумки/места будут удалены.`
-          : "Эта сумка/место уже пустая, поэтому из текущей укладки уйдёт только пустая заготовка.",
+          ? `${formatThingCount(itemCount)} from this bag/place will be removed from the layout and become outside the layout. Nested pouches inside this bag/place will be deleted.`
+          : "This bag/place is already empty, so only the empty shell will leave the current layout.",
         tone: itemCount ? "danger" : "safe",
-        okText: "Удалить",
+        okText: "Remove",
         onConfirm: () => removeRootContainerFromActiveLayout(containerId)
       });
     });

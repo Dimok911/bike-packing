@@ -33,6 +33,7 @@ import {
   demoTemplateForLanguage,
   demoTemplatesForLanguage,
   findDemoTemplateForLanguage,
+  isPublicDemoTemplateRecord,
   localDemoTemplateEntriesFromLayouts,
   mergeDemoTemplateEntriesForAdmin,
   mergeServerDemoTemplateCatalog,
@@ -50,6 +51,11 @@ import {
   publicTemplateMetadataRequest,
   publicTemplateMetadataTarget
 } from "../../src/public/public-template-metadata.js";
+import {
+  PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY,
+  publicTemplatePayloadPath,
+  shouldFallbackToLegacyPublicTemplatePayload
+} from "../../src/public/public-template-payload-api.js";
 import {
   appendCopiedFromTemplateNote,
   cloneIsolatedPublicEntity,
@@ -75,6 +81,7 @@ import {
   serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload,
+  upsertRuntimeSharedLayout,
   visibleSharedLayoutsForLanguage
 } from "../../src/public/shared-layouts.js";
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
@@ -89,6 +96,8 @@ import {
   createSharedLayoutCatalogDiagnostics,
   shouldWarnAboutSharedLayoutCatalog
 } from "../../src/public/shared-layout-catalog-diagnostics.js";
+import { refreshPublicSharedLayoutCatalogFlow } from "../../src/public/shared-catalog-refresh-flow.js";
+import { createPublicTemplatePayloadCache } from "../../src/public/template-payload-cache.js";
 import {
   guestDemoCopyLayoutName,
   guestDemoStartupAction
@@ -149,6 +158,19 @@ test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
     demoAdminPathForPublicListId("/metadata", "public-demo-state-copy-ru-abc", "ru"),
     "/bike-packing/admin/demo-states/copy-ru-abc/metadata"
   );
+});
+
+test("public template payload endpoint replaces legacy itemKey reads when available", () => {
+  assert.equal(PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY, "publicTemplatePayloadEndpoint");
+  assert.equal(
+    publicTemplatePayloadPath("shared-layout:demo bag"),
+    "/bike-packing/public-template-payloads/shared-layout%3Ademo%20bag"
+  );
+  assert.equal(publicTemplatePayloadPath("demo-state:en"), "/bike-packing/public-template-payloads/demo-state%3Aen");
+  assert.equal(publicTemplatePayloadPath(""), "");
+  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 404 }), true);
+  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 405 }), true);
+  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 500 }), false);
 });
 
 test("demo layout choices encode the selected UI language", () => {
@@ -332,6 +354,7 @@ test("demo template payload cache targets exact public list rows", () => {
   }), {
     language: "en",
     listId: "public-demo-state-copy-en-2",
+    itemKey: "demo-state:copy-en-2",
     name: "Demo-packing 2",
     updatedAt: "2026-05-26T00:00:00.000Z"
   });
@@ -343,6 +366,7 @@ test("demo template payload cache targets exact public list rows", () => {
   }), {
     language: "ru",
     listId: "public-demo-state",
+    itemKey: "demo-state",
     name: "",
     updatedAt: ""
   });
@@ -1762,6 +1786,112 @@ test("public shared catalog language uses server metadata before payload languag
   assert.equal(confirmed[0].id, "template-copy-ru-123");
   assert.equal(confirmed[0].name, "Renamed shared template");
   assert.equal(confirmed[0].language, "en");
+});
+
+test("public shared template payload cache avoids repeated full payload fetches for unchanged rows", async () => {
+  const record = {
+    id: "public-shared-layout-bikepacking-reference-bags",
+    title: "Bikepacking reference",
+    language: "ru",
+    ownerId: "user-1",
+    updatedAt: "2026-05-30T10:00:00.000Z"
+  };
+  const payload = {
+    activeLayoutId: "layout-main",
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Bikepacking reference",
+        language: "ru",
+        rootContainerIds: []
+      }
+    },
+    containers: {},
+    items: {}
+  };
+  const runtime = {
+    serverConfirmedDemoTemplates: [],
+    serverConfirmedSharedLayouts: [],
+    sharedLayoutCatalogDiagnostics: null,
+    sharedLayoutsByLanguage: { ru: [], en: [] },
+    state: { layouts: {}, containers: {}, items: {} },
+    uiLanguage: "ru"
+  };
+  let payloadFetches = 0;
+  const dependencies = {
+    canOpenAdminPublishedEdit: () => false,
+    copyPublishedContainerToState: () => "",
+    createLayoutArrangementFromCurrentState: () => ({}),
+    createSharedLayoutCatalogDiagnostics: ({ records }) => ({ confirmedCount: records.length }),
+    currentEditMeta: () => ({}),
+    demoTemplateFallbackName: () => "Demo",
+    ensureLayoutDictionaries: () => null,
+    fetchPublicSharedLayoutCatalog: async () => ({ lists: [record], unified: true }),
+    fetchPublishedDemoTemplateState: async () => null,
+    fetchStateRecordByItemKey: async () => {
+      payloadFetches += 1;
+      return payload;
+    },
+    forgetDeletedSharedLayoutId: () => {},
+    isConcretePublicSharedLayoutListRecord,
+    isLayoutMeaningful: () => false,
+    isPublicDemoTemplateRecord,
+    isPublicSharedLayoutListRecord,
+    isPublicSharedTemplatePayload,
+    mergeServerDemoTemplateCatalog,
+    mergeSharedLayoutCatalogEntries,
+    normalizeLayoutArrangement: () => {},
+    normalizeUiLanguage: (value) => String(value || "").trim().toLowerCase(),
+    nowIso: () => "2026-05-30T10:00:00.000Z",
+    pruneRuntimeSharedLayouts,
+    publicDemoTemplateEntryFromRecord,
+    publishedPayloadWithTemplateMetadata: (sourcePayload, metadata = {}) => ({
+      ...sourcePayload,
+      layouts: Object.fromEntries(Object.entries(sourcePayload.layouts || {}).map(([id, layout]) => [id, {
+        ...layout,
+        name: metadata.name || layout.name,
+        language: metadata.language || layout.language
+      }]))
+    }),
+    purgeUnconfirmedSharedTemplatesFromFrontendState: () => ({ removedLayoutIds: [], removedRuntimeCount: 0 }),
+    reconcilePublishedTemplateCopyDraft: () => false,
+    removeLayoutTree: () => false,
+    render: () => {},
+    saveState: () => {},
+    serverConfirmedSharedLayoutsByAdminOrder: () => runtime.serverConfirmedSharedLayouts,
+    serverConfirmedSharedLayoutsFromPublicRecords,
+    setDemoPublicTemplateMissing: () => {},
+    setDemoStatePayloadForLanguage: () => {},
+    sharedLayoutIdFromPublicListRecord,
+    sharedLayoutItemKey: (id) => `shared-layout:${id}`,
+    sharedLayoutStatePayload: (layout) => layout?.statePayload || null,
+    sharedPayloadActiveLayout: (sourcePayload) => sourcePayload.layouts?.[sourcePayload.activeLayoutId] || null,
+    templateCopySourceScore: () => 0,
+    upsertRuntimeSharedLayout
+  };
+
+  await refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies });
+  await refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies });
+
+  assert.equal(payloadFetches, 1);
+  assert.equal(runtime.sharedLayoutsByLanguage.ru[0].id, "bikepacking-reference-bags");
+});
+
+test("public template payload cache invalidates entries when updatedAt changes", () => {
+  let now = 1_000;
+  const cache = createPublicTemplatePayloadCache({
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    normalizePayload: (value) => value && value.ok ? value : null,
+    now: () => now,
+    ttlMs: 500
+  });
+
+  cache.set("public-demo-state-en", { ok: true, value: 1 }, { updatedAt: "a" });
+
+  assert.deepEqual(cache.get("public-demo-state-en", { updatedAt: "a" }), { ok: true, value: 1 });
+  assert.equal(cache.get("public-demo-state-en", { updatedAt: "b" }), null);
+  now += 600;
+  assert.equal(cache.get("public-demo-state-en"), null);
 });
 
 test("public template metadata is applied over stale payload layout titles", () => {

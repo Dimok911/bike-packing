@@ -5484,7 +5484,7 @@ dialog.photo-lightbox::backdrop {
 }
 
 .confirm-highlight.confirm-danger::before {
-  content: "Важно";
+  content: "Important";
   display: block;
   width: fit-content;
   margin-bottom: 6px;

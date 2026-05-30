@@ -2,6 +2,7 @@ export const PUBLIC_TEMPLATE_KIND_DEMO = "demo";
 export const PUBLIC_TEMPLATE_KIND_SHARED = "shared-layout";
 export const PUBLIC_DEMO_LIST_ID = "public-demo-state";
 export const PUBLIC_DEMO_LIST_PREFIX = "public-demo-state-";
+const DEMO_ITEM_KEY = "demo-state";
 
 function normalizeText(value = "") {
   return String(value || "").trim();
@@ -22,6 +23,17 @@ function normalizeComparableName(value = "") {
 function trailingNumber(value = "") {
   const match = normalizeText(value).match(/(\d+)\s*$/);
   return match ? Number(match[1]) : null;
+}
+
+function demoTemplateItemKeyFromListId(listId, language) {
+  const id = normalizeText(listId);
+  if (id === PUBLIC_DEMO_LIST_ID) return DEMO_ITEM_KEY;
+  if (id.startsWith(PUBLIC_DEMO_LIST_PREFIX)) {
+    const suffix = normalizeText(id.slice(PUBLIC_DEMO_LIST_PREFIX.length));
+    return suffix ? `${DEMO_ITEM_KEY}:${suffix}` : DEMO_ITEM_KEY;
+  }
+  const normalizedLanguage = normalizeLanguage(language, "");
+  return normalizedLanguage && normalizedLanguage !== "ru" ? `${DEMO_ITEM_KEY}:${normalizedLanguage}` : DEMO_ITEM_KEY;
 }
 
 export function demoAdminIdFromPublicListId(listId) {
@@ -69,6 +81,8 @@ export function publicDemoTemplateEntryFromRecord(record, {
   return {
     id,
     listId: id,
+    itemKey: normalizeText(record?.itemKey || record?.item_key) || demoTemplateItemKeyFromListId(id, language),
+    payloadEndpoint: normalizeText(record?.payloadEndpoint || record?.payload_endpoint),
     name,
     title: name,
     language,
@@ -92,6 +106,8 @@ export function demoTemplateEntryForLanguage(language, {
   return {
     id,
     listId: id,
+    itemKey: demoTemplateItemKeyFromListId(id, normalizedLanguage),
+    payloadEndpoint: "",
     name: normalizeText(name) || id,
     title: normalizeText(name) || id,
     language: normalizedLanguage,
@@ -265,9 +281,11 @@ export function publicDemoTemplatePayloadTarget(entry, {
   const listId = normalizeText(entry?.listId || entry?.id) || normalizeText(demoListIdForLanguage(language));
   if (!listId) return null;
   const name = normalizeText(entry?.name || entry?.title);
+  const itemKey = normalizeText(entry?.itemKey || entry?.item_key) || demoTemplateItemKeyFromListId(listId, language);
   return {
     language,
     listId,
+    itemKey,
     name,
     updatedAt: normalizeText(entry?.updatedAt || entry?.updated_at)
   };

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=969" />
+    <link rel="stylesheet" href="./styles.css?v=979" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -147,74 +147,74 @@
     <dialog id="itemDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2 id="dialogTitle">Вещь</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+          <h2 id="dialogTitle">Item</h2>
+          <button value="cancel" class="icon-button" aria-label="Close">×</button>
         </header>
         <label>
-          Название
+          Name
           <input id="itemName" />
         </label>
         <div class="item-measure-row">
           <label>
-            Вес, г
+            Weight, g
             <input id="itemWeight" type="number" min="0" step="1" inputmode="numeric" enterkeyhint="done" />
           </label>
           <div class="quantity-field field-label">
-            Количество
+            Quantity
             <div class="quantity-stepper">
-              <button id="itemQuantityMinus" class="ghost" type="button" aria-label="Уменьшить количество">−</button>
+              <button id="itemQuantityMinus" class="ghost" type="button" aria-label="Decrease quantity">−</button>
               <input id="itemQuantity" type="number" min="1" step="1" inputmode="numeric" enterkeyhint="done" />
-              <button id="itemQuantityPlus" class="ghost" type="button" aria-label="Увеличить количество">+</button>
+              <button id="itemQuantityPlus" class="ghost" type="button" aria-label="Increase quantity">+</button>
             </div>
           </div>
           <div class="item-total-weight" aria-live="polite">
-            <span>Общий вес</span>
-            <strong id="itemTotalWeight">0 г</strong>
+            <span>Total weight</span>
+            <strong id="itemTotalWeight">0 g</strong>
           </div>
         </div>
         <label>
-          Где хранится
+          Storage place
           <select id="itemLocation"></select>
         </label>
         <div class="field-label">
-          Категории
+          Categories
           <div id="itemCategoryList" class="category-picker"></div>
         </div>
         <div class="field-label item-container-field">
-          <span id="itemContainerLabel">Положить в</span>
+          <span id="itemContainerLabel">Place in</span>
           <div class="item-container-control">
             <span id="itemContainerCurrent" class="item-container-current" hidden></span>
-            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
-            <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
-            <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Удалить из укладки</button>
-            <button id="itemDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить вещь навсегда</button>
+            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Move within layout</button>
+            <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
+            <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Remove from layout</button>
+            <button id="itemDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Delete item forever</button>
           </div>
           <input id="itemContainer" type="hidden" />
         </div>
         <label>
-          Заметка
+          Note
           <textarea id="itemNote" rows="3"></textarea>
         </label>
         <div class="field-label item-photo-field">
-          Фото
+          Photo
           <div id="itemPhotoPreview" class="item-photo-preview empty"></div>
           <div class="item-photo-actions">
             <label class="ghost item-photo-pick">
-              Выбрать фото
+              Choose photo
               <input id="itemPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <label class="ghost item-photo-pick">
-              Снять фото
+              Take photo
               <input id="itemPhotoCameraInput" type="file" accept="image/*" capture="environment" />
             </label>
-            <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
-            <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
+            <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Remove photo</button>
+            <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
           </div>
           <small id="itemPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
-          <button id="copySharedItemDialogBtn" class="ghost" type="button" hidden>Скопировать</button>
-          <button id="saveItemBtn" value="default">Сохранить</button>
+          <button id="copySharedItemDialogBtn" class="ghost" type="button" hidden>Copy</button>
+          <button id="saveItemBtn" value="default">Save</button>
         </footer>
       </form>
     </dialog>
@@ -222,83 +222,83 @@
     <dialog id="rootContainerDialog">
       <form method="dialog" class="dialog-card root-container-dialog-card">
         <header>
-          <h2 id="rootContainerDialogTitle">Сумка или место</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+          <h2 id="rootContainerDialogTitle">Bag or place</h2>
+          <button value="cancel" class="icon-button" aria-label="Close">×</button>
         </header>
         <label>
-          Название
+          Name
           <input id="rootContainerName" />
         </label>
         <div class="dialog-two-columns">
           <label>
-            Вес, г
+            Weight, g
             <input id="rootContainerWeight" type="number" min="0" step="1" inputmode="numeric" enterkeyhint="done" />
           </label>
           <label>
-            Объём, л
+            Volume, l
             <input id="rootContainerVolume" type="text" inputmode="decimal" enterkeyhint="done" />
           </label>
           <label>
-            Цвет
-            <input id="rootContainerColor" type="text" placeholder="например: красная" />
+            Color
+            <input id="rootContainerColor" type="text" placeholder="for example: red" />
           </label>
           <fieldset class="container-dimensions-field">
-            <legend>Размеры, см</legend>
+            <legend>Dimensions, cm</legend>
             <label>
-              Ш
+              W
               <input id="rootContainerWidth" type="text" inputmode="decimal" enterkeyhint="done" />
             </label>
             <label>
-              В
+              H
               <input id="rootContainerHeight" type="text" inputmode="decimal" enterkeyhint="done" />
             </label>
             <label>
-              Г
+              D
               <input id="rootContainerDepth" type="text" inputmode="decimal" enterkeyhint="done" />
             </label>
           </fieldset>
         </div>
         <label>
-          Где хранится
+          Storage place
           <select id="rootContainerLocation"></select>
         </label>
         <div class="field-label">
-          Категории
+          Categories
           <div id="rootContainerCategoryList" class="category-picker"></div>
         </div>
         <div id="rootContainerPlacementField" class="field-label item-container-field">
-          <span id="rootContainerPlacementLabel">Находится в</span>
+          <span id="rootContainerPlacementLabel">Located in</span>
           <div class="item-container-control root-container-placement-control">
             <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
-            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переложить в пределах укладки</button>
-            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Скопировать в другую укладку</button>
-            <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Удалить</button>
-            <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить навсегда</button>
+            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Move within layout</button>
+            <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
+            <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Remove</button>
+            <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Delete forever</button>
           </div>
         </div>
         <label>
-          Заметки
+          Notes
           <textarea id="rootContainerNote" rows="3"></textarea>
         </label>
         <div class="field-label item-photo-field">
-          Фото
+          Photo
           <div id="rootContainerPhotoPreview" class="item-photo-preview empty"></div>
           <div class="item-photo-actions">
             <label class="ghost item-photo-pick">
-              Выбрать фото
+              Choose photo
               <input id="rootContainerPhotoInput" type="file" accept="image/*" multiple />
             </label>
             <label class="ghost item-photo-pick">
-              Снять фото
+              Take photo
               <input id="rootContainerPhotoCameraInput" type="file" accept="image/*" capture="environment" />
             </label>
-            <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Удалить фото</button>
-            <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Сделать главным</button>
+            <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Remove photo</button>
+            <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
           </div>
           <small id="rootContainerPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
-          <button id="saveRootContainerBtn" value="default">Сохранить</button>
+          <button id="saveRootContainerBtn" value="default">Save</button>
         </footer>
       </form>
     </dialog>
@@ -386,20 +386,20 @@
     <dialog id="layoutEditDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2 id="layoutEditTitle">Редактировать укладку</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+          <h2 id="layoutEditTitle">Edit layout</h2>
+          <button value="cancel" class="icon-button" aria-label="Close">×</button>
         </header>
         <label>
-          Название
+          Name
           <input id="layoutEditName" />
         </label>
         <label id="layoutEditLanguageLabel">
-          Язык шаблона
+          Template language
           <select id="layoutEditLanguage"></select>
         </label>
         <footer class="layout-edit-actions">
-          <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Удалить</button>
-          <button id="saveEditedLayoutBtn" value="default">Сохранить</button>
+          <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Delete</button>
+          <button id="saveEditedLayoutBtn" value="default">Save</button>
         </footer>
       </form>
     </dialog>
@@ -407,23 +407,23 @@
     <dialog id="layoutDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2 id="layoutCreateTitle">Новая укладка</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+          <h2 id="layoutCreateTitle">New layout</h2>
+          <button value="cancel" class="icon-button" aria-label="Close">×</button>
         </header>
         <label>
-          Название
-          <input id="layoutName" placeholder="Например: Летний ПВД" />
+          Name
+          <input id="layoutName" placeholder="For example: Summer overnighter" />
         </label>
         <label>
-          Создать
+          Create
           <select id="layoutCreateMode">
-            <option value="empty">Пустую укладку</option>
-            <option value="copy">Копию укладки</option>
-            <option value="from-template-layout">Укладку из шаблона</option>
-            <option value="template" class="template-mode-option">Пустой шаблон</option>
-            <option value="template-copy" class="template-mode-option">Копию шаблона</option>
-            <option value="demo-template">Demo-шаблон</option>
-            <option value="shared-template">Shared-шаблон</option>
+            <option value="empty">Empty layout</option>
+            <option value="copy">Layout copy</option>
+            <option value="from-template-layout">Layout from template</option>
+            <option value="template" class="template-mode-option">Empty template</option>
+            <option value="template-copy" class="template-mode-option">Template copy</option>
+            <option value="demo-template">Demo template</option>
+            <option value="shared-template">Shared template</option>
           </select>
         </label>
         <label id="layoutTemplateKindLabel" hidden>
@@ -434,15 +434,15 @@
           </select>
         </label>
         <label id="layoutTemplateLanguageLabel" hidden>
-          Язык шаблона
+          Template language
           <select id="layoutTemplateLanguage"></select>
         </label>
         <label id="layoutCopyLabel">
-          <span id="layoutCopySourceLabel">Скопировать из</span>
+          <span id="layoutCopySourceLabel">Copy from</span>
           <select id="layoutCopyFrom"></select>
         </label>
         <footer>
-          <button id="saveLayoutBtn" value="default">Создать</button>
+          <button id="saveLayoutBtn" value="default">Create</button>
         </footer>
       </form>
     </dialog>
@@ -478,18 +478,18 @@
     <dialog id="authDialog">
       <form id="authForm" class="dialog-card auth-dialog-card">
         <header>
-          <h2>Вход по ссылке</h2>
-          <button type="button" class="icon-button" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
+          <h2>Sign in by link</h2>
+          <button type="button" class="icon-button" aria-label="Close" onclick="this.closest('dialog').close()">×</button>
         </header>
-        <p class="dialog-note">Введите email. Мы отправим magic link, а пароль вводить не нужно.</p>
+        <p class="dialog-note">Enter your email. We will send a magic link, no password needed.</p>
         <label>
           Email
           <input id="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required />
         </label>
         <p id="authDialogStatus" class="dialog-status" aria-live="polite"></p>
         <footer>
-          <button type="button" class="ghost" onclick="this.closest('dialog').close()">Закрыть</button>
-          <button id="authSubmitBtn" type="submit">Отправить ссылку</button>
+          <button type="button" class="ghost" onclick="this.closest('dialog').close()">Close</button>
+          <button id="authSubmitBtn" type="submit">Send link</button>
         </footer>
       </form>
     </dialog>
@@ -598,6 +598,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=969" type="module"></script>
+    <script src="./app.js?v=979" type="module"></script>
   </body>
 </html>

@@ -34,34 +34,34 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   } = dependencies;
   if (isSharedListLinkRoute()) return;
   if (isForcedOffline()) {
-    setLayoutLoadStatus("warning", "Офлайн: показана локальная укладка");
+    setLayoutLoadStatus("warning", "Offline: showing the local layout");
     if (isExplicitlySignedOut()) {
-      await enterSignedOutPublicMode("Вы вышли · личные списки скрыты, открыта локальная копия демо");
+      await enterSignedOutPublicMode("Signed out · personal lists are hidden, local demo copy is open");
       return;
     }
-    unlockOfflineState("Принудительно офлайн · локальная укладка доступна");
+    unlockOfflineState("Forced offline · local layout is available");
     return;
   }
   let authData = null;
   try {
-    setLayoutLoadStatus("loading", "Проверяю вход и личные укладки...");
-    updateSyncUi("Проверяю вход...");
+    setLayoutLoadStatus("loading", "Checking sign-in and personal layouts...");
+    updateSyncUi("Checking sign-in...");
     authData = await apiFetch("/auth/me");
   } catch (error) {
     runtime.currentUser = null;
     if (isAuthCheckUnavailableError(error, isNetworkError)) {
-      setLayoutLoadStatus("warning", "Сервер недоступен, пробую локальную копию");
-      if (activateOfflineRememberedSession("Сервер недоступен · открыта локальная копия личных укладок")) return;
+      setLayoutLoadStatus("warning", "Server unavailable, trying the local copy");
+      if (activateOfflineRememberedSession("Server unavailable · local copy of personal layouts is open")) return;
       if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
         runtime.appUnlocked = true;
         await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
         updateSyncUi(currentPublicTemplateStatusMessage());
         return;
       }
-      await enterSignedOutPublicMode("Сервер недоступен · личные списки скрыты, открыта локальная копия демо");
+      await enterSignedOutPublicMode("Server unavailable · personal lists are hidden, local demo copy is open");
       return;
     }
-    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
+    setLayoutLoadStatus("warning", "Sign-in is not confirmed, personal layouts are hidden");
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       runtime.appUnlocked = true;
       await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
@@ -81,11 +81,11 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   runtime.currentUser = authData.user || authData.me || authData.account || null;
   if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
   if (!runtime.currentUser) {
-    if (activateOfflineRememberedSession("Вход не подтверждён · открыта локальная копия личных укладок")) return;
+    if (activateOfflineRememberedSession("Sign-in is not confirmed · local copy of personal layouts is open")) return;
     clearOfflineRememberedSession();
     runtime.appUnlocked = true;
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
-    setLayoutLoadStatus("warning", "Вход не подтверждён, личные укладки скрыты");
+    setLayoutLoadStatus("warning", "Sign-in is not confirmed, personal layouts are hidden");
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
       updateSyncUi(currentPublicTemplateStatusMessage());
@@ -117,13 +117,13 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   rememberAuthenticatedUser();
   restoreTemplateCopyDraftsFromRecovery();
   if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
-  setLayoutLoadStatus("loading", "Загружаю личные укладки...");
-  updateSyncUi("Вход выполнен · загружаю данные...");
+  setLayoutLoadStatus("loading", "Loading personal layouts...");
+  updateSyncUi("Signed in · loading data...");
   await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });
 
   try {
     if (runtime.syncMeta.dirty && hasLocalSavedState()) {
-      updateSyncUi("Есть локальные изменения · проверяю даты...");
+      updateSyncUi("Local changes found · checking timestamps...");
       await loadRemoteState({ notifyDirtySave: syncDirtyNotify, preferredLayout: remotePreferredLayout });
       if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
       setPersonalLayoutsLoadedStatus();
@@ -135,13 +135,13 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", "Сервер недоступен, показана локальная укладка");
-      updateSyncUi("Вход выполнен · офлайн, локальная укладка доступна");
+      setLayoutLoadStatus("warning", "Server unavailable, showing the local layout");
+      updateSyncUi("Signed in · offline, local layout is available");
       return;
     }
     renderInitialLocalFallbackIfNeeded();
-    setLayoutLoadStatus("error", `Не удалось загрузить личные укладки: ${error.message}`);
-    updateSyncUi(`Вход выполнен · не удалось загрузить данные: ${error.message}`);
+    setLayoutLoadStatus("error", `Could not load personal layouts: ${error.message}`);
+    updateSyncUi(`Signed in · could not load data: ${error.message}`);
   }
 }
 

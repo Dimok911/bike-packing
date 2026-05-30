@@ -6,7 +6,17 @@ import {
   listFreshnessChanged,
   normalizeListFreshness
 } from "../../src/sync/list-freshness.js";
+import {
+  loadStoredSyncMeta,
+  saveStoredSyncMeta
+} from "../../src/storage/sync-meta.js";
+import {
+  applyEntityChangesToState,
+  canRequestEntityChanges
+} from "../../src/sync/entity-changes.js";
+import { rememberEntitySyncResultMeta } from "../../src/sync/entity-sync.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
+import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
 
@@ -47,6 +57,137 @@ test("CRITICAL sync-save: changed freshness requests a full state refresh", () =
     ),
     true
   );
+});
+
+test("CRITICAL sync-save: changed freshness can request entity changes without full state", () => {
+  assert.deepEqual(
+    canRequestEntityChanges({
+      listId: "list-1",
+      syncMeta: { listId: "list-1", stateRevision: 7 },
+      freshness: { listId: "list-1", stateRevision: 8 }
+    }),
+    {
+      ok: true,
+      sinceRevision: 7,
+      targetRevision: 8
+    }
+  );
+
+  assert.equal(
+    canRequestEntityChanges({
+      listId: "list-1",
+      syncMeta: { listId: "list-1", stateRevision: null },
+      freshness: { listId: "list-1", stateRevision: 8 }
+    }).ok,
+    false
+  );
+});
+
+test("CRITICAL sync-save: sequential entity sync results advance base revision for next entity type", () => {
+  const syncMeta = {
+    dirty: true,
+    serverUpdatedAt: "2026-05-30T10:00:00.000Z",
+    stateRevision: 7
+  };
+  const remembered = [];
+
+  assert.equal(
+    rememberEntitySyncResultMeta({
+      attempted: true,
+      serverUpdatedAt: "2026-05-30T10:01:00.000Z",
+      integrityMeta: { stateRevision: 8, entityHash: "entity-8" }
+    }, {
+      rememberRemoteIntegrityMeta: (meta) => {
+        remembered.push(meta);
+        syncMeta.stateRevision = meta.stateRevision ?? syncMeta.stateRevision;
+        syncMeta.entityHash = meta.entityHash || syncMeta.entityHash || null;
+      },
+      syncMeta
+    }),
+    true
+  );
+
+  assert.equal(syncMeta.serverUpdatedAt, "2026-05-30T10:01:00.000Z");
+  assert.equal(syncMeta.stateRevision, 8);
+  assert.deepEqual(remembered, [{ stateRevision: 8, entityHash: "entity-8" }]);
+});
+
+test("CRITICAL sync-save: entity changes apply changed and deleted records locally", () => {
+  const sourceState = {
+    activeLayoutId: "layout-1",
+    items: {
+      "item-1": { id: "item-1", name: "Pump" },
+      "item-2": { id: "item-2", name: "Old" }
+    },
+    containers: {
+      "bag-1": { id: "bag-1", name: "Bag" }
+    },
+    layouts: {
+      "layout-1": { id: "layout-1", name: "Main", rootContainerIds: ["bag-1"] }
+    },
+    categories: ["Tools"],
+    locations: ["Home"],
+    customCategories: ["Tools"],
+    customLocations: ["Home"],
+    hiddenCategories: [],
+    hiddenLocations: [],
+    packedItems: {},
+    collapsedContainers: {}
+  };
+
+  const result = applyEntityChangesToState(sourceState, {
+    listId: "list-1",
+    stateRevision: 8,
+    serverUpdatedAt: "2026-05-30T10:00:00.000Z",
+    changes: {
+      items: {
+        changed: [{ id: "item-1", payload: { id: "item-1", name: "Pump v2" } }],
+        deleted: [{ id: "item-2" }]
+      },
+      dictionaries: {
+        changed: [{
+          id: "dictionary-state",
+          payload: {
+            id: "dictionary-state",
+            categories: ["Tools", "Repair"],
+            locations: ["Home"],
+            customCategories: ["Tools", "Repair"],
+            customLocations: ["Home"]
+          }
+        }],
+        deleted: []
+      }
+    }
+  });
+
+  assert.equal(result.applied, true);
+  assert.equal(result.state.items["item-1"].name, "Pump v2");
+  assert.equal(result.state.items["item-2"], undefined);
+  assert.deepEqual(result.state.customCategories, ["Tools", "Repair"]);
+  assert.equal(result.meta.stateRevision, 8);
+});
+
+test("CRITICAL sync-save: entity changes fall back when revision changed without rows", () => {
+  const result = applyEntityChangesToState({
+    activeLayoutId: "layout-1",
+    items: { "item-1": { id: "item-1", name: "Pump" } },
+    containers: { "bag-1": { id: "bag-1", name: "Bag" } },
+    layouts: { "layout-1": { id: "layout-1", rootContainerIds: ["bag-1"] } },
+    categories: [],
+    locations: [],
+    customCategories: [],
+    customLocations: [],
+    hiddenCategories: [],
+    hiddenLocations: []
+  }, {
+    listId: "list-1",
+    sinceRevision: 7,
+    stateRevision: 8,
+    changes: {}
+  });
+
+  assert.equal(result.applied, false);
+  assert.equal(result.fallbackRequired, true);
 });
 
 test("CRITICAL sync-save: background polling requires lightweight freshness signal", () => {
@@ -106,6 +247,92 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
     }),
     true
   );
+});
+
+test("CRITICAL offline-start: startup tries entity changes before full state when freshness changed", async () => {
+  let changesCalled = false;
+  let fullStateCalled = false;
+  const runtime = {
+    appUnlocked: false,
+    currentUser: { id: "user-1" },
+    initialRemoteLoadPending: true,
+    pendingGuestLocalLayoutCandidate: null,
+    remoteRefreshInFlight: false,
+    state: {
+      activeLayoutId: "layout-1",
+      items: { "item-1": { id: "item-1" } },
+      containers: { "bag-1": { id: "bag-1" } },
+      layouts: { "layout-1": { id: "layout-1" } }
+    },
+    syncMeta: {
+      dirty: false,
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    }
+  };
+
+  await loadRemoteStateFlow({
+    runtime,
+    dependencies: {
+      canUseCachedStartupState,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      currentPackingListId: () => "list-1",
+      fetchRemoteListFreshnessRecord: async () => ({
+        listId: "list-1",
+        serverUpdatedAt: "2026-05-27T20:01:00.000Z",
+        stateRevision: 8
+      }),
+      fetchRemoteStateRecord: async () => {
+        fullStateCalled = true;
+        return {};
+      },
+      hasLocalSavedState: () => true,
+      isForeignLocalSyncState: () => false,
+      isPublicLayoutContext: () => false,
+      isSharedListLinkRoute: () => false,
+      setLayoutLoadStatus: () => {},
+      tryApplyRemoteEntityChanges: async () => {
+        changesCalled = true;
+        return { applied: true };
+      },
+      updateSyncUi: () => {}
+    }
+  });
+
+  assert.equal(changesCalled, true);
+  assert.equal(fullStateCalled, false);
+});
+
+test("CRITICAL offline-start: sync meta keeps the active list id for startup freshness", () => {
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, String(value))
+  };
+  try {
+    saveStoredSyncMeta("sync-meta", {
+      dirty: false,
+      listId: "list-1",
+      currentListId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    });
+    assert.deepEqual(
+      {
+        listId: loadStoredSyncMeta("sync-meta").listId,
+        currentListId: loadStoredSyncMeta("sync-meta").currentListId
+      },
+      {
+        listId: "list-1",
+        currentListId: "list-1"
+      }
+    );
+  } finally {
+    if (previousLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousLocalStorage;
+  }
 });
 
 test("CRITICAL offline-start: startup must fetch full state without local state or with dirty changes", () => {

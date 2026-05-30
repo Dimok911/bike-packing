@@ -12,12 +12,12 @@ export function parseVolumeInput(value) {
 
 export function formatVolume(liters) {
   const number = Number(liters || 0);
-  if (!number) return "0 л";
-  return `${String(number).replace(".", ",")} л`;
+  if (!number) return "0 l";
+  return `${String(number)} l`;
 }
 
 export function formatWeight(grams) {
-  if (!grams) return "0 г";
-  if (grams < 1000) return `${grams} г`;
-  return `${(grams / 1000).toFixed(1).replace(".", ",")} кг`;
+  if (!grams) return "0 g";
+  if (grams < 1000) return `${grams} g`;
+  return `${(grams / 1000).toFixed(1)} kg`;
 }

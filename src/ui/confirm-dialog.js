@@ -25,7 +25,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     title,
     text,
     okText,
-    cancelText = "Отмена",
+    cancelText = "Cancel",
     alternateText = "",
     highlightText = "",
     highlightCount = "",
@@ -97,10 +97,10 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
   }
 
   function askUnsavedChangesDialog() {
-    refs.confirmTitle.textContent = "Есть несохранённые изменения";
-    refs.confirmText.textContent = "Сохранить изменения перед закрытием?";
-    refs.confirmCancelBtn.textContent = "Закрыть без сохранения";
-    refs.confirmOkBtn.textContent = "Сохранить";
+    refs.confirmTitle.textContent = "You have unsaved changes";
+    refs.confirmText.textContent = "Save changes before closing?";
+    refs.confirmCancelBtn.textContent = "Close without saving";
+    refs.confirmOkBtn.textContent = "Save";
     refs.confirmCancelBtn.classList.add("danger-action");
     refs.confirmOkBtn.classList.remove("danger-action");
     refs.confirmDialog.classList.remove("danger-confirm-dialog");

@@ -1,5 +1,5 @@
 export function layoutEditTitle(layout) {
-  return layout?.adminDemo || layout?.adminSharedSourceId ? "Редактировать шаблон" : "Редактировать укладку";
+  return layout?.adminDemo || layout?.adminSharedSourceId ? "Edit template" : "Edit layout";
 }
 
 export function publicTemplateOptionLabel({ prefix, name, languageLabel }) {
@@ -56,7 +56,11 @@ export function layoutCreateCopySourceOptions({
 export function canReplaceLayoutCreateNameSuggestion(value, { force = false } = {}) {
   if (force) return true;
   const text = String(value || "").trim();
-  return !text || /^Новая укладка( \d+)?$/.test(text) || /^Шаблон( \d+)?$/.test(text);
+  return !text ||
+    /^New layout( \d+)?$/i.test(text) ||
+    /^Template( \d+)?$/i.test(text) ||
+    /^Новая укладка( \d+)?$/.test(text) ||
+    /^Шаблон( \d+)?$/.test(text);
 }
 
 export function suggestedLayoutCreateName({
@@ -68,32 +72,34 @@ export function suggestedLayoutCreateName({
   uniquePublishedTemplateName = (value) => value,
   language = ""
 } = {}) {
-  if (mode === "template-copy") return uniquePublishedTemplateName(selectedSourceName || "Шаблон");
-  if (isLayoutCreateTemplateLayoutMode(mode)) return uniqueLayoutName(selectedSourceName || "Новая укладка");
+  if (mode === "template-copy") return uniquePublishedTemplateName(selectedSourceName || "Template");
+  if (isLayoutCreateTemplateLayoutMode(mode)) return uniqueLayoutName(selectedSourceName || "New layout");
   if (mode !== "template" && mode !== "demo-template" && mode !== "shared-template") return "";
-  const fallback = kind === "demo" ? demoTemplateFallbackName(language) : "Новый шаблон";
+  const fallback = kind === "demo" ? demoTemplateFallbackName(language) : "New template";
   return uniquePublishedTemplateName(fallback);
 }
 
 export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, isLastLayout }) {
+  const containerText = `${containerCount} ${containerCount === 1 ? "bag/container" : "bags/containers"}`;
   return {
-    title: "Удалить укладку?",
-    text: `«${layout?.name || "Укладка"}» будет удалена из списка укладок.`,
-    highlightText: `${containerCount} сумок/контейнеров, ${itemText} исчезнут только из этой укладки.\nСами вещи и сумки останутся во вкладках «Вещи» и «Сумки».${isLastLayout ? "\nЭто последняя укладка, вместо неё будет создана пустая." : ""}`,
-    okText: "Удалить",
+    title: "Delete layout?",
+    text: `“${layout?.name || "Layout"}” will be removed from the layout list.`,
+    highlightText: `${containerText} and ${itemText} will disappear only from this layout.\nThe items and bags themselves will stay on the Items and Bags tabs.${isLastLayout ? "\nThis is the last layout, so an empty one will be created instead." : ""}`,
+    okText: "Delete",
     tone: "danger"
   };
 }
 
 export function publicLayoutDeleteConfirm({ layout, containerCount, itemText, deletePublished = false }) {
+  const containerText = `${containerCount} ${containerCount === 1 ? "bag/container" : "bags/containers"}`;
   const serverText = deletePublished
-    ? "Опубликованный шаблон будет удален с сервера и из публичного списка шаблонов."
-    : "Опубликованная версия на сервере не удаляется.";
+    ? "The published template will be deleted from the server and the public template list."
+    : "The published version on the server will not be deleted.";
   return {
-    title: "Удалить шаблон?",
-    text: `«${layout?.name || "Шаблон"}» будет удален из локальных шаблонов для правки.`,
-    highlightText: `${containerCount} сумок/контейнеров, ${itemText} исчезнут из этого локального шаблона. ${serverText}`,
-    okText: "Удалить",
+    title: "Delete template?",
+    text: `“${layout?.name || "Template"}” will be removed from local editable templates.`,
+    highlightText: `${containerText} and ${itemText} will disappear from this local template. ${serverText}`,
+    okText: "Delete",
     tone: "danger"
   };
 }

@@ -57,6 +57,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     stateIntegrityMetaFromResponse,
     statePrivateLayoutCount,
     timeValue,
+    tryApplyRemoteEntityChanges,
     updateSyncUi
   } = dependencies;
   if (!runtime.currentUser) return;
@@ -81,10 +82,12 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     ) {
       try {
         const freshness = await fetchRemoteListFreshnessRecord(startupListId);
+        const accountMatches = isForeignLocalSyncState ? !isForeignLocalSyncState() : true;
+        const hasLocalStateForStartup = hasLocalSavedState();
         if (canUseCachedStartupState?.({
-          accountMatches: isForeignLocalSyncState ? !isForeignLocalSyncState() : true,
+          accountMatches,
           currentListId: startupListId,
-          hasLocalState: hasLocalSavedState(),
+          hasLocalState: hasLocalStateForStartup,
           remoteFreshness: freshness,
           syncMeta
         })) {
@@ -105,6 +108,22 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           setPersonalLayoutsLoadedStatus();
           updateSyncUi();
           return;
+        }
+        if (accountMatches && hasLocalStateForStartup && !syncMeta.dirty && tryApplyRemoteEntityChanges) {
+          try {
+            const changesResult = await tryApplyRemoteEntityChanges(startupListId, freshness, { preferredLayout });
+            if (changesResult?.applied) return;
+            console.info("[bike-packing] Startup entity changes feed fell back to full state refresh", {
+              listId: startupListId,
+              reason: changesResult?.reason || "not-applied"
+            });
+          } catch (error) {
+            console.info("[bike-packing] Startup entity changes feed failed; falling back to full state refresh", {
+              listId: startupListId,
+              status: error?.status || null,
+              message: error?.message || String(error || "")
+            });
+          }
         }
       } catch {
         // Older API processes do not have the lightweight endpoint; fall back
@@ -320,7 +339,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     syncMeta.serverUpdatedAt = serverTimeText || null;
     syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt;
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-    rememberRemoteIntegrityMeta(remoteIntegrityMeta);
+    rememberRemoteIntegrityMeta(record, remoteIntegrityMeta, data);
     rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();

@@ -170,10 +170,23 @@ function migrateLayoutCustomDictionary(layout, type, sourceState, defaults = {},
   setCustomDictionaryValues(layout, type, customValues);
 }
 
-function prunePublicLayoutCustomDictionary(layout, type, usedValues = []) {
-  if (!isPublicLayoutRecord(layout)) return;
+function pruneLayoutCustomDictionary(layout, type, usedValues = []) {
   const used = new Set(normalizeDictionaryValues(usedValues));
   setCustomDictionaryValues(layout, type, customDictionaryValues(layout, type).filter((value) => used.has(value)));
+}
+
+function layoutCustomDictionarySignature(layout) {
+  return JSON.stringify({
+    customLocations: customDictionaryValues(layout, "location"),
+    customCategories: customDictionaryValues(layout, "category")
+  });
+}
+
+function pruneLayoutCustomDictionaries(layout, usedLocations = [], usedCategories = []) {
+  const before = layoutCustomDictionarySignature(layout);
+  pruneLayoutCustomDictionary(layout, "location", usedLocations);
+  pruneLayoutCustomDictionary(layout, "category", usedCategories);
+  return layoutCustomDictionarySignature(layout) !== before;
 }
 
 function layoutDictionaryList(owner, type, usedValues = [], defaults = {}) {
@@ -245,7 +258,8 @@ export function ensureLayoutDictionaries(layout, {
   sourceState,
   defaults = {},
   getLayoutContainerIdSet,
-  getLayoutItemIdSet
+  getLayoutItemIdSet,
+  pruneUnusedCustomDictionaries = false
 } = {}) {
   if (!layout) return null;
   const source = sourceState || {};
@@ -254,14 +268,32 @@ export function ensureLayoutDictionaries(layout, {
   migrateLayoutCustomDictionary(layout, "category", source, defaults, helpers);
   const usedLocations = layoutDictionaryValues(layout, "location", source, helpers);
   const usedCategories = layoutDictionaryValues(layout, "category", source, helpers);
-  if (isPublicLayoutRecord(layout) && layout.publicDictionaryCleanupVersion !== PUBLIC_DICTIONARY_CLEANUP_VERSION) {
-    prunePublicLayoutCustomDictionary(layout, "location", usedLocations);
-    prunePublicLayoutCustomDictionary(layout, "category", usedCategories);
+  if (pruneUnusedCustomDictionaries) {
+    pruneLayoutCustomDictionaries(layout, usedLocations, usedCategories);
+  } else if (isPublicLayoutRecord(layout) && layout.publicDictionaryCleanupVersion !== PUBLIC_DICTIONARY_CLEANUP_VERSION) {
+    pruneLayoutCustomDictionaries(layout, usedLocations, usedCategories);
     layout.publicDictionaryCleanupVersion = PUBLIC_DICTIONARY_CLEANUP_VERSION;
   }
   layout.locations = layoutDictionaryList(layout, "location", usedLocations, defaults);
   layout.categories = layoutDictionaryList(layout, "category", usedCategories, defaults);
   return layout;
+}
+
+export function pruneUnusedLayoutCustomDictionaries(layout, {
+  sourceState,
+  defaults = {},
+  getLayoutContainerIdSet,
+  getLayoutItemIdSet
+} = {}) {
+  if (!layout) return false;
+  const source = sourceState || {};
+  const helpers = { getLayoutContainerIdSet, getLayoutItemIdSet };
+  const usedLocations = layoutDictionaryValues(layout, "location", source, helpers);
+  const usedCategories = layoutDictionaryValues(layout, "category", source, helpers);
+  const changed = pruneLayoutCustomDictionaries(layout, usedLocations, usedCategories);
+  layout.locations = layoutDictionaryList(layout, "location", usedLocations, defaults);
+  layout.categories = layoutDictionaryList(layout, "category", usedCategories, defaults);
+  return changed;
 }
 
 export function readOnlyLayoutDictionaries(layout, {

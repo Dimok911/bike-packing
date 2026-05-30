@@ -83,6 +83,9 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       return;
     }
     if (!forceOverwrite && entitySync.attempted && hasLegacyChanges) {
+      // Allowed full-payload recovery path: entity sync handled its known
+      // records, but an audited top-level legacy diff remains. New ordinary
+      // fields should be modeled as entities/local UI state instead.
       const fallbackReason = legacyPayloadFallbackReasonText(legacyDiffKeys);
       updateSyncUi(`Сохраняю полный payload · ${fallbackReason}`);
       console.info("[bike-packing] Full payload fallback after entity sync", {
@@ -94,6 +97,8 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
         saveSyncMeta();
       }
     }
+    // Full payload writer is allowed for force overwrite, conflict/recovery
+    // merge results, entity-sync-uncovered legacy diffs, and old API fallback.
     const data = await saveRemoteStateRecord({ forceOverwrite });
     runtime.syncMeta.dirty = false;
     runtime.syncMeta.serverUpdatedAt = remoteUpdatedAt(data.record || data.list || data) || new Date().toISOString();
