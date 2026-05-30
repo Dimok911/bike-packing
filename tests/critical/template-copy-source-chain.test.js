@@ -53,8 +53,7 @@ import {
 } from "../../src/public/public-template-metadata.js";
 import {
   PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY,
-  publicTemplatePayloadPath,
-  shouldFallbackToLegacyPublicTemplatePayload
+  publicTemplatePayloadPath
 } from "../../src/public/public-template-payload-api.js";
 import {
   appendCopiedFromTemplateNote,
@@ -160,7 +159,7 @@ test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
   );
 });
 
-test("public template payload endpoint replaces legacy itemKey reads when available", () => {
+test("public template payload endpoint replaces legacy itemKey reads", () => {
   assert.equal(PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY, "publicTemplatePayloadEndpoint");
   assert.equal(
     publicTemplatePayloadPath("shared-layout:demo bag"),
@@ -168,9 +167,6 @@ test("public template payload endpoint replaces legacy itemKey reads when availa
   );
   assert.equal(publicTemplatePayloadPath("demo-state:en"), "/bike-packing/public-template-payloads/demo-state%3Aen");
   assert.equal(publicTemplatePayloadPath(""), "");
-  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 404 }), true);
-  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 405 }), true);
-  assert.equal(shouldFallbackToLegacyPublicTemplatePayload({ status: 500 }), false);
 });
 
 test("demo layout choices encode the selected UI language", () => {

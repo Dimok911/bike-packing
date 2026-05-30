@@ -1,3 +1,5 @@
+import { isLegacyPersonalSyncWriteBlockedError } from "./legacy-personal-sync.js";
+
 export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = false, forceOverwrite = false, preferredLayout = null, preferServerOnConflict = false, retryForceConflict = true } = {}) {
   const {
     blockDestructiveLocalSave,
@@ -98,7 +100,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       }
     }
     // Full payload writer is allowed for force overwrite, conflict/recovery
-    // merge results, entity-sync-uncovered legacy diffs, and old API fallback.
+    // merge results, and entity-sync-uncovered legacy diffs through the list API.
     const data = await saveRemoteStateRecord({ forceOverwrite });
     runtime.syncMeta.dirty = false;
     runtime.syncMeta.serverUpdatedAt = remoteUpdatedAt(data.record || data.list || data) || new Date().toISOString();
@@ -121,6 +123,11 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     }
     runtime.syncMeta.dirty = true;
     saveSyncMeta();
+    if (isLegacyPersonalSyncWriteBlockedError(error)) {
+      updateSyncUi("Новый API синхронизации недоступен · legacy-запись отключена, изменения сохранены на устройстве");
+      if (notify) showToast("Новый API синхронизации недоступен. Изменения остались на устройстве и не отправлены в старый legacy-путь.", "error");
+      return;
+    }
     if (error.status === 409) {
       if (forceOverwrite) {
         if (retryForceConflict) {

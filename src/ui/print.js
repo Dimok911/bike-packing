@@ -25,16 +25,15 @@ export function askPrintLabelsChoice(askConfirmDialog, { createPrintTarget = nul
     printTarget = createPrintTarget?.() || null;
   };
   return askConfirmDialog({
-    title: "Печать списка",
-    text: "Печатать метки мест хранения и категорий? С метками проще ориентироваться в поездке, без меток список компактнее.",
-    okText: "С метками",
-    cancelText: "Без меток",
+    title: "Print list",
+    text: "Print storage-place and category labels? Labels make the list easier to navigate on the trip; without labels, the list is more compact.",
+    okText: "With labels",
+    cancelText: "Without labels",
     onOk: preparePrintTarget,
     onCancel: preparePrintTarget
-  }).then((includeLabels) => ({
-    includeLabels,
-    printTarget
-  }));
+  }).then((includeLabels) => includeLabels === null
+    ? { cancelled: true, includeLabels: true, printTarget: null }
+    : { includeLabels, printTarget });
 }
 
 export function createPrintWindowTarget() {

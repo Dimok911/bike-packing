@@ -133,8 +133,7 @@ import {
 } from "./src/public/public-template-metadata.js";
 import {
   PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY,
-  publicTemplatePayloadPath,
-  shouldFallbackToLegacyPublicTemplatePayload
+  publicTemplatePayloadPath
 } from "./src/public/public-template-payload-api.js";
 import { createPublicTemplatePayloadCache } from "./src/public/template-payload-cache.js";
 import {
@@ -537,6 +536,10 @@ import {
   normalizeListFreshness
 } from "./src/sync/list-freshness.js";
 import { shouldRecoverUnsyncedLocalChanges } from "./src/sync/local-dirty.js";
+import {
+  createLegacyPersonalSyncWriteBlockedError,
+  shouldBlockLegacyPersonalSyncWriteFallback
+} from "./src/sync/legacy-personal-sync.js";
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
@@ -582,7 +585,6 @@ import {
 } from "./src/sync/serialize.js";
 import {
   buildListSaveBody as buildListSaveBodyForSync,
-  buildRemoteSaveBody as buildRemoteSaveBodyForSync,
   pruneAdminPublishedDraftsForSync as pruneAdminPublishedDraftsForSyncValue,
   rememberConflictRemoteMeta as rememberConflictRemoteMetaForSync
 } from "./src/sync/save-body.js";
@@ -5416,18 +5418,6 @@ async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
   }
 }
 
-function buildRemoteSaveBody({ forceOverwrite = false } = {}) {
-  return buildRemoteSaveBodyForSync({
-    dataItemKey: DATA_ITEM_KEY,
-    dataScopeKey: DATA_SCOPE_KEY,
-    forceOverwrite,
-    nowIso,
-    serializeState,
-    syncDevice,
-    syncMeta
-  });
-}
-
 function buildListSaveBody({ forceOverwrite = false } = {}) {
   return buildListSaveBodyForSync({
     forceOverwrite,
@@ -5492,28 +5482,8 @@ function normalizeRemoteListRecord(data) {
 }
 
 async function fetchRemoteStateRecord() {
-  const listRecord = await fetchRemoteListStateRecord().catch((error) => {
-    if (!shouldFallbackToLegacyPersonalSync(error)) throw error;
-    return null;
-  });
-  if (listRecord?.payload) return { record: listRecord, source: "list" };
-
-  // Allowed legacy compatibility path: only used when the personal list API is
-  // unavailable or too old during load. Normal entity sync must not reach this.
-  const params = new URLSearchParams({ scopeKey: DATA_SCOPE_KEY, itemKey: DATA_ITEM_KEY });
-  try {
-    const data = await apiFetch(`/bike-packing-data.json?${params.toString()}`, { timeoutMs: LIST_API_TIMEOUT_MS });
-    const legacyRecord = normalizeRemoteListRecord({
-      ...(data.record || data.list || data),
-      source: data.record?.source || data.list?.source || data.source || "",
-      payload: data.record?.payload || data.list?.payload || data.payload || null
-    });
-    currentPackingListMeta = legacyRecord;
-    return { ...data, record: legacyRecord, source: "legacy" };
-  } catch (error) {
-    if (listRecord && isTemporaryServerStorageError(error)) return { record: listRecord, source: "list" };
-    throw error;
-  }
+  const listRecord = await fetchRemoteListStateRecord();
+  return { record: listRecord, source: "list" };
 }
 
 async function fetchRemoteListDetailRecord(listId) {
@@ -5751,32 +5721,20 @@ async function fetchRemoteListStateSnapshot(listId) {
 async function saveRemoteStateRecord({ forceOverwrite = false } = {}) {
   if (isReadOnlyBikePackingContext()) throw createReadOnlyBikePackingError();
   const listData = await saveRemoteListStateRecord({ forceOverwrite }).catch((error) => {
-    if (!shouldFallbackToLegacyPersonalSync(error)) throw error;
-    return null;
+    if (!shouldBlockLegacyPersonalSyncWrite(error)) throw error;
+    throw createLegacyPersonalSyncWriteBlockedError(error);
   });
   if (listData) return { ...listData, source: "list" };
-
-  // Allowed legacy compatibility writer: only after the list API failed or was
-  // skipped. Routine changes should be covered by entity sync before this call.
-  const requestBody = buildRemoteSaveBody({ forceOverwrite });
-  const body = JSON.stringify(requestBody);
-  const report = syncPayloadSizeReport(requestBody.payload, body);
-  return apiFetch("/bike-packing-data.json", {
-    method: "POST",
-    timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-    body
-  }).catch((error) => {
-    throw annotatePayloadError(error, report);
-  });
+  throw createLegacyPersonalSyncWriteBlockedError();
 }
 
-function shouldFallbackToLegacyPersonalSync(error) {
+function shouldBlockLegacyPersonalSyncWrite(error) {
   if (error?.path?.includes("/bike-packing/lists")) personalListApiUnavailable = true;
-  return error?.status !== 409;
+  return shouldBlockLegacyPersonalSyncWriteFallback(error);
 }
 
 async function fetchRemoteListStateRecord() {
-  if (personalListApiUnavailable) return null;
+  if (personalListApiUnavailable) throw createSkippedPersonalListApiError();
   if (isPublicTemplateListId(currentPackingListId)) saveActivePackingListId("");
   let savedRecord = null;
   if (currentPackingListId) {
@@ -5906,18 +5864,7 @@ async function fetchPublicTemplatePayloadRecordByItemKey(itemKey) {
 }
 
 async function fetchStateRecordMetaByItemKey(itemKey) {
-  try {
-    return await fetchPublicTemplatePayloadRecordByItemKey(itemKey);
-  } catch (error) {
-    if (!shouldFallbackToLegacyPublicTemplatePayload(error)) throw error;
-  }
-
-  // Legacy compatibility path for old backend deployments that do not expose
-  // the public-template payload endpoint yet.
-  const params = new URLSearchParams({ scopeKey: DATA_SCOPE_KEY, itemKey });
-  const data = await apiFetch(`/bike-packing-data.json?${params.toString()}`, { timeoutMs: LIST_API_TIMEOUT_MS });
-  const record = data.record || data.list || data;
-  return normalizeRemoteListRecord({ ...record, payload: record?.payload || data.payload || null });
+  return fetchPublicTemplatePayloadRecordByItemKey(itemKey);
 }
 
 async function fetchStateRecordPayloadByItemKey(itemKey, { cacheKey = "", updatedAt = "" } = {}) {
@@ -6663,12 +6610,12 @@ async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage
     }
     setDemoStatePayloadForLanguage(normalizedLanguage, await defaultDemoState(normalizedLanguage, demoListId), { listId: demoListId });
     render();
-    updateSyncUi("Демо-укладка · просмотр");
+    updateSyncUi("Demo layout · viewing");
   } catch (error) {
     setActivePrivateScope();
     render();
     updateSyncUi();
-    showToast(`Не удалось открыть демо: ${error.message}`, "error");
+    showToast(`Could not open demo: ${error.message}`, "error");
   }
 }
 
@@ -6676,22 +6623,22 @@ async function confirmPublicLayoutTransition(kind, layout = null) {
   const admin = canEditPublishedTemplatesNow();
   if (kind === "demo") {
     return askConfirmDialog({
-      title: admin ? "Открыть демо-укладку для правки?" : "Открыть демо-укладку?",
+      title: admin ? "Open demo layout for editing?" : "Open demo layout?",
       text: admin
-        ? "Это публичная демо-укладка. Изменения будут сохраняться отдельно от вашей личной укладки и после синхронизации станут видны другим пользователям."
-        : "Это демонстрационная укладка. Ее нельзя редактировать напрямую, но можно копировать вещи и сумки в свои укладки.",
-      okText: admin ? "Открыть демо" : "Смотреть демо",
-      cancelText: "Остаться здесь",
+        ? "This is a public demo layout. Changes will be saved separately from your personal layout and will become visible to other users after sync."
+        : "This is a demo layout. It cannot be edited directly, but you can copy items and bags into your own layouts.",
+      okText: admin ? "Open demo" : "View demo",
+      cancelText: "Stay here",
       tone: "warning"
     });
   }
   return askConfirmDialog({
-    title: admin ? "Открыть шаблон для правки?" : "Открыть шаблон?",
+    title: admin ? "Open template for editing?" : "Open template?",
     text: admin
-      ? `Это публичный шаблон${layout?.name ? ` «${layout.name}»` : ""}. Изменения будут сохраняться отдельно от вашей личной укладки и после синхронизации станут видны другим пользователям.`
-      : `Вы открываете шаблон${layout?.name ? ` «${layout.name}»` : ""}. Редактирование заблокировано, доступно только копирование в свои укладки.`,
-    okText: admin ? "Открыть для правки" : "Смотреть шаблон",
-    cancelText: "Остаться здесь",
+      ? `This is a public template${layout?.name ? ` “${layout.name}”` : ""}. Changes will be saved separately from your personal layout and will become visible to other users after sync.`
+      : `You are opening the template${layout?.name ? ` “${layout.name}”` : ""}. Editing is locked; you can only copy it into your own layouts.`,
+    okText: admin ? "Open for editing" : "View template",
+    cancelText: "Stay here",
     tone: "warning"
   });
 }
@@ -6964,8 +6911,8 @@ function isReadonlyTemplateView() {
 
 function readonlyTemplateMessage() {
   return activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID
-    ? "Это демо-шаблон. Чтобы добавлять, редактировать и удалять, создайте свою укладку на основе шаблона."
-    : "Это публичный шаблон. Чтобы добавлять, редактировать и удалять, создайте свою укладку на основе шаблона.";
+    ? "This is a demo template. To add, edit, and delete, create your own layout from the template."
+    : "This is a public template. To add, edit, and delete, create your own layout from the template.";
 }
 
 async function confirmCreateLayoutFromReadonlyTemplate() {
@@ -14270,15 +14217,18 @@ async function restoreFullBackup() {
   });
 }
 async function exportData() {
-  const { html, printTarget } = await buildPrintableHtmlFromChoice();
+  const printChoice = await buildPrintableHtmlFromChoice();
+  if (!printChoice) return;
+  const { html, printTarget } = printChoice;
   printHtmlDocument(html, { printTarget });
 }
 
 async function buildPrintableHtmlFromChoice() {
   const layout = state.layouts[state.activeLayoutId];
-  const { includeLabels, printTarget } = await askPrintLabelsChoice(askConfirmDialog, {
+  const { cancelled, includeLabels, printTarget } = await askPrintLabelsChoice(askConfirmDialog, {
     createPrintTarget: createPrintWindowTarget
   });
+  if (cancelled) return null;
   return {
     html: buildPrintableDocument(state, {
       layoutId: state.activeLayoutId,

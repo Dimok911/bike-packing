@@ -34,6 +34,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     onCancel = null
   }) {
     const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
+    const closeBtn = refs.confirmCloseBtn || refs.confirmDialog.querySelector("header .icon-button");
     refs.confirmTitle.textContent = title;
     refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightCount, tone });
     refs.confirmCancelBtn.textContent = cancelText;
@@ -52,6 +53,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         refs.confirmDialog.removeEventListener("close", handleClose);
         refs.confirmCancelBtn.onclick = null;
         refs.confirmOkBtn.onclick = null;
+        closeBtn?.removeEventListener("click", handleCloseButton);
         if (refs.confirmAlternateBtn) {
           refs.confirmAlternateBtn.onclick = null;
           refs.confirmAlternateBtn.hidden = true;
@@ -64,9 +66,13 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
       };
       const handleClose = () => {
         const value = refs.confirmDialog.returnValue;
-        const confirmed = value === "alternate" ? "alternate" : value === "default";
+        const confirmed = value === "close" ? null : value === "alternate" ? "alternate" : value === "default";
         cleanup();
         resolve(confirmed);
+      };
+      const handleCloseButton = (event) => {
+        event.preventDefault();
+        refs.confirmDialog.close("close");
       };
       const runAction = (action) => {
         try {
@@ -91,6 +97,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
           refs.confirmDialog.close("alternate");
         };
       }
+      closeBtn?.addEventListener("click", handleCloseButton);
       refs.confirmDialog.addEventListener("close", handleClose);
       openModalDialog(refs.confirmDialog);
     });

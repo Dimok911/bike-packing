@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   canUseCachedStartupState,
   hasListFreshnessSignal,
@@ -15,6 +17,11 @@ import {
   canRequestEntityChanges
 } from "../../src/sync/entity-changes.js";
 import { rememberEntitySyncResultMeta } from "../../src/sync/entity-sync.js";
+import {
+  createLegacyPersonalSyncWriteBlockedError,
+  isLegacyPersonalSyncWriteBlockedError,
+  shouldBlockLegacyPersonalSyncWriteFallback
+} from "../../src/sync/legacy-personal-sync.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
 import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
@@ -110,6 +117,31 @@ test("CRITICAL sync-save: sequential entity sync results advance base revision f
   assert.equal(syncMeta.serverUpdatedAt, "2026-05-30T10:01:00.000Z");
   assert.equal(syncMeta.stateRevision, 8);
   assert.deepEqual(remembered, [{ stateRevision: 8, entityHash: "entity-8" }]);
+});
+
+const root = resolve(import.meta.dirname, "../..");
+
+function read(path) {
+  return readFileSync(resolve(root, path), "utf8");
+}
+
+test("CRITICAL sync-save: legacy personal sync writer is blocked", () => {
+  const listApiError = new Error("list API unavailable");
+  listApiError.status = 503;
+  listApiError.path = "/bike-packing/lists/list-1";
+
+  const blocked = createLegacyPersonalSyncWriteBlockedError(listApiError);
+
+  assert.equal(shouldBlockLegacyPersonalSyncWriteFallback(listApiError), true);
+  assert.equal(isLegacyPersonalSyncWriteBlockedError(blocked), true);
+  assert.equal(blocked.path, "/bike-packing-data.json");
+  assert.equal(blocked.cause, listApiError);
+});
+
+test("CRITICAL sync-save: runtime does not call legacy bike-packing-data endpoint automatically", () => {
+  const app = read("app.js");
+
+  assert.doesNotMatch(app, /apiFetch\(\s*[`'"]\/bike-packing-data\.json/);
 });
 
 test("CRITICAL sync-save: entity changes apply changed and deleted records locally", () => {

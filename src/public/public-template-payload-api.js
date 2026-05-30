@@ -7,7 +7,3 @@ export function publicTemplatePayloadPath(itemKey) {
   if (!normalizedItemKey) return "";
   return `/bike-packing/public-template-payloads/${encodeURIComponent(normalizedItemKey)}`;
 }
-
-export function shouldFallbackToLegacyPublicTemplatePayload(error) {
-  return error?.status === 404 || error?.status === 405;
-}

@@ -10,14 +10,29 @@ export function parseVolumeInput(value) {
   return Math.round(number * 10) / 10;
 }
 
+function currentUiLanguage() {
+  if (typeof document === "undefined") return "en";
+  return String(document.documentElement?.lang || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
+function localizedNumber(value, language) {
+  const text = String(value);
+  return language === "ru" ? text.replace(".", ",") : text;
+}
+
 export function formatVolume(liters) {
   const number = Number(liters || 0);
-  if (!number) return "0 l";
-  return `${String(number)} l`;
+  const language = currentUiLanguage();
+  const unit = language === "ru" ? "л" : "l";
+  if (!number) return `0 ${unit}`;
+  return `${localizedNumber(number, language)} ${unit}`;
 }
 
 export function formatWeight(grams) {
-  if (!grams) return "0 g";
-  if (grams < 1000) return `${grams} g`;
-  return `${(grams / 1000).toFixed(1)} kg`;
+  const language = currentUiLanguage();
+  const gramUnit = language === "ru" ? "г" : "g";
+  const kilogramUnit = language === "ru" ? "кг" : "kg";
+  if (!grams) return `0 ${gramUnit}`;
+  if (grams < 1000) return `${grams} ${gramUnit}`;
+  return `${localizedNumber((grams / 1000).toFixed(1), language)} ${kilogramUnit}`;
 }
