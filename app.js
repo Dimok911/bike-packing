@@ -212,6 +212,7 @@ import {
 } from "./src/public/shared-layouts.js";
 import { refreshPublicSharedLayoutCatalogFlow } from "./src/public/shared-catalog-refresh-flow.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
+import { publishedPhotoUploadRequest } from "./src/public/published-photo-upload.js";
 import {
   deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
   purgeDeletedSharedTemplateFromFrontendState,
@@ -318,6 +319,7 @@ import {
   itemPhotoSignature,
   addPhotosToDraft,
   createPhotoDraftFromRecord,
+  draftPhotosToCleanup,
   normalizeItemPhotos,
   normalizePhotoUrlFields,
   photoDraftChanged,
@@ -877,9 +879,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
   "adminUsageReports",
-  "collectionModeStateSync"
+  "collectionModeStateSync",
+  "publicTemplateDetachedCatalogItems"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-30.entity-changes-feed-v2";
+const REQUIRED_ADMIN_API_VERSION = "2026-05-31.public-template-detached-catalog-items-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1280,7 +1283,7 @@ const appTailControllerDeps = {
   demoTemplateForLanguage, demoTemplateIdFromLayoutChoice, demoTemplateIdFromLayoutChoiceValue, demoTemplateNameCandidates, demoTemplateNameFromPayload,
   demoTemplatesForLanguage, demoTemplatesForUiLanguage, dictionaryCategorySortMode, dictionaryEditScope, dictionaryEntitySyncUnavailable,
   dictionaryListForOwner, dictionaryLocationSortMode, dictionaryOptionsForOwner, dictionaryOptionsForUi, dictionaryOptionsForUiValues,
-  dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, duplicateContainerSnapshotRecords, duplicateItemToContainerInLayoutState,
+  dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, duplicateContainerSnapshotRecords, duplicateItemToContainerInLayoutState,
   duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin, editedLayoutName,
   editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload, ensureGuestPublicScope,
   ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState, ensurePrivateDictionaries,
@@ -1376,6 +1379,7 @@ const appTailControllerDeps = {
   publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice, publicTemplateDeleteBlockReason,
   publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
   publicTemplatePayloadPath, publishPublicHistoryRecord, publishedItemKeyStateCache, publishedLayoutSaveLayoutId, publishedLayoutSaveTimer,
+  publishedPhotoUploadRequest,
   publishedLayoutTarget, publishedListStateCache, publishedPayloadWithTemplateMetadata, publishedTemplateBlockReason, purgeDeletedSharedTemplateFromFrontendState,
   purgeUnconfirmedSharedTemplatesFromFrontendState, putCachedPhoto, readBackupArchiveFile, readBackupImportFile, readOnlyLayoutDictionariesForState,
   readableGuestDemoLayoutName, readonlyPublicTemplateOptionLabel, readonlyTemplateMessage, reconcilePublishedTemplateCopyDraft, recoverBetterLocalSnapshotIfNeeded,
@@ -1446,7 +1450,7 @@ const appTailControllerDeps = {
   updateCategoryFilterButton, updateCompactStickyControls, updateFilterContextToggle, updateFilterHighlights, updateLayoutCollapseAllToggle,
   updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState, updateSharedLayoutCatalogEntryMetadata,
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
-  uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
+  uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
   upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
   validateGuestImportSyncState, visibleItemLayoutPlacementLabels, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
@@ -5320,8 +5324,19 @@ async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId 
   return changed;
 }
 
-async function uploadEntityPhoto(listId, entity, photo, entityType = "item") {
-  return uploadEntityPhotoToPath(`/bike-packing/lists/${encodeURIComponent(listId)}/photos`, listId, entity, photo, entityType);
+async function uploadEntityPhoto(listId, entity, photo, entityType = "item", options = {}) {
+  return uploadEntityPhotoToPath(`/bike-packing/lists/${encodeURIComponent(listId)}/photos`, listId, entity, photo, entityType, options);
+}
+
+async function uploadPublishedEntityPhoto(layoutId, entity, photo, entityType = "item", options = {}) {
+  const request = publishedPhotoUploadRequest(state.layouts?.[layoutId], {
+    demoAdminPathForPublicListId,
+    publicListIdForPublishedTarget,
+    publishedLayoutTarget,
+    uiLanguage
+  });
+  if (!request) return false;
+  return uploadEntityPhotoToPath(request.path, request.listId, entity, photo, entityType, options);
 }
 
 async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
@@ -5353,18 +5368,22 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
   return changed;
 }
 
-async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item") {
+async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item", { onPhotoProgress = null } = {}) {
   const sourcePhoto = photo;
   let activePhoto = photo;
   const resolvePhoto = () => {
     activePhoto = findEntityPhotoForUpload(entity, sourcePhoto) || activePhoto;
     return activePhoto;
   };
+  const updatePhotoProgress = (targetPhoto, progress) => {
+    setPhotoUploadProgress(targetPhoto, progress);
+    if (typeof onPhotoProgress === "function") onPhotoProgress(targetPhoto, progress);
+    schedulePhotoUploadProgressRender();
+  };
   const localId = photo.localId || photo.id;
   const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType, { uploadPath: path });
   if (copiedOnServer) return true;
-  setPhotoUploadProgress(resolvePhoto(), 0);
-  schedulePhotoUploadProgressRender();
+  updatePhotoProgress(resolvePhoto(), 0);
   const uploadSource = await getPhotoUploadSource(photo, localId);
   if (!uploadSource?.blob) {
     const targetPhoto = resolvePhoto();
@@ -5380,7 +5399,7 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   uploadPhoto.error = "";
   uploadPhoto.updatedAt = nowIso();
   persistStateSnapshot(state);
-  schedulePhotoUploadProgressRender();
+  updatePhotoProgress(uploadPhoto, uploadPhoto.uploadProgress || 0);
 
   try {
     const formData = new FormData();
@@ -5395,13 +5414,12 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
       body: formData,
       timeoutMs: 30000,
       onUploadProgress: (progress) => {
-        setPhotoUploadProgress(resolvePhoto(), progress);
-        schedulePhotoUploadProgressRender();
+        updatePhotoProgress(resolvePhoto(), progress);
       }
     });
     const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, path, photo.id);
     const targetPhoto = resolvePhoto();
-    setPhotoUploadProgress(targetPhoto, 100);
+    updatePhotoProgress(targetPhoto, 100);
     Object.assign(targetPhoto, {
       ...targetPhoto,
       ...serverPhoto,
@@ -6452,6 +6470,7 @@ async function refreshPublicSharedLayoutCatalog(options = {}) {
     dependencies: {
       canOpenAdminPublishedEdit,
       copyPublishedContainerToState,
+      copyPublishedItemToState,
       createLayoutArrangementFromCurrentState,
       createSharedLayoutCatalogDiagnostics,
       currentEditMeta,
@@ -8273,6 +8292,7 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
   return materializeSharedLayoutForAdminState(layoutId, {
     canOpenAdminPublishedEdit,
     copyPublishedContainerToState,
+    copyPublishedItemToState,
     copySharedRootToState,
     createLayoutArrangementFromCurrentState,
     currentCreateMeta,

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeItemPhotos } from "../../src/state/item-photos.js";
+import { draftPhotosToCleanup, normalizeItemPhotos } from "../../src/state/item-photos.js";
 import { copyRecordPhotosForLocalDuplicate, photoRemoteSrc } from "../../src/sync/photos.js";
 import { MemoryStorage } from "./helpers.js";
 
@@ -89,4 +89,37 @@ test("CRITICAL offline-photos: remote copy marker survives photo normalization",
 
   assert.equal(record.photos[0]._copyToCurrentList, true);
   assert.equal(record.photos[0].status, "pending");
+});
+
+test("CRITICAL offline-photos: discarded new-record drafts clean up local photos", () => {
+  const draft = {
+    photos: [
+      { id: "photo-new-1", localId: "photo-new-1", status: "pending" },
+      { id: "photo-new-2", localId: "photo-new-2", status: "pending" }
+    ],
+    deletedPhotos: []
+  };
+
+  const cleanup = draftPhotosToCleanup(draft, null);
+
+  assert.deepEqual(cleanup.map((photo) => photo.id), ["photo-new-1", "photo-new-2"]);
+});
+
+test("CRITICAL offline-photos: discarded edit drafts keep existing local photos", () => {
+  const source = {
+    photos: [
+      { id: "photo-existing", localId: "photo-existing", status: "pending" }
+    ]
+  };
+  const draft = {
+    photos: [
+      { id: "photo-existing", localId: "photo-existing", status: "pending" },
+      { id: "photo-new", localId: "photo-new", status: "pending" }
+    ],
+    deletedPhotos: []
+  };
+
+  const cleanup = draftPhotosToCleanup(draft, source);
+
+  assert.deepEqual(cleanup.map((photo) => photo.id), ["photo-new"]);
 });

@@ -2,6 +2,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
   const {
     canOpenAdminPublishedEdit,
     copyPublishedContainerToState,
+    copyPublishedItemToState,
     createLayoutArrangementFromCurrentState,
     createSharedLayoutCatalogDiagnostics,
     currentEditMeta,
@@ -158,6 +159,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
           templateCopySourceScore,
           removeLayoutTree,
           copyPublishedContainerToState,
+          copyPublishedItemToState,
           createLayoutArrangementFromCurrentState,
           normalizeLayoutArrangement,
           ensureLayoutDictionaries,

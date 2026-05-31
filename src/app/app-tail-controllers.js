@@ -75,7 +75,7 @@ export function createAppTailControllers(ctx) {
     demoTemplateFallbackName, demoTemplateForLanguage, demoTemplateIdFromLayoutChoice, demoTemplateIdFromLayoutChoiceValue, demoTemplateNameCandidates,
     demoTemplateNameFromPayload, demoTemplatesForLanguage, demoTemplatesForUiLanguage, dictionaryCategorySortMode, dictionaryEditScope,
     dictionaryEntitySyncUnavailable, dictionaryListForOwner, dictionaryLocationSortMode, dictionaryOptionsForOwner, dictionaryOptionsForUi,
-    dictionaryOptionsForUiValues, dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, duplicateContainerSnapshotRecords,
+    dictionaryOptionsForUiValues, dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, duplicateContainerSnapshotRecords,
     duplicateItemToContainerInLayoutState, duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin,
     editedLayoutName, editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload,
     ensureGuestPublicScope, ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState,
@@ -241,11 +241,12 @@ export function createAppTailControllers(ctx) {
     updateCatalogSelection, updateCategoryFilterButton, updateCompactStickyControls, updateFilterContextToggle, updateFilterHighlights,
     updateLayoutCollapseAllToggle, updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState,
     updateSharedLayoutCatalogEntryMetadata, updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls,
-    updateViewScopedControlsUi, uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedLayoutPhotos,
+    updateViewScopedControlsUi, uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos,
     upsertDemoTemplateCatalogEntry, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState,
     userStorageScopeKey, validateGuestImportSyncState, visibleItemLayoutPlacementLabels, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
+  let dialogPhotoUploadPreviewFrame = null;
 
 function isEnglishUi() {
   return normalizeUiLanguage(uiLanguage) === "en";
@@ -2598,10 +2599,13 @@ function getPackingDragController() {
       edgeScrollMaxSpeed: EDGE_SCROLL_MAX_SPEED,
       edgeScrollZone: EDGE_SCROLL_ZONE,
       getContainerItemIdsDeep,
+      getCurrentView,
       getDescendantContainerIds,
       getDraggingContainerId: () => runtime.draggingContainerId,
       getDraggingItemId: () => runtime.draggingItemId,
       getItemContainerIdInLayout,
+      getPackingRoot: () => refs.packingView,
+      getPackingTab: () => document.querySelector('.tab[data-view="packing"]'),
       getState: () => state,
       isOriginalRootColumnPosition,
       moveContainer,
@@ -2617,6 +2621,7 @@ function getPackingDragController() {
       setDraggingItemId: (value) => {
         runtime.draggingItemId = value;
       },
+      switchToPacking: () => switchView("packing"),
       touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
       touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
       touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,
@@ -2632,6 +2637,10 @@ function bindRootColumnDrag(root) {
 
 function bindPointerPackingDrag(root, placeholder) {
   getPackingDragController().bindPointerPackingDrag(root, placeholder);
+}
+
+function bindCatalogItemPackingDrag(root) {
+  getPackingDragController().bindCatalogItemPackingDrag(root);
 }
 
 function preventDragContextMenu(event) {
@@ -2781,6 +2790,7 @@ function renderItems() {
     button.addEventListener("click", () => confirmDeleteCatalogItems(catalogItemActionIds(button.dataset.deleteItem)));
   });
   bindItemCatalogSelection();
+  bindCatalogItemPackingDrag(refs.itemsView);
 }
 
 function renderSharedItemsView() {
@@ -3153,8 +3163,11 @@ function bindSettingsPointerDrag() {
     addRootContainerToActiveLayout,
     cleanupLayoutDropState,
     dropList: document.querySelector("#layoutDropList"),
+    getCurrentView,
     getLayoutPlaceholderIndex,
     getLayoutRowAfterPointer,
+    getPackingRoot: () => refs.packingView,
+    getPackingTab: () => document.querySelector('.tab[data-view="packing"]'),
     getState: () => state,
     getTouchPoint,
     isHoldDragInput,
@@ -3162,6 +3175,7 @@ function bindSettingsPointerDrag() {
     pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
     preventDragContextMenu,
     render,
+    switchToPacking: () => switchView("packing"),
     touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
     touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
     touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,
@@ -3399,6 +3413,7 @@ function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId) {
   capturePackingScroll();
   const changedAt = nowIso();
   if (!removeItemFromLayoutInState(state, layoutId, itemId, { changedAt, touchLayout })) return;
+  if (isAdminEditablePublishedLayout(layoutId)) markRecordActivePublicCatalog(state.items?.[itemId], layoutId);
   if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
   saveState();
   scheduleActivePublishedEditSave();
@@ -3448,10 +3463,10 @@ function confirmRemoveItemFromActiveLayout(itemId) {
   const layout = state.layouts?.[state.activeLayoutId];
   if (!item || !getItemContainerIdInLayout(layout, itemId)) return;
   openConfirmDialog({
-    title: "Remove item from layout?",
-    text: `“${item.name}” will disappear from the current layout, but will stay on the Items tab as unused.`,
-    highlightText: "This item is currently used in the current layout.",
-    okText: "Remove",
+    title: t("items.removeFromLayoutTitle"),
+    text: t("items.removeFromLayoutText", { name: item.name }),
+    highlightText: t("items.removeFromLayoutHighlight"),
+    okText: t("items.removeFromLayoutOk"),
     tone: "danger",
     onConfirm: () => removeItemFromActiveLayout(itemId)
   });
@@ -4781,7 +4796,10 @@ async function handleItemPhotoInputChange(event) {
     const draft = runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
     const result = addPhotosToDraft(draft, photos, limit);
     runtime.itemDialogPhotoDraft = result.draft;
-    if (result.rejected.length) showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    if (result.rejected.length) {
+      deleteCachedDraftPhotos(result.rejected);
+      showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    }
     runtime.itemDialogPhotoActiveIndex = Math.max(0, runtime.itemDialogPhotoDraft.photos.length - result.accepted.length);
     updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft.photos);
     updateItemDialogSaveState();
@@ -4833,12 +4851,13 @@ function resetItemDialogPhotoDraft() {
 }
 
 function cleanupUnsavedItemDialogPhotoDraft() {
-  if (!runtime.itemDialogPhotoDraft || !runtime.editingItemId) return;
-  const sourcePhotoIds = photoIdentitySet(normalizeItemPhotos(state.items?.[runtime.editingItemId] || { photos: [] }));
-  runtime.itemDialogPhotoDraft.photos.forEach((photo) => {
-    if (photoIdentityMatches(sourcePhotoIds, photo)) return;
+  if (!runtime.itemDialogPhotoDraft) return;
+  const isDiscardedNewRecord = !runtime.editingItemId && refs.dialog?.returnValue === "cancel";
+  if (!runtime.editingItemId && !isDiscardedNewRecord) return;
+  const source = runtime.editingItemId ? state.items?.[runtime.editingItemId] || { photos: [] } : { photos: [] };
+  draftPhotosToCleanup(runtime.itemDialogPhotoDraft, source).forEach((photo) => {
     if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(runtime.editingItemId, photo);
-    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+    deleteCachedDraftPhotos(photo);
   });
 }
 
@@ -4863,13 +4882,16 @@ async function updateItemDialogPhotoPreview(photos) {
   refs.itemPhotoPreview.innerHTML = rendered;
   refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
-  updateItemDialogPhotoPrimaryButton();
+  updateItemDialogPhotoPrimaryButton(list.length);
   bindPhotoGalleries(refs.itemPhotoPreview, photoGalleryBindingOptions());
   setItemDialogPhotoStatus(photoStatusText(list));
 }
 
-function updateItemDialogPhotoPrimaryButton() {
-  updatePhotoPrimaryButton(refs.itemPhotoPrimaryBtn, runtime.itemDialogPhotoActiveIndex);
+function updateItemDialogPhotoPrimaryButton(photoCount = null) {
+  const count = Number.isFinite(Number(photoCount))
+    ? Number(photoCount)
+    : refs.itemPhotoPreview?.querySelectorAll(".photo-gallery-slide").length || 0;
+  updatePhotoPrimaryButton(refs.itemPhotoPrimaryBtn, runtime.itemDialogPhotoActiveIndex, count);
 }
 
 function setItemDialogPhotoStatus(message) {
@@ -4878,6 +4900,12 @@ function setItemDialogPhotoStatus(message) {
 
 function revokeObjectUrls(urls) {
   (Array.isArray(urls) ? urls : [urls]).filter(Boolean).forEach((url) => URL.revokeObjectURL(url));
+}
+
+function deleteCachedDraftPhotos(photos = []) {
+  (Array.isArray(photos) ? photos : [photos]).filter(Boolean).forEach((photo) => {
+    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+  });
 }
 
 function getRootContainerDialogPhotoSnapshot() {
@@ -4899,7 +4927,10 @@ async function handleRootContainerPhotoInputChange(event) {
     const draft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
     const result = addPhotosToDraft(draft, photos, limit);
     runtime.rootContainerDialogPhotoDraft = result.draft;
-    if (result.rejected.length) showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    if (result.rejected.length) {
+      deleteCachedDraftPhotos(result.rejected);
+      showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
+    }
     runtime.rootContainerDialogPhotoActiveIndex = Math.max(0, runtime.rootContainerDialogPhotoDraft.photos.length - result.accepted.length);
     updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft.photos);
     updateRootContainerDialogSaveState();
@@ -4945,6 +4976,7 @@ async function uploadItemDialogDraftPhotos(photos = []) {
     entity: item,
     entityType: "item",
     photos,
+    onProgress: () => scheduleDialogPhotoUploadPreviewRender("item"),
     onAfterUpload: () => {
       updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item)).catch(() => null);
       updateItemDialogSaveState();
@@ -4958,6 +4990,7 @@ async function uploadRootContainerDialogDraftPhotos(photos = []) {
     entity: container,
     entityType: "container",
     photos,
+    onProgress: () => scheduleDialogPhotoUploadPreviewRender("container"),
     onAfterUpload: () => {
       updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container)).catch(() => null);
       updateRootContainerDialogSaveState();
@@ -4965,24 +4998,47 @@ async function uploadRootContainerDialogDraftPhotos(photos = []) {
   });
 }
 
-async function uploadDialogDraftPhotos({ entity = null, entityType = "item", photos = [], onAfterUpload = () => {} } = {}) {
+async function uploadDialogDraftPhotos({ entity = null, entityType = "item", photos = [], onProgress = () => {}, onAfterUpload = () => {} } = {}) {
   const uploadPhotos = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
   if (!entity?.id || !uploadPhotos.length || runtime.photoUploadInFlight || !runtime.currentUser || isForcedOffline()) return;
-  if (isReadOnlyBikePackingContext()) return;
+  const publishedLayoutId = getPublishedEditLayoutId();
+  const usePublishedTemplateUpload = currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT &&
+    isAdminEditablePublishedLayout(publishedLayoutId);
+  if (!usePublishedTemplateUpload && isReadOnlyBikePackingContext()) return;
   runtime.photoUploadInFlight = true;
   let uploaded = false;
   try {
-    const targetListId = await ensureCurrentPackingListId();
-    if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
-    if (isReadOnlyBikePackingContext()) return;
-    for (const photo of uploadPhotos) {
-      uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType) || uploaded;
+    if (usePublishedTemplateUpload) {
+      for (const photo of uploadPhotos) {
+        uploaded = await uploadPublishedEntityPhoto(publishedLayoutId, entity, photo, entityType, { onPhotoProgress: onProgress }) || uploaded;
+      }
+    } else {
+      const targetListId = await ensureCurrentPackingListId();
+      if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
+      if (isReadOnlyBikePackingContext()) return;
+      for (const photo of uploadPhotos) {
+        uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType, { onPhotoProgress: onProgress }) || uploaded;
+      }
     }
   } finally {
     runtime.photoUploadInFlight = false;
     onAfterUpload();
   }
   if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(entity, photo))) saveState();
+}
+
+function scheduleDialogPhotoUploadPreviewRender(kind = "item") {
+  if (dialogPhotoUploadPreviewFrame) return;
+  dialogPhotoUploadPreviewFrame = requestAnimationFrame(() => {
+    dialogPhotoUploadPreviewFrame = null;
+    if (kind === "container") {
+      const container = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
+      updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container)).catch(() => null);
+      return;
+    }
+    const item = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
+    updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item)).catch(() => null);
+  });
 }
 
 function entityHasPhoto(entity, photo) {
@@ -5028,12 +5084,13 @@ function resetRootContainerDialogPhotoDraft() {
 }
 
 function cleanupUnsavedRootContainerDialogPhotoDraft() {
-  if (!runtime.rootContainerDialogPhotoDraft || !runtime.editingRootContainerId) return;
-  const sourcePhotoIds = photoIdentitySet(normalizeItemPhotos(state.containers?.[runtime.editingRootContainerId] || { photos: [] }));
-  runtime.rootContainerDialogPhotoDraft.photos.forEach((photo) => {
-    if (photoIdentityMatches(sourcePhotoIds, photo)) return;
+  if (!runtime.rootContainerDialogPhotoDraft) return;
+  const isDiscardedNewRecord = !runtime.editingRootContainerId && refs.rootContainerDialog?.returnValue === "cancel";
+  if (!runtime.editingRootContainerId && !isDiscardedNewRecord) return;
+  const source = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] || { photos: [] } : { photos: [] };
+  draftPhotosToCleanup(runtime.rootContainerDialogPhotoDraft, source).forEach((photo) => {
     if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(runtime.editingRootContainerId, photo, "container");
-    if (photo?.localId || photo?.id) deleteCachedPhoto(photo.localId || photo.id);
+    deleteCachedDraftPhotos(photo);
   });
 }
 
@@ -5058,17 +5115,27 @@ async function updateRootContainerDialogPhotoPreview(photos) {
   refs.rootContainerPhotoPreview.innerHTML = rendered;
   refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
-  updateRootContainerDialogPhotoPrimaryButton();
+  updateRootContainerDialogPhotoPrimaryButton(list.length);
   bindPhotoGalleries(refs.rootContainerPhotoPreview, photoGalleryBindingOptions());
   setRootContainerDialogPhotoStatus(photoStatusText(list));
 }
 
-function updateRootContainerDialogPhotoPrimaryButton() {
-  updatePhotoPrimaryButton(refs.rootContainerPhotoPrimaryBtn, runtime.rootContainerDialogPhotoActiveIndex);
+function updateRootContainerDialogPhotoPrimaryButton(photoCount = null) {
+  const count = Number.isFinite(Number(photoCount))
+    ? Number(photoCount)
+    : refs.rootContainerPhotoPreview?.querySelectorAll(".photo-gallery-slide").length || 0;
+  updatePhotoPrimaryButton(refs.rootContainerPhotoPrimaryBtn, runtime.rootContainerDialogPhotoActiveIndex, count);
 }
 
-function updatePhotoPrimaryButton(button, activeIndex = 0) {
+function updatePhotoPrimaryButton(button, activeIndex = 0, photoCount = 0) {
   if (!button) return;
+  const count = Number(photoCount) || 0;
+  if (count <= 1) {
+    button.hidden = true;
+    button.disabled = true;
+    button.textContent = t("buttons.primaryPhoto");
+    return;
+  }
   button.hidden = false;
   const isPrimary = Number(activeIndex) <= 0;
   button.disabled = isPrimary;
@@ -5372,9 +5439,9 @@ function isItemInActiveCatalog(item) {
   });
 }
 
-function markRecordActivePublicCatalog(record) {
-  if (!record || !isScopedCatalogLayout()) return;
-  record.publicCatalogLayoutId = getPublishedEditLayoutId();
+function markRecordActivePublicCatalog(record, layoutId = getPublishedEditLayoutId()) {
+  if (!record || !isScopedCatalogLayout(layoutId)) return;
+  record.publicCatalogLayoutId = layoutId;
 }
 
 function isItemAwayFromHomeAndBike(item) {
@@ -5804,7 +5871,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     isItemRemovedFromActiveLayout, isItemPacked, getContainerItemIdsDeep, isContainerPacked,
     startInlineItemTitleEdit, togglePacked, unpackAllItems, renderItemCard,
     renderItemPhoto, photoGalleryBindingOptions, bindPackingEvents, isCoarsePointerInteraction,
-    needsHoldToDrag, getPackingDragController, bindRootColumnDrag, bindPointerPackingDrag,
+    needsHoldToDrag, getPackingDragController, bindRootColumnDrag, bindPointerPackingDrag, bindCatalogItemPackingDrag,
     preventDragContextMenu, getTouchPoint, isHoldDragInput, markDragPending,
     clearDragPending, vibrateDragStart, isBlockedDropzone, getEntryAfterPointer,
     placePlaceholder, getPlaceholderItemIndex, getPlaceholderContainerIndex, isOriginalItemPosition,

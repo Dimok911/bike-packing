@@ -99,6 +99,13 @@ export function addPhotosToDraft(draft, photos, limit = Infinity) {
   };
 }
 
+export function draftPhotosToCleanup(draft, sourceRecord = null) {
+  const draftPhotos = Array.isArray(draft?.photos) ? draft.photos : [];
+  if (!draftPhotos.length) return [];
+  const sourceIds = photoIdentitySet(normalizeItemPhotos(sourceRecord || { photos: [] }));
+  return draftPhotos.filter((photo) => !photoIdentityMatches(sourceIds, photo));
+}
+
 export function removePhotoFromDraft(draft, index = 0) {
   const target = draft || { photos: [], deletedPhotos: [] };
   const safeIndex = Math.max(0, Math.min(Number(index) || 0, target.photos.length - 1));
@@ -133,4 +140,20 @@ export function setPrimaryPhotoInDraft(draft, index = 0) {
 export function photoDraftChanged(draft, record) {
   if (!draft) return false;
   return itemPhotosSignature({ photos: draft.photos }) !== itemPhotosSignature(record) || draft.deletedPhotos.length > 0;
+}
+
+function photoIdentitySet(photos = []) {
+  const ids = new Set();
+  (Array.isArray(photos) ? photos : []).forEach((photo) => {
+    if (photo?.id) ids.add(String(photo.id));
+    if (photo?.localId) ids.add(String(photo.localId));
+  });
+  return ids;
+}
+
+function photoIdentityMatches(ids, photo) {
+  return Boolean(
+    (photo?.id && ids.has(String(photo.id))) ||
+    (photo?.localId && ids.has(String(photo.localId)))
+  );
 }

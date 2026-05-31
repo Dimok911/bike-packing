@@ -31,6 +31,17 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     itemIdMap.set(itemId, nextId);
     return nextId;
   };
+  const copyItemRecord = (itemId, containerId = "") => {
+    const item = targetState.items?.[itemId];
+    if (!item) return "";
+    const nextItemId = mapItemId(itemId);
+    if (items[nextItemId]) return nextItemId;
+    items[nextItemId] = clone(item);
+    items[nextItemId].id = nextItemId;
+    items[nextItemId].containerId = containerId;
+    stripPublishedPublicOriginMarkers(items[nextItemId]);
+    return nextItemId;
+  };
   const remapOrder = (order = []) => order.map((entry) => {
     if (entry?.type === "container") {
       const id = containerIdMap.get(entry.id);
@@ -54,13 +65,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     delete containers[nextContainerId].adminSharedSourceId;
     delete containers[nextContainerId].publicCatalogLayoutId;
     (container.itemIds || []).forEach((itemId) => {
-      if (targetState.items?.[itemId]) {
-        const nextItemId = mapItemId(itemId);
-        items[nextItemId] = clone(targetState.items[itemId]);
-        items[nextItemId].id = nextItemId;
-        items[nextItemId].containerId = nextContainerId;
-        stripPublishedPublicOriginMarkers(items[nextItemId]);
-      }
+      copyItemRecord(itemId, nextContainerId);
     });
     (container.childIds || []).forEach(walk);
     containers[nextContainerId].childIds = (container.childIds || []).map((id) => containerIdMap.get(id)).filter(Boolean);
@@ -76,6 +81,11 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     return nextContainerId;
   };
   const rootContainerIds = (layout.rootContainerIds || []).map(walk).filter(Boolean);
+  Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
+    if (!item || itemIdMap.has(itemId)) return;
+    if (item.publicCatalogLayoutId !== layoutId) return;
+    copyItemRecord(itemId, "");
+  });
   const dictionaryOwner = ensureLayoutDictionaries(layout);
   const demoLayout = {
     ...clone(layout),
@@ -139,6 +149,8 @@ export function cleanGeneratedEntityId(value) {
       .replace(/^admin-demo-item-\d+-/, "")
       .replace(/^container-shared-/, "")
       .replace(/^item-shared-/, "")
+      .replace(/^shared-container-/, "")
+      .replace(/^shared-item-/, "")
       .replace(/^shared-virtual-container-/, "")
       .replace(/^shared-virtual-item-/, "");
   }

@@ -76,6 +76,7 @@ export function isGeneratedCatalogStateArtifact(itemId, item, targetState) {
   const containerId = generatedCatalogString(item.containerId);
   const hasValidContainer = Boolean(containerId && targetState?.containers?.[containerId]);
   if (hasValidContainer) return false;
+  if (isDetachedPublicCatalogItem(item, targetState)) return false;
   return Boolean(
     hasPublicOriginMarker(item) ||
     id.startsWith("demo-item-") ||
@@ -104,4 +105,11 @@ export function isGeneratedCatalogContainerStateArtifact(containerId, container,
 
 export function generatedCatalogString(value) {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function isDetachedPublicCatalogItem(item, targetState) {
+  const layoutId = generatedCatalogString(item?.publicCatalogLayoutId);
+  if (!layoutId) return false;
+  const layout = targetState?.layouts?.[layoutId];
+  return Boolean(layout && (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId));
 }

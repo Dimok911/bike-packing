@@ -1,6 +1,7 @@
 export function materializeSharedLayoutForAdminState(layoutId, {
   canOpenAdminPublishedEdit = () => false,
   copyPublishedContainerToState = () => "",
+  copyPublishedItemToState = () => "",
   copySharedRootToState = () => "",
   createLayoutArrangementFromCurrentState = () => ({}),
   currentCreateMeta = () => ({}),
@@ -34,6 +35,7 @@ export function materializeSharedLayoutForAdminState(layoutId, {
     const idMap = { containers: new Map(), items: new Map() };
     const sourceState = sharedLayoutStatePayload(layout);
     const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
+    const nextLayoutId = `layout-admin-shared-${layout.id}-${Date.now()}`;
     const rootIds = sourceState
       ? (sourceLayout?.rootContainerIds || []).map((id) =>
           copyPublishedContainerToState(sourceState, id, { targetLayoutId: "", changedAt, idMap, preserveSource: true })
@@ -41,7 +43,18 @@ export function materializeSharedLayoutForAdminState(layoutId, {
       : sharedLayoutRoots(layout).map((root) =>
           copySharedRootToState(root, { targetLayoutId: "", changedAt, idMap, preserveSource: true })
         );
-    const nextLayoutId = `layout-admin-shared-${layout.id}-${Date.now()}`;
+    if (sourceState) {
+      Object.keys(sourceState.items || {}).forEach((itemId) => {
+        if (idMap.items.has(itemId)) return;
+        const copiedId = copyPublishedItemToState(sourceState, itemId, {
+          containerId: "",
+          changedAt,
+          idMap,
+          preserveSource: true
+        });
+        if (copiedId && state.items?.[copiedId]) state.items[copiedId].publicCatalogLayoutId = nextLayoutId;
+      });
+    }
     editableLayout = {
       id: nextLayoutId,
       name: sourceLayout?.name || layout.name,
@@ -68,6 +81,7 @@ export function materializeSharedLayoutForAdminState(layoutId, {
       templateCopySourceScore,
       removeLayoutTree,
       copyPublishedContainerToState,
+      copyPublishedItemToState,
       createLayoutArrangementFromCurrentState,
       normalizeLayoutArrangement,
       ensureLayoutDictionaries,

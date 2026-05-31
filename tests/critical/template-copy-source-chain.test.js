@@ -61,7 +61,11 @@ import {
   publicCopySourceIdFromRecord,
   stripPublishedPublicOriginMarkers
 } from "../../src/public/copy-public-to-private.js";
-import { cleanPublishedEntityId } from "../../src/public/published-state-export.js";
+import {
+  cleanPublishedEntityId,
+  exportLayoutAsPublishedState
+} from "../../src/public/published-state-export.js";
+import { createSharedVirtualStateFromPublishedState } from "../../src/public/shared-virtual-state.js";
 import {
   planLayoutTreeMissingItems,
   planPublicCopyMissingItems,
@@ -107,6 +111,9 @@ import {
   purgeUnconfirmedSharedTemplatesFromFrontendState
 } from "../../src/public/shared-layout-admin.js";
 import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
+import { materializeSharedLayoutForAdminState } from "../../src/public/shared-admin-materialize.js";
+import { cleanupGeneratedCatalogArtifacts } from "../../src/state/cleanup.js";
+import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 import {
   removeManagedDemoTemplateTreesFromState,
   removeManagedSharedLayoutTreesFromState,
@@ -141,6 +148,14 @@ test("published entity id cleanup works when used as a callback without cssSafeI
   assert.equal(
     cleanPublishedEntityId("item", { name: "First Aid Kit" }, ""),
     "item-first-aid-kit"
+  );
+  assert.equal(
+    cleanPublishedEntityId("item", { sharedSourceId: "shared-item-padded-camera-insert" }, "fallback"),
+    "item-padded-camera-insert"
+  );
+  assert.equal(
+    cleanPublishedEntityId("container", { sharedSourceId: "shared-container-handlebar-bag" }, "fallback"),
+    "container-handlebar-bag"
   );
 });
 
@@ -1519,6 +1534,250 @@ test("published template payloads drop local public-copy markers", () => {
   assert.deepEqual(item.photos, [{ id: "photo-1", url: "/photos/photo-1/file" }]);
 });
 
+test("published template export keeps items removed from the layout in the catalog", () => {
+  const layoutId = "layout-admin-shared";
+  const state = {
+    locations: [],
+    categories: [],
+    containers: {
+      "container-root": {
+        id: "container-root",
+        name: "Frame bag",
+        parentId: null,
+        itemIds: ["item-attached"],
+        childIds: [],
+        order: [{ type: "item", id: "item-attached" }],
+        publicCatalogLayoutId: layoutId
+      }
+    },
+    items: {
+      "item-attached": {
+        id: "item-attached",
+        name: "Attached",
+        containerId: "container-root",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-detached": {
+        id: "item-detached",
+        name: "Detached",
+        containerId: "",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-private": {
+        id: "item-private",
+        name: "Private",
+        containerId: ""
+      }
+    },
+    layouts: {
+      [layoutId]: {
+        id: layoutId,
+        name: "Template",
+        rootContainerIds: ["container-root"],
+        adminSharedSourceId: "shared-template"
+      }
+    }
+  };
+
+  const payload = exportLayoutAsPublishedState(state, layoutId, {
+    clone: (value) => JSON.parse(JSON.stringify(value)),
+    createLayoutArrangementFromCurrentState,
+    cssSafeId: (value) => String(value || "").toLowerCase().replace(/\s+/g, "-"),
+    ensureLayoutDictionaries: () => null,
+    normalizePublishedStatePayload: (value) => value,
+    stripPublishedPublicOriginMarkers
+  });
+
+  assert.deepEqual(Object.keys(payload.items).sort(), ["item-attached", "item-detached"]);
+  assert.equal(payload.items["item-detached"].containerId, "");
+  assert.equal(payload.items["item-detached"].publicCatalogLayoutId, undefined);
+  assert.equal(payload.layouts["layout-main"].arrangement.items["item-detached"], undefined);
+});
+
+test("published shared virtual state keeps detached catalog items", () => {
+  const sourceState = {
+    locations: [],
+    categories: [],
+    containers: {
+      "container-root": {
+        id: "container-root",
+        itemIds: ["item-attached"],
+        childIds: [],
+        order: [{ type: "item", id: "item-attached" }]
+      }
+    },
+    items: {
+      "item-attached": { id: "item-attached", name: "Attached", containerId: "container-root" },
+      "item-detached": { id: "item-detached", name: "Detached", containerId: "" }
+    },
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Template",
+        rootContainerIds: ["container-root"]
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
+
+  const virtual = createSharedVirtualStateFromPublishedState({ id: "shared-template", name: "Template" }, sourceState, {
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    collapsedDefaultsForTemplateContainers: () => ({}),
+    createLayoutArrangementFromCurrentState,
+    publicReadonlyItemDisplayMode: (value) => value || "meta-photos",
+    shouldShowItemLabelsForMode: () => true
+  });
+
+  const detached = virtual.items["shared-virtual-item-item-detached"];
+  assert.ok(detached);
+  assert.equal(detached.containerId, "");
+  assert.equal(detached.publicCatalogLayoutId, "shared-virtual-layout-shared-template");
+  assert.equal(virtual.layouts["shared-virtual-layout-shared-template"].arrangement.items[detached.id], undefined);
+});
+
+test("admin shared materialization keeps detached published catalog items", () => {
+  const sourceState = {
+    locations: [],
+    categories: [],
+    containers: {
+      "container-root": {
+        id: "container-root",
+        itemIds: ["item-attached"],
+        childIds: [],
+        order: [{ type: "item", id: "item-attached" }]
+      }
+    },
+    items: {
+      "item-attached": { id: "item-attached", name: "Attached", containerId: "container-root" },
+      "item-detached": { id: "item-detached", name: "Detached", containerId: "" }
+    },
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Template",
+        rootContainerIds: ["container-root"]
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
+  const state = { layouts: {}, containers: {}, items: {}, collapsedContainers: {} };
+  const sharedLayout = { id: "shared-template", name: "Template", language: "ru", statePayload: sourceState };
+
+  const editable = materializeSharedLayoutForAdminState("shared-template", {
+    canOpenAdminPublishedEdit: () => true,
+    copyPublishedContainerToState: (publishedState, containerId, { idMap }) => {
+      const nextContainerId = `copy-${containerId}`;
+      idMap.containers.set(containerId, nextContainerId);
+      state.containers[nextContainerId] = {
+        ...publishedState.containers[containerId],
+        id: nextContainerId,
+        itemIds: ["copy-item-attached"],
+        order: [{ type: "item", id: "copy-item-attached" }]
+      };
+      idMap.items.set("item-attached", "copy-item-attached");
+      state.items["copy-item-attached"] = {
+        ...publishedState.items["item-attached"],
+        id: "copy-item-attached",
+        containerId: nextContainerId
+      };
+      return nextContainerId;
+    },
+    copyPublishedItemToState: (publishedState, itemId, { idMap }) => {
+      const nextItemId = `copy-${itemId}`;
+      idMap.items.set(itemId, nextItemId);
+      state.items[nextItemId] = {
+        ...publishedState.items[itemId],
+        id: nextItemId,
+        containerId: ""
+      };
+      return nextItemId;
+    },
+    createLayoutArrangementFromCurrentState,
+    currentCreateMeta: () => ({}),
+    ensureLayoutDictionaries: () => null,
+    findSharedLayout: () => sharedLayout,
+    normalizeDictionaryValues: (values = []) => values,
+    nowIso: () => "2026-05-31T00:00:00.000Z",
+    saveState: () => {},
+    sharedLayoutStatePayload: (layout) => layout.statePayload,
+    sharedPayloadActiveLayout: (payload) => payload.layouts[payload.activeLayoutId],
+    state,
+    uiLanguage: "ru"
+  });
+
+  const detached = state.items["copy-item-detached"];
+  assert.ok(editable);
+  assert.ok(detached);
+  assert.equal(detached.containerId, "");
+  assert.equal(detached.publicCatalogLayoutId, editable.id);
+});
+
+test("frontend load cleanup preserves detached public template catalog items", () => {
+  const layoutId = "layout-admin-shared-template";
+  const state = {
+    layouts: {
+      [layoutId]: {
+        id: layoutId,
+        adminSharedSourceId: "shared-template",
+        rootContainerIds: ["container-root"],
+        arrangement: {
+          rootContainerIds: ["container-root"],
+          containers: {
+            "container-root": {
+              parentId: "",
+              itemIds: ["item-shared-attached-1"],
+              childIds: [],
+              order: [{ type: "item", id: "item-shared-attached-1" }]
+            }
+          },
+          items: {
+            "item-shared-attached-1": "container-root"
+          },
+          packedItems: {}
+        }
+      }
+    },
+    containers: {
+      "container-root": {
+        id: "container-root",
+        itemIds: ["item-shared-attached-1"],
+        childIds: [],
+        order: [{ type: "item", id: "item-shared-attached-1" }]
+      }
+    },
+    items: {
+      "item-shared-attached-1": {
+        id: "item-shared-attached-1",
+        name: "Attached",
+        containerId: "container-root",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-shared-detached-1": {
+        id: "item-shared-detached-1",
+        name: "Detached",
+        containerId: "",
+        sharedSourceId: "item-detached",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-shared-stale-1": {
+        id: "item-shared-stale-1",
+        name: "Stale",
+        containerId: "",
+        sharedSourceId: "item-shared-stale",
+        publicCatalogLayoutId: "missing-layout"
+      }
+    },
+    packedItems: {},
+    collapsedContainers: {}
+  };
+
+  const removed = cleanupGeneratedCatalogArtifacts(state);
+
+  assert.equal(removed, 1);
+  assert.ok(state.items["item-shared-detached-1"]);
+  assert.equal(state.items["item-shared-stale-1"], undefined);
+});
+
 test("isolated public clones do not keep shared source markers", () => {
   const clone = cloneIsolatedPublicEntity({
     id: "item-shared-item-tent-111",
@@ -1817,6 +2076,7 @@ test("public shared template payload cache avoids repeated full payload fetches 
   const dependencies = {
     canOpenAdminPublishedEdit: () => false,
     copyPublishedContainerToState: () => "",
+    copyPublishedItemToState: () => "",
     createLayoutArrangementFromCurrentState: () => ({}),
     createSharedLayoutCatalogDiagnostics: ({ records }) => ({ confirmedCount: records.length }),
     currentEditMeta: () => ({}),
@@ -2304,7 +2564,8 @@ test("empty local template-copy draft is hydrated from meaningful published payl
       "container-a": { id: "container-a", itemIds: ["item-a"], childIds: [] }
     },
     items: {
-      "item-a": { id: "item-a", containerId: "container-a" }
+      "item-a": { id: "item-a", containerId: "container-a" },
+      "item-b": { id: "item-b", containerId: "" }
     }
   };
   const sharedLayout = {
@@ -2330,9 +2591,11 @@ test("empty local template-copy draft is hydrated from meaningful published payl
       targetState.items = {};
       return true;
     },
-    copyPublishedContainerToState: (sourceState, containerId) => {
+    copyPublishedContainerToState: (sourceState, containerId, { idMap }) => {
       const nextContainerId = `copy-${containerId}`;
       const nextItemId = "copy-item-a";
+      idMap.containers.set(containerId, nextContainerId);
+      idMap.items.set("item-a", nextItemId);
       state.containers[nextContainerId] = {
         ...sourceState.containers[containerId],
         id: nextContainerId,
@@ -2340,6 +2603,12 @@ test("empty local template-copy draft is hydrated from meaningful published payl
       };
       state.items[nextItemId] = { ...sourceState.items["item-a"], id: nextItemId, containerId: nextContainerId };
       return nextContainerId;
+    },
+    copyPublishedItemToState: (sourceState, itemId, { idMap }) => {
+      const nextItemId = `copy-${itemId}`;
+      idMap.items.set(itemId, nextItemId);
+      state.items[nextItemId] = { ...sourceState.items[itemId], id: nextItemId, containerId: "" };
+      return nextItemId;
     },
     createLayoutArrangementFromCurrentState: (targetState, rootContainerIds) => ({
       rootContainerIds,
@@ -2360,6 +2629,8 @@ test("empty local template-copy draft is hydrated from meaningful published payl
   assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
   assert.deepEqual(state.layouts["layout-local-draft"].rootContainerIds, ["copy-container-a"]);
   assert.ok(state.items["copy-item-a"]);
+  assert.equal(state.items["copy-item-b"].containerId, "");
+  assert.equal(state.items["copy-item-b"].publicCatalogLayoutId, "layout-local-draft");
 });
 
 test("published templates are blocked when offline or forced offline", () => {

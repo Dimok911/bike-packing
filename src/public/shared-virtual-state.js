@@ -216,6 +216,9 @@ export function createSharedVirtualStateFromPublishedState(layout, sourceState, 
   };
 
   const rootContainerIds = (sourceLayout?.rootContainerIds || []).map((id) => copyContainer(id, null)).filter(Boolean);
+  Object.keys(sourceState.items || {}).forEach((itemId) => {
+    if (!itemMap.has(itemId)) copyItem(itemId, "");
+  });
   return {
     items,
     containers,

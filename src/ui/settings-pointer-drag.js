@@ -2,8 +2,11 @@ export function bindSettingsPointerDrag({
   addRootContainerToActiveLayout,
   cleanupLayoutDropState,
   dropList,
+  getCurrentView = () => "",
   getLayoutPlaceholderIndex,
   getLayoutRowAfterPointer,
+  getPackingRoot = () => null,
+  getPackingTab = () => document.querySelector?.('.tab[data-view="packing"]') || null,
   getState,
   getTouchPoint,
   isHoldDragInput,
@@ -11,6 +14,7 @@ export function bindSettingsPointerDrag({
   pointerDragStartDistance,
   preventDragContextMenu,
   render,
+  switchToPacking = () => {},
   touchDragCancelDistance,
   touchDragDelayMs,
   touchScrollCancelDistance,
@@ -43,6 +47,7 @@ export function bindSettingsPointerDrag({
     let finished = false;
     let blockingTouchMove = false;
     const sourceIsLayoutMember = Boolean(handle.dataset.layoutMemberRowDrag);
+    const sourceIsRootCatalog = Boolean(handle.dataset.rootDrag);
     const originalLayoutIndex = sourceIsLayoutMember
       ? (state.layouts[state.activeLayoutId]?.rootContainerIds || []).indexOf(containerId)
       : -1;
@@ -50,6 +55,7 @@ export function bindSettingsPointerDrag({
     const dragInput = inputType === "touch" ? "touch" : event.pointerType || "mouse";
     const needsHold = isHoldDragInput(dragInput);
     let holdTimer = null;
+    let packingDrop = null;
 
     if (needsHold) {
       markDragPending(sourceRow);
@@ -73,6 +79,8 @@ export function bindSettingsPointerDrag({
       sourceRow.classList.remove("drag-source-collapsed");
       ghost.remove();
       cleanupLayoutDropState(dropList, placeholder);
+      cleanupPackingDropState();
+      clearPackingPortalTabTarget();
       document.body.classList.remove("dragging-ui");
       if (inputType === "touch") {
         document.removeEventListener("touchmove", onMove);
@@ -120,12 +128,136 @@ export function bindSettingsPointerDrag({
       ghost.style.transform = `translate(${clientX - startX}px, ${clientY - startY}px)`;
     };
 
+    const getPackingPortalTabTarget = (target) => {
+      const tab = getPackingTab?.();
+      if (!tab || !target) return null;
+      return target === tab || tab.contains(target) ? tab : null;
+    };
+
+    const clearPackingPortalTabTarget = () => {
+      getPackingTab?.()?.classList?.remove("drag-over");
+    };
+
+    const cleanupPackingDropState = () => {
+      const packingRoot = getPackingRoot?.();
+      packingRoot?.querySelectorAll?.(".dropzone.drag-over").forEach((zone) => zone.classList.remove("drag-over"));
+      packingRoot?.querySelectorAll?.(".subcontainer.container-drop-target").forEach((container) => container.classList.remove("container-drop-target"));
+      placeholder.remove();
+      packingDrop = null;
+    };
+
+    const getColumnPlaceholderIndex = (board) => {
+      const entries = [...(board?.children || [])].filter((child) =>
+        child === placeholder ||
+        (
+          child.classList?.contains("container-card") &&
+          child.dataset.rootContainerId !== containerId &&
+          !child.classList.contains("dragging")
+        )
+      );
+      const index = entries.indexOf(placeholder);
+      return index >= 0 ? index : entries.length;
+    };
+
+    const getColumnAfterPointer = (board, pointerX) => {
+      const cards = [...(board?.children || [])].filter((child) =>
+        child.classList?.contains("container-card") &&
+        child.dataset.rootContainerId !== containerId &&
+        !child.classList.contains("dragging")
+      );
+      return cards.reduce(
+        (closest, card) => {
+          const box = card.getBoundingClientRect();
+          const offset = pointerX - box.left - box.width / 2;
+          if (offset < 0 && offset > closest.offset) return { offset, card };
+          return closest;
+        },
+        { offset: Number.NEGATIVE_INFINITY, card: null }
+      ).card;
+    };
+
+    const placePlaceholder = (parent, beforeNode = null) => {
+      if (!parent) return;
+      if (beforeNode) parent.insertBefore(placeholder, beforeNode);
+      else if (placeholder.parentElement !== parent || placeholder.nextElementSibling) parent.appendChild(placeholder);
+    };
+
+    const packingColumnPlaceholderWidth = (board) => {
+      const reference = board?.querySelector?.(".container-card");
+      const referenceWidth = reference?.getBoundingClientRect?.().width || 0;
+      if (referenceWidth) return referenceWidth;
+      const boardWidth = board?.clientWidth || window.innerWidth || 360;
+      const isMobile = window.matchMedia?.("(max-width: 560px)")?.matches;
+      if (isMobile) return Math.max(285, boardWidth - 36);
+      return Math.min(360, Math.max(300, boardWidth - 12));
+    };
+
+    const setPackingColumnPlaceholderSize = (board) => {
+      const width = packingColumnPlaceholderWidth(board);
+      placeholder.style.width = `${width}px`;
+      placeholder.style.height = "";
+      placeholder.style.maxWidth = "none";
+      placeholder.style.minHeight = "";
+    };
+
+    const setLayoutPlaceholderSize = (box) => {
+      placeholder.style.height = `${box.height}px`;
+      placeholder.style.width = `${box.width}px`;
+      placeholder.style.maxWidth = "100%";
+      placeholder.style.minHeight = "";
+    };
+
+    const placePacking = (target, clientX, clientY) => {
+      const packingRoot = getPackingRoot?.();
+      if (!packingRoot || !target || !packingRoot.contains(target)) {
+        cleanupPackingDropState();
+        return false;
+      }
+
+      const board = packingRoot.querySelector?.(".board");
+      const boardTarget = target.closest?.(".board");
+      if (board && boardTarget === board) {
+        packingRoot.querySelectorAll?.(".dropzone.drag-over").forEach((entry) => entry.classList.remove("drag-over"));
+        packingRoot.querySelectorAll?.(".subcontainer.container-drop-target").forEach((entry) => entry.classList.remove("container-drop-target"));
+        placeholder.className = "column-placeholder";
+        setPackingColumnPlaceholderSize(board);
+        placePlaceholder(board, getColumnAfterPointer(board, clientX));
+        packingDrop = {
+          type: "root",
+          index: getColumnPlaceholderIndex(board)
+        };
+        return true;
+      }
+
+      cleanupPackingDropState();
+      return false;
+    };
+
     const place = (clientX, clientY) => {
       const target = document.elementFromPoint(clientX, clientY);
+      if (sourceIsRootCatalog) {
+        const packingTab = getPackingPortalTabTarget(target);
+        if (packingTab && getCurrentView?.() !== "packing") {
+          packingTab.classList.add("drag-over");
+          cleanupLayoutDropState(dropList, placeholder);
+          cleanupPackingDropState();
+          switchToPacking?.();
+          return;
+        }
+        clearPackingPortalTabTarget();
+        if (getCurrentView?.() === "packing") {
+          cleanupLayoutDropState(dropList, placeholder);
+          placePacking(target, clientX, clientY);
+          return;
+        }
+      }
       if (!target || !dropList.contains(target)) {
         cleanupLayoutDropState(dropList, placeholder);
         return;
       }
+      cleanupPackingDropState();
+      placeholder.className = "drop-placeholder";
+      setLayoutPlaceholderSize(sourceRow.getBoundingClientRect());
       dropList.classList.add("drag-over");
       const afterRow = getLayoutRowAfterPointer(dropList, clientY);
       if (afterRow) dropList.insertBefore(placeholder, afterRow);
@@ -171,6 +303,12 @@ export function bindSettingsPointerDrag({
         dropped = true;
         const targetIndex = getLayoutPlaceholderIndex(dropList, placeholder);
         addRootContainerToActiveLayout(containerId, targetIndex, { closeDialog: false, renderAfter: false });
+      } else if (!canceled && started && sourceIsRootCatalog && packingDrop) {
+        endEvent.preventDefault();
+        dropped = true;
+        if (packingDrop.type === "root") {
+          addRootContainerToActiveLayout(containerId, packingDrop.index, { closeDialog: false, renderAfter: false });
+        }
       }
       if (started) {
         sourceRow.dataset.justDragged = "true";

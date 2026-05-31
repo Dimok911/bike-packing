@@ -18,6 +18,7 @@ export function repairEmptyTemplateCopyDraftFromPublishedLayout({
   templateCopySourceScore = () => 0,
   removeLayoutTree = () => false,
   copyPublishedContainerToState = () => "",
+  copyPublishedItemToState = () => "",
   createLayoutArrangementFromCurrentState = () => null,
   normalizeLayoutArrangement = () => {},
   ensureLayoutDictionaries = () => null,
@@ -61,6 +62,17 @@ export function repairEmptyTemplateCopyDraftFromPublishedLayout({
     if (wasActive) state.activeLayoutId = layoutId;
     return null;
   }
+
+  Object.keys(sourceState.items || {}).forEach((itemId) => {
+    if (idMap.items.has(itemId)) return;
+    const copiedId = copyPublishedItemToState(sourceState, itemId, {
+      containerId: "",
+      changedAt,
+      idMap,
+      preserveSource: true
+    });
+    if (copiedId && state.items?.[copiedId]) state.items[copiedId].publicCatalogLayoutId = layoutId;
+  });
 
   const arrangement = createLayoutArrangementFromCurrentState(state, rootContainerIds);
   const dictionaries = ensureLayoutDictionaries(sourceLayout, sourceState);
