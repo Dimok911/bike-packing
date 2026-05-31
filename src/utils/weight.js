@@ -1,3 +1,5 @@
+import { currentDocumentLanguage } from "./language.js";
+
 export function parseWeightInput(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number) || number < 0) return 0;
@@ -10,11 +12,6 @@ export function parseVolumeInput(value) {
   return Math.round(number * 10) / 10;
 }
 
-function currentUiLanguage() {
-  if (typeof document === "undefined") return "en";
-  return String(document.documentElement?.lang || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
-}
-
 function localizedNumber(value, language) {
   const text = String(value);
   return language === "ru" ? text.replace(".", ",") : text;
@@ -22,14 +19,14 @@ function localizedNumber(value, language) {
 
 export function formatVolume(liters) {
   const number = Number(liters || 0);
-  const language = currentUiLanguage();
+  const language = currentDocumentLanguage();
   const unit = language === "ru" ? "л" : "l";
   if (!number) return `0 ${unit}`;
   return `${localizedNumber(number, language)} ${unit}`;
 }
 
 export function formatWeight(grams) {
-  const language = currentUiLanguage();
+  const language = currentDocumentLanguage();
   const gramUnit = language === "ru" ? "г" : "g";
   const kilogramUnit = language === "ru" ? "кг" : "kg";
   if (!grams) return `0 ${gramUnit}`;

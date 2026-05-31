@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=986" />
+    <link rel="stylesheet" href="./styles.css?v=989" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -148,7 +148,7 @@
       <form method="dialog" class="dialog-card">
         <header>
           <h2 id="dialogTitle">Item</h2>
-          <button value="cancel" class="icon-button" aria-label="Close">×</button>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label>
           Name
@@ -181,12 +181,12 @@
           <div id="itemCategoryList" class="category-picker"></div>
         </div>
         <div class="field-label item-container-field">
-          <span id="itemContainerLabel">Place in</span>
+          <span id="itemContainerLabel">Положить в</span>
           <div class="item-container-control">
             <span id="itemContainerCurrent" class="item-container-current" hidden></span>
-            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Move within layout</button>
+            <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
             <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
-            <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Remove from layout</button>
+            <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Убрать из укладки</button>
             <button id="itemDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Delete item forever</button>
           </div>
           <input id="itemContainer" type="hidden" />
@@ -223,7 +223,7 @@
       <form method="dialog" class="dialog-card root-container-dialog-card">
         <header>
           <h2 id="rootContainerDialogTitle">Bag or place</h2>
-          <button value="cancel" class="icon-button" aria-label="Close">×</button>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label>
           Name
@@ -267,13 +267,13 @@
           <div id="rootContainerCategoryList" class="category-picker"></div>
         </div>
         <div id="rootContainerPlacementField" class="field-label item-container-field">
-          <span id="rootContainerPlacementLabel">Located in</span>
+          <span id="rootContainerPlacementLabel">Находится в</span>
           <div class="item-container-control root-container-placement-control">
             <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
-            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Move within layout</button>
+            <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переложить в пределах укладки</button>
             <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
             <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Remove</button>
-            <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Delete forever</button>
+            <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить навсегда</button>
           </div>
         </div>
         <label>
@@ -386,8 +386,8 @@
     <dialog id="layoutEditDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2 id="layoutEditTitle">Edit layout</h2>
-          <button value="cancel" class="icon-button" aria-label="Close">×</button>
+          <h2 id="layoutEditTitle">Редактировать укладку</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label>
           Name
@@ -407,8 +407,8 @@
     <dialog id="layoutDialog">
       <form method="dialog" class="dialog-card">
         <header>
-          <h2 id="layoutCreateTitle">New layout</h2>
-          <button value="cancel" class="icon-button" aria-label="Close">×</button>
+          <h2 id="layoutCreateTitle">Новая укладка</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label>
           Name
@@ -451,7 +451,7 @@
       <form method="dialog" class="dialog-card">
         <header>
           <h2 id="confirmTitle">Confirm</h2>
-          <button value="cancel" class="icon-button" aria-label="Close">×</button>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <p id="confirmText"></p>
         <footer>
@@ -479,8 +479,8 @@
     <dialog id="authDialog">
       <form id="authForm" class="dialog-card auth-dialog-card">
         <header>
-          <h2>Sign in by link</h2>
-          <button type="button" class="icon-button" aria-label="Close" onclick="this.closest('dialog').close()">×</button>
+          <h2>Вход по ссылке</h2>
+          <button type="button" class="icon-button" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
         </header>
         <p class="dialog-note">Enter your email. We will send a magic link, no password needed.</p>
         <label>
@@ -489,8 +489,8 @@
         </label>
         <p id="authDialogStatus" class="dialog-status" aria-live="polite"></p>
         <footer>
-          <button type="button" class="ghost" onclick="this.closest('dialog').close()">Close</button>
-          <button id="authSubmitBtn" type="submit">Send link</button>
+          <button type="button" class="ghost" onclick="this.closest('dialog').close()">Закрыть</button>
+          <button id="authSubmitBtn" type="submit">Отправить ссылку</button>
         </footer>
       </form>
     </dialog>
@@ -599,6 +599,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=986" type="module"></script>
+    <script src="./app.js?v=989" type="module"></script>
   </body>
 </html>

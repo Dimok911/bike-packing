@@ -1,3 +1,13 @@
+import { currentDocumentLanguage } from "../utils/language.js";
+
+function localText(en, ru) {
+  return currentDocumentLanguage() === "en" ? en : ru;
+}
+
+function quoteName(name) {
+  return currentDocumentLanguage() === "en" ? `“${name}”` : `«${name}»`;
+}
+
 export function bindLayoutEditorControls({
   addRootContainerToActiveLayout,
   cleanupLayoutDropState,
@@ -22,13 +32,22 @@ export function bindLayoutEditorControls({
       const container = state.containers[containerId];
       const itemCount = getContainerItemIdsDeep(containerId).length;
       openConfirmDialog({
-        title: "Remove from layout?",
-        text: `“${container.name}” will be removed from the current layout and will stay in the bags and places list as an empty shell.`,
+        title: localText("Remove from layout?", "Убрать из укладки?"),
+        text: localText(
+          `${quoteName(container.name)} will be removed from the current layout and will stay in the bags and places list as an empty shell.`,
+          `${quoteName(container.name)} исчезнет из текущей укладки и останется в списке сумок и мест как пустая оболочка.`
+        ),
         highlightText: itemCount
-          ? `${formatThingCount(itemCount)} from this bag/place will be removed from the layout and become outside the layout. Nested pouches inside this bag/place will be deleted.`
-          : "This bag/place is already empty, so only the empty shell will leave the current layout.",
+          ? localText(
+            `${formatThingCount(itemCount)} from this bag/place will be removed from the layout and become outside the layout. Nested pouches inside this bag/place will be deleted.`,
+            `${formatThingCount(itemCount)} из этой сумки/места будут убраны из укладки и окажутся вне укладки. Вложенные пакеты внутри этой сумки/места будут удалены.`
+          )
+          : localText(
+            "This bag/place is already empty, so only the empty shell will leave the current layout.",
+            "Эта сумка/место уже пустые, поэтому из текущей укладки уйдёт только пустая оболочка."
+          ),
         tone: itemCount ? "danger" : "safe",
-        okText: "Remove",
+        okText: localText("Remove", "Убрать"),
         onConfirm: () => removeRootContainerFromActiveLayout(containerId)
       });
     });

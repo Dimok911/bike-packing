@@ -1,4 +1,9 @@
 import { escapeHtml } from "../utils/html.js";
+import { currentDocumentLanguage } from "../utils/language.js";
+
+function localizedText(en, ru) {
+  return currentDocumentLanguage() === "en" ? en : ru;
+}
 
 export function isDestructiveConfirmAction(okText, tone = "") {
   return tone === "danger" || /удал|сброс|разобрать|выйти/i.test(okText);
@@ -25,7 +30,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     title,
     text,
     okText,
-    cancelText = "Cancel",
+    cancelText = localizedText("Cancel", "Отмена"),
     alternateText = "",
     highlightText = "",
     highlightCount = "",
@@ -104,10 +109,10 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
   }
 
   function askUnsavedChangesDialog() {
-    refs.confirmTitle.textContent = "You have unsaved changes";
-    refs.confirmText.textContent = "Save changes before closing?";
-    refs.confirmCancelBtn.textContent = "Close without saving";
-    refs.confirmOkBtn.textContent = "Save";
+    refs.confirmTitle.textContent = localizedText("You have unsaved changes", "Есть несохранённые изменения");
+    refs.confirmText.textContent = localizedText("Save changes before closing?", "Сохранить изменения перед закрытием?");
+    refs.confirmCancelBtn.textContent = localizedText("Close without saving", "Закрыть без сохранения");
+    refs.confirmOkBtn.textContent = localizedText("Save", "Сохранить");
     refs.confirmCancelBtn.classList.add("danger-action");
     refs.confirmOkBtn.classList.remove("danger-action");
     refs.confirmDialog.classList.remove("danger-confirm-dialog");

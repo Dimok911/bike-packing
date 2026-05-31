@@ -5484,7 +5484,7 @@ dialog.photo-lightbox::backdrop {
 }
 
 .confirm-highlight.confirm-danger::before {
-  content: "Important";
+  content: "Важно";
   display: block;
   width: fit-content;
   margin-bottom: 6px;
@@ -5496,6 +5496,10 @@ dialog.photo-lightbox::backdrop {
   line-height: 1.2;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+html[lang="en"] .confirm-highlight.confirm-danger::before {
+  content: "Important";
 }
 
 .confirm-highlight-count {

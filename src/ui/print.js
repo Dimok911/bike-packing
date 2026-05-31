@@ -8,6 +8,7 @@ import {
   itemTotalWeight
 } from "../state/metrics.js";
 import { escapeHtml } from "../utils/html.js";
+import { currentDocumentLanguage } from "../utils/language.js";
 import { formatWeight } from "../utils/weight.js";
 
 const PRINT_COLUMN_CAPACITY = 40;
@@ -20,15 +21,18 @@ export function askPrintLabelsChoice(askConfirmDialog, { createPrintTarget = nul
   if (typeof askConfirmDialog !== "function") {
     return Promise.resolve({ includeLabels: true, printTarget: createPrintTarget?.() || null });
   }
+  const english = currentDocumentLanguage() === "en";
   let printTarget = null;
   const preparePrintTarget = () => {
     printTarget = createPrintTarget?.() || null;
   };
   return askConfirmDialog({
-    title: "Print list",
-    text: "Print storage-place and category labels? Labels make the list easier to navigate on the trip; without labels, the list is more compact.",
-    okText: "With labels",
-    cancelText: "Without labels",
+    title: english ? "Print list" : "Печать списка",
+    text: english
+      ? "Print storage-place and category labels? Labels make the list easier to navigate on the trip; without labels, the list is more compact."
+      : "Печатать метки мест хранения и категорий? С метками проще ориентироваться в поездке, без меток список компактнее.",
+    okText: english ? "With labels" : "С метками",
+    cancelText: english ? "Without labels" : "Без меток",
     onOk: preparePrintTarget,
     onCancel: preparePrintTarget
   }).then((includeLabels) => includeLabels === null

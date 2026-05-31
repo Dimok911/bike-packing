@@ -319,6 +319,7 @@
 
 | Дата | Размер app.js | Завершенный срез | Последний push |
 | --- | ---: | --- | --- |
+| 2026-05-31 | 9299 | tail UI/controller block moved to `src/app/app-tail-controllers.js`; cache bumped to `v988`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-28 | 13595 | static translation application moved to `src/ui/static-translations.js`; cache bumped to `v917`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-28 | 13623 | template copy creation flow moved to `src/public/template-copy-flow.js`; cache bumped to `v916`; `check`/`build`/`test:critical` ok | local, not pushed |
 | 2026-05-28 | 13689 | shared/demo public catalog refresh moved to `src/public/shared-catalog-refresh-flow.js`; cache bumped to `v915`; `check`/`build`/`test:critical` ok | local, not pushed |

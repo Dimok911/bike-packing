@@ -2,6 +2,11 @@ import {
   applySyncVisualState,
   resolveSyncVisualState
 } from "./sync-visual-state.js";
+import { currentDocumentLanguage } from "../utils/language.js";
+
+function localText(en, ru) {
+  return currentDocumentLanguage() === "en" ? en : ru;
+}
 
 export function updateSyncUiControls({
   appUnlocked = false,
@@ -99,8 +104,8 @@ export function updateSyncUiControls({
   }
   if (rememberedOffline && appUnlocked && !message) {
     refs.syncStatus.textContent = syncMeta.dirty
-      ? "Offline · local changes are saved on this device"
-      : "Offline · local copy of personal layouts";
+      ? localText("Offline · local changes are saved on this device", "Офлайн · локальные изменения сохранены на этом устройстве")
+      : localText("Offline · local copy of personal layouts", "Офлайн · локальная копия личных укладок");
     return syncVisualState;
   }
   if (!loggedIn && appUnlocked) {
