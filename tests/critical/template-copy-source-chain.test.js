@@ -1548,6 +1548,17 @@ test("published template export keeps items removed from the layout in the catal
         childIds: [],
         order: [{ type: "item", id: "item-attached" }],
         publicCatalogLayoutId: layoutId
+      },
+      "container-detached": {
+        id: "container-detached",
+        name: "Detached bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: [],
+        location: "Garage",
+        categories: ["Storage"],
+        publicCatalogLayoutId: layoutId
       }
     },
     items: {
@@ -1588,9 +1599,15 @@ test("published template export keeps items removed from the layout in the catal
     stripPublishedPublicOriginMarkers
   });
 
+  assert.deepEqual(Object.keys(payload.containers).sort(), ["container-detached", "container-root"]);
   assert.deepEqual(Object.keys(payload.items).sort(), ["item-attached", "item-detached"]);
+  assert.equal(payload.containers["container-detached"].publicCatalogLayoutId, undefined);
+  assert.equal(payload.containers["container-detached"].parentId, null);
   assert.equal(payload.items["item-detached"].containerId, "");
   assert.equal(payload.items["item-detached"].publicCatalogLayoutId, undefined);
+  assert.deepEqual(payload.locations, ["Garage"]);
+  assert.deepEqual(payload.categories, ["Storage"]);
+  assert.equal(payload.layouts["layout-main"].arrangement.containers["container-detached"], undefined);
   assert.equal(payload.layouts["layout-main"].arrangement.items["item-detached"], undefined);
 });
 
@@ -1604,6 +1621,14 @@ test("published shared virtual state keeps detached catalog items", () => {
         itemIds: ["item-attached"],
         childIds: [],
         order: [{ type: "item", id: "item-attached" }]
+      },
+      "container-detached": {
+        id: "container-detached",
+        name: "Detached bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: []
       }
     },
     items: {
@@ -1629,9 +1654,14 @@ test("published shared virtual state keeps detached catalog items", () => {
   });
 
   const detached = virtual.items["shared-virtual-item-item-detached"];
+  const detachedContainer = virtual.containers["shared-virtual-container-container-detached"];
   assert.ok(detached);
+  assert.ok(detachedContainer);
   assert.equal(detached.containerId, "");
   assert.equal(detached.publicCatalogLayoutId, "shared-virtual-layout-shared-template");
+  assert.equal(detachedContainer.parentId, null);
+  assert.equal(detachedContainer.publicCatalogLayoutId, "shared-virtual-layout-shared-template");
+  assert.equal(virtual.layouts["shared-virtual-layout-shared-template"].arrangement.containers[detachedContainer.id], undefined);
   assert.equal(virtual.layouts["shared-virtual-layout-shared-template"].arrangement.items[detached.id], undefined);
 });
 
@@ -1645,6 +1675,14 @@ test("admin shared materialization keeps detached published catalog items", () =
         itemIds: ["item-attached"],
         childIds: [],
         order: [{ type: "item", id: "item-attached" }]
+      },
+      "container-detached": {
+        id: "container-detached",
+        name: "Detached bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: []
       }
     },
     items: {
@@ -1668,18 +1706,21 @@ test("admin shared materialization keeps detached published catalog items", () =
     copyPublishedContainerToState: (publishedState, containerId, { idMap }) => {
       const nextContainerId = `copy-${containerId}`;
       idMap.containers.set(containerId, nextContainerId);
+      const itemIds = containerId === "container-root" ? ["copy-item-attached"] : [];
       state.containers[nextContainerId] = {
         ...publishedState.containers[containerId],
         id: nextContainerId,
-        itemIds: ["copy-item-attached"],
-        order: [{ type: "item", id: "copy-item-attached" }]
+        itemIds,
+        order: itemIds.map((id) => ({ type: "item", id }))
       };
-      idMap.items.set("item-attached", "copy-item-attached");
-      state.items["copy-item-attached"] = {
-        ...publishedState.items["item-attached"],
-        id: "copy-item-attached",
-        containerId: nextContainerId
-      };
+      if (containerId === "container-root") {
+        idMap.items.set("item-attached", "copy-item-attached");
+        state.items["copy-item-attached"] = {
+          ...publishedState.items["item-attached"],
+          id: "copy-item-attached",
+          containerId: nextContainerId
+        };
+      }
       return nextContainerId;
     },
     copyPublishedItemToState: (publishedState, itemId, { idMap }) => {
@@ -1706,10 +1747,14 @@ test("admin shared materialization keeps detached published catalog items", () =
   });
 
   const detached = state.items["copy-item-detached"];
+  const detachedContainer = state.containers["copy-container-detached"];
   assert.ok(editable);
   assert.ok(detached);
+  assert.ok(detachedContainer);
   assert.equal(detached.containerId, "");
   assert.equal(detached.publicCatalogLayoutId, editable.id);
+  assert.equal(detachedContainer.publicCatalogLayoutId, editable.id);
+  assert.deepEqual(editable.rootContainerIds, ["copy-container-root"]);
 });
 
 test("frontend load cleanup preserves detached public template catalog items", () => {
@@ -1743,6 +1788,26 @@ test("frontend load cleanup preserves detached public template catalog items", (
         itemIds: ["item-shared-attached-1"],
         childIds: [],
         order: [{ type: "item", id: "item-shared-attached-1" }]
+      },
+      "container-shared-detached-1": {
+        id: "container-shared-detached-1",
+        name: "Detached bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: [],
+        sharedSourceId: "container-detached",
+        publicCatalogLayoutId: layoutId
+      },
+      "container-shared-stale-1": {
+        id: "container-shared-stale-1",
+        name: "Stale bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: [],
+        sharedSourceId: "container-stale",
+        publicCatalogLayoutId: "missing-layout"
       }
     },
     items: {
@@ -1773,7 +1838,9 @@ test("frontend load cleanup preserves detached public template catalog items", (
 
   const removed = cleanupGeneratedCatalogArtifacts(state);
 
-  assert.equal(removed, 1);
+  assert.equal(removed, 2);
+  assert.ok(state.containers["container-shared-detached-1"]);
+  assert.equal(state.containers["container-shared-stale-1"], undefined);
   assert.ok(state.items["item-shared-detached-1"]);
   assert.equal(state.items["item-shared-stale-1"], undefined);
 });
@@ -2561,7 +2628,8 @@ test("empty local template-copy draft is hydrated from meaningful published payl
     },
     activeLayoutId: "layout-main",
     containers: {
-      "container-a": { id: "container-a", itemIds: ["item-a"], childIds: [] }
+      "container-a": { id: "container-a", itemIds: ["item-a"], childIds: [] },
+      "container-b": { id: "container-b", itemIds: [], childIds: [], order: [] }
     },
     items: {
       "item-a": { id: "item-a", containerId: "container-a" },
@@ -2593,15 +2661,17 @@ test("empty local template-copy draft is hydrated from meaningful published payl
     },
     copyPublishedContainerToState: (sourceState, containerId, { idMap }) => {
       const nextContainerId = `copy-${containerId}`;
-      const nextItemId = "copy-item-a";
       idMap.containers.set(containerId, nextContainerId);
-      idMap.items.set("item-a", nextItemId);
+      const itemIds = containerId === "container-a" ? ["copy-item-a"] : [];
       state.containers[nextContainerId] = {
         ...sourceState.containers[containerId],
         id: nextContainerId,
-        itemIds: [nextItemId]
+        itemIds
       };
-      state.items[nextItemId] = { ...sourceState.items["item-a"], id: nextItemId, containerId: nextContainerId };
+      if (containerId === "container-a") {
+        idMap.items.set("item-a", "copy-item-a");
+        state.items["copy-item-a"] = { ...sourceState.items["item-a"], id: "copy-item-a", containerId: nextContainerId };
+      }
       return nextContainerId;
     },
     copyPublishedItemToState: (sourceState, itemId, { idMap }) => {
@@ -2629,6 +2699,7 @@ test("empty local template-copy draft is hydrated from meaningful published payl
   assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
   assert.deepEqual(state.layouts["layout-local-draft"].rootContainerIds, ["copy-container-a"]);
   assert.ok(state.items["copy-item-a"]);
+  assert.equal(state.containers["copy-container-b"].publicCatalogLayoutId, "layout-local-draft");
   assert.equal(state.items["copy-item-b"].containerId, "");
   assert.equal(state.items["copy-item-b"].publicCatalogLayoutId, "layout-local-draft");
 });

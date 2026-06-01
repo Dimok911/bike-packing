@@ -7,6 +7,7 @@ export function bindSettingsPointerDrag({
   getLayoutRowAfterPointer,
   getPackingRoot = () => null,
   getPackingTab = () => document.querySelector?.('.tab[data-view="packing"]') || null,
+  getColumnPlaceholderIndex = null,
   getState,
   getTouchPoint,
   isHoldDragInput,
@@ -56,6 +57,7 @@ export function bindSettingsPointerDrag({
     const needsHold = isHoldDragInput(dragInput);
     let holdTimer = null;
     let packingDrop = null;
+    let packingDropBoard = null;
 
     if (needsHold) {
       markDragPending(sourceRow);
@@ -138,15 +140,27 @@ export function bindSettingsPointerDrag({
       getPackingTab?.()?.classList?.remove("drag-over");
     };
 
+    const cleanupLayoutListDropState = () => {
+      if (placeholder.parentElement === dropList) {
+        cleanupLayoutDropState(dropList, placeholder);
+        return;
+      }
+      dropList?.classList.remove("drag-over");
+    };
+
     const cleanupPackingDropState = () => {
       const packingRoot = getPackingRoot?.();
       packingRoot?.querySelectorAll?.(".dropzone.drag-over").forEach((zone) => zone.classList.remove("drag-over"));
       packingRoot?.querySelectorAll?.(".subcontainer.container-drop-target").forEach((container) => container.classList.remove("container-drop-target"));
       placeholder.remove();
       packingDrop = null;
+      packingDropBoard = null;
     };
 
-    const getColumnPlaceholderIndex = (board) => {
+    const getPackingColumnPlaceholderIndex = (board) => {
+      if (typeof getColumnPlaceholderIndex === "function") {
+        return getColumnPlaceholderIndex(board, placeholder, containerId);
+      }
       const entries = [...(board?.children || [])].filter((child) =>
         child === placeholder ||
         (
@@ -178,6 +192,8 @@ export function bindSettingsPointerDrag({
 
     const placePlaceholder = (parent, beforeNode = null) => {
       if (!parent) return;
+      const targetNext = beforeNode || null;
+      if (placeholder.parentElement === parent && placeholder.nextElementSibling === targetNext) return;
       if (beforeNode) parent.insertBefore(placeholder, beforeNode);
       else if (placeholder.parentElement !== parent || placeholder.nextElementSibling) parent.appendChild(placeholder);
     };
@@ -224,8 +240,13 @@ export function bindSettingsPointerDrag({
         placePlaceholder(board, getColumnAfterPointer(board, clientX));
         packingDrop = {
           type: "root",
-          index: getColumnPlaceholderIndex(board)
+          index: getPackingColumnPlaceholderIndex(board)
         };
+        packingDropBoard = board;
+        return true;
+      }
+
+      if (packingDrop && packingDropBoard && packingRoot.contains(target)) {
         return true;
       }
 
@@ -239,14 +260,14 @@ export function bindSettingsPointerDrag({
         const packingTab = getPackingPortalTabTarget(target);
         if (packingTab && getCurrentView?.() !== "packing") {
           packingTab.classList.add("drag-over");
-          cleanupLayoutDropState(dropList, placeholder);
+          cleanupLayoutListDropState();
           cleanupPackingDropState();
           switchToPacking?.();
           return;
         }
         clearPackingPortalTabTarget();
         if (getCurrentView?.() === "packing") {
-          cleanupLayoutDropState(dropList, placeholder);
+          cleanupLayoutListDropState();
           placePacking(target, clientX, clientY);
           return;
         }

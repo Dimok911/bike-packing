@@ -410,6 +410,7 @@ import {
 } from "./src/state/container-tree-snapshot.js";
 import {
   addItemToLayoutArrangement as addItemToLayoutArrangementForState,
+  addRootContainerToLayoutInState,
   cleanupEmptyContainersInLayoutArrangement,
   createGroupFromItemsInState,
   ensureLayoutContainerPlacement as ensureLayoutContainerPlacementForState,
@@ -424,6 +425,7 @@ import {
   removeContainerFromLayoutOnlyInState,
   removeItemFromLayoutArrangement,
   removeItemFromLayoutInState,
+  rootColumnInsertIndexFromVisibleNeighbors,
   touchLayoutsReferencingItemInState
 } from "./src/state/layout-ops.js";
 import {
@@ -667,6 +669,7 @@ import {
 import {
   renderFilteredRootContainerColumnHtml,
   renderPackingItemCardHtml,
+  renderPackingRootHeaderCellHtml,
   renderRootContainerColumnHtml,
   renderSubcontainerSectionHtml,
   subcontainerTitleHtml
@@ -675,7 +678,8 @@ import { createPackingDragController } from "./src/ui/packing-drag.js";
 import { bindPackingEvents as bindPackingEventsUi } from "./src/ui/packing-events.js";
 import {
   bindBoardScroll,
-  bindFixedScrollbar
+  bindFixedScrollbar,
+  bindStickyRootHeaderRow
 } from "./src/ui/packing-scroll.js";
 import { applyStaticTranslationsUi } from "./src/ui/static-translations.js";
 import {
@@ -1236,7 +1240,7 @@ const appTailControllerDeps = {
   applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState, arePublishedTemplatesBlocked,
   askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog, assertAdminApiCompatibility,
   assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity, backupDownloadName,
-  bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls, bindFixedScrollbar,
+  bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls, bindFixedScrollbar, bindStickyRootHeaderRow,
   bindHorizontalTouchScroll, bindLayoutEditorControls, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
   bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi, blockDestructiveLocalSave,
   blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions, buildAdminSharedTemplateOptions,
@@ -1353,7 +1357,7 @@ const appTailControllerDeps = {
   mergeBuiltInSharedEntriesIntoAdminLayoutValue, mergeDemoTemplateCatalogEntry, mergeDemoTemplateEntriesForAdmin, mergeLocalCollapsedContainers, mergeManagedPublicDraftRecords,
   mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries, mergeStateFromBase,
   mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState, moveContainerInLayoutArrangementForState,
-  moveItemInLayoutArrangementForState, moveRootColumnInState, nextDemoTemplateAfter, nextItemDisplayModeValue, nextServerConfirmedSharedLayoutAfter,
+  moveItemInLayoutArrangementForState, moveRootColumnInState, addRootContainerToLayoutInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue, nextServerConfirmedSharedLayoutAfter,
   normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms, normalizeBike3dViewState,
   normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, normalizeContainerFields,
   normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues, normalizeIntegrityCount,
@@ -1398,7 +1402,7 @@ const appTailControllerDeps = {
   renderDictionaryHtml, renderEmptyState, renderFilterControls, renderFilteredRootContainerColumnHtml, renderFilters,
   renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls, renderInitialLocalFallbackIfNeeded,
   renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml, renderListItemHtml,
-  renderPackingItemCardHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml, renderRootContainerColumnHtml,
+  renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml, renderRootContainerColumnHtml,
   renderRootContainersEditorHtml, renderSharedItemsViewHtml, renderSharedLayouts, renderSharedLayoutsHtml, renderSubcontainerSectionHtml,
   repairActiveEmptyAdminDemoDraft, repairAdminDemoLayout, repairAdminDemoLayoutValue, repairCollapsedActiveLayoutBeforeSave, repairContainerMembershipFromItemLinks,
   repairEmptyTemplateCopyDraftFromPublishedLayout, repairMojibakeLayoutNames, repairPlacementRegressionFromReference, repairPrivateMojibakeLayoutNames, repairPublishedLayoutArrangement,
@@ -3681,8 +3685,8 @@ function solidifyManagedTemplateDrafts() {
   });
 }
 
-function saveState({ sync = true } = {}) {
-  captureActiveLayoutArrangement();
+function saveState({ captureArrangement = true, sync = true } = {}) {
+  if (captureArrangement) captureActiveLayoutArrangement();
   solidifyManagedTemplateDrafts();
   sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
@@ -8928,10 +8932,15 @@ function shouldKeepScopedControlsStable() {
 }
 
 function updateStickyControlsHeight() {
-  const height = shouldUseStickyFilterControls() && refs.controls && !refs.controls.hidden
+  const controlsHeight = shouldUseStickyFilterControls() && refs.controls && !refs.controls.hidden
     ? Math.ceil(refs.controls.getBoundingClientRect().height)
     : 0;
-  document.documentElement.style.setProperty("--sticky-controls-height", `${height}px`);
+  const tabsRow = document.querySelector(".tabs-row");
+  const tabsHeight = tabsRow && tabsRow.offsetParent !== null
+    ? Math.ceil(tabsRow.getBoundingClientRect().height)
+    : 0;
+  document.documentElement.style.setProperty("--sticky-controls-height", `${controlsHeight}px`);
+  document.documentElement.style.setProperty("--sticky-tabs-height", `${tabsHeight}px`);
 }
 
 function updateCompactStickyControls() {
@@ -9167,10 +9176,17 @@ function toggleItemDisplayMode() {
 }
 
 function toggleActiveLayoutNestedContainers() {
-  const { count } = toggleActiveLayoutNestedContainersCollapsedForState(state);
+  let count = 0;
+  if (isSharedLayoutView()) {
+    withSharedVirtualState(() => {
+      ({ count } = toggleActiveLayoutNestedContainersCollapsedForState(state));
+    });
+  } else {
+    ({ count } = toggleActiveLayoutNestedContainersCollapsedForState(state));
+  }
   if (!count) return;
   capturePackingScroll();
-  saveLocalUiState();
+  if (!isSharedLayoutView()) saveLocalUiState();
   render();
 }
 
@@ -9198,9 +9214,19 @@ function updateLayoutCollapseAllToggle() {
   const button = refs.layoutCollapseAllBtn;
   if (!button) return;
   const isPackingView = getCurrentView() === "packing";
-  const hasNested = activeLayoutNestedContainerIdsForState(state).length > 0;
+  let nestedCount = 0;
+  let allCollapsed = false;
+  if (isSharedLayoutView()) {
+    withSharedVirtualState(() => {
+      nestedCount = activeLayoutNestedContainerIdsForState(state).length;
+      allCollapsed = allActiveLayoutNestedContainersCollapsedForState(state);
+    });
+  } else {
+    nestedCount = activeLayoutNestedContainerIdsForState(state).length;
+    allCollapsed = allActiveLayoutNestedContainersCollapsedForState(state);
+  }
+  const hasNested = nestedCount > 0;
   const available = isPackingView && hasNested;
-  const allCollapsed = allActiveLayoutNestedContainersCollapsedForState(state);
   button.hidden = false;
   button.disabled = !available;
   button.tabIndex = available ? 0 : -1;

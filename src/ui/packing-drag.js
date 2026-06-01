@@ -10,6 +10,7 @@ export function createPackingDragController({
   getDraggingItemId,
   getPackingRoot = () => null,
   getPackingTab = () => document.querySelector?.('.tab[data-view="packing"]') || null,
+  getColumnPlaceholderIndex = () => -1,
   getItemContainerIdInLayout,
   getState,
   isOriginalRootColumnPosition,
@@ -123,10 +124,10 @@ export function createPackingDragController({
     return viewportBottom - fixedBottomReserve;
   }
 
-  function setDragGhostPosition(ghost, left, top) {
+  function setDragGhostPosition(ghost, left, top, { fitTop = true } = {}) {
     if (!ghost) return;
     ghost.style.left = `${left}px`;
-    ghost.style.top = `${fittedDragGhostTop(top, ghost)}px`;
+    ghost.style.top = `${fitTop ? fittedDragGhostTop(top, ghost) : top}px`;
   }
 
   function createPreDragScroller(board, startX, startY) {
@@ -355,6 +356,8 @@ export function createPackingDragController({
         let holdTimer = null;
         let blockingTouchMove = false;
         const rect = source.getBoundingClientRect();
+        const dragOffsetX = startX - rect.left;
+        const dragOffsetY = startY - rect.top;
         const preDragScroller = createPreDragScroller(board, startX, startY);
         const edgeScroller = createBoardEdgeScroller(board, () => {
           if (started) place(latestX);
@@ -390,21 +393,21 @@ export function createPackingDragController({
 
         const moveGhost = (clientX, clientY, immediate = false) => {
           if (!ghost) return;
-          ghostTargetX = clientX;
-          ghostTargetY = clientY;
+          ghostTargetX = clientX - dragOffsetX;
+          ghostTargetY = clientY - dragOffsetY;
           if (immediate) {
-            ghostX = clientX;
-            ghostY = clientY;
-            setDragGhostPosition(ghost, ghostX, ghostY);
+            ghostX = ghostTargetX;
+            ghostY = ghostTargetY;
+            setDragGhostPosition(ghost, ghostX, ghostY, { fitTop: false });
             return;
           }
           if (ghostFrame) return;
           const tick = () => {
             ghostX += (ghostTargetX - ghostX) * 0.45;
             ghostY += (ghostTargetY - ghostY) * 0.45;
-            setDragGhostPosition(ghost, ghostX, ghostY);
+            setDragGhostPosition(ghost, ghostX, ghostY, { fitTop: false });
             if (Math.abs(ghostTargetX - ghostX) < 0.5 && Math.abs(ghostTargetY - ghostY) < 0.5) {
-              setDragGhostPosition(ghost, ghostTargetX, ghostTargetY);
+              setDragGhostPosition(ghost, ghostTargetX, ghostTargetY, { fitTop: false });
               ghostFrame = null;
               return;
             }
@@ -427,7 +430,7 @@ export function createPackingDragController({
             { offset: Number.NEGATIVE_INFINITY, card: null }
           ).card;
           placePlaceholder(board, placeholder, after);
-          currentIndex = getColumnPlaceholderIndex(board, placeholder);
+          currentIndex = getColumnPlaceholderIndex(board, placeholder, containerId);
           placeholder.classList.remove("hidden");
         };
 

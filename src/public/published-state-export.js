@@ -53,21 +53,21 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     }
     return null;
   }).filter(Boolean);
-  const walk = (containerId) => {
+  const walk = (containerId, parentId = null) => {
     const container = targetState.containers?.[containerId];
     if (!container) return "";
     const nextContainerId = mapContainerId(containerId);
     if (containers[nextContainerId]) return nextContainerId;
     containers[nextContainerId] = clone(container);
     containers[nextContainerId].id = nextContainerId;
-    containers[nextContainerId].parentId = container.parentId ? mapContainerId(container.parentId) : null;
+    containers[nextContainerId].parentId = parentId;
     delete containers[nextContainerId].adminDemo;
     delete containers[nextContainerId].adminSharedSourceId;
     delete containers[nextContainerId].publicCatalogLayoutId;
     (container.itemIds || []).forEach((itemId) => {
       copyItemRecord(itemId, nextContainerId);
     });
-    (container.childIds || []).forEach(walk);
+    (container.childIds || []).forEach((childId) => walk(childId, nextContainerId));
     containers[nextContainerId].childIds = (container.childIds || []).map((id) => containerIdMap.get(id)).filter(Boolean);
     containers[nextContainerId].itemIds = (container.itemIds || []).map((id) => itemIdMap.get(id)).filter(Boolean);
     containers[nextContainerId].order = remapOrder(container.order || []);
@@ -80,13 +80,20 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     stripPublishedPublicOriginMarkers(containers[nextContainerId]);
     return nextContainerId;
   };
-  const rootContainerIds = (layout.rootContainerIds || []).map(walk).filter(Boolean);
+  const rootContainerIds = (layout.rootContainerIds || []).map((id) => walk(id, null)).filter(Boolean);
+  Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
+    if (!container || containerIdMap.has(containerId)) return;
+    if (container.publicCatalogLayoutId !== layoutId) return;
+    walk(containerId, null);
+  });
   Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
     if (!item || itemIdMap.has(itemId)) return;
     if (item.publicCatalogLayoutId !== layoutId) return;
     copyItemRecord(itemId, "");
   });
   const dictionaryOwner = ensureLayoutDictionaries(layout);
+  const publishedLocations = publishedDictionaryValues("location", dictionaryOwner, locations, { containers, items });
+  const publishedCategories = publishedDictionaryValues("category", dictionaryOwner, categories, { containers, items });
   const demoLayout = {
     ...clone(layout),
     id: "layout-main",
@@ -99,8 +106,8 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   delete demoLayout.publicCatalogLayoutId;
   stripPublishedPublicOriginMarkers(demoLayout);
   const demoState = {
-    locations: [...(dictionaryOwner?.locations || locations)],
-    categories: [...(dictionaryOwner?.categories || categories)],
+    locations: publishedLocations,
+    categories: publishedCategories,
     containers,
     items,
     layouts: { "layout-main": demoLayout },
@@ -162,4 +169,30 @@ export function uniquePublishedRecordId(records, preferredId) {
   let index = 2;
   while (records[`${preferredId}-${index}`]) index += 1;
   return `${preferredId}-${index}`;
+}
+
+function publishedDictionaryValues(type, owner, defaults = [], { containers = {}, items = {} } = {}) {
+  const values = [...(owner?.[type === "location" ? "locations" : "categories"] || defaults)];
+  const addRecord = (record) => {
+    if (!record || typeof record !== "object") return;
+    if (type === "location") {
+      if (record.location) values.push(record.location);
+      return;
+    }
+    if (Array.isArray(record.categories)) values.push(...record.categories);
+    else if (record.category) values.push(record.category);
+  };
+  Object.values(containers || {}).forEach(addRecord);
+  Object.values(items || {}).forEach(addRecord);
+  return uniqueTextValues(values);
+}
+
+function uniqueTextValues(values = []) {
+  const result = [];
+  values.forEach((value) => {
+    if (typeof value !== "string") return;
+    const normalized = value.trim();
+    if (normalized && !result.includes(normalized)) result.push(normalized);
+  });
+  return result;
 }

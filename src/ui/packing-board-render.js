@@ -114,6 +114,52 @@ export function renderFilteredRootContainerColumnHtml({
   `;
 }
 
+export function renderPackingRootHeaderCellHtml({
+  allNestedCollapsed,
+  container,
+  hasNestedContainers,
+  packed,
+  readonly,
+  readonlyTemplate,
+  rootCollapsed,
+  titleHtml,
+  totalWeightHtml
+}) {
+  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
+  return `
+    <div class="packing-root-header-cell ${packed ? "packed-container" : ""}" data-sticky-root-container-id="${escapeHtml(container.id)}">
+      <div class="container-title">
+        ${readonly ? `
+          <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "Развернуть" : "Свернуть"}">
+            <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
+          </button>
+        ` : ""}
+        <h2>${titleHtml}</h2>
+      </div>
+      <div class="container-tools">
+        ${readonlyTemplate ? "" : `
+          <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="Добавить вещь" title="Добавить вещь">+</button>
+          <button class="header-icon-button" data-edit-container="${container.id}" aria-label="Редактировать" title="Редактировать">&#9998;</button>
+        `}
+        ${hasNestedContainers ? `
+          <button
+            class="collapse-button nested-collapse-toggle"
+            data-toggle-column="${container.id}"
+            aria-label="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
+            title="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
+          >
+            <span class="stack-icon ${allNestedCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
+              <span class="stack-chevron stack-chevron-up"></span>
+              <span class="stack-chevron stack-chevron-down"></span>
+            </span>
+          </button>
+        ` : ""}
+        ${totalWeightHtml}
+      </div>
+    </div>
+  `;
+}
+
 export function renderSubcontainerSectionHtml({
   collapsed,
   container,

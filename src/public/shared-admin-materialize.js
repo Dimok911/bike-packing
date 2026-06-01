@@ -44,6 +44,17 @@ export function materializeSharedLayoutForAdminState(layoutId, {
           copySharedRootToState(root, { targetLayoutId: "", changedAt, idMap, preserveSource: true })
         );
     if (sourceState) {
+      Object.keys(sourceState.containers || {}).forEach((containerId) => {
+        if (idMap.containers.has(containerId)) return;
+        const copiedId = copyPublishedContainerToState(sourceState, containerId, {
+          targetLayoutId: "",
+          parentId: null,
+          changedAt,
+          idMap,
+          preserveSource: true
+        });
+        if (copiedId && state.containers?.[copiedId]) state.containers[copiedId].publicCatalogLayoutId = nextLayoutId;
+      });
       Object.keys(sourceState.items || {}).forEach((itemId) => {
         if (idMap.items.has(itemId)) return;
         const copiedId = copyPublishedItemToState(sourceState, itemId, {

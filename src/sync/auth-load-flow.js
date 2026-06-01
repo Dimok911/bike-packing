@@ -66,7 +66,6 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
       ))) return;
       if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
         runtime.appUnlocked = true;
-        await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
         updateSyncUi(currentPublicTemplateStatusMessage());
         return;
       }
@@ -79,7 +78,6 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     setLayoutLoadStatus("warning", localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       runtime.appUnlocked = true;
-      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
       updateSyncUi(currentPublicTemplateStatusMessage());
       return;
     }
@@ -105,7 +103,6 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
     setLayoutLoadStatus("warning", localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
-      await loadGuestPublishedDemoOnStartup({ forcePublicScope: true });
       updateSyncUi(currentPublicTemplateStatusMessage());
       return;
     }

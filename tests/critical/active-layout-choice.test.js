@@ -348,6 +348,67 @@ test("CRITICAL offline-auth-scope: empty auth response keeps remembered private 
   assert.equal(loadedGuestDemo, false);
 });
 
+test("CRITICAL offline-auth-scope: signed-out auth refresh keeps current readonly shared template", async () => {
+  const runtime = {
+    appUnlocked: false,
+    currentUser: null,
+    syncMeta: { dirty: false }
+  };
+  let guestScopeActivated = false;
+  let loadedGuestDemo = false;
+  let enteredPublic = false;
+  const statusMessages = [];
+  const dependencies = {
+    activateLocalStorageScope: () => {
+      guestScopeActivated = true;
+    },
+    activateLocalStorageScopeForCurrentUser: () => {},
+    activateOfflineRememberedSession: () => false,
+    apiFetch: async () => ({ user: null, session: null }),
+    applyPreferredPrivateLayoutChoice: () => false,
+    checkAdminApiCompatibility: () => ({ catch: () => null }),
+    clearOfflineRememberedSession: () => {},
+    currentPrivateLayoutRef: () => null,
+    currentPublicTemplateStatusMessage: () => "Shared read-only",
+    enterSignedOutPublicMode: async () => {
+      enteredPublic = true;
+    },
+    hasLocalSavedState: () => false,
+    isAdminUser: () => false,
+    isExplicitlySignedOut: () => false,
+    isForcedOffline: () => false,
+    isNetworkError: () => false,
+    isSharedListLinkRoute: () => false,
+    loadGuestPublishedDemoOnStartup: async () => {
+      loadedGuestDemo = true;
+    },
+    loadRemoteState: async () => {},
+    rememberAuthenticatedUser: () => {},
+    renderCachedPrivateStateDuringRemoteLoad: async () => {},
+    renderInitialLocalFallbackIfNeeded: () => {},
+    restoreSavedLayoutChoice: async () => {},
+    restoreTemplateCopyDraftsFromRecovery: () => {},
+    setExplicitlySignedOut: () => {},
+    setLayoutLoadStatus: () => {},
+    setPersonalLayoutsLoadedStatus: () => {},
+    shouldKeepCurrentReadonlyDemoAfterAuthCheck: () => true,
+    storedPrivateLayoutChoiceRef: () => null,
+    unlockOfflineState: () => {},
+    updateSyncUi: (message = "") => {
+      statusMessages.push(message);
+    },
+    GUEST_STORAGE_SCOPE: "guest"
+  };
+
+  await checkAuthAndLoadFlow({ runtime, dependencies }, { restoreLayoutChoice: false });
+
+  assert.equal(runtime.appUnlocked, true);
+  assert.equal(guestScopeActivated, true);
+  assert.equal(loadedGuestDemo, false);
+  assert.equal(enteredPublic, false);
+  assert.deepEqual(statusMessages, ["Checking sign-in...", "Shared read-only"]);
+});
+
 test("CRITICAL offline-auth-scope: temporary auth HTTP failures are treated as offline-capable", () => {
   assert.equal(isAuthCheckUnavailableError({ status: 503 }, () => false), true);
   assert.equal(isAuthCheckUnavailableError({ status: 502 }, () => false), true);

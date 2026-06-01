@@ -21,7 +21,6 @@ export function bindHorizontalTouchScroll(board) {
     const max = Math.max(0, board.scrollWidth - board.clientWidth);
     return Math.max(0, Math.min(max, value));
   };
-
   const startMomentum = () => {
     stopMomentum();
     if (!horizontalScroll || Math.abs(velocityX) < 0.08) return;

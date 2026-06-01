@@ -96,6 +96,7 @@ export function isGeneratedCatalogContainerStateArtifact(containerId, container,
   const isRecursiveSharedContainer = id.includes("container-shared-container-shared-") ||
     sourceId.startsWith("container-shared-") ||
     sourceId.includes("container-shared-container-shared-");
+  if (isPublicCatalogContainer(container, targetState)) return false;
   if (hasPublicOriginMarker(container)) return true;
   if (container.publicCatalogLayoutId || container.adminDemo || container.adminSharedSourceId) return true;
   if (id.startsWith("demo-") || id.startsWith("admin-demo-container-") || id.startsWith("container-shared-")) return true;
@@ -109,6 +110,13 @@ export function generatedCatalogString(value) {
 
 function isDetachedPublicCatalogItem(item, targetState) {
   const layoutId = generatedCatalogString(item?.publicCatalogLayoutId);
+  if (!layoutId) return false;
+  const layout = targetState?.layouts?.[layoutId];
+  return Boolean(layout && (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId));
+}
+
+function isPublicCatalogContainer(container, targetState) {
+  const layoutId = generatedCatalogString(container?.publicCatalogLayoutId);
   if (!layoutId) return false;
   const layout = targetState?.layouts?.[layoutId];
   return Boolean(layout && (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId));

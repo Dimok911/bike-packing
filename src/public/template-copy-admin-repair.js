@@ -63,6 +63,19 @@ export function repairEmptyTemplateCopyDraftFromPublishedLayout({
     return null;
   }
 
+  Object.keys(sourceState.containers || {}).forEach((containerId) => {
+    if (idMap.containers.has(containerId)) return;
+    const copiedId = copyPublishedContainerToState(sourceState, containerId, {
+      targetLayoutId: "",
+      parentId: null,
+      changedAt,
+      idMap,
+      preserveSource: true,
+      sourceLayoutId: sourceLayout.id
+    });
+    if (copiedId && state.containers?.[copiedId]) state.containers[copiedId].publicCatalogLayoutId = layoutId;
+  });
+
   Object.keys(sourceState.items || {}).forEach((itemId) => {
     if (idMap.items.has(itemId)) return;
     const copiedId = copyPublishedItemToState(sourceState, itemId, {
