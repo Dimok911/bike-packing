@@ -1,6 +1,7 @@
 import { getLayoutContainerIdSet, getLayoutItemIdSet } from "../state/layout-ops.js";
 import { normalizeItemPhotos } from "../state/item-photos.js";
 import {
+  cacheRecordRemotePhotosForUploadFallback,
   hasRemotePhotoUrl,
   isPhotoStoredForList,
   isPhotoUsableFromServer,
@@ -62,6 +63,25 @@ export function markLayoutPhotosForCurrentListCopy(targetState, layoutId) {
   getLayoutItemIdSet(targetState, layout).forEach((itemId) => {
     markRecordPhotosForCurrentListCopy(targetState.items?.[itemId]);
   });
+}
+
+export async function cacheLayoutRemotePhotosForUploadFallback(targetState, {
+  layoutId = null,
+  changedAt = ""
+} = {}) {
+  if (layoutId && !targetState.layouts?.[layoutId]) return 0;
+  const scope = getPhotoUploadScope(targetState, layoutId);
+  let changed = 0;
+  const options = changedAt ? { changedAt } : {};
+  for (const item of Object.values(targetState.items || {})) {
+    if (!isEntityInPhotoUploadScope(item, "item", scope)) continue;
+    changed += await cacheRecordRemotePhotosForUploadFallback(item, options);
+  }
+  for (const container of Object.values(targetState.containers || {})) {
+    if (!isEntityInPhotoUploadScope(container, "container", scope)) continue;
+    changed += await cacheRecordRemotePhotosForUploadFallback(container, options);
+  }
+  return changed;
 }
 
 export function getUnsyncedPhotoEntries(targetState, {

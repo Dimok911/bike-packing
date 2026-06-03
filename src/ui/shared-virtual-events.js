@@ -5,7 +5,12 @@ import {
   TEMPLATE_COPY_TITLE
 } from "../public/template-copy.js";
 
-function markReadonlyTemplateActionButtons(root = document) {
+function tr(t, key, fallback) {
+  return typeof t === "function" ? t(key) : fallback;
+}
+
+function markReadonlyTemplateActionButtons(root = document, { t } = {}) {
+  const copyTitle = tr(t, "tooltips.copyFromTemplate", TEMPLATE_COPY_TITLE);
   root.querySelectorAll("[data-add-to-container], [data-delete-root], [data-remove-from-layout], [data-delete-item]").forEach((button) => {
     button.hidden = true;
     button.setAttribute("aria-hidden", "true");
@@ -13,13 +18,14 @@ function markReadonlyTemplateActionButtons(root = document) {
   root.querySelectorAll("[data-edit-item], [data-copy-layout-item], [data-copy-item], [data-edit-root], [data-edit-container], [data-copy-root]").forEach((button) => {
     button.classList.remove("template-action-disabled");
     button.removeAttribute("aria-disabled");
-    button.title = TEMPLATE_COPY_TITLE;
-    button.setAttribute("aria-label", TEMPLATE_COPY_TITLE);
+    button.title = copyTitle;
+    button.setAttribute("aria-label", copyTitle);
     button.innerHTML = TEMPLATE_COPY_ICON_HTML;
   });
 }
 
-function addSharedReadOnlyCopyButtons(root = document) {
+function addSharedReadOnlyCopyButtons(root = document, { t } = {}) {
+  const copyTitle = tr(t, "tooltips.copy", "Скопировать");
   root.querySelectorAll("[data-root-container-id], [data-subcontainer-id]").forEach((card) => {
     const virtualId = card.dataset.rootContainerId || card.dataset.subcontainerId;
     const sourceId = originalSharedId(virtualId, "shared-virtual-container-");
@@ -30,8 +36,8 @@ function addSharedReadOnlyCopyButtons(root = document) {
     button.className = "header-icon-button copy-item-button";
     button.type = "button";
     button.dataset.copyRoot = virtualId;
-    button.title = "Скопировать";
-    button.setAttribute("aria-label", "Скопировать");
+    button.title = copyTitle;
+    button.setAttribute("aria-label", copyTitle);
     button.innerHTML = '<span aria-hidden="true">⧉</span>';
     tools.insertBefore(button, tools.firstChild);
   });
@@ -57,11 +63,12 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     openSharedItemCopyPicker,
     openSharedReadonlyItemDialog,
     render,
+    t,
     withSharedVirtualState
   } = dependencies;
   const demoSource = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
   const readonlyTemplate = isReadonlyTemplateView();
-  if (!canOpenAdminPublishedEdit() && !readonlyTemplate) addSharedReadOnlyCopyButtons(root);
+  if (!canOpenAdminPublishedEdit() && !readonlyTemplate) addSharedReadOnlyCopyButtons(root, { t });
   bindSharedLayoutEvents(root);
   root.querySelectorAll("[data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -137,18 +144,19 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     });
   });
   root.querySelectorAll("#addRootContainerBtn").forEach((button) => {
-    button.textContent = "Скопировать всю укладку";
+    button.textContent = tr(t, "buttons.copyAll", "Скопировать всю укладку");
     if (demoSource) button.textContent = demoCopyActionText();
     button.addEventListener("click", () => copySharedLayout(activeReadOnlyLayoutId()));
   });
   if (!canOpenAdminPublishedEdit()) {
-    if (readonlyTemplate) markReadonlyTemplateActionButtons(root);
+    if (readonlyTemplate) markReadonlyTemplateActionButtons(root, { t });
     root.querySelectorAll("[data-edit-item]").forEach((button) => {
       if (readonlyTemplate) {
-        button.setAttribute("aria-label", "Создать укладку на основе шаблона");
+        button.setAttribute("aria-label", tr(t, "tooltips.copyFromTemplate", "Скопировать из шаблона"));
       } else {
-        button.title = "Открыть и скопировать";
-        button.setAttribute("aria-label", "Открыть и скопировать");
+        const copyTitle = tr(t, "tooltips.copy", "Скопировать");
+        button.title = copyTitle;
+        button.setAttribute("aria-label", copyTitle);
       }
     });
     if (!readonlyTemplate) {

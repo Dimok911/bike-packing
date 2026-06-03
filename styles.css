@@ -1452,6 +1452,7 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 .packing-root-header-row {
+  --packing-root-header-cell-height: 78px;
   position: fixed;
   top: calc(var(--sticky-controls-height, 0px) + var(--sticky-tabs-height, 44px));
   left: var(--packing-root-header-left, 0px);
@@ -1473,7 +1474,7 @@ button.ghost.context-toggle.active:focus-visible {
 
 .packing-root-header-track {
   position: relative;
-  height: var(--packing-root-header-height, 44px);
+  height: var(--packing-root-header-height, var(--packing-root-header-cell-height, 78px));
   width: 100%;
   will-change: transform;
 }
@@ -1482,40 +1483,33 @@ button.ghost.context-toggle.active:focus-visible {
   position: absolute;
   top: 0;
   left: 0;
+  box-sizing: border-box;
   min-width: 0;
-  min-height: 44px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 13px;
-  border: 1px solid var(--line);
+  height: var(--packing-root-header-cell-height, 78px);
+  min-height: var(--packing-root-header-cell-height, 78px);
+  display: block;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.packing-root-header-cell > .container-header {
+  box-sizing: border-box;
+  height: 100%;
+  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
   border-radius: 8px 8px 0 0;
   overflow: hidden;
-  background: var(--panel);
   box-shadow: 0 8px 18px rgba(38, 59, 52, 0.09);
   pointer-events: auto;
 }
 
-.packing-root-header-cell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-top: 4px solid rgba(31, 111, 91, 0.72);
-  border-bottom: 1px solid var(--line);
-  background:
-    linear-gradient(90deg, rgba(220, 236, 230, 0.96), rgba(255, 255, 255, 0.98));
-  pointer-events: none;
-}
-
-.packing-root-header-cell > * {
-  position: relative;
-  z-index: 1;
-}
-
-.packing-root-header-cell h2 {
+.packing-root-header-cell .container-header h2 {
   min-width: 0;
+  min-height: 2.36em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1525,10 +1519,6 @@ button.ghost.context-toggle.active:focus-visible {
   font-weight: 850;
   line-height: 1.18;
   overflow-wrap: anywhere;
-}
-
-.packing-root-header-cell .container-tools {
-  pointer-events: auto;
 }
 
 .packing-root-header-cell .container-weight {
@@ -1541,25 +1531,11 @@ button.ghost.context-toggle.active:focus-visible {
 .packing-visual-separated-axis .packing-root-header-cell,
 .packing-visual-folder-nested .packing-root-header-cell,
 .packing-visual-text-hierarchy .packing-root-header-cell {
-  background: var(--panel);
-}
-
-.packing-visual-separated-axis .packing-root-header-cell::before,
-.packing-visual-folder-nested .packing-root-header-cell::before,
-.packing-visual-text-hierarchy .packing-root-header-cell::before {
-  border-top-width: 5px;
-  border-top-color: rgba(31, 111, 91, 0.72);
-  background: #f9fbfa;
+  background: transparent;
 }
 
 .packing-visual-calm-combined .packing-root-header-cell {
-  background: var(--panel);
-}
-
-.packing-visual-calm-combined .packing-root-header-cell::before {
-  border-top-width: 5px;
-  border-top-color: rgba(31, 111, 91, 0.7);
-  background: linear-gradient(90deg, rgba(224, 238, 233, 0.98), rgba(255, 255, 255, 0.98));
+  background: transparent;
 }
 
 .bike3d-shell {
@@ -2314,7 +2290,8 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 .container-header span,
-.subcontainer-title span {
+.subcontainer-title span,
+.packing-root-header-cell .stack-icon {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
@@ -6718,11 +6695,12 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   }
 
   .packing-root-header-row {
+    --packing-root-header-cell-height: 86px;
     margin-bottom: 6px;
     padding-right: 0;
   }
 
-  .packing-root-header-cell {
+  .packing-root-header-cell > .container-header {
     padding: 10px 10px;
     gap: 8px;
     align-items: center;
@@ -6731,6 +6709,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   .packing-root-header-cell h2 {
     font-size: 20px;
     line-height: 1.12;
+    min-height: 2.24em;
   }
 
   .bike3d-shell {
@@ -6812,7 +6791,8 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   }
 
   .container-header span,
-  .subcontainer-title span {
+  .subcontainer-title span,
+  .packing-root-header-cell .stack-icon {
     font-size: 12px;
   }
 }

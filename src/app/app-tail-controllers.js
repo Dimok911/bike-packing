@@ -167,7 +167,7 @@ export function createAppTailControllers(ctx) {
     primaryItemPhoto, printHtmlDocument, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
-    publicCopySourceIdFromRecord, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
+    publicCopySourceIdFromRecord, isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
     publicLayoutDeleteConfirm, publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice,
     publicTemplateDeleteBlockReason, publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget,
     publicTemplateOptionLabel, publicTemplatePayloadPath, publishPublicHistoryRecord, publishedItemKeyStateCache, publishedLayoutSaveLayoutId,
@@ -878,8 +878,16 @@ async function openRootContainerCopyPickerDialog(event) {
   openModalDialog(refs.containerPickerDialog);
 }
 
+function canUseLayoutAsSharedCopyTarget(layout) {
+  return isSharedCopyTargetLayout(layout, {
+    readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  });
+}
+
 function firstPrivateLayoutId() {
-  return Object.values(state.layouts || {}).find((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId)?.id || "";
+  return sharedCopyTargetLayouts(state.layouts, {
+    readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  })[0]?.id || "";
 }
 
 async function openSharedItemCopyPicker(sourceId) {
@@ -924,12 +932,12 @@ function renderContainerPicker() {
     boardHtml = rootIds.map(renderContainerPickerColumn).join("");
   });
   refs.containerPickerBoard.innerHTML = boardHtml ||
-    `<div class="empty">В текущей укладке нет верхних элементов</div>`;
+    `<div class="empty">${escapeHtml(t("forms.emptyTopLevel"))}</div>`;
   refs.containerPickerNoneBtn.hidden = runtime.containerPickerMode === "container" || isContainerPickerItemCopyMode();
   refs.containerPickerNoneBtn.classList.toggle("active", runtime.containerPickerMode === "item" && !refs.itemContainer.value);
   refs.containerPickerNoneBtn.textContent = isContainerPickerContainerCopyMode()
-    ? "В корень укладки"
-    : refs.itemContainer.value ? "Убрать из укладки" : "Вне укладки";
+    ? t("forms.rootOfLayout")
+    : refs.itemContainer.value ? t("forms.removeFromLayout") : t("forms.outsideLayout");
   refs.containerPickerBoard.querySelectorAll("[data-pick-container]").forEach((button) => {
     button.addEventListener("click", () => selectContainerPickerTarget(button.dataset.pickContainer));
   });
@@ -948,9 +956,12 @@ function getContainerPickerLayoutOptions() {
     return currentLayout ? [currentLayout] : [];
   }
   const allLayouts = Object.values(state.layouts || {});
-  const personalLayouts = allLayouts.filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId);
+  const personalLayouts = allLayouts.filter(canUseLayoutAsSharedCopyTarget);
   if (!canOpenAdminPublishedEdit()) return personalLayouts;
-  const publicDrafts = orderAdminPublicDraftsLikeMainSelect(allLayouts.filter((layout) => isPublishedLayoutEditable(layout)));
+  const publicDrafts = orderAdminPublicDraftsLikeMainSelect(publicCopyTargetLayouts(allLayouts, {
+    choiceForLayout: publicLayoutChoiceForLayout,
+    visibleChoices: adminPublicLayoutOptions().map(([value]) => value)
+  }).filter((layout) => isPublishedLayoutEditable(layout)));
   return [...publicDrafts, ...personalLayouts];
 }
 
@@ -969,24 +980,24 @@ function renderContainerPickerLayoutSelect(layoutOptions) {
 function updateContainerPickerTitle() {
   if (!refs.containerPickerTitle) return;
   if (runtime.containerPickerMode === SHARED_ITEM_COPY_PICKER_MODE) {
-    refs.containerPickerTitle.textContent = "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0432\u0435\u0449\u044c \u0438\u0437 \u0448\u0430\u0431\u043b\u043e\u043d\u0430";
+    refs.containerPickerTitle.textContent = t("forms.copySharedItemTitle");
     return;
   }
   if (runtime.containerPickerMode === SHARED_CONTAINER_COPY_PICKER_MODE) {
-    refs.containerPickerTitle.textContent = "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0441\u0443\u043c\u043a\u0443 \u0438\u0437 \u0448\u0430\u0431\u043b\u043e\u043d\u0430";
+    refs.containerPickerTitle.textContent = t("forms.copySharedContainerTitle");
     return;
   }
   if (runtime.containerPickerMode === "item-copy") {
-    refs.containerPickerTitle.textContent = "Скопировать в место";
+    refs.containerPickerTitle.textContent = t("forms.copyToPlace");
     return;
   }
   if (runtime.containerPickerMode === "container-copy") {
     const target = state.containers[runtime.containerPickerTargetContainerId];
-    refs.containerPickerTitle.textContent = target?.name ? `Скопировать «${target.name}»` : "Скопировать в место";
+    refs.containerPickerTitle.textContent = target?.name ? t("forms.copyNamedContainer", { name: target.name }) : t("forms.copyToPlace");
     return;
   }
   const target = runtime.containerPickerMode === "container" ? state.containers[runtime.containerPickerTargetContainerId] : null;
-  refs.containerPickerTitle.textContent = target?.name ? `Выбрать место для «${target.name}»` : "Выбрать место";
+  refs.containerPickerTitle.textContent = target?.name ? t("forms.choosePlaceFor", { name: target.name }) : t("forms.choosePlace");
 }
 
 function renderContainerPickerColumn(containerId) {
@@ -1054,7 +1065,7 @@ function renderContainerPickerCurrentSlot(level, compact = false) {
       class="container-picker-slot current ${compact ? "compact" : ""}"
       style="--level: ${level}"
       aria-current="true"
-    >Текущее место</div>
+    >${escapeHtml(t("forms.currentPlace"))}</div>
   `;
 }
 
@@ -2232,6 +2243,7 @@ function renderPackingRootStickyHeader(containerId, { filtered = false } = {}) {
     readonly: isReadOnlyStateScope(),
     readonlyTemplate: isReadonlyTemplateView(),
     rootCollapsed,
+    t,
     titleHtml: `${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${filtered || isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}`,
     totalWeightHtml: renderContainerWeightText(containerWeight(containerId))
   });
@@ -2264,6 +2276,7 @@ function renderContainer(containerId) {
     readonly: isReadOnlyStateScope(),
     readonlyTemplate: isReadonlyTemplateView(),
     rootCollapsed,
+    t,
     titleHtml: `${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}`,
     totalWeightHtml: renderContainerWeightText(total)
   });
@@ -2284,6 +2297,7 @@ function renderFilteredContainer(containerId) {
     readonly: isReadOnlyStateScope(),
     readonlyTemplate: isReadonlyTemplateView(),
     rootCollapsed,
+    t,
     titleHtml: `${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${highlight(container.name)}`,
     totalWeightHtml: renderContainerWeightText(total)
   });
@@ -2306,6 +2320,7 @@ function renderSubcontainer(containerId) {
     justAdded,
     packed,
     photoHtml: renderItemPhoto(container),
+    t,
     titleHtml: subcontainerTitleHtml({
       container,
       editing: runtime.editingContainerId === container.id,
@@ -2330,6 +2345,7 @@ function renderFilteredSubcontainer(containerId) {
     justAdded,
     packed,
     photoHtml: renderItemPhoto(container),
+    t,
     titleHtml: subcontainerTitleHtml({
       container,
       editing: runtime.editingContainerId === container.id,
@@ -2534,6 +2550,7 @@ function renderItemCard(item) {
     packed,
     packedVisible,
     photoHtml: renderItemPhoto(item),
+    t,
     titleDragAttr,
     titleHtml: title,
     weightHtml: formatItemWeight(item)

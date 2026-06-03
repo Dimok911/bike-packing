@@ -73,6 +73,11 @@ import {
   summarizePublicCopyDuplicates
 } from "../../src/public/copy-duplicates.js";
 import {
+  isSharedCopyTargetLayout,
+  publicCopyTargetLayouts,
+  sharedCopyTargetLayouts
+} from "../../src/public/copy-public-layout-target.js";
+import {
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
   isConcretePublicSharedLayoutListRecord,
@@ -182,6 +187,99 @@ test("public template payload endpoint replaces legacy itemKey reads", () => {
   );
   assert.equal(publicTemplatePayloadPath("demo-state:en"), "/bike-packing/public-template-payloads/demo-state%3Aen");
   assert.equal(publicTemplatePayloadPath(""), "");
+});
+
+test("shared copy targets keep private layouts while excluding readonly source layouts", () => {
+  const layouts = {
+    "layout-private-active": { id: "layout-private-active", name: "Current private layout" },
+    "layout-private-other": { id: "layout-private-other", name: "Other private layout" },
+    "shared-template": { id: "shared-template", name: "Readonly source with colliding id" },
+    "shared-virtual-layout-shared-template": {
+      id: "shared-virtual-layout-shared-template",
+      name: "Readonly virtual layout",
+      adminSharedSourceId: "shared-template",
+      publicCatalogLayoutId: "shared-virtual-layout-shared-template"
+    },
+    "layout-admin-demo": { id: "layout-admin-demo", adminDemo: true },
+    "layout-generated": { id: "layout-generated", publicCatalogLayoutId: "layout-generated" }
+  };
+
+  assert.equal(isSharedCopyTargetLayout(layouts["layout-private-active"], {
+    readonlySourceLayoutId: "shared-template"
+  }), true);
+  assert.equal(isSharedCopyTargetLayout(layouts["shared-template"], {
+    readonlySourceLayoutId: "shared-template"
+  }), false);
+
+  assert.deepEqual(sharedCopyTargetLayouts(layouts, {
+    readonlySourceLayoutId: "shared-template"
+  }).map((layout) => layout.id), [
+    "layout-private-active",
+    "layout-private-other"
+  ]);
+});
+
+test("admin public copy targets follow visible public choices without legacy demo duplicates", () => {
+  const layouts = {
+    "layout-demo-legacy-a": {
+      id: "layout-demo-legacy-a",
+      name: "Demo",
+      adminDemo: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state"
+    },
+    "layout-demo-legacy-b": {
+      id: "layout-demo-legacy-b",
+      name: "Demo duplicate",
+      adminDemo: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state"
+    },
+    "layout-demo-hidden": {
+      id: "layout-demo-hidden",
+      name: "Hidden demo",
+      adminDemo: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state-copy-hidden"
+    },
+    "layout-demo-draft": {
+      id: "layout-demo-draft",
+      name: "Demo draft",
+      adminDemo: true,
+      adminTemplateCopy: true,
+      adminDemoLanguage: "ru",
+      adminDemoListId: "public-demo-state-copy-draft"
+    },
+    "layout-shared-template": {
+      id: "layout-shared-template",
+      name: "Shared template",
+      adminSharedSourceId: "bikepacking-reference-bags"
+    },
+    "layout-private": {
+      id: "layout-private",
+      name: "Private"
+    }
+  };
+
+  const choiceForLayout = (layout) => {
+    if (layout.adminTemplateCopy) return `template-draft:${layout.id}`;
+    if (layout.adminDemo) return `demo:${layout.adminDemoLanguage || "ru"}:${layout.adminDemoListId || "public-demo-state"}`;
+    if (layout.adminSharedSourceId) return `shared:${layout.adminSharedSourceId}`;
+    return "";
+  };
+
+  assert.deepEqual(publicCopyTargetLayouts(layouts, {
+    choiceForLayout,
+    visibleChoices: [
+      "demo:ru:public-demo-state",
+      "template-draft:layout-demo-draft",
+      "shared:bikepacking-reference-bags"
+    ]
+  }).map((layout) => layout.id), [
+    "layout-demo-legacy-a",
+    "layout-demo-draft",
+    "layout-shared-template"
+  ]);
 });
 
 test("demo layout choices encode the selected UI language", () => {

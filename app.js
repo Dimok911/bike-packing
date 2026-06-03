@@ -78,6 +78,9 @@ import { createDeletedSharedLayoutStore } from "./src/public/deleted-shared-layo
 import {
   linkExistingContainerTreeToLayoutState,
   markCopiedItemForPublicLayout,
+  isSharedCopyTargetLayout,
+  publicCopyTargetLayouts,
+  sharedCopyTargetLayouts,
   writeContainerTreeToLayoutArrangement
 } from "./src/public/copy-public-layout-target.js";
 import {
@@ -559,6 +562,7 @@ import {
   summarizeHistoryPayload
 } from "./src/sync/history.js";
 import {
+  cacheRecordRemotePhotosForUploadFallback,
   copyRecordPhotosForLocalDuplicate,
   createItemPhotoFromFile,
   deleteCachedPhoto,
@@ -575,6 +579,7 @@ import {
   remotePhotoSourceFromRecord
 } from "./src/sync/photos.js";
 import {
+  cacheLayoutRemotePhotosForUploadFallback,
   getUnsyncedPhotoEntries as getUnsyncedPhotoEntriesForSync,
   getUploadablePhotoEntries as getUploadablePhotoEntriesForSync,
   markLayoutPhotosForCurrentListCopy as markLayoutPhotosForCurrentListCopyForSync,
@@ -1379,6 +1384,7 @@ const appTailControllerDeps = {
   printHtmlDocument, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
+  isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
   publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue, publicLayoutDeleteConfirm,
   publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice, publicTemplateDeleteBlockReason,
   publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
@@ -7148,18 +7154,18 @@ async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage
     if (allowOfflineCache && arePublishedTemplatesBlocked()) {
       const cachedDemoState = demoStatePayloadForLanguage(normalizedLanguage, demoListId);
       if (!isMeaningfulPackingState(cachedDemoState)) {
-        updateSyncUi("Демо-укладка · офлайн, локальная копия не найдена");
-        showToast("Для этого demo-шаблона нет локальной копии. Откройте его один раз онлайн.", "warning");
+        updateSyncUi(t("demo.statusOfflineMissing"));
+        showToast(t("demo.toastOfflineMissing"), "warning");
         return;
       }
       setDemoStatePayloadForLanguage(normalizedLanguage, cachedDemoState, { listId: demoListId });
       render();
-      updateSyncUi("Демо-укладка · офлайн-просмотр");
+      updateSyncUi(t("demo.statusOfflineViewing"));
       return;
     }
     setDemoStatePayloadForLanguage(normalizedLanguage, await defaultDemoState(normalizedLanguage, demoListId), { listId: demoListId });
     render();
-    updateSyncUi(localText("Demo layout · viewing", "Демо-укладка · просмотр"));
+    updateSyncUi(t("demo.statusViewing"));
   } catch (error) {
     setActivePrivateScope();
     render();
@@ -7373,17 +7379,17 @@ async function openSharedLayoutViewer(layoutId, { remember = true, allowOfflineC
   if (remember) rememberActiveLayoutChoice(`shared:${layoutId}`);
   switchView("packing");
   render();
-  updateSyncUi(`Шаблон · просмотр ${layout.name || ""}`);
+  updateSyncUi(t("shared.statusViewing", { name: layout.name || "" }));
   try {
     const loaded = await loadSharedLayoutPayload(layoutId);
     if (activeReadOnlyLayoutId() !== layoutId) return;
     if (loaded) {
       render();
-      updateSyncUi(`Шаблон · загружен с сервера ${layout.name || ""}`);
+      updateSyncUi(t("shared.statusLoaded", { name: layout.name || "" }));
     }
   } catch {
     if (activeReadOnlyLayoutId() !== layoutId) return;
-    updateSyncUi(`Шаблон · локальная версия ${layout.name || ""}`);
+    updateSyncUi(t("shared.statusLocal", { name: layout.name || "" }));
   }
 }
 
@@ -7394,7 +7400,7 @@ async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
   }
   const layout = findSharedLayout(layoutId);
   if (!layout || !canOpenAdminPublishedEdit()) return;
-  updateSyncUi(`Шаблон · загружаю для правки ${layout.name || ""}`);
+  updateSyncUi(t("shared.statusLoadingEdit", { name: layout.name || "" }));
   try {
     await loadSharedLayoutPayload(layoutId);
   } catch {
@@ -7404,7 +7410,7 @@ async function openSharedLayoutForAdmin(layoutId, { remember = true } = {}) {
   if (!editableLayout) return;
   activateAdminPublishedLayout(editableLayout.id, { remember: false });
   if (remember) rememberActiveLayoutChoice(`shared:${layoutId}`);
-  updateSyncUi(`Шаблон · админ-редактирование ${layout.name || ""}`);
+  updateSyncUi(t("shared.statusAdminEdit", { name: layout.name || "" }));
 }
 
 async function loadSharedLayoutPayload(layoutId) {
@@ -7439,9 +7445,12 @@ async function loadSharedLayoutPayload(layoutId) {
 }
 
 function renderSharedLayouts() {
+  const copyTargetLayouts = sharedCopyTargetLayouts(state.layouts, {
+    readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  });
   fillSelect(
     refs.sharedCopyLayoutSelect,
-    Object.values(state.layouts).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId).map((layout) => [layout.id, layout.name]),
+    copyTargetLayouts.map((layout) => [layout.id, layout.name]),
     state.activeLayoutId
   );
   refs.sharedLayoutsList.innerHTML = renderSharedLayoutsHtml(currentSharedLayouts(), {
@@ -7511,6 +7520,7 @@ function bindSharedVirtualEvents(root = document) {
     openSharedItemCopyPicker,
     openSharedReadonlyItemDialog,
     render,
+    t,
     withSharedVirtualState
   });
 }
@@ -7597,11 +7607,17 @@ function sharedItemFromPublishedItem(item) {
 function selectedSharedTargetLayoutId() {
   const selected = refs.sharedCopyLayoutSelect?.value;
   const layout = state.layouts[selected];
-  return layout && !layout.adminDemo && !layout.adminSharedSourceId ? selected : "";
+  return isSharedCopyTargetLayout(layout, {
+    readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  })
+    ? selected
+    : "";
 }
 
 function chooseSharedCopyTargetLayoutId() {
-  const layouts = Object.values(state.layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId);
+  const layouts = sharedCopyTargetLayouts(state.layouts, {
+    readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  });
   if (!layouts.length) return "";
   if (layouts.length === 1) return layouts[0].id;
   const list = layouts.map((layout, index) => `${index + 1}. ${layout.name}`).join("\n");
@@ -7632,6 +7648,16 @@ function ensureSharedCopyTargetLayoutId() {
   return layoutId;
 }
 
+async function cacheGuestTemplatePhotoFallbacks(layoutId, { changedAt = "" } = {}) {
+  if (!layoutId || canUsePrivateState()) return 0;
+  return cacheLayoutRemotePhotosForUploadFallback(state, { layoutId, changedAt });
+}
+
+async function cacheGuestRecordPhotoFallbacks(record, { changedAt = "" } = {}) {
+  if (!record || canUsePrivateState()) return 0;
+  return cacheRecordRemotePhotosForUploadFallback(record, changedAt ? { changedAt } : {});
+}
+
 async function copySharedRoot(rootId) {
   const published = findSharedPublishedContainer(rootId);
   if (published) {
@@ -7642,6 +7668,7 @@ async function copySharedRoot(rootId) {
     const sourceSnapshot = snapshotContainerTree(rootId, { targetState: published.sourceState });
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, rootName))) return;
     copyPublishedContainerToState(published.sourceState, rootId, { targetLayoutId });
+    await cacheGuestTemplatePhotoFallbacks(targetLayoutId);
     setActivePrivateScope();
     saveState();
     switchActiveLayout(targetLayoutId);
@@ -7658,6 +7685,7 @@ async function copySharedRoot(rootId) {
   const sourceSnapshot = legacySharedRootSnapshot(root);
   if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, root.name))) return;
   copySharedRootToState(root, { targetLayoutId });
+  await cacheGuestTemplatePhotoFallbacks(targetLayoutId);
   setActivePrivateScope();
   saveState();
   switchActiveLayout(targetLayoutId);
@@ -7675,6 +7703,7 @@ async function copySharedItem(itemId) {
     const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: published.item } };
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, published.item.name))) return;
     const copiedItemId = copyPublishedItemToState(published.sourceState, itemId, { containerId: "" });
+    await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId]);
     setActivePrivateScope();
     saveState();
     switchActiveLayout(targetLayoutId);
@@ -7692,6 +7721,7 @@ async function copySharedItem(itemId) {
   const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: match.item } };
   if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, match.item.name))) return;
   const copiedItemId = copySharedItemToState(match.item, { containerId: "" });
+  await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId]);
   setActivePrivateScope();
   saveState();
   switchActiveLayout(targetLayoutId);
@@ -7724,6 +7754,7 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
     return;
   }
   markRecentlyAddedItem(copiedItemId, targetLayoutId);
+  await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId], { changedAt });
   saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
@@ -7751,10 +7782,12 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
     await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
     return;
   }
-  await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
+  const copiedRootId = await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: rootId,
     publicSource: true
   });
+  if (!copiedRootId) return;
+  if (await cacheGuestTemplatePhotoFallbacks(targetLayoutId)) saveState();
 }
 
 function copyPublishedContainerToState(sourceState, containerId, { targetLayoutId = "", parentId = null, changedAt = nowIso(), idMap = null, preserveSource = false, sourceLayoutId = "", sourceSnapshot: providedSnapshot = null, copiedFromTemplateName = "" } = {}) {
@@ -8055,6 +8088,7 @@ async function createLocalDemoCopy({ forceNew = false, remember = true, exactTem
       }
     }
     const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { remember, exactTemplateName });
+    await cacheGuestTemplatePhotoFallbacks(layoutId);
     await syncCreatedPrivateLayoutEntities(layoutId);
     updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));
     return layoutId;
@@ -8280,6 +8314,7 @@ async function copySharedLayout(layoutId) {
   applyLayoutArrangement(nextLayoutId);
   setActivePrivateScope();
   rememberActiveLayoutChoice(nextLayoutId);
+  await cacheGuestTemplatePhotoFallbacks(nextLayoutId, { changedAt });
   saveState({ sync: false });
   if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
   switchView("packing");
@@ -9233,8 +9268,9 @@ function updateLayoutCollapseAllToggle() {
   button.setAttribute("aria-hidden", String(!available));
   button.classList.toggle("layout-collapse-all-button-placeholder", !available);
   button.classList.toggle("active", allCollapsed);
-  button.setAttribute("aria-label", allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки");
-  button.title = allCollapsed ? "Развернуть все вложенные списки" : "Свернуть все вложенные списки";
+  const label = allCollapsed ? t("tooltips.expandAllInLayout") : t("tooltips.collapseAllInLayout");
+  button.setAttribute("aria-label", label);
+  button.title = label;
   button.innerHTML = `
     <span class="stack-icon ${allCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
       <span class="stack-chevron stack-chevron-up"></span>

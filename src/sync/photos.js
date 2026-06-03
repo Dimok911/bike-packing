@@ -7,7 +7,7 @@ import {
   PHOTO_DB_VERSION,
   PHOTO_STORE
 } from "../config/constants.js";
-import { normalizePhotoStatus, normalizePhotoUrlFields } from "../state/item-photos.js";
+import { normalizeItemPhotos, normalizePhotoStatus, normalizePhotoUrlFields } from "../state/item-photos.js";
 import { nowIso } from "../utils/time.js";
 
 export function hasRemotePhotoUrl(photo) {
@@ -162,6 +162,57 @@ export function getCachedPhoto(id) {
 export function deleteCachedPhoto(id) {
   if (!id) return Promise.resolve();
   return photoDbStore("readwrite", (store) => store.delete(id)).catch(() => null);
+}
+
+function createLocalPhotoId() {
+  return `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function fetchRemotePhotoBlobForCache(photo, variant = "file") {
+  normalizePhotoUrlFields(photo);
+  const src = normalizeRemotePhotoUrl(variant === "thumb"
+    ? (photo.thumbUrl || photo.url || "")
+    : (photo.url || photo.thumbUrl || ""));
+  if (!src) return null;
+  const response = await fetch(src, { credentials: "include", cache: "no-store" });
+  if (!response.ok) return null;
+  return response.blob();
+}
+
+export async function cacheRecordRemotePhotosForUploadFallback(record, { changedAt = nowIso() } = {}) {
+  const photos = Array.isArray(record?.photos) ? normalizeItemPhotos(record) : [];
+  let changed = 0;
+  for (const photo of photos) {
+    if (!hasRemotePhotoUrl(photo)) continue;
+    const cachedLocalId = String(photo.localId || "").trim();
+    const cached = cachedLocalId ? await getCachedPhoto(cachedLocalId) : null;
+    if (cached?.blob) continue;
+    const blob = await fetchRemotePhotoBlobForCache(photo, "file").catch(() => null);
+    if (!blob) continue;
+    const localId = createLocalPhotoId();
+    const thumbBlob = await fetchRemotePhotoBlobForCache(photo, "thumb").catch(() => null);
+    await putCachedPhoto({
+      id: localId,
+      blob,
+      thumbBlob,
+      fileName: photo.fileName || `${localId}.jpg`,
+      type: blob.type || photo.type || "image/jpeg",
+      size: blob.size || photo.size || 0,
+      width: Number.isFinite(Number(photo.width)) ? Number(photo.width) : 0,
+      height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0,
+      createdAt: changedAt,
+      updatedAt: changedAt
+    });
+    photo.id = localId;
+    photo.localId = localId;
+    photo.status = "synced";
+    photo.error = "";
+    photo.updatedAt = changedAt;
+    photo._copyToCurrentList = true;
+    delete photo.copyToCurrentList;
+    changed += 1;
+  }
+  return changed;
 }
 
 export async function copyRecordPhotosForLocalDuplicate(record, { changedAt = nowIso() } = {}) {

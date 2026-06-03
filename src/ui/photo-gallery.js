@@ -115,7 +115,7 @@ export function photoStatusText(photos) {
 
 function photoUploadState(photos) {
   const list = Array.isArray(photos) ? photos : [];
-  const active = list.some((photo) => photo.status === "pending" || photo.status === "uploading");
+  const active = list.some((photo) => photo.status === "uploading" || (photo.status === "pending" && !photoRemoteSrc(photo)));
   if (!active) return { active: false, progress: 0 };
   const uploading = list.filter((photo) => photo.status === "uploading");
   const source = uploading.find((photo) => Number.isFinite(Number(photo.uploadProgress))) ||

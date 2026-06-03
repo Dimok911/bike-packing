@@ -123,7 +123,6 @@ export function createSharedVirtualState(layout, {
     activeLayoutId: virtualLayoutId,
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds, {
       collapsedDefaultsForTemplateContainers,
-      demoSharedLayoutId,
       sharedVirtualCollapsedContainers
     }),
     packedItems: {},
@@ -240,7 +239,6 @@ export function createSharedVirtualStateFromPublishedState(layout, sourceState, 
     activeLayoutId: virtualLayoutId,
     collapsedContainers: sharedVirtualCollapsedState(layout, containers, rootContainerIds, {
       collapsedDefaultsForTemplateContainers,
-      demoSharedLayoutId,
       sharedVirtualCollapsedContainers
     }),
     packedItems: {},
@@ -255,10 +253,8 @@ export function createSharedVirtualStateFromPublishedState(layout, sourceState, 
 
 function sharedVirtualCollapsedState(layout, containers, rootContainerIds = [], {
   collapsedDefaultsForTemplateContainers,
-  demoSharedLayoutId = "",
   sharedVirtualCollapsedContainers = {}
 } = {}) {
-  if (layout?.id === demoSharedLayoutId) return {};
   if (!layout?.linkedSharedList) return { ...sharedVirtualCollapsedContainers };
   return collapsedDefaultsForTemplateContainers(containers, sharedVirtualCollapsedContainers, rootContainerIds);
 }

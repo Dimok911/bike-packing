@@ -143,9 +143,11 @@ export function applyStaticTranslationsUi({
 
   setText(refs.rootPlacementTitle, t("forms.inCurrentLayout"));
   setText(refs.rootPlacementDialog?.querySelector(".dialog-subtitle"), t("forms.choosePlace"));
-  setText(refs.containerPickerTitle, uiLanguage === "en" ? "Choose place" : "Выбрать место");
+  setText(refs.containerPickerTitle, t("forms.choosePlace"));
   setText(refs.containerPickerLayoutField?.querySelector("span"), t("labels.layout"));
   setText(refs.containerPickerNoneBtn, t("forms.outsideLayout"));
+  setAttr(refs.layoutCollapseAllBtn, "aria-label", t("tooltips.collapseAllInLayout"));
+  setAttr(refs.layoutCollapseAllBtn, "title", t("tooltips.collapseAllInLayout"));
   setText(refs.categoryFilterDialog?.querySelector("h2"), t("categoryFilter.title"));
   setText(refs.resetCategoryFilterBtn, t("buttons.reset"));
   setText(refs.applyCategoryFilterBtn, t("buttons.done"));

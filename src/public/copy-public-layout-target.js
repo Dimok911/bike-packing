@@ -3,6 +3,45 @@ function touchRecord(record, changedAt, touch) {
   touch(record, changedAt);
 }
 
+export function isSharedCopyTargetLayout(layout, { readonlySourceLayoutId = "" } = {}) {
+  const layoutId = String(layout?.id || "");
+  if (!layoutId) return false;
+  if (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId) return false;
+  if (readonlySourceLayoutId && layoutId === String(readonlySourceLayoutId)) return false;
+  return true;
+}
+
+export function sharedCopyTargetLayouts(layouts, options = {}) {
+  return Object.values(layouts || {}).filter((layout) => isSharedCopyTargetLayout(layout, options));
+}
+
+function publicCopyTargetRank(layout) {
+  return layout?.adminTemplateCopy ? 2 : 1;
+}
+
+export function publicCopyTargetLayouts(layouts, {
+  choiceForLayout = () => "",
+  visibleChoices = []
+} = {}) {
+  const visible = new Set((Array.isArray(visibleChoices) ? visibleChoices : [])
+    .map((choice) => String(choice || ""))
+    .filter(Boolean));
+  if (!visible.size) return [];
+  const byChoice = new Map();
+  const order = [];
+  Object.values(layouts || {}).forEach((layout) => {
+    if (!layout || (!layout.adminDemo && !layout.adminSharedSourceId)) return;
+    const choice = String(choiceForLayout(layout) || "");
+    if (!choice || !visible.has(choice)) return;
+    if (!byChoice.has(choice)) order.push(choice);
+    const current = byChoice.get(choice);
+    if (!current || publicCopyTargetRank(layout) > publicCopyTargetRank(current)) {
+      byChoice.set(choice, layout);
+    }
+  });
+  return order.map((choice) => byChoice.get(choice)).filter(Boolean);
+}
+
 export function markCopiedItemForPublicLayout(targetState, itemId, targetLayoutId, { changedAt = "", touch = null } = {}) {
   const item = targetState?.items?.[itemId];
   if (!item || !targetLayoutId) return false;

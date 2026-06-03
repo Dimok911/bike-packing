@@ -1,5 +1,65 @@
 import { escapeHtml } from "../utils/html.js";
 
+function tr(t, key, fallback, values) {
+  return typeof t === "function" ? t(key, values) : fallback;
+}
+
+function rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t }) {
+  if (!readonly || readonlyTemplate) return "";
+  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
+  const label = rootCollapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
+  return `
+    <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+      <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
+    </button>
+  `;
+}
+
+function rootContainerToolsHtml({
+  allNestedCollapsed = false,
+  container,
+  hasNestedContainers = false,
+  readonlyTemplate,
+  t,
+  totalWeightHtml
+}) {
+  const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
+  const editLabel = readonlyTemplate ? tr(t, "tooltips.copyFromTemplate", "Скопировать из шаблона") : tr(t, "tooltips.edit", "Редактировать");
+  const toggleAllLabel = allNestedCollapsed ? tr(t, "tooltips.expandAll", "Развернуть все") : tr(t, "tooltips.collapseAll", "Свернуть все");
+  return `
+    <div class="container-tools">
+      ${readonlyTemplate ? "" : `
+      <button
+        class="header-icon-button add-to-container-button"
+        data-add-to-container="${container.id}"
+        aria-label="${escapeHtml(addItemLabel)}"
+        title="${escapeHtml(addItemLabel)}"
+      >+</button>
+      `}
+      <button
+        class="header-icon-button ${readonlyTemplate ? "copy-item-button" : ""}"
+        data-edit-container="${container.id}"
+        aria-label="${escapeHtml(editLabel)}"
+        title="${escapeHtml(editLabel)}"
+      >&#9998;</button>
+      ${hasNestedContainers ? `
+        <button
+          class="header-icon-button"
+          data-toggle-column="${container.id}"
+          aria-label="${escapeHtml(toggleAllLabel)}"
+          title="${escapeHtml(toggleAllLabel)}"
+        >
+          <span class="stack-icon ${allNestedCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
+            <span class="stack-chevron stack-chevron-up"></span>
+            <span class="stack-chevron stack-chevron-down"></span>
+          </span>
+        </button>
+      ` : ""}
+      ${totalWeightHtml}
+    </div>
+  `;
+}
+
 export function renderRootContainerColumnHtml({
   allNestedCollapsed,
   container,
@@ -11,51 +71,18 @@ export function renderRootContainerColumnHtml({
   readonly,
   readonlyTemplate,
   rootCollapsed,
+  t,
   titleHtml,
   totalWeightHtml
 }) {
-  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
   return `
     <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
-          ${readonly ? `
-            <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "Развернуть" : "Свернуть"}">
-              <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
-            </button>
-          ` : ""}
+          ${rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t })}
           <h2>${titleHtml}</h2>
         </div>
-        <div class="container-tools">
-          ${readonlyTemplate ? "" : `
-          <button
-            class="header-icon-button add-to-container-button"
-            data-add-to-container="${container.id}"
-            aria-label="Добавить вещь"
-            title="Добавить вещь"
-          >+</button>
-          `}
-          <button
-            class="header-icon-button"
-            data-edit-container="${container.id}"
-            aria-label="Редактировать"
-            title="Редактировать"
-          >&#9998;</button>
-          ${hasNestedContainers ? `
-            <button
-              class="header-icon-button"
-              data-toggle-column="${container.id}"
-              aria-label="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
-              title="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
-            >
-              <span class="stack-icon ${allNestedCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
-                <span class="stack-chevron stack-chevron-up"></span>
-                <span class="stack-chevron stack-chevron-down"></span>
-              </span>
-            </button>
-          ` : ""}
-          ${totalWeightHtml}
-        </div>
+        ${rootContainerToolsHtml({ allNestedCollapsed, container, hasNestedContainers, readonlyTemplate, t, totalWeightHtml })}
       </header>
       ${rootCollapsed ? "" : photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
@@ -74,37 +101,18 @@ export function renderFilteredRootContainerColumnHtml({
   readonly,
   readonlyTemplate,
   rootCollapsed,
+  t,
   titleHtml,
   totalWeightHtml
 }) {
-  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
-  const rootCollapseButton = readonly
-    ? `<button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "Развернуть" : "Свернуть"}"><span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span></button>`
-    : "";
   return `
     <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
       <header class="container-header">
         <div class="container-title">
-          ${rootCollapseButton}
+          ${rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t })}
           <h2>${titleHtml}</h2>
         </div>
-        <div class="container-tools">
-          ${readonlyTemplate ? "" : `
-          <button
-            class="header-icon-button add-to-container-button"
-            data-add-to-container="${container.id}"
-            aria-label="Добавить вещь"
-            title="Добавить вещь"
-          >+</button>
-          `}
-          <button
-            class="header-icon-button"
-            data-edit-container="${container.id}"
-            aria-label="Редактировать"
-            title="Редактировать"
-          >&#9998;</button>
-          ${totalWeightHtml}
-        </div>
+        ${rootContainerToolsHtml({ container, readonlyTemplate, t, totalWeightHtml })}
       </header>
       ${rootCollapsed ? "" : photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
@@ -122,40 +130,19 @@ export function renderPackingRootHeaderCellHtml({
   readonly,
   readonlyTemplate,
   rootCollapsed,
+  t,
   titleHtml,
   totalWeightHtml
 }) {
-  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
   return `
     <div class="packing-root-header-cell ${packed ? "packed-container" : ""}" data-sticky-root-container-id="${escapeHtml(container.id)}">
-      <div class="container-title">
-        ${readonly ? `
-          <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${rootCollapsed ? "Развернуть" : "Свернуть"}">
-            <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
-          </button>
-        ` : ""}
-        <h2>${titleHtml}</h2>
-      </div>
-      <div class="container-tools">
-        ${readonlyTemplate ? "" : `
-          <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="Добавить вещь" title="Добавить вещь">+</button>
-          <button class="header-icon-button" data-edit-container="${container.id}" aria-label="Редактировать" title="Редактировать">&#9998;</button>
-        `}
-        ${hasNestedContainers ? `
-          <button
-            class="collapse-button nested-collapse-toggle"
-            data-toggle-column="${container.id}"
-            aria-label="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
-            title="${allNestedCollapsed ? "Развернуть все" : "Свернуть все"}"
-          >
-            <span class="stack-icon ${allNestedCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
-              <span class="stack-chevron stack-chevron-up"></span>
-              <span class="stack-chevron stack-chevron-down"></span>
-            </span>
-          </button>
-        ` : ""}
-        ${totalWeightHtml}
-      </div>
+      <header class="container-header">
+        <div class="container-title">
+          ${rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t })}
+          <h2>${titleHtml}</h2>
+        </div>
+        ${rootContainerToolsHtml({ allNestedCollapsed, container, hasNestedContainers, readonlyTemplate, t, totalWeightHtml })}
+      </header>
     </div>
   `;
 }
@@ -167,22 +154,26 @@ export function renderSubcontainerSectionHtml({
   justAdded,
   packed,
   photoHtml,
+  t,
   titleHtml,
   weightHtml
 }) {
   const iconClass = collapsed ? "chevron-down" : "chevron-up";
+  const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
+  const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
+  const editLabel = tr(t, "tooltips.edit", "Редактировать");
   return `
     <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}">
       <div class="subcontainer-title">
         <div class="subcontainer-title-main">
-          <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${collapsed ? "Развернуть" : "Свернуть"}">
+          <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(collapseLabel)}" title="${escapeHtml(collapseLabel)}">
             <span class="chevron-icon ${iconClass}" aria-hidden="true"></span>
           </button>
           ${titleHtml}
         </div>
         <div class="subcontainer-tools">
-          <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="Добавить вещь" title="Добавить вещь">+</button>
-          <button class="header-icon-button" data-edit-container="${container.id}" aria-label="Редактировать" title="Редактировать">&#9998;</button>
+          <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="${escapeHtml(addItemLabel)}" title="${escapeHtml(addItemLabel)}">+</button>
+          <button class="header-icon-button" data-edit-container="${container.id}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}">&#9998;</button>
           ${weightHtml}
         </div>
       </div>
@@ -205,10 +196,16 @@ export function renderPackingItemCardHtml({
   packed,
   packedVisible,
   photoHtml,
+  t,
   titleDragAttr,
   titleHtml,
   weightHtml
 }) {
+  const packAriaLabel = packed ? tr(t, "tooltips.markUnpacked", "Отметить как не собранное") : tr(t, "tooltips.markPacked", "Отметить как собранное");
+  const packTitle = packed ? tr(t, "tooltips.packed", "Собрано") : tr(t, "tooltips.unpacked", "Не собрано");
+  const copyLabel = tr(t, "tooltips.copy", "Скопировать");
+  const editLabel = tr(t, "tooltips.edit", "Редактировать");
+  const removeLabel = tr(t, "forms.removeFromLayout", "Убрать из укладки");
   return `
     <article class="item-card ${packedVisible ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top ${collection ? "with-pack-toggle" : ""}">
@@ -216,18 +213,18 @@ export function renderPackingItemCardHtml({
           <button
             class="pack-toggle ${packedVisible ? "packed" : ""}"
             data-toggle-packed="${item.id}"
-            aria-label="${packed ? "Отметить как не собранное" : "Отметить как собранное"}"
-            title="${packed ? "Собрано" : "Не собрано"}"
+            aria-label="${escapeHtml(packAriaLabel)}"
+            title="${escapeHtml(packTitle)}"
           >${packedVisible ? "✓" : ""}</button>
         ` : ""}
         <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}</div>
-        <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="Скопировать" title="Скопировать">
+        <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="${escapeHtml(copyLabel)}" title="${escapeHtml(copyLabel)}">
           <span aria-hidden="true">⧉</span>
         </button>
-        <button class="edit-button" data-edit-item="${item.id}" aria-label="Редактировать" title="Редактировать">
+        <button class="edit-button" data-edit-item="${item.id}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}">
           <span aria-hidden="true">&#9998;</span>
         </button>
-        <button class="remove-layout-button" data-remove-from-layout="${item.id}" aria-label="Убрать из укладки" title="Убрать из укладки">
+        <button class="remove-layout-button" data-remove-from-layout="${item.id}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
