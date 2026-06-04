@@ -304,7 +304,11 @@ import {
   stateStats
 } from "./src/state/diagnostics.js";
 import { repairPlacementRegressionFromReference } from "./src/state/regression-repair.js";
-import { isolateLinkedLayoutEntities } from "./src/state/layout-entity-isolation.js";
+import {
+  isolateLinkedLayoutEntities,
+  layoutEntityRepairBaseState,
+  rememberLayoutEntityRepairBaseState
+} from "./src/state/layout-entity-isolation.js";
 import {
   addCustomDictionaryValue,
   dictionaryOptionsForUi as dictionaryOptionsForUiValues,
@@ -2907,7 +2911,7 @@ function hasStoredLocalValue(key, scope = localStorageScopeKey) {
 function loadBaseState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(BASE_STATE_KEY)));
-    return normalizeRemoteState(parsed);
+    return normalizeRemoteState(parsed, { repairCatalog: false });
   } catch {
     return null;
   }
@@ -4502,7 +4506,7 @@ function pruneAdminPublishedDraftsForSync(cloned) {
     isPublicSyncItem
   });
 }
-function normalizeRemoteState(payload) {
+function normalizeRemoteState(payload, { repairCatalog = true } = {}) {
   if (!payload || typeof payload !== "object") return null;
   const normalized = JSON.parse(JSON.stringify(payload));
   if (!normalized.locations || !normalized.categories || !normalized.containers || !normalized.items || !normalized.layouts) {
@@ -4519,7 +4523,11 @@ function normalizeRemoteState(payload) {
   cleanupGeneratedCatalogArtifacts(normalized);
   repairContainerMembershipFromItemLinks(normalized);
   normalizeLayoutFields(normalized);
-  isolateLinkedLayoutEntities(normalized);
+  const baseBeforeCatalogRepair = repairCatalog ? JSON.parse(JSON.stringify(normalized)) : null;
+  const catalogRepairReport = repairCatalog
+    ? isolateLinkedLayoutEntities(normalized)
+    : { mergedContainers: 0, mergedItems: 0 };
+  rememberLayoutEntityRepairBaseState(normalized, baseBeforeCatalogRepair, catalogRepairReport);
   normalizeItemCategories(normalized);
   migrateContainerOrder(normalized);
   applyLayoutArrangement(normalized.activeLayoutId, normalized);
@@ -4713,15 +4721,20 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     renderInitialLocalFallbackIfNeeded();
     return false;
   }
+  const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
   replaceState(remoteState);
   removePublicLayoutDrafts();
   setActivePrivateScope();
   rememberPrivateServerLayoutChoice({ preferStored: !preferredLayoutId });
-  saveBaseState(serializeState({ forSync: true }));
+  saveBaseState(catalogRepairBase || serializeState({ forSync: true }));
   syncMeta.dirty = false;
   syncMeta.serverUpdatedAt = updatedAt || null;
   syncMeta.localUpdatedAt = updatedAt || null;
   syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
+  if (catalogRepairBase && hasLocalSyncChanges(catalogRepairBase)) {
+    syncMeta.dirty = true;
+    syncMeta.localUpdatedAt = nowIso();
+  }
   rememberRemoteIntegrityMeta(integrityMeta);
   rememberCurrentSyncAccount();
   saveSyncMeta();
@@ -4730,6 +4743,10 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
   setPersonalLayoutsLoadedStatus();
+  if (catalogRepairBase && syncMeta.dirty) {
+    updateSyncUi("Каталог очищен от технических дублей · синхронизирую...");
+    scheduleRemoteSave();
+  }
   updateSyncUi();
   return true;
 }

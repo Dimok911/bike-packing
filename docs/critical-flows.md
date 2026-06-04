@@ -67,6 +67,28 @@ to `npm.cmd run check`.
 - Shared/demo copy and delete flows involve frontend and `bikepacking-api`.
 - If API behavior changes, bump backend compatibility and frontend required
   version/capabilities together.
-- Layouts and public template drafts must not share container/item entity ids.
-  Old payloads may already contain linked roots, nested containers, or items, so
-  state normalization must isolate those ids before delete/copy actions run.
+- Модель данных каталога единая для всех укладок:
+  - `state.items` - общий каталог вещей пользователя.
+  - `state.containers` - общий каталог сумок, мест и групп.
+  - категории, места хранения и настройки - общие справочники, а не копии
+    на каждую укладку.
+- Укладка хранит только сценарий размещения:
+  - `state.layouts[layoutId].arrangement.rootContainerIds`
+  - `state.layouts[layoutId].arrangement.containers`
+  - `state.layouts[layoutId].arrangement.items`
+  - `state.layouts[layoutId].arrangement.packedItems`
+- Одна и та же вещь или сумка может легально участвовать в нескольких
+  укладках под тем же `id`. Это не linked-delete bug, а нормальная ссылка на
+  общий каталог.
+- Нельзя клонировать вещи/сумки только потому, что они встречаются в нескольких
+  укладках. Такое клонирование раздувает вкладки "Вещи" и "Сумки", ломает
+  смысл общего каталога и резко замедляет рендер.
+- Удаление public/shared/demo/template-укладки должно удалять запись укладки и
+  её layout-only arrangement. Физически удалять запись из `state.items` или
+  `state.containers` можно только если после удаления на неё не ссылается ни
+  одна оставшаяся укладка.
+- Вкладки "Вещи", "Сумки" и "Настройки" не должны показывать отдельную копию
+  одной и той же реальной вещи/сумки для каждой укладки. Пользовательские
+  осознанные дубли допустимы, но технические `*-isolated-*` копии от старого
+  ремонта должны схлопываться обратно в исходные `id`, если исходная запись
+  существует.
