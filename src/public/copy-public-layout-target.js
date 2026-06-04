@@ -147,6 +147,7 @@ export function writeContainerTreeToLayoutArrangement(targetState, layoutId, con
 export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapshot, targetLayoutId, targetParentId = "", {
   changedAt = "",
   normalizeLayoutArrangement = () => {},
+  targetIndex = null,
   targetContainerIds = [],
   touchLayout = () => {}
 } = {}) {
@@ -187,12 +188,19 @@ export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapsh
     parent.childIds = parent.childIds || [];
     if (!parent.childIds.includes(rootId)) parent.childIds.push(rootId);
     parent.order = parent.order || [];
-    if (!parent.order.some((entry) => entry?.type === "container" && entry.id === rootId)) {
-      parent.order.push({ type: "container", id: rootId });
-    }
+    parent.order = parent.order.filter((entry) => !(entry?.type === "container" && entry.id === rootId));
+    const index = targetIndex === null
+      ? parent.order.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, parent.order.length));
+    parent.order.splice(index, 0, { type: "container", id: rootId });
     targetState.collapsedContainers[targetParentId] = false;
   } else {
-    targetLayout.rootContainerIds = [...new Set([...(targetLayout.rootContainerIds || []), rootId])];
+    const rootIds = [...new Set([...(targetLayout.rootContainerIds || [])])].filter((id) => id !== rootId);
+    const index = targetIndex === null
+      ? rootIds.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, rootIds.length));
+    rootIds.splice(index, 0, rootId);
+    targetLayout.rootContainerIds = rootIds;
   }
   writeContainerTreeToLayoutArrangement(targetState, targetLayoutId, rootId);
   normalizeLayoutArrangement(targetLayout, targetState);

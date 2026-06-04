@@ -5,6 +5,10 @@ import {
   moveRootColumnInState,
   rootColumnInsertIndexFromVisibleNeighbors
 } from "../../src/state/layout-ops.js";
+import {
+  deleteRootContainerFromState,
+  placeDuplicatedContainerSnapshotInLayoutState
+} from "../../src/state/container-ops.js";
 
 function createState() {
   return {
@@ -84,4 +88,160 @@ test("CRITICAL root column drag: visible neighbor target maps to the full root o
     nextRootId: "bag-c",
     previousRootId: "bag-a"
   }), 3);
+});
+
+test("CRITICAL container copy picker: duplicated nested bag is inserted at the selected slot", () => {
+  const state = {
+    containers: {
+      "parent": {
+        id: "parent",
+        childIds: ["child-a", "child-b"],
+        itemIds: [],
+        order: [
+          { type: "container", id: "child-a" },
+          { type: "container", id: "child-b" }
+        ]
+      },
+      "child-a": { id: "child-a", parentId: "parent", childIds: [], itemIds: [], order: [] },
+      "child-b": { id: "child-b", parentId: "parent", childIds: [], itemIds: [], order: [] },
+      "copy-root": { id: "copy-root", parentId: "parent", childIds: [], itemIds: [], order: [] }
+    },
+    items: {},
+    collapsedContainers: {},
+    layouts: {
+      "layout-a": {
+        id: "layout-a",
+        rootContainerIds: ["parent"],
+        arrangement: {
+          rootContainerIds: ["parent"],
+          containers: {
+            "parent": {
+              parentId: "",
+              childIds: ["child-a", "child-b"],
+              itemIds: [],
+              order: [
+                { type: "container", id: "child-a" },
+                { type: "container", id: "child-b" }
+              ]
+            },
+            "child-a": { parentId: "parent", childIds: [], itemIds: [], order: [] },
+            "child-b": { parentId: "parent", childIds: [], itemIds: [], order: [] }
+          },
+          items: {},
+          packedItems: {}
+        }
+      }
+    }
+  };
+  const touched = [];
+
+  assert.equal(placeDuplicatedContainerSnapshotInLayoutState(state, "layout-a", "copy-root", {
+    copiedPlacements: {
+      "copy-root": { parentId: "parent", childIds: [], itemIds: [], order: [] }
+    },
+    targetParentId: "parent",
+    targetIndex: 1,
+    touchContainer: (containerId) => touched.push(`container:${containerId}`),
+    touchLayout: (layoutId) => touched.push(`layout:${layoutId}`)
+  }), true);
+
+  assert.deepEqual(state.containers.parent.order, [
+    { type: "container", id: "child-a" },
+    { type: "container", id: "copy-root" },
+    { type: "container", id: "child-b" }
+  ]);
+  assert.deepEqual(state.layouts["layout-a"].arrangement.containers.parent.order, [
+    { type: "container", id: "child-a" },
+    { type: "container", id: "copy-root" },
+    { type: "container", id: "child-b" }
+  ]);
+  assert.deepEqual(touched, ["container:parent", "layout:layout-a"]);
+});
+
+test("CRITICAL container copy picker: duplicated top-level bag is inserted at the selected root slot", () => {
+  const state = {
+    containers: {
+      "bag-a": { id: "bag-a", parentId: null, childIds: [], itemIds: [], order: [] },
+      "bag-b": { id: "bag-b", parentId: null, childIds: [], itemIds: [], order: [] },
+      "copy-root": { id: "copy-root", parentId: null, childIds: [], itemIds: [], order: [] }
+    },
+    items: {},
+    collapsedContainers: {},
+    layouts: {
+      "layout-a": {
+        id: "layout-a",
+        rootContainerIds: ["bag-a", "bag-b"],
+        arrangement: {
+          rootContainerIds: ["bag-a", "bag-b"],
+          containers: {
+            "bag-a": { parentId: "", childIds: [], itemIds: [], order: [] },
+            "bag-b": { parentId: "", childIds: [], itemIds: [], order: [] }
+          },
+          items: {},
+          packedItems: {}
+        }
+      }
+    }
+  };
+
+  assert.equal(placeDuplicatedContainerSnapshotInLayoutState(state, "layout-a", "copy-root", {
+    copiedPlacements: {
+      "copy-root": { parentId: "", childIds: [], itemIds: [], order: [] }
+    },
+    targetIndex: 1
+  }), true);
+
+  assert.deepEqual(state.layouts["layout-a"].rootContainerIds, ["bag-a", "copy-root", "bag-b"]);
+  assert.deepEqual(state.layouts["layout-a"].arrangement.rootContainerIds, ["bag-a", "copy-root", "bag-b"]);
+});
+
+test("CRITICAL container copy: deleting a copied bag does not remove the source bag from another layout", () => {
+  const state = {
+    containers: {
+      "source-root": { id: "source-root", parentId: null, childIds: [], itemIds: ["source-item"], order: [{ type: "item", id: "source-item" }] },
+      "copy-root": { id: "copy-root", parentId: null, childIds: [], itemIds: ["copy-item"], order: [{ type: "item", id: "copy-item" }] }
+    },
+    items: {
+      "source-item": { id: "source-item", containerId: "source-root" },
+      "copy-item": { id: "copy-item", containerId: "copy-root" }
+    },
+    collapsedContainers: {},
+    packedItems: {},
+    layouts: {
+      "source-layout": {
+        id: "source-layout",
+        rootContainerIds: ["source-root"],
+        arrangement: {
+          rootContainerIds: ["source-root"],
+          containers: {
+            "source-root": { parentId: "", childIds: [], itemIds: ["source-item"], order: [{ type: "item", id: "source-item" }] }
+          },
+          items: { "source-item": "source-root" },
+          packedItems: {}
+        }
+      },
+      "copy-layout": {
+        id: "copy-layout",
+        rootContainerIds: ["copy-root"],
+        arrangement: {
+          rootContainerIds: ["copy-root"],
+          containers: {
+            "copy-root": { parentId: "", childIds: [], itemIds: ["copy-item"], order: [{ type: "item", id: "copy-item" }] }
+          },
+          items: { "copy-item": "copy-root" },
+          packedItems: {}
+        }
+      }
+    }
+  };
+
+  assert.equal(deleteRootContainerFromState(state, "copy-root"), true);
+
+  assert.deepEqual(state.layouts["source-layout"].rootContainerIds, ["source-root"]);
+  assert.ok(state.containers["source-root"]);
+  assert.ok(state.items["source-item"]);
+  assert.equal(state.items["source-item"].containerId, "source-root");
+  assert.deepEqual(state.layouts["copy-layout"].rootContainerIds, []);
+  assert.equal(state.containers["copy-root"], undefined);
+  assert.equal(state.items["copy-item"].containerId, "");
 });

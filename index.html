@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1059" />
+    <link rel="stylesheet" href="./styles.css?v=1071" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -508,6 +508,10 @@
             <button type="button" data-history-source="demo">Демо</button>
             <button type="button" data-history-source="shared">Шаблоны</button>
           </div>
+          <label id="historyDemoField" class="history-shared-field">
+            <span>Демо-шаблон</span>
+            <select id="historyDemoSelect"></select>
+          </label>
           <label id="historySharedField" class="history-shared-field">
             <span>Шаблон</span>
             <select id="historySharedSelect"></select>
@@ -516,6 +520,20 @@
         <p id="historyStatus" class="dialog-status" aria-live="polite"></p>
         <div id="historyList" class="history-list"></div>
         <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="historyDetailDialog">
+      <form method="dialog" class="dialog-card history-detail-dialog-card">
+        <header>
+          <h2 id="historyDetailTitle">Детали версии</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div id="historyDetailContent" class="history-detail-content"></div>
+        <footer>
+          <button type="button" id="historyDetailRestoreBtn" class="primary">Восстановить</button>
           <button value="cancel" class="ghost">Закрыть</button>
         </footer>
       </form>
@@ -599,6 +617,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1059" type="module"></script>
+    <script src="./app.js?v=1071" type="module"></script>
   </body>
 </html>

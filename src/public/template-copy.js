@@ -18,6 +18,22 @@ export function isContainerPickerContainerCopyMode(mode) {
   return mode === "container-copy" || mode === SHARED_CONTAINER_COPY_PICKER_MODE;
 }
 
+export function containerCopyExcludedLayoutIds({
+  mode = "",
+  readonlyLayoutId = "",
+  sourceLayoutId = ""
+} = {}) {
+  const ids = new Set();
+  if (mode === SHARED_ITEM_COPY_PICKER_MODE || mode === SHARED_CONTAINER_COPY_PICKER_MODE) {
+    if (sourceLayoutId) ids.add(sourceLayoutId);
+    if (readonlyLayoutId) ids.add(readonlyLayoutId);
+  }
+  if (isContainerPickerContainerCopyMode(mode) && sourceLayoutId) {
+    ids.add(sourceLayoutId);
+  }
+  return ids;
+}
+
 export function collapsedDefaultsForTemplateContainers(containers, previous = {}, rootContainerIds = []) {
   const rootIds = new Set(rootContainerIds);
   const defaults = Object.fromEntries(Object.keys(containers || {}).map((id) => [id, !rootIds.has(id)]));

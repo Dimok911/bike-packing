@@ -67,3 +67,6 @@ to `npm.cmd run check`.
 - Shared/demo copy and delete flows involve frontend and `bikepacking-api`.
 - If API behavior changes, bump backend compatibility and frontend required
   version/capabilities together.
+- Layouts and public template drafts must not share container/item entity ids.
+  Old payloads may already contain linked roots, nested containers, or items, so
+  state normalization must isolate those ids before delete/copy actions run.

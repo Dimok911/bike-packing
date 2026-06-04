@@ -4136,6 +4136,7 @@ dialog {
 
 #conflictDialog,
 #historyDialog,
+#historyDetailDialog,
 #adminReportsDialog,
 #backupDialog {
   width: min(760px, calc(100vw - 24px));
@@ -4167,7 +4168,17 @@ dialog::backdrop {
   box-sizing: border-box;
 }
 
-.history-dialog-card > * {
+.history-detail-dialog-card {
+  width: min(760px, calc(100vw - 24px));
+  height: min(760px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto minmax(120px, 1fr) auto;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.history-dialog-card > *,
+.history-detail-dialog-card > * {
   min-width: 0;
 }
 
@@ -5282,6 +5293,16 @@ dialog.photo-lightbox::backdrop {
   touch-action: pan-x pan-y;
 }
 
+.container-picker-board.root-copy-placement-board {
+  grid-auto-columns: auto minmax(210px, 270px);
+  gap: 8px;
+  height: min(560px, calc(100dvh - 190px));
+}
+
+.container-picker-board.root-copy-placement-board > * {
+  touch-action: pan-x;
+}
+
 .container-picker-column {
   min-width: 0;
   min-height: 0;
@@ -5816,6 +5837,8 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 }
 
 .history-list {
+  display: grid;
+  gap: 8px;
   min-height: 0;
   max-height: none;
   overflow-x: hidden;
@@ -5824,77 +5847,6 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-}
-
-.history-group {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fbf8;
-  overflow: hidden;
-}
-
-.history-group + .history-group {
-  margin-top: 8px;
-}
-
-.history-group-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  padding: 10px 12px;
-  color: var(--text);
-  cursor: pointer;
-  list-style: none;
-}
-
-.history-group-summary::-webkit-details-marker {
-  display: none;
-}
-
-.history-group-summary::after {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(45deg);
-  transition: transform 140ms ease;
-  opacity: 0.68;
-  flex: 0 0 auto;
-}
-
-.history-group[open] .history-group-summary::after {
-  transform: rotate(225deg);
-}
-
-.history-group-summary strong,
-.history-group-summary small {
-  display: block;
-}
-
-.history-group-summary > span,
-.history-record-main {
-  min-width: 0;
-}
-
-.history-group-summary small {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.history-group-records {
-  display: grid;
-  gap: 8px;
-  padding: 0 8px 8px;
-}
-
-.history-group[open] .history-group-records {
-  max-height: none;
-  overflow: visible;
 }
 
 .history-record {
@@ -5906,16 +5858,22 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   border-radius: 8px;
   padding: 10px;
   background: #fbfcfa;
+  cursor: pointer;
 }
 
-.history-record.expanded {
-  align-items: start;
+.history-record:hover,
+.history-record:focus-visible {
   border-color: rgba(31, 111, 91, 0.34);
   background: #f7fbf8;
+  outline: none;
 }
 
 .history-record-main {
-  cursor: pointer;
+  min-width: 0;
+}
+
+.history-record-title {
+  font-weight: 800;
 }
 
 .history-record p {
@@ -5935,12 +5893,63 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   min-height: 36px;
 }
 
+.history-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.history-detail-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.history-detail-meta {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.history-detail-meta strong,
+.history-detail-meta span,
+.history-detail-meta small,
+.history-detail-meta p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-detail-meta span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.history-detail-meta small,
+.history-detail-meta p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.history-detail-meta p {
+  margin: 2px 0 0;
+}
+
 .history-record-details {
-  grid-column: 1 / -1;
   display: grid;
   gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
 }
 
 .history-record-details h3,

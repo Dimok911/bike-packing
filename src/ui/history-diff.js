@@ -183,33 +183,64 @@ export function renderHistoryDiffSection(title, diff) {
 
 export function renderHistoryRecordArticle(record, index, records, {
   activeSource = "private",
-  currentComparisonState = () => null,
-  expandedRecordId = "",
   formatDateTime = (value) => String(value || ""),
   recordKey = (_record, recordIndex) => String(recordIndex),
   recordState = () => null,
-  summarizePayload = () => ""
+  recordTitle = (_record, _payload, fallback) => fallback || "",
+  showTitle = true
 } = {}) {
   const key = recordKey(record, index);
   const payload = recordState(record);
-  const summary = summarizePayload(payload);
+  const title = recordTitle(record, payload, "Без названия");
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
-  const device = record.sourceDeviceName || record.source_device_name || "устройство не указано";
-  const expanded = expandedRecordId === key;
+  const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
+  const meta = [
+    device,
+    sourceAt ? `изменение: ${sourceAt}` : ""
+  ].filter(Boolean).join(" · ");
   return `
-    <article class="history-record${expanded ? " expanded" : ""}" data-history-record="${escapeHtml(key)}">
+    <article class="history-record" data-history-record="${escapeHtml(key)}" tabindex="0" role="button">
       <div class="history-record-main">
         <strong>${escapeHtml(createdAt || "без даты")}</strong>
-        <p>${escapeHtml(summary)}</p>
-        <small>${escapeHtml(device)}${sourceAt ? ` · изменение: ${escapeHtml(sourceAt)}` : ""}</small>
+        ${showTitle ? `<p class="history-record-title">${escapeHtml(title)}</p>` : ""}
+        ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       </div>
-      <button type="button" class="ghost" data-restore-history="${escapeHtml(String(record.id))}">${activeSource === "private" ? "Восстановить" : "Опубликовать"}</button>
-      ${expanded ? renderHistoryRecordComparison(record, index, records, {
-        currentComparisonState,
-        recordState
-      }) : ""}
+      <div class="history-record-actions">
+        <button type="button" class="ghost" data-history-detail="${escapeHtml(key)}">Детали</button>
+        <button type="button" class="ghost" data-restore-history="${escapeHtml(key)}">${activeSource === "private" ? "Восстановить" : "Опубликовать"}</button>
+      </div>
     </article>
+  `;
+}
+
+export function renderHistoryRecordDetails(record, index, records, {
+  activeSource = "private",
+  currentComparisonState = () => null,
+  formatDateTime = (value) => String(value || ""),
+  recordState = () => null,
+  recordTitle = (_record, _payload, fallback) => fallback || "",
+  summarizePayload = () => ""
+} = {}) {
+  const payload = recordState(record);
+  const summary = summarizePayload(payload, { record, source: activeSource, includeTitle: false });
+  const createdAt = formatDateTime(record.createdAt || record.created_at);
+  const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
+  const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
+  const meta = [
+    device,
+    sourceAt ? `изменение: ${sourceAt}` : ""
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="history-detail-meta">
+      <strong>${escapeHtml(createdAt || "без даты")}</strong>
+      ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+      <p>${escapeHtml(summary)}</p>
+    </div>
+    ${renderHistoryRecordComparison(record, index, records, {
+      currentComparisonState,
+      recordState
+    })}
   `;
 }
 
@@ -218,14 +249,19 @@ function renderHistoryRecordComparison(record, index, records, {
   recordState
 } = {}) {
   const selectedState = recordState(record);
-  const targetState = index === 0
+  const previousState = records[index + 1] ? recordState(records[index + 1]) : null;
+  const newerState = index === 0
     ? currentComparisonState()
     : recordState(records[index - 1]);
-  const targetLabel = index === 0 ? "текущей версии" : "более новой версии";
-  if (!selectedState || !targetState) {
+  const fromState = previousState || selectedState;
+  const toState = previousState ? selectedState : newerState;
+  const targetLabel = previousState
+    ? "Изменения относительно предыдущей версии"
+    : "Отличия от более новой версии";
+  if (!fromState || !toState) {
     return `<div class="history-record-details"><p class="history-diff-empty">Не удалось сравнить payload этой записи.</p></div>`;
   }
-  const diff = buildHistoryStateDiff(selectedState, targetState);
+  const diff = buildHistoryStateDiff(fromState, toState);
   const sections = [
     renderHistoryDiffSection("Вещи", diff.items),
     renderHistoryDiffSection("Сумки и места", diff.containers),
@@ -235,7 +271,7 @@ function renderHistoryRecordComparison(record, index, records, {
   ].filter(Boolean).join("");
   return `
     <div class="history-record-details">
-      <h3>Отличия от ${escapeHtml(targetLabel)}</h3>
+      <h3>${escapeHtml(targetLabel)}</h3>
       ${sections || `<p class="history-diff-empty">Отличий не найдено.</p>`}
     </div>
   `;

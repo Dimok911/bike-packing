@@ -39,12 +39,28 @@ export function historyRecordState(record, source = "private", {
 }
 
 export function historyRecordKey(record, index = 0) {
-  return String(record?.id ?? record?.createdAt ?? record?.created_at ?? index);
+  const source = String(record?.source || "").trim();
+  const listId = String(record?.listId || record?.list_id || record?.list?.id || "").trim();
+  const id = String(record?.id ?? record?.createdAt ?? record?.created_at ?? index).trim();
+  return [source, listId, id || String(index)].filter(Boolean).join("::");
 }
 
 export function historyPayloadTitle(payload, fallback = "") {
   const layout = payload?.layouts?.[payload.activeLayoutId] || Object.values(payload?.layouts || {})[0];
   return String(layout?.name || fallback || "").trim();
+}
+
+export function historyRecordTitle(record, payload = null, fallback = "") {
+  const explicit = String(
+    record?.listTitle ||
+    record?.list_title ||
+    record?.layoutTitle ||
+    record?.layout_title ||
+    record?.title ||
+    record?.list?.title ||
+    ""
+  ).trim();
+  return explicit || historyPayloadTitle(payload, fallback);
 }
 
 export function groupHistoryRecords(records, {
@@ -59,7 +75,7 @@ export function groupHistoryRecords(records, {
       normalizePublishedStatePayload,
       normalizeRemoteState
     });
-    const title = historyPayloadTitle(payload, fallbackTitle);
+    const title = historyRecordTitle(record, payload, fallbackTitle);
     const key = title || fallbackTitle;
     if (!groups.has(key)) groups.set(key, { key, title: key, records: [] });
     groups.get(key).records.push(record);
@@ -76,12 +92,21 @@ export function pluralRu(count, one, few, many) {
   return many;
 }
 
-export function summarizeHistoryPayload(payload) {
+export function summarizeHistoryPayload(payload, {
+  record = null,
+  source = "private",
+  fallbackTitle = "",
+  includeTitle = true
+} = {}) {
   if (!payload) return "версия не распознана";
   const itemCount = Object.keys(payload.items || {}).length;
   const containerCount = Object.keys(payload.containers || {}).length;
   const layout = payload.layouts?.[payload.activeLayoutId];
-  const layoutName = layout?.name ? ` · ${layout.name}` : "";
+  const recordTitle = record ? historyRecordTitle(record, payload, fallbackTitle) : "";
+  const visibleTitle = source === "private"
+    ? recordTitle
+    : layout?.name || recordTitle;
+  const layoutName = includeTitle && visibleTitle ? ` · ${visibleTitle}` : "";
   return `${itemCount} вещей · ${containerCount} контейнеров${layoutName}`;
 }
 

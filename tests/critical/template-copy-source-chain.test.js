@@ -112,6 +112,10 @@ import {
 } from "../../src/public/guest-demo-startup.js";
 import { validateGuestImportSyncState } from "../../src/public/guest-login-import.js";
 import {
+  containerCopyExcludedLayoutIds,
+  SHARED_CONTAINER_COPY_PICKER_MODE
+} from "../../src/public/template-copy.js";
+import {
   purgeDeletedSharedTemplateFromFrontendState,
   purgeUnconfirmedSharedTemplatesFromFrontendState
 } from "../../src/public/shared-layout-admin.js";
@@ -145,6 +149,27 @@ import { assertEntitySyncConfirmed } from "../../src/sync/entity-sync-confirmati
 
 const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
 
+test("container copy picker excludes the source layout for nested bag copy targets", () => {
+  const excluded = containerCopyExcludedLayoutIds({
+    mode: "container-copy",
+    sourceLayoutId: "layout-source"
+  });
+
+  assert.equal(excluded.has("layout-source"), true);
+  assert.equal(excluded.has("layout-target"), false);
+});
+
+test("shared container copy picker excludes readonly and source layouts", () => {
+  const excluded = containerCopyExcludedLayoutIds({
+    mode: SHARED_CONTAINER_COPY_PICKER_MODE,
+    readonlyLayoutId: "layout-readonly",
+    sourceLayoutId: "layout-source"
+  });
+
+  assert.equal(excluded.has("layout-source"), true);
+  assert.equal(excluded.has("layout-readonly"), true);
+});
+
 test("published entity id cleanup works when used as a callback without cssSafeId", () => {
   assert.equal(
     cleanPublishedEntityId("container", { id: "container-shared-front-bag", name: "Front bag" }, "fallback"),
@@ -173,9 +198,15 @@ test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
   assert.equal(demoAdminStatePathForLanguage("en"), "/bike-packing/admin/demo-states/en/state");
   assert.equal(demoAdminPathForPublicListId("/metadata", "public-demo-state", "ru"), "/bike-packing/admin/demo-state/metadata");
   assert.equal(demoAdminPathForPublicListId("/metadata", "public-demo-state-en", "en"), "/bike-packing/admin/demo-states/en/metadata");
+  assert.equal(demoAdminPathForPublicListId("/history", "public-demo-state", "ru"), "/bike-packing/admin/demo-state/history");
+  assert.equal(demoAdminPathForPublicListId("/history", "public-demo-state-en", "en"), "/bike-packing/admin/demo-states/en/history");
   assert.equal(
     demoAdminPathForPublicListId("/metadata", "public-demo-state-copy-ru-abc", "ru"),
     "/bike-packing/admin/demo-states/copy-ru-abc/metadata"
+  );
+  assert.equal(
+    demoAdminPathForPublicListId("/history", "public-demo-state-copy-ru-abc", "ru"),
+    "/bike-packing/admin/demo-states/copy-ru-abc/history"
   );
 });
 
@@ -1853,6 +1884,138 @@ test("admin shared materialization keeps detached published catalog items", () =
   assert.equal(detached.publicCatalogLayoutId, editable.id);
   assert.equal(detachedContainer.publicCatalogLayoutId, editable.id);
   assert.deepEqual(editable.rootContainerIds, ["copy-container-root"]);
+});
+
+test("admin shared materialization rebuilds stale template-copy drafts from newer published payload", () => {
+  const sourceState = {
+    locations: ["Home"],
+    categories: ["Gear"],
+    containers: {
+      "container-a": {
+        id: "container-a",
+        name: "Published A",
+        itemIds: ["item-a"],
+        childIds: [],
+        order: [{ type: "item", id: "item-a" }]
+      },
+      "container-b": {
+        id: "container-b",
+        name: "Published B",
+        itemIds: ["item-b"],
+        childIds: [],
+        order: [{ type: "item", id: "item-b" }]
+      }
+    },
+    items: {
+      "item-a": { id: "item-a", name: "A", containerId: "container-a" },
+      "item-b": { id: "item-b", name: "B", containerId: "container-b" }
+    },
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Template",
+        language: "ru",
+        rootContainerIds: ["container-a", "container-b"],
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
+  const state = {
+    layouts: {
+      "layout-local-draft": {
+        id: "layout-local-draft",
+        name: "Template",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "template-copy-ru-123",
+        language: "ru",
+        rootContainerIds: ["container-old"],
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    },
+    containers: {
+      "container-old": {
+        id: "container-old",
+        name: "Old local copy",
+        itemIds: ["item-old"],
+        childIds: [],
+        order: [{ type: "item", id: "item-old" }]
+      }
+    },
+    items: {
+      "item-old": { id: "item-old", name: "Old", containerId: "container-old" }
+    },
+    collapsedContainers: {},
+    activeLayoutId: "layout-local-draft"
+  };
+  const sharedLayout = {
+    id: "template-copy-ru-123",
+    name: "Template",
+    language: "ru",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    statePayload: sourceState
+  };
+
+  const editable = materializeSharedLayoutForAdminState("template-copy-ru-123", {
+    canOpenAdminPublishedEdit: () => true,
+    copyPublishedContainerToState: (publishedState, containerId, { idMap }) => {
+      const nextContainerId = `copy-${containerId}`;
+      idMap.containers.set(containerId, nextContainerId);
+      const itemIds = (publishedState.containers[containerId].itemIds || []).map((itemId) => `copy-${itemId}`);
+      state.containers[nextContainerId] = {
+        ...publishedState.containers[containerId],
+        id: nextContainerId,
+        itemIds,
+        order: itemIds.map((id) => ({ type: "item", id }))
+      };
+      (publishedState.containers[containerId].itemIds || []).forEach((itemId) => {
+        const nextItemId = `copy-${itemId}`;
+        idMap.items.set(itemId, nextItemId);
+        state.items[nextItemId] = {
+          ...publishedState.items[itemId],
+          id: nextItemId,
+          containerId: nextContainerId
+        };
+      });
+      return nextContainerId;
+    },
+    copyPublishedItemToState: (publishedState, itemId, { idMap }) => {
+      const nextItemId = `copy-${itemId}`;
+      idMap.items.set(itemId, nextItemId);
+      state.items[nextItemId] = {
+        ...publishedState.items[itemId],
+        id: nextItemId,
+        containerId: ""
+      };
+      return nextItemId;
+    },
+    createLayoutArrangementFromCurrentState,
+    currentEditMeta: () => ({ updatedByDeviceId: "test-device", updatedByDeviceName: "test" }),
+    ensureLayoutDictionaries: () => ({ locations: ["Home"], categories: ["Gear"] }),
+    findSharedLayout: () => sharedLayout,
+    isLayoutMeaningful: (layoutId) => layoutId === "layout-local-draft",
+    normalizeLayoutArrangement: () => {},
+    nowIso: () => "2026-06-02T00:00:00.000Z",
+    removeLayoutTree: (layoutId, targetState) => {
+      delete targetState.layouts[layoutId];
+      delete targetState.containers["container-old"];
+      delete targetState.items["item-old"];
+      return true;
+    },
+    saveState: () => {},
+    sharedLayoutStatePayload: (layout) => layout.statePayload,
+    sharedPayloadActiveLayout: (payload) => payload.layouts[payload.activeLayoutId],
+    state,
+    templateCopySourceScore: (layout) => (layout?.id === "layout-main" ? 20 : 3),
+    uiLanguage: "ru"
+  });
+
+  assert.equal(editable?.id, "layout-local-draft");
+  assert.deepEqual(editable.rootContainerIds, ["copy-container-a", "copy-container-b"]);
+  assert.equal(state.containers["container-old"], undefined);
+  assert.equal(state.items["item-old"], undefined);
+  assert.equal(state.activeLayoutId, "layout-local-draft");
+  assert.equal(state.items["copy-item-b"].containerId, "copy-container-b");
 });
 
 test("frontend load cleanup preserves detached public template catalog items", () => {

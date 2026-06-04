@@ -212,6 +212,7 @@ export function placeDuplicatedContainerSnapshotInLayoutState(targetState, targe
   copiedPlacements = {},
   normalizeLayoutArrangement = () => {},
   targetParentId = "",
+  targetIndex = null,
   touchContainer = () => {},
   touchLayout = () => {}
 } = {}) {
@@ -237,14 +238,20 @@ export function placeDuplicatedContainerSnapshotInLayoutState(targetState, targe
     parent.order = Array.isArray(parent.order)
       ? parent.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
       : [];
+    const liveIndex = targetIndex === null
+      ? parent.order.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, parent.order.length));
     parent.childIds.push(nextRootId);
-    parent.order.push({ type: "container", id: nextRootId });
+    parent.order.splice(liveIndex, 0, { type: "container", id: nextRootId });
     parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds.filter((id) => id !== nextRootId) : [];
     parentPlacement.order = Array.isArray(parentPlacement.order)
       ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === nextRootId))
       : [];
+    const placementIndex = targetIndex === null
+      ? parentPlacement.order.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, parentPlacement.order.length));
     parentPlacement.childIds.push(nextRootId);
-    parentPlacement.order.push({ type: "container", id: nextRootId });
+    parentPlacement.order.splice(placementIndex, 0, { type: "container", id: nextRootId });
     arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== nextRootId);
     copiedPlacements[nextRootId].parentId = targetParentId;
     targetState.collapsedContainers[targetParentId] = false;
@@ -253,11 +260,15 @@ export function placeDuplicatedContainerSnapshotInLayoutState(targetState, targe
     if (!copiedPlacements[nextRootId]) return false;
     copiedPlacements[nextRootId].parentId = "";
     targetState.containers[nextRootId].parentId = null;
-    arrangement.rootContainerIds = uniqueLayoutIds([
+    const rootIds = uniqueLayoutIds([
       ...(arrangement.rootContainerIds || []),
-      ...(targetLayout.rootContainerIds || []),
-      nextRootId
-    ]);
+      ...(targetLayout.rootContainerIds || [])
+    ]).filter((id) => id !== nextRootId);
+    const index = targetIndex === null
+      ? rootIds.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, rootIds.length));
+    rootIds.splice(index, 0, nextRootId);
+    arrangement.rootContainerIds = rootIds;
   }
 
   targetLayout.rootContainerIds = [...arrangement.rootContainerIds];

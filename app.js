@@ -238,6 +238,7 @@ import {
   SHARED_ITEM_COPY_PICKER_MODE,
   assertPublishedTemplateCopyConfirmed,
   collapsedDefaultsForTemplateContainers,
+  containerCopyExcludedLayoutIds,
   createNewPublicTemplateDraftRecord as createNewPublicTemplateDraftRecordValue,
   isContainerPickerContainerCopyMode as isContainerPickerContainerCopyModeValue,
   isContainerPickerCopyMode as isContainerPickerCopyModeValue,
@@ -303,6 +304,7 @@ import {
   stateStats
 } from "./src/state/diagnostics.js";
 import { repairPlacementRegressionFromReference } from "./src/state/regression-repair.js";
+import { isolateLinkedLayoutEntities } from "./src/state/layout-entity-isolation.js";
 import {
   addCustomDictionaryValue,
   dictionaryOptionsForUi as dictionaryOptionsForUiValues,
@@ -553,11 +555,10 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
-  groupHistoryRecords as groupHistoryRecordsForSync,
   historyPayloadTitle,
   historyRecordKey,
   historyRecordState as historyRecordStateForSync,
-  pluralRu,
+  historyRecordTitle,
   sortHistoryRecords,
   summarizeHistoryPayload
 } from "./src/sync/history.js";
@@ -763,7 +764,8 @@ import {
   formatMergeConflicts
 } from "./src/ui/conflict-format.js";
 import {
-  renderHistoryRecordArticle as renderHistoryRecordArticleHtml
+  renderHistoryRecordArticle as renderHistoryRecordArticleHtml,
+  renderHistoryRecordDetails as renderHistoryRecordDetailsHtml
 } from "./src/ui/history-diff.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
@@ -889,9 +891,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "templateCopyMetadataSidecar",
   "adminUsageReports",
   "collectionModeStateSync",
-  "publicTemplateDetachedCatalogItems"
+  "publicTemplateDetachedCatalogItems",
+  "listSaveNoopHistoryGuard"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-05-31.public-template-detached-catalog-items-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-06-05.list-save-noop-history-guard-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -989,10 +992,9 @@ let containerEntitySyncUnavailable = false;
 let layoutEntitySyncUnavailable = false;
 let dictionaryEntitySyncUnavailable = false;
 let historyRecords = [];
-let expandedHistoryRecordId = "";
-let expandedHistoryGroups = {};
 let historyComparisonState = null;
 let activeHistorySource = "private";
+let selectedHistoryDetailRecordKey = "";
 let adminReportsDialogController = null;
 let filterViewCollapseSignature = "";
 let filterViewCollapsedContainers = {};
@@ -1260,7 +1262,7 @@ const appTailControllerDeps = {
   cleanupEmptyContainersInLayoutArrangement, cleanupEmptyContainersInState, cleanupGeneratedCatalogArtifacts, clearActiveAdminDemoStateOnStartup, clearCategoryFilter,
   clearLocalStorageScope, clearOfflineRememberedSession, clearPhotoUploadProgress, clearReadOnlyPackingListContextForPrivateMutation, clearSearch,
   clearSelectFilter, clearStaleDirtyFlagIfNoLocalChanges, clone, cloneIsolatedPublicEntity, clonePlain,
-  cloneStateForSync, cloneStateForSyncPayload, closeDialogWithoutRestoringFocus, closeTopMenu, collapsedDefaultsForTemplateContainers,
+  cloneStateForSync, cloneStateForSyncPayload, closeDialogWithoutRestoringFocus, closeTopMenu, collapsedDefaultsForTemplateContainers, containerCopyExcludedLayoutIds,
   collectManagedPublicDraftRecords, collectPublicLayoutRecordIds, commitSearchInputForNavigation, comparableValueForMerge, compareDemoTemplateOrder,
   compareSharedLayoutAdminOrder, compareSharedLayoutIndexEntries, compareSharedTemplateAdminOrder, confirmContainerTreeCopyToLayout, confirmCreateLayoutFromReadonlyTemplate,
   confirmGuestImportRemoteState, confirmLoadedDemoPublicTemplate, confirmPublicCopyDuplicates, confirmPublicLayoutTransition, confirmRepeatedSharedLayoutCopy,
@@ -1297,7 +1299,7 @@ const appTailControllerDeps = {
   editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload, ensureGuestPublicScope,
   ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState, ensurePrivateDictionaries,
   ensurePrivateDictionariesForState, ensurePrivateStateForSharedCopy, ensureSharedCopyTargetLayoutId, enterSignedOutPublicMode, entitySyncBodyContext,
-  entitySyncStateDeps, escapeHtml, expandedHistoryGroups, expandedHistoryRecordId, explicitLayoutChoice,
+  entitySyncStateDeps, escapeHtml, explicitLayoutChoice,
   exportLayoutAsDemoState, exportLayoutAsPublishedState, fallbackDemoTemplateEntry, fetchAdminReports, fetchBikePackingApiCapabilities,
   fetchPublicSharedLayoutCatalog, fetchPublicTemplatePayloadRecordByItemKey, fetchPublishedDemoTemplateState, fetchPublishedListStateById, fetchRemoteListChangesRecord,
   fetchRemoteListDetailRecord, fetchRemoteListFreshnessRecord, fetchRemoteListStateRecord, fetchRemoteListStateSnapshot, fetchRemotePhotoBlobForUpload,
@@ -1311,7 +1313,7 @@ const appTailControllerDeps = {
   getItemContainerIdInLayoutForState, getLayoutContainerIdSetForState, getLayoutCreateCopySourceOptions, getLayoutDescendantContainerIdsForState, getLayoutItemIdSetForState,
   getPhotoUploadSource, getPublishedEditLayoutId, getPublishedWorkLayout, getSavedAuthEmail, getSavedAuthEmailFromStorage,
   getTemplateCopyRootSnapshots, getTemplateCopySourceScore, getUnsyncedPhotoEntries, getUnsyncedPhotoEntriesForSync, getUploadablePhotoEntries,
-  getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, groupHistoryRecords, groupHistoryRecordsForSync, guestCandidateLayouts,
+  getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, guestCandidateLayouts,
   guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction, guestLayoutHasUserContentEdits,
   guestLayoutImportFallbackName, guestLocalDisplayPreferences, guestLocalDisplayPreferencesWereChanged, guestLocalLayoutCandidate, guestLocalLayoutImportPlan,
   hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton, handlePackingTabTouchEnd,
@@ -1379,7 +1381,7 @@ const appTailControllerDeps = {
   parseVolumeInput, parseWeightInput, pendingGuestLocalLayoutCandidate, persistActiveLayoutSelection, persistStateSnapshot,
   personalListApiUnavailable, photoCopyApiPath, photoDraftChanged, photoObjectUrls, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
-  placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems, pluralRu,
+  placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
   printHtmlDocument, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
@@ -1588,6 +1590,7 @@ function applyLoadedStateToCurrentScope(nextState) {
   cleanupGeneratedCatalogArtifacts(state);
   repairContainerMembershipFromItemLinks(state);
   normalizeLayoutFields(state);
+  isolateLinkedLayoutEntities(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);
   restorePrivateLayoutChoiceInState(state);
@@ -2664,16 +2667,27 @@ async function init() {
     const button = event.target.closest("[data-history-source]");
     if (!button) return;
     activeHistorySource = button.dataset.historySource || "private";
-    expandedHistoryRecordId = "";
-    expandedHistoryGroups = {};
     historyComparisonState = null;
+    selectedHistoryDetailRecordKey = "";
+    refs.historyDetailDialog?.close();
+    refreshHistoryDialog();
+  });
+  refs.historyDemoSelect?.addEventListener("change", () => {
+    const target = selectedHistoryDemoTarget();
+    if (target?.demoListId) activeDemoTemplateListId = target.demoListId;
+    historyComparisonState = null;
+    selectedHistoryDetailRecordKey = "";
+    refs.historyDetailDialog?.close();
     refreshHistoryDialog();
   });
   refs.historySharedSelect?.addEventListener("change", () => {
-    expandedHistoryRecordId = "";
-    expandedHistoryGroups = {};
     historyComparisonState = null;
+    selectedHistoryDetailRecordKey = "";
+    refs.historyDetailDialog?.close();
     refreshHistoryDialog();
+  });
+  refs.historyDetailRestoreBtn?.addEventListener("click", () => {
+    if (selectedHistoryDetailRecordKey) restoreHistoryRecord(selectedHistoryDetailRecordKey);
   });
   document.addEventListener("click", (event) => {
     resetCatalogSelectionOnPlainClick(event);
@@ -2806,6 +2820,7 @@ function loadState() {
     normalizeItemFields(initial);
     repairContainerMembershipFromItemLinks(initial);
     normalizeLayoutFields(initial);
+    isolateLinkedLayoutEntities(initial);
     normalizeItemCategories(initial);
     migrateContainerOrder(initial);
     restorePrivateLayoutChoiceInState(initial);
@@ -2827,6 +2842,7 @@ function loadState() {
     cleanupGeneratedCatalogArtifacts(parsed);
     repairContainerMembershipFromItemLinks(parsed);
     normalizeLayoutFields(parsed);
+    isolateLinkedLayoutEntities(parsed);
     normalizeItemCategories(parsed);
     migrateContainerOrder(parsed);
     restorePrivateLayoutChoiceInState(parsed);
@@ -2847,6 +2863,7 @@ function loadState() {
       normalizeItemFields(fallback);
       repairContainerMembershipFromItemLinks(fallback);
       normalizeLayoutFields(fallback);
+      isolateLinkedLayoutEntities(fallback);
       normalizeItemCategories(fallback);
       migrateContainerOrder(fallback);
       restorePrivateLayoutChoiceInState(fallback);
@@ -2992,6 +3009,7 @@ function normalizeRecoveryPayload(payload) {
   cleanupGeneratedCatalogArtifacts(candidate);
   repairContainerMembershipFromItemLinks(candidate);
   normalizeLayoutFields(candidate);
+  isolateLinkedLayoutEntities(candidate);
   normalizeItemCategories(candidate);
   migrateContainerOrder(candidate);
   applyLayoutArrangement(candidate.activeLayoutId, candidate);
@@ -4501,6 +4519,7 @@ function normalizeRemoteState(payload) {
   cleanupGeneratedCatalogArtifacts(normalized);
   repairContainerMembershipFromItemLinks(normalized);
   normalizeLayoutFields(normalized);
+  isolateLinkedLayoutEntities(normalized);
   normalizeItemCategories(normalized);
   migrateContainerOrder(normalized);
   applyLayoutArrangement(normalized.activeLayoutId, normalized);
@@ -4527,6 +4546,7 @@ function normalizePublishedStatePayload(payload) {
   normalizeItemCategories(normalized);
   migrateContainerOrder(normalized);
   repairPublishedLayoutArrangement(normalized);
+  isolateLinkedLayoutEntities(normalized);
   applyLayoutArrangement(normalized.activeLayoutId, normalized);
   applyDefaultCollapsedContainers(normalized);
   return normalized;
@@ -4551,6 +4571,7 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   cleanupGeneratedCatalogArtifacts(state);
   repairContainerMembershipFromItemLinks(state);
   normalizeLayoutFields(state);
+  isolateLinkedLayoutEntities(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);
   applyLayoutArrangement(state.activeLayoutId, state);
@@ -7460,10 +7481,10 @@ function renderSharedLayouts() {
     showPhotos: shouldShowItemPhotos()
   });
   refs.sharedLayoutsList.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
-    button.addEventListener("click", () => copySharedRoot(button.dataset.copySharedRoot));
+    button.addEventListener("click", () => openSharedContainerCopyPicker(button.dataset.copySharedRoot));
   });
   refs.sharedLayoutsList.querySelectorAll("[data-copy-shared-item]").forEach((button) => {
-    button.addEventListener("click", () => copySharedItem(button.dataset.copySharedItem));
+    button.addEventListener("click", () => openSharedItemCopyPicker(button.dataset.copySharedItem));
   });
 }
 
@@ -7472,10 +7493,10 @@ function bindSharedLayoutEvents(root = document) {
     button.addEventListener("click", () => copySharedLayout(button.dataset.copySharedLayout));
   });
   root.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
-    button.addEventListener("click", () => copySharedRoot(button.dataset.copySharedRoot));
+    button.addEventListener("click", () => openSharedContainerCopyPicker(button.dataset.copySharedRoot));
   });
   root.querySelectorAll("[data-copy-shared-item]").forEach((button) => {
-    button.addEventListener("click", () => copySharedItem(button.dataset.copySharedItem));
+    button.addEventListener("click", () => openSharedItemCopyPicker(button.dataset.copySharedItem));
   });
 }
 
@@ -7764,7 +7785,7 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
   showToast(`"${sourceName}" \u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u0443\u044e \u0441\u0443\u043c\u043a\u0443.`, "success");
 }
 
-async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId) {
+async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId, { targetIndex = null } = {}) {
   if (!rootId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
@@ -7784,7 +7805,8 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   }
   const copiedRootId = await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: rootId,
-    publicSource: true
+    publicSource: true,
+    targetIndex
   });
   if (!copiedRootId) return;
   if (await cacheGuestTemplatePhotoFallbacks(targetLayoutId)) saveState();
@@ -8565,12 +8587,58 @@ async function openHistoryDialog() {
     return;
   }
   if (!canOpenAdminPublishedEdit()) activeHistorySource = "private";
-  expandedHistoryRecordId = "";
-  expandedHistoryGroups = {};
   historyComparisonState = null;
+  selectedHistoryDetailRecordKey = "";
   renderHistorySourceControls();
   openModalDialog(refs.historyDialog);
   refreshHistoryDialog();
+}
+
+function historyDemoTemplateOptions() {
+  const languageOrder = [
+    normalizeUiLanguage(uiLanguage),
+    ...SUPPORTED_LANGUAGES.map(normalizeUiLanguage).filter((language) => language !== normalizeUiLanguage(uiLanguage))
+  ];
+  const entries = [
+    ...adminDemoTemplateCatalogEntries(),
+    ...languageOrder.map((language) => fallbackDemoTemplateEntry(language))
+  ];
+  const seen = new Set();
+  const options = [];
+  entries.forEach((entry) => {
+    const language = normalizeUiLanguage(entry?.language || uiLanguage);
+    const listId = String(entry?.listId || entry?.id || demoPublicListIdForLanguage(language) || "").trim();
+    if (!listId || seen.has(listId)) return;
+    seen.add(listId);
+    const name = String(entry?.name || "").trim() || demoTemplateFallbackName(language);
+    options.push({
+      type: "demo",
+      demoListId: listId,
+      listId,
+      language,
+      name,
+      label: `${name} · ${languageOptionLabel(language)}`
+    });
+  });
+  return options;
+}
+
+function selectedHistoryDemoTarget() {
+  const options = historyDemoTemplateOptions();
+  const selectedListId = String(refs.historyDemoSelect?.value || activeDemoTemplateListId || "").trim();
+  const selected = options.find((option) => option.listId === selectedListId);
+  if (selected) return selected;
+  const language = normalizeUiLanguage(uiLanguage);
+  const template = currentDemoTemplate(language, selectedListId);
+  const demoListId = selectedListId || template?.listId || demoPublicListIdForLanguage(language);
+  return {
+    type: "demo",
+    demoListId,
+    listId: demoListId,
+    language,
+    name: template?.name || demoTemplateFallbackName(language),
+    label: `${template?.name || demoTemplateFallbackName(language)} · ${languageOptionLabel(language)}`
+  };
 }
 
 function renderHistorySourceControls() {
@@ -8582,6 +8650,15 @@ function renderHistorySourceControls() {
   refs.historySourceTabs?.querySelectorAll("[data-history-source]").forEach((button) => {
     button.classList.toggle("active", button.dataset.historySource === activeHistorySource);
   });
+  if (refs.historyDemoField) refs.historyDemoField.hidden = activeHistorySource !== "demo";
+  if (refs.historyDemoSelect) {
+    const demoOptions = historyDemoTemplateOptions();
+    const selected = selectedHistoryDemoTarget().listId || demoOptions[0]?.listId || "";
+    fillSelect(refs.historyDemoSelect, demoOptions.map((option) => [option.listId, option.label]), selected);
+    if (activeHistorySource === "demo" && refs.historyDemoSelect.value) {
+      activeDemoTemplateListId = refs.historyDemoSelect.value;
+    }
+  }
   if (refs.historySharedField) refs.historySharedField.hidden = activeHistorySource !== "shared";
   if (refs.historySharedSelect) {
     const sharedOptions = currentSharedLayouts();
@@ -8616,7 +8693,8 @@ async function refreshHistoryDialog() {
 
 async function loadCurrentHistoryComparisonState(source = activeHistorySource) {
   if (source === "demo") {
-    const payload = await fetchPublishedListStateById(activeDemoTemplateListId || currentDemoTemplate(uiLanguage)?.listId || demoPublicListIdForLanguage());
+    const target = selectedHistoryDemoTarget();
+    const payload = await fetchPublishedListStateById(target.demoListId);
     return normalizePublishedStatePayload(payload);
   }
   if (source === "shared") {
@@ -8631,34 +8709,19 @@ async function loadCurrentHistoryComparisonState(source = activeHistorySource) {
 async function loadRemoteHistory(source = "private") {
   let path = "";
   if (source === "demo") {
+    const target = selectedHistoryDemoTarget();
     path = demoAdminPathForPublicListId(
       "/history",
-      activeDemoTemplateListId || currentDemoTemplate(uiLanguage)?.listId || demoPublicListIdForLanguage(uiLanguage),
-      uiLanguage
+      target.demoListId,
+      target.language
     );
   } else if (source === "shared") {
     const sharedId = refs.historySharedSelect?.value || currentSharedLayouts()[0]?.id || "";
     if (!sharedId) throw new Error("Нет shared-укладок для истории.");
     path = `/bike-packing/admin/shared-layouts/${encodeURIComponent(sharedId)}/history`;
   } else {
-    const listId = await ensureCurrentPackingListId();
-    try {
-      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history`, {
-        timeoutMs: LIST_API_TIMEOUT_MS
-      });
-      const records = Array.isArray(data.records)
-        ? data.records
-        : Array.isArray(data.history)
-          ? data.history
-          : [];
-      return sortHistoryRecords(records).map((record) => ({
-        ...record,
-        listId: record.listId || record.list_id || listId,
-        source: record.source || "bike_packing_list_history"
-      }));
-    } catch (error) {
-      throw new Error(`Новая история списка недоступна: ${apiErrorMessage(error)}`);
-    }
+    return loadPrivateRemoteHistory();
+
   }
   const data = await apiFetch(path);
   const records = Array.isArray(data.records)
@@ -8669,6 +8732,56 @@ async function loadRemoteHistory(source = "private") {
   return sortHistoryRecords(records);
 }
 
+async function loadPrivateRemoteHistory() {
+  let lists = [];
+  try {
+    const catalog = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
+    lists = normalizePackingListsResponse(catalog)
+      .map((list) => normalizeRemoteListRecord(list))
+      .filter((list) => remoteRecordId(list) && !isReadOnlyBikePackingRecord(list));
+  } catch {
+    lists = [];
+  }
+
+  const currentListId = await ensureCurrentPackingListId();
+  if (!lists.some((list) => remoteRecordId(list) === currentListId)) {
+    lists.push({ id: currentListId, title: currentPackingListMeta?.title || "" });
+  }
+
+  const uniqueLists = [];
+  const seen = new Set();
+  lists.forEach((list) => {
+    const listId = remoteRecordId(list);
+    if (!listId || seen.has(listId)) return;
+    seen.add(listId);
+    uniqueLists.push(list);
+  });
+
+  const results = await Promise.allSettled(uniqueLists.map(async (list) => {
+    const listId = remoteRecordId(list);
+    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history`, {
+      timeoutMs: LIST_API_TIMEOUT_MS
+    });
+    const records = Array.isArray(data.records)
+      ? data.records
+      : Array.isArray(data.history)
+        ? data.history
+        : [];
+    const listTitle = String(list.title || list.name || list.listTitle || "").trim();
+    return records.map((record) => ({
+      ...record,
+      listId: record.listId || record.list_id || listId,
+      listTitle: record.listTitle || record.list_title || listTitle || historyPayloadTitle(record.payload, historySourceLabel()),
+      source: record.source || "bike_packing_list_history"
+    }));
+  }));
+
+  const records = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (records.length || results.some((result) => result.status === "fulfilled")) return sortHistoryRecords(records);
+  const firstError = results.find((result) => result.status === "rejected")?.reason;
+  throw new Error(`History is unavailable: ${apiErrorMessage(firstError)}`);
+}
+
 function renderHistoryRecords(records) {
   if (!records.length) {
     refs.historyStatus.className = "dialog-status";
@@ -8676,59 +8789,67 @@ function renderHistoryRecords(records) {
     refs.historyList.innerHTML = "";
     return;
   }
-  const groups = groupHistoryRecords(records);
   refs.historyStatus.className = "dialog-status success";
-  refs.historyStatus.textContent = `${historySourceLabel()} · найдено версий: ${records.length} · укладок: ${groups.length}`;
-  refs.historyList.innerHTML = groups.map((group, groupIndex) => {
-    const expanded = expandedHistoryGroups[group.key] ?? groupIndex === 0;
-    const latestAt = formatHistoryDateTime(group.records[0]?.createdAt || group.records[0]?.created_at);
-    return `
-      <details class="history-group" data-history-group="${escapeHtml(group.key)}"${expanded ? " open" : ""}>
-        <summary class="history-group-summary">
-          <span>
-            <strong>${escapeHtml(group.title)}</strong>
-            <small>${group.records.length} ${pluralRu(group.records.length, "версия", "версии", "версий")}${latestAt ? ` · последняя ${escapeHtml(latestAt)}` : ""}</small>
-          </span>
-        </summary>
-        <div class="history-group-records">
-          ${group.records.map((record, index) => renderHistoryRecordArticleHtml(record, index, group.records, {
-            activeSource: activeHistorySource,
-            currentComparisonState: currentHistoryComparisonState,
-            expandedRecordId: expandedHistoryRecordId,
-            formatDateTime: formatHistoryDateTime,
-            recordKey: historyRecordKey,
-            recordState: historyRecordState,
-            summarizePayload: summarizeHistoryPayload
-          })).join("")}
-        </div>
-      </details>
-    `;
-  }).join("");
-  refs.historyList.querySelectorAll("[data-history-group]").forEach((groupElement) => {
-    groupElement.addEventListener("toggle", () => {
-      expandedHistoryGroups[groupElement.dataset.historyGroup || ""] = groupElement.open;
-    });
-  });
+  refs.historyStatus.textContent = `${historySourceLabel()} · найдено версий: ${records.length}`;
+  refs.historyList.innerHTML = records.map((record, index) => renderHistoryRecordArticleHtml(record, index, records, {
+    activeSource: activeHistorySource,
+    formatDateTime: formatHistoryDateTime,
+    recordKey: historyRecordKey,
+    recordState: historyRecordState,
+    recordTitle: historyRecordTitle,
+    showTitle: false,
+    summarizePayload: summarizeHistoryPayload
+  })).join("");
   refs.historyList.querySelectorAll("[data-history-record]").forEach((recordElement) => {
     recordElement.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
       const key = recordElement.dataset.historyRecord || "";
-      expandedHistoryRecordId = expandedHistoryRecordId === key ? "" : key;
-      renderHistoryRecords(historyRecords);
+      openHistoryRecordDetails(key);
     });
+    recordElement.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openHistoryRecordDetails(recordElement.dataset.historyRecord || "");
+    });
+  });
+  refs.historyList.querySelectorAll("[data-history-detail]").forEach((button) => {
+    button.addEventListener("click", () => openHistoryRecordDetails(button.dataset.historyDetail));
   });
   refs.historyList.querySelectorAll("[data-restore-history]").forEach((button) => {
     button.addEventListener("click", () => restoreHistoryRecord(button.dataset.restoreHistory));
   });
 }
 
-function groupHistoryRecords(records) {
-  return groupHistoryRecordsForSync(records, {
-    source: activeHistorySource,
-    normalizePublishedStatePayload,
-    normalizeRemoteState,
-    fallbackTitle: "Без названия"
-  });
+function findHistoryRecordByKey(recordKey) {
+  const key = String(recordKey || "");
+  const index = historyRecords.findIndex((item, itemIndex) => historyRecordKey(item, itemIndex) === key);
+  return {
+    record: index >= 0 ? historyRecords[index] : null,
+    index,
+    records: historyRecords
+  };
+}
+
+function openHistoryRecordDetails(recordKey) {
+  const { record, index, records } = findHistoryRecordByKey(recordKey);
+  if (!record || index < 0) return;
+  selectedHistoryDetailRecordKey = historyRecordKey(record, index);
+  const createdAt = formatHistoryDateTime(record.createdAt || record.created_at);
+  if (refs.historyDetailTitle) refs.historyDetailTitle.textContent = createdAt ? `Версия ${createdAt}` : "Детали версии";
+  if (refs.historyDetailContent) {
+    refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(record, index, records, {
+      activeSource: activeHistorySource,
+      currentComparisonState: currentHistoryComparisonState,
+      formatDateTime: formatHistoryDateTime,
+      recordState: historyRecordState,
+      recordTitle: historyRecordTitle,
+      summarizePayload: summarizeHistoryPayload
+    });
+  }
+  if (refs.historyDetailRestoreBtn) {
+    refs.historyDetailRestoreBtn.textContent = activeHistorySource === "private" ? "Восстановить" : "Опубликовать";
+  }
+  openModalDialog(refs.historyDetailDialog);
 }
 
 function historyRecordState(record, source = activeHistorySource) {
@@ -8751,7 +8872,10 @@ function currentHistoryComparisonState() {
 }
 
 function historySourceLabel(source = activeHistorySource) {
-  if (source === "demo") return "Демо";
+  if (source === "demo") {
+    const target = selectedHistoryDemoTarget();
+    return target?.name ? `Демо · ${target.name} · ${languageOptionLabel(target.language)}` : "Демо";
+  }
   if (source === "shared") {
     const layout = findSharedLayout(refs.historySharedSelect?.value);
     return layout?.name ? `Шаблон · ${layout.name}` : "Шаблон";
@@ -8759,8 +8883,8 @@ function historySourceLabel(source = activeHistorySource) {
   return "Моя история";
 }
 
-async function restoreHistoryRecord(recordId) {
-  const record = historyRecords.find((item) => String(item.id) === String(recordId));
+async function restoreHistoryRecord(recordKey) {
+  const { record } = findHistoryRecordByKey(recordKey);
   const restoredState = historyRecordState(record);
   if ((activeHistorySource === "demo" || activeHistorySource === "shared") && record && restoredState) {
     await publishPublicHistoryRecord(record, restoredState);
@@ -8778,6 +8902,7 @@ async function restoreHistoryRecord(recordId) {
   });
   if (!confirmed) return;
   refs.historyDialog.close();
+  refs.historyDetailDialog?.close();
   updateSyncUi("Восстанавливаю версию на сервере...");
   try {
     await restorePrivateHistoryRecordOnServer(record);
@@ -8803,17 +8928,17 @@ async function restorePrivateHistoryRecordOnServer(record) {
   if (!listId) {
     throw new Error("Не удалось определить список для восстановления версии.");
   }
-  if (!syncMeta.stateRevision) {
-    const currentRecord = await fetchRemoteListDetailRecord(listId);
-    rememberRemoteIntegrityMeta(currentRecord);
-    saveSyncMeta();
-  }
+  const currentRecord = await fetchRemoteListDetailRecord(listId);
+  const currentMeta = stateIntegrityMetaFromResponse(currentRecord);
+  const baseStateRevision = currentMeta.stateRevision ?? currentRecord?.stateRevision ?? currentRecord?.state_revision ?? null;
+  rememberRemoteIntegrityMeta(currentRecord);
+  saveSyncMeta();
   const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history/${encodeURIComponent(historyId)}/restore`, {
     method: "POST",
     timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
     body: JSON.stringify({
-      baseStateRevision: syncMeta.stateRevision ?? null,
-      stateRevision: syncMeta.stateRevision ?? null
+      baseStateRevision,
+      stateRevision: baseStateRevision
     })
   });
   const recordData = normalizeRemoteListRecord(data);
@@ -8829,11 +8954,12 @@ async function restorePrivateHistoryRecordOnServer(record) {
 
 function selectedHistoryPublishedTarget() {
   if (activeHistorySource === "demo") {
+    const target = selectedHistoryDemoTarget();
     return {
       type: "demo",
       sharedId: "",
-      language: uiLanguage,
-      demoListId: activeDemoTemplateListId || currentDemoTemplate(uiLanguage)?.listId || demoPublicListIdForLanguage(uiLanguage)
+      language: target.language,
+      demoListId: target.demoListId
     };
   }
   if (activeHistorySource !== "shared") return null;
@@ -8865,6 +8991,7 @@ async function publishPublicHistoryRecord(record, payload) {
     ? target.language || uiLanguage
     : findSharedLayout(target.sharedId)?.language || uiLanguage;
   refs.historyDialog.close();
+  refs.historyDetailDialog?.close();
   updateSyncUi(target.type === "demo" ? "Публикую demo-версию из истории..." : "Публикую shared-версию из истории...");
   await apiFetch(path, {
     method: "POST",
@@ -9417,6 +9544,7 @@ function resetData() {
       normalizeItemFields(state);
       repairContainerMembershipFromItemLinks(state);
       normalizeLayoutFields(state);
+      isolateLinkedLayoutEntities(state);
       normalizeItemCategories(state);
       saveState();
       render();

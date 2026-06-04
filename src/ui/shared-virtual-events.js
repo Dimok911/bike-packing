@@ -82,6 +82,7 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
         return;
       }
       if (button.dataset.editItem && canOpenAdminPublishedEdit()) editSharedSourceAsAdmin("item", sourceId);
+      else if (canOpenAdminPublishedEdit()) openSharedItemCopyPicker(sourceId);
       else if (!canOpenAdminPublishedEdit()) openSharedReadonlyItemDialog(sourceId);
       else copySharedItem(sourceId);
     });
@@ -94,7 +95,7 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
         button.dataset.addToContainer || button.dataset.editContainer;
       const sourceId = originalSharedId(virtualId, "shared-virtual-container-");
       if (!sourceId) return;
-      if (readonlyTemplate) {
+      if (readonlyTemplate || (canOpenAdminPublishedEdit() && button.dataset.copyRoot)) {
         openSharedContainerCopyPicker(sourceId);
         return;
       }
