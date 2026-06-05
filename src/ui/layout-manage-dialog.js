@@ -51,10 +51,11 @@ export function layoutCreateModeState(mode, { canCreateTemplates = false } = {})
   let normalizedMode = String(mode || "");
   const templateModes = ["from-template-layout", "template", "template-copy", "demo-template", "shared-template"];
   if (!canCreateTemplates && templateModes.includes(normalizedMode)) normalizedMode = "empty";
+  if (normalizedMode === "template") normalizedMode = "demo-template";
   const shouldCopy = normalizedMode === "copy";
   const shouldCreateFromTemplate = isLayoutCreateTemplateLayoutMode(normalizedMode);
   const shouldCopyTemplate = normalizedMode === "template-copy";
-  const shouldPickTemplate = normalizedMode === "template" || normalizedMode === "demo-template" || normalizedMode === "shared-template";
+  const shouldPickTemplate = normalizedMode === "demo-template" || normalizedMode === "shared-template";
   return {
     mode: normalizedMode,
     shouldCopy,

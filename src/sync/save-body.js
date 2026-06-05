@@ -59,7 +59,7 @@ export function rememberConflictRemoteMeta(record, meta, updatedAt = "", {
   saveSyncMeta = () => {},
   syncMeta
 } = {}) {
-  rememberRemoteIntegrityMeta(record || meta || {});
+  rememberRemoteIntegrityMeta(record || {}, meta || {});
   if (updatedAt) syncMeta.serverUpdatedAt = updatedAt;
   saveSyncMeta();
 }

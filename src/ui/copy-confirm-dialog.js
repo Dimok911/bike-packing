@@ -30,26 +30,30 @@ export function rootContainerCopyConfirm({ container, inLayout = false, t } = {}
   };
 }
 
-export function itemDeleteConfirm({ item, placementText = "", hasPlacements = false, t } = {}) {
+export function itemDeleteConfirm({ item, placementText = "", placementHtml = "", hasPlacements = false, t } = {}) {
   const name = item?.name || tr(t, "items.addItem", "item").toLowerCase();
   return {
     title: tr(t, "delete.itemTitle", "Delete item forever?"),
     text: tr(t, "delete.itemText", "“{name}” will be deleted from the item list and from every layout. This action cannot be undone.", { name }),
     highlightText: placementText,
+    highlightHtml: placementHtml,
     okText: tr(t, "buttons.deleteLayout", "Delete"),
     cancelText: tr(t, "buttons.cancel", "Cancel"),
+    hideClose: true,
     tone: hasPlacements ? "danger" : "safe"
   };
 }
 
-export function rootContainerDeleteConfirm({ container, layoutText = "", itemsText = "", risky = false, t } = {}) {
+export function rootContainerDeleteConfirm({ container, layoutText = "", layoutHtml = "", itemsText = "", itemsHtml = "", risky = false, t } = {}) {
   const name = container?.name || tr(t, "rootContainers.add", "bag or place").toLowerCase();
   return {
     title: tr(t, "delete.rootTitle", "Delete bag or place?"),
     text: tr(t, "delete.rootText", "“{name}” will be deleted from the bags and places list and from every layout.", { name }),
     highlightText: `${layoutText}${itemsText}`,
+    highlightHtml: layoutHtml || itemsHtml ? `${layoutHtml}${itemsHtml}` : "",
     okText: tr(t, "buttons.deleteLayout", "Delete"),
     cancelText: tr(t, "buttons.cancel", "Cancel"),
+    hideClose: true,
     tone: risky ? "danger" : "safe"
   };
 }

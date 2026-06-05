@@ -22,8 +22,12 @@ import {
   isLegacyPersonalSyncWriteBlockedError,
   shouldBlockLegacyPersonalSyncWriteFallback
 } from "../../src/sync/legacy-personal-sync.js";
+import { rememberConflictRemoteMeta } from "../../src/sync/save-body.js";
+import { createQueuedRemoteSave } from "../../src/sync/save-queue.js";
+import { preflightRemoteSaveConflictFlow } from "../../src/sync/save-preflight.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
 import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
+import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
 
@@ -117,6 +121,250 @@ test("CRITICAL sync-save: sequential entity sync results advance base revision f
   assert.equal(syncMeta.serverUpdatedAt, "2026-05-30T10:01:00.000Z");
   assert.equal(syncMeta.stateRevision, 8);
   assert.deepEqual(remembered, [{ stateRevision: 8, entityHash: "entity-8" }]);
+});
+
+test("CRITICAL sync-save: forced conflict retry remembers standalone server revision", () => {
+  const syncMeta = {
+    dirty: true,
+    serverUpdatedAt: "2026-06-05T10:00:00.000Z",
+    stateRevision: 7
+  };
+  const remembered = [];
+  let saved = false;
+
+  rememberConflictRemoteMeta(
+    { id: "list-1", updatedAt: "2026-06-05T10:01:00.000Z" },
+    { stateRevision: 9, entityHash: "entity-9" },
+    "2026-06-05T10:01:00.000Z",
+    {
+      rememberRemoteIntegrityMeta: (...sources) => {
+        remembered.push(sources);
+        const meta = sources.find((source) => source?.stateRevision != null) || {};
+        syncMeta.stateRevision = meta.stateRevision ?? syncMeta.stateRevision;
+        syncMeta.entityHash = meta.entityHash || syncMeta.entityHash || null;
+      },
+      saveSyncMeta: () => {
+        saved = true;
+      },
+      syncMeta
+    }
+  );
+
+  assert.equal(syncMeta.serverUpdatedAt, "2026-06-05T10:01:00.000Z");
+  assert.equal(syncMeta.stateRevision, 9);
+  assert.equal(syncMeta.entityHash, "entity-9");
+  assert.equal(saved, true);
+  assert.equal(remembered[0].length, 2);
+});
+
+test("CRITICAL sync-save: force overwrite skips entity sync and uses full payload save", async () => {
+  let entitySyncCalled = false;
+  let preflightCalled = false;
+  let fullSaveForce = null;
+  const runtime = {
+    currentUser: { id: "user-1" },
+    state: { items: {}, containers: {}, layouts: {} },
+    syncMeta: { dirty: true, stateRevision: 9 },
+    uiLanguage: "ru"
+  };
+
+  await saveRemoteStateFlow({
+    runtime,
+    dependencies: {
+      blockDestructiveLocalSave: () => false,
+      canLocalStateOverrideRemote: () => true,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      currentPublicTemplateStatusMessage: () => "",
+      handleRemoteSaveConflict: async () => {},
+      hasLegacyPayloadChanges: () => false,
+      legacyComparableTopLevelDiffKeys: () => [],
+      preflightRemoteSaveConflict: async () => {
+        preflightCalled = true;
+        throw new Error("preflight must not run for force overwrite");
+      },
+      isDemoPublicTemplateMissing: () => false,
+      isNetworkError: () => false,
+      isReadOnlyBikePackingContext: () => false,
+      isReadOnlyBikePackingError: () => false,
+      isSuspiciousEmptyPackingState: () => false,
+      isTemporaryServerStorageError: () => false,
+      isTimeoutError: () => false,
+      loadBaseState: () => ({ items: {}, containers: {}, layouts: {} }),
+      nowIso: () => "2026-06-05T10:02:00.000Z",
+      remoteUpdatedAt: () => "2026-06-05T10:03:00.000Z",
+      rememberConflictRemoteMeta: () => {},
+      rememberCurrentSyncAccount: () => {},
+      rememberRemoteIntegrityMeta: () => {},
+      repairCollapsedActiveLayoutBeforeSave: () => {},
+      saveBaseState: () => {},
+      saveRemoteState: async () => {},
+      saveRemoteStateRecord: async ({ forceOverwrite }) => {
+        fullSaveForce = forceOverwrite;
+        return { list: { updatedAt: "2026-06-05T10:03:00.000Z", stateRevision: 10 } };
+      },
+      saveSyncMeta: () => {},
+      serializeState: () => ({ items: {}, containers: {}, layouts: {} }),
+      showToast: () => {},
+      stateIntegrityMetaFromResponse: () => ({ stateRevision: 10 }),
+      syncChangedBikePackingEntities: async () => {
+        entitySyncCalled = true;
+        throw new Error("entity sync must not run for force overwrite");
+      },
+      updateSyncUi: () => {},
+      uploadPendingPhotos: async () => {}
+    }
+  }, { forceOverwrite: true });
+
+  assert.equal(entitySyncCalled, false);
+  assert.equal(preflightCalled, false);
+  assert.equal(fullSaveForce, true);
+  assert.equal(runtime.syncMeta.dirty, false);
+});
+
+test("CRITICAL sync-save: changed server freshness stops before entity sync", async () => {
+  let preflightCalled = false;
+  let entitySyncCalled = false;
+  let fullSaveCalled = false;
+  const runtime = {
+    currentUser: { id: "user-1" },
+    state: { items: {}, containers: {}, layouts: {} },
+    syncMeta: { dirty: true, stateRevision: 9 },
+    uiLanguage: "ru"
+  };
+
+  await saveRemoteStateFlow({
+    runtime,
+    dependencies: {
+      blockDestructiveLocalSave: () => false,
+      canLocalStateOverrideRemote: () => true,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      currentPublicTemplateStatusMessage: () => "",
+      handleRemoteSaveConflict: async () => {},
+      hasLegacyPayloadChanges: () => false,
+      legacyComparableTopLevelDiffKeys: () => [],
+      preflightRemoteSaveConflict: async () => {
+        preflightCalled = true;
+        return true;
+      },
+      isDemoPublicTemplateMissing: () => false,
+      isNetworkError: () => false,
+      isReadOnlyBikePackingContext: () => false,
+      isReadOnlyBikePackingError: () => false,
+      isSuspiciousEmptyPackingState: () => false,
+      isTemporaryServerStorageError: () => false,
+      isTimeoutError: () => false,
+      loadBaseState: () => {
+        throw new Error("base state must not be loaded after handled preflight");
+      },
+      nowIso: () => "2026-06-05T10:02:00.000Z",
+      remoteUpdatedAt: () => "2026-06-05T10:03:00.000Z",
+      rememberConflictRemoteMeta: () => {},
+      rememberCurrentSyncAccount: () => {},
+      rememberRemoteIntegrityMeta: () => {},
+      repairCollapsedActiveLayoutBeforeSave: () => {},
+      saveBaseState: () => {},
+      saveRemoteState: async () => {},
+      saveRemoteStateRecord: async () => {
+        fullSaveCalled = true;
+        throw new Error("full save must not run after handled preflight");
+      },
+      saveSyncMeta: () => {},
+      serializeState: () => ({ items: {}, containers: {}, layouts: {} }),
+      showToast: () => {},
+      stateIntegrityMetaFromResponse: () => ({ stateRevision: 10 }),
+      syncChangedBikePackingEntities: async () => {
+        entitySyncCalled = true;
+        throw new Error("entity sync must not run after handled preflight");
+      },
+      updateSyncUi: () => {},
+      uploadPendingPhotos: async () => {}
+    }
+  });
+
+  assert.equal(preflightCalled, true);
+  assert.equal(entitySyncCalled, false);
+  assert.equal(fullSaveCalled, false);
+});
+
+test("CRITICAL sync-save: preflight routes stale revision through conflict flow", async () => {
+  let freshnessCalled = false;
+  let stateCalled = false;
+  let conflictError = null;
+
+  const handled = await preflightRemoteSaveConflictFlow({
+    currentUser: { id: "user-1" },
+    fetchRemoteListFreshnessRecord: async (listId) => {
+      freshnessCalled = listId === "list-1";
+      return {
+        listId: "list-1",
+        serverUpdatedAt: "2026-06-05T10:01:00.000Z",
+        stateRevision: 10
+      };
+    },
+    fetchRemoteListStateSnapshot: async (listId) => {
+      stateCalled = listId === "list-1";
+      return {
+        id: "list-1",
+        updatedAt: "2026-06-05T10:01:00.000Z",
+        stateRevision: 10,
+        payload: { items: { "item-1": { id: "item-1" } }, containers: {}, layouts: {} }
+      };
+    },
+    handleRemoteSaveConflict: async (error) => {
+      conflictError = error;
+    },
+    listId: "list-1",
+    remoteUpdatedAt: (record) => record?.updatedAt || "",
+    syncMeta: {
+      serverUpdatedAt: "2026-06-05T10:00:00.000Z",
+      stateRevision: 9
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(freshnessCalled, true);
+  assert.equal(stateCalled, true);
+  assert.equal(conflictError?.status, 409);
+  assert.equal(conflictError?.data?.code, "preflight_conflict");
+  assert.equal(conflictError?.data?.stateRevision, 10);
+  assert.deepEqual(conflictError?.data?.serverPayload?.items, { "item-1": { id: "item-1" } });
+});
+
+test("CRITICAL sync-save: direct remote saves run sequentially", async () => {
+  const events = [];
+  let releaseFirst = null;
+  const firstGate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  const save = createQueuedRemoteSave(async ({ name }) => {
+    events.push(`start:${name}`);
+    if (name === "first") await firstGate;
+    events.push(`end:${name}`);
+  });
+
+  const first = save({ name: "first" });
+  const second = save({ name: "second" });
+  await Promise.resolve();
+
+  assert.deepEqual(events, ["start:first"]);
+  releaseFirst();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(events, ["start:first", "end:first", "start:second", "end:second"]);
+});
+
+test("CRITICAL sync-save: reentrant conflict saves bypass the outer queue", async () => {
+  const events = [];
+  let save = null;
+  save = createQueuedRemoteSave(async ({ name }) => {
+    events.push(`start:${name}`);
+    if (name === "outer") await save({ name: "inner", _reentrant: true });
+    events.push(`end:${name}`);
+  });
+
+  await save({ name: "outer" });
+
+  assert.deepEqual(events, ["start:outer", "start:inner", "end:inner", "end:outer"]);
 });
 
 const root = resolve(import.meta.dirname, "../..");

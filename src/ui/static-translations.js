@@ -163,6 +163,29 @@ export function applyStaticTranslationsUi({
   if (refs.layoutRootSearch) refs.layoutRootSearch.placeholder = t("forms.bagOrPlaceNamePlaceholder");
   setAttr(refs.clearLayoutRootSearchBtn, "aria-label", uiLanguage === "en" ? "Clear search" : "Очистить поиск");
 
+  setFirstText(refs.layoutDialog?.querySelector("label:has(#layoutCreateMode)"), t("layout.createMode"));
+  setFirstText(refs.layoutDialog?.querySelector("label:has(#layoutName)"), t("forms.name"));
+  if (refs.layoutName) refs.layoutName.placeholder = t("layout.namePlaceholder");
+  if (refs.layoutCreateMode) {
+    const modeLabels = {
+      empty: t("layout.createEmpty"),
+      copy: t("layout.createCopy"),
+      "from-template-layout": t("layout.createFromTemplate"),
+      template: t("layout.createEmptyTemplate"),
+      "demo-template": t("layout.createDemoTemplate"),
+      "shared-template": t("layout.createSharedTemplate"),
+      "template-copy": t("layout.createTemplateCopy")
+    };
+    refs.layoutCreateMode.querySelectorAll("option").forEach((option) => {
+      option.textContent = modeLabels[option.value] || option.textContent;
+    });
+  }
+  setText(refs.saveLayoutBtn, t("buttons.add"));
+
+  setFirstText(refs.layoutEditDialog?.querySelector("label:has(#layoutEditName)"), t("forms.name"));
+  setText(refs.deleteEditedLayoutBtn, t("buttons.deleteLayout"));
+  setText(refs.saveEditedLayoutBtn, t("buttons.save"));
+
   setText(refs.backupDialog?.querySelector("h2"), t("backup.title"));
   setText(refs.backupCreateBtn, t("backup.createArchive"));
   const backupPick = refs.backupFileInput?.closest(".backup-file-pick");

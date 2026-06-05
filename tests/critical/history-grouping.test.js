@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   groupHistoryRecords,
+  historySharedTemplateOptions,
   historyRecordKey,
   historyRecordTitle,
   summarizeHistoryPayload
@@ -99,6 +100,24 @@ test("CRITICAL history: private list row hides layout titles to avoid nested lay
   assert.doesNotMatch(html, /1 контейнеров/);
   assert.match(html, /04\.06\.2026, 09:00/);
   assert.match(html, /Телефон/);
+});
+
+test("CRITICAL history: shared template options keep separate language targets", () => {
+  const options = historySharedTemplateOptions([
+    { id: "bikepacking-reference-bags", name: "Tristan Ridley Список снаряжения", language: "ru" },
+    { id: "bikepacking-reference-bags-en", name: "Tristan Ridley Gear List", language: "en" }
+  ], {
+    languageLabel: (language) => language.toUpperCase()
+  });
+
+  assert.deepEqual(options.map((option) => option.id), [
+    "bikepacking-reference-bags",
+    "bikepacking-reference-bags-en"
+  ]);
+  assert.deepEqual(options.map((option) => option.label), [
+    "Tristan Ridley Список снаряжения · RU",
+    "Tristan Ridley Gear List · EN"
+  ]);
 });
 
 test("CRITICAL history: list save body sends source device fields for history rows", () => {

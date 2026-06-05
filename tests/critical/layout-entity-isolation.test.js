@@ -233,6 +233,44 @@ test("CRITICAL catalog repair: accidental isolated copies are rewritten to origi
   assert.equal(state.collapsedContainers["shared-root"], true);
 });
 
+test("CRITICAL catalog model: deleting a private layout keeps unreferenced catalog records", () => {
+  const state = {
+    containers: {
+      "private-root": {
+        id: "private-root",
+        itemIds: ["private-item"],
+        childIds: [],
+        order: [{ type: "item", id: "private-item" }]
+      }
+    },
+    items: {
+      "private-item": { id: "private-item", name: "Map", containerId: "private-root" }
+    },
+    collapsedContainers: { "private-root": true },
+    packedItems: { "private-item": true },
+    layouts: {
+      "layout-private": {
+        id: "layout-private",
+        rootContainerIds: ["private-root"],
+        arrangement: {
+          rootContainerIds: ["private-root"],
+          containers: { "private-root": placement({ itemIds: ["private-item"] }) },
+          items: { "private-item": "private-root" },
+          packedItems: { "private-item": true }
+        }
+      }
+    },
+    activeLayoutId: "layout-private"
+  };
+
+  assert.equal(removeLayoutTreeFromState(state, "layout-private"), true);
+  assert.equal(state.layouts["layout-private"], undefined);
+  assert.ok(state.containers["private-root"]);
+  assert.ok(state.items["private-item"]);
+  assert.equal(state.collapsedContainers["private-root"], true);
+  assert.equal(state.packedItems["private-item"], true);
+});
+
 test("CRITICAL catalog model: unreferenced managed template entities are still removed", () => {
   const state = {
     containers: {
@@ -275,7 +313,9 @@ test("CRITICAL catalog model: unreferenced managed template entities are still r
     activeLayoutId: "layout-private"
   };
 
-  assert.equal(removeLayoutTreeFromState(state, "layout-template"), true);
+  assert.equal(removeLayoutTreeFromState(state, "layout-template", {
+    deleteUnreferencedEntities: true
+  }), true);
   assert.ok(state.containers["private-root"]);
   assert.equal(state.containers["template-root"], undefined);
   assert.equal(state.items["template-item"], undefined);

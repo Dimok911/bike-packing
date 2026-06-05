@@ -9,13 +9,14 @@ export function isDestructiveConfirmAction(okText, tone = "") {
   return tone === "danger" || /удал|сброс|разобрать|выйти/i.test(okText);
 }
 
-export function confirmMessageHtml({ text, highlightText = "", highlightCount = "", tone = "" }) {
-  if (!highlightText) return escapeHtml(text);
+export function confirmMessageHtml({ text, highlightText = "", highlightHtml = "", highlightCount = "", tone = "" }) {
+  if (!highlightText && !highlightHtml) return escapeHtml(text);
   const highlightClass = `confirm-highlight confirm-${tone || "safe"}`;
   const countHtml = highlightCount
     ? `<strong class="confirm-highlight-count">${escapeHtml(highlightCount)}</strong>`
     : "";
-  return `${escapeHtml(text)}<span class="${highlightClass}">${countHtml}${escapeHtml(highlightText)}</span>`;
+  const bodyHtml = highlightHtml || `${countHtml}${escapeHtml(highlightText)}`;
+  return `${escapeHtml(text)}<span class="${highlightClass}">${bodyHtml}</span>`;
 }
 
 export function createConfirmDialogController({ refs, openModalDialog }) {
@@ -33,17 +34,21 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     cancelText = localizedText("Cancel", "Отмена"),
     alternateText = "",
     highlightText = "",
+    highlightHtml = "",
     highlightCount = "",
     tone = "",
+    hideClose = false,
     onOk = null,
     onCancel = null
   }) {
     const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
     const closeBtn = refs.confirmCloseBtn || refs.confirmDialog.querySelector("header .icon-button");
+    const previousCloseHidden = closeBtn?.hidden || false;
     refs.confirmTitle.textContent = title;
-    refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightCount, tone });
+    refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightHtml, highlightCount, tone });
     refs.confirmCancelBtn.textContent = cancelText;
     refs.confirmOkBtn.textContent = okText;
+    if (closeBtn) closeBtn.hidden = Boolean(hideClose);
     if (refs.confirmAlternateBtn) {
       refs.confirmAlternateBtn.textContent = alternateText || "";
       refs.confirmAlternateBtn.hidden = !alternateText;
@@ -67,6 +72,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         refs.confirmCancelBtn.classList.remove("danger-action");
         refs.confirmOkBtn.classList.remove("danger-action");
         refs.confirmDialog.classList.remove("danger-confirm-dialog");
+        if (closeBtn) closeBtn.hidden = previousCloseHidden;
         setConfirmButtonOrder();
       };
       const handleClose = () => {
@@ -102,7 +108,7 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
           refs.confirmDialog.close("alternate");
         };
       }
-      closeBtn?.addEventListener("click", handleCloseButton);
+      if (!hideClose) closeBtn?.addEventListener("click", handleCloseButton);
       refs.confirmDialog.addEventListener("close", handleClose);
       openModalDialog(refs.confirmDialog);
     });
@@ -160,8 +166,29 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     });
   }
 
-  function openConfirmDialog({ title, text, okText, highlightText = "", highlightCount = "", tone = "", onConfirm }) {
-    askConfirmDialog({ title, text, okText, highlightText, highlightCount, tone }).then((confirmed) => {
+  function openConfirmDialog({
+    title,
+    text,
+    okText,
+    cancelText,
+    highlightText = "",
+    highlightHtml = "",
+    highlightCount = "",
+    tone = "",
+    hideClose = false,
+    onConfirm
+  }) {
+    askConfirmDialog({
+      title,
+      text,
+      okText,
+      cancelText,
+      highlightText,
+      highlightHtml,
+      highlightCount,
+      tone,
+      hideClose
+    }).then((confirmed) => {
       if (!confirmed) return;
       onConfirm();
     });

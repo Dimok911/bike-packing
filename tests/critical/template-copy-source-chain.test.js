@@ -98,7 +98,10 @@ import {
   publishedTemplateBlockReason,
   readonlyPublicTemplateOptionLabel
 } from "../../src/public/public-template-availability.js";
-import { layoutSourceNameFromOptionLabel } from "../../src/ui/layout-manage-dialog.js";
+import {
+  layoutCreateModeState,
+  layoutSourceNameFromOptionLabel
+} from "../../src/ui/layout-manage-dialog.js";
 import { publicTemplateDeleteBlockReason } from "../../src/public/public-template-delete-guard.js";
 import {
   createSharedLayoutCatalogDiagnostics,
@@ -121,6 +124,7 @@ import {
 } from "../../src/public/shared-layout-admin.js";
 import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
 import { materializeSharedLayoutForAdminState } from "../../src/public/shared-admin-materialize.js";
+import { mergePublishedSharedStateIntoAdminLayout } from "../../src/public/shared-admin-merge.js";
 import { cleanupGeneratedCatalogArtifacts } from "../../src/state/cleanup.js";
 import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 import {
@@ -1740,6 +1744,93 @@ test("published template export keeps items removed from the layout in the catal
   assert.equal(payload.layouts["layout-main"].arrangement.items["item-detached"], undefined);
 });
 
+test("published template export follows target layout arrangement instead of live container state", () => {
+  const layoutId = "layout-admin-shared";
+  const state = {
+    locations: [],
+    categories: [],
+    containers: {
+      "container-existing": {
+        id: "container-existing",
+        name: "Existing bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: [],
+        publicCatalogLayoutId: layoutId
+      },
+      "container-copied": {
+        id: "container-copied",
+        name: "Copied bag",
+        parentId: null,
+        itemIds: ["item-copied"],
+        childIds: [],
+        order: [{ type: "item", id: "item-copied" }],
+        publicCatalogLayoutId: layoutId
+      }
+    },
+    items: {
+      "item-existing": {
+        id: "item-existing",
+        name: "Existing item",
+        containerId: "",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-copied": {
+        id: "item-copied",
+        name: "Copied item",
+        containerId: "container-copied",
+        publicCatalogLayoutId: layoutId
+      }
+    },
+    layouts: {
+      [layoutId]: {
+        id: layoutId,
+        name: "Template",
+        rootContainerIds: ["container-copied"],
+        adminSharedSourceId: "shared-template",
+        arrangement: {
+          rootContainerIds: ["container-existing", "container-copied"],
+          containers: {
+            "container-existing": {
+              parentId: "",
+              itemIds: ["item-existing"],
+              childIds: [],
+              order: [{ type: "item", id: "item-existing" }]
+            },
+            "container-copied": {
+              parentId: "",
+              itemIds: ["item-copied"],
+              childIds: [],
+              order: [{ type: "item", id: "item-copied" }]
+            }
+          },
+          items: {
+            "item-existing": "container-existing",
+            "item-copied": "container-copied"
+          },
+          packedItems: {}
+        }
+      }
+    }
+  };
+
+  const payload = exportLayoutAsPublishedState(state, layoutId, {
+    clone: (value) => JSON.parse(JSON.stringify(value)),
+    createLayoutArrangementFromCurrentState,
+    cssSafeId: (value) => String(value || "").toLowerCase().replace(/\s+/g, "-"),
+    ensureLayoutDictionaries: () => null,
+    normalizePublishedStatePayload: (value) => value,
+    stripPublishedPublicOriginMarkers
+  });
+
+  assert.deepEqual(payload.layouts["layout-main"].rootContainerIds, ["container-existing", "container-copied"]);
+  assert.deepEqual(Object.keys(payload.containers).sort(), ["container-copied", "container-existing"]);
+  assert.deepEqual(Object.keys(payload.items).sort(), ["item-copied", "item-existing"]);
+  assert.deepEqual(payload.containers["container-existing"].itemIds, ["item-existing"]);
+  assert.equal(payload.items["item-existing"].containerId, "container-existing");
+});
+
 test("published shared virtual state keeps detached catalog items", () => {
   const sourceState = {
     locations: [],
@@ -1884,6 +1975,118 @@ test("admin shared materialization keeps detached published catalog items", () =
   assert.equal(detached.publicCatalogLayoutId, editable.id);
   assert.equal(detachedContainer.publicCatalogLayoutId, editable.id);
   assert.deepEqual(editable.rootContainerIds, ["copy-container-root"]);
+});
+
+test("published shared admin merge restores missing source roots without dropping local edits", () => {
+  const sourceState = {
+    containers: {
+      "container-a": {
+        id: "container-a",
+        name: "Published A",
+        itemIds: ["item-a"],
+        childIds: [],
+        order: [{ type: "item", id: "item-a" }]
+      },
+      "container-b": {
+        id: "container-b",
+        name: "Published B",
+        itemIds: ["item-b"],
+        childIds: [],
+        order: [{ type: "item", id: "item-b" }]
+      }
+    },
+    items: {
+      "item-a": { id: "item-a", name: "A", containerId: "container-a" },
+      "item-b": { id: "item-b", name: "B", containerId: "container-b" }
+    },
+    layouts: {
+      "layout-source": {
+        id: "layout-source",
+        rootContainerIds: ["container-a", "container-b"]
+      }
+    },
+    activeLayoutId: "layout-source"
+  };
+  const state = {
+    layouts: {
+      "layout-admin-shared": {
+        id: "layout-admin-shared",
+        adminSharedSourceId: "shared-template",
+        rootContainerIds: ["container-local-copy"],
+        arrangement: { rootContainerIds: ["container-local-copy"], containers: {}, items: {}, packedItems: {} }
+      }
+    },
+    containers: {
+      "container-local-copy": {
+        id: "container-local-copy",
+        name: "Published A copy",
+        itemIds: ["item-local"],
+        childIds: [],
+        order: [{ type: "item", id: "item-local" }]
+      }
+    },
+    items: {
+      "item-local": { id: "item-local", name: "Local edit", containerId: "container-local-copy" }
+    }
+  };
+  const touched = [];
+  const normalized = [];
+
+  const changed = mergePublishedSharedStateIntoAdminLayout({
+    id: "shared-template",
+    name: "Shared template"
+  }, state.layouts["layout-admin-shared"], {
+    changedAt: "2026-06-06T00:00:00.000Z",
+    clone: (value) => JSON.parse(JSON.stringify(value)),
+    copyPublishedContainerToState: (publishedState, containerId, { idMap, targetLayoutId }) => {
+      const nextContainerId = `copy-${containerId}`;
+      idMap.containers.set(containerId, nextContainerId);
+      const itemIds = (publishedState.containers[containerId].itemIds || []).map((itemId) => `copy-${itemId}`);
+      state.containers[nextContainerId] = {
+        ...publishedState.containers[containerId],
+        id: nextContainerId,
+        sharedSourceId: containerId,
+        itemIds
+      };
+      itemIds.forEach((nextItemId) => {
+        const sourceItemId = nextItemId.slice("copy-".length);
+        idMap.items.set(sourceItemId, nextItemId);
+        state.items[nextItemId] = {
+          ...publishedState.items[sourceItemId],
+          id: nextItemId,
+          sharedSourceId: sourceItemId,
+          containerId: nextContainerId
+        };
+      });
+      const layout = state.layouts[targetLayoutId];
+      layout.rootContainerIds = [...(layout.rootContainerIds || []), nextContainerId];
+      layout.arrangement = {
+        ...(layout.arrangement || {}),
+        rootContainerIds: [...(layout.arrangement?.rootContainerIds || []), nextContainerId]
+      };
+      return nextContainerId;
+    },
+    ensureLayoutDictionaries: () => {},
+    hasRemotePhotoUrl: () => false,
+    normalizeLayoutArrangement: (layout) => normalized.push(layout.id),
+    normalizePhotoUrlFields: (value) => value,
+    normalizeSharedGearName: (value) => String(value || "").trim().toLowerCase(),
+    sameJson: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    sourceState,
+    state,
+    touchLayout: (layoutId) => touched.push(layoutId)
+  });
+
+  assert.equal(changed, true);
+  assert.deepEqual(state.layouts["layout-admin-shared"].rootContainerIds, [
+    "container-local-copy",
+    "copy-container-a",
+    "copy-container-b"
+  ]);
+  assert.equal(state.items["item-local"].containerId, "container-local-copy");
+  assert.equal(state.items["copy-item-b"].containerId, "copy-container-b");
+  assert.deepEqual(normalized, ["layout-admin-shared"]);
+  assert.deepEqual(touched, ["layout-admin-shared"]);
 });
 
 test("admin shared materialization rebuilds stale template-copy drafts from newer published payload", () => {
@@ -2478,6 +2681,23 @@ test("public template payload cache invalidates entries when updatedAt changes",
   assert.equal(cache.get("public-demo-state-en"), null);
 });
 
+test("public template payload cache can purge a deleted demo template", () => {
+  const cache = createPublicTemplatePayloadCache({
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    normalizePayload: (value) => value && value.ok ? value : null,
+    now: () => 1_000,
+    ttlMs: 60_000
+  });
+
+  cache.set("public-demo-state-copy-ru-delete", { ok: true, value: "stale-list" });
+  cache.set("demo-state:copy-ru-delete", { ok: true, value: "stale-item-key" });
+
+  assert.equal(cache.remove("public-demo-state-copy-ru-delete"), true);
+  assert.equal(cache.remove("demo-state:copy-ru-delete"), true);
+  assert.equal(cache.get("public-demo-state-copy-ru-delete"), null);
+  assert.equal(cache.get("demo-state:copy-ru-delete"), null);
+});
+
 test("public template metadata is applied over stale payload layout titles", () => {
   const payload = {
     activeLayoutId: "layout-main",
@@ -3008,6 +3228,20 @@ test("layout source option labels expose source names for copy suggestions", () 
   assert.equal(layoutSourceNameFromOptionLabel("Template: Demo-packing (EN)"), "Demo-packing");
   assert.equal(layoutSourceNameFromOptionLabel("\u{1F512} Template: New layout 3 (RU)"), "New layout 3");
   assert.equal(layoutSourceNameFromOptionLabel("Full kit"), "Full kit");
+});
+
+test("template creation modes expose demo and shared as explicit choices", () => {
+  assert.deepEqual(layoutCreateModeState("template", { canCreateTemplates: true }), {
+    mode: "demo-template",
+    shouldCopy: false,
+    shouldCopyTemplate: false,
+    shouldCreateFromTemplate: false,
+    shouldPickSource: false,
+    shouldPickTemplate: true
+  });
+  assert.equal(layoutCreateModeState("demo-template", { canCreateTemplates: true }).shouldPickTemplate, true);
+  assert.equal(layoutCreateModeState("shared-template", { canCreateTemplates: true }).shouldPickTemplate, true);
+  assert.equal(layoutCreateModeState("shared-template", { canCreateTemplates: false }).mode, "empty");
 });
 
 test("private mutations clear stale public list context before sync", () => {

@@ -77,6 +77,7 @@ import {
 import { createDeletedSharedLayoutStore } from "./src/public/deleted-shared-layouts.js";
 import {
   linkExistingContainerTreeToLayoutState,
+  linkMissingContainerTreeToLayoutState,
   markCopiedItemForPublicLayout,
   isSharedCopyTargetLayout,
   publicCopyTargetLayouts,
@@ -438,6 +439,11 @@ import {
   touchLayoutsReferencingItemInState
 } from "./src/state/layout-ops.js";
 import {
+  photoDuplicateOptionsForLayoutCopy,
+  privateContainerTreeCopyRoute,
+  shouldCopyPhotosToCurrentListForLayoutCopy
+} from "./src/state/layout-copy-policy.js";
+import {
   activeEditableLayoutId as activeEditableLayoutIdForState,
   getDescendantContainerIds as getDescendantContainerIdsForState,
   getVisibleLayoutRootIds as getVisibleLayoutRootIdsForState,
@@ -447,7 +453,7 @@ import {
   isRootContainerInCatalog as isRootContainerInCatalogForState,
   isRootContainerInLayout as isRootContainerInLayoutForState,
   layoutContainerPath as layoutContainerPathForState,
-  visibleItemLayoutPlacementLabels,
+  visibleItemLayoutPlacements as visibleItemLayoutPlacementsForState,
   userEditableLayouts as userEditableLayoutsForState,
   canDeleteActiveLayout as canDeleteActiveLayoutForState
 } from "./src/state/layout-selectors.js";
@@ -559,6 +565,7 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
+  historySharedTemplateOptions,
   historyPayloadTitle,
   historyRecordKey,
   historyRecordState as historyRecordStateForSync,
@@ -573,10 +580,13 @@ import {
   deleteCachedPhoto,
   getCachedPhoto,
   hasRemotePhotoUrl,
+  isMissingRemotePhotoCopyError,
   isPhotoUsableFromServer,
   isPhotoStoredForList,
   keepRemoteOnlyPhotoReference,
   normalizeUploadedPhotoAssetUrls,
+  photoRecordIdMatchesRemoteSource,
+  removeRecordPhotoReference,
   photoCopyApiPath,
   photoRemoteSrc,
   photoShouldBeCopiedToCurrentList,
@@ -607,6 +617,8 @@ import {
   handleRemoteSaveConflictFlow,
   saveRemoteStateFlow
 } from "./src/sync/save-remote-state-flow.js";
+import { preflightRemoteSaveConflictFlow } from "./src/sync/save-preflight.js";
+import { createQueuedRemoteSave } from "./src/sync/save-queue.js";
 import { registerAppServiceWorker } from "./src/sync/service-worker.js";
 import {
   backupDownloadName,
@@ -1354,7 +1366,7 @@ const appTailControllerDeps = {
   lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState, layoutCreateModeState,
   layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage,
   layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys, legacyComparableTopLevelDiffKeysForSync,
-  legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged, listRecordVisibility,
+  legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged, listRecordVisibility,
   loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState, loadCurrentHistoryComparisonState,
   loadCurrentServerStateDirectly, loadGuestPublishedDemoOnStartup, loadPublishedDemoState, loadPublishedTemplateCopySourceValue, loadRecoverySnapshots,
   loadRemoteHistory, loadRemoteState, loadRemoteStateFlow, loadSharedLayoutPayload, loadState,
@@ -1383,11 +1395,11 @@ const appTailControllerDeps = {
   openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog, openSharedListFromLink,
   orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible, parseContainerDimensionInput,
   parseVolumeInput, parseWeightInput, pendingGuestLocalLayoutCandidate, persistActiveLayoutSelection, persistStateSnapshot,
-  personalListApiUnavailable, photoCopyApiPath, photoDraftChanged, photoObjectUrls, photoRemoteSrc,
+  personalListApiUnavailable, photoCopyApiPath, photoDraftChanged, photoObjectUrls, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
-  printHtmlDocument, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
+  printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
   isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
@@ -1468,7 +1480,7 @@ const appTailControllerDeps = {
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
   uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
   upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
-  validateGuestImportSyncState, visibleItemLayoutPlacementLabels, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
+  validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
 };
 const {
@@ -3755,11 +3767,18 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
   }
 }
 
-function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900 } = {}) {
+function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900, publishNow = false, forcePublic = false } = {}) {
   solidifyTemplateDraftLayout(layoutId);
-  const targetIsPublic = isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout(layoutId);
+  const targetIsPublic = (forcePublic || isAdminPublicEditScope(modeState)) && isAdminEditablePublishedLayout(layoutId);
   saveState({ sync: !targetIsPublic });
-  if (targetIsPublic) schedulePublishedLayoutSave(layoutId, publishDelay);
+  if (targetIsPublic) {
+    if (publishNow) {
+      cancelPublishedLayoutSave(layoutId);
+      return savePublishedLayoutRecord(layoutId);
+    }
+    schedulePublishedLayoutSave(layoutId, publishDelay);
+  }
+  return null;
 }
 
 function hasLocalSyncChanges(baseState = loadBaseState()) {
@@ -5403,7 +5422,9 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
   photoUploadInFlight = true;
   try {
     for (const entry of uploadEntries) {
-      const uploaded = await uploadEntityPhotoToPath(path, listId, entry.entity, entry.photo, entry.entityType);
+      const uploaded = await uploadEntityPhotoToPath(path, listId, entry.entity, entry.photo, entry.entityType, {
+        dropMissingRemotePhoto: true
+      });
       changed = uploaded || changed;
     }
   } finally {
@@ -5416,7 +5437,10 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
   return changed;
 }
 
-async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item", { onPhotoProgress = null } = {}) {
+async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item", {
+  dropMissingRemotePhoto = false,
+  onPhotoProgress = null
+} = {}) {
   const sourcePhoto = photo;
   let activePhoto = photo;
   const resolvePhoto = () => {
@@ -5430,6 +5454,25 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   };
   const localId = photo.localId || photo.id;
   const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType, { uploadPath: path });
+  if (copiedOnServer === "missing-source") {
+    const targetPhoto = resolvePhoto();
+    if (dropMissingRemotePhoto && removeRecordPhotoReference(entity, targetPhoto)) {
+      const changedAt = nowIso();
+      clearPhotoUploadProgress(targetPhoto);
+      if (entityType === "container") touchContainer(entity.id, changedAt);
+      else touchItem(entity.id, changedAt);
+      return true;
+    }
+    targetPhoto.status = "missing-local-file";
+    targetPhoto.error = "Файл фото не найден на сервере.";
+    targetPhoto.updatedAt = nowIso();
+    delete targetPhoto._copyToCurrentList;
+    delete targetPhoto.copyToCurrentList;
+    clearPhotoUploadProgress(targetPhoto);
+    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+    else touchItem(entity.id, targetPhoto.updatedAt);
+    return true;
+  }
   if (copiedOnServer) return true;
   updatePhotoProgress(resolvePhoto(), 0);
   const uploadSource = await getPhotoUploadSource(photo, localId);
@@ -5577,6 +5620,7 @@ async function copyRemotePhotoToList(listId, entity, photo, entityType = "item",
     else touchItem(entity.id, photo.updatedAt);
     return true;
   } catch (error) {
+    if (isMissingRemotePhotoCopyError(error)) return "missing-source";
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[bike-packing] Failed to copy remote photo through API; falling back to download/upload.", {
         copyPath,
@@ -5606,6 +5650,7 @@ async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item")
   if (!currentUser || isForcedOffline() || !photo?.id) return;
   if (isAdminEditablePublishedLayout(getPublishedEditLayoutId())) return;
   if (isReadOnlyBikePackingContext()) return;
+  if (hasRemotePhotoUrl(photo) && !photoRecordIdMatchesRemoteSource(photo)) return;
   try {
     const listId = await ensureCurrentPackingListId();
     if (hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId)) return;
@@ -6732,8 +6777,7 @@ async function enterSignedOutPublicMode(message = "") {
   updateSyncUi(message || currentPublicTemplateStatusMessage());
 }
 
-async function saveRemoteState(options = {}) {
-  return saveRemoteStateFlow({
+const queuedSaveRemoteState = createQueuedRemoteSave((options = {}) => saveRemoteStateFlow({
     runtime: {
       get currentUser() { return currentUser; },
       get state() { return state; },
@@ -6748,6 +6792,7 @@ async function saveRemoteState(options = {}) {
       handleRemoteSaveConflict,
       hasLegacyPayloadChanges,
       legacyComparableTopLevelDiffKeys,
+      preflightRemoteSaveConflict,
       isDemoPublicTemplateMissing,
       isNetworkError,
       isReadOnlyBikePackingContext,
@@ -6763,7 +6808,7 @@ async function saveRemoteState(options = {}) {
       rememberRemoteIntegrityMeta,
       repairCollapsedActiveLayoutBeforeSave,
       saveBaseState,
-      saveRemoteState,
+      saveRemoteState: (nextOptions = {}) => saveRemoteState({ ...nextOptions, _reentrant: true }),
       saveRemoteStateRecord,
       saveSyncMeta,
       serializeState,
@@ -6773,7 +6818,27 @@ async function saveRemoteState(options = {}) {
       updateSyncUi,
       uploadPendingPhotos
     }
-  }, options);
+  }, options));
+
+async function saveRemoteState(options = {}) {
+  return queuedSaveRemoteState(options);
+}
+
+async function preflightRemoteSaveConflict({ notify = false, preferredLayout = null } = {}) {
+  return preflightRemoteSaveConflictFlow({
+    currentUser,
+    fetchRemoteListFreshnessRecord,
+    fetchRemoteListStateSnapshot,
+    handleRemoteSaveConflict,
+    isForcedOffline,
+    isPublicLayoutContext,
+    isSharedListLinkRoute,
+    listId: currentPackingListId || remoteRecordId(currentPackingListMeta) || syncMeta.listId,
+    notify,
+    preferredLayout,
+    remoteUpdatedAt,
+    syncMeta
+  });
 }
 
 async function handleRemoteSaveConflict(error, options = {}) {
@@ -7267,8 +7332,14 @@ function isLayoutMeaningful(layoutId, targetState = state) {
   return (layout.rootContainerIds || []).reduce((sum, containerId) => sum + visit(containerId), 0) > 0;
 }
 
-function removeLayoutTree(layoutId, targetState = state, { save = true } = {}) {
-  const removed = removeLayoutTreeFromState(targetState, layoutId);
+function removeLayoutTree(layoutId, targetState = state, {
+  deleteUnreferencedEntities = null,
+  save = true
+} = {}) {
+  const layout = targetState?.layouts?.[layoutId] || null;
+  const removed = removeLayoutTreeFromState(targetState, layoutId, {
+    deleteUnreferencedEntities: deleteUnreferencedEntities ?? isDisposableManagedPublicDraft(layout)
+  });
   if (removed && save && targetState === state) saveState({ sync: false });
   return removed;
 }
@@ -7793,7 +7864,7 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
   }
   markRecentlyAddedItem(copiedItemId, targetLayoutId);
   await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId], { changedAt });
-  saveLayoutMutation(targetLayoutId);
+  await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   render();
@@ -8222,7 +8293,7 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
       okText: "Дублировать",
       alternateText: missingPlan.canCopyMissingItems ? "Только недостающие" : "",
       cancelText: "Не копировать",
-      highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
+      highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} контейнеров/пакетов и ${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
       tone: "safe"
     });
     if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing-local";
@@ -8256,8 +8327,13 @@ async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayo
   if (!targetLayout || !plan.canCopyMissingItems) return 0;
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const photoDuplicateOptions = photoDuplicateOptionsForLayoutCopy({
+    targetIsPublic,
+    sourceIsPublicCopy: true
+  });
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
   let copiedCount = 0;
+  let firstCopiedItemId = "";
   for (const entry of plan.missingItems) {
     const sourceItem = publicSourceSnapshot.items?.[entry.sourceItemId] || sourceSnapshot.items?.[entry.sourceItemId];
     if (!sourceItem || !state.containers?.[entry.targetContainerId]) continue;
@@ -8267,12 +8343,13 @@ async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayo
       applyLayoutArrangement,
       changedAt,
       cloneEntity: cloneIsolatedPublicEntity,
-      copyPhotos: copyRecordPhotosForLocalDuplicate,
+      copyPhotos: (record, options) => copyRecordPhotosForLocalDuplicate(record, { ...options, ...photoDuplicateOptions }),
       currentEditMeta,
       id: copyId,
       mapRecordToTarget: (record) => {
         if (targetIsPublic) {
           record.publicCatalogLayoutId = targetLayoutId;
+          markRecordPhotosForCurrentListCopy(record);
         } else {
           markRecordPhotosForCurrentListCopy(record);
           stripPublicOriginForPrivateCopy(record);
@@ -8286,39 +8363,74 @@ async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayo
       continue;
     }
     markRecentlyAddedItem(copyId, targetLayoutId);
+    if (!firstCopiedItemId) firstCopiedItemId = copyId;
     copiedCount += 1;
   }
   if (!copiedCount) return 0;
-  saveLayoutMutation(targetLayoutId);
+  await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
   openCopiedTargetLayout(targetLayoutId);
+  pendingPackingScroll = null;
   refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
   renderSharedLayouts();
+  if (firstCopiedItemId) requestAnimationFrame(() => focusRecentlyAddedItem(firstCopiedItemId));
   showToast(`${copiedCount} вещей добавлено без дублей.`, "success");
   return copiedCount;
 }
 
-function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId) {
+async function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId) {
   const targetLayout = state.layouts[targetLayoutId];
   const plan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
   if (!targetLayout || !plan.canCopyMissingItems) return 0;
-  ensureWritableTargetLayoutContext(targetLayoutId);
+  const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
+  let firstAddedItemId = "";
+  const firstRestoredContainerId = plan.missingContainers.find((entry) =>
+    state.containers?.[entry?.sourceContainerId]
+  )?.sourceContainerId || "";
+  const restored = linkMissingContainerTreeToLayoutState(state, sourceSnapshot, targetLayoutId, {
+    changedAt,
+    missingContainers: plan.missingContainers,
+    missingItems: plan.missingItems,
+    normalizeLayoutArrangement,
+    touchLayout
+  });
+  if (targetLayoutId === state.activeLayoutId && restored.containerCount) applyLayoutArrangement(targetLayoutId);
   let copiedCount = 0;
   plan.missingItems.forEach((entry) => {
+    if (getLayoutItemIdSet(targetLayout).has(entry.sourceItemId)) return;
     if (!state.items?.[entry.sourceItemId] || !state.containers?.[entry.targetContainerId]) return;
     if (!placeExistingItemInLayout(entry.sourceItemId, entry.targetContainerId, targetLayoutId, { changedAt })) return;
     markRecentlyAddedItem(entry.sourceItemId, targetLayoutId);
+    if (!firstAddedItemId) firstAddedItemId = entry.sourceItemId;
     copiedCount += 1;
   });
-  if (!copiedCount) return 0;
-  saveLayoutMutation(targetLayoutId);
+  if (!firstAddedItemId && restored.itemCount) {
+    const layoutItemIds = getLayoutItemIdSet(targetLayout);
+    firstAddedItemId = plan.missingItems.find((entry) =>
+      state.items?.[entry.sourceItemId] && layoutItemIds.has(entry.sourceItemId)
+    )?.sourceItemId || "";
+    if (firstAddedItemId) markRecentlyAddedItem(firstAddedItemId, targetLayoutId);
+  }
+  const changedCount = copiedCount + restored.containerCount + restored.itemCount;
+  if (!changedCount) return 0;
+  if (firstRestoredContainerId && restored.containerCount) markRecentlyAddedContainer(firstRestoredContainerId, targetLayoutId);
+  await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
   openCopiedTargetLayout(targetLayoutId);
+  pendingPackingScroll = null;
   refs.containerPickerDialog.close();
+  closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
   renderSharedLayouts();
-  showToast(`${copiedCount} вещей добавлено без дублей.`, "success");
-  return copiedCount;
+  if (firstRestoredContainerId && restored.containerCount) {
+    requestAnimationFrame(() => focusRecentlyAddedContainer(firstRestoredContainerId));
+  } else if (firstAddedItemId) {
+    requestAnimationFrame(() => focusRecentlyAddedItem(firstAddedItemId));
+  }
+  showToast(`${changedCount} элементов добавлено без дублей.`, "success");
+  return changedCount;
 }
 
 async function copySharedLayout(layoutId) {
@@ -8457,6 +8569,7 @@ function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
   return mergePublishedSharedStateIntoAdminLayoutValue(layout, editableLayout, {
     changedAt: nowIso(),
     clone,
+    copyPublishedContainerToState,
     ensureLayoutDictionaries,
     hasRemotePhotoUrl,
     normalizeLayoutArrangement,
@@ -8658,6 +8771,12 @@ function selectedHistoryDemoTarget() {
   };
 }
 
+function historySharedTemplateSelectOptions() {
+  return historySharedTemplateOptions(allSharedLayoutsByAdminOrder(), {
+    languageLabel: languageOptionLabel
+  });
+}
+
 function renderHistorySourceControls() {
   if (!refs.historySourceControls) return;
   const admin = canOpenAdminPublishedEdit();
@@ -8678,12 +8797,12 @@ function renderHistorySourceControls() {
   }
   if (refs.historySharedField) refs.historySharedField.hidden = activeHistorySource !== "shared";
   if (refs.historySharedSelect) {
-    const sharedOptions = currentSharedLayouts();
+    const sharedOptions = historySharedTemplateSelectOptions();
     const selected = refs.historySharedSelect.value ||
       (activeReadOnlyLayoutId() !== DEMO_SHARED_LAYOUT_ID ? activeReadOnlyLayoutId() : "") ||
       sharedOptions[0]?.id ||
       "";
-    fillSelect(refs.historySharedSelect, sharedOptions.map((layout) => [layout.id, layout.name]), selected);
+    fillSelect(refs.historySharedSelect, sharedOptions.map((layout) => [layout.id, layout.label]), selected);
   }
 }
 
@@ -8715,7 +8834,7 @@ async function loadCurrentHistoryComparisonState(source = activeHistorySource) {
     return normalizePublishedStatePayload(payload);
   }
   if (source === "shared") {
-    const sharedId = refs.historySharedSelect?.value || currentSharedLayouts()[0]?.id || "";
+    const sharedId = refs.historySharedSelect?.value || historySharedTemplateSelectOptions()[0]?.id || "";
     if (!sharedId) return null;
     const payload = await fetchStateRecordByItemKey(sharedLayoutItemKey(sharedId));
     return normalizePublishedStatePayload(payload);
@@ -8733,7 +8852,7 @@ async function loadRemoteHistory(source = "private") {
       target.language
     );
   } else if (source === "shared") {
-    const sharedId = refs.historySharedSelect?.value || currentSharedLayouts()[0]?.id || "";
+    const sharedId = refs.historySharedSelect?.value || historySharedTemplateSelectOptions()[0]?.id || "";
     if (!sharedId) throw new Error("Нет shared-укладок для истории.");
     path = `/bike-packing/admin/shared-layouts/${encodeURIComponent(sharedId)}/history`;
   } else {
@@ -8980,7 +9099,7 @@ function selectedHistoryPublishedTarget() {
     };
   }
   if (activeHistorySource !== "shared") return null;
-  const sharedId = refs.historySharedSelect?.value || currentSharedLayouts()[0]?.id || "";
+  const sharedId = refs.historySharedSelect?.value || historySharedTemplateSelectOptions()[0]?.id || "";
   return sharedId ? { type: "shared", sharedId } : null;
 }
 

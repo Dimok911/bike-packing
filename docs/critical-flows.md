@@ -1,92 +1,134 @@
-# Critical flows
+# Критические сценарии
 
-These flows are treated as app contracts. A change that touches a `CRITICAL:` marker
-or one of the files listed here should run `npm.cmd run test:critical` in addition
-to `npm.cmd run check`.
+Эти сценарии считаются контрактами приложения. Если правка затрагивает маркер
+`CRITICAL:` или один из связанных файлов, нужно запускать `npm.cmd run
+test:critical` дополнительно к `npm.cmd run check`.
 
 ## CRITICAL: offline-start
 
-- A cached app shell must open without internet on iOS/PWA.
-- `sw.js` must refresh navigation HTML from network while online, then fall
-  back to cached `index.html` while offline.
-- A service worker update must activate a waiting worker via `SKIP_WAITING`,
-  otherwise iOS can keep an old cache active for offline launches.
-- Versioned browser assets must stay aligned across:
+- Кэшированный app shell должен открываться без интернета на iOS/PWA.
+- `sw.js` в онлайне должен обновлять navigation HTML из сети, а в офлайне
+  возвращать кэшированный `index.html`.
+- Обновление service worker должно активировать waiting worker через
+  `SKIP_WAITING`, иначе iOS может продолжать держать старый offline-cache.
+- Версии браузерных ассетов должны обновляться синхронно:
   - `src/config/constants.js` -> `APP_VERSION`
-  - `index.html` -> `styles.css?v=...` and `app.js?v=...`
-  - `sw.js` -> `CACHE_NAME` and `ASSETS`
+  - `index.html` -> `styles.css?v=...` и `app.js?v=...`
+  - `sw.js` -> `CACHE_NAME` и `ASSETS`
 
 ## CRITICAL: offline-auth-scope
 
-- If a user did not explicitly sign out, offline startup should open the same
-  local private storage scope that was used while online.
-- Remembered scope lookup priority:
-  - exact saved auth storage scope
-  - direct `id:<user-id>` / `email:<email>` scope
-  - legacy scope matched by `syncMeta.accountEmail`
-  - the only private scope on the device, if there is exactly one
-- Explicit sign-out must disable private offline access.
+- Если пользователь явно не вышел из аккаунта, offline-start должен открыть тот
+  же локальный приватный storage scope, который использовался онлайн.
+- Приоритет поиска remembered scope:
+  - точный сохраненный auth storage scope
+  - прямой `id:<user-id>` / `email:<email>` scope
+  - legacy scope, совпавший по `syncMeta.accountEmail`
+  - единственный приватный scope на устройстве, если он ровно один
+- Явный sign-out должен отключать приватный offline-доступ.
 
 ## CRITICAL: offline-photos
 
-- When offline or forced-offline, photos with local `id/localId` should prefer
-  IndexedDB object URLs over remote `thumbUrl/url`.
-- Remote-only photos can only appear offline if they were already cached by the
-  browser or copied into IndexedDB.
+- В офлайне или forced-offline фото с локальным `id/localId` должны
+  предпочитать IndexedDB object URL вместо удаленного `thumbUrl/url`.
+- Remote-only фото могут появиться офлайн только если уже есть в браузерном
+  кэше или были скопированы в IndexedDB.
+- При размещении существующей вещи/сумки в другой пользовательской укладке фото
+  не копируются физически: целевая укладка получает ссылку на тот же `id` из
+  общего каталога, а фото остаются ссылками на те же файлы в том же приватном
+  list. Если пользователь явно создает дубль специальной кнопкой на карточке,
+  тогда появляется новая запись каталога.
+- Вложенный пакет/список внутри сумки является layout-scoped структурой. При
+  переносе в другую пользовательскую укладку он получает новую вложенную
+  структуру в целевой укладке, но remote-фото в том же приватном namespace
+  остаются `synced` ссылками на существующие `url/thumbUrl`; `_copyToCurrentList`
+  для них ставить нельзя.
+- Физическое копирование фото и маркер `_copyToCurrentList` допустимы только
+  при пересечении границы шаблона: пользовательская укладка -> шаблон,
+  шаблон -> пользовательская укладка или шаблон -> другой шаблон. Подробный
+  контракт лежит в `docs/copy-mechanics.md`.
 
 ## CRITICAL: touch-click-timing
 
-- Touch/click/drag delays are fragile on iPhone and were tuned by hand.
-- Do not change timeout constants or literal delays around tap, double-click,
-  hold-to-drag, nested container open/close, drag start, or touch cancel unless
-  the exact regression requires it.
-- Current sensitive values include:
+- Touch/click/drag задержки хрупкие на iPhone и подбирались вручную.
+- Не менять timeout-константы и literal delays вокруг tap, double-click,
+  hold-to-drag, открытия/закрытия вложенных контейнеров, drag start или touch
+  cancel без точной причины регрессии.
+- Чувствительные значения:
   - `TOUCH_DRAG_DELAY_MS`
   - `TOUCH_DRAG_CANCEL_DISTANCE`
   - `TOUCH_SCROLL_CANCEL_DISTANCE`
   - `NESTED_GROUP_HOVER_DELAY_MS`
-  - the `180ms` single-click delay used for desktop subcontainer title
-    double-click editing
-- If a mobile tap feels late, prefer input-type branching (`touch/coarse pointer`)
-  over changing shared desktop timing.
-- After touching this area, check at least: tap nested bag title, tap nested bag
-  arrow, double-click/desktop rename, hold-to-drag, scroll cancel on iPhone.
+  - `180ms` single-click delay для desktop double-click редактирования
+    заголовка вложенной сумки
+- Если мобильный tap ощущается поздним, сначала делать ветвление по input type
+  (`touch/coarse pointer`), а не менять общий desktop timing.
+- После правок в этой зоне проверить минимум: tap по заголовку вложенной сумки,
+  tap по стрелке вложенной сумки, double-click/desktop rename, hold-to-drag,
+  scroll cancel на iPhone.
 
 ## CRITICAL: sync-save
 
-- Local changes made offline must remain dirty and should not be overwritten by
-  remote state until auth and server freshness are checked.
-- Suspicious empty local states must not be uploaded over meaningful server data.
-- Background freshness polling must not fetch the full list payload. Use a
-  lightweight metadata endpoint first, and fetch `/state` only after
-  `updatedAt`/`stateRevision` changes or when the lightweight check is
-  unavailable.
+- Локальные изменения, сделанные офлайн, должны оставаться dirty и не должны
+  перетираться remote state до проверки auth и server freshness.
+- Подозрительно пустые локальные состояния нельзя загружать поверх осмысленных
+  серверных данных.
+- Background freshness polling не должен забирать полный payload списка. Сначала
+  использовать легкий metadata endpoint, а `/state` грузить только после
+  изменения `updatedAt`/`stateRevision` или если легкая проверка недоступна.
+- Прямые remote save должны выполняться последовательно. Параллельные сохранения
+  одного list легко дают ложный `/items/sync 409`, когда второй запрос уходит со
+  старым `baseStateRevision`.
+- `forceOverwrite` не должен отправлять entity-sync. Это полный save поверх
+  сервера после уже принятого решения о конфликте.
 
 ## CRITICAL: template-copy-delete
 
-- Shared/demo copy and delete flows involve frontend and `bikepacking-api`.
-- If API behavior changes, bump backend compatibility and frontend required
-  version/capabilities together.
-- Модель данных каталога единая для всех укладок:
+- Shared/demo copy и delete flows затрагивают frontend и `bikepacking-api`.
+- Если меняется API-поведение, одновременно поднимать backend compatibility и
+  frontend required version/capabilities.
+- Модель данных каталога единая для всех пользовательских укладок:
   - `state.items` - общий каталог вещей пользователя.
   - `state.containers` - общий каталог сумок, мест и групп.
-  - категории, места хранения и настройки - общие справочники, а не копии
-    на каждую укладку.
+  - категории, места хранения и настройки - общие справочники, а не копии на
+    каждую укладку.
+- Пользовательские укладки одного пользователя находятся в одном приватном
+  namespace: общий каталог, общие справочники и общий набор файлов фото.
+- Каждый отдельный шаблон, включая RU/EN варианты, находится в собственном
+  template namespace. У него свой каталог, свои placement/arrangement и свои
+  файлы фото.
 - Укладка хранит только сценарий размещения:
   - `state.layouts[layoutId].arrangement.rootContainerIds`
   - `state.layouts[layoutId].arrangement.containers`
   - `state.layouts[layoutId].arrangement.items`
   - `state.layouts[layoutId].arrangement.packedItems`
-- Одна и та же вещь или сумка может легально участвовать в нескольких
-  укладках под тем же `id`. Это не linked-delete bug, а нормальная ссылка на
-  общий каталог.
-- Нельзя клонировать вещи/сумки только потому, что они встречаются в нескольких
-  укладках. Такое клонирование раздувает вкладки "Вещи" и "Сумки", ломает
-  смысл общего каталога и резко замедляет рендер.
-- Удаление public/shared/demo/template-укладки должно удалять запись укладки и
-  её layout-only arrangement. Физически удалять запись из `state.items` или
-  `state.containers` можно только если после удаления на неё не ссылается ни
-  одна оставшаяся укладка.
+- Одна и та же вещь или сумка может легально участвовать в нескольких укладках
+  под тем же `id`, если эти укладки находятся в одном namespace. Это не
+  linked-delete bug, а нормальная ссылка на общий каталог.
+- Копирование через границу namespace, например пользовательская укладка ->
+  шаблон, шаблон -> пользовательская укладка или RU-шаблон -> EN-шаблон,
+  должно создавать записи в целевом namespace и отдельно обрабатывать фото.
+- Кнопка копирования/переноса в другую пользовательскую укладку не создает
+  дубль каталожной записи. Она добавляет в целевую укладку ссылку на тот же
+  `id` вещи или сумки.
+- Дубль вещи/сумки, который должен появиться во вкладках "Вещи" или "Сумки",
+  создается только специальной кнопкой дублирования на карточке. Такое действие
+  намеренно создает новую запись в `state.items` или `state.containers`.
+- Нельзя автоматически клонировать вещи/сумки только потому, что они встречаются
+  в нескольких укладках. Автоматическое клонирование раздувает вкладки "Вещи" и
+  "Сумки", ломает смысл общего каталога и резко замедляет рендер.
+- Удаление пользовательской укладки или удаление элемента из конкретной
+  пользовательской укладки должно удалять только запись укладки и/или
+  layout-only placement/arrangement. Это снятие ссылки с укладки, а не
+  физическое удаление вещи или сумки из общего каталога.
+- В пользовательском namespace физически удалять запись из `state.items` или
+  `state.containers` можно только по явному действию пользователя "Удалить
+  навсегда". Отсутствие ссылок из укладок само по себе не является разрешением
+  на автоматическое удаление каталожной записи.
+- Удаление целого template namespace, например опубликованного RU/EN шаблона или
+  его disposable draft, может удалить принадлежащие только этому namespace
+  записи каталога и фото. Это не то же самое, что убрать вещь/сумку из одной
+  пользовательской укладки.
 - Вкладки "Вещи", "Сумки" и "Настройки" не должны показывать отдельную копию
   одной и той же реальной вещи/сумки для каждой укладки. Пользовательские
   осознанные дубли допустимы, но технические `*-isolated-*` копии от старого

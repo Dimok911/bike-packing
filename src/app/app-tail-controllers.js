@@ -133,7 +133,7 @@ export function createAppTailControllers(ctx) {
     lastToastAt, lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState,
     layoutCreateModeState, layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus,
     layoutManageLanguage, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
-    legacyComparableTopLevelDiffKeysForSync, legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged,
+    legacyComparableTopLevelDiffKeysForSync, legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged,
     listRecordVisibility, loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState,
     loadCurrentHistoryComparisonState, loadCurrentServerStateDirectly, loadGuestPublishedDemoOnStartup, loadPublishedDemoState, loadPublishedTemplateCopySourceValue,
     loadRecoverySnapshots, loadRemoteHistory, loadRemoteState, loadRemoteStateFlow, loadSharedLayoutPayload,
@@ -166,7 +166,7 @@ export function createAppTailControllers(ctx) {
     photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
-    primaryItemPhoto, printHtmlDocument, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
+    primaryItemPhoto, printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
     publicCopySourceIdFromRecord, isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
@@ -245,7 +245,7 @@ export function createAppTailControllers(ctx) {
     updateSharedLayoutCatalogEntryMetadata, updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls,
     updateViewScopedControlsUi, uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos,
     upsertDemoTemplateCatalogEntry, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState,
-    userStorageScopeKey, validateGuestImportSyncState, visibleItemLayoutPlacementLabels, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
+    userStorageScopeKey, validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
   let dialogPhotoUploadPreviewFrame = null;
@@ -260,6 +260,10 @@ function localText(en, ru) {
 
 function quoteName(name) {
   return isEnglishUi() ? `“${name}”` : `«${name}»`;
+}
+
+function confirmLayoutNameHtml(name) {
+  return `<span class="confirm-layout-name">${escapeHtml(name || defaultLayoutName())}</span>`;
 }
 
 function defaultLayoutName() {
@@ -427,6 +431,8 @@ function updateRootContainerRemoveFromLayoutButton() {
   const canRemove = canRemoveContainerFromActiveLayout(runtime.editingRootContainerId);
   const label = isNested ? t("buttons.deleteForever") : t("forms.removeFromLayout");
   refs.rootContainerRemoveFromLayoutBtn.textContent = label;
+  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("delete-forever-button", isNested);
+  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("remove-from-layout-button", !isNested);
   refs.rootContainerRemoveFromLayoutBtn.setAttribute(
     "aria-label",
     isNested
@@ -471,7 +477,30 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
   if (!container || !layout || !canRemoveContainerFromActiveLayout(containerId)) return;
   const itemCount = getLayoutSubtreeItemCount(layout, containerId);
   const isRoot = getLayoutContainerRootStatus(layout, containerId);
-  const nestedSubject = localText("This nested pouch will be deleted forever.", "Этот вложенный пакет будет удалён навсегда.");
+  const layoutName = layout.name || defaultLayoutName();
+  const currentLayoutText = localText(`Current layout: ${layoutName}`, `Текущая укладка: ${layoutName}`);
+  const currentLayoutHtml = localText(
+    `Current layout: ${confirmLayoutNameHtml(layoutName)}`,
+    `Текущая укладка: ${confirmLayoutNameHtml(layoutName)}`
+  );
+  const nestedSubject = localText(
+    `This nested pouch will be deleted forever from the current layout ${layoutName}.`,
+    `Этот вложенный пакет будет удалён навсегда из текущей укладки ${layoutName}.`
+  );
+  const nestedSubjectHtml = localText(
+    `This nested pouch will be deleted forever from the current layout ${confirmLayoutNameHtml(layoutName)}.`,
+    `Этот вложенный пакет будет удалён навсегда из текущей укладки ${confirmLayoutNameHtml(layoutName)}.`
+  );
+  const affectedItemsText = itemCount
+    ? localText(
+      `${formatThingCount(itemCount)} from ${isRoot ? "this bag/place" : "this pouch"} will be removed from the layout and become outside the layout. Nested pouches inside will be deleted.`,
+      `${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут убраны из укладки и окажутся вне укладки. Вложенные пакеты внутри будут удалены.`
+    )
+    : "";
+  const emptyRootText = localText(
+    "This bag/place is already empty, so only the empty shell will leave the current layout.",
+    "Эта сумка/место уже пустые, поэтому из текущей укладки уйдёт только пустая оболочка."
+  );
   const confirmed = await askConfirmDialog({
     title: isRoot
       ? localText("Remove from layout?", "Убрать из укладки?")
@@ -482,22 +511,22 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
         `${quoteName(container.name)} исчезнет из текущей укладки.`
       )
       : localText(
-        `${quoteName(container.name)} will be deleted forever as a nested bag/place.`,
-        `${quoteName(container.name)} будет удалён навсегда как вложенная сумка/место.`
+        `${quoteName(container.name)} will be deleted forever from the current layout as a nested bag/place.`,
+        `${quoteName(container.name)} будет удалён навсегда из текущей укладки как вложенная сумка/место.`
       ),
     highlightText: itemCount
-      ? localText(
-        `${isRoot ? "" : `${nestedSubject}\n`}${formatThingCount(itemCount)} from ${isRoot ? "this bag/place" : "this pouch"} will be removed from the layout and become outside the layout. Nested pouches inside will be deleted.`,
-        `${isRoot ? "" : `${nestedSubject}\n`}${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут убраны из укладки и окажутся вне укладки. Вложенные пакеты внутри будут удалены.`
-      )
+      ? `${isRoot ? `${currentLayoutText}\n` : `${nestedSubject}\n`}${affectedItemsText}`
       : isRoot
-        ? localText(
-          "This bag/place is already empty, so only the empty shell will leave the current layout.",
-          "Эта сумка/место уже пустые, поэтому из текущей укладки уйдёт только пустая оболочка."
-        )
+        ? `${currentLayoutText}\n${emptyRootText}`
         : nestedSubject,
+    highlightHtml: itemCount
+      ? `${isRoot ? `${currentLayoutHtml}\n` : `${nestedSubjectHtml}\n`}${escapeHtml(affectedItemsText)}`
+      : isRoot
+        ? `${currentLayoutHtml}\n${escapeHtml(emptyRootText)}`
+        : nestedSubjectHtml,
     tone: itemCount || !isRoot ? "danger" : "safe",
-    okText: isRoot ? localText("Remove", "Убрать") : t("buttons.deleteForever")
+    okText: isRoot ? localText("Remove", "Убрать") : t("buttons.deleteForever"),
+    hideClose: true
   });
   if (confirmed) removeContainerFromLayoutWithAnimation(containerId);
 }
@@ -747,6 +776,7 @@ function createSubcontainerFromAddDialog(event) {
 
 function focusRecentlyAddedItem(itemId) {
   if (runtime.recentlyAddedLayoutId && runtime.recentlyAddedLayoutId !== state.activeLayoutId) return;
+  runtime.pendingPackingScroll = null;
   const card = refs.packingView.querySelector(`[data-item-id="${cssEscape(itemId)}"]`);
   if (!card) return;
   card.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
@@ -761,16 +791,29 @@ function focusRecentlyAddedItem(itemId) {
 
 function focusRecentlyAddedContainer(containerId) {
   if (runtime.recentlyAddedLayoutId && runtime.recentlyAddedLayoutId !== state.activeLayoutId) return;
-  const card = refs.packingView.querySelector(`[data-root-container-id="${cssEscape(containerId)}"], [data-subcontainer-id="${cssEscape(containerId)}"]`);
-  if (!card) return;
-  card.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-  window.setTimeout(() => {
-    if (runtime.recentlyAddedContainerId === containerId) {
-      runtime.recentlyAddedContainerId = "";
-      runtime.recentlyAddedLayoutId = "";
-      card.classList.remove("just-added");
+  runtime.pendingPackingScroll = null;
+  const selector = `[data-root-container-id="${cssEscape(containerId)}"], [data-subcontainer-id="${cssEscape(containerId)}"]`;
+  const scrollToCard = (card, behavior = "smooth") => {
+    card.scrollIntoView({ block: "center", inline: "center", behavior });
+    syncFixedScrollbarVisibility();
+  };
+  const tryFocus = (remaining = 4) => {
+    const card = refs.packingView.querySelector(selector);
+    if (!card) {
+      if (remaining > 0) requestAnimationFrame(() => tryFocus(remaining - 1));
+      return;
     }
-  }, 1700);
+    scrollToCard(card, remaining === 4 ? "smooth" : "auto");
+    if (remaining > 0) requestAnimationFrame(() => scrollToCard(card, "auto"));
+    window.setTimeout(() => {
+      if (runtime.recentlyAddedContainerId === containerId) {
+        runtime.recentlyAddedContainerId = "";
+        runtime.recentlyAddedLayoutId = "";
+        card.classList.remove("just-added");
+      }
+    }, 1700);
+  };
+  tryFocus();
 }
 
 function fillSelect(select, entries, selected = "") {
@@ -1294,32 +1337,31 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic) {
+    if (layoutContainsItem(targetLayoutId, itemId)) {
+      const duplicate = await askConfirmDialog({
+        title: "Вещь уже есть в этой укладке",
+        text: `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`,
+        okText: "Дублировать",
+        cancelText: "Не копировать",
+        tone: "safe"
+      });
+      if (duplicate) {
+        await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+        return;
+      }
+      refs.containerPickerDialog.close();
+      showToast("Копирование пропущено: вещь уже есть в целевой укладке.", "success");
+      return;
+    }
+    if (linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
+    return;
+  }
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
   const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
   if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, source.name))) return;
   }
-  if (!targetIsPublic && layoutContainsItem(targetLayoutId, itemId)) {
-    const duplicate = await askConfirmDialog({
-      title: "Вещь уже есть в этой укладке",
-      text: `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`,
-      okText: "Дублировать",
-      cancelText: "Не копировать",
-      tone: "safe"
-    });
-    if (!duplicate) {
-      refs.containerPickerDialog.close();
-      showToast("Копирование пропущено: вещь уже есть в целевой укладке.", "success");
-      return;
-    }
-    await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
-    return;
-  }
-  if (
-    !targetIsPublic &&
-    !hasPrivateSyncBlockedPublicOrigin(source, itemId) &&
-    linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)
-  ) return;
   await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
 }
 
@@ -1379,6 +1421,14 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
   const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
     Boolean(publicCopySourceIdFromRecord(sourceSnapshot, "item", itemId));
+  const shouldCopyPhotosToCurrentList = shouldCopyPhotosToCurrentListForLayoutCopy({
+    targetIsPublic,
+    sourceIsPublicCopy
+  });
+  const photoDuplicateOptions = photoDuplicateOptionsForLayoutCopy({
+    targetIsPublic,
+    sourceIsPublicCopy
+  });
   const copyId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const copied = await duplicateItemToContainerInLayoutState(state, itemId, targetContainerId, targetLayoutId, {
     activeLayoutId: state.activeLayoutId,
@@ -1386,14 +1436,15 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
     changedAt,
     cloneEntity: cloneIsolatedPublicEntity,
     copyName: makeItemCopyName,
-    copyPhotos: copyRecordPhotosForLocalDuplicate,
+    copyPhotos: (record, options) => copyRecordPhotosForLocalDuplicate(record, { ...options, ...photoDuplicateOptions }),
     currentEditMeta,
     id: copyId,
     mapRecordToTarget: (record) => {
       if (targetIsPublic) {
         record.publicCatalogLayoutId = targetLayoutId;
-      } else {
-        markRecordPhotosForCurrentListCopy(record);
+      }
+      if (shouldCopyPhotosToCurrentList) markRecordPhotosForCurrentListCopy(record);
+      if (!targetIsPublic) {
         stripPublicOriginForPrivateCopy(record);
       }
     },
@@ -1405,7 +1456,7 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
     return;
   }
   markRecentlyAddedItem(copyId, targetLayoutId);
-  saveLayoutMutation(targetLayoutId);
+  await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
@@ -1437,22 +1488,36 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
   if (copyAction === "cancel") return;
   if (copyAction === "copy-missing") {
-    await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    const copiedCount = await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    if (copiedCount) closeSourceEditorAfterCopy("container", sourceSnapshot.rootId || containerId);
     return;
   }
   if (copyAction === "copy-missing-local") {
-    copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    const copiedCount = await copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
+    if (copiedCount) closeSourceEditorAfterCopy("container", sourceSnapshot.rootId || containerId);
     return;
   }
   if (!targetIsPublic) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
-    if (duplicates.containerIds.length || duplicates.itemIds.length) {
+    const route = privateContainerTreeCopyRoute({
+      copyAction,
+      duplicateContainerIds: duplicates.containerIds,
+      duplicateItemIds: duplicates.itemIds
+    });
+    if (route === "link-existing") {
+      if (!linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId, { targetIndex })) {
+        showToast("Не удалось добавить сумку или пакет в выбранную укладку.", "error");
+      }
+      return;
+    }
+    if (route === "duplicate-explicit") {
       await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
         sourceContainerId: containerId,
         targetIndex
       });
       return;
     }
+    return;
   }
   await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: containerId,
@@ -1520,6 +1585,14 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
   const sourceIsPublicCopy = publicSource ||
     snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
+  const shouldCopyPhotosToCurrentList = shouldCopyPhotosToCurrentListForLayoutCopy({
+    targetIsPublic,
+    sourceIsPublicCopy
+  });
+  const photoDuplicateOptions = photoDuplicateOptionsForLayoutCopy({
+    targetIsPublic,
+    sourceIsPublicCopy
+  });
   const mapPublicOrigin = (record, sourceRecord, kind, sourceId) => {
     const publicSourceId = publicCopySourceIdFromRecord(sourceRecord, kind, sourceId) || sourceId;
     const marked = markPrivateCopyOriginFromSource(record, sourceRecord, kind, sourceId);
@@ -1538,47 +1611,57 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
     if (!record) return;
     if (targetIsPublic) {
       record.publicCatalogLayoutId = targetLayoutId;
-    } else {
-      markRecordPhotosForCurrentListCopy(record);
+    }
+    if (shouldCopyPhotosToCurrentList) markRecordPhotosForCurrentListCopy(record);
+    if (!targetIsPublic) {
       stripPublicOriginForPrivateCopy(record);
     }
   };
-  const targetContainerSet = getLayoutContainerIdSet(targetLayout);
-  if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return "";
+  const duplicateIntoTargetLayout = async () => {
+    const activeTargetLayout = state.layouts[targetLayoutId];
+    const targetContainerSet = getLayoutContainerIdSet(activeTargetLayout);
+    if (targetParentId && (!state.containers[targetParentId] || !targetContainerSet.has(targetParentId))) return "";
 
-  const {
-    rootId: nextRootId,
-    copiedPlacements,
-    copiedItemContainers
-  } = await duplicateContainerSnapshotRecords(sourceSnapshot, {
-    changedAt,
-    cloneEntity: cloneIsolatedPublicEntity,
-    copyContainerName: makeContainerCopyName,
-    copyPhotos: copyRecordPhotosForLocalDuplicate,
-    currentEditMeta,
-    mapPublicOrigin,
-    mapRecordToTarget,
-    normalizeContainerColor,
-    sourceIsPublicCopy,
-    targetParentId: targetParentId || null,
-    targetState: state
-  });
+    const {
+      rootId: nextRootId,
+      copiedPlacements,
+      copiedItemContainers
+    } = await duplicateContainerSnapshotRecords(sourceSnapshot, {
+      changedAt,
+      cloneEntity: cloneIsolatedPublicEntity,
+      copyContainerName: makeContainerCopyName,
+      copyPhotos: (record, options) => copyRecordPhotosForLocalDuplicate(record, { ...options, ...photoDuplicateOptions }),
+      currentEditMeta,
+      mapPublicOrigin,
+      mapRecordToTarget,
+      normalizeContainerColor,
+      sourceIsPublicCopy,
+      targetParentId: targetParentId || null,
+      targetState: state
+    });
+    if (!nextRootId) return "";
+
+    const placed = placeDuplicatedContainerSnapshotInLayoutState(state, targetLayoutId, nextRootId, {
+      changedAt,
+      copiedItemContainers,
+      copiedPlacements,
+      normalizeLayoutArrangement,
+      targetParentId,
+      targetIndex,
+      touchContainer,
+      touchLayout
+    });
+    if (!placed) return "";
+    if (targetLayoutId === state.activeLayoutId) applyLayoutArrangement(targetLayoutId);
+    markRecentlyAddedContainer(nextRootId, targetLayoutId);
+    await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
+    return nextRootId;
+  };
+
+  const nextRootId = targetLayoutId === state.activeLayoutId
+    ? await duplicateIntoTargetLayout()
+    : await withLayoutArrangementAppliedAsync(targetLayoutId, duplicateIntoTargetLayout);
   if (!nextRootId) return "";
-
-  const placed = placeDuplicatedContainerSnapshotInLayoutState(state, targetLayoutId, nextRootId, {
-    changedAt,
-    copiedItemContainers,
-    copiedPlacements,
-    normalizeLayoutArrangement,
-    targetParentId,
-    targetIndex,
-    touchContainer,
-    touchLayout
-  });
-  if (!placed) return "";
-  if (targetLayoutId === state.activeLayoutId) applyLayoutArrangement(targetLayoutId);
-  markRecentlyAddedContainer(nextRootId, targetLayoutId);
-  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("container", sourceContainerId || sourceSnapshot.rootId);
@@ -3142,7 +3225,8 @@ async function confirmDeleteCatalogItems(itemIds) {
     text: `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`,
     highlightText: selectionNames(ids.map((id) => state.items[id])),
     okText: "Удалить",
-    tone: "danger"
+    tone: "danger",
+    hideClose: true
   });
   if (!confirmed) return;
   ids.forEach((id) => deleteItemForever(id, { cleanupContainers: false, renderAfter: false }));
@@ -3184,7 +3268,8 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
     text: `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`,
     highlightText: selectionNames(ids.map((id) => state.containers[id])),
     okText: "Удалить",
-    tone: "danger"
+    tone: "danger",
+    hideClose: true
   });
   if (!confirmed) return;
   ids.forEach((id) => deleteRootContainer(id));
@@ -3632,6 +3717,7 @@ function confirmRemoveItemFromActiveLayout(itemId) {
     highlightText: t("items.removeFromLayoutHighlight"),
     okText: t("items.removeFromLayoutOk"),
     tone: "danger",
+    hideClose: true,
     onConfirm: () => removeItemFromActiveLayout(itemId)
   });
 }
@@ -3648,7 +3734,8 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
     text: t("items.removeFromLayoutText", { name: item.name }),
     highlightText: t("items.removeFromLayoutHighlight"),
     okText: t("items.removeFromLayoutOk"),
-    tone: "danger"
+    tone: "danger",
+    hideClose: true
   });
   if (!confirmed) return;
   refs.dialog?.close("remove-from-layout");
@@ -3667,10 +3754,15 @@ function confirmDeleteEditingItemForever(event) {
 function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   const item = state.items[itemId];
   if (!item) return;
-  const placements = describeVisibleItemLayoutPlacements(item);
+  const placements = describeVisibleItemLayoutPlacementRows(item);
   const placementText = placements.length
-    ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement}`).join("\n")}`
+    ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement.label}`).join("\n")}`
     : t("items.deleteOutside");
+  const placementHtml = placements.length
+    ? `${escapeHtml(t("items.deleteUsedNow"))}\n${placements.map((placement) =>
+      `- ${confirmLayoutNameHtml(placement.layoutName)}: ${escapeHtml(placement.placeText)}`
+    ).join("\n")}`
+    : escapeHtml(t("items.deleteOutside"));
   openConfirmDialog({
     title: "Delete item forever?",
     text: `“${item.name}” will be deleted from the item list and from every layout. This action cannot be undone.`,
@@ -3678,6 +3770,7 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
     okText: "Delete",
     tone: placements.length ? "danger" : "safe",
     ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length), t }),
+    highlightHtml: placementHtml,
     onConfirm: () => {
       deleteItemForever(itemId);
       afterConfirm?.();
@@ -3685,8 +3778,27 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   });
 }
 
+function describeVisibleItemLayoutPlacementRows(item) {
+  return visibleItemLayoutPlacementsForState(state, item, { containerPath }).map((placement) => {
+    const rootText = isEnglishUi()
+      ? `bag ${quoteName(placement.rootName)}`
+      : `сумка ${quoteName(placement.rootName)}`;
+    const placeText = placement.isRoot
+      ? rootText
+      : isEnglishUi()
+        ? `${rootText}, place ${quoteName(placement.path)}`
+        : `${rootText}, место ${quoteName(placement.path)}`;
+    return {
+      ...placement,
+      layoutName: placement.layoutName || defaultLayoutName(),
+      placeText,
+      label: `${placement.layoutName || defaultLayoutName()}: ${placeText}`
+    };
+  });
+}
+
 function describeVisibleItemLayoutPlacements(item) {
-  return visibleItemLayoutPlacementLabels(state, item, { containerPath });
+  return describeVisibleItemLayoutPlacementRows(item).map((placement) => placement.label);
 }
 
 function deleteItemPhotos(item, itemId) {
@@ -3794,26 +3906,39 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
   const itemCount = getContainerItemIdsDeep(containerId).length;
-  const layoutNames = Object.values(state.layouts)
+  const layoutRows = Object.values(state.layouts)
     .filter((layout) => (layout.rootContainerIds || []).includes(containerId))
-    .map((layout) => layout.name);
-  const layoutText = layoutNames.length
-    ? `${t("rootContainers.deleteUsedInLayouts")}\n${layoutNames.map((name) => `- ${name}`).join("\n")}`
+    .map((layout) => ({
+      id: layout.id || "",
+      name: layout.name || defaultLayoutName()
+    }));
+  const layoutText = layoutRows.length
+    ? `${t("rootContainers.deleteUsedInLayouts")}\n${layoutRows.map((layout) => `- ${layout.name}`).join("\n")}`
     : t("rootContainers.deleteUnused");
+  const layoutHtml = layoutRows.length
+    ? `${escapeHtml(t("rootContainers.deleteUsedInLayouts"))}\n${layoutRows.map((layout) =>
+      `- ${confirmLayoutNameHtml(layout.name)}`
+    ).join("\n")}`
+    : escapeHtml(t("rootContainers.deleteUnused"));
   const itemsText = itemCount
     ? `\n${t("rootContainers.deleteItemsRemain", { count: formatThingCount(itemCount) })}`
+    : "";
+  const itemsHtml = itemCount
+    ? `\n${escapeHtml(t("rootContainers.deleteItemsRemain", { count: formatThingCount(itemCount) }))}`
     : "";
   openConfirmDialog({
     title: "Удалить сумку или место?",
     text: `«${container.name}» будет удалено из списка сумок и мест и из всех укладок.`,
     highlightText: `${layoutText}${itemsText}`,
     okText: "Удалить",
-    tone: layoutNames.length || itemCount ? "danger" : "safe",
+    tone: layoutRows.length || itemCount ? "danger" : "safe",
     ...rootContainerDeleteConfirm({
       container,
       layoutText,
+      layoutHtml,
       itemsText,
-      risky: Boolean(layoutNames.length || itemCount),
+      itemsHtml,
+      risky: Boolean(layoutRows.length || itemCount),
       t
     }),
     onConfirm: () => {
@@ -4384,11 +4509,11 @@ function openLayoutDialog() {
 
 function updateLayoutCopyVisibility() {
   const canCreateTemplates = canOpenAdminPublishedEdit();
-  refs.layoutCreateMode.querySelectorAll("option[value='from-template-layout'], option[value='template'], option[value='template-copy']").forEach((option) => {
+  refs.layoutCreateMode.querySelectorAll("option[value='from-template-layout'], option[value='template-copy'], option[value='demo-template'], option[value='shared-template']").forEach((option) => {
     option.hidden = !canCreateTemplates;
     option.disabled = !canCreateTemplates;
   });
-  refs.layoutCreateMode.querySelectorAll("option[value$='-template']").forEach((option) => {
+  refs.layoutCreateMode.querySelectorAll("option[value='template']").forEach((option) => {
     option.hidden = true;
     option.disabled = true;
   });
@@ -4416,10 +4541,11 @@ function updateLayoutCopyVisibility() {
       : refs.layoutCopyFrom.value || state.activeLayoutId;
     fillSelect(refs.layoutCopyFrom, entries, selected);
   }
+  const shouldShowLegacyTemplateKind = modeState.mode === "template";
   if (refs.layoutTemplateKindLabel && refs.layoutTemplateKind) {
-    refs.layoutTemplateKindLabel.hidden = !shouldPickTemplate;
-    refs.layoutTemplateKindLabel.setAttribute("aria-hidden", String(!shouldPickTemplate));
-    refs.layoutTemplateKind.disabled = !shouldPickTemplate;
+    refs.layoutTemplateKindLabel.hidden = !shouldShowLegacyTemplateKind;
+    refs.layoutTemplateKindLabel.setAttribute("aria-hidden", String(!shouldShowLegacyTemplateKind));
+    refs.layoutTemplateKind.disabled = !shouldShowLegacyTemplateKind;
   }
   if (refs.layoutTemplateLanguageLabel && refs.layoutTemplateLanguage) {
     refs.layoutTemplateLanguageLabel.hidden = !shouldPickTemplate;
@@ -4757,6 +4883,16 @@ async function deletePublishedDemoTemplate(target, sourceLayout = null) {
   });
   const listId = target.demoListId || sourceLayout?.adminDemoListId || demoPublicListIdForLanguage(target.language || uiLanguage);
   const language = normalizeUiLanguage(target.language || sourceLayout?.adminDemoLanguage || sourceLayout?.language || uiLanguage);
+  const payloadTarget = publicDemoTemplatePayloadTarget({
+    id: listId,
+    listId,
+    language
+  }, {
+    fallbackLanguage: language,
+    demoListIdForLanguage: demoPublicListIdForLanguage
+  });
+  publishedListStateCache.remove?.(listId);
+  if (payloadTarget?.itemKey) publishedItemKeyStateCache.remove?.(payloadTarget.itemKey);
   runtime.serverConfirmedDemoTemplates = removePublicTemplateCatalogEntry(runtime.serverConfirmedDemoTemplates, {
     listId,
     publicTemplateKind: "demo"

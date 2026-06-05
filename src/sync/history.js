@@ -63,6 +63,27 @@ export function historyRecordTitle(record, payload = null, fallback = "") {
   return explicit || historyPayloadTitle(payload, fallback);
 }
 
+export function historySharedTemplateOptions(layouts = [], {
+  languageLabel = (language) => String(language || "").toUpperCase()
+} = {}) {
+  const seen = new Set();
+  return (Array.isArray(layouts) ? layouts : [])
+    .map((layout) => {
+      const id = String(layout?.id || "").trim();
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+      const language = String(layout?.language || "").trim().toLowerCase();
+      const name = String(layout?.name || id).trim() || id;
+      return {
+        id,
+        name,
+        language,
+        label: language ? `${name} · ${languageLabel(language)}` : name
+      };
+    })
+    .filter(Boolean);
+}
+
 export function groupHistoryRecords(records, {
   source = "private",
   normalizePublishedStatePayload,

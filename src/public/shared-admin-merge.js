@@ -1,5 +1,6 @@
 export function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout, {
   changedAt,
+  copyPublishedContainerToState,
   ensureLayoutDictionaries,
   hasRemotePhotoUrl,
   normalizeLayoutArrangement,
@@ -21,7 +22,7 @@ export function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout,
     layoutContainerIds.add(containerId);
     (container.childIds || []).forEach(collectContainer);
   };
-  (editableLayout.rootContainerIds || []).forEach(collectContainer);
+  layoutRootContainerIds(editableLayout).forEach(collectContainer);
 
   const containersBySource = new Map();
   const containersByName = new Map();
@@ -41,6 +42,39 @@ export function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout,
   });
 
   let changed = false;
+  const rootBySource = new Map();
+  const rootByName = new Map();
+  const rememberRoot = (containerId) => {
+    const container = state.containers?.[containerId];
+    if (!container) return;
+    if (container.sharedSourceId) rootBySource.set(container.sharedSourceId, containerId);
+    if (container.name) rootByName.set(normalizeSharedGearName(container.name), containerId);
+  };
+  layoutRootContainerIds(editableLayout).forEach(rememberRoot);
+
+  const idMap = { containers: new Map(), items: new Map() };
+  const sourceRootIds = layoutRootContainerIds(sourceLayout);
+  sourceRootIds.forEach((sourceRootId) => {
+    const sourceContainer = sourceState.containers?.[sourceRootId];
+    if (!sourceContainer) return;
+    const existingRootId =
+      rootBySource.get(sourceRootId) ||
+      rootByName.get(normalizeSharedGearName(sourceContainer.name));
+    if (existingRootId) return;
+    if (typeof copyPublishedContainerToState !== "function") return;
+    const copiedRootId = copyPublishedContainerToState(sourceState, sourceRootId, {
+      targetLayoutId: editableLayout.id,
+      changedAt,
+      idMap,
+      preserveSource: true,
+      sourceLayoutId: sourceLayout.id
+    });
+    if (!copiedRootId || !state.containers?.[copiedRootId]) return;
+    collectContainer(copiedRootId);
+    rememberRoot(copiedRootId);
+    changed = true;
+  });
+
   const syncEntity = (target, source, sourceId) => {
     if (!target || !source) return;
     if (sourceId && target.sharedSourceId !== sourceId) {
@@ -70,12 +104,19 @@ export function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout,
     (sourceContainer.childIds || []).forEach(syncContainerTree);
   };
 
-  (sourceLayout.rootContainerIds || []).forEach(syncContainerTree);
+  sourceRootIds.forEach(syncContainerTree);
   if (changed) {
     normalizeLayoutArrangement(editableLayout, state);
     touchLayout(editableLayout.id, changedAt);
   }
   return changed;
+}
+
+function layoutRootContainerIds(layout) {
+  return [...new Set([
+    ...(Array.isArray(layout?.arrangement?.rootContainerIds) ? layout.arrangement.rootContainerIds : []),
+    ...(Array.isArray(layout?.rootContainerIds) ? layout.rootContainerIds : [])
+  ])].filter(Boolean);
 }
 
 export function syncPublishedEntityPhotos(target, source, {

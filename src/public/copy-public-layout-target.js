@@ -144,6 +144,128 @@ export function writeContainerTreeToLayoutArrangement(targetState, layoutId, con
   return true;
 }
 
+function ensureLayoutArrangementObject(layout) {
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object"
+    ? layout.arrangement
+    : { rootContainerIds: [], containers: {}, items: {}, packedItems: {} };
+  arrangement.rootContainerIds = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
+  arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
+  arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
+  arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
+  layout.arrangement = arrangement;
+  return arrangement;
+}
+
+function orderedSourceIds(sourceContainer, type) {
+  const fromFields = type === "container" ? sourceContainer?.childIds || [] : sourceContainer?.itemIds || [];
+  const fromOrder = (sourceContainer?.order || [])
+    .filter((entry) => entry?.type === type && entry.id)
+    .map((entry) => entry.id);
+  return [...new Set([...fromOrder, ...fromFields])].filter(Boolean);
+}
+
+function insertContainerInParentPlacement(parentPlacement, containerId) {
+  parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds : [];
+  parentPlacement.order = Array.isArray(parentPlacement.order) ? parentPlacement.order : [];
+  if (!parentPlacement.childIds.includes(containerId)) parentPlacement.childIds.push(containerId);
+  if (!parentPlacement.order.some((entry) => entry?.type === "container" && entry.id === containerId)) {
+    parentPlacement.order.push({ type: "container", id: containerId });
+  }
+}
+
+export function linkMissingContainerTreeToLayoutState(targetState, sourceSnapshot, targetLayoutId, {
+  changedAt = "",
+  missingContainers = [],
+  missingItems = [],
+  normalizeLayoutArrangement = () => {},
+  touchLayout = () => {}
+} = {}) {
+  const targetLayout = targetState?.layouts?.[targetLayoutId];
+  if (!targetState || !sourceSnapshot || !targetLayout) return { containerCount: 0, itemCount: 0 };
+  targetState.collapsedContainers = targetState.collapsedContainers && typeof targetState.collapsedContainers === "object"
+    ? targetState.collapsedContainers
+    : {};
+  const arrangement = ensureLayoutArrangementObject(targetLayout);
+  const missingContainerById = new Map(
+    (Array.isArray(missingContainers) ? missingContainers : [])
+      .map((entry) => [String(entry?.sourceContainerId || ""), String(entry?.targetParentId || "")])
+      .filter(([id]) => id && targetState.containers?.[id] && sourceSnapshot.containers?.[id])
+  );
+  const missingItemContainerById = new Map(
+    (Array.isArray(missingItems) ? missingItems : [])
+      .map((entry) => [String(entry?.sourceItemId || ""), String(entry?.targetContainerId || "")])
+      .filter(([itemId, containerId]) => itemId && containerId && targetState.items?.[itemId] && targetState.containers?.[containerId])
+  );
+  let containerCount = 0;
+  let itemCount = 0;
+
+  const placeContainer = (containerId) => {
+    if (!missingContainerById.has(containerId) || arrangement.containers?.[containerId]) return Boolean(arrangement.containers?.[containerId]);
+    const sourceContainer = sourceSnapshot.containers?.[containerId];
+    const parentId = missingContainerById.get(containerId) || "";
+    if (parentId) {
+      if (missingContainerById.has(parentId) && !arrangement.containers[parentId]) placeContainer(parentId);
+      if (!arrangement.containers[parentId]) return false;
+    }
+
+    const childIds = orderedSourceIds(sourceContainer, "container")
+      .filter((childId) => missingContainerById.has(childId) && targetState.containers?.[childId]);
+    const itemIds = orderedSourceIds(sourceContainer, "item")
+      .filter((itemId) => missingItemContainerById.get(itemId) === containerId && targetState.items?.[itemId]);
+    const childSet = new Set(childIds);
+    const itemSet = new Set(itemIds);
+    const order = (sourceContainer.order || [])
+      .filter((entry) => entry && (entry.type === "item" || entry.type === "container") && entry.id)
+      .filter((entry) => entry.type === "item" ? itemSet.has(entry.id) : childSet.has(entry.id))
+      .map((entry) => ({ type: entry.type, id: entry.id }));
+    const orderKeys = new Set(order.map((entry) => `${entry.type}:${entry.id}`));
+    arrangement.containers[containerId] = {
+      parentId,
+      itemIds,
+      childIds,
+      order: [
+        ...order,
+        ...itemIds.filter((id) => !orderKeys.has(`item:${id}`)).map((id) => ({ type: "item", id })),
+        ...childIds.filter((id) => !orderKeys.has(`container:${id}`)).map((id) => ({ type: "container", id }))
+      ]
+    };
+    itemIds.forEach((itemId) => {
+      arrangement.items[itemId] = containerId;
+      itemCount += 1;
+    });
+    if (parentId) {
+      insertContainerInParentPlacement(arrangement.containers[parentId], containerId);
+      targetState.collapsedContainers[parentId] = false;
+    } else if (!arrangement.rootContainerIds.includes(containerId)) {
+      arrangement.rootContainerIds.push(containerId);
+      targetLayout.rootContainerIds = [...arrangement.rootContainerIds];
+    }
+    targetState.collapsedContainers[containerId] = false;
+    containerCount += 1;
+    childIds.forEach(placeContainer);
+    return true;
+  };
+
+  [...missingContainerById.keys()].forEach(placeContainer);
+  missingItemContainerById.forEach((containerId, itemId) => {
+    if (arrangement.items[itemId]) return;
+    const placement = arrangement.containers?.[containerId];
+    if (!placement) return;
+    placement.itemIds = Array.isArray(placement.itemIds) ? placement.itemIds.filter((id) => id !== itemId) : [];
+    placement.order = Array.isArray(placement.order)
+      ? placement.order.filter((entry) => !(entry?.type === "item" && entry.id === itemId))
+      : [];
+    placement.itemIds.push(itemId);
+    placement.order.push({ type: "item", id: itemId });
+    arrangement.items[itemId] = containerId;
+    itemCount += 1;
+  });
+  if (!containerCount && !itemCount) return { containerCount: 0, itemCount: 0 };
+  normalizeLayoutArrangement(targetLayout, targetState);
+  touchLayout(targetLayoutId, changedAt);
+  return { containerCount, itemCount };
+}
+
 export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapshot, targetLayoutId, targetParentId = "", {
   changedAt = "",
   normalizeLayoutArrangement = () => {},

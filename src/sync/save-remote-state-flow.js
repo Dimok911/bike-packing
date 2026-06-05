@@ -9,6 +9,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     handleRemoteSaveConflict,
     hasLegacyPayloadChanges,
     legacyComparableTopLevelDiffKeys,
+    preflightRemoteSaveConflict,
     isDemoPublicTemplateMissing,
     isNetworkError,
     isReadOnlyBikePackingContext,
@@ -62,9 +63,15 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       if (notify) showToast("Локальная версия похожа на усечённую. Я не отправил её на сервер.", "error");
       return;
     }
+    if (!forceOverwrite && typeof preflightRemoteSaveConflict === "function") {
+      const handled = await preflightRemoteSaveConflict({ notify, preferredLayout });
+      if (handled) return;
+    }
     updateSyncUi("Сохраняю на сервер...");
     const baseBeforeSave = loadBaseState();
-    const entitySync = await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
+    const entitySync = forceOverwrite
+      ? { attempted: false, skipped: true, unavailable: false, integrityMeta: null, upserted: [], deleted: [] }
+      : await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
     const legacyDiffKeys = typeof legacyComparableTopLevelDiffKeys === "function"
       ? legacyComparableTopLevelDiffKeys(baseBeforeSave, runtime.state, entitySync)
       : [];

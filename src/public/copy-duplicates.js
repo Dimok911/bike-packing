@@ -345,29 +345,56 @@ export function planLayoutTreeMissingItems({
   getLayoutItemIdSet = () => new Set()
 }) {
   if (!sourceSnapshot || !targetLayout) {
-    return { missingItems: [], duplicateItemCount: 0, canCopyMissingItems: false };
+    return { missingContainers: [], missingItems: [], duplicateItemCount: 0, canCopyMissingItems: false };
   }
   const targetContainerIds = getLayoutContainerIdSet(targetLayout);
   const targetItemIds = getLayoutItemIdSet(targetLayout);
   const sourceContainers = sourceSnapshot.containers || {};
   const sourceItems = sourceSnapshot.items || {};
+  const sourceParentByContainerId = new Map();
   const sourceParentByItemId = new Map();
   Object.entries(sourceContainers).forEach(([containerId, container]) => {
+    (container.childIds || []).forEach((childId) => sourceParentByContainerId.set(childId, containerId));
     (container.itemIds || []).forEach((itemId) => sourceParentByItemId.set(itemId, containerId));
     (container.order || []).forEach((entry) => {
+      if (entry?.type === "container" && entry.id) sourceParentByContainerId.set(entry.id, containerId);
       if (entry?.type === "item" && entry.id) sourceParentByItemId.set(entry.id, containerId);
     });
   });
+  const sourceContainerIds = Object.keys(sourceContainers);
+  const missingContainerIdSet = new Set(sourceContainerIds.filter((containerId) => !targetContainerIds.has(containerId)));
+  const hasTargetAncestor = (containerId) => {
+    let parentId = sourceParentByContainerId.get(containerId) || "";
+    const seen = new Set([containerId]);
+    while (parentId) {
+      if (targetContainerIds.has(parentId)) return true;
+      if (seen.has(parentId)) return false;
+      seen.add(parentId);
+      parentId = sourceParentByContainerId.get(parentId) || "";
+    }
+    return false;
+  };
+  const missingContainers = sourceContainerIds
+    .filter((containerId) => missingContainerIdSet.has(containerId) && hasTargetAncestor(containerId))
+    .map((containerId) => ({
+      sourceContainerId: containerId,
+      targetParentId: sourceParentByContainerId.get(containerId) || ""
+    }));
+  const restorableContainerIds = new Set([
+    ...targetContainerIds,
+    ...missingContainers.map((entry) => entry.sourceContainerId)
+  ]);
   const missingItems = Object.keys(sourceItems)
     .filter((itemId) => !targetItemIds.has(itemId))
     .map((itemId) => ({
       sourceItemId: itemId,
       targetContainerId: sourceParentByItemId.get(itemId) || sourceSnapshot.rootId || ""
     }))
-    .filter((entry) => entry.targetContainerId && targetContainerIds.has(entry.targetContainerId));
+    .filter((entry) => entry.targetContainerId && restorableContainerIds.has(entry.targetContainerId));
   return {
+    missingContainers,
     missingItems,
     duplicateItemCount: Math.max(0, Object.keys(sourceItems).length - missingItems.length),
-    canCopyMissingItems: missingItems.length > 0
+    canCopyMissingItems: missingContainers.length > 0 || missingItems.length > 0
   };
 }

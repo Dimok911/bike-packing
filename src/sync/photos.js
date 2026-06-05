@@ -19,6 +19,11 @@ export function photoShouldBeCopiedToCurrentList(photo) {
   return Boolean(photo?._copyToCurrentList || photo?.copyToCurrentList || photo?.publicCopySourceId || photo?.sharedSourceId);
 }
 
+export function isMissingRemotePhotoCopyError(error) {
+  const text = `${error?.data?.message || ""} ${error?.data?.error || ""} ${error?.message || ""}`.toLowerCase();
+  return error?.status === 404 && text.includes("photo") && text.includes("not found");
+}
+
 export function keepRemoteOnlyPhotoReference(photo) {
   if (!hasRemotePhotoUrl(photo) || photo.localId) return false;
   photo.status = "synced";
@@ -42,6 +47,34 @@ export function remotePhotoSourceFromRecord(photo, {
     sourceListId: String(fromUrl?.sourceListId || photo?.listId || "").trim(),
     sourcePhotoId: String(fromUrl?.sourcePhotoId || photo?.id || photo?.photoId || "").trim()
   };
+}
+
+export function photoRecordIdMatchesRemoteSource(photo, {
+  baseUrl = globalThis.location?.href
+} = {}) {
+  const recordId = String(photo?.id || photo?.photoId || "").trim();
+  const { sourcePhotoId } = remotePhotoSourceFromRecord(photo, { baseUrl });
+  return !recordId || !sourcePhotoId || recordId === sourcePhotoId;
+}
+
+export function removeRecordPhotoReference(record, sourcePhoto) {
+  if (!record || !Array.isArray(record.photos) || !sourcePhoto) return false;
+  const sourceId = String(sourcePhoto.id || "");
+  const sourceLocalId = String(sourcePhoto.localId || "");
+  const sourceUrl = String(sourcePhoto.url || "");
+  const sourceThumbUrl = String(sourcePhoto.thumbUrl || "");
+  const nextPhotos = record.photos.filter((photo) => {
+    if (!photo) return false;
+    if (photo === sourcePhoto) return false;
+    if (sourceId && String(photo.id || "") === sourceId) return false;
+    if (sourceLocalId && String(photo.localId || "") === sourceLocalId) return false;
+    if (sourceUrl && String(photo.url || "") === sourceUrl) return false;
+    if (sourceThumbUrl && String(photo.thumbUrl || "") === sourceThumbUrl) return false;
+    return true;
+  });
+  if (nextPhotos.length === record.photos.length) return false;
+  record.photos = nextPhotos;
+  return true;
 }
 
 export function remotePhotoSourceFromUrl(src, {
@@ -215,22 +248,39 @@ export async function cacheRecordRemotePhotosForUploadFallback(record, { changed
   return changed;
 }
 
-export async function copyRecordPhotosForLocalDuplicate(record, { changedAt = nowIso() } = {}) {
+export async function copyRecordPhotosForLocalDuplicate(record, {
+  changedAt = nowIso(),
+  copyRemotePhotosToCurrentList = false,
+  dropMissingLocalPhotos = false,
+  getCachedPhotoForCopy = getCachedPhoto,
+  putCachedPhotoForCopy = putCachedPhoto
+} = {}) {
   const photos = Array.isArray(record?.photos) ? record.photos : [];
   const copies = [];
   for (const photo of photos) {
-    const copy = await copyPhotoForLocalDuplicate(photo, { changedAt });
+    const copy = await copyPhotoForLocalDuplicate(photo, {
+      changedAt,
+      copyRemotePhotosToCurrentList,
+      dropMissingLocalPhotos,
+      getCachedPhotoForCopy,
+      putCachedPhotoForCopy
+    });
     if (copy) copies.push(copy);
   }
   return copies;
 }
 
-async function copyPhotoForLocalDuplicate(photo, { changedAt = nowIso() } = {}) {
+async function copyPhotoForLocalDuplicate(photo, {
+  changedAt = nowIso(),
+  copyRemotePhotosToCurrentList = false,
+  dropMissingLocalPhotos = false,
+  getCachedPhotoForCopy = getCachedPhoto,
+  putCachedPhotoForCopy = putCachedPhoto
+} = {}) {
   if (!photo || typeof photo !== "object") return null;
   normalizePhotoUrlFields(photo);
   const nextId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const sourceLocalId = String(photo.localId || photo.id || "").trim();
-  const cached = sourceLocalId ? await getCachedPhoto(sourceLocalId) : null;
   const remote = hasRemotePhotoUrl(photo);
   const copy = {
     ...photo,
@@ -241,9 +291,17 @@ async function copyPhotoForLocalDuplicate(photo, { changedAt = nowIso() } = {}) 
     updatedAt: changedAt,
     error: ""
   };
+  if (remote && !copyRemotePhotosToCurrentList) {
+    copy.localId = "";
+    copy.status = "synced";
+    delete copy._copyToCurrentList;
+    delete copy.copyToCurrentList;
+    return copy;
+  }
+  const cached = sourceLocalId ? await getCachedPhotoForCopy(sourceLocalId) : null;
   if (cached?.blob) {
     try {
-      await putCachedPhoto({
+      await putCachedPhotoForCopy({
         ...cached,
         id: nextId,
         createdAt: changedAt,
@@ -263,12 +321,14 @@ async function copyPhotoForLocalDuplicate(photo, { changedAt = nowIso() } = {}) 
   }
   if (remote) {
     copy.localId = "";
-    copy.status = "pending";
-    copy._copyToCurrentList = true;
+    copy.status = copyRemotePhotosToCurrentList ? "pending" : "synced";
+    if (copyRemotePhotosToCurrentList) copy._copyToCurrentList = true;
+    else delete copy._copyToCurrentList;
     delete copy.copyToCurrentList;
     return copy;
   }
   if (sourceLocalId) {
+    if (dropMissingLocalPhotos) return null;
     copy.status = "missing-local-file";
     copy.error = photo.error || "local-photo-copy-missing";
   }

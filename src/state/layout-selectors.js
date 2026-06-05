@@ -34,7 +34,7 @@ export function isItemInLayout(targetState, layout, item) {
   return Boolean(getItemContainerIdInLayout(targetState, layout, item.id));
 }
 
-export function visibleItemLayoutPlacementLabels(targetState, item, {
+export function visibleItemLayoutPlacements(targetState, item, {
   containerPath = (containerId) => containerId
 } = {}) {
   if (!item?.id) return [];
@@ -49,8 +49,22 @@ export function visibleItemLayoutPlacementLabels(targetState, item, {
     if (!root) return [];
     const path = containerPath(containerId);
     const place = rootId === containerId ? "" : `, \u043c\u0435\u0441\u0442\u043e \u00ab${path}\u00bb`;
-    return [`${layout.name}: \u0441\u0442\u043e\u043b\u0431\u0435\u0446 \u00ab${root.name}\u00bb${place}`];
+    const label = `${layout.name}: \u0441\u0443\u043c\u043a\u0430 \u00ab${root.name}\u00bb${place}`;
+    return [{
+      layoutId: layout.id || "",
+      layoutName: layout.name || "",
+      rootId,
+      rootName: root.name || "",
+      containerId,
+      path,
+      isRoot: rootId === containerId,
+      label
+    }];
   });
+}
+
+export function visibleItemLayoutPlacementLabels(targetState, item, options = {}) {
+  return visibleItemLayoutPlacements(targetState, item, options).map((placement) => placement.label);
 }
 
 export function layoutContainerPath(targetState, layout, containerId, { separator = " / " } = {}) {

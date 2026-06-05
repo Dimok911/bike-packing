@@ -28,5 +28,13 @@ export function createPublicTemplatePayloadCache({
     return cloneValue(normalized);
   }
 
-  return { get, set };
+  function remove(key) {
+    return cache.delete(String(key || ""));
+  }
+
+  function clear() {
+    cache.clear();
+  }
+
+  return { get, set, remove, clear };
 }

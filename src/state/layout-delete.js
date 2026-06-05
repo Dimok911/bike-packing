@@ -3,18 +3,22 @@ import {
   isTemplateCopySharedId
 } from "./layout-manage.js";
 
-export function removeLayoutTreeFromState(targetState, layoutId) {
+export function removeLayoutTreeFromState(targetState, layoutId, {
+  deleteUnreferencedEntities = false
+} = {}) {
   const layout = targetState?.layouts?.[layoutId];
   if (!layout) return false;
   const candidates = collectLayoutEntityReferences(targetState, layout);
   delete targetState.layouts[layoutId];
-  const retained = collectStateLayoutEntityReferences(targetState);
-  candidates.containers.forEach((containerId) => {
-    if (!retained.containers.has(containerId)) delete targetState.containers?.[containerId];
-  });
-  candidates.items.forEach((itemId) => {
-    if (!retained.items.has(itemId)) delete targetState.items?.[itemId];
-  });
+  if (deleteUnreferencedEntities) {
+    const retained = collectStateLayoutEntityReferences(targetState);
+    candidates.containers.forEach((containerId) => {
+      if (!retained.containers.has(containerId)) delete targetState.containers?.[containerId];
+    });
+    candidates.items.forEach((itemId) => {
+      if (!retained.items.has(itemId)) delete targetState.items?.[itemId];
+    });
+  }
   Object.keys(targetState.collapsedContainers || {}).forEach((containerId) => {
     if (!targetState.containers?.[containerId]) delete targetState.collapsedContainers[containerId];
   });
@@ -34,7 +38,9 @@ export function removeManagedSharedLayoutTreesFromState(targetState, sharedId) {
     .filter((layout) => layout?.adminSharedSourceId === id)
     .map((layout) => layout.id)
     .filter(Boolean);
-  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId, {
+    deleteUnreferencedEntities: true
+  }));
 }
 
 export function removeManagedDemoTemplateTreesFromState(targetState, {
@@ -54,7 +60,9 @@ export function removeManagedDemoTemplateTreesFromState(targetState, {
     )
     .map((layout) => layout.id)
     .filter(Boolean);
-  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId, {
+    deleteUnreferencedEntities: true
+  }));
 }
 
 function hasSharedTemplateIdentityOverlap(layout, targetKeys, fallbackLanguage) {
@@ -90,7 +98,9 @@ export function removeManagedSharedTemplateTreesFromState(targetState, {
     })
     .map((layout) => layout.id)
     .filter(Boolean);
-  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId, {
+    deleteUnreferencedEntities: true
+  }));
 }
 
 export function removeUnconfirmedManagedSharedTemplateTreesFromState(targetState, {
@@ -119,7 +129,9 @@ export function removeUnconfirmedManagedSharedTemplateTreesFromState(targetState
     })
     .map((layout) => layout.id)
     .filter(Boolean);
-  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId));
+  return layoutIds.filter((layoutId) => removeLayoutTreeFromState(targetState, layoutId, {
+    deleteUnreferencedEntities: true
+  }));
 }
 
 function collectStateLayoutEntityReferences(targetState) {

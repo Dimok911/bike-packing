@@ -42,6 +42,40 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     stripPublishedPublicOriginMarkers(items[nextItemId]);
     return nextItemId;
   };
+  const uniqueIds = (list = []) => {
+    const result = [];
+    list.forEach((id) => {
+      if (typeof id === "string" && id && !result.includes(id)) result.push(id);
+    });
+    return result;
+  };
+  const placementForContainer = (containerId) => {
+    const placement = layout.arrangement?.containers?.[containerId];
+    const container = targetState.containers?.[containerId];
+    if (placement && typeof placement === "object") {
+      const orderEntries = Array.isArray(placement.order) ? placement.order : [];
+      const itemIds = uniqueIds([
+        ...(Array.isArray(placement.itemIds) ? placement.itemIds : []),
+        ...orderEntries.filter((entry) => entry?.type === "item").map((entry) => entry.id)
+      ]).filter((id) => targetState.items?.[id]);
+      const childIds = uniqueIds([
+        ...(Array.isArray(placement.childIds) ? placement.childIds : []),
+        ...orderEntries.filter((entry) => entry?.type === "container").map((entry) => entry.id)
+      ]).filter((id) => targetState.containers?.[id]);
+      return {
+        parentId: placement.parentId || "",
+        itemIds,
+        childIds,
+        order: orderEntries
+      };
+    }
+    return {
+      parentId: container?.parentId || "",
+      itemIds: uniqueIds(Array.isArray(container?.itemIds) ? container.itemIds : []).filter((id) => targetState.items?.[id]),
+      childIds: uniqueIds(Array.isArray(container?.childIds) ? container.childIds : []).filter((id) => targetState.containers?.[id]),
+      order: Array.isArray(container?.order) ? container.order : []
+    };
+  };
   const remapOrder = (order = []) => order.map((entry) => {
     if (entry?.type === "container") {
       const id = containerIdMap.get(entry.id);
@@ -56,6 +90,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   const walk = (containerId, parentId = null) => {
     const container = targetState.containers?.[containerId];
     if (!container) return "";
+    const placement = placementForContainer(containerId);
     const nextContainerId = mapContainerId(containerId);
     if (containers[nextContainerId]) return nextContainerId;
     containers[nextContainerId] = clone(container);
@@ -64,13 +99,13 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     delete containers[nextContainerId].adminDemo;
     delete containers[nextContainerId].adminSharedSourceId;
     delete containers[nextContainerId].publicCatalogLayoutId;
-    (container.itemIds || []).forEach((itemId) => {
+    placement.itemIds.forEach((itemId) => {
       copyItemRecord(itemId, nextContainerId);
     });
-    (container.childIds || []).forEach((childId) => walk(childId, nextContainerId));
-    containers[nextContainerId].childIds = (container.childIds || []).map((id) => containerIdMap.get(id)).filter(Boolean);
-    containers[nextContainerId].itemIds = (container.itemIds || []).map((id) => itemIdMap.get(id)).filter(Boolean);
-    containers[nextContainerId].order = remapOrder(container.order || []);
+    placement.childIds.forEach((childId) => walk(childId, nextContainerId));
+    containers[nextContainerId].childIds = placement.childIds.map((id) => containerIdMap.get(id)).filter(Boolean);
+    containers[nextContainerId].itemIds = placement.itemIds.map((id) => itemIdMap.get(id)).filter(Boolean);
+    containers[nextContainerId].order = remapOrder(placement.order || []);
     if (!containers[nextContainerId].order.length) {
       containers[nextContainerId].order = [
         ...containers[nextContainerId].itemIds.map((id) => ({ type: "item", id })),
@@ -80,7 +115,10 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     stripPublishedPublicOriginMarkers(containers[nextContainerId]);
     return nextContainerId;
   };
-  const rootContainerIds = (layout.rootContainerIds || []).map((id) => walk(id, null)).filter(Boolean);
+  const rootContainerIds = uniqueIds([
+    ...(Array.isArray(layout.arrangement?.rootContainerIds) ? layout.arrangement.rootContainerIds : []),
+    ...(Array.isArray(layout.rootContainerIds) ? layout.rootContainerIds : [])
+  ]).map((id) => walk(id, null)).filter(Boolean);
   Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
     if (!container || containerIdMap.has(containerId)) return;
     if (container.publicCatalogLayoutId !== layoutId) return;
