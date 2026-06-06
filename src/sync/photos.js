@@ -522,7 +522,26 @@ export async function materializeSelectedPhotoFile(file, {
   const buffer = timeoutMs > 0
     ? await promiseWithTimeout(readPromise, timeoutMs, "Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.")
     : await readPromise;
-  return new Blob([buffer], { type: file.type || "image/jpeg" });
+  const byteLength = Number(buffer?.byteLength || buffer?.length || 0);
+  if (!byteLength) {
+    throw new Error("Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.");
+  }
+  const type = file.type || "image/jpeg";
+  const name = file.name || "item-photo.jpg";
+  if (typeof File === "function") {
+    return new File([buffer], name, {
+      type,
+      lastModified: Number(file.lastModified || Date.now())
+    });
+  }
+  const blob = new Blob([buffer], { type });
+  try {
+    Object.defineProperty(blob, "name", { value: name, configurable: true });
+    Object.defineProperty(blob, "lastModified", { value: Number(file.lastModified || Date.now()), configurable: true });
+  } catch {
+    // Blob metadata is optional; the materialized bytes are the required part.
+  }
+  return blob;
 }
 
 function promiseWithTimeout(promise, timeoutMs, message) {

@@ -38,8 +38,6 @@ import {
   API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
-  PHOTO_UPLOAD_TIMEOUT_MS,
-  PHOTO_UPLOAD_STALL_TIMEOUT_MS,
   POINTER_DRAG_START_DISTANCE,
   TOUCH_DRAG_DELAY_MS,
   TOUCH_DRAG_CANCEL_DISTANCE,
@@ -577,29 +575,23 @@ import {
 } from "./src/sync/history.js";
 import {
   cacheRecordRemotePhotosForUploadFallback,
-  applyPendingPhotoUploadRetry,
-  applySyncedPhotoUploadResult,
-  clonePhotoUploadBlob,
   copyRecordPhotosForLocalDuplicate,
   createItemPhotoFromFile,
   deleteCachedPhoto,
   getCachedPhoto,
   hasRemotePhotoUrl,
-  isMissingRemotePhotoCopyError,
   isPhotoUsableFromServer,
   isPhotoStoredForList,
   keepRemoteOnlyPhotoReference,
-  normalizeUploadedPhotoAssetUrls,
   photoRecordIdMatchesRemoteSource,
-  removeRecordPhotoReference,
-  photoCopyApiPath,
   photoRemoteSrc,
   photoShouldBeCopiedToCurrentList,
-  putCachedPhoto,
-  remotePhotoSourceFromRecord,
-  resolveUploadedPhotoByContentHash,
-  shouldRetryLocalPhotoUploadAfterFailure
+  putCachedPhoto
 } from "./src/sync/photos.js";
+import {
+  markPhotoUploadStarted,
+  uploadPhotoToPath
+} from "./src/sync/photo-upload-flow.js";
 import {
   cacheLayoutRemotePhotosForUploadFallback,
   getUnsyncedPhotoEntries as getUnsyncedPhotoEntriesForSync,
@@ -770,9 +762,11 @@ import { highlightSearchText } from "./src/ui/search-highlight.js";
 import {
   bindPhotoGalleries,
   hydrateItemPhotos,
+  photoDialogStatusText,
   photoStatusText,
   renderPhotoGalleryHtml,
-  renderItemPhotoHtml
+  renderItemPhotoHtml,
+  updatePhotoGalleryUploadProgress
 } from "./src/ui/photo-gallery.js";
 import {
   formatItemWeight,
@@ -830,6 +824,10 @@ import {
   currentPageScrollPosition,
   setupDialogKeyboardScrollGuard
 } from "./src/ui/modal-focus.js";
+import {
+  bindDialogBackdropClickGuard,
+  bindFilePickerDialogDismissGuard
+} from "./src/ui/modal-close-policy.js";
 import { createModalScrollLockController } from "./src/ui/modal-scroll-lock.js";
 import {
   askPrintLabelsChoice,
@@ -1283,7 +1281,7 @@ const appTailControllerDeps = {
   catalogActionTargetIds, categories, checkAdminApiCompatibility, checkAuthAndLoad, checkAuthAndLoadFlow,
   checkRemoteStateFreshness, chooseContainerTreeCopyToLayoutAction, chooseDefaultPackingList, chooseSharedCopyTargetLayoutId, cleanPublishedEntityId,
   cleanupEmptyContainersInLayoutArrangement, cleanupEmptyContainersInState, cleanupGeneratedCatalogArtifacts, clearActiveAdminDemoStateOnStartup, clearCategoryFilter,
-  clearLocalStorageScope, clearOfflineRememberedSession, clearPhotoUploadProgress, clearReadOnlyPackingListContextForPrivateMutation, clearSearch,
+  clearLocalStorageScope, clearOfflineRememberedSession, clearReadOnlyPackingListContextForPrivateMutation, clearSearch,
   clearSelectFilter, clearStaleDirtyFlagIfNoLocalChanges, clone, cloneIsolatedPublicEntity, clonePlain,
   cloneStateForSync, cloneStateForSyncPayload, closeDialogWithoutRestoringFocus, closeTopMenu, collapsedDefaultsForTemplateContainers, containerCopyExcludedLayoutIds,
   collectManagedPublicDraftRecords, collectPublicLayoutRecordIds, commitSearchInputForNavigation, comparableValueForMerge, compareDemoTemplateOrder,
@@ -1293,7 +1291,7 @@ const appTailControllerDeps = {
   conflictTimestamp, conflictVersionStamp, consumeGuestLocalLayoutCandidate, containerCategories, containerCreatedTimeForState,
   containerEntitySyncUnavailable, containerPathForState, containerTreeSnapshotScore, containerWeightForState, copyItemInState,
   copyMissingLayoutSnapshotItemsToLayout, copyMissingPublicSnapshotItemsToLayout, copyPickerLayoutLabel, copyPublishedContainerToState, copyPublishedContainerToStateValue,
-  copyPublishedDemoStateToLocalLayout, copyPublishedItemToState, copyRecordPhotosForLocalDuplicate, copyRemotePhotoToList, copySharedItem,
+  copyPublishedDemoStateToLocalLayout, copyPublishedItemToState, copyRecordPhotosForLocalDuplicate, copySharedItem,
   copySharedItemToLayoutContainer, copySharedItemToState, copySharedLayout, copySharedListLink, copySharedRoot,
   copySharedRootToLayoutContainer, copySharedRootToState, countPrivateLayouts, createAdminReportsDialogController,
   createBackupZip, createBlankBikePackingState, createConfirmDialogController, createConflictValueFormatter, createDeletedSharedLayoutStore,
@@ -1325,16 +1323,16 @@ const appTailControllerDeps = {
   entitySyncStateDeps, escapeHtml, explicitLayoutChoice,
   exportLayoutAsDemoState, exportLayoutAsPublishedState, fallbackDemoTemplateEntry, fetchAdminReports, fetchBikePackingApiCapabilities,
   fetchPublicSharedLayoutCatalog, fetchPublicTemplatePayloadRecordByItemKey, fetchPublishedDemoTemplateState, fetchPublishedListStateById, fetchRemoteListChangesRecord,
-  fetchRemoteListDetailRecord, fetchRemoteListFreshnessRecord, fetchRemoteListStateRecord, fetchRemoteListStateSnapshot, fetchRemotePhotoBlobForUpload,
+  fetchRemoteListDetailRecord, fetchRemoteListFreshnessRecord, fetchRemoteListStateRecord, fetchRemoteListStateSnapshot,
   fetchRemoteStateRecord, fetchSharedListLinkRecord, fetchStateRecordByItemKey, fetchStateRecordMetaByItemKey, fetchStateRecordPayloadByItemKey,
-  filterAutoResolvedMergeConflicts, findCopiedSharedLayout, findDemoTemplateForLanguage, findEntityPhotoForUpload, findMaterializedSharedContainerId,
+  filterAutoResolvedMergeConflicts, findCopiedSharedLayout, findDemoTemplateForLanguage, findMaterializedSharedContainerId,
   findMaterializedSharedItemId, findSharedItem, findSharedLayout, findSharedLayoutForLanguage, findSharedPublishedContainer,
   findSharedPublishedItem, findSharedRoot, fixedScrollbarRefreshFrame, flushActivePublishedEditSave, forgetDeletedSharedLayoutId,
   formatFullDateTime, formatHistoryDateTime, formatItemWeight, formatMergeConflicts, formatThingCount,
   formatVolume, formatWeight, fullBackupRestoreConfirm, generatedCatalogString, getActiveEditableLayoutId,
   getBike3dPackingScrollHost, getCachedPhoto, getContainerItemIdsDeepForState, getCurrentView, getDescendantContainerIdsForState,
   getItemContainerIdInLayoutForState, getLayoutContainerIdSetForState, getLayoutCreateCopySourceOptions, getLayoutDescendantContainerIdsForState, getLayoutItemIdSetForState,
-  getPhotoUploadSource, getPublishedEditLayoutId, getPublishedWorkLayout, getSavedAuthEmail, getSavedAuthEmailFromStorage,
+  getPublishedEditLayoutId, getPublishedWorkLayout, getSavedAuthEmail, getSavedAuthEmailFromStorage,
   getTemplateCopyRootSnapshots, getTemplateCopySourceScore, getUnsyncedPhotoEntries, getUnsyncedPhotoEntriesForSync, getUploadablePhotoEntries,
   getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, guestCandidateLayouts,
   guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction, guestLayoutHasUserContentEdits,
@@ -1382,6 +1380,7 @@ const appTailControllerDeps = {
   localAdminTemplateCopyLayouts, localDemoCopyInFlight, localDemoTemplateEntriesFromLayouts, localSharedLayoutCatalogEntriesFromLayouts, localStorageScopeKey,
   locations, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage, markCopiedItemForPublicLayout,
   markEdited, markEntitySyncTypeUnavailable, markLayoutPhotosForCurrentListCopy, markLayoutPhotosForCurrentListCopyForSync, markLocalPublicCopyOrigin,
+  markPhotoUploadStarted,
   markPrivateCopyOriginFromSource, markPublicTemplateOptionsState, markRecordPhotosForCurrentListCopy, matchesCollectionFilterValue, matchesItemFieldsFilterValue,
   matchesRootContainerFieldsFilterValue, materializeDemoLayoutForAdminCopy, materializeSharedLayoutForAdmin, materializeSharedLayoutForAdminState, mergeBuiltInSharedEntriesIntoAdminLayout,
   mergeBuiltInSharedEntriesIntoAdminLayoutValue, mergeDemoTemplateCatalogEntry, mergeDemoTemplateEntriesForAdmin, mergeLocalCollapsedContainers, mergeManagedPublicDraftRecords,
@@ -1396,13 +1395,13 @@ const appTailControllerDeps = {
   normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore, normalizePublicTemplateMetadataResponse,
   normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRecoveryPayload, normalizeRemoteListRecord, normalizeRemoteState,
   normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision, normalizeUiLanguage,
-  normalizeUploadedPhotoAssetUrls, nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad, offerSaveGuestLocalLayouts,
+  nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad, offerSaveGuestLocalLayouts,
   offlineRememberedUser, openAdminDemoLayout, openAuthDialog, openCategoryFilterDialog, openConfirmDialog,
   openDemoLayoutFromSelect, openHelpLimitsDialog, openHelpLimitsDialogUi, openHistoryDialog, openModalDialog,
   openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog, openSharedListFromLink,
   orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible, parseContainerDimensionInput,
   parseVolumeInput, parseWeightInput, pendingGuestLocalLayoutCandidate, persistActiveLayoutSelection, persistStateSnapshot,
-  personalListApiUnavailable, photoCopyApiPath, photoDraftChanged, photoObjectUrls, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
+  personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
@@ -1422,7 +1421,7 @@ const appTailControllerDeps = {
   refreshPublicSharedLayoutCatalogFlow, refreshPublicSharedLayoutIndex, refreshPublicSharedTemplates, refreshPublishedLayoutView, refs,
   registerAppServiceWorker, rememberActiveLayoutChoice, rememberAuthenticatedUser, rememberAuthenticatedUserInStorage, rememberConflictRemoteMeta,
   rememberConflictRemoteMetaForSync, rememberCurrentPackingListRecord, rememberCurrentSyncAccount, rememberDeletedSharedLayoutId, rememberEntitySyncResultMeta,
-  rememberPrivateServerLayoutChoice, rememberRemoteIntegrityMeta, rememberedOfflineUser, remoteListRecords, remotePhotoSourceFromRecord,
+  rememberPrivateServerLayoutChoice, rememberRemoteIntegrityMeta, rememberedOfflineUser, remoteListRecords,
   remoteRecordId, remoteRecordPrivateLayoutCount, remoteRecordStateInfo, remoteRefreshInFlight, remoteRefreshTimer,
   remoteStateIntegrityError, remoteStateLoadPromise, remoteUpdatedAt, removeContainerFromLayoutOnlyInState, removeCustomDictionaryValue,
   removeItemFromLayoutArrangement, removeItemFromLayoutInState, removeLayoutTree, removeLayoutTreeFromState, removeManagedDemoTemplateTreesFromState,
@@ -1434,6 +1433,7 @@ const appTailControllerDeps = {
   renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls, renderInitialLocalFallbackIfNeeded,
   renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml, renderListItemHtml,
   renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml, renderRootContainerColumnHtml,
+  updatePhotoGalleryUploadProgress,
   renderRootContainersEditorHtml, renderSharedItemsViewHtml, renderSharedLayouts, renderSharedLayoutsHtml, renderSubcontainerSectionHtml,
   repairActiveEmptyAdminDemoDraft, repairAdminDemoLayout, repairAdminDemoLayoutValue, repairCollapsedActiveLayoutBeforeSave, repairContainerMembershipFromItemLinks,
   repairEmptyTemplateCopyDraftFromPublishedLayout, repairMojibakeLayoutNames, repairPlacementRegressionFromReference, repairPrivateMojibakeLayoutNames, repairPublishedLayoutArrangement,
@@ -1456,7 +1456,7 @@ const appTailControllerDeps = {
   serverChangedSinceLastSync, serverConfirmedDemoTemplates, serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsByAdminOrder, serverConfirmedSharedLayoutsFromPublicRecords,
   setActiveLocalEditableScope, setActivePrivateScope, setActiveReadOnlyScope, setDemoPublicTemplateMissing, setDemoStatePayloadForLanguage,
   setDictionarySortModeForType, setExplicitlySignedOut, setForcedOffline, setLayoutLoadProgress, setLayoutLoadStatus,
-  setLoadedRemoteListProgress, setPackingVisualStyle, setPackingVisualStylePanelVisible, setPersonalLayoutsLoadedStatus, setPhotoUploadProgress,
+  setLoadedRemoteListProgress, setPackingVisualStyle, setPackingVisualStylePanelVisible, setPersonalLayoutsLoadedStatus,
   setPrimaryPhotoInDraft, setTemporaryAdminEditLayout, setUiLanguage, setViewScope, settingLabel,
   setupDialogKeyboardScrollGuard, setupModalScrollLock, setupPackingVisualStyleQuickControl, setupTouchActionButtonFeedback, shareCurrentPackingListByLink,
   sharedGearPhotos, sharedItemFromPublishedItem, sharedLayoutCatalogDiagnostics, sharedLayoutIdFromLocation, sharedLayoutIdFromPublicListRecord,
@@ -2642,6 +2642,16 @@ async function init() {
     resetSharedReadonlyItemDialog();
     resetItemDialogPhotoDraft();
   });
+  bindDialogBackdropClickGuard(refs.dialog, () => Boolean(
+    runtime.itemDialogPhotoDraft &&
+    photoDraftChanged(runtime.itemDialogPhotoDraft, runtime.editingItemId ? state.items?.[runtime.editingItemId] : { photos: [] })
+  ));
+  bindFilePickerDialogDismissGuard(refs.dialog, [refs.itemPhotoInput, refs.itemPhotoCameraInput]);
+  bindDialogBackdropClickGuard(refs.rootContainerDialog, () => Boolean(
+    runtime.rootContainerDialogPhotoDraft &&
+    photoDraftChanged(runtime.rootContainerDialogPhotoDraft, runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : { photos: [] })
+  ));
+  bindFilePickerDialogDismissGuard(refs.rootContainerDialog, [refs.rootContainerPhotoInput, refs.rootContainerPhotoCameraInput]);
   refs.newLayoutBtn.addEventListener("click", () => {
     if (isSharedLayoutView()) {
       copySharedLayout(activeReadOnlyLayoutId());
@@ -5449,201 +5459,25 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   onPhotoProgress = null,
   retryTemporaryUploadFailure = true
 } = {}) {
-  const sourcePhoto = photo;
-  let activePhoto = photo;
-  const resolvePhoto = () => {
-    activePhoto = findEntityPhotoForUpload(entity, sourcePhoto) || activePhoto;
-    return activePhoto;
-  };
-  const updatePhotoProgress = (targetPhoto, progress) => {
-    setPhotoUploadProgress(targetPhoto, progress);
-    if (typeof onPhotoProgress === "function") onPhotoProgress(targetPhoto, progress);
-    schedulePhotoUploadProgressRender();
-  };
-  const localId = photo.localId || photo.id;
-  const copiedOnServer = await copyRemotePhotoToList(listId, entity, photo, entityType, { uploadPath: path });
-  if (copiedOnServer === "missing-source") {
-    const targetPhoto = resolvePhoto();
-    if (dropMissingRemotePhoto && removeRecordPhotoReference(entity, targetPhoto)) {
-      const changedAt = nowIso();
-      clearPhotoUploadProgress(targetPhoto);
-      if (entityType === "container") touchContainer(entity.id, changedAt);
-      else touchItem(entity.id, changedAt);
-      return true;
-    }
-    targetPhoto.status = "missing-local-file";
-    targetPhoto.error = "Файл фото не найден на сервере.";
-    targetPhoto.updatedAt = nowIso();
-    delete targetPhoto._copyToCurrentList;
-    delete targetPhoto.copyToCurrentList;
-    clearPhotoUploadProgress(targetPhoto);
-    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-    else touchItem(entity.id, targetPhoto.updatedAt);
-    return true;
-  }
-  if (copiedOnServer) return true;
-  updatePhotoProgress(resolvePhoto(), 0);
-  let uploadSource = await getPhotoUploadSource(photo, localId);
-  if (!uploadSource?.blob) {
-    const targetPhoto = resolvePhoto();
-    targetPhoto.status = "missing-local-file";
-    targetPhoto.error = "Локальный файл фото не найден.";
-    targetPhoto.updatedAt = nowIso();
-    clearPhotoUploadProgress(targetPhoto);
-    return true;
-  }
-
-  const uploadPhoto = resolvePhoto();
-  uploadPhoto.status = "uploading";
-  uploadPhoto.error = "";
-  uploadPhoto.updatedAt = nowIso();
-  persistStateSnapshot(state);
-  updatePhotoProgress(uploadPhoto, uploadPhoto.uploadProgress || 0);
-
-  const createPhotoUploadFormData = (source = uploadSource) => {
-    const formData = new FormData();
-    formData.append("entityType", entityType);
-    formData.append("entityId", entity.id);
-    if (entityType === "item") formData.append("itemId", entity.id);
-    formData.append("photoId", photo.id);
-    formData.append("file", clonePhotoUploadBlob(source.blob), source.fileName || photo.fileName || `${photo.id}.jpg`);
-    if (source.thumbBlob) formData.append("thumb", clonePhotoUploadBlob(source.thumbBlob), `thumb-${photo.id}.jpg`);
-    return formData;
-  };
-  const applyUploadedPhotoResult = (targetPhoto, data) => {
-    updatePhotoProgress(targetPhoto, 100);
-    applySyncedPhotoUploadResult(targetPhoto, data.photo || data, {
-      fallbackPhotoId: photo.id,
-      listId,
-      localId,
-      nowIsoValue: nowIso(),
-      uploadPath: path
-    });
-    clearPhotoUploadProgress(targetPhoto);
-    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-    else touchItem(entity.id, targetPhoto.updatedAt);
-  };
-  const recoverStoredPhoto = async (targetPhoto) => {
-    const recoveredPhoto = !String(path || "").includes("/admin/")
-      ? await resolveUploadedPhotoByContentHash({
-        apiFetch,
-        blob: uploadSource.blob,
-        listId,
-        timeoutMs: 30000
-      })
-      : null;
-    if (!recoveredPhoto?.id) return false;
-    applySyncedPhotoUploadResult(targetPhoto, recoveredPhoto, {
-      fallbackPhotoId: photo.id,
-      listId,
-      localId,
-      nowIsoValue: nowIso(),
-      uploadPath: path
-    });
-    clearPhotoUploadProgress(targetPhoto);
-    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-    else touchItem(entity.id, targetPhoto.updatedAt);
-    return true;
-  };
-
-  try {
-    const data = await apiUploadFormData(path, {
-      method: "POST",
-      body: createPhotoUploadFormData(),
-      timeoutMs: PHOTO_UPLOAD_TIMEOUT_MS,
-      stalledUploadTimeoutMs: PHOTO_UPLOAD_STALL_TIMEOUT_MS,
-      onUploadProgress: (progress) => {
-        updatePhotoProgress(resolvePhoto(), progress);
-      }
-    });
-    const targetPhoto = resolvePhoto();
-    applyUploadedPhotoResult(targetPhoto, data);
-    return true;
-  } catch (error) {
-    const targetPhoto = resolvePhoto();
-    if (await recoverStoredPhoto(targetPhoto)) return true;
-    if (shouldRetryLocalPhotoUploadAfterFailure({
-      blob: uploadSource?.blob,
-      error,
-      isNetworkErrorValue: isNetworkError(error),
-      isTimeoutErrorValue: isTimeoutError(error),
-      retryAvailable: retryTemporaryUploadFailure,
-      uploadPath: path
-    })) {
-      applyPendingPhotoUploadRetry(targetPhoto, { nowIsoValue: nowIso() });
-      clearPhotoUploadProgress(targetPhoto);
-      if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-      else touchItem(entity.id, targetPhoto.updatedAt);
-      const retryPhoto = resolvePhoto();
-      uploadSource = await getPhotoUploadSource(retryPhoto, localId) || uploadSource;
-      retryPhoto.status = "uploading";
-      retryPhoto.error = "";
-      retryPhoto.updatedAt = nowIso();
-      clearPhotoUploadProgress(retryPhoto);
-      schedulePhotoUploadProgressRender();
-      try {
-        const data = await apiFetch(path, {
-          method: "POST",
-          body: createPhotoUploadFormData(),
-          timeoutMs: PHOTO_UPLOAD_TIMEOUT_MS
-        });
-        applyUploadedPhotoResult(resolvePhoto(), data);
-        return true;
-      } catch {
-        const retryTargetPhoto = resolvePhoto();
-        if (await recoverStoredPhoto(retryTargetPhoto)) return true;
-        applyPendingPhotoUploadRetry(retryTargetPhoto, { nowIsoValue: nowIso() });
-        clearPhotoUploadProgress(retryTargetPhoto);
-        if (entityType === "container") touchContainer(entity.id, retryTargetPhoto.updatedAt);
-        else touchItem(entity.id, retryTargetPhoto.updatedAt);
-        return true;
-      }
-    }
-    if (shouldRetryLocalPhotoUploadAfterFailure({
-      blob: uploadSource?.blob,
-      error,
-      isNetworkErrorValue: isNetworkError(error),
-      isTimeoutErrorValue: isTimeoutError(error),
-      retryAvailable: true,
-      uploadPath: path
-    })) {
-      applyPendingPhotoUploadRetry(targetPhoto, { nowIsoValue: nowIso() });
-      clearPhotoUploadProgress(targetPhoto);
-      if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-      else touchItem(entity.id, targetPhoto.updatedAt);
-      return true;
-    }
-    targetPhoto.status = "error";
-    targetPhoto.error = error.message || "Не удалось загрузить фото.";
-    targetPhoto.updatedAt = nowIso();
-    clearPhotoUploadProgress(targetPhoto);
-    return true;
-  }
-}
-
-function findEntityPhotoForUpload(entity, sourcePhoto) {
-  const photos = Array.isArray(entity?.photos) ? entity.photos : [];
-  const sourceId = String(sourcePhoto?.id || "");
-  const sourceLocalId = String(sourcePhoto?.localId || "");
-  return photos.find((photo) =>
-    (sourceId && String(photo?.id || "") === sourceId) ||
-    (sourceLocalId && String(photo?.localId || "") === sourceLocalId)
-  ) || null;
-}
-
-function setPhotoUploadProgress(photo, progress) {
-  if (!photo) return;
-  Object.defineProperty(photo, "uploadProgress", {
-    value: Math.max(0, Math.min(100, Number(progress) || 0)),
-    writable: true,
-    configurable: true,
-    enumerable: false
+  return uploadPhotoToPath({
+    path,
+    listId,
+    entity,
+    photo,
+    entityType,
+    dropMissingRemotePhoto,
+    onPhotoProgress,
+    retryTemporaryUploadFailure,
+    apiFetch,
+    apiUploadFormData,
+    getCachedPhoto,
+    markEntityChanged: (targetEntity, targetType, updatedAt) => {
+      if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
+      else touchItem(targetEntity.id, updatedAt);
+    },
+    persistStateSnapshot: () => persistStateSnapshot(state),
+    scheduleProgressRender: schedulePhotoUploadProgressRender
   });
-}
-
-function clearPhotoUploadProgress(photo) {
-  if (!photo || !Object.prototype.hasOwnProperty.call(photo, "uploadProgress")) return;
-  delete photo.uploadProgress;
 }
 
 function schedulePhotoUploadProgressRender() {
@@ -5652,82 +5486,6 @@ function schedulePhotoUploadProgressRender() {
     photoUploadProgressRenderFrame = null;
     renderPreservingPackingScroll();
   });
-}
-
-async function getPhotoUploadSource(photo, localId) {
-  const cached = await getCachedPhoto(localId);
-  if (cached?.blob) return cached;
-  if (!hasRemotePhotoUrl(photo)) return null;
-  const blob = await fetchRemotePhotoBlobForUpload(photo, "file");
-  if (!blob) return null;
-  const thumbBlob = await fetchRemotePhotoBlobForUpload(photo, "thumb").catch(() => null);
-  return {
-    blob,
-    thumbBlob,
-    fileName: photo.fileName || `${photo.id || localId || "photo"}.jpg`
-  };
-}
-
-async function copyRemotePhotoToList(listId, entity, photo, entityType = "item", { uploadPath = "" } = {}) {
-  if (!listId || !entity?.id || !hasRemotePhotoUrl(photo)) return false;
-  const source = remotePhotoSourceFromRecord(photo);
-  if (!source.sourceListId || !source.sourcePhotoId) return false;
-  const copyPath = photoCopyApiPath({ uploadPath, listId });
-  if (!copyPath) return false;
-  try {
-    const data = await apiFetch(copyPath, {
-      method: "POST",
-      silentErrors: true,
-      timeoutMs: 30000,
-      body: JSON.stringify({
-        sourceListId: source.sourceListId,
-        sourcePhotoId: source.sourcePhotoId,
-        photoId: photo.id || source.sourcePhotoId,
-        entityType,
-        entityId: entity.id
-      })
-    });
-    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, copyPath, photo.id || source.sourcePhotoId);
-    Object.assign(photo, {
-      ...photo,
-      ...serverPhoto,
-      id: serverPhoto.id || photo.id || source.sourcePhotoId,
-      localId: photo.localId || photo.id || source.sourcePhotoId,
-      listId: String(serverPhoto.listId || serverPhoto.list_id || listId || ""),
-      status: "synced",
-      error: "",
-      updatedAt: serverPhoto.updatedAt || nowIso()
-    });
-    delete photo._copyToCurrentList;
-    delete photo.copyToCurrentList;
-    if (entityType === "container") touchContainer(entity.id, photo.updatedAt);
-    else touchItem(entity.id, photo.updatedAt);
-    return true;
-  } catch (error) {
-    if (isMissingRemotePhotoCopyError(error)) return "missing-source";
-    if (typeof console !== "undefined" && console.warn) {
-      console.warn("[bike-packing] Failed to copy remote photo through API; falling back to download/upload.", {
-        copyPath,
-        source,
-        targetListId: listId,
-        entityType,
-        entityId: entity.id,
-        error
-      });
-    }
-    return false;
-  }
-}
-
-async function fetchRemotePhotoBlobForUpload(photo, variant = "file") {
-  normalizePhotoUrlFields(photo);
-  const src = variant === "thumb"
-    ? (photo.thumbUrl || photo.url || "")
-    : (photo.url || photo.thumbUrl || "");
-  if (!src) return null;
-  const response = await fetch(src, { credentials: "include", cache: "no-store" });
-  if (!response.ok) return null;
-  return response.blob();
 }
 
 async function deleteRemotePhotoIfPossible(entityId, photo, entityType = "item") {

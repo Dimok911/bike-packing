@@ -52,7 +52,7 @@ export function createAppTailControllers(ctx) {
     captureSearchBlurViewportLock, catalogActionTargetIds, categories, checkAdminApiCompatibility, checkAuthAndLoad,
     checkAuthAndLoadFlow, checkRemoteStateFreshness, chooseContainerTreeCopyToLayoutAction, chooseDefaultPackingList, chooseSharedCopyTargetLayoutId,
     cleanPublishedEntityId, cleanupEmptyContainersInLayoutArrangement, cleanupEmptyContainersInState, cleanupGeneratedCatalogArtifacts, clearActiveAdminDemoStateOnStartup,
-    clearCategoryFilter, clearLocalStorageScope, clearOfflineRememberedSession, clearPhotoUploadProgress, clearReadOnlyPackingListContextForPrivateMutation,
+    clearCategoryFilter, clearLocalStorageScope, clearOfflineRememberedSession, clearReadOnlyPackingListContextForPrivateMutation,
     clearSearch, clearSelectFilter, clearStaleDirtyFlagIfNoLocalChanges, clone, cloneIsolatedPublicEntity,
     clonePlain, cloneStateForSync, cloneStateForSyncPayload, closeDialogWithoutRestoringFocus, closeTopMenu,
     collapsedDefaultsForTemplateContainers, collectManagedPublicDraftRecords, collectPublicLayoutRecordIds, commitSearchInputForNavigation, comparableValueForMerge,
@@ -63,7 +63,7 @@ export function createAppTailControllers(ctx) {
     conflictSummary, conflictTimestamp, conflictVersionStamp, consumeGuestLocalLayoutCandidate, containerCategories,
     containerCreatedTimeForState, containerEntitySyncUnavailable, containerPathForState, containerTreeSnapshotScore, containerWeightForState,
     copyItemInState, copyMissingLayoutSnapshotItemsToLayout, copyMissingPublicSnapshotItemsToLayout, copyPickerLayoutLabel, copyPublishedContainerToState,
-    copyPublishedContainerToStateValue, copyPublishedDemoStateToLocalLayout, copyPublishedItemToState, copyRecordPhotosForLocalDuplicate, copyRemotePhotoToList,
+    copyPublishedContainerToStateValue, copyPublishedDemoStateToLocalLayout, copyPublishedItemToState, copyRecordPhotosForLocalDuplicate,
     copySharedItem, copySharedItemToLayoutContainer, copySharedItemToState, copySharedLayout, copySharedListLink,
     copySharedRoot, copySharedRootToLayoutContainer, copySharedRootToState, countPrivateLayouts,
     createAdminReportsDialogController, createBackupZip, createBlankBikePackingState, createConfirmDialogController, createConflictValueFormatter,
@@ -96,15 +96,15 @@ export function createAppTailControllers(ctx) {
     explicitLayoutChoice, exportLayoutAsDemoState, exportLayoutAsPublishedState, fallbackDemoTemplateEntry, fetchAdminReports,
     fetchBikePackingApiCapabilities, fetchPublicSharedLayoutCatalog, fetchPublicTemplatePayloadRecordByItemKey, fetchPublishedDemoTemplateState, fetchPublishedListStateById,
     fetchRemoteListChangesRecord, fetchRemoteListDetailRecord, fetchRemoteListFreshnessRecord, fetchRemoteListStateRecord, fetchRemoteListStateSnapshot,
-    fetchRemotePhotoBlobForUpload, fetchRemoteStateRecord, fetchSharedListLinkRecord, fetchStateRecordByItemKey, fetchStateRecordMetaByItemKey,
-    fetchStateRecordPayloadByItemKey, filterAutoResolvedMergeConflicts, findCopiedSharedLayout, findDemoTemplateForLanguage, findEntityPhotoForUpload,
+    fetchRemoteStateRecord, fetchSharedListLinkRecord, fetchStateRecordByItemKey, fetchStateRecordMetaByItemKey,
+    fetchStateRecordPayloadByItemKey, filterAutoResolvedMergeConflicts, findCopiedSharedLayout, findDemoTemplateForLanguage,
     findMaterializedSharedContainerId, findMaterializedSharedItemId, findSharedItem, findSharedLayout, findSharedLayoutForLanguage,
     findSharedPublishedContainer, findSharedPublishedItem, findSharedRoot, fixedScrollbarRefreshFrame, flushActivePublishedEditSave,
     forgetDeletedSharedLayoutId, formatFullDateTime, formatHistoryDateTime, formatItemWeight, formatMergeConflicts,
     formatThingCount, formatVolume, formatWeight, fullBackupRestoreConfirm, generatedCatalogString,
     getActiveEditableLayoutId, getBike3dPackingScrollHost, getCachedPhoto, getContainerItemIdsDeepForState, getCurrentView,
     getDescendantContainerIdsForState, getItemContainerIdInLayoutForState, getLayoutContainerIdSetForState, getLayoutCreateCopySourceOptions, getLayoutDescendantContainerIdsForState,
-    getLayoutItemIdSetForState, getPhotoUploadSource, getPublishedEditLayoutId, getPublishedWorkLayout, getSavedAuthEmail,
+    getLayoutItemIdSetForState, getPublishedEditLayoutId, getPublishedWorkLayout, getSavedAuthEmail,
     getSavedAuthEmailFromStorage, getTemplateCopyRootSnapshots, getTemplateCopySourceScore, getUnsyncedPhotoEntries, getUnsyncedPhotoEntriesForSync,
     getUploadablePhotoEntries, getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, groupHistoryRecords, groupHistoryRecordsForSync,
     guestCandidateLayouts, guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction,
@@ -152,7 +152,7 @@ export function createAppTailControllers(ctx) {
     loadUiSettings, localAdminTemplateCopyLayouts, localDemoCopyInFlight, localDemoTemplateEntriesFromLayouts, localSharedLayoutCatalogEntriesFromLayouts,
     localStorageScopeKey, locations, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage,
     markCopiedItemForPublicLayout, markEdited, markEntitySyncTypeUnavailable, markLayoutPhotosForCurrentListCopy, markLayoutPhotosForCurrentListCopyForSync,
-    markLocalPublicCopyOrigin, markPrivateCopyOriginFromSource, markPublicTemplateOptionsState, markRecordPhotosForCurrentListCopy, matchesCollectionFilterValue,
+    markLocalPublicCopyOrigin, markPhotoUploadStarted, markPrivateCopyOriginFromSource, markPublicTemplateOptionsState, markRecordPhotosForCurrentListCopy, matchesCollectionFilterValue,
     matchesItemFieldsFilterValue, matchesRootContainerFieldsFilterValue, materializeDemoLayoutForAdminCopy, materializeSharedLayoutForAdmin, materializeSharedLayoutForAdminState,
     mergeBuiltInSharedEntriesIntoAdminLayout, mergeBuiltInSharedEntriesIntoAdminLayoutValue, mergeDemoTemplateCatalogEntry, mergeDemoTemplateEntriesForAdmin, mergeLocalCollapsedContainers,
     mergeManagedPublicDraftRecords, mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries,
@@ -166,14 +166,15 @@ export function createAppTailControllers(ctx) {
     normalizePackingViewMode, normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore,
     normalizePublicTemplateMetadataResponse, normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRecoveryPayload, normalizeRemoteListRecord,
     normalizeRemoteState, normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision,
-    normalizeUiLanguage, normalizeUploadedPhotoAssetUrls, nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad,
+    normalizeUiLanguage, nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad,
     offerSaveGuestLocalLayouts, offlineRememberedUser, openAdminDemoLayout, openAuthDialog, openCategoryFilterDialog,
     openConfirmDialog, openDemoLayoutFromSelect, openHelpLimitsDialog, openHelpLimitsDialogUi, openHistoryDialog,
     openModalDialog, openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog,
     openSharedListFromLink, orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible,
     parseContainerDimensionInput, parseVolumeInput, parseWeightInput, pendingGuestLocalLayoutCandidate, persistActiveLayoutSelection,
-    persistStateSnapshot, personalListApiUnavailable, photoCopyApiPath, photoDraftChanged, photoObjectUrls,
-    photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
+    persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoObjectUrls,
+    photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
+    updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
     primaryItemPhoto, printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
@@ -191,7 +192,7 @@ export function createAppTailControllers(ctx) {
     refs, registerAppServiceWorker, rememberActiveLayoutChoice, rememberAuthenticatedUser, rememberAuthenticatedUserInStorage,
     rememberConflictRemoteMeta, rememberConflictRemoteMetaForSync, rememberCurrentPackingListRecord, rememberCurrentSyncAccount, rememberDeletedSharedLayoutId,
     rememberEntitySyncResultMeta, rememberPrivateServerLayoutChoice, rememberRemoteIntegrityMeta, rememberedOfflineUser, remoteListRecords,
-    remotePhotoSourceFromRecord, remoteRecordId, remoteRecordPrivateLayoutCount, remoteRecordStateInfo, remoteRefreshInFlight,
+    remoteRecordId, remoteRecordPrivateLayoutCount, remoteRecordStateInfo, remoteRefreshInFlight,
     remoteRefreshTimer, remoteStateIntegrityError, remoteStateLoadPromise, remoteUpdatedAt, removeContainerFromLayoutOnlyInState,
     removeCustomDictionaryValue, removeItemFromLayoutArrangement, removeItemFromLayoutInState, removeLayoutTree, removeLayoutTreeFromState,
     removeManagedDemoTemplateTreesFromState, removeManagedSharedTemplateTreesFromState, removePhotoFromDraft, removePublicLayoutDrafts, removePublicTemplateCatalogEntry,
@@ -225,7 +226,7 @@ export function createAppTailControllers(ctx) {
     serverConfirmedSharedLayoutsFromPublicRecords, setActiveLocalEditableScope, setActivePrivateScope, setActiveReadOnlyScope, setDemoPublicTemplateMissing,
     setDemoStatePayloadForLanguage, setDictionarySortModeForType, setExplicitlySignedOut, setForcedOffline, setLayoutLoadProgress,
     setLayoutLoadStatus, setLoadedRemoteListProgress, setPackingVisualStyle, setPackingVisualStylePanelVisible, setPersonalLayoutsLoadedStatus,
-    setPhotoUploadProgress, setPrimaryPhotoInDraft, setTemporaryAdminEditLayout, setUiLanguage, setViewScope,
+    setPrimaryPhotoInDraft, setTemporaryAdminEditLayout, setUiLanguage, setViewScope,
     settingLabel, setupDialogKeyboardScrollGuard, setupModalScrollLock, setupPackingVisualStyleQuickControl, setupTouchActionButtonFeedback,
     shareCurrentPackingListByLink, sharedGearPhotos, sharedItemFromPublishedItem, sharedLayoutCatalogDiagnostics, sharedLayoutIdFromLocation,
     sharedLayoutIdFromPublicListRecord, sharedLayoutIdFromUrl, sharedLayoutItemKey, sharedLayoutItemKeyFromScope, sharedLayoutLanguageFromPayload,
@@ -258,7 +259,6 @@ export function createAppTailControllers(ctx) {
     userStorageScopeKey, validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
-  let dialogPhotoUploadPreviewFrame = null;
 
 function isEnglishUi() {
   return normalizeUiLanguage(uiLanguage) === "en";
@@ -5133,7 +5133,7 @@ async function handleItemPhotoInputChange(event) {
       showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
     }
     runtime.itemDialogPhotoActiveIndex = Math.max(0, runtime.itemDialogPhotoDraft.photos.length - result.accepted.length);
-    updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft.photos);
+    await updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft.photos);
     updateItemDialogSaveState();
     uploadItemDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
@@ -5197,11 +5197,12 @@ function cleanupUnsavedItemDialogPhotoDraft() {
 async function updateItemDialogPhotoPreview(photos) {
   if (!refs.itemPhotoPreview) return;
   const renderToken = ++itemDialogPhotoPreviewRenderToken;
-  revokeObjectUrls(runtime.itemDialogPhotoObjectUrls);
+  const previousObjectUrls = runtime.itemDialogPhotoObjectUrls;
   const objectUrls = [];
-  runtime.itemDialogPhotoObjectUrls = objectUrls;
   const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
   if (!list.length) {
+    revokeObjectUrls(previousObjectUrls);
+    runtime.itemDialogPhotoObjectUrls = [];
     itemDialogPhotoPreviewPhotoCount = 0;
     refs.itemPhotoPreview.innerHTML = "";
     refs.itemPhotoPreview.classList.add("empty");
@@ -5219,13 +5220,15 @@ async function updateItemDialogPhotoPreview(photos) {
     revokeObjectUrls(objectUrls);
     return;
   }
+  revokeObjectUrls(previousObjectUrls);
+  runtime.itemDialogPhotoObjectUrls = objectUrls;
   itemDialogPhotoPreviewPhotoCount = list.length;
   refs.itemPhotoPreview.innerHTML = rendered;
   refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
   updateItemDialogPhotoPrimaryButton(list.length);
   bindPhotoGalleries(refs.itemPhotoPreview, photoGalleryBindingOptions());
-  setItemDialogPhotoStatus(photoStatusText(list));
+  setItemDialogPhotoStatus(photoDialogStatusText(list));
 }
 
 function updateItemDialogPhotoPrimaryButton(photoCount = null) {
@@ -5277,7 +5280,7 @@ async function handleRootContainerPhotoInputChange(event) {
       showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
     }
     runtime.rootContainerDialogPhotoActiveIndex = Math.max(0, runtime.rootContainerDialogPhotoDraft.photos.length - result.accepted.length);
-    updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft.photos);
+    await updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft.photos);
     updateRootContainerDialogSaveState();
     uploadRootContainerDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
@@ -5321,9 +5324,20 @@ async function uploadItemDialogDraftPhotos(photos = []) {
     entity: item,
     entityType: "item",
     photos,
-    onProgress: () => scheduleDialogPhotoUploadPreviewRender("item"),
+    shouldUploadPhoto: (photo) => dialogDraftPhotoStillOwnedBy({
+      draft: runtime.itemDialogPhotoDraft,
+      entity: item,
+      photo
+    }),
+    onPhotoProgress: () => {
+      const list = runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item);
+      updatePhotoGalleryUploadProgress(refs.itemPhotoPreview, list);
+      setItemDialogPhotoStatus(photoDialogStatusText(list));
+    },
     onAfterUpload: () => {
-      updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item)).catch(() => null);
+      const list = runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item);
+      updatePhotoGalleryUploadProgress(refs.itemPhotoPreview, list);
+      setItemDialogPhotoStatus(photoDialogStatusText(list));
       updateItemDialogSaveState();
     }
   });
@@ -5335,34 +5349,68 @@ async function uploadRootContainerDialogDraftPhotos(photos = []) {
     entity: container,
     entityType: "container",
     photos,
-    onProgress: () => scheduleDialogPhotoUploadPreviewRender("container"),
+    shouldUploadPhoto: (photo) => dialogDraftPhotoStillOwnedBy({
+      draft: runtime.rootContainerDialogPhotoDraft,
+      entity: container,
+      photo
+    }),
+    onPhotoProgress: () => {
+      const list = runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container);
+      updatePhotoGalleryUploadProgress(refs.rootContainerPhotoPreview, list);
+      setRootContainerDialogPhotoStatus(photoDialogStatusText(list));
+    },
     onAfterUpload: () => {
-      updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container)).catch(() => null);
+      const list = runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container);
+      updatePhotoGalleryUploadProgress(refs.rootContainerPhotoPreview, list);
+      setRootContainerDialogPhotoStatus(photoDialogStatusText(list));
       updateRootContainerDialogSaveState();
     }
   });
 }
 
-async function uploadDialogDraftPhotos({ entity = null, entityType = "item", photos = [], onProgress = () => {}, onAfterUpload = () => {} } = {}) {
+async function uploadDialogDraftPhotos({
+  entity = null,
+  entityType = "item",
+  photos = [],
+  shouldUploadPhoto = () => true,
+  onPhotoProgress = () => {},
+  onAfterUpload = () => {}
+} = {}) {
   const uploadPhotos = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
-  if (!entity?.id || !uploadPhotos.length || runtime.photoUploadInFlight || !runtime.currentUser || isForcedOffline()) return;
+  if (!entity?.id || !uploadPhotos.length || !runtime.currentUser || isForcedOffline()) return false;
   const publishedLayoutId = getPublishedEditLayoutId();
   const usePublishedTemplateUpload = currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT &&
     isAdminEditablePublishedLayout(publishedLayoutId);
-  if (!usePublishedTemplateUpload && isReadOnlyBikePackingContext()) return;
+  if (!usePublishedTemplateUpload && isReadOnlyBikePackingContext()) return false;
+  const slotAvailable = await waitForDialogPhotoUploadSlot({
+    shouldContinue: () => uploadPhotos.some((photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo))
+  });
+  if (!slotAvailable) return false;
   runtime.photoUploadInFlight = true;
   let uploaded = false;
   try {
     if (usePublishedTemplateUpload) {
       for (const photo of uploadPhotos) {
-        uploaded = await uploadPublishedEntityPhoto(publishedLayoutId, entity, photo, entityType, { onPhotoProgress: onProgress }) || uploaded;
+        if (!shouldUploadPhoto(photo) || photoRemoteSrc(photo)) continue;
+        markPhotoUploadStarted(photo);
+        onPhotoProgress(photo, photo.uploadProgress || 0);
+        uploaded = await uploadPublishedEntityPhoto(publishedLayoutId, entity, photo, entityType, {
+          onPhotoProgress,
+          retryTemporaryUploadFailure: false
+        }) || uploaded;
       }
     } else {
       const targetListId = await ensureCurrentPackingListId();
       if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
-      if (isReadOnlyBikePackingContext()) return;
+      if (isReadOnlyBikePackingContext()) return false;
       for (const photo of uploadPhotos) {
-        uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType, { onPhotoProgress: onProgress }) || uploaded;
+        if (!shouldUploadPhoto(photo) || photoRemoteSrc(photo)) continue;
+        markPhotoUploadStarted(photo);
+        onPhotoProgress(photo, photo.uploadProgress || 0);
+        uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType, {
+          onPhotoProgress,
+          retryTemporaryUploadFailure: false
+        }) || uploaded;
       }
     }
   } finally {
@@ -5370,20 +5418,27 @@ async function uploadDialogDraftPhotos({ entity = null, entityType = "item", pho
     onAfterUpload();
   }
   if (uploaded && uploadPhotos.some((photo) => entityHasPhoto(entity, photo))) saveState();
+  return true;
 }
 
-function scheduleDialogPhotoUploadPreviewRender(kind = "item") {
-  if (dialogPhotoUploadPreviewFrame) return;
-  dialogPhotoUploadPreviewFrame = requestAnimationFrame(() => {
-    dialogPhotoUploadPreviewFrame = null;
-    if (kind === "container") {
-      const container = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
-      updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container)).catch(() => null);
-      return;
-    }
-    const item = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
-    updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item)).catch(() => null);
-  });
+async function waitForDialogPhotoUploadSlot({
+  shouldContinue = () => true,
+  maxWaitMs = 60000,
+  delayMs = 250
+} = {}) {
+  const startedAt = Date.now();
+  while (runtime.photoUploadInFlight) {
+    if (!runtime.currentUser || isForcedOffline() || !shouldContinue()) return false;
+    if (Date.now() - startedAt >= maxWaitMs) return false;
+    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+  }
+  return shouldContinue();
+}
+
+function dialogDraftPhotoStillOwnedBy({ draft = null, entity = null, photo = null } = {}) {
+  if (!photo) return false;
+  if (draft && photoIdentityMatches(photoIdentitySet(draft.photos), photo)) return true;
+  return entityHasPhoto(entity, photo);
 }
 
 function entityHasPhoto(entity, photo) {
@@ -5443,11 +5498,12 @@ function cleanupUnsavedRootContainerDialogPhotoDraft() {
 async function updateRootContainerDialogPhotoPreview(photos) {
   if (!refs.rootContainerPhotoPreview) return;
   const renderToken = ++rootContainerDialogPhotoPreviewRenderToken;
-  revokeObjectUrls(runtime.rootContainerDialogPhotoObjectUrls);
+  const previousObjectUrls = runtime.rootContainerDialogPhotoObjectUrls;
   const objectUrls = [];
-  runtime.rootContainerDialogPhotoObjectUrls = objectUrls;
   const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
   if (!list.length) {
+    revokeObjectUrls(previousObjectUrls);
+    runtime.rootContainerDialogPhotoObjectUrls = [];
     rootContainerDialogPhotoPreviewPhotoCount = 0;
     refs.rootContainerPhotoPreview.innerHTML = "";
     refs.rootContainerPhotoPreview.classList.add("empty");
@@ -5465,13 +5521,15 @@ async function updateRootContainerDialogPhotoPreview(photos) {
     revokeObjectUrls(objectUrls);
     return;
   }
+  revokeObjectUrls(previousObjectUrls);
+  runtime.rootContainerDialogPhotoObjectUrls = objectUrls;
   rootContainerDialogPhotoPreviewPhotoCount = list.length;
   refs.rootContainerPhotoPreview.innerHTML = rendered;
   refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
   updateRootContainerDialogPhotoPrimaryButton(list.length);
   bindPhotoGalleries(refs.rootContainerPhotoPreview, photoGalleryBindingOptions());
-  setRootContainerDialogPhotoStatus(photoStatusText(list));
+  setRootContainerDialogPhotoStatus(photoDialogStatusText(list));
 }
 
 function updateRootContainerDialogPhotoPrimaryButton(photoCount = null) {
@@ -6268,7 +6326,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     confirmDialogPhotoDelete, uploadItemDialogDraftPhotos, uploadRootContainerDialogDraftPhotos, uploadDialogDraftPhotos,
     entityHasPhoto, photoIdentitySet, photoIdentityMatches, setRootContainerDialogPhotoPrimary,
     resetRootContainerDialogPhotoDraft, cleanupUnsavedRootContainerDialogPhotoDraft, updateRootContainerDialogPhotoPreview, updateRootContainerDialogPhotoPrimaryButton,
-    updatePhotoPrimaryButton, setRootContainerDialogPhotoStatus, readItemDialogQuantity, normalizeItemQuantityInput,
+    updatePhotoGalleryUploadProgress, updatePhotoPrimaryButton, setRootContainerDialogPhotoStatus, readItemDialogQuantity, normalizeItemQuantityInput,
     changeItemDialogQuantity, updateItemQuantityUi, getRootContainerDialogSnapshot, updateItemDialogSaveState,
     hasSavableItemDialogChanges, updateRootContainerDialogSaveState, updateModalSaveButton, hasSavableRootContainerDialogChanges,
     saveRootContainerDialog, saveDialogItem, applyItemDialogPhotoDraft, applyRootContainerDialogPhotoDraft,

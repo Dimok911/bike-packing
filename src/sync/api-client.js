@@ -145,17 +145,21 @@ export function apiUploadFormDataRequest(
     Object.entries(headers || {}).forEach(([name, value]) => {
       if (value !== undefined && value !== null) xhr.setRequestHeader(name, String(value));
     });
-    if (typeof onUploadProgress === "function") {
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable || !event.total) return;
-        const loaded = Number(event.loaded) || 0;
-        if (loaded > lastUploadLoaded) {
-          lastUploadLoaded = loaded;
-          scheduleStalledUploadTimer();
-        }
-        onUploadProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))));
-      };
-    }
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) return;
+      const loaded = Number(event.loaded) || 0;
+      if (loaded > lastUploadLoaded) {
+        lastUploadLoaded = loaded;
+        scheduleStalledUploadTimer();
+      }
+      if (typeof onUploadProgress === "function") {
+        onUploadProgress(Math.max(0, Math.min(99, Math.round((event.loaded / event.total) * 100))));
+      }
+    };
+    xhr.upload.onload = () => {
+      lastUploadLoaded = Number.POSITIVE_INFINITY;
+      clearStalledUploadTimer();
+    };
     xhr.onload = () => {
       const data = parseApiJsonResponse(xhr.responseText);
       if (xhr.status < 200 || xhr.status >= 300 || data?.ok === false) {

@@ -2920,6 +2920,7 @@ button.ghost.context-toggle.active:focus-visible {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  overscroll-behavior: contain;
   touch-action: pan-x pan-y;
 }
 
@@ -2938,6 +2939,12 @@ button.ghost.context-toggle.active:focus-visible {
   scroll-snap-align: start;
 }
 
+button.photo-gallery-slide:not(:disabled):active,
+button.photo-gallery-slide.touch-feedback-active {
+  translate: 0;
+  filter: none;
+}
+
 .photo-gallery-slide img {
   pointer-events: none;
 }
@@ -2946,6 +2953,7 @@ button.ghost.context-toggle.active:focus-visible {
   position: absolute;
   left: 50%;
   bottom: 7px;
+  z-index: 2;
   display: flex;
   gap: 5px;
   transform: translateX(-50%);
@@ -2975,6 +2983,7 @@ button.ghost.context-toggle.active:focus-visible {
   position: absolute;
   left: 6px;
   bottom: 6px;
+  z-index: 2;
   max-width: calc(100% - 12px);
   padding: 3px 6px;
   border-radius: 999px;
@@ -2988,13 +2997,15 @@ button.ghost.context-toggle.active:focus-visible {
   position: absolute;
   right: 7px;
   top: 7px;
+  z-index: 3;
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: conic-gradient(var(--accent) var(--photo-upload-angle, 0deg), rgba(220, 236, 230, 0.7) 0);
-  box-shadow: 0 3px 12px rgba(29, 37, 34, 0.16);
+  outline: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 5px 16px rgba(29, 37, 34, 0.28);
 }
 
 .photo-upload-progress-indeterminate {
