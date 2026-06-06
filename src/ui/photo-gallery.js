@@ -181,30 +181,78 @@ export function bindPhotoGalleries(root = document, {
     const track = gallery.querySelector(".photo-gallery-track");
     const dots = [...gallery.querySelectorAll(".photo-gallery-dot")];
     if (!track) return;
+    const slideButtons = [...gallery.querySelectorAll("[data-photo-open]")];
+    const slideCount = Math.max(slideButtons.length, dots.length, 1);
+    let suppressSlideClickUntil = 0;
+    const clampIndex = (index) => Math.max(0, Math.min(slideCount - 1, Number(index) || 0));
     const setActive = (index) => {
-      dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
-      if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(index);
-      if (gallery.closest("#rootContainerPhotoPreview")) onRootContainerPreviewActive(index);
+      const safeIndex = clampIndex(index);
+      dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === safeIndex));
+      if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(safeIndex);
+      if (gallery.closest("#rootContainerPhotoPreview")) onRootContainerPreviewActive(safeIndex);
+    };
+    const scrollToIndex = (index, behavior = "smooth") => {
+      const safeIndex = clampIndex(index);
+      track.scrollTo({ left: track.clientWidth * safeIndex, behavior });
+      setActive(safeIndex);
     };
     const syncActive = () => {
       const width = track.clientWidth || 1;
-      const index = Math.max(0, Math.min(dots.length - 1, Math.round(track.scrollLeft / width)));
-      setActive(index);
+      setActive(Math.round(track.scrollLeft / width));
     };
     dots.forEach((dot, index) => {
       dot.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        track.scrollTo({ left: track.clientWidth * index, behavior: "smooth" });
-        setActive(index);
+        scrollToIndex(index);
       });
     });
     track.addEventListener("scroll", () => requestAnimationFrame(syncActive), { passive: true });
-    const slideButtons = [...gallery.querySelectorAll("[data-photo-open]")];
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartScrollLeft = 0;
+    let touchStartTime = 0;
+    let touchTracking = false;
+    track.addEventListener("touchstart", (event) => {
+      if (event.touches.length !== 1 || slideCount <= 1) {
+        touchTracking = false;
+        return;
+      }
+      const touch = event.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchStartScrollLeft = track.scrollLeft;
+      touchStartTime = Date.now();
+      touchTracking = true;
+    }, { passive: true });
+    track.addEventListener("touchend", (event) => {
+      if (!touchTracking || !event.changedTouches.length) return;
+      touchTracking = false;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      const minDistance = Math.min(54, Math.max(28, (track.clientWidth || 1) * 0.11));
+      const fastEnough = Date.now() - touchStartTime <= 1100;
+      if (fastEnough && absX >= minDistance && absX > absY * 0.55) {
+        const width = track.clientWidth || 1;
+        const baseIndex = Math.round(touchStartScrollLeft / width);
+        const direction = dx < 0 ? 1 : -1;
+        scrollToIndex(baseIndex + direction);
+        suppressSlideClickUntil = Date.now() + 450;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, { passive: false });
+    track.addEventListener("touchcancel", () => {
+      touchTracking = false;
+    }, { passive: true });
     slideButtons.forEach((button, index) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (Date.now() < suppressSlideClickUntil) return;
         const image = button.querySelector("img");
         if (image) openLightbox(image, { gallery, index });
       });

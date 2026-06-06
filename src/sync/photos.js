@@ -2,6 +2,8 @@ import {
   API_BASE,
   ITEM_PHOTO_MAX_SIZE,
   ITEM_PHOTO_QUALITY,
+  ITEM_PHOTO_TARGET_BYTES,
+  ITEM_PHOTO_THUMB_TARGET_BYTES,
   ITEM_PHOTO_THUMB_SIZE,
   PHOTO_DB_NAME,
   PHOTO_DB_VERSION,
@@ -370,13 +372,118 @@ export function normalizeUploadedPhotoAssetUrls(photo, listId, uploadPath, fallb
   return photo;
 }
 
+export function applySyncedPhotoUploadResult(targetPhoto, serverPhoto, {
+  fallbackPhotoId = "",
+  listId = "",
+  localId = "",
+  nowIsoValue = nowIso(),
+  uploadPath = ""
+} = {}) {
+  if (!targetPhoto || typeof targetPhoto !== "object") return targetPhoto;
+  const normalizedServerPhoto = normalizeUploadedPhotoAssetUrls(
+    { ...(serverPhoto || {}) },
+    listId,
+    uploadPath,
+    fallbackPhotoId || targetPhoto.id || ""
+  );
+  Object.assign(targetPhoto, {
+    ...targetPhoto,
+    ...normalizedServerPhoto,
+    id: normalizedServerPhoto.id || targetPhoto.id,
+    localId,
+    listId: String(normalizedServerPhoto.listId || normalizedServerPhoto.list_id || listId || ""),
+    status: "synced",
+    error: "",
+    updatedAt: normalizedServerPhoto.updatedAt || nowIsoValue
+  });
+  delete targetPhoto._copyToCurrentList;
+  delete targetPhoto.copyToCurrentList;
+  return targetPhoto;
+}
+
+export function applyPendingPhotoUploadRetry(targetPhoto, {
+  nowIsoValue = nowIso()
+} = {}) {
+  if (!targetPhoto || typeof targetPhoto !== "object") return targetPhoto;
+  targetPhoto.status = "pending";
+  targetPhoto.error = "";
+  targetPhoto.updatedAt = nowIsoValue;
+  return targetPhoto;
+}
+
+export function shouldRetryLocalPhotoUploadAfterFailure({
+  blob = null,
+  error = null,
+  isNetworkErrorValue = false,
+  isTimeoutErrorValue = false,
+  retryAvailable = true,
+  uploadPath = ""
+} = {}) {
+  return Boolean(
+    retryAvailable &&
+    blob &&
+    !String(uploadPath || "").includes("/admin/") &&
+    (isNetworkErrorValue || isTimeoutErrorValue || error?.isUploadStalled)
+  );
+}
+
+export function clonePhotoUploadBlob(blob) {
+  if (!blob || typeof blob !== "object") return blob;
+  if (typeof blob.slice !== "function") return blob;
+  return blob.slice(0, blob.size || undefined, blob.type || "");
+}
+
+export async function sha256BlobHex(blob, {
+  cryptoImpl = globalThis.crypto
+} = {}) {
+  if (!blob || typeof blob.arrayBuffer !== "function" || !cryptoImpl?.subtle?.digest) return "";
+  const digest = await cryptoImpl.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function resolveUploadedPhotoByContentHash({
+  apiFetch,
+  blob,
+  cryptoImpl = globalThis.crypto,
+  listId = "",
+  retryDelayMs = 700,
+  timeoutMs = 30000
+} = {}) {
+  if (!blob || !listId || typeof apiFetch !== "function") return null;
+  const hash = await sha256BlobHex(blob, { cryptoImpl });
+  if (!hash) return null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0 && retryDelayMs > 0) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, retryDelayMs));
+    }
+    try {
+      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/photos/resolve`, {
+        method: "POST",
+        silentErrors: true,
+        timeoutMs,
+        body: JSON.stringify({ hashes: [hash] })
+      });
+      const resolved = data?.photosByHash?.[hash];
+      if (resolved?.id) return resolved;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export async function createItemPhotoFromFile(file) {
   if (!file || !file.type?.startsWith("image/")) {
     throw new Error("Выберите файл изображения.");
   }
   const photoId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const full = await resizeImageFile(file, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY);
-  const thumb = await resizeImageFile(file, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY);
+  const source = await materializeSelectedPhotoFile(file);
+  const full = await resizeImageFile(source, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY, {
+    targetBytes: ITEM_PHOTO_TARGET_BYTES
+  });
+  const thumb = await resizeImageFile(source, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY, {
+    targetBytes: ITEM_PHOTO_THUMB_TARGET_BYTES
+  });
   const createdAt = nowIso();
   await putCachedPhoto({
     id: photoId,
@@ -407,20 +514,64 @@ export async function createItemPhotoFromFile(file) {
   };
 }
 
-export async function resizeImageFile(file, maxSize, quality) {
+export async function materializeSelectedPhotoFile(file, {
+  timeoutMs = 60000
+} = {}) {
+  if (!file || typeof file.arrayBuffer !== "function") return file;
+  const readPromise = file.arrayBuffer();
+  const buffer = timeoutMs > 0
+    ? await promiseWithTimeout(readPromise, timeoutMs, "Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.")
+    : await readPromise;
+  return new Blob([buffer], { type: file.type || "image/jpeg" });
+}
+
+function promiseWithTimeout(promise, timeoutMs, message) {
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+export async function resizeImageFile(file, maxSize, quality, {
+  targetBytes = 0,
+  minQuality = 0.58,
+  minSize = 960,
+  qualityStep = 0.08,
+  sizeStep = 0.85
+} = {}) {
   const bitmap = await loadImageBitmap(file);
-  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  context.drawImage(bitmap, 0, 0, width, height);
-  if (typeof bitmap.close === "function") bitmap.close();
+  try {
+    let nextMaxSize = maxSize;
+    let best = null;
+    while (true) {
+      const scale = Math.min(1, nextMaxSize / Math.max(bitmap.width, bitmap.height));
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0, width, height);
+      for (let nextQuality = quality; nextQuality >= minQuality; nextQuality -= qualityStep) {
+        const blob = await canvasToJpegBlob(canvas, nextQuality);
+        best = { blob, width, height };
+        if (!targetBytes || blob.size <= targetBytes) return best;
+      }
+      if (nextMaxSize <= minSize) return best;
+      nextMaxSize = Math.max(minSize, Math.round(nextMaxSize * sizeStep));
+    }
+  } finally {
+    if (typeof bitmap.close === "function") bitmap.close();
+  }
+}
+
+async function canvasToJpegBlob(canvas, quality) {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
   if (!blob) throw new Error("Не удалось подготовить фото.");
-  return { blob, width, height };
+  return blob;
 }
 
 export function loadImageBitmap(file) {

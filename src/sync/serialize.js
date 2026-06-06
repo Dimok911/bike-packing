@@ -94,6 +94,7 @@ export function compactPhotoForSync(photo) {
   if (!id) return null;
   const url = normalizeRemotePhotoUrl(photo.url);
   const thumbUrl = normalizeRemotePhotoUrl(photo.thumbUrl);
+  if (!url && !thumbUrl) return null;
   const compact = {
     id,
     status: normalizePhotoStatus(photo.status),
@@ -104,7 +105,6 @@ export function compactPhotoForSync(photo) {
     height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0,
     updatedAt: typeof photo.updatedAt === "string" ? photo.updatedAt : ""
   };
-  if (!compact.url && !compact.thumbUrl && compact.status === "synced") compact.status = "pending";
   return compact;
 }
 

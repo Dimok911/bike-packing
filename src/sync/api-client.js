@@ -92,7 +92,8 @@ export function apiUploadFormDataRequest(
     method = "POST",
     timeoutMs = API_TIMEOUT_MS,
     silentErrors = false,
-    onUploadProgress = null
+    onUploadProgress = null,
+    stalledUploadTimeoutMs = 0
   } = {},
   { isForcedOffline = () => false } = {}
 ) {
@@ -104,6 +105,40 @@ export function apiUploadFormDataRequest(
   }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    let stalledUploadTimer = null;
+    let lastUploadLoaded = -1;
+    const clearStalledUploadTimer = () => {
+      if (!stalledUploadTimer) return;
+      clearTimeout(stalledUploadTimer);
+      stalledUploadTimer = null;
+    };
+    const resolveOnce = (value) => {
+      if (settled) return;
+      settled = true;
+      clearStalledUploadTimer();
+      resolve(value);
+    };
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      clearStalledUploadTimer();
+      reject(error);
+    };
+    const scheduleStalledUploadTimer = () => {
+      if (!stalledUploadTimeoutMs || stalledUploadTimeoutMs <= 0) return;
+      clearStalledUploadTimer();
+      stalledUploadTimer = setTimeout(() => {
+        const error = createNetworkError("загрузка фото не отвечает", null, { timeout: true });
+        error.isUploadStalled = true;
+        rejectOnce(error);
+        try {
+          xhr.abort();
+        } catch {
+          // The request is already considered failed.
+        }
+      }, stalledUploadTimeoutMs);
+    };
     xhr.open(method, `${API_BASE}${path}`, true);
     xhr.withCredentials = true;
     xhr.timeout = timeoutMs;
@@ -113,6 +148,11 @@ export function apiUploadFormDataRequest(
     if (typeof onUploadProgress === "function") {
       xhr.upload.onprogress = (event) => {
         if (!event.lengthComputable || !event.total) return;
+        const loaded = Number(event.loaded) || 0;
+        if (loaded > lastUploadLoaded) {
+          lastUploadLoaded = loaded;
+          scheduleStalledUploadTimer();
+        }
         onUploadProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))));
       };
     }
@@ -132,14 +172,15 @@ export function apiUploadFormDataRequest(
             response: data
           });
         }
-        reject(apiError);
+        rejectOnce(apiError);
         return;
       }
-      resolve(data);
+      resolveOnce(data);
     };
-    xhr.onerror = () => reject(createNetworkError("нет соединения с сервером"));
-    xhr.ontimeout = () => reject(createNetworkError("сервер не ответил вовремя", null, { timeout: true }));
-    xhr.onabort = () => reject(createNetworkError("загрузка фото отменена"));
+    xhr.onerror = () => rejectOnce(createNetworkError("нет соединения с сервером"));
+    xhr.ontimeout = () => rejectOnce(createNetworkError("сервер не ответил вовремя", null, { timeout: true }));
+    xhr.onabort = () => rejectOnce(createNetworkError("загрузка фото отменена"));
+    scheduleStalledUploadTimer();
     xhr.send(body);
   });
 }

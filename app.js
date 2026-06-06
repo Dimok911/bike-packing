@@ -38,6 +38,8 @@ import {
   API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
+  PHOTO_UPLOAD_TIMEOUT_MS,
+  PHOTO_UPLOAD_STALL_TIMEOUT_MS,
   POINTER_DRAG_START_DISTANCE,
   TOUCH_DRAG_DELAY_MS,
   TOUCH_DRAG_CANCEL_DISTANCE,
@@ -575,6 +577,9 @@ import {
 } from "./src/sync/history.js";
 import {
   cacheRecordRemotePhotosForUploadFallback,
+  applyPendingPhotoUploadRetry,
+  applySyncedPhotoUploadResult,
+  clonePhotoUploadBlob,
   copyRecordPhotosForLocalDuplicate,
   createItemPhotoFromFile,
   deleteCachedPhoto,
@@ -591,7 +596,9 @@ import {
   photoRemoteSrc,
   photoShouldBeCopiedToCurrentList,
   putCachedPhoto,
-  remotePhotoSourceFromRecord
+  remotePhotoSourceFromRecord,
+  resolveUploadedPhotoByContentHash,
+  shouldRetryLocalPhotoUploadAfterFailure
 } from "./src/sync/photos.js";
 import {
   cacheLayoutRemotePhotosForUploadFallback,
@@ -5439,7 +5446,8 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
 
 async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item", {
   dropMissingRemotePhoto = false,
-  onPhotoProgress = null
+  onPhotoProgress = null,
+  retryTemporaryUploadFailure = true
 } = {}) {
   const sourcePhoto = photo;
   let activePhoto = photo;
@@ -5475,7 +5483,7 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   }
   if (copiedOnServer) return true;
   updatePhotoProgress(resolvePhoto(), 0);
-  const uploadSource = await getPhotoUploadSource(photo, localId);
+  let uploadSource = await getPhotoUploadSource(photo, localId);
   if (!uploadSource?.blob) {
     const targetPhoto = resolvePhoto();
     targetPhoto.status = "missing-local-file";
@@ -5492,43 +5500,119 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   persistStateSnapshot(state);
   updatePhotoProgress(uploadPhoto, uploadPhoto.uploadProgress || 0);
 
-  try {
+  const createPhotoUploadFormData = (source = uploadSource) => {
     const formData = new FormData();
     formData.append("entityType", entityType);
     formData.append("entityId", entity.id);
     if (entityType === "item") formData.append("itemId", entity.id);
     formData.append("photoId", photo.id);
-    formData.append("file", uploadSource.blob, uploadSource.fileName || photo.fileName || `${photo.id}.jpg`);
-    if (uploadSource.thumbBlob) formData.append("thumb", uploadSource.thumbBlob, `thumb-${photo.id}.jpg`);
+    formData.append("file", clonePhotoUploadBlob(source.blob), source.fileName || photo.fileName || `${photo.id}.jpg`);
+    if (source.thumbBlob) formData.append("thumb", clonePhotoUploadBlob(source.thumbBlob), `thumb-${photo.id}.jpg`);
+    return formData;
+  };
+  const applyUploadedPhotoResult = (targetPhoto, data) => {
+    updatePhotoProgress(targetPhoto, 100);
+    applySyncedPhotoUploadResult(targetPhoto, data.photo || data, {
+      fallbackPhotoId: photo.id,
+      listId,
+      localId,
+      nowIsoValue: nowIso(),
+      uploadPath: path
+    });
+    clearPhotoUploadProgress(targetPhoto);
+    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+    else touchItem(entity.id, targetPhoto.updatedAt);
+  };
+  const recoverStoredPhoto = async (targetPhoto) => {
+    const recoveredPhoto = !String(path || "").includes("/admin/")
+      ? await resolveUploadedPhotoByContentHash({
+        apiFetch,
+        blob: uploadSource.blob,
+        listId,
+        timeoutMs: 30000
+      })
+      : null;
+    if (!recoveredPhoto?.id) return false;
+    applySyncedPhotoUploadResult(targetPhoto, recoveredPhoto, {
+      fallbackPhotoId: photo.id,
+      listId,
+      localId,
+      nowIsoValue: nowIso(),
+      uploadPath: path
+    });
+    clearPhotoUploadProgress(targetPhoto);
+    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+    else touchItem(entity.id, targetPhoto.updatedAt);
+    return true;
+  };
+
+  try {
     const data = await apiUploadFormData(path, {
       method: "POST",
-      body: formData,
-      timeoutMs: 30000,
+      body: createPhotoUploadFormData(),
+      timeoutMs: PHOTO_UPLOAD_TIMEOUT_MS,
+      stalledUploadTimeoutMs: PHOTO_UPLOAD_STALL_TIMEOUT_MS,
       onUploadProgress: (progress) => {
         updatePhotoProgress(resolvePhoto(), progress);
       }
     });
-    const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, path, photo.id);
     const targetPhoto = resolvePhoto();
-    updatePhotoProgress(targetPhoto, 100);
-    Object.assign(targetPhoto, {
-      ...targetPhoto,
-      ...serverPhoto,
-      id: serverPhoto.id || targetPhoto.id,
-      localId,
-      listId: String(serverPhoto.listId || serverPhoto.list_id || listId || ""),
-      status: "synced",
-      error: "",
-      updatedAt: serverPhoto.updatedAt || nowIso()
-    });
-    clearPhotoUploadProgress(targetPhoto);
-    delete targetPhoto._copyToCurrentList;
-    delete targetPhoto.copyToCurrentList;
-    if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
-    else touchItem(entity.id, targetPhoto.updatedAt);
+    applyUploadedPhotoResult(targetPhoto, data);
     return true;
   } catch (error) {
     const targetPhoto = resolvePhoto();
+    if (await recoverStoredPhoto(targetPhoto)) return true;
+    if (shouldRetryLocalPhotoUploadAfterFailure({
+      blob: uploadSource?.blob,
+      error,
+      isNetworkErrorValue: isNetworkError(error),
+      isTimeoutErrorValue: isTimeoutError(error),
+      retryAvailable: retryTemporaryUploadFailure,
+      uploadPath: path
+    })) {
+      applyPendingPhotoUploadRetry(targetPhoto, { nowIsoValue: nowIso() });
+      clearPhotoUploadProgress(targetPhoto);
+      if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+      else touchItem(entity.id, targetPhoto.updatedAt);
+      const retryPhoto = resolvePhoto();
+      uploadSource = await getPhotoUploadSource(retryPhoto, localId) || uploadSource;
+      retryPhoto.status = "uploading";
+      retryPhoto.error = "";
+      retryPhoto.updatedAt = nowIso();
+      clearPhotoUploadProgress(retryPhoto);
+      schedulePhotoUploadProgressRender();
+      try {
+        const data = await apiFetch(path, {
+          method: "POST",
+          body: createPhotoUploadFormData(),
+          timeoutMs: PHOTO_UPLOAD_TIMEOUT_MS
+        });
+        applyUploadedPhotoResult(resolvePhoto(), data);
+        return true;
+      } catch {
+        const retryTargetPhoto = resolvePhoto();
+        if (await recoverStoredPhoto(retryTargetPhoto)) return true;
+        applyPendingPhotoUploadRetry(retryTargetPhoto, { nowIsoValue: nowIso() });
+        clearPhotoUploadProgress(retryTargetPhoto);
+        if (entityType === "container") touchContainer(entity.id, retryTargetPhoto.updatedAt);
+        else touchItem(entity.id, retryTargetPhoto.updatedAt);
+        return true;
+      }
+    }
+    if (shouldRetryLocalPhotoUploadAfterFailure({
+      blob: uploadSource?.blob,
+      error,
+      isNetworkErrorValue: isNetworkError(error),
+      isTimeoutErrorValue: isTimeoutError(error),
+      retryAvailable: true,
+      uploadPath: path
+    })) {
+      applyPendingPhotoUploadRetry(targetPhoto, { nowIsoValue: nowIso() });
+      clearPhotoUploadProgress(targetPhoto);
+      if (entityType === "container") touchContainer(entity.id, targetPhoto.updatedAt);
+      else touchItem(entity.id, targetPhoto.updatedAt);
+      return true;
+    }
     targetPhoto.status = "error";
     targetPhoto.error = error.message || "Не удалось загрузить фото.";
     targetPhoto.updatedAt = nowIso();

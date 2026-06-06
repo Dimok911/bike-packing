@@ -1,5 +1,15 @@
+import {
+  applyPhotoPrimaryButtonState,
+  photoPrimaryButtonState,
+  resolvePhotoPrimaryButtonPhotoCount
+} from "../ui/photo-primary-button.js";
+
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
+  let itemDialogPhotoPreviewRenderToken = 0;
+  let rootContainerDialogPhotoPreviewRenderToken = 0;
+  let itemDialogPhotoPreviewPhotoCount = 0;
+  let rootContainerDialogPhotoPreviewPhotoCount = 0;
   let containerPickerSourceIsNestedContainer = false;
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
@@ -4083,6 +4093,7 @@ function openRootContainerDialog(containerId = null) {
   if (refs.rootContainerCopyToContainerBtn) refs.rootContainerCopyToContainerBtn.hidden = !containerId;
   refs.rootContainerNote.value = container?.note || "";
   runtime.rootContainerDialogPhotoDraft = null;
+  runtime.rootContainerDialogPhotoActiveIndex = 0;
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
   if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview(normalizeItemPhotos(container || { photos: [] }));
@@ -4130,6 +4141,7 @@ function openItemDialog(itemId = null) {
   updateItemDeleteForeverButton();
   refs.itemNote.value = item.note || "";
   runtime.itemDialogPhotoDraft = null;
+  runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
   if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(normalizeItemPhotos(item));
@@ -4156,6 +4168,7 @@ function openSharedReadonlyItemDialog(sourceItemId) {
   updateItemDeleteForeverButton();
   refs.itemNote.value = item.description || "";
   runtime.itemDialogPhotoDraft = null;
+  runtime.itemDialogPhotoActiveIndex = 0;
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
   if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(sharedGearPhotos(item));
@@ -5149,6 +5162,7 @@ async function removeItemDialogPhoto() {
 
 function setItemDialogPhotoPrimary(event) {
   event?.preventDefault();
+  if (runtime.sharedDialogCopyItemId || refs.itemPhotoPrimaryBtn?.disabled) return;
   const source = runtime.editingItemId ? state.items[runtime.editingItemId] : { photos: [] };
   const draft = runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source);
   const result = setPrimaryPhotoInDraft(draft, runtime.itemDialogPhotoActiveIndex);
@@ -5182,10 +5196,13 @@ function cleanupUnsavedItemDialogPhotoDraft() {
 
 async function updateItemDialogPhotoPreview(photos) {
   if (!refs.itemPhotoPreview) return;
+  const renderToken = ++itemDialogPhotoPreviewRenderToken;
   revokeObjectUrls(runtime.itemDialogPhotoObjectUrls);
-  runtime.itemDialogPhotoObjectUrls = [];
+  const objectUrls = [];
+  runtime.itemDialogPhotoObjectUrls = objectUrls;
   const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
   if (!list.length) {
+    itemDialogPhotoPreviewPhotoCount = 0;
     refs.itemPhotoPreview.innerHTML = "";
     refs.itemPhotoPreview.classList.add("empty");
     refs.itemPhotoRemoveBtn.hidden = true;
@@ -5194,10 +5211,15 @@ async function updateItemDialogPhotoPreview(photos) {
     return;
   }
   const rendered = await renderPhotoGalleryHtml(list, {
-    objectUrls: runtime.itemDialogPhotoObjectUrls,
+    objectUrls,
     activeIndex: runtime.itemDialogPhotoActiveIndex,
     className: "dialog-photo-gallery"
   });
+  if (renderToken !== itemDialogPhotoPreviewRenderToken) {
+    revokeObjectUrls(objectUrls);
+    return;
+  }
+  itemDialogPhotoPreviewPhotoCount = list.length;
   refs.itemPhotoPreview.innerHTML = rendered;
   refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
@@ -5207,9 +5229,13 @@ async function updateItemDialogPhotoPreview(photos) {
 }
 
 function updateItemDialogPhotoPrimaryButton(photoCount = null) {
-  const count = Number.isFinite(Number(photoCount))
-    ? Number(photoCount)
-    : refs.itemPhotoPreview?.querySelectorAll(".photo-gallery-slide").length || 0;
+  const source = runtime.itemDialogPhotoDraft || (runtime.editingItemId ? state.items[runtime.editingItemId] : null);
+  const count = resolvePhotoPrimaryButtonPhotoCount({
+    explicitCount: photoCount,
+    sourceCount: source ? normalizeItemPhotos(source).length : null,
+    previewCount: itemDialogPhotoPreviewPhotoCount,
+    domCount: refs.itemPhotoPreview?.querySelectorAll(".photo-gallery-slide").length
+  });
   updatePhotoPrimaryButton(refs.itemPhotoPrimaryBtn, runtime.itemDialogPhotoActiveIndex, count);
 }
 
@@ -5382,6 +5408,7 @@ function photoIdentityMatches(ids, photo) {
 
 function setRootContainerDialogPhotoPrimary(event) {
   event?.preventDefault();
+  if (refs.rootContainerPhotoPrimaryBtn?.disabled) return;
   const source = runtime.editingRootContainerId ? state.containers[runtime.editingRootContainerId] : { photos: [] };
   const draft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
   const result = setPrimaryPhotoInDraft(draft, runtime.rootContainerDialogPhotoActiveIndex);
@@ -5415,10 +5442,13 @@ function cleanupUnsavedRootContainerDialogPhotoDraft() {
 
 async function updateRootContainerDialogPhotoPreview(photos) {
   if (!refs.rootContainerPhotoPreview) return;
+  const renderToken = ++rootContainerDialogPhotoPreviewRenderToken;
   revokeObjectUrls(runtime.rootContainerDialogPhotoObjectUrls);
-  runtime.rootContainerDialogPhotoObjectUrls = [];
+  const objectUrls = [];
+  runtime.rootContainerDialogPhotoObjectUrls = objectUrls;
   const list = Array.isArray(photos) ? photos : (photos ? [photos] : []);
   if (!list.length) {
+    rootContainerDialogPhotoPreviewPhotoCount = 0;
     refs.rootContainerPhotoPreview.innerHTML = "";
     refs.rootContainerPhotoPreview.classList.add("empty");
     refs.rootContainerPhotoRemoveBtn.hidden = true;
@@ -5427,10 +5457,15 @@ async function updateRootContainerDialogPhotoPreview(photos) {
     return;
   }
   const rendered = await renderPhotoGalleryHtml(list, {
-    objectUrls: runtime.rootContainerDialogPhotoObjectUrls,
+    objectUrls,
     activeIndex: runtime.rootContainerDialogPhotoActiveIndex,
     className: "dialog-photo-gallery"
   });
+  if (renderToken !== rootContainerDialogPhotoPreviewRenderToken) {
+    revokeObjectUrls(objectUrls);
+    return;
+  }
+  rootContainerDialogPhotoPreviewPhotoCount = list.length;
   refs.rootContainerPhotoPreview.innerHTML = rendered;
   refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
@@ -5440,25 +5475,24 @@ async function updateRootContainerDialogPhotoPreview(photos) {
 }
 
 function updateRootContainerDialogPhotoPrimaryButton(photoCount = null) {
-  const count = Number.isFinite(Number(photoCount))
-    ? Number(photoCount)
-    : refs.rootContainerPhotoPreview?.querySelectorAll(".photo-gallery-slide").length || 0;
+  const source = runtime.rootContainerDialogPhotoDraft || (runtime.editingRootContainerId ? state.containers[runtime.editingRootContainerId] : null);
+  const count = resolvePhotoPrimaryButtonPhotoCount({
+    explicitCount: photoCount,
+    sourceCount: source ? normalizeItemPhotos(source).length : null,
+    previewCount: rootContainerDialogPhotoPreviewPhotoCount,
+    domCount: refs.rootContainerPhotoPreview?.querySelectorAll(".photo-gallery-slide").length
+  });
   updatePhotoPrimaryButton(refs.rootContainerPhotoPrimaryBtn, runtime.rootContainerDialogPhotoActiveIndex, count);
 }
 
 function updatePhotoPrimaryButton(button, activeIndex = 0, photoCount = 0) {
-  if (!button) return;
-  const count = Number(photoCount) || 0;
-  if (count <= 1) {
-    button.hidden = true;
-    button.disabled = true;
-    button.textContent = t("buttons.primaryPhoto");
-    return;
-  }
-  button.hidden = false;
-  const isPrimary = Number(activeIndex) <= 0;
-  button.disabled = isPrimary;
-  button.textContent = isPrimary ? t("buttons.primaryPhotoDone") : t("buttons.primaryPhoto");
+  applyPhotoPrimaryButtonState(button, photoPrimaryButtonState({
+    activeIndex,
+    photoCount,
+    primaryText: t("buttons.primaryPhoto"),
+    alreadyPrimaryText: t("buttons.primaryPhotoDone"),
+    forceDisabled: Boolean(runtime.sharedDialogCopyItemId && button === refs.itemPhotoPrimaryBtn)
+  }));
 }
 
 function setRootContainerDialogPhotoStatus(message) {
