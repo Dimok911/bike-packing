@@ -106,7 +106,8 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
         }
         return serverPayload;
       });
-      publishedByServerPhotoCopy = true;
+      const unsyncedPhotos = getUnsyncedPhotoEntries({ layoutId, listId: publicListId });
+      publishedByServerPhotoCopy = unsyncedPhotos.length === 0;
     } catch (error) {
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[bike-packing] Server-side public template photo copy failed; falling back to legacy publish flow.", error);

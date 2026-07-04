@@ -21,6 +21,10 @@ import {
   markPhotoUploadStarted,
   uploadPhotoToPath
 } from "../../src/sync/photo-upload-flow.js";
+import {
+  getUnsyncedPhotoEntries,
+  getUploadablePhotoEntries
+} from "../../src/sync/photo-upload-scope.js";
 import { compactPhotoForSync, prunePhotoPayloadForSync } from "../../src/sync/serialize.js";
 import {
   photoDialogStatusText,
@@ -217,6 +221,70 @@ test("CRITICAL offline-photos: remote copy marker survives photo normalization",
 
   assert.equal(record.photos[0]._copyToCurrentList, true);
   assert.equal(record.photos[0].status, "pending");
+});
+
+test("CRITICAL offline-photos: public catalog item photos are in the published upload scope", () => {
+  const layoutId = "layout-admin-shared";
+  const state = {
+    layouts: {
+      [layoutId]: {
+        id: layoutId,
+        adminSharedSourceId: "shared-demo",
+        rootContainerIds: ["container-root"],
+        arrangement: {
+          rootContainerIds: ["container-root"],
+          containers: {
+            "container-root": {
+              parentId: "",
+              itemIds: [],
+              childIds: [],
+              order: []
+            }
+          },
+          items: {},
+          packedItems: {}
+        }
+      }
+    },
+    containers: {
+      "container-root": {
+        id: "container-root",
+        itemIds: [],
+        childIds: [],
+        order: []
+      }
+    },
+    items: {
+      "item-detached": {
+        id: "item-detached",
+        name: "Giro Tracker Shoes",
+        containerId: "",
+        publicCatalogLayoutId: layoutId,
+        photos: [{
+          id: "photo-detached",
+          localId: "photo-detached",
+          status: "pending",
+          url: "",
+          thumbUrl: ""
+        }]
+      }
+    }
+  };
+
+  const uploadable = getUploadablePhotoEntries(state, {
+    layoutId,
+    listId: "public-shared-layout-shared-demo",
+    allowRemoteOnlyReferences: false
+  });
+  const unsynced = getUnsyncedPhotoEntries(state, {
+    layoutId,
+    listId: "public-shared-layout-shared-demo"
+  });
+
+  assert.equal(uploadable.length, 1);
+  assert.equal(uploadable[0].entity.id, "item-detached");
+  assert.equal(unsynced.length, 1);
+  assert.equal(unsynced[0].entity.id, "item-detached");
 });
 
 test("CRITICAL offline-photos: stale copied photo ids are not treated as remote file owners", () => {
@@ -872,8 +940,20 @@ test("CRITICAL offline-photos: saved item cards render active upload progress on
 
 test("CRITICAL offline-photos: dialog photo gallery keeps vertical scroll without button press feedback", () => {
   const styles = readProjectFile("styles.css");
+  assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*overscroll-behavior-x:\s*contain;[\s\S]*overscroll-behavior-y:\s*auto;/);
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /button\.photo-gallery-slide:not\(:disabled\):active,\s*button\.photo-gallery-slide\.touch-feedback-active\s*\{[\s\S]*translate:\s*0;[\s\S]*filter:\s*none;/);
+});
+
+test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zones", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(source, /photo-lightbox-prev[\s\S]*<span aria-hidden="true">/);
+  assert.match(source, /setAttribute\("aria-disabled", activeIndex <= 0 \? "true" : "false"\)/);
+  assert.match(source, /if \(direction < 0 && activeIndex <= 0\) return;/);
+  assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*clamp\(72px,\s*22vw,\s*148px\);/);
+  assert.match(styles, /\.photo-lightbox-nav span\s*\{[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
+  assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
 });
 
 test("CRITICAL offline-photos: changed photo draft blocks backdrop click without blocking normal dialog clicks", () => {

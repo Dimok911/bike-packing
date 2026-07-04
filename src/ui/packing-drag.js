@@ -15,6 +15,7 @@ export function createPackingDragController({
   getState,
   onBeforePackingDragEnter = () => {},
   isOriginalRootColumnPosition,
+  canStartPackingDrag = () => true,
   moveContainer,
   moveContainerIntoContainerTop,
   moveItem,
@@ -343,6 +344,7 @@ export function createPackingDragController({
         let canceled = false;
         let finished = false;
         let preScrollGesture = false;
+        let dragStartBlocked = false;
         const startX = point.clientX;
         const startY = point.clientY;
         let latestX = startX;
@@ -368,7 +370,14 @@ export function createPackingDragController({
         placeholder.style.width = `${rect.width}px`;
 
         const begin = () => {
-          if (started) return;
+          if (started) return true;
+          if (dragStartBlocked) return false;
+          if (!canStartPackingDrag({ kind: "root-container", id: containerId })) {
+            canceled = true;
+            dragStartBlocked = true;
+            clearDragPending(source);
+            return false;
+          }
           started = true;
           if (inputType === "touch" && !blockingTouchMove) {
             document.removeEventListener("touchmove", onMove);
@@ -390,6 +399,7 @@ export function createPackingDragController({
           source.classList.add("drag-source-collapsed");
           moveGhost(latestX, latestY, true);
           edgeScroller.update(latestX, latestY);
+          return true;
         };
 
         const moveGhost = (clientX, clientY, immediate = false) => {
@@ -462,10 +472,10 @@ export function createPackingDragController({
               if (!started) return;
             }
             if (Math.hypot(dx, dy) < pointerDragStartDistance) return;
-            begin();
+            if (!begin()) return;
           }
           moveEvent.preventDefault();
-          begin();
+          if (!begin()) return;
           moveGhost(movePoint.clientX, movePoint.clientY);
           edgeScroller.update(movePoint.clientX, movePoint.clientY);
           place(movePoint.clientX);
@@ -552,6 +562,7 @@ export function createPackingDragController({
       let canceled = false;
       let finished = false;
       let preScrollGesture = false;
+      let dragStartBlocked = false;
       let currentZone = null;
       let groupTargetItemId = null;
       let packageTargetContainerId = null;
@@ -613,7 +624,14 @@ export function createPackingDragController({
       };
 
       const begin = () => {
-        if (started) return;
+        if (started) return true;
+        if (dragStartBlocked) return false;
+        if (!canStartPackingDrag({ kind, id })) {
+          canceled = true;
+          dragStartBlocked = true;
+          clearDragPending(source);
+          return false;
+        }
         started = true;
         if (inputType === "touch" && !blockingTouchMove) {
           document.removeEventListener("touchmove", onMove);
@@ -642,6 +660,7 @@ export function createPackingDragController({
         source.classList.add("drag-source-collapsed");
         moveGhost(latestX, latestY, true);
         edgeScroller.update(latestX, latestY);
+        return true;
       };
 
       const moveGhost = (clientX, clientY, immediate = false) => {
@@ -799,10 +818,10 @@ export function createPackingDragController({
             if (!started) return;
           }
           if (Math.hypot(dx, dy) < pointerDragStartDistance) return;
-          begin();
+          if (!begin()) return;
         }
         moveEvent.preventDefault();
-        begin();
+        if (!begin()) return;
         moveGhost(movePoint.clientX, movePoint.clientY);
         edgeScroller.update(movePoint.clientX, movePoint.clientY);
         place(movePoint.clientX, movePoint.clientY);
@@ -962,6 +981,7 @@ export function createPackingDragController({
       let canceled = false;
       let finished = false;
       let preScrollGesture = false;
+      let dragStartBlocked = false;
       let currentZone = null;
       let groupTargetItemId = null;
       let packageTargetContainerId = null;
@@ -1023,7 +1043,14 @@ export function createPackingDragController({
       };
 
       const begin = () => {
-        if (started) return;
+        if (started) return true;
+        if (dragStartBlocked) return false;
+        if (!canStartPackingDrag({ kind: "catalog-item", id })) {
+          canceled = true;
+          dragStartBlocked = true;
+          clearDragPending(source);
+          return false;
+        }
         started = true;
         if (inputType === "touch" && !blockingTouchMove) {
           document.removeEventListener("touchmove", onMove);
@@ -1050,6 +1077,7 @@ export function createPackingDragController({
         source.classList.add("drag-source-collapsed");
         moveGhost(latestX, latestY, true);
         edgeScroller.update(latestX, latestY);
+        return true;
       };
 
       const moveGhost = (clientX, clientY, immediate = false) => {
@@ -1191,10 +1219,10 @@ export function createPackingDragController({
             if (!started) return;
           }
           if (Math.hypot(dx, dy) < pointerDragStartDistance) return;
-          begin();
+          if (!begin()) return;
         }
         moveEvent.preventDefault();
-        begin();
+        if (!begin()) return;
         moveGhost(latestX, latestY);
         edgeScroller.update(latestX, latestY);
         place(latestX, latestY);

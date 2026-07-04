@@ -1,3 +1,4 @@
+import { bikePackingEntitySyncConfirmationFailures } from "./entity-sync-confirmation.js";
 import { isLegacyPersonalSyncWriteBlockedError } from "./legacy-personal-sync.js";
 
 export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = false, forceOverwrite = false, preferredLayout = null, preferServerOnConflict = false, retryForceConflict = true } = {}) {
@@ -72,10 +73,13 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     const entitySync = forceOverwrite
       ? { attempted: false, skipped: true, unavailable: false, integrityMeta: null, upserted: [], deleted: [] }
       : await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
+    const confirmationFailures = forceOverwrite
+      ? []
+      : bikePackingEntitySyncConfirmationFailures(entitySync);
     const legacyDiffKeys = typeof legacyComparableTopLevelDiffKeys === "function"
       ? legacyComparableTopLevelDiffKeys(baseBeforeSave, runtime.state, entitySync)
       : [];
-    const hasLegacyChanges = legacyDiffKeys.length
+    const hasLegacyChanges = confirmationFailures.length || legacyDiffKeys.length
       ? true
       : hasLegacyPayloadChanges(baseBeforeSave, runtime.state, entitySync);
     if (!forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
@@ -95,9 +99,10 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       // Allowed full-payload recovery path: entity sync handled its known
       // records, but an audited top-level legacy diff remains. New ordinary
       // fields should be modeled as entities/local UI state instead.
-      const fallbackReason = legacyPayloadFallbackReasonText(legacyDiffKeys);
+      const fallbackReason = legacyPayloadFallbackReasonText([...confirmationFailures, ...legacyDiffKeys]);
       updateSyncUi(`Сохраняю полный payload · ${fallbackReason}`);
       console.info("[bike-packing] Full payload fallback after entity sync", {
+        confirmationFailures,
         legacyDiffKeys
       });
       if (entitySync.serverUpdatedAt) {

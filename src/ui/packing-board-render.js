@@ -1,4 +1,8 @@
 import { escapeHtml } from "../utils/html.js";
+import {
+  itemAvailabilityBadgeHtml,
+  itemAvailabilityCardClass
+} from "./item-availability.js";
 
 function tr(t, key, fallback, values) {
   return typeof t === "function" ? t(key, values) : fallback;
@@ -201,13 +205,15 @@ export function renderPackingItemCardHtml({
   titleHtml,
   weightHtml
 }) {
+  const availabilityClass = itemAvailabilityCardClass(item);
+  const availabilityBadge = itemAvailabilityBadgeHtml(item, t);
   const packAriaLabel = packed ? tr(t, "tooltips.markUnpacked", "Отметить как не собранное") : tr(t, "tooltips.markPacked", "Отметить как собранное");
   const packTitle = packed ? tr(t, "tooltips.packed", "Собрано") : tr(t, "tooltips.unpacked", "Не собрано");
   const copyLabel = tr(t, "tooltips.copy", "Скопировать");
   const editLabel = tr(t, "tooltips.edit", "Редактировать");
   const removeLabel = tr(t, "forms.removeFromLayout", "Убрать из укладки");
   return `
-    <article class="item-card ${packedVisible ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
+    <article class="item-card ${availabilityClass} ${packedVisible ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
       <div class="item-card-top ${collection ? "with-pack-toggle" : ""}">
         ${collection ? `
           <button
@@ -217,7 +223,7 @@ export function renderPackingItemCardHtml({
             title="${escapeHtml(packTitle)}"
           >${packedVisible ? "✓" : ""}</button>
         ` : ""}
-        <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}</div>
+        <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}${availabilityBadge}</div>
         <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="${escapeHtml(copyLabel)}" title="${escapeHtml(copyLabel)}">
           <span aria-hidden="true">⧉</span>
         </button>

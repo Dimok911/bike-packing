@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   resolveStoredPrivateLayoutChoice,
   resolveStoredPrivateLayoutChoiceForState
@@ -27,11 +29,19 @@ import {
 import {
   updateSyncUiControls
 } from "../../src/ui/sync-ui.js";
+import {
+  saveItemDialogAction
+} from "../../src/ui/item-dialog-save.js";
 
+const root = resolve(import.meta.dirname, "../..");
 const privateIds = new Set(["layout-a", "layout-b", "layout-c"]);
 const normalizeChoice = (choice) => String(choice || "").trim();
 const isPrivateChoice = (choice) => Boolean(choice && !choice.startsWith("shared:") && !choice.startsWith("demo:"));
 const isPrivateUserLayoutId = (choice) => privateIds.has(choice);
+
+function readProjectFile(path) {
+  return readFileSync(resolve(root, path), "utf8");
+}
 
 test("CRITICAL sync-save: stored private layout choice wins over server active layout", () => {
   assert.equal(
@@ -477,6 +487,195 @@ test("CRITICAL offline-auth-scope: public readonly status cannot mask an active 
   assert.equal(refs.syncBtn.hidden, false);
 });
 
+test("CRITICAL offline-auth-scope: remembered local account is not shown as confirmed sync", () => {
+  const toggles = [];
+  const createElement = () => ({
+    classList: {
+      toggle: (name, enabled) => toggles.push([name, enabled]),
+      remove: () => {}
+    },
+    dataset: {},
+    hidden: false,
+    textContent: "",
+    title: "",
+    disabled: false,
+    setAttribute: () => {}
+  });
+  const refs = {
+    authBtn: createElement(),
+    collectionMenuBtn: createElement(),
+    forceOfflineBtn: createElement(),
+    mobileAdminApiWarning: createElement(),
+    syncBtn: createElement(),
+    syncStatus: createElement(),
+    syncUserEmail: createElement()
+  };
+  const signOutBtn = createElement();
+  const documentRef = {
+    body: { classList: { toggle: () => {} } },
+    documentElement: { lang: "ru" },
+    querySelector: (selector) => selector === "#signOutBtn" ? signOutBtn : null
+  };
+
+  const previousDocument = globalThis.document;
+  globalThis.document = documentRef;
+  try {
+    updateSyncUiControls({
+      appUnlocked: true,
+      canUseLocalEditableState: () => true,
+      currentPublicTemplateStatusMessage: () => "Demo/public read-only",
+      currentUser: null,
+      currentUserEmail: () => "u@example.test",
+      document: documentRef,
+      isCurrentPrivateLayout: () => true,
+      isOfflineRememberedSession: () => true,
+      message: "Вход не подтверждён · открыта локальная копия личных укладок",
+      refs,
+      state: { collectionMode: false },
+      syncMeta: { dirty: false },
+      t: (key) => ({
+        "auth.notSignedIn": "not signed in",
+        "menu.collectionOff": "collection off",
+        "menu.offline": "offline",
+        "menu.signIn": "sign in",
+        "menu.signOut": "sign out",
+        "sync.dirty": "dirty",
+        "sync.synced": "synced"
+      }[key] || key)
+    });
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+
+  assert.equal(refs.syncStatus.textContent, "Вход не подтверждён · открыта локальная копия личных укладок");
+  assert.equal(refs.authBtn.hidden, false);
+  assert.equal(refs.authBtn.textContent, "Подтвердить вход");
+  assert.equal(signOutBtn.hidden, false);
+  assert.equal(refs.syncUserEmail.textContent, "Локально · u@example.test");
+  assert.equal(refs.syncUserEmail.title, "Вход на сервере не подтверждён. Локальная копия: u@example.test");
+  assert.equal(refs.syncBtn.dataset.syncState, "offline");
+  assert.equal(toggles.some(([name, enabled]) => name === "local-remembered-email" && enabled), true);
+});
+
+test("CRITICAL offline-auth-scope: remembered local account fallback text does not say offline", () => {
+  const createElement = () => ({
+    classList: { toggle: () => {}, remove: () => {} },
+    dataset: {},
+    hidden: false,
+    textContent: "",
+    title: "",
+    disabled: false,
+    setAttribute: () => {}
+  });
+  const refs = {
+    authBtn: createElement(),
+    collectionMenuBtn: createElement(),
+    forceOfflineBtn: createElement(),
+    mobileAdminApiWarning: createElement(),
+    syncBtn: createElement(),
+    syncStatus: createElement(),
+    syncUserEmail: createElement()
+  };
+  const documentRef = {
+    body: { classList: { toggle: () => {} } },
+    documentElement: { lang: "ru" },
+    querySelector: () => null
+  };
+
+  const previousDocument = globalThis.document;
+  globalThis.document = documentRef;
+  try {
+    updateSyncUiControls({
+      appUnlocked: true,
+      canUseLocalEditableState: () => true,
+      currentUser: null,
+      currentUserEmail: () => "u@example.test",
+      document: documentRef,
+      isCurrentPrivateLayout: () => true,
+      isOfflineRememberedSession: () => true,
+      refs,
+      state: { collectionMode: false },
+      syncMeta: { dirty: false },
+      t: (key) => ({
+        "auth.notSignedIn": "not signed in",
+        "menu.collectionOff": "collection off",
+        "menu.offline": "offline",
+        "menu.signIn": "sign in",
+        "menu.signOut": "sign out",
+        "sync.dirty": "dirty",
+        "sync.synced": "synced"
+      }[key] || key)
+    });
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+
+  assert.equal(refs.syncStatus.textContent, "Локальная копия личных укладок · войдите для синхронизации");
+  assert.equal(refs.syncStatus.textContent.includes("Офлайн"), false);
+});
+
+test("CRITICAL offline-auth-scope: remembered local account labels follow English UI language", () => {
+  const createElement = () => ({
+    classList: { toggle: () => {}, remove: () => {} },
+    dataset: {},
+    hidden: false,
+    textContent: "",
+    title: "",
+    disabled: false,
+    setAttribute: () => {}
+  });
+  const refs = {
+    authBtn: createElement(),
+    collectionMenuBtn: createElement(),
+    forceOfflineBtn: createElement(),
+    mobileAdminApiWarning: createElement(),
+    syncBtn: createElement(),
+    syncStatus: createElement(),
+    syncUserEmail: createElement()
+  };
+  const documentRef = {
+    body: { classList: { toggle: () => {} } },
+    documentElement: { lang: "en" },
+    querySelector: () => null
+  };
+
+  const previousDocument = globalThis.document;
+  globalThis.document = documentRef;
+  try {
+    updateSyncUiControls({
+      appUnlocked: true,
+      canUseLocalEditableState: () => true,
+      currentUser: null,
+      currentUserEmail: () => "u@example.test",
+      document: documentRef,
+      isCurrentPrivateLayout: () => true,
+      isOfflineRememberedSession: () => true,
+      refs,
+      state: { collectionMode: false },
+      syncMeta: { dirty: false },
+      t: (key) => ({
+        "auth.notSignedIn": "not signed in",
+        "menu.collectionOff": "collection off",
+        "menu.offline": "offline",
+        "menu.signIn": "sign in",
+        "menu.signOut": "sign out",
+        "sync.dirty": "dirty",
+        "sync.synced": "synced"
+      }[key] || key)
+    });
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+
+  assert.equal(refs.syncStatus.textContent, "Local copy of personal layouts · sign in to sync");
+  assert.equal(refs.authBtn.textContent, "Confirm sign-in");
+  assert.equal(refs.syncUserEmail.textContent, "Local · u@example.test");
+  assert.equal(refs.syncUserEmail.title, "Server sign-in is not confirmed. Local copy: u@example.test");
+});
+
 test("container category edits can save an explicitly empty category list", () => {
   const targetState = {
     categories: ["Кемпинг", "Прочее"],
@@ -553,6 +752,44 @@ test("legacy items without a category list do not receive built-in categories", 
 
   assert.deepEqual(itemCategories(targetState.items["item-a"]), []);
   assert.equal(targetState.items["item-a"].category, "");
+});
+
+test("new item dialog defaults to no categories", () => {
+  const state = {
+    layouts: { "layout-a": { id: "layout-a", arrangement: { containers: {} } } },
+    containers: {},
+    items: {}
+  };
+  saveItemDialogAction({
+    changedAt: "2026-07-04T00:00:00.000Z",
+    currentEditMeta: () => ({}),
+    getDialogSelectedCategories: () => [],
+    getPublishedEditLayoutId: () => "layout-a",
+    refs: {
+      dialog: { close() {} },
+      itemAvailabilityStatus: { value: "available" },
+      itemContainer: { value: "" },
+      itemLocation: { value: "Home" },
+      itemName: { value: "New thing" },
+      itemNote: { value: "" },
+      itemQuantity: { value: "1" },
+      itemWeight: { value: "0" },
+      saveItemBtn: { disabled: false }
+    },
+    state
+  });
+
+  const item = Object.values(state.items)[0];
+  assert.ok(item);
+  assert.deepEqual(item.categories, []);
+  assert.equal(item.category, "");
+});
+
+test("new item form does not preselect the first dictionary category", () => {
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+  assert.match(controllers, /function renderItemCategoryPicker\(selected = null, \{ fallbackDefault = false \} = \{\}\)/);
+  assert.match(controllers, /category:\s*"",\s*categories:\s*\[\],\s*containerId:/);
+  assert.doesNotMatch(controllers, /const defaultCategory = dictionaryOptionsForUi\("category"\)\[0\]/);
 });
 
 test("settings summary weight can include every bag in the active layout", () => {

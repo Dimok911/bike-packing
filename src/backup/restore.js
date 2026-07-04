@@ -1,4 +1,5 @@
 import { clonePlain } from "../utils/json.js";
+import { normalizeLayoutNotes } from "../state/layout-notes.js";
 
 export function backupLayoutNameKey(layout) {
   return String(layout?.name || "").trim().toLowerCase();
@@ -35,6 +36,12 @@ export function summarizeBackupLayouts({
   normalizePhotos
 } = {}) {
   const rows = backupLayoutRows(backupState, currentState).filter((row) => layoutIds.has(row.layout.id));
+  const lockedLayoutProtections = rows
+    .filter(({ layout, existing }) => existing?.locked && !layout?.locked)
+    .map(({ layout, existing }) => ({
+      id: layout.id,
+      name: existing?.name || layout.name || ""
+    }));
   const itemIds = new Set();
   const containerIds = new Set();
   rows.forEach(({ layout }) => {
@@ -47,6 +54,7 @@ export function summarizeBackupLayouts({
   return {
     replace: rows.filter((row) => row.mode === "replace").length,
     create: rows.filter((row) => row.mode === "create").length,
+    lockedLayoutProtections,
     newItems: [...itemIds].filter((id) => !currentState.items?.[id]),
     newContainers: [...containerIds].filter((id) => !currentState.containers?.[id]),
     photos: [...photoIds].filter((id) => photoFiles?.has(id))
@@ -104,6 +112,17 @@ export function restoreSelectedBackupLayoutsToState({
     .filter((row) => selectedIds.has(row.layout?.id))
     .forEach(({ layout, existing }) => {
       const targetLayoutId = existing?.id || (!targetState.layouts?.[layout.id] ? layout.id : uniqueLayoutId(layout));
+      const existingWasLocked = Boolean(existing?.locked);
+      const existingNotes = normalizeLayoutNotes(existing?.notes);
+      const restoredLayout = {
+        ...cloneValue(layout),
+        id: targetLayoutId,
+        updatedAt: changedAt
+      };
+      if (existingWasLocked && !restoredLayout.locked) restoredLayout.locked = true;
+      if (existingWasLocked && existingNotes && !normalizeLayoutNotes(restoredLayout.notes)) {
+        restoredLayout.notes = existingNotes;
+      }
       if (existing?.id) delete targetState.layouts[existing.id];
       getLayoutContainerIdSet(sourceState, layout).forEach((containerId) => {
         const result = mergeBackupRecordWithExisting(targetState.containers, sourceState.containers?.[containerId], { normalizePhotos });
@@ -115,11 +134,7 @@ export function restoreSelectedBackupLayoutsToState({
         result.photoIds.forEach((id) => importedPhotoIds.add(id));
         if (result.created) markEdited(targetState.items[itemId], changedAt);
       });
-      targetState.layouts[targetLayoutId] = {
-        ...cloneValue(layout),
-        id: targetLayoutId,
-        updatedAt: changedAt
-      };
+      targetState.layouts[targetLayoutId] = restoredLayout;
       targetState.activeLayoutId = targetLayoutId;
       restoredLayoutIds.push(targetLayoutId);
     });

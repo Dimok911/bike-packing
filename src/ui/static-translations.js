@@ -97,6 +97,18 @@ export function applyStaticTranslationsUi({
   setText(refs.dialog?.querySelector(".item-total-weight span"), t("forms.totalWeight"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemLocation)"), t("forms.storage"));
   setFirstText(refs.dialog?.querySelector(".field-label:has(#itemCategoryList)"), t("forms.categories"));
+  setFirstText(refs.dialog?.querySelector("label:has(#itemAvailabilityStatus)"), t("forms.availability"));
+  if (refs.itemAvailabilityStatus) {
+    const availabilityLabels = {
+      available: t("items.availability.available"),
+      lost: t("items.availability.lost"),
+      broken: t("items.availability.broken"),
+      retired: t("items.availability.retired")
+    };
+    refs.itemAvailabilityStatus.querySelectorAll("option").forEach((option) => {
+      option.textContent = availabilityLabels[option.value] || option.textContent;
+    });
+  }
   setText(refs.itemContainerLabel, t("forms.placeIn"));
   setText(refs.itemContainerPickerBtn, t("forms.moveInsideLayout"));
   setText(refs.itemCopyToContainerBtn, t("forms.copyToLayout"));
@@ -183,6 +195,9 @@ export function applyStaticTranslationsUi({
   setText(refs.saveLayoutBtn, t("buttons.add"));
 
   setFirstText(refs.layoutEditDialog?.querySelector("label:has(#layoutEditName)"), t("forms.name"));
+  setFirstText(refs.layoutEditDialog?.querySelector("label:has(#layoutEditNotes)"), t("forms.notes"));
+  if (refs.layoutEditNotes) refs.layoutEditNotes.placeholder = t("layout.notesPlaceholder");
+  setText(refs.layoutLockedLabel?.querySelector("span"), t("layout.lockedLabel"));
   setText(refs.deleteEditedLayoutBtn, t("buttons.deleteLayout"));
   setText(refs.saveEditedLayoutBtn, t("buttons.save"));
 

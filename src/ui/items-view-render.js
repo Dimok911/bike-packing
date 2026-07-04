@@ -1,6 +1,11 @@
 import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
 import { renderEmptyState } from "./empty-state.js";
 import { formatItemWeight, renderItemQuantityText } from "./item-format.js";
+import {
+  itemAvailabilityBadgeHtml,
+  itemAvailabilityCardClass,
+  itemAvailabilityLabel
+} from "./item-availability.js";
 
 function tr(t, key, fallback, values = {}) {
   const value = t(key, values);
@@ -126,11 +131,14 @@ export function renderListItemHtml({
   showLabels,
   t = (key) => key
 }) {
+  const availabilityLabel = itemAvailabilityLabel(item, t);
+  const availabilityBadge = itemAvailabilityBadgeHtml(item, t);
   const copyLabel = tr(t, "buttons.copy", "Скопировать");
   const editLabel = tr(t, "buttons.edit", "Редактировать");
   const deleteLabel = tr(t, "buttons.deleteForever", "Удалить навсегда");
   const cardTitle = [
     item.name,
+    availabilityLabel,
     quantityText,
     formatItemWeight(item),
     categories.join(", "),
@@ -139,6 +147,7 @@ export function renderListItemHtml({
   ].filter(Boolean).join("\n");
   return renderCatalogCard({
     classes: [
+      itemAvailabilityCardClass(item),
       inCurrentLayout ? "in-current-layout" : "",
       selected ? "catalog-selected" : "",
       filterMatch ? "filter-match" : ""
@@ -149,7 +158,7 @@ export function renderListItemHtml({
       ...(filterMatch ? { "data-filter-match-id": item.id } : {})
     },
     title: cardTitle,
-    titleHtml: `${highlightText(item.name)}${renderItemQuantityText(item)}`,
+    titleHtml: `${highlightText(item.name)}${availabilityBadge}${renderItemQuantityText(item)}`,
     metaHtml: renderCatalogPills([
       formatItemWeight(item),
       ...categories.map((category) => highlightText(category)),

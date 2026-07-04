@@ -122,11 +122,13 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
     if (!container || containerIdMap.has(containerId)) return;
     if (container.publicCatalogLayoutId !== layoutId) return;
+    if (publishedSourceAlreadyExported("container", containers, container, containerId, { cssSafeId })) return;
     walk(containerId, null);
   });
   Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
     if (!item || itemIdMap.has(itemId)) return;
     if (item.publicCatalogLayoutId !== layoutId) return;
+    if (publishedSourceAlreadyExported("item", items, item, itemId, { cssSafeId })) return;
     copyItemRecord(itemId, "");
   });
   const dictionaryOwner = ensureLayoutDictionaries(layout);
@@ -181,6 +183,12 @@ function fallbackSafeId(value) {
     .replace(/[^a-zа-я0-9_-]+/gi, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function publishedSourceAlreadyExported(type, records, entity, fallbackId, { cssSafeId } = {}) {
+  if (!entity?.sharedSourceId && !entity?._publicCopySourceId && !entity?.publicCopySourceId) return false;
+  const id = cleanPublishedEntityId(type, entity, fallbackId, { cssSafeId });
+  return Boolean(id && records?.[id]);
 }
 
 export function cleanGeneratedEntityId(value) {

@@ -76,6 +76,7 @@ export function renderFilterControls({
   fillSelect = () => {},
   getActiveEditableLayoutId = () => "",
   isDemoLayoutChoice = () => false,
+  isLayoutLocked = () => false,
   isReadOnlyStateScope = () => false,
   isSharedLayoutView = () => false,
   linkedSharedListLayout = null,
@@ -137,7 +138,11 @@ export function renderFilterControls({
   }
   const layoutOptions = [
     ...publicOptions,
-    ...personalLayouts.map((layout) => [layout.id, layout.name, "personal"])
+    ...personalLayouts.map((layout) => [
+      layout.id,
+      `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layout.name}`,
+      "personal"
+    ])
   ];
   fillSelect(refs.layoutSelect, layoutOptions, selectedLayoutValue);
   updateLayoutLoadStatusUi();

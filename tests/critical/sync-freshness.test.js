@@ -221,6 +221,84 @@ test("CRITICAL sync-save: force overwrite skips entity sync and uses full payloa
   assert.equal(runtime.syncMeta.dirty, false);
 });
 
+test("CRITICAL sync-save: unconfirmed entity sync falls back to full payload save", async () => {
+  let fullSaveCalled = false;
+  const runtime = {
+    currentUser: { id: "user-1" },
+    state: {
+      items: { "item-1": { id: "item-1", name: "Fresh phone item" } },
+      containers: {},
+      layouts: {}
+    },
+    syncMeta: { dirty: true, stateRevision: 9 },
+    uiLanguage: "ru"
+  };
+
+  await saveRemoteStateFlow({
+    runtime,
+    dependencies: {
+      blockDestructiveLocalSave: () => false,
+      canLocalStateOverrideRemote: () => true,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      currentPublicTemplateStatusMessage: () => "",
+      handleRemoteSaveConflict: async () => {},
+      hasLegacyPayloadChanges: () => false,
+      legacyComparableTopLevelDiffKeys: () => [],
+      preflightRemoteSaveConflict: async () => false,
+      isDemoPublicTemplateMissing: () => false,
+      isNetworkError: () => false,
+      isReadOnlyBikePackingContext: () => false,
+      isReadOnlyBikePackingError: () => false,
+      isSuspiciousEmptyPackingState: () => false,
+      isTemporaryServerStorageError: () => false,
+      isTimeoutError: () => false,
+      loadBaseState: () => ({ items: {}, containers: {}, layouts: {} }),
+      nowIso: () => "2026-06-05T10:02:00.000Z",
+      remoteUpdatedAt: () => "2026-06-05T10:04:00.000Z",
+      rememberConflictRemoteMeta: () => {},
+      rememberCurrentSyncAccount: () => {},
+      rememberRemoteIntegrityMeta: () => {},
+      repairCollapsedActiveLayoutBeforeSave: () => {},
+      saveBaseState: () => {},
+      saveRemoteState: async () => {},
+      saveRemoteStateRecord: async () => {
+        fullSaveCalled = true;
+        return { list: { updatedAt: "2026-06-05T10:04:00.000Z", stateRevision: 11 } };
+      },
+      saveSyncMeta: () => {},
+      serializeState: () => runtime.state,
+      showToast: () => {},
+      stateIntegrityMetaFromResponse: () => ({ stateRevision: 11 }),
+      syncChangedBikePackingEntities: async () => ({
+        attempted: true,
+        skipped: false,
+        unavailable: false,
+        serverUpdatedAt: "2026-06-05T10:03:00.000Z",
+        integrityMeta: { stateRevision: 10 },
+        item: {
+          type: "item",
+          attempted: true,
+          changedIds: ["item-1"],
+          deletedIds: [],
+          upserted: [],
+          deleted: []
+        },
+        container: { type: "container", attempted: false, changedIds: [], deletedIds: [], upserted: [], deleted: [] },
+        layout: { type: "layout", attempted: false, changedIds: [], deletedIds: [], upserted: [], deleted: [] },
+        dictionary: { type: "dictionary", attempted: false, changedIds: [], deletedIds: [], upserted: [], deleted: [] },
+        upserted: [],
+        deleted: []
+      }),
+      updateSyncUi: () => {},
+      uploadPendingPhotos: async () => {}
+    }
+  });
+
+  assert.equal(fullSaveCalled, true);
+  assert.equal(runtime.syncMeta.dirty, false);
+  assert.equal(runtime.syncMeta.serverUpdatedAt, "2026-06-05T10:04:00.000Z");
+});
+
 test("CRITICAL sync-save: changed server freshness stops before entity sync", async () => {
   let preflightCalled = false;
   let entitySyncCalled = false;

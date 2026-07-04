@@ -90,6 +90,65 @@ export async function createContainerTreeDuplicateRecord(container, {
   };
 }
 
+export function createSubcontainerInLayoutState(targetState, parentId, targetLayoutId, {
+  changedAt = "",
+  currentCreateMeta = () => ({}),
+  id = "",
+  markRecordActivePublicCatalog = () => {},
+  name = "",
+  normalizeLayoutArrangement = () => {},
+  touchContainer = () => {},
+  touchLayout = () => {}
+} = {}) {
+  const layout = targetState?.layouts?.[targetLayoutId];
+  const parent = targetState?.containers?.[parentId];
+  const normalizedName = String(name || "").trim();
+  if (!targetState?.containers || !layout || !parent || !id || !normalizedName || targetState.containers[id]) {
+    return null;
+  }
+
+  const parentPlacement = ensureLayoutContainerPlacement(targetState, layout, parentId);
+  if (!parentPlacement) return null;
+
+  targetState.containers[id] = {
+    id,
+    name: normalizedName,
+    parentId,
+    childIds: [],
+    itemIds: [],
+    order: [],
+    weight: 0,
+    ...currentCreateMeta(changedAt)
+  };
+  markRecordActivePublicCatalog(targetState.containers[id]);
+
+  layout.arrangement.containers[id] = {
+    parentId,
+    itemIds: [],
+    childIds: [],
+    order: []
+  };
+
+  parent.childIds = Array.isArray(parent.childIds) ? parent.childIds.filter((childId) => childId !== id) : [];
+  parent.childIds.push(id);
+  parent.order = Array.isArray(parent.order)
+    ? parent.order.filter((entry) => !(entry?.type === "container" && entry.id === id))
+    : [];
+  parent.order.push({ type: "container", id });
+
+  parentPlacement.childIds = Array.isArray(parentPlacement.childIds) ? parentPlacement.childIds.filter((childId) => childId !== id) : [];
+  parentPlacement.childIds.push(id);
+  parentPlacement.order = Array.isArray(parentPlacement.order)
+    ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === id))
+    : [];
+  parentPlacement.order.push({ type: "container", id });
+
+  normalizeLayoutArrangement(layout, targetState);
+  touchContainer(parent, changedAt);
+  touchLayout(targetLayoutId, changedAt);
+  return { id, parentId, layoutId: targetLayoutId };
+}
+
 export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
   changedAt = "",
   cloneEntity = (record) => ({ ...(record || {}) }),

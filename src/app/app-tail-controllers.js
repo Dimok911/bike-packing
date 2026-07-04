@@ -3,6 +3,10 @@ import {
   photoPrimaryButtonState,
   resolvePhotoPrimaryButtonPhotoCount
 } from "../ui/photo-primary-button.js";
+import {
+  applyLayoutNotes,
+  normalizeLayoutNotes
+} from "../state/layout-notes.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -33,9 +37,9 @@ export function createAppTailControllers(ctx) {
     allActiveLayoutNestedContainersCollapsedForState, allSharedLayoutsByAdminOrder, annotatePayloadError, apiCapabilitySet, apiErrorMessage,
     apiFetch, apiFetchRequest, apiUploadFormData, apiUploadFormDataRequest, appUnlocked,
     appendCopiedFromTemplateNote, applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState,
-    applyDefaultCollapsedContainers, applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyLayoutArrangement,
+    applyDefaultCollapsedContainers, applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyItemAvailabilityStatus, applyLayoutArrangement,
     applyLayoutArrangementToState, applyLayoutEditFields, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass,
-    applyPreferredPrivateLayoutChoice, applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState,
+    applyLayoutLocked, applyPreferredPrivateLayoutChoice, applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState,
     applySearchInputNow, applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState,
     arePublishedTemplatesBlocked, askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog,
     assertAdminApiCompatibility, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity,
@@ -87,7 +91,7 @@ export function createAppTailControllers(ctx) {
     demoTemplateFallbackName, demoTemplateForLanguage, demoTemplateIdFromLayoutChoice, demoTemplateIdFromLayoutChoiceValue, demoTemplateNameCandidates,
     demoTemplateNameFromPayload, demoTemplatesForLanguage, demoTemplatesForUiLanguage, dictionaryCategorySortMode, dictionaryEditScope,
     dictionaryEntitySyncUnavailable, dictionaryListForOwner, dictionaryLocationSortMode, dictionaryOptionsForOwner, dictionaryOptionsForUi,
-    dictionaryOptionsForUiValues, dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, duplicateContainerSnapshotRecords,
+    dictionaryOptionsForUiValues, dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, createSubcontainerInLayoutState, duplicateContainerSnapshotRecords,
     duplicateItemToContainerInLayoutState, duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin,
     editedLayoutName, editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload,
     ensureGuestPublicScope, ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState,
@@ -126,7 +130,7 @@ export function createAppTailControllers(ctx) {
     isGeneratedCatalogContainerSyncArtifact, isGeneratedCatalogStateArtifact, isGeneratedCatalogSyncArtifact, isGeneratedStartupFallbackState, isGuestDemoCopyLayout,
     isGuestDemoCopyLayoutRecord, isGuestLocalPersonalLayout, isGuestSession, isItemAwayFromHomeAndBikeValue, isItemInCatalogForState,
     isItemInLayoutForState, isItemWithoutWeightValue, isLayoutCreateTemplateLayoutModeValue, isLayoutMeaningful, isLocalDevOrigin,
-    isManagedDemoTemplateLayout, isManagedPublicTemplateDraft, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession,
+    isItemUnavailableForPacking, isLayoutLocked, isManagedDemoTemplateLayout, isManagedPublicTemplateDraft, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession,
     isOfflineRememberedSession, isOwnLayoutEchoConflict, isOwnLayoutEchoConflictValue, isPackingStateShape, isPhotoStoredForList,
     isPhotoUsableFromServer, isPrivateCatalogRecord, isPrivateLayoutChoice, isPrivateLayoutChoiceForStateRestore, isPrivateLayoutChoiceValue,
     isPrivateUserLayoutId, isPublicCatalogContainerRecordForState, isPublicCatalogItemRecordForState, isPublicDemoTemplateRecord, isPublicLayoutContext,
@@ -158,11 +162,11 @@ export function createAppTailControllers(ctx) {
     mergeManagedPublicDraftRecords, mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries,
     mergeStateFromBase, mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState,
     moveContainerInLayoutArrangementForState, moveItemInLayoutArrangementForState, moveRootColumnInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue,
-    nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
+    itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, unavailableSnapshotItems, nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
     normalizeBike3dViewState, normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions,
     normalizeContainerFields, normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues,
     normalizeIntegrityCount, normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos,
-    normalizeItemQuantity, normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse,
+    normalizeItemAvailabilityStatus, normalizeItemQuantity, normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse,
     normalizePackingViewMode, normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore,
     normalizePublicTemplateMetadataResponse, normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRecoveryPayload, normalizeRemoteListRecord,
     normalizeRemoteState, normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision,
@@ -179,7 +183,7 @@ export function createAppTailControllers(ctx) {
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
     primaryItemPhoto, printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
-    publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
+    containerPlacementSnapshotChanged, publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
     publicCopySourceIdFromRecord, isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
     publicLayoutDeleteConfirm, publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice,
     publicTemplateDeleteBlockReason, publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget,
@@ -272,6 +276,89 @@ function quoteName(name) {
   return isEnglishUi() ? `“${name}”` : `«${name}»`;
 }
 
+function layoutDisplayName(layout) {
+  return layout?.name || defaultLayoutName();
+}
+
+function lockedLayoutNames(layouts = []) {
+  return layouts.map(layoutDisplayName).join(", ");
+}
+
+function warnLockedLayoutMutation(layoutId) {
+  const layout = state.layouts?.[layoutId];
+  if (!isLayoutLocked(layout)) return false;
+  showToast(t("layout.lockedMutationBlock", { name: layoutDisplayName(layout) }), "warning");
+  return true;
+}
+
+function warnLockedItemDelete(itemId) {
+  const layouts = lockedLayoutsContainingItem(state, itemId);
+  if (!layouts.length) return false;
+  showToast(t("items.deleteLockedLayoutBlock", { layouts: lockedLayoutNames(layouts) }), "warning");
+  return true;
+}
+
+function warnLockedContainerDelete(containerId) {
+  const layouts = lockedLayoutsContainingContainer(state, containerId);
+  if (!layouts.length) return false;
+  showToast(t("layout.containerDeleteLockedBlock", { layouts: lockedLayoutNames(layouts) }), "warning");
+  return true;
+}
+
+function warnLockedItemEdit(itemId) {
+  const layouts = lockedLayoutsContainingItem(state, itemId);
+  if (!layouts.length) return false;
+  showToast(t("items.editLockedLayoutBlock", { layouts: lockedLayoutNames(layouts) }), "warning");
+  return true;
+}
+
+function warnLockedContainerEdit(containerId) {
+  const layouts = lockedLayoutsContainingNestedContainer(state, containerId);
+  if (!layouts.length) return false;
+  showToast(t("layout.containerEditLockedBlock", { layouts: lockedLayoutNames(layouts) }), "warning");
+  return true;
+}
+
+function warnUnavailableItemPlacement(itemId) {
+  if (!itemAvailabilityBlocksPlacement(state.items?.[itemId])) return false;
+  showToast(t("items.unavailableCannotAdd"), "warning");
+  return true;
+}
+
+function warnUnavailableItemDialogPlacement() {
+  if (!runtime.editingItemId) return false;
+  if (!itemAvailabilityBlocksPlacement(state.items?.[runtime.editingItemId], refs.itemAvailabilityStatus?.value)) return false;
+  showToast(t("items.unavailableCannotAdd"), "warning");
+  return true;
+}
+
+function warnUnavailableSnapshotCopy(sourceSnapshot) {
+  if (!unavailableSnapshotItems(sourceSnapshot).length) return false;
+  showToast(t("items.unavailableCannotAdd"), "warning");
+  return true;
+}
+
+function itemDialogChangedOnlyAvailability() {
+  if (!runtime.itemDialogInitialSnapshot) return false;
+  const initial = { ...runtime.itemDialogInitialSnapshot };
+  const current = { ...getItemDialogSnapshot() };
+  delete initial.availabilityStatus;
+  delete current.availabilityStatus;
+  return snapshotsEqual(initial, current);
+}
+
+function warnLockedItemDialogPlacementChange() {
+  if (!runtime.itemDialogInitialSnapshot) return false;
+  if (!itemPlacementSnapshotChanged(runtime.itemDialogInitialSnapshot, getItemDialogSnapshot())) return false;
+  return warnLockedLayoutMutation(runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId());
+}
+
+function warnLockedRootContainerDialogPlacementChange() {
+  if (!runtime.rootContainerDialogInitialSnapshot) return false;
+  if (!containerPlacementSnapshotChanged(runtime.rootContainerDialogInitialSnapshot, getRootContainerDialogSnapshot())) return false;
+  return warnLockedLayoutMutation(getPublishedEditLayoutId());
+}
+
 function confirmLayoutNameHtml(name) {
   return `<span class="confirm-layout-name">${escapeHtml(name || defaultLayoutName())}</span>`;
 }
@@ -288,6 +375,7 @@ function openAddToContainerDialog(containerId) {
   if (!state.containers[containerId]) return;
   runtime.addToContainerTargetId = containerId;
   runtime.addToContainerTargetLayoutId = resolveEditableLayoutIdForContainer(containerId);
+  if (warnLockedLayoutMutation(runtime.addToContainerTargetLayoutId)) return;
   refs.addToContainerTitle.textContent = t("buttons.add");
   refs.addToContainerPath.textContent = containerPath(containerId);
   refs.addToContainerSearch.value = "";
@@ -325,14 +413,16 @@ function renderAddToContainerResults() {
     .slice(0, 60);
   refs.addToContainerResults.innerHTML = items.map((item) => {
     const alreadyHere = getItemContainerIdInLayout(layout, item.id) === containerId;
+    const unavailable = isItemUnavailableForPacking(item);
     return `
       <button
-        class="add-item-result ${alreadyHere ? "already-here" : ""}"
+        class="add-item-result ${alreadyHere ? "already-here" : ""} ${unavailable ? "unavailable" : ""}"
         type="button"
         data-add-existing-item="${item.id}"
-        ${alreadyHere ? "disabled" : ""}
+        ${alreadyHere || unavailable ? "disabled" : ""}
       >
         <strong>${highlightSearchText(item.name, query)}</strong>
+        ${unavailable ? `<small>${escapeHtml(t("items.unavailableBadge"))}</small>` : ""}
       </button>
     `;
   }).join("") || `<div class="empty">${escapeHtml(t("empty.notFound"))}</div>`;
@@ -485,6 +575,7 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
   const container = state.containers?.[containerId];
   const layout = state.layouts?.[getPublishedEditLayoutId()];
   if (!container || !layout || !canRemoveContainerFromActiveLayout(containerId)) return;
+  if (warnLockedLayoutMutation(layout.id)) return;
   const itemCount = getLayoutSubtreeItemCount(layout, containerId);
   const isRoot = getLayoutContainerRootStatus(layout, containerId);
   const layoutName = layout.name || defaultLayoutName();
@@ -595,6 +686,7 @@ function openRootContainerPlacementAction(event) {
   event?.preventDefault();
   const container = state.containers[runtime.editingRootContainerId];
   if (!container) return;
+  if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   if (container.parentId) {
     openContainerParentPickerDialog();
     return;
@@ -605,6 +697,7 @@ function openRootContainerPlacementAction(event) {
 function openRootPlacementDialog() {
   const containerId = runtime.editingRootContainerId;
   const container = state.containers[containerId];
+  if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   if (!container || container.parentId) return;
   refs.rootPlacementTitle.textContent = `Переставить «${container.name}»`;
   renderRootPlacementBoard(containerId);
@@ -659,6 +752,7 @@ function renderRootPlacementColumn(rootId, selectedId) {
 }
 
 function placeRootContainerInActiveLayout(containerId, slotIndex) {
+  if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   const index = normalizeRootPlacementIndex(containerId, slotIndex);
   const rootIds = getRootContainerDialogLayoutRootIds().filter((id) => id !== containerId);
   rootIds.splice(Math.max(0, Math.min(index, rootIds.length)), 0, containerId);
@@ -688,6 +782,7 @@ function applyRootContainerDialogPlacement() {
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   if (!layout) return false;
+  if (warnLockedLayoutMutation(layoutId)) return false;
   const currentIds = layout.rootContainerIds || [];
   if (snapshotsEqual(currentIds, runtime.rootContainerDialogPendingRootIds)) return false;
   layout.rootContainerIds = [...runtime.rootContainerDialogPendingRootIds];
@@ -697,6 +792,7 @@ function applyRootContainerDialogPlacement() {
 
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
   const layoutId = getPublishedEditLayoutId();
+  if (warnLockedLayoutMutation(layoutId)) return;
   if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
     markRecordActivePublicCatalog,
     touchLayout
@@ -711,6 +807,7 @@ function addExistingItemToContainer(itemId) {
   const containerId = runtime.addToContainerTargetId;
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const changedAt = nowIso();
+  if (warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(itemId)) return;
   if (!placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
     showToast("Не удалось добавить вещь в эту укладку.", "error");
     return;
@@ -740,40 +837,30 @@ function createSubcontainerFromAddDialog(event) {
   event.preventDefault();
   const parentId = runtime.addToContainerTargetId;
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
-  const layout = state.layouts?.[layoutId];
-  const parent = state.containers[parentId];
-  const parentPlacement = ensureLayoutContainerPlacement(layout, parentId);
   const name = refs.newSubcontainerName.value.trim();
-  if (!parent || !layout || !parentPlacement || !name) return;
+  if (!name) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   if (!requireUsageCapacity("containers")) return;
   const changedAt = nowIso();
   const id = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  state.containers[id] = {
+  const created = createSubcontainerInLayoutState(state, parentId, layoutId, {
+    changedAt,
+    currentCreateMeta,
     id,
     name,
-    parentId,
-    childIds: [],
-    itemIds: [],
-    order: [],
-    weight: 0,
-    ...currentCreateMeta(changedAt)
-  };
-  markRecordActivePublicCatalog(state.containers[id]);
-  layout.arrangement.containers[id] = {
-    parentId,
-    itemIds: [],
-    childIds: [],
-    order: []
-  };
-  parentPlacement.childIds = parentPlacement.childIds || [];
-  if (!parentPlacement.childIds.includes(id)) parentPlacement.childIds.push(id);
-  parentPlacement.order = parentPlacement.order || [];
-  parentPlacement.order.push({ type: "container", id });
-  normalizeLayoutArrangement(layout, state);
+    markRecordActivePublicCatalog,
+    normalizeLayoutArrangement,
+    touchContainer: markEdited,
+    touchLayout
+  });
+  if (!created) {
+    showToast("Не удалось добавить новый список в эту укладку.", "error");
+    return;
+  }
   state.collapsedContainers[parentId] = false;
   state.collapsedContainers[id] = false;
-  touchLayout(layoutId, changedAt);
   saveLocalUiState();
+  markRecentlyAddedContainer(id, layoutId);
   if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
   saveLayoutMutation(layoutId);
   refs.addToContainerDialog.close();
@@ -852,7 +939,7 @@ function renderCategoryPicker(target, selected = null, { fallbackDefault = true,
   }).join("");
 }
 
-function renderItemCategoryPicker(selected = null, { fallbackDefault = true } = {}) {
+function renderItemCategoryPicker(selected = null, { fallbackDefault = false } = {}) {
   renderCategoryPicker(refs.itemCategoryList, selected, { fallbackDefault, idPrefix: "item-category" });
 }
 
@@ -928,10 +1015,13 @@ function getContainerCopyExcludedLayoutIds() {
 
 function openItemContainerPickerDialog(event) {
   event?.preventDefault();
+  const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  if (warnLockedLayoutMutation(layoutId)) return;
+  if (warnUnavailableItemDialogPlacement()) return;
   containerPickerSourceIsNestedContainer = false;
   runtime.containerPickerMode = "item";
   runtime.containerPickerTargetContainerId = "";
-  runtime.containerPickerLayoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  runtime.containerPickerLayoutId = layoutId;
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -940,6 +1030,7 @@ function openItemContainerPickerDialog(event) {
 async function openItemCopyContainerPickerDialog(event) {
   event?.preventDefault();
   if (!runtime.editingItemId || !state.items[runtime.editingItemId]) return;
+  if (warnUnavailableItemDialogPlacement()) return;
   containerPickerSourceIsNestedContainer = false;
   runtime.containerPickerMode = "item-copy";
   runtime.containerPickerTargetContainerId = "";
@@ -953,6 +1044,7 @@ async function openItemCopyContainerPickerDialog(event) {
 function openContainerParentPickerDialog(event) {
   event?.preventDefault();
   if (!runtime.editingRootContainerId || !state.containers[runtime.editingRootContainerId]?.parentId) return;
+  if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   containerPickerSourceIsNestedContainer = false;
   runtime.containerPickerMode = "container";
   runtime.containerPickerTargetContainerId = runtime.editingRootContainerId;
@@ -1308,7 +1400,9 @@ async function selectContainerPickerRootTarget(targetIndex = null) {
 }
 
 function selectItemContainer(containerId) {
-  runtime.itemDialogTargetLayoutId = getPublishedEditLayoutId();
+  const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  if (warnLockedLayoutMutation(layoutId)) return;
+  runtime.itemDialogTargetLayoutId = layoutId;
   refs.itemContainer.value = containerId || "";
   updateItemContainerPickerButton();
   updateItemRemoveFromLayoutButton();
@@ -1346,6 +1440,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
+  if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) {
     if (layoutContainsItem(targetLayoutId, itemId)) {
@@ -1424,6 +1519,7 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
+  if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   if (!requireUsageCapacity("items")) return;
   const sourceSnapshot = clone(source);
   const changedAt = nowIso();
@@ -1494,6 +1590,8 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   const targetLayout = state.layouts[targetLayoutId];
   const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, excludeLayoutId: targetLayoutId });
   if (!sourceSnapshot || !targetLayout) return;
+  if (warnLockedLayoutMutation(targetLayoutId)) return;
+  if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
   if (copyAction === "cancel") return;
@@ -1556,6 +1654,8 @@ function layoutMissingItemPlanForContainerTree(layoutId, sourceSnapshot) {
 function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = state.activeLayoutId, targetParentId = "", { targetIndex = null } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!sourceSnapshot || !targetLayout) return false;
+  if (warnLockedLayoutMutation(targetLayoutId)) return false;
+  if (warnUnavailableSnapshotCopy(sourceSnapshot)) return false;
   ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
   let linkedRootId = "";
@@ -1587,6 +1687,8 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
 } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!sourceSnapshot || !targetLayout) return "";
+  if (warnLockedLayoutMutation(targetLayoutId)) return "";
+  if (warnUnavailableSnapshotCopy(sourceSnapshot)) return "";
   if (!requireUsageCapacity("containers", Object.keys(sourceSnapshot.containers || {}).length)) return "";
   if (!requireUsageCapacity("items", Object.keys(sourceSnapshot.items || {}).length)) return "";
   const changedAt = nowIso();
@@ -1685,6 +1787,7 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
 function selectRootContainerParent(parentId, targetIndex = null) {
   const containerId = runtime.containerPickerTargetContainerId || runtime.editingRootContainerId;
   if (!containerId || !state.containers[containerId] || !state.containers[parentId]) return;
+  if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   if (!isContainerPickerTargetAllowed(parentId)) return;
   runtime.rootContainerDialogPendingParentId = parentId;
   runtime.rootContainerDialogPendingParentIndex = Number.isFinite(targetIndex) ? targetIndex : null;
@@ -1850,12 +1953,12 @@ function renderSummary() {
       isItemAwayFromHomeAndBike({ location: container.location || defaultRootContainerLocation(state) })
     ).length;
     const unknownWeight = containers.filter((container) => !Number(container.weight || 0)).length;
-    refs.summary.innerHTML = [
+    renderSummaryContent([
       metric(formatWeight(totalWeight), filteredLabel(t("summary.totalBagWeight"), isFiltered)),
       metric(String(containers.length), filteredLabel(t("summary.bagsShown"), isFiltered)),
       metric(String(notHome), filteredLabel(t("summary.notPacked"), isFiltered)),
       metric(String(unknownWeight), filteredLabel(t("summary.withoutWeight"), isFiltered))
-    ].join("");
+    ]);
     return;
   }
   const visibleItems = getSummaryItems(view);
@@ -1866,20 +1969,20 @@ function renderSummary() {
     const activeItems = getActiveLayoutItems().filter(matchesBaseFilters);
     const packedCount = activeItems.filter((item) => isItemPacked(item.id)).length;
     const unpackedCount = Math.max(0, activeItems.length - packedCount);
-    refs.summary.innerHTML = [
+    renderSummaryContent([
       metric(`${packedCount} / ${activeItems.length}`, t("summary.packed")),
       metric(String(unpackedCount), t("summary.leftToPack")),
       metric(String(notHome), filteredLabel(t("summary.notPacked"), isFiltered)),
       metric(String(unknownWeight), filteredLabel(t("summary.withoutWeight"), isFiltered))
-    ].join("");
+    ]);
     return;
   }
-  refs.summary.innerHTML = [
+  renderSummaryContent([
     metric(formatWeight(totalWeight), filteredLabel(t("summary.totalWeight"), isFiltered)),
     metric(String(visibleItems.length), filteredLabel(t("summary.itemsShown"), isFiltered)),
     metric(String(notHome), filteredLabel(t("summary.notPacked"), isFiltered)),
     metric(String(unknownWeight), filteredLabel(t("summary.withoutWeight"), isFiltered))
-  ].join("");
+  ]);
 }
 
 function getSummaryItems(view = getCurrentView()) {
@@ -1915,6 +2018,21 @@ function filteredLabel(label, isFiltered) {
 
 function metric(value, label) {
   return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
+}
+
+function layoutNotesSummaryHtml() {
+  const notes = normalizeLayoutNotes(state.layouts?.[state.activeLayoutId]?.notes);
+  if (!notes) return "";
+  return `
+    <div class="layout-notes-summary">
+      <strong>${escapeHtml(t("layout.notesTitle"))}</strong>
+      <p>${escapeHtml(notes)}</p>
+    </div>
+  `;
+}
+
+function renderSummaryContent(metrics) {
+  refs.summary.innerHTML = `${metrics.join("")}${layoutNotesSummaryHtml()}`;
 }
 
 function isSharedLayoutView() {
@@ -2000,12 +2118,12 @@ function renderSharedSummary() {
     const totalWeight = getSummaryWeight(summaryView, visibleItems, hasActiveContentFilter());
     const unknownWeight = visibleItems.filter((item) => !Number(item.weight)).length;
     const rootCount = state.layouts[state.activeLayoutId]?.rootContainerIds?.length || 0;
-    refs.summary.innerHTML = [
+    renderSummaryContent([
       metric(t("shared.prefix"), t("shared.viewMetric")),
       metric(formatWeight(totalWeight), t("summary.totalWeight")),
       metric(String(rootCount), t("summary.bags")),
       metric(String(unknownWeight), t("summary.withoutWeight"))
-    ].join("");
+    ]);
   });
 }
 
@@ -2726,6 +2844,7 @@ function startInlineItemTitleEdit(itemId) {
 
 function togglePacked(itemId) {
   if (!state.items[itemId]) return;
+  if (warnLockedLayoutMutation(state.activeLayoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
   state.packedItems = state.packedItems || {};
@@ -2738,6 +2857,7 @@ function togglePacked(itemId) {
 
 function unpackAllItems() {
   if (!Object.values(state.packedItems || {}).some(Boolean)) return;
+  if (warnLockedLayoutMutation(state.activeLayoutId)) return;
   openConfirmDialog({
     title: "Разобрать все вещи?",
     text: "Все отметки «собрано» будут сняты. Сами вещи и укладка останутся на месте.",
@@ -2888,6 +3008,8 @@ function getPackingDragController() {
       getPackingTab: () => document.querySelector('.tab[data-view="packing"]'),
       getState: () => state,
       isOriginalRootColumnPosition,
+      canStartPackingDrag: () => !warnLockedLayoutMutation(state.activeLayoutId),
+      onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
       moveContainer,
       moveContainerIntoContainerTop,
       moveItem,
@@ -2901,7 +3023,6 @@ function getPackingDragController() {
       setDraggingItemId: (value) => {
         runtime.draggingItemId = value;
       },
-      onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
       switchToPacking: () => {
         switchView("packing");
         renderPacking();
@@ -3234,6 +3355,7 @@ function formatRootContainerCount(count) {
 
 async function copyCatalogItems(itemIds) {
   const ids = [...new Set(itemIds)].filter((id) => state.items?.[id]);
+  if (ids.some((id) => warnUnavailableItemPlacement(id))) return;
   if (ids.length <= 1) {
     if (ids[0]) copyItem(ids[0], { keepPlacement: false });
     return;
@@ -3459,10 +3581,10 @@ function bindSettingsPointerDrag() {
     getTouchPoint,
     isHoldDragInput,
     markDragPending,
+    onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
     pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
     preventDragContextMenu,
     render,
-    onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
     switchToPacking: () => {
       switchView("packing");
       renderPacking();
@@ -3639,6 +3761,7 @@ function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];
   if (!state.items[itemId] || !layout || !state.containers[targetContainerId]) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   if (options.captureScroll !== false) capturePackingScroll();
   const changedAt = nowIso();
   if (!moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex)) return;
@@ -3653,6 +3776,7 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];
   if (!layout || !state.containers[containerId] || !state.containers[targetParentId]) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
   if (!moveContainerInLayoutArrangement(layout, containerId, targetParentId, targetIndex)) return;
@@ -3682,6 +3806,7 @@ function createGroupFromItems(itemId, targetItemId) {
   if (!requireUsageCapacity("containers")) return;
   const layoutId = state.activeLayoutId;
   if (!state.layouts?.[layoutId] || !state.items[itemId] || !state.items[targetItemId]) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
   const groupId = `container-${Date.now()}`;
@@ -3701,6 +3826,7 @@ function createGroupFromItems(itemId, targetItemId) {
 }
 
 function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId) {
+  if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
   if (!removeItemFromLayoutInState(state, layoutId, itemId, { changedAt, touchLayout })) return;
@@ -3732,6 +3858,7 @@ function addItemToLayoutArrangement(layout, itemId, containerId, targetIndex = n
 }
 
 function placeExistingItemInLayout(itemId, containerId, layoutId = state.activeLayoutId, { changedAt = nowIso(), targetIndex = null } = {}) {
+  if (warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(itemId)) return false;
   return placeExistingItemInLayoutInState(state, itemId, containerId, layoutId, {
     activeLayoutId: state.activeLayoutId,
     applyLayoutArrangement,
@@ -3753,6 +3880,7 @@ function confirmRemoveItemFromActiveLayout(itemId) {
   const item = state.items[itemId];
   const layout = state.layouts?.[state.activeLayoutId];
   if (!item || !getItemContainerIdInLayout(layout, itemId)) return;
+  if (warnLockedLayoutMutation(state.activeLayoutId)) return;
   openConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
     text: t("items.removeFromLayoutText", { name: item.name }),
@@ -3771,6 +3899,7 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
   const layout = state.layouts?.[layoutId];
   if (!item || !layout || !getItemContainerIdInLayout(layout, itemId)) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   const confirmed = await askConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
     text: t("items.removeFromLayoutText", { name: item.name }),
@@ -3796,6 +3925,7 @@ function confirmDeleteEditingItemForever(event) {
 function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   const item = state.items[itemId];
   if (!item) return;
+  if (warnLockedItemDelete(itemId)) return;
   const placements = describeVisibleItemLayoutPlacementRows(item);
   const placementText = placements.length
     ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement.label}`).join("\n")}`
@@ -3851,6 +3981,7 @@ function deleteItemPhotos(item, itemId) {
 }
 
 function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = true } = {}) {
+  if (warnLockedItemDelete(itemId)) return;
   const changedAt = nowIso();
   const deleted = deleteItemFromState(state, itemId, {
     beforeDeleteItem: deleteItemPhotos,
@@ -3869,8 +4000,10 @@ function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = tru
 async function copyItem(itemId, options = {}) {
   const item = state.items[itemId];
   if (!item) return;
+  if (warnUnavailableItemPlacement(itemId)) return;
   if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
+  if (keepPlacement && warnLockedLayoutMutation(state.activeLayoutId)) return;
   if (options.confirm !== false) {
     const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement, t }));
     if (!confirmed) return;
@@ -3947,6 +4080,7 @@ function confirmDeleteEditingRootContainerForever(event) {
 function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
+  if (warnLockedContainerDelete(containerId)) return;
   const itemCount = getContainerItemIdsDeep(containerId).length;
   const layoutRows = Object.values(state.layouts)
     .filter((layout) => (layout.rootContainerIds || []).includes(containerId))
@@ -3991,6 +4125,7 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
 }
 
 function deleteRootContainer(containerId) {
+  if (warnLockedContainerDelete(containerId)) return;
   const changedAt = nowIso();
   const deleted = deleteRootContainerFromState(state, containerId, {
     beforeDeleteContainer: deleteContainerPhotos,
@@ -4009,6 +4144,7 @@ function removeRootContainerFromActiveLayout(containerId) {
   const layout = state.layouts[layoutId];
   const container = state.containers[containerId];
   if (!layout || !container) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   const changedAt = nowIso();
   if (!removeContainerFromLayoutOnly(layout, containerId, changedAt)) return;
   touchLayout(layoutId, changedAt);
@@ -4020,6 +4156,7 @@ function removeRootContainerFromActiveLayout(containerId) {
 }
 
 function removeContainerFromLayoutOnly(layout, containerId, changedAt = nowIso()) {
+  if (warnLockedLayoutMutation(layout?.id || state.activeLayoutId)) return false;
   return removeContainerFromLayoutOnlyInState(state, layout, containerId, {
     changedAt,
     deleteUnusedLayoutContainerEntity,
@@ -4094,6 +4231,7 @@ function isOriginalRootColumnPosition(containerId, targetIndex) {
 function moveRootColumn(containerId, targetIndex) {
   const layoutId = getPublishedEditLayoutId();
   if (!state.layouts[layoutId]?.rootContainerIds?.includes(containerId)) return;
+  if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   moveRootColumnInState(state, layoutId, containerId, targetIndex, { touchLayout });
   saveState({ captureArrangement: false });
@@ -4145,14 +4283,13 @@ function openItemDialog(itemId = null) {
   resetSharedReadonlyItemDialog();
   runtime.editingItemId = itemId;
   runtime.itemDialogTargetLayoutId = getPublishedEditLayoutId();
-  const defaultCategory = dictionaryOptionsForUi("category")[0] || "";
   const item = itemId ? state.items[itemId] : {
     name: "",
     weight: 0,
     quantity: 1,
     location: dictionaryOptionsForUi("location")[0] || defaultRootContainerLocation(state),
-    category: defaultCategory,
-    categories: defaultCategory ? [defaultCategory] : [],
+    category: "",
+    categories: [],
     containerId: "",
     note: "",
     photos: []
@@ -4164,6 +4301,7 @@ function openItemDialog(itemId = null) {
   updateItemQuantityUi();
   fillSelect(refs.itemLocation, dictionaryOptionsForUi("location", { selected: item.location ? [item.location] : [] }).map(dictionarySelectEntry), item.location);
   renderItemCategoryPicker(itemCategories(item), { fallbackDefault: false });
+  if (refs.itemAvailabilityStatus) refs.itemAvailabilityStatus.value = normalizeItemAvailabilityStatus(item.availabilityStatus);
   refs.itemContainer.value = itemId
     ? getItemContainerIdInLayout(state.layouts?.[runtime.itemDialogTargetLayoutId], itemId)
     : "";
@@ -4195,6 +4333,7 @@ function openSharedReadonlyItemDialog(sourceItemId) {
   updateItemQuantityUi();
   refs.itemLocation.value = defaultRootContainerLocation(state);
   renderItemCategoryPicker([], { fallbackDefault: false });
+  if (refs.itemAvailabilityStatus) refs.itemAvailabilityStatus.value = "available";
   refs.itemContainer.value = "";
   updateItemContainerPickerButton();
   updateItemDeleteForeverButton();
@@ -4740,8 +4879,20 @@ function openLayoutEditDialog() {
   refs.layoutEditTitle.textContent = layoutEditTitle(layout);
   refs.layoutEditName.value = layout.name || "";
   const showLanguage = isAdminEditablePublishedLayout(layout.id);
+  const notesLabel = refs.layoutEditNotes?.closest("label");
+  if (notesLabel) {
+    notesLabel.hidden = showLanguage;
+    notesLabel.setAttribute("aria-hidden", String(showLanguage));
+  }
+  if (refs.layoutEditNotes) refs.layoutEditNotes.value = showLanguage ? "" : normalizeLayoutNotes(layout.notes);
   refs.layoutEditLanguageLabel.hidden = !showLanguage;
   refs.layoutEditLanguageLabel.setAttribute("aria-hidden", String(!showLanguage));
+  const showLock = !showLanguage;
+  if (refs.layoutLockedLabel) {
+    refs.layoutLockedLabel.hidden = !showLock;
+    refs.layoutLockedLabel.setAttribute("aria-hidden", String(!showLock));
+  }
+  if (refs.layoutLocked) refs.layoutLocked.checked = isLayoutLocked(layout);
   if (showLanguage) {
     fillSelect(refs.layoutEditLanguage, languageSelectEntries(), normalizeUiLanguage(layoutManageLanguage(layout, uiLanguage)));
   }
@@ -4764,12 +4915,15 @@ function publicTemplateDeleteBlockReasonForLayout(layout) {
 
 function updateLayoutEditDeleteButton(layout) {
   if (!refs.deleteEditedLayoutBtn) return;
-  const reason = publicTemplateDeleteBlockReasonForLayout(layout);
-  refs.deleteEditedLayoutBtn.textContent = reason || t("buttons.deleteLayout");
+  const lockedByOpenForm = Boolean(layout?.id && layout.id === runtime.layoutEditTargetId && refs.layoutLocked?.checked);
+  const lockedReason = (isLayoutLocked(layout) || lockedByOpenForm) ? t("layout.deleteLockedBlock") : "";
+  const publicReason = publicTemplateDeleteBlockReasonForLayout(layout);
+  const reason = lockedReason || publicReason;
+  refs.deleteEditedLayoutBtn.textContent = t("buttons.deleteLayout");
   refs.deleteEditedLayoutBtn.title = reason;
-  refs.deleteEditedLayoutBtn.classList.toggle("delete-blocked", Boolean(reason));
-  refs.deleteEditedLayoutBtn.classList.toggle("danger", !reason);
-  refs.deleteEditedLayoutBtn.disabled = Boolean(reason) || !canDeleteManagedLayout(layout?.id);
+  refs.deleteEditedLayoutBtn.classList.toggle("delete-blocked", Boolean(publicReason));
+  refs.deleteEditedLayoutBtn.classList.toggle("danger", !publicReason);
+  refs.deleteEditedLayoutBtn.disabled = Boolean(publicReason) || !canDeleteManagedLayout(layout?.id);
 }
 
 function canDeleteManagedLayout(layoutId = runtime.layoutEditTargetId || state.activeLayoutId) {
@@ -4788,6 +4942,22 @@ async function saveEditedLayout(event) {
   const changedAt = nowIso();
   const nextName = refs.layoutEditName.value.trim();
   if (!nextName) return;
+  const previousLocked = isLayoutLocked(layout);
+  const nextLocked = !adminPublished && refs.layoutLocked ? refs.layoutLocked.checked : false;
+  if (previousLocked && nextLocked && nextName !== (layout.name || "")) {
+    warnLockedLayoutMutation(layout.id);
+    return;
+  }
+  if (previousLocked && !nextLocked) {
+    const confirmed = await askConfirmDialog({
+      title: t("layout.unlockTitle"),
+      text: t("layout.unlockText"),
+      okText: t("layout.unlockOk"),
+      cancelText: t("buttons.cancel"),
+      tone: "danger"
+    });
+    if (!confirmed) return;
+  }
   const previousLayout = adminPublished ? clone(layout) : null;
   const changed = applyLayoutEditFields(layout, {
     adminPublished,
@@ -4799,7 +4969,9 @@ async function saveEditedLayout(event) {
     uiLanguage,
     uniqueLayoutName
   });
-  if (!changed) {
+  const notesChanged = !adminPublished && applyLayoutNotes(layout, refs.layoutEditNotes?.value || "");
+  const lockChanged = !adminPublished && applyLayoutLocked(layout, nextLocked);
+  if (!changed && !notesChanged && !lockChanged) {
     refs.layoutEditDialog.close();
     return;
   }
@@ -4835,6 +5007,11 @@ async function saveEditedLayout(event) {
 
 async function confirmDeleteEditedLayout() {
   const layout = state.layouts?.[runtime.layoutEditTargetId];
+  if (isLayoutLocked(layout) || refs.layoutLocked?.checked) {
+    showToast(t("layout.deleteLockedBlock"), "warning");
+    updateLayoutEditDeleteButton(layout);
+    return;
+  }
   const blockReason = publicTemplateDeleteBlockReasonForLayout(layout);
   if (blockReason) {
     showToast(blockReason, "warning");
@@ -5135,6 +5312,7 @@ function getItemDialogSnapshot() {
     quantity: readItemDialogQuantity(),
     location: refs.itemLocation.value,
     categories: getDialogSelectedCategories().join("\u0000"),
+    availabilityStatus: refs.itemAvailabilityStatus ? normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus.value) : "available",
     containerId: refs.itemContainer.value || "",
     note: refs.itemNote.value.trim(),
     photo: getItemDialogPhotoSnapshot()
@@ -5686,6 +5864,7 @@ function hasSavableRootContainerDialogChanges() {
 
 function saveRootContainerDialog(event) {
   event?.preventDefault();
+  if (warnLockedRootContainerDialogPlacementChange()) return;
   saveRootContainerDialogAction({
     applyRootContainerDialogParent,
     applyRootContainerDialogPhotoDraft,
@@ -5717,8 +5896,10 @@ function saveRootContainerDialog(event) {
 
 function saveDialogItem(event) {
   event?.preventDefault();
+  if (warnLockedItemDialogPlacementChange()) return;
   capturePackingScroll();
   saveItemDialogAction({
+    applyItemAvailabilityStatus,
     applyItemDialogPhotoDraft,
     applyLayoutArrangement,
     changedAt: nowIso(),
@@ -5732,6 +5913,7 @@ function saveDialogItem(event) {
     itemDialogPhotoDraft: runtime.itemDialogPhotoDraft,
     itemDialogTargetLayoutId: runtime.itemDialogTargetLayoutId,
     markRecordActivePublicCatalog,
+    normalizeItemAvailabilityStatus,
     parseWeightInput,
     placeExistingItemInLayout,
     readItemDialogQuantity,
@@ -5744,7 +5926,8 @@ function saveDialogItem(event) {
     showToast,
     state,
     touchItem,
-    touchLayout
+    touchLayout,
+    unavailablePlacementText: t("items.unavailableCannotAdd")
   });
 }
 
@@ -5771,6 +5954,7 @@ function applyRootContainerDialogPhotoDraft(container, changedAt = nowIso()) {
 function applyRootContainerDialogParent(changedAt = nowIso()) {
   if (runtime.rootContainerDialogPendingParentId === undefined || !runtime.editingRootContainerId) return false;
   const layoutId = getPublishedEditLayoutId();
+  if (warnLockedLayoutMutation(layoutId)) return false;
   const layout = state.layouts?.[layoutId];
   const container = state.containers[runtime.editingRootContainerId];
   const targetParent = state.containers[runtime.rootContainerDialogPendingParentId];

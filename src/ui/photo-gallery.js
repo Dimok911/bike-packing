@@ -329,9 +329,9 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const hasNavigation = entries.length > 1;
   overlay.innerHTML = `
     <button class="photo-lightbox-close" type="button" aria-label="Закрыть">×</button>
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="Предыдущее фото">‹</button>` : ""}
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="Предыдущее фото"><span aria-hidden="true">‹</span></button>` : ""}
     <img class="photo-lightbox-image" src="${escapeHtml(initial.src)}" alt="" />
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="Следующее фото">›</button>` : ""}
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="Следующее фото"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
   if (typeof overlay.showModal === "function") {
@@ -382,13 +382,15 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
   };
   const updateNavigation = () => {
-    if (prevButton) prevButton.disabled = activeIndex <= 0;
-    if (nextButton) nextButton.disabled = activeIndex >= entries.length - 1;
+    if (prevButton) prevButton.setAttribute("aria-disabled", activeIndex <= 0 ? "true" : "false");
+    if (nextButton) nextButton.setAttribute("aria-disabled", activeIndex >= entries.length - 1 ? "true" : "false");
   };
   const activateNavigation = (event, direction) => {
     event.preventDefault();
     event.stopPropagation();
     suppressImageCloseUntil = Date.now() + 450;
+    if (direction < 0 && activeIndex <= 0) return;
+    if (direction > 0 && activeIndex >= entries.length - 1) return;
     showPhoto(activeIndex + direction);
   };
   bindPhotoLightboxNavButton(prevButton, (event) => activateNavigation(event, -1));

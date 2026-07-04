@@ -83,6 +83,7 @@ export function saveRootContainerDialogAction({
 }
 
 export function saveItemDialogAction({
+  applyItemAvailabilityStatus = () => false,
   applyItemDialogPhotoDraft = () => {},
   applyLayoutArrangement = () => {},
   changedAt = "",
@@ -96,6 +97,7 @@ export function saveItemDialogAction({
   itemDialogPhotoDraft = null,
   itemDialogTargetLayoutId = "",
   markRecordActivePublicCatalog = () => {},
+  normalizeItemAvailabilityStatus = () => "available",
   parseWeightInput = () => 0,
   placeExistingItemInLayout = () => false,
   readItemDialogQuantity = () => 1,
@@ -108,7 +110,8 @@ export function saveItemDialogAction({
   showToast = () => {},
   state,
   touchItem = () => {},
-  touchLayout = () => {}
+  touchLayout = () => {},
+  unavailablePlacementText = "This item is unavailable and cannot be added to a layout."
 } = {}) {
   if (refs.saveItemBtn.disabled) return;
   const name = refs.itemName.value.trim();
@@ -117,6 +120,8 @@ export function saveItemDialogAction({
   const layoutId = itemDialogTargetLayoutId || getPublishedEditLayoutId();
   const layout = state.layouts?.[layoutId];
   const selectedCategories = getDialogSelectedCategories();
+  const availabilityStatus = normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus?.value);
+  const itemIsUnavailable = availabilityStatus !== "available";
 
   if (editingItemId) {
     const item = state.items[editingItemId];
@@ -128,12 +133,17 @@ export function saveItemDialogAction({
     item.categories = selectedCategories;
     item.category = selectedCategories[0] || "";
     item.note = refs.itemNote.value.trim();
+    applyItemAvailabilityStatus(item, availabilityStatus);
     applyItemDialogPhotoDraft(item, changedAt);
     markRecordActivePublicCatalog(item);
     touchItem(editingItemId, changedAt);
     if (previousContainerId !== containerId) {
       closeDialogWithoutRestoringFocus(refs.dialog);
       if (containerId) {
+        if (itemIsUnavailable) {
+          showToast(unavailablePlacementText, "warning");
+          return;
+        }
         if (!placeExistingItemInLayout(editingItemId, containerId, layoutId, { changedAt })) {
           showToast("Не удалось добавить вещь в эту укладку.", "error");
           return;
@@ -168,8 +178,14 @@ export function saveItemDialogAction({
       photos: itemDialogPhotoDraft?.photos ? [...itemDialogPhotoDraft.photos] : [],
       ...currentEditMeta(changedAt)
     };
+    applyItemAvailabilityStatus(state.items[id], availabilityStatus);
     markRecordActivePublicCatalog(state.items[id]);
     if (containerId && state.containers[containerId] && layout) {
+      if (itemIsUnavailable) {
+        showToast(unavailablePlacementText, "warning");
+        delete state.items[id];
+        return;
+      }
       if (!placeExistingItemInLayout(id, containerId, layoutId, { changedAt })) {
         delete state.items[id];
         showToast("Не удалось добавить вещь в эту укладку.", "error");

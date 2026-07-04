@@ -50,8 +50,10 @@ export function updateSyncUiControls({
   if (!canOpenAdminPublishedEdit()) disablePackingVisualStylePanel();
   syncPackingVisualStyleControls();
   adminReportsDialogController?.syncVisibility?.();
-  refs.authBtn.textContent = t("menu.signIn");
-  refs.authBtn.hidden = loggedIn;
+  refs.authBtn.textContent = rememberedOffline
+    ? localText("Confirm sign-in", "Подтвердить вход")
+    : t("menu.signIn");
+  refs.authBtn.hidden = Boolean(currentUser);
   refs.authBtn.classList.remove("danger");
   const signOutBtn = document.querySelector("#signOutBtn");
   if (signOutBtn) {
@@ -64,11 +66,20 @@ export function updateSyncUiControls({
   refs.collectionMenuBtn.classList.toggle("active", state.collectionMode);
   if (refs.syncUserEmail) {
     const email = loggedIn ? currentUserEmail() : "";
-    const accountLabel = email || t("auth.notSignedIn");
+    const accountLabel = rememberedOffline
+      ? (email ? localText(`Local · ${email}`, `Локально · ${email}`) : localText("Local account", "Локальный аккаунт"))
+      : (email || t("auth.notSignedIn"));
+    const accountTitle = rememberedOffline
+      ? localText(
+        `Server sign-in is not confirmed. Local copy: ${email || "account"}`,
+        `Вход на сервере не подтверждён. Локальная копия: ${email || "аккаунт"}`
+      )
+      : accountLabel;
     refs.syncUserEmail.hidden = !unlocked;
     refs.syncUserEmail.textContent = accountLabel;
-    refs.syncUserEmail.title = accountLabel;
+    refs.syncUserEmail.title = accountTitle;
     refs.syncUserEmail.classList.toggle("admin-user-email", canOpenAdminPublishedEdit());
+    refs.syncUserEmail.classList.toggle("local-remembered-email", rememberedOffline);
     refs.syncUserEmail.classList.toggle("guest-user-email", !loggedIn);
   }
   refs.syncBtn.hidden = !loggedIn;
@@ -86,6 +97,7 @@ export function updateSyncUiControls({
     message,
     adminApiWarning: showAdminApiWarning,
     forcedOffline,
+    rememberedOffline,
     readOnlyScope: isReadOnlyStateScope(),
     dirty: syncMeta.dirty
   });
@@ -104,8 +116,8 @@ export function updateSyncUiControls({
   }
   if (rememberedOffline && appUnlocked && !message) {
     refs.syncStatus.textContent = syncMeta.dirty
-      ? localText("Offline · local changes are saved on this device", "Офлайн · локальные изменения сохранены на этом устройстве")
-      : localText("Offline · local copy of personal layouts", "Офлайн · локальная копия личных укладок");
+      ? localText("Local copy · changes are saved on this device", "Локальная копия · изменения сохранены на этом устройстве")
+      : localText("Local copy of personal layouts · sign in to sync", "Локальная копия личных укладок · войдите для синхронизации");
     return syncVisualState;
   }
   if (!loggedIn && appUnlocked) {

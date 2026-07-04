@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1153" />
+    <link rel="stylesheet" href="./styles.css?v=1156" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -180,6 +180,15 @@
           Categories
           <div id="itemCategoryList" class="category-picker"></div>
         </div>
+        <label>
+          Availability
+          <select id="itemAvailabilityStatus">
+            <option value="available">Available</option>
+            <option value="lost">Lost</option>
+            <option value="broken">Broken</option>
+            <option value="retired">Retired</option>
+          </select>
+        </label>
         <div class="field-label item-container-field">
           <span id="itemContainerLabel">Положить в</span>
           <div class="item-container-control">
@@ -396,6 +405,14 @@
         <label id="layoutEditLanguageLabel">
           Template language
           <select id="layoutEditLanguage"></select>
+        </label>
+        <label>
+          Notes
+          <textarea id="layoutEditNotes" rows="4"></textarea>
+        </label>
+        <label id="layoutLockedLabel" class="checkbox-row">
+          <input id="layoutLocked" type="checkbox" />
+          <span>Lock this layout</span>
         </label>
         <footer class="layout-edit-actions">
           <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Delete</button>
@@ -617,6 +634,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1153" type="module"></script>
+    <script src="./app.js?v=1156" type="module"></script>
   </body>
 </html>

@@ -278,6 +278,7 @@ import {
 } from "./src/state/container-fields.js";
 import {
   cleanupEmptyContainersInState,
+  createSubcontainerInLayoutState,
   deleteRootContainerFromState,
   deleteUnusedLayoutContainerEntityFromState,
   duplicateRootContainerInState,
@@ -381,6 +382,21 @@ import {
   templateDraftLayoutId,
   withoutPhotoReferences
 } from "./src/state/layout-manage.js";
+import {
+  applyItemAvailabilityStatus,
+  applyLayoutLocked,
+  containerPlacementSnapshotChanged,
+  itemAvailabilityBlocksPlacement,
+  itemPlacementSnapshotChanged,
+  isItemUnavailableForPacking,
+  isLayoutLocked,
+  lockedLayoutMutationBlocked,
+  lockedLayoutsContainingContainer,
+  lockedLayoutsContainingItem,
+  lockedLayoutsContainingNestedContainer,
+  normalizeItemAvailabilityStatus,
+  unavailableSnapshotItems
+} from "./src/state/layout-locks.js";
 import {
   normalizeLayoutArrangement,
   normalizeLayoutFields,
@@ -1266,8 +1282,8 @@ const appTailControllerDeps = {
   allSharedLayoutsByAdminOrder, annotatePayloadError, apiCapabilitySet, apiErrorMessage, apiFetch,
   apiFetchRequest, apiUploadFormData, apiUploadFormDataRequest, appUnlocked, appendCopiedFromTemplateNote,
   applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState, applyDefaultCollapsedContainers,
-  applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyLayoutArrangement, applyLayoutArrangementToState,
-  applyLayoutEditFields, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass, applyPreferredPrivateLayoutChoice,
+  applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyItemAvailabilityStatus, applyLayoutArrangement, applyLayoutArrangementToState,
+  applyLayoutEditFields, applyLayoutLocked, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass, applyPreferredPrivateLayoutChoice,
   applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState, applySearchInputNow,
   applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState, arePublishedTemplatesBlocked,
   askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog, assertAdminApiCompatibility,
@@ -1319,7 +1335,7 @@ const appTailControllerDeps = {
   demoTemplateForLanguage, demoTemplateIdFromLayoutChoice, demoTemplateIdFromLayoutChoiceValue, demoTemplateNameCandidates, demoTemplateNameFromPayload,
   demoTemplatesForLanguage, demoTemplatesForUiLanguage, dictionaryCategorySortMode, dictionaryEditScope, dictionaryEntitySyncUnavailable,
   dictionaryListForOwner, dictionaryLocationSortMode, dictionaryOptionsForOwner, dictionaryOptionsForUi, dictionaryOptionsForUiValues,
-  dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, duplicateContainerSnapshotRecords, duplicateItemToContainerInLayoutState,
+  dictionarySelectEntry, dictionarySortModeForType, dictionaryValueLabel, draftPhotosToCleanup, createSubcontainerInLayoutState, duplicateContainerSnapshotRecords, duplicateItemToContainerInLayoutState,
   duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin, editedLayoutName,
   editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload, ensureGuestPublicScope,
   ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState, ensurePrivateDictionaries,
@@ -1357,7 +1373,7 @@ const appTailControllerDeps = {
   isExplicitlySignedOut, isForcedOffline, isForeignLocalSyncState, isGeneratedCatalogContainerStateArtifact, isGeneratedCatalogContainerSyncArtifact,
   isGeneratedCatalogStateArtifact, isGeneratedCatalogSyncArtifact, isGeneratedStartupFallbackState, isGuestDemoCopyLayout, isGuestDemoCopyLayoutRecord,
   isGuestLocalPersonalLayout, isGuestSession, isItemAwayFromHomeAndBikeValue, isItemInCatalogForState, isItemInLayoutForState,
-  isItemWithoutWeightValue, isLayoutCreateTemplateLayoutModeValue, isLayoutMeaningful, isLocalDevOrigin, isManagedDemoTemplateLayout,
+  itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, isItemUnavailableForPacking, isItemWithoutWeightValue, isLayoutCreateTemplateLayoutModeValue, isLayoutLocked, isLayoutMeaningful, isLocalDevOrigin, isManagedDemoTemplateLayout,
   isManagedPublicTemplateDraft, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession, isOfflineRememberedSession,
   isOwnLayoutEchoConflict, isOwnLayoutEchoConflictValue, isPackingStateShape, isPhotoStoredForList, isPhotoUsableFromServer,
   isPrivateCatalogRecord, isPrivateLayoutChoice, isPrivateLayoutChoiceForStateRestore, isPrivateLayoutChoiceValue, isPrivateUserLayoutId,
@@ -1394,6 +1410,7 @@ const appTailControllerDeps = {
   normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms, normalizeBike3dViewState,
   normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, normalizeContainerFields,
   normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues, normalizeIntegrityCount,
+  lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, normalizeItemAvailabilityStatus,
   normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos, normalizeItemQuantity,
   normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse, normalizePackingViewMode,
   normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore, normalizePublicTemplateMetadataResponse,
@@ -1410,7 +1427,7 @@ const appTailControllerDeps = {
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
   printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
-  pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
+  containerPlacementSnapshotChanged, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
   isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
   publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue, publicLayoutDeleteConfirm,
@@ -1490,7 +1507,7 @@ const appTailControllerDeps = {
   updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState, updateSharedLayoutCatalogEntryMetadata,
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
   uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
-  upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
+  unavailableSnapshotItems, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
   validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
 };
@@ -2392,6 +2409,7 @@ async function setUiLanguage(language) {
   }
   applyStaticTranslations();
   render();
+  if (isOfflineRememberedSession()) setOfflineRememberedLayoutLoadStatus();
   updateSyncUi();
   if (wasAdminDemoEdit) {
     try {
@@ -2667,6 +2685,9 @@ async function init() {
   refs.layoutEditLanguage?.addEventListener("change", () => {
     updateLayoutEditDeleteButton(state.layouts?.[layoutEditTargetId]);
   });
+  refs.layoutLocked?.addEventListener("change", () => {
+    updateLayoutEditDeleteButton(state.layouts?.[layoutEditTargetId]);
+  });
   refs.saveEditedLayoutBtn?.addEventListener("click", saveEditedLayout);
   refs.deleteEditedLayoutBtn?.addEventListener("click", confirmDeleteEditedLayout);
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
@@ -2675,7 +2696,7 @@ async function init() {
   refs.saveLayoutBtn.addEventListener("click", saveNewLayout);
   refs.layoutCopyFrom?.addEventListener("change", () => updateLayoutCreateNameSuggestion({ force: true }));
   refs.authBtn.addEventListener("click", handleAuthButton);
-  document.querySelector("#signOutBtn")?.addEventListener("click", handleAuthButton);
+  document.querySelector("#signOutBtn")?.addEventListener("click", handleSignOutButton);
   refs.authGateBtn.addEventListener("click", handleAuthButton);
   refs.sharedLayoutsBtn?.addEventListener("click", openSharedLayoutsDialog);
   refs.shareListBtn?.addEventListener("click", shareCurrentPackingListByLink);
@@ -3174,6 +3195,13 @@ function updatePackingViewModeControl(view = getCurrentView()) {
 
 function setLayoutLoadStatus(tone = "idle", text = "") {
   layoutLoadStatus.setStatus(tone, text);
+}
+
+function setOfflineRememberedLayoutLoadStatus() {
+  setLayoutLoadStatus("warning", localText(
+    "Local copy: server sign-in is not confirmed",
+    "Локальная копия: вход на сервере не подтверждён"
+  ));
 }
 
 function setLayoutLoadProgress({ loaded = 0, total = null, prefix = localText("Loading personal layouts", "Загружаем личные укладки") } = {}) {
@@ -4395,13 +4423,15 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
   if (!config) return { type, attempted: false, skipped: true, safeForLegacyCompare: true };
   if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true };
   const entries = buildChangedEntitySyncEntries(type, baseState, state, { forceOverwrite });
-  if (!entries.length) return { type, attempted: false, skipped: false, entryCount: 0, safeForLegacyCompare: true };
+  const changedIds = entries.filter((entry) => !entry.deleted).map((entry) => entry.id);
+  const deletedIds = entries.filter((entry) => entry.deleted).map((entry) => entry.id);
+  if (!entries.length) return { type, attempted: false, skipped: false, entryCount: 0, changedIds, deletedIds, safeForLegacyCompare: true };
   if (isEntitySyncTypeUnavailable(type) || personalListApiUnavailable) {
-    return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, safeForLegacyCompare: false };
+    return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, changedIds, deletedIds, safeForLegacyCompare: false };
   }
   const targetListId = listId || await ensureCurrentPackingListId();
   if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
-  if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true };
+  if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true, changedIds, deletedIds };
   try {
     const results = [];
     for (const batch of splitEntitySyncEntries(type, entries)) {
@@ -4435,6 +4465,8 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
       type,
       attempted: true,
       entryCount: entries.length,
+      changedIds,
+      deletedIds,
       safeForLegacyCompare: true,
       serverUpdatedAt: [...results].reverse().find((data) => data?.serverUpdatedAt)?.serverUpdatedAt || integrityMeta?.updatedAt || nowIso(),
       integrityMeta,
@@ -4444,7 +4476,7 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
   } catch (error) {
     if (isEntitySyncUnavailableError(error, type) || isNetworkError(error)) {
       markEntitySyncTypeUnavailable(type);
-      return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, safeForLegacyCompare: false };
+      return { type, attempted: false, skipped: true, unavailable: true, entryCount: entries.length, changedIds, deletedIds, safeForLegacyCompare: false };
     }
     throw error;
   }
@@ -5018,7 +5050,7 @@ function clearOfflineRememberedSession() {
   offlineRememberedUser = null;
 }
 
-function activateOfflineRememberedSession(message = localText("Offline · local copy of personal layouts is open", "Офлайн · открыта локальная копия личных укладок")) {
+function activateOfflineRememberedSession(message = localText("Local copy of personal layouts · sign in to sync", "Локальная копия личных укладок · войдите для синхронизации")) {
   const rememberedUser = rememberedOfflineUser(offlineRememberedUser);
   if (!rememberedUser) return false;
   currentUser = null;
@@ -5026,7 +5058,7 @@ function activateOfflineRememberedSession(message = localText("Offline · local 
   appUnlocked = true;
   activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
   setActivePrivateScope();
-  setLayoutLoadStatus("warning", localText("Offline: showing the local copy of personal layouts", "Офлайн: показана локальная копия личных укладок"));
+  setOfflineRememberedLayoutLoadStatus();
   const renderedFallback = renderInitialLocalFallbackIfNeeded();
   if (!renderedFallback) renderPreservingPackingScroll();
   updateSyncUi(message);
@@ -5606,34 +5638,41 @@ async function handleAuthButton() {
     showToast("Сначала выключите офлайн-режим в меню.", "error");
     return;
   }
-  if (currentUser || isOfflineRememberedSession()) {
-    const confirmed = await askConfirmDialog({
-      title: "Выйти из аккаунта?",
-      text: "После выхода список будет скрыт на этом устройстве до нового входа. Локальная копия не удалится, но офлайн-доступ после явного выхода будет отключён.",
-      okText: "Выйти",
-      cancelText: "Остаться"
-    });
-    if (!confirmed) return;
-    if (currentUser) {
-      try {
-        updateSyncUi("Выходим...");
-        await apiFetch("/auth/logout", { method: "POST" });
-      } catch {
-        // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
-      }
-    }
-    currentUser = null;
-    clearOfflineRememberedSession();
-    appUnlocked = true;
-    setExplicitlySignedOut(true);
-    activateLocalStorageScope(GUEST_STORAGE_SCOPE);
-    resetGuestDemoScopeToCanonical();
-    await enterSignedOutPublicMode("Signed out · personal lists are hidden, local demo copy is open");
-    showToast("Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их.", "success");
+  openAuthDialog();
+}
+
+async function handleSignOutButton() {
+  if (isForcedOffline()) {
+    showToast("Сначала выключите офлайн-режим в меню.", "error");
     return;
   }
-
-  openAuthDialog();
+  if (!currentUser && !isOfflineRememberedSession()) {
+    openAuthDialog();
+    return;
+  }
+  const confirmed = await askConfirmDialog({
+    title: "Выйти из аккаунта?",
+    text: "После выхода список будет скрыт на этом устройстве до нового входа. Локальная копия не удалится, но офлайн-доступ после явного выхода будет отключён.",
+    okText: "Выйти",
+    cancelText: "Остаться"
+  });
+  if (!confirmed) return;
+  if (currentUser) {
+    try {
+      updateSyncUi("Выходим...");
+      await apiFetch("/auth/logout", { method: "POST" });
+    } catch {
+      // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
+    }
+  }
+  currentUser = null;
+  clearOfflineRememberedSession();
+  appUnlocked = true;
+  setExplicitlySignedOut(true);
+  activateLocalStorageScope(GUEST_STORAGE_SCOPE);
+  resetGuestDemoScopeToCanonical();
+  await enterSignedOutPublicMode("Signed out · personal lists are hidden, local demo copy is open");
+  showToast("Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их.", "success");
 }
 
 function getSavedAuthEmail() {
@@ -9235,6 +9274,7 @@ function renderFilters() {
     fillSelect,
     getActiveEditableLayoutId,
     isDemoLayoutChoice,
+    isLayoutLocked,
     isReadOnlyStateScope,
     isSharedLayoutView,
     linkedSharedListLayout,

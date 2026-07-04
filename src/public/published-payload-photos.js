@@ -23,6 +23,7 @@ function recordMapFromCollection(collection) {
 function sourceRecordForLocalRecord(sourceMap, type, record, recordKey, publishedEntityId) {
   const candidates = [
     publishedEntityId?.(type, record, recordKey),
+    record?._publicCopySourceKind === type ? record?._publicCopySourceId : "",
     record?.sharedSourceId,
     record?.publicCopySourceId,
     record?.id,

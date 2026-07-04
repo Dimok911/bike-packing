@@ -65,6 +65,8 @@ import {
   cleanPublishedEntityId,
   exportLayoutAsPublishedState
 } from "../../src/public/published-state-export.js";
+import { savePublishedLayoutRecordFlow } from "../../src/public/published-layout-save-flow.js";
+import { applyPublishedPayloadPhotosToLayoutState } from "../../src/public/published-payload-photos.js";
 import { createSharedVirtualStateFromPublishedState } from "../../src/public/shared-virtual-state.js";
 import {
   planLayoutTreeMissingItems,
@@ -191,6 +193,200 @@ test("published entity id cleanup works when used as a callback without cssSafeI
     cleanPublishedEntityId("container", { sharedSourceId: "shared-container-handlebar-bag" }, "fallback"),
     "container-handlebar-bag"
   );
+});
+
+test("published payload photo copy updates local public-origin records", () => {
+  const state = {
+    layouts: {
+      "layout-template": {
+        id: "layout-template",
+        rootContainerIds: ["container-local"],
+        arrangement: {
+          rootContainerIds: ["container-local"],
+          containers: {
+            "container-local": {
+              parentId: "",
+              itemIds: ["item-local"],
+              childIds: [],
+              order: [{ type: "item", id: "item-local" }]
+            }
+          },
+          items: { "item-local": "container-local" },
+          packedItems: {}
+        }
+      }
+    },
+    containers: {
+      "container-local": {
+        id: "container-local",
+        _publicCopySourceKind: "container",
+        _publicCopySourceId: "container-source",
+        photos: [{
+          id: "photo-container-copy",
+          status: "pending",
+          url: "",
+          thumbUrl: "",
+          _copyToCurrentList: true
+        }]
+      }
+    },
+    items: {
+      "item-local": {
+        id: "item-local",
+        _publicCopySourceKind: "item",
+        _publicCopySourceId: "item-source",
+        photos: [{
+          id: "photo-item-copy",
+          status: "pending",
+          url: "",
+          thumbUrl: "",
+          _copyToCurrentList: true
+        }]
+      }
+    }
+  };
+  const publishedPayload = {
+    containers: {
+      "container-source": {
+        id: "container-source",
+        photos: [{
+          id: "photo-container-copy",
+          status: "synced",
+          url: "https://api.example.test/bike-packing/lists/public-list/photos/photo-container-copy/file",
+          thumbUrl: "https://api.example.test/bike-packing/lists/public-list/photos/photo-container-copy/thumb"
+        }]
+      }
+    },
+    items: {
+      "item-source": {
+        id: "item-source",
+        photos: [{
+          id: "photo-item-copy",
+          status: "synced",
+          url: "https://api.example.test/bike-packing/lists/public-list/photos/photo-item-copy/file",
+          thumbUrl: "https://api.example.test/bike-packing/lists/public-list/photos/photo-item-copy/thumb"
+        }]
+      }
+    }
+  };
+
+  const changed = applyPublishedPayloadPhotosToLayoutState(state, "layout-template", publishedPayload, {
+    getLayoutContainerIdSet: () => new Set(["container-local"]),
+    getLayoutItemIdSet: () => new Set(["item-local"]),
+    publishedEntityId: cleanPublishedEntityId
+  });
+
+  assert.equal(changed, true);
+  assert.equal(state.containers["container-local"].photos[0].status, "synced");
+  assert.equal(state.containers["container-local"].photos[0]._copyToCurrentList, undefined);
+  assert.match(state.containers["container-local"].photos[0].thumbUrl, /photo-container-copy\/thumb/);
+  assert.equal(state.items["item-local"].photos[0].status, "synced");
+  assert.equal(state.items["item-local"].photos[0]._copyToCurrentList, undefined);
+  assert.match(state.items["item-local"].photos[0].thumbUrl, /photo-item-copy\/thumb/);
+});
+
+test("admin shared template save uploads photos left pending after server copy", async () => {
+  const publishPayload = {
+    layouts: {
+      "layout-admin-shared": {
+        id: "layout-admin-shared",
+        name: "Shared demo",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "shared-demo",
+        rootContainerIds: ["container-local"]
+      }
+    },
+    containers: {
+      "container-local": {
+        id: "container-local",
+        itemIds: ["item-local"],
+        childIds: []
+      }
+    },
+    items: {
+      "item-local": {
+        id: "item-local",
+        photos: [{
+          id: "photo-local",
+          status: "pending",
+          url: "blob:local-photo"
+        }]
+      }
+    }
+  };
+  const apiCalls = [];
+  let uploaded = false;
+  let uploadCalls = 0;
+  const runtime = {
+    state: {
+      activeLayoutId: "layout-admin-shared",
+      layouts: {
+        "layout-admin-shared": {
+          id: "layout-admin-shared",
+          name: "Shared demo",
+          language: "ru",
+          adminTemplateCopy: true,
+          adminSharedSourceId: "shared-demo"
+        }
+      }
+    },
+    currentUser: { email: "admin@example.test" },
+    syncMeta: {},
+    sharedLayoutsByLanguage: {},
+    uiLanguage: "ru"
+  };
+
+  await savePublishedLayoutRecordFlow({
+    runtime,
+    dependencies: {
+      LIST_SAVE_API_TIMEOUT_MS: 1000,
+      apiFetch: async (path, options = {}) => {
+        const body = JSON.parse(options.body || "{}");
+        apiCalls.push({ path, body });
+        return { payload: body.payload };
+      },
+      applyPublishedPayloadPhotosToLayoutState: () => false,
+      canOpenAdminPublishedEdit: () => true,
+      checkAdminApiCompatibility: async () => {},
+      cleanPublishedEntityId,
+      clone: (value) => JSON.parse(JSON.stringify(value)),
+      exportLayoutAsDemoState: () => JSON.parse(JSON.stringify(publishPayload)),
+      findSharedLayout: () => ({ id: "shared-demo" }),
+      getLayoutContainerIdSetForState: () => new Set(["container-local"]),
+      getLayoutItemIdSetForState: () => new Set(["item-local"]),
+      getUnsyncedPhotoEntries: () => uploaded
+        ? []
+        : [{ entityType: "item", entityId: "item-local", photo: { id: "photo-local", status: "pending" } }],
+      getUploadablePhotoEntries: () => [
+        { entityType: "item", entityId: "item-local", photo: { id: "photo-local", status: "pending" } }
+      ],
+      nowIso: () => "2026-07-04T00:00:00.000Z",
+      persistStateSnapshot: () => {},
+      publicListIdForPublishedTarget: () => "public-shared-layout-shared-demo",
+      publishedLayoutTarget: () => ({ type: "shared", sharedId: "shared-demo", language: "ru" }),
+      publishedPayloadWithTemplateMetadata: (payload) => payload,
+      refreshPublishedLayoutView: () => {},
+      refreshPublicSharedLayoutCatalog: async () => {},
+      saveSyncMeta: () => {},
+      shouldCopyPublicTemplatePhotoReferencesOnServer: () => true,
+      shouldCreatePublishedTemplateBeforePhotos: () => false,
+      showToast: () => {},
+      updateSyncUi: () => {},
+      uploadPublishedLayoutPhotos: async () => {
+        uploadCalls += 1;
+        uploaded = true;
+      },
+      upsertRuntimeSharedLayout: () => ({ id: "shared-demo" }),
+      withLayoutArrangementAppliedAsync: async (_layoutId, callback) => callback(),
+      withoutPhotoReferences: (payload) => payload
+    }
+  }, "layout-admin-shared");
+
+  assert.equal(uploadCalls, 1);
+  assert.equal(apiCalls.length, 2);
+  assert.equal(apiCalls[0].path, "/bike-packing/admin/shared-layouts/shared-demo/state");
+  assert.equal(apiCalls[0].body.copyPhotoReferences, true);
+  assert.equal(apiCalls[1].body.copyPhotoReferences, undefined);
 });
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
@@ -1692,6 +1888,16 @@ test("published template export keeps items removed from the layout in the catal
         location: "Garage",
         categories: ["Storage"],
         publicCatalogLayoutId: layoutId
+      },
+      "container-detached-copy": {
+        id: "container-detached-copy",
+        name: "Detached bag",
+        parentId: null,
+        itemIds: [],
+        childIds: [],
+        order: [],
+        sharedSourceId: "container-detached",
+        publicCatalogLayoutId: layoutId
       }
     },
     items: {
@@ -1705,6 +1911,13 @@ test("published template export keeps items removed from the layout in the catal
         id: "item-detached",
         name: "Detached",
         containerId: "",
+        publicCatalogLayoutId: layoutId
+      },
+      "item-detached-copy": {
+        id: "item-detached-copy",
+        name: "Detached",
+        containerId: "",
+        sharedSourceId: "item-detached",
         publicCatalogLayoutId: layoutId
       },
       "item-private": {

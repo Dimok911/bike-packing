@@ -6,6 +6,7 @@ import {
   rootColumnInsertIndexFromVisibleNeighbors
 } from "../../src/state/layout-ops.js";
 import {
+  createSubcontainerInLayoutState,
   deleteRootContainerFromState,
   placeDuplicatedContainerSnapshotInLayoutState
 } from "../../src/state/container-ops.js";
@@ -155,6 +156,52 @@ test("CRITICAL container copy picker: duplicated nested bag is inserted at the s
     { type: "container", id: "copy-root" },
     { type: "container", id: "child-b" }
   ]);
+  assert.deepEqual(touched, ["container:parent", "layout:layout-a"]);
+});
+
+test("CRITICAL add-to-container plus: creating a nested bag updates live parent order and layout arrangement", () => {
+  const state = {
+    containers: {
+      "parent": {
+        id: "parent",
+        childIds: [],
+        itemIds: [],
+        order: []
+      }
+    },
+    items: {},
+    layouts: {
+      "layout-a": {
+        id: "layout-a",
+        rootContainerIds: ["parent"],
+        arrangement: {
+          rootContainerIds: ["parent"],
+          containers: {
+            "parent": { parentId: "", childIds: [], itemIds: [], order: [] }
+          },
+          items: {},
+          packedItems: {}
+        }
+      }
+    }
+  };
+  const touched = [];
+
+  const created = createSubcontainerInLayoutState(state, "parent", "layout-a", {
+    changedAt: "2026-07-02T00:00:00.000Z",
+    currentCreateMeta: (changedAt) => ({ createdAt: changedAt, updatedAt: changedAt }),
+    id: "child-new",
+    name: "New pouch",
+    touchContainer: (container) => touched.push(`container:${container.id}`),
+    touchLayout: (layoutId) => touched.push(`layout:${layoutId}`)
+  });
+
+  assert.deepEqual(created, { id: "child-new", parentId: "parent", layoutId: "layout-a" });
+  assert.equal(state.containers["child-new"].parentId, "parent");
+  assert.deepEqual(state.containers.parent.childIds, ["child-new"]);
+  assert.deepEqual(state.containers.parent.order, [{ type: "container", id: "child-new" }]);
+  assert.deepEqual(state.layouts["layout-a"].arrangement.containers.parent.childIds, ["child-new"]);
+  assert.deepEqual(state.layouts["layout-a"].arrangement.containers.parent.order, [{ type: "container", id: "child-new" }]);
   assert.deepEqual(touched, ["container:parent", "layout:layout-a"]);
 });
 

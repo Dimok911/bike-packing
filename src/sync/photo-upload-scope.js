@@ -14,9 +14,16 @@ export function getPhotoUploadScope(targetState, layoutId = null) {
   const layout = targetState.layouts?.[layoutId];
   if (!layout) return null;
   const containerIds = getLayoutContainerIdSet(targetState, layout);
-  const itemIds = new Set();
+  const itemIds = new Set(getLayoutItemIdSet(targetState, layout));
+  Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
+    if (container?.publicCatalogLayoutId === layoutId) containerIds.add(containerId);
+  });
   containerIds.forEach((containerId) => {
     (targetState.containers?.[containerId]?.itemIds || []).forEach((itemId) => itemIds.add(itemId));
+  });
+  Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
+    if (item?.publicCatalogLayoutId === layoutId) itemIds.add(itemId);
+    if (item?.containerId && containerIds.has(item.containerId)) itemIds.add(itemId);
   });
   return { containerIds, itemIds };
 }
