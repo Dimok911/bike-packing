@@ -13,6 +13,7 @@ export function createPackingDragController({
   getColumnPlaceholderIndex = () => -1,
   getItemContainerIdInLayout,
   getState,
+  onBeforePackingDragEnter = () => {},
   isOriginalRootColumnPosition,
   moveContainer,
   moveContainerIntoContainerTop,
@@ -1098,6 +1099,7 @@ export function createPackingDragController({
         if (tab && getCurrentView?.() !== "packing") {
           tab.classList.add("drag-over");
           clearZones();
+          onBeforePackingDragEnter();
           switchToPacking?.();
           return;
         }

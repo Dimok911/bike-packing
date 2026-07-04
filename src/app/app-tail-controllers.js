@@ -2595,6 +2595,30 @@ function hasActiveContentFilter(view = getCurrentView()) {
   return Boolean(refs.searchInput.value.trim() || refs.locationFilter.value || runtime.selectedCategoryFilters.length);
 }
 
+function clearContentFiltersForPackingDrag() {
+  if (!hasActiveContentFilter()) return false;
+  if (runtime.searchRenderTimer) {
+    window.clearTimeout(runtime.searchRenderTimer);
+    runtime.searchRenderTimer = null;
+  }
+  if (runtime.searchContextCommitTimer) {
+    window.clearTimeout(runtime.searchContextCommitTimer);
+    runtime.searchContextCommitTimer = null;
+  }
+  refs.searchInput.value = "";
+  refs.locationFilter.value = "";
+  runtime.selectedCategoryFilters = [];
+  runtime.filterMatchIndex = 0;
+  runtime.filterMatchSignature = "";
+  runtime.pendingFilterJump = false;
+  runtime.suppressNextFilterJump = false;
+  showToast(localText(
+    "Search filters were cleared so the full layout is available for dragging.",
+    "Фильтр сброшен, чтобы была доступна вся укладка для перетаскивания."
+  ), "warning");
+  return true;
+}
+
 function isFilterContextActive() {
   return Boolean(state.showFilterContext && hasActiveContentFilter());
 }
@@ -2877,7 +2901,11 @@ function getPackingDragController() {
       setDraggingItemId: (value) => {
         runtime.draggingItemId = value;
       },
-      switchToPacking: () => switchView("packing"),
+      onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
+      switchToPacking: () => {
+        switchView("packing");
+        renderPacking();
+      },
       touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
       touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
       touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,
@@ -3434,7 +3462,11 @@ function bindSettingsPointerDrag() {
     pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
     preventDragContextMenu,
     render,
-    switchToPacking: () => switchView("packing"),
+    onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
+    switchToPacking: () => {
+      switchView("packing");
+      renderPacking();
+    },
     touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
     touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
     touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,

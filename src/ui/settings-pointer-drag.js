@@ -10,6 +10,7 @@ export function bindSettingsPointerDrag({
   getColumnPlaceholderIndex = null,
   getState,
   getTouchPoint,
+  onBeforePackingDragEnter = () => {},
   isHoldDragInput,
   markDragPending,
   pointerDragStartDistance,
@@ -262,6 +263,7 @@ export function bindSettingsPointerDrag({
           packingTab.classList.add("drag-over");
           cleanupLayoutListDropState();
           cleanupPackingDropState();
+          onBeforePackingDragEnter();
           switchToPacking?.();
           return;
         }
