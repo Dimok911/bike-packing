@@ -144,7 +144,7 @@ function collectStateLayoutEntityReferences(targetState) {
   return result;
 }
 
-function collectLayoutEntityReferences(targetState, layout) {
+export function collectLayoutEntityReferences(targetState, layout) {
   const result = { containers: new Set(), items: new Set() };
   const collectContainerTree = (containerId) => {
     if (!containerId || result.containers.has(containerId) || !targetState?.containers?.[containerId]) return;

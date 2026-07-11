@@ -95,8 +95,16 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Пользовательские укладки одного пользователя находятся в одном приватном
   namespace: общий каталог, общие справочники и общий набор файлов фото.
 - Каждый отдельный шаблон, включая RU/EN варианты, находится в собственном
-  template namespace. У него свой каталог, свои placement/arrangement и свои
-  файлы фото.
+  template namespace. У него свой каталог вещей, каталог сумок, справочники
+  категорий/мест, placement/arrangement и свои файлы фото.
+- Локальный админский draft технически может находиться в одном browser state с
+  приватными данными, но записи его каталога обязаны иметь ownership
+  `publicCatalogLayoutId`. Это локальное представление отдельного namespace, а
+  не разрешение связывать template-запись с приватной укладкой по тому же `id`.
+- UI-предпочтения устройства (`itemDisplayMode`, `showItemMeta`, сворачивание,
+  фильтры, visual style) не являются настройками каталога/namespace и не должны
+  переноситься вместе с шаблоном. Настройки предметной области шаблона — его
+  категории, места и layout-поля — входят в template namespace.
 - Укладка хранит только сценарий размещения:
   - `state.layouts[layoutId].arrangement.rootContainerIds`
   - `state.layouts[layoutId].arrangement.containers`
@@ -108,6 +116,10 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Копирование через границу namespace, например пользовательская укладка ->
   шаблон, шаблон -> пользовательская укладка или RU-шаблон -> EN-шаблон,
   должно создавать записи в целевом namespace и отдельно обрабатывать фото.
+- Link-by-ID допустим только между пользовательскими укладками одного private
+  namespace. Если хотя бы одна сторона является demo/shared template, нужна
+  изолированная запись целевого namespace, даже если локальный admin draft
+  временно лежит в том же `state.items/state.containers`.
 - Кнопка копирования/переноса в другую пользовательскую укладку не создает
   дубль каталожной записи. Она добавляет в целевую укладку ссылку на тот же
   `id` вещи или сумки.
@@ -134,3 +146,8 @@ test:critical` дополнительно к `npm.cmd run check`.
   осознанные дубли допустимы, но технические `*-isolated-*` копии от старого
   ремонта должны схлопываться обратно в исходные `id`, если исходная запись
   существует.
+# Recovery snapshots
+
+- Recovery snapshots are diagnostic/safety copies only. Application startup and authentication must never merge or replace working state from them automatically.
+- An old recovery snapshot may contain intentionally deleted layouts, templates, bags, or items, so absence from current state is not evidence of accidental data loss.
+- Restoring any recovery/history/backup payload must require an explicit user action. Normal server-state replacement may preserve managed public drafts from the current working state, but must not resurrect them from an older recovery snapshot.

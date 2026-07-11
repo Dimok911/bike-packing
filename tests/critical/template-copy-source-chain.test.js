@@ -45,8 +45,11 @@ import {
 } from "../../src/public/public-template-catalog.js";
 import {
   applyPublicTemplateMetadataToPayload,
+  canonicalCatalogConfirmsDemoTemplateAbsent,
   normalizePublicTemplateMetadataResponse,
+  publicDemoTemplateExactDeletePath,
   publicTemplateDeletePath,
+  publicTemplateDeleteResponseMatches,
   publicTemplateMetadataPath,
   publicTemplateMetadataRequest,
   publicTemplateMetadataTarget
@@ -118,6 +121,8 @@ import {
 import { validateGuestImportSyncState } from "../../src/public/guest-login-import.js";
 import {
   containerCopyExcludedLayoutIds,
+  createTemplateCopyLayoutRecord,
+  templateCopySourceKindFromChoice,
   SHARED_CONTAINER_COPY_PICKER_MODE
 } from "../../src/public/template-copy.js";
 import {
@@ -561,6 +566,34 @@ test("demo and shared templates use the same metadata request model", () => {
   assert.equal(sharedPath, "/bike-packing/admin/shared-layouts/bikepacking-reference-bags/metadata");
   assert.equal(demoDeletePath, "/bike-packing/admin/demo-states/en");
   assert.equal(sharedDeletePath, "/bike-packing/admin/shared-layouts/bikepacking-reference-bags");
+  assert.equal(
+    publicDemoTemplateExactDeletePath("public-demo-state-copy-ru-delete"),
+    "/bike-packing/admin/demo-templates/public-demo-state-copy-ru-delete"
+  );
+  assert.equal(publicTemplateDeleteResponseMatches({
+    deleted: true,
+    listId: "public-demo-state-copy-ru-delete"
+  }, "public-demo-state-copy-ru-delete"), true);
+  assert.equal(publicTemplateDeleteResponseMatches({
+    deleted: false,
+    alreadyAbsent: true,
+    listId: "public-demo-state-copy-ru-wrong"
+  }, "public-demo-state-copy-ru-delete"), false);
+  assert.equal(canonicalCatalogConfirmsDemoTemplateAbsent({
+    canonical: true,
+    unified: true,
+    lists: [{ id: "public-demo-state", publicTemplateKind: "demo" }]
+  }, "public-demo-state-copy-ru-delete"), true);
+  assert.equal(canonicalCatalogConfirmsDemoTemplateAbsent({
+    canonical: true,
+    unified: true,
+    lists: [{ id: "public-demo-state-copy-ru-delete", publicTemplateKind: "demo" }]
+  }, "public-demo-state-copy-ru-delete"), false);
+  assert.equal(canonicalCatalogConfirmsDemoTemplateAbsent({
+    canonical: false,
+    unified: true,
+    lists: []
+  }, "public-demo-state-copy-ru-delete"), false);
   assert.deepEqual(publicTemplateMetadataRequest({
     name: "Demo-packing 4",
     adminDemoLanguage: "en"
@@ -850,6 +883,42 @@ test("demo template copies stay demo templates with their own public list id", (
   assert.equal(record.adminDemoLanguage, "ru");
   assert.equal(record.language, "ru");
   assert.equal(record.adminDemoListId, demoListId);
+});
+
+test("explicit shared source choice cannot be reclassified as demo by stale draft markers", () => {
+  const state = {
+    layouts: {
+      "layout-stale": {
+        id: "layout-stale",
+        adminDemo: true,
+        adminSharedSourceId: "tristan-ridley-kit-list"
+      }
+    }
+  };
+  const sourceKind = templateCopySourceKindFromChoice("shared:tristan-ridley-kit-list", {
+    isDemoLayoutChoice: (choice) => choice.startsWith("demo:"),
+    state,
+    templateDraftLayoutId: (choice) => choice.startsWith("template-draft:") ? choice.slice(15) : ""
+  });
+  const record = createTemplateCopyLayoutRecord({
+    id: "layout-copy",
+    requestedName: "Tristan Ridley Kit List 2",
+    sourceLayout: state.layouts["layout-stale"],
+    copySourceLayout: state.layouts["layout-stale"],
+    sourceState: state,
+    currentState: state,
+    rootSnapshots: [{ rootId: "bag-a" }],
+    arrangement: { rootContainerIds: ["bag-a"], containers: {}, items: {} },
+    sourceKind,
+    language: "ru",
+    ensureLayoutDictionaries: () => ({ locations: [], categories: [] }),
+    ensurePrivateDictionaries: () => ({ locations: [], categories: [] }),
+    createDemoTemplateCopyRecord: () => ({ kind: "demo" }),
+    createTemplateCopyRecord: () => ({ kind: "shared" })
+  });
+
+  assert.equal(sourceKind, "shared");
+  assert.equal(record.kind, "shared");
 });
 
 test("demo template delete removes server catalog entry and local admin drafts", () => {

@@ -12,6 +12,13 @@ export function privateContainerTreeCopyRoute({
   return "cancel";
 }
 
+export function copyCrossesPublicNamespaceBoundary({
+  sourceIsPublic = false,
+  targetIsPublic = false
+} = {}) {
+  return Boolean(sourceIsPublic || targetIsPublic);
+}
+
 export function shouldCopyPhotosToCurrentListForLayoutCopy({
   targetIsPublic = false,
   sourceIsPublicCopy = false

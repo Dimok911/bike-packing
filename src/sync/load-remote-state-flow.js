@@ -1,3 +1,5 @@
+import { STARTUP_CACHE_INTEGRITY_VERSION } from "./list-freshness.js";
+
 export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDirtySave = false, preferredLayout = null } = {}) {
   const state = runtime.state;
   const syncMeta = runtime.syncMeta;
@@ -88,6 +90,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           accountMatches,
           currentListId: startupListId,
           hasLocalState: hasLocalStateForStartup,
+          localState: state,
           remoteFreshness: freshness,
           syncMeta
         })) {
@@ -151,6 +154,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, data);
     const remoteRawPayload = record?.payload || data?.payload || data?.state || null;
     if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
+    if (remoteState) syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
     const serverTimeText = remoteUpdatedAt(record);
     const serverTime = timeValue(serverTimeText);
     const localTime = timeValue(syncMeta.localUpdatedAt);

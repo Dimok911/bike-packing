@@ -1,5 +1,6 @@
 export async function createTemplateCopyFromSourceFlow({ runtime, dependencies }, sourceLayout, requestedName, {
   language = "",
+  sourceKind = "",
   activate = true,
   renderAfter = true
 } = {}) {
@@ -62,6 +63,7 @@ export async function createTemplateCopyFromSourceFlow({ runtime, dependencies }
       sourceState,
       currentState: runtime.state,
       rootSnapshots,
+      sourceKind,
       changedAt,
       language,
       uiLanguage: runtime.uiLanguage,
@@ -107,6 +109,7 @@ export async function createTemplateCopyFromSourceFlow({ runtime, dependencies }
       sourceState,
       currentState: runtime.state,
       rootSnapshots,
+      sourceKind,
       arrangement,
       changedAt,
       language,

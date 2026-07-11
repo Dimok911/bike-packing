@@ -7,6 +7,11 @@ import {
   applyLayoutNotes,
   normalizeLayoutNotes
 } from "../state/layout-notes.js";
+import {
+  isLayoutNotesCollapsed,
+  LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
+  setLayoutNotesCollapsed
+} from "../ui/layout-notes-collapse.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -172,7 +177,7 @@ export function createAppTailControllers(ctx) {
     normalizeIntegrityCount, normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos,
     normalizeItemAvailabilityStatus, normalizeItemQuantity, normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse,
     normalizePackingViewMode, normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore,
-    normalizePublicTemplateMetadataResponse, normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRecoveryPayload, normalizeRemoteListRecord,
+    normalizePublicTemplateMetadataResponse, normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRemoteListRecord,
     normalizeRemoteState, normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision,
     normalizeUiLanguage, nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad,
     offerSaveGuestLocalLayouts, offlineRememberedUser, openAdminDemoLayout, openAuthDialog, openCategoryFilterDialog,
@@ -185,17 +190,17 @@ export function createAppTailControllers(ctx) {
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
-    primaryItemPhoto, printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
+    primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     containerPlacementSnapshotChanged, publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
     publicCopySourceIdFromRecord, isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
     publicLayoutDeleteConfirm, publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice,
-    publicTemplateDeleteBlockReason, publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget,
+    publicTemplateDeleteBlockReason, publicDemoTemplateExactDeletePath, publicTemplateDeletePath, publicTemplateDeleteResponseMatches, canonicalCatalogConfirmsDemoTemplateAbsent, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget,
     publicTemplateOptionLabel, publicTemplatePayloadPath, publishPublicHistoryRecord, publishedItemKeyStateCache, publishedLayoutSaveLayoutId,
     publishedLayoutSaveTimer, publishedLayoutTarget, publishedListStateCache, publishedPayloadWithTemplateMetadata, publishedTemplateBlockReason,
     purgeDeletedSharedTemplateFromFrontendState, purgeUnconfirmedSharedTemplatesFromFrontendState, putCachedPhoto, readBackupArchiveFile, readBackupImportFile,
     readOnlyLayoutDictionariesForState, readableGuestDemoLayoutName, readonlyPublicTemplateOptionLabel, readonlyTemplateMessage, reconcilePublishedTemplateCopyDraft,
-    recoverBetterLocalSnapshotIfNeeded, recoverUnsyncedLocalChanges, refreshActiveReadOnlyPublicTemplate, refreshHistoryDialog, refreshOpenPhotoDialogPreviews,
+    recoverUnsyncedLocalChanges, refreshActiveReadOnlyPublicTemplate, refreshHistoryDialog, refreshOpenPhotoDialogPreviews,
     refreshPublicSharedLayoutCatalog, refreshPublicSharedLayoutCatalogFlow, refreshPublicSharedLayoutIndex, refreshPublicSharedTemplates, refreshPublishedLayoutView,
     refs, registerAppServiceWorker, rememberActiveLayoutChoice, rememberAuthenticatedUser, rememberAuthenticatedUserInStorage,
     rememberConflictRemoteMeta, rememberConflictRemoteMetaForSync, rememberCurrentPackingListRecord, rememberCurrentSyncAccount, rememberDeletedSharedLayoutId,
@@ -219,7 +224,7 @@ export function createAppTailControllers(ctx) {
     resolveLayoutCreateTemplateCopySourceValue, resolvePreferredLayoutId, resolveStoredPrivateLayoutChoice, resolveStoredPrivateLayoutChoiceForState, restorableStoredPrivateLayoutChoiceId,
     restoreAdminPublishedLayoutContext, restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState,
     restorePrivateHistoryRecordOnServer, restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow,
-    restoreSelectedBackupLayoutsToState, restoreTemplateCopyDraftsFromRecovery, reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm,
+    restoreSelectedBackupLayoutsToState, reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm,
     rootContainerSortMode, rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow,
     runSyncNowFlow, safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice,
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
@@ -254,7 +259,7 @@ export function createAppTailControllers(ctx) {
     syncCreatedPrivateLayoutEntities, syncDemoStatePayloadForLanguage, syncDevice, syncInFlight, syncMeta,
     syncMetaAccountKey, syncMetaBelongsToCurrentUser, syncNow, syncPackingVisualStyleControls, syncPayloadSizeReport,
     syncPublishedEntityPhotos, syncPublishedEntityPhotosValue, syncQueued, syncQueuedForce, syncTimer,
-    t, templateCopySourceRootIds, templateDraftLayoutId, timeValue, toggleActiveLayoutNestedContainers,
+    t, templateCopySourceKindFromChoice, templateCopySourceRootIds, templateDraftLayoutId, timeValue, toggleActiveLayoutNestedContainers,
     toggleActiveLayoutNestedContainersCollapsedForState, toggleCollectionMode, toggleCollectionModeEnabled, toggleFilterContext, toggleForcedOfflineMode,
     toggleItemDisplayMode, togglePackingViewMode, togglePackingVisualStylePanel, toggleShowOnlyUnpacked, toggleTopMenu,
     touchContainer, touchItem, touchLayout, touchLayoutsReferencingItemInState, tryApplyRemoteEntityChanges,
@@ -1446,7 +1451,9 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (!source || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  if (!targetIsPublic) {
+  const sourceIsPublic = Boolean(source.publicCatalogLayoutId);
+  const crossesPublicNamespace = copyCrossesPublicNamespaceBoundary({ sourceIsPublic, targetIsPublic });
+  if (!crossesPublicNamespace) {
     if (layoutContainsItem(targetLayoutId, itemId)) {
       const duplicate = await askConfirmDialog({
         title: "Вещь уже есть в этой укладке",
@@ -1467,7 +1474,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
     return;
   }
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
-  const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
+  const sourceIsPublicCopy = sourceIsPublic || hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
   if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, source.name))) return;
   }
@@ -1529,7 +1536,8 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
-  const sourceIsPublicCopy = hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
+  const sourceIsPublicCopy = Boolean(sourceSnapshot.publicCatalogLayoutId) ||
+    hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
     Boolean(publicCopySourceIdFromRecord(sourceSnapshot, "item", itemId));
   const shouldCopyPhotosToCurrentList = shouldCopyPhotosToCurrentListForLayoutCopy({
     targetIsPublic,
@@ -1597,6 +1605,14 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (warnLockedLayoutMutation(targetLayoutId)) return;
   if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  const sourceLayout = state.layouts?.[sourceLayoutId];
+  const sourceIsPublic = Boolean(
+    sourceLayout?.adminDemo ||
+    sourceLayout?.adminSharedSourceId ||
+    Object.values(sourceSnapshot.containers || {}).some((container) => container?.publicCatalogLayoutId) ||
+    Object.values(sourceSnapshot.items || {}).some((item) => item?.publicCatalogLayoutId)
+  );
+  const crossesPublicNamespace = copyCrossesPublicNamespaceBoundary({ sourceIsPublic, targetIsPublic });
   const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
   if (copyAction === "cancel") return;
   if (copyAction === "copy-missing") {
@@ -1609,7 +1625,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     if (copiedCount) closeSourceEditorAfterCopy("container", sourceSnapshot.rootId || containerId);
     return;
   }
-  if (!targetIsPublic) {
+  if (!crossesPublicNamespace) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     const route = privateContainerTreeCopyRoute({
       copyAction,
@@ -1633,6 +1649,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   }
   await duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId, targetParentId, {
     sourceContainerId: containerId,
+    publicSource: sourceIsPublic,
     targetIndex
   });
 }
@@ -2025,18 +2042,52 @@ function metric(value, label) {
 }
 
 function layoutNotesSummaryHtml() {
-  const notes = normalizeLayoutNotes(state.layouts?.[state.activeLayoutId]?.notes);
+  const layoutId = state.activeLayoutId || "";
+  const notes = normalizeLayoutNotes(state.layouts?.[layoutId]?.notes);
   if (!notes) return "";
+  const storageKey = scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY);
+  const collapsed = isLayoutNotesCollapsed(storageKey, layoutId);
+  const toggleLabel = t(collapsed ? "tooltips.expand" : "tooltips.collapse");
+  const editLabel = t("tooltips.edit");
   return `
-    <div class="layout-notes-summary">
-      <strong>${escapeHtml(t("layout.notesTitle"))}</strong>
-      <p>${escapeHtml(notes)}</p>
+    <div class="layout-notes-summary ${collapsed ? "collapsed" : ""}">
+      <div class="layout-notes-header">
+        <strong>${escapeHtml(t("layout.notesTitle"))}</strong>
+        <div class="layout-notes-actions">
+          ${canManageActiveLayout() ? `
+            <button
+              type="button"
+              class="edit-button layout-notes-edit-button"
+              data-edit-layout-notes
+              aria-label="${escapeHtml(editLabel)}"
+              title="${escapeHtml(editLabel)}"
+            ><span aria-hidden="true">&#9998;</span></button>
+          ` : ""}
+          <button
+            type="button"
+            class="layout-notes-collapse-button"
+            data-toggle-layout-notes="${escapeHtml(layoutId)}"
+            aria-expanded="${String(!collapsed)}"
+            aria-label="${escapeHtml(`${t("layout.notesTitle")}: ${toggleLabel}`)}"
+            title="${escapeHtml(toggleLabel)}"
+          ><span class="layout-notes-chevron" aria-hidden="true"></span></button>
+        </div>
+      </div>
+      <p ${collapsed ? "hidden" : ""}>${escapeHtml(notes)}</p>
     </div>
   `;
 }
 
 function renderSummaryContent(metrics) {
   refs.summary.innerHTML = `${metrics.join("")}${layoutNotesSummaryHtml()}`;
+  refs.summary.querySelector("[data-toggle-layout-notes]")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const layoutId = button.dataset.toggleLayoutNotes || "";
+    const collapsed = button.getAttribute("aria-expanded") === "true";
+    setLayoutNotesCollapsed(scopedLocalStorageKey(LAYOUT_NOTES_COLLAPSE_STORAGE_KEY), layoutId, collapsed);
+    renderSummary();
+  });
+  refs.summary.querySelector("[data-edit-layout-notes]")?.addEventListener("click", openLayoutEditDialog);
 }
 
 function isSharedLayoutView() {
@@ -4645,11 +4696,12 @@ function createPrivateLayoutFromTemplateSource(source, requestedName, { activate
   return id;
 }
 
-async function createAndPublishTemplateCopy(sourceLayout, requestedName) {
+async function createAndPublishTemplateCopy(sourceLayout, requestedName, { sourceKind = "" } = {}) {
   if (!sourceLayout || !requestedName || !isAdminEditablePublishedLayout(sourceLayout.id)) return "";
   const language = normalizeUiLanguage(sourceLayout.adminDemoLanguage || sourceLayout.language || uiLanguage);
   const createdId = await createTemplateCopyFromSource(sourceLayout, requestedName, {
     language,
+    sourceKind,
     activate: false,
     renderAfter: false
   });
@@ -4823,13 +4875,19 @@ async function saveNewLayout(event) {
     return;
   }
   if (shouldCopyTemplate) {
-    const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(refs.layoutCopyFrom.value);
+    const sourceChoice = refs.layoutCopyFrom.value;
+    const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
     if (!sourceLayout) {
       showToast("Источник шаблона не найден.", "error");
       return;
     }
     try {
-      const createdId = await createAndPublishTemplateCopy(sourceLayout, requestedName);
+      const sourceKind = templateCopySourceKindFromChoice(sourceChoice, {
+        isDemoLayoutChoice,
+        state,
+        templateDraftLayoutId
+      });
+      const createdId = await createAndPublishTemplateCopy(sourceLayout, requestedName, { sourceKind });
       if (!createdId) return;
       refs.layoutDialog.close();
       switchView("packing");
@@ -5476,13 +5534,27 @@ async function deletePublishedSharedTemplate(sharedId, sourceLayout = null) {
 }
 
 async function deletePublishedDemoTemplate(target, sourceLayout = null) {
-  const path = publicTemplateDeletePath(target, { demoAdminPathForPublicListId });
-  if (!path) return false;
-  await apiFetch(path, {
-    method: "DELETE",
-    timeoutMs: LIST_SAVE_API_TIMEOUT_MS
-  });
   const listId = target.demoListId || sourceLayout?.adminDemoListId || demoPublicListIdForLanguage(target.language || uiLanguage);
+  const path = publicDemoTemplateExactDeletePath(listId);
+  if (!path) return false;
+  try {
+    const result = await apiFetch(path, {
+      method: "DELETE",
+      timeoutMs: LIST_SAVE_API_TIMEOUT_MS
+    });
+    if (!publicTemplateDeleteResponseMatches(result, listId)) {
+      throw new Error(`API did not confirm deletion of demo template ${listId}`);
+    }
+  } catch (error) {
+    let catalog = null;
+    try {
+      catalog = await fetchPublicSharedLayoutCatalog();
+    } catch {
+      // Keep the original delete error when the authoritative catalog cannot
+      // confirm that this is only a stale local admin draft.
+    }
+    if (!canonicalCatalogConfirmsDemoTemplateAbsent(catalog, listId)) throw error;
+  }
   const language = normalizeUiLanguage(target.language || sourceLayout?.adminDemoLanguage || sourceLayout?.language || uiLanguage);
   const payloadTarget = publicDemoTemplatePayloadTarget({
     id: listId,
@@ -6905,7 +6977,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
     resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, uniqueLayoutName, uniquePublishedTemplateName,
     canManageLayout, canManageActiveLayout, languageSelectEntries, createLayoutCopyFromSource,
-    templateCopyRootSnapshots, templateCopySourceScore, loadPublishedTemplateCopySource, createTemplateCopyFromSource,
+    templateCopyRootSnapshots, templateCopySourceKindFromChoice, templateCopySourceScore, loadPublishedTemplateCopySource, createTemplateCopyFromSource,
     layoutCreateCopySourceOptions, isLayoutCreateTemplateLayoutMode, resolveLayoutCreateCopySource, resolveLayoutCreateTemplateCopySource,
     resolveLayoutCreateTemplateCopyLayout, createPrivateLayoutFromTemplateSource, createAndPublishTemplateCopy, openLayoutDialog,
     updateLayoutCopyVisibility, layoutCreateSelectedSourceName, canReplaceLayoutCreateNameSuggestion, updateLayoutCreateNameSuggestion,

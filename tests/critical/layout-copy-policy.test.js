@@ -6,10 +6,18 @@ import {
   linkMissingContainerTreeToLayoutState
 } from "../../src/public/copy-public-layout-target.js";
 import {
+  copyCrossesPublicNamespaceBoundary,
   photoDuplicateOptionsForLayoutCopy,
   privateContainerTreeCopyRoute,
   shouldCopyPhotosToCurrentListForLayoutCopy
 } from "../../src/state/layout-copy-policy.js";
+
+test("CRITICAL namespace copy: linking by id is allowed only inside the private namespace", () => {
+  assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: false, targetIsPublic: false }), false);
+  assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: true, targetIsPublic: false }), true);
+  assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: false, targetIsPublic: true }), true);
+  assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: true, targetIsPublic: true }), true);
+});
 
 test("CRITICAL private copy: top-level bag links existing catalog records when target has no duplicates", () => {
   const state = {

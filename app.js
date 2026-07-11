@@ -130,8 +130,11 @@ import {
 } from "./src/public/public-template-delete-guard.js";
 import {
   applyPublicTemplateMetadataToPayload,
+  canonicalCatalogConfirmsDemoTemplateAbsent,
   normalizePublicTemplateMetadataResponse,
+  publicDemoTemplateExactDeletePath,
   publicTemplateDeletePath,
+  publicTemplateDeleteResponseMatches,
   publicTemplateMetadataPath,
   publicTemplateMetadataRequest,
   publicTemplateMetadataTarget
@@ -249,6 +252,7 @@ import {
   loadPublishedTemplateCopySource as loadPublishedTemplateCopySourceValue,
   resolveLayoutCreateTemplateCopyLayout as resolveLayoutCreateTemplateCopyLayoutValue,
   resolveLayoutCreateTemplateCopySource as resolveLayoutCreateTemplateCopySourceValue,
+  templateCopySourceKindFromChoice,
   templateCopyRootSnapshots as getTemplateCopyRootSnapshots,
   templateCopySourceScore as getTemplateCopySourceScore
 } from "./src/public/template-copy.js";
@@ -464,6 +468,7 @@ import {
   touchLayoutsReferencingItemInState
 } from "./src/state/layout-ops.js";
 import {
+  copyCrossesPublicNamespaceBoundary,
   photoDuplicateOptionsForLayoutCopy,
   privateContainerTreeCopyRoute,
   shouldCopyPhotosToCurrentListForLayoutCopy
@@ -578,7 +583,8 @@ import {
   canUseCachedStartupState,
   hasListFreshnessSignal,
   listFreshnessChanged,
-  normalizeListFreshness
+  normalizeListFreshness,
+  STARTUP_CACHE_INTEGRITY_VERSION
 } from "./src/sync/list-freshness.js";
 import { shouldRecoverUnsyncedLocalChanges } from "./src/sync/local-dirty.js";
 import {
@@ -915,6 +921,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "dictionaryStateEntitySync",
   "entitySyncListUpdatedAt",
   "lightweightListFreshness",
+  "listFreshnessIntegrityCounts",
   "entityChangesFeed",
   "entityChangesFeedRevisionBump",
   "publicTemplatePhotoReferenceCopy",
@@ -934,6 +941,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicTemplateLanguageColumn",
   "publicTemplateMetadataPatch",
   "publicTemplateDelete",
+  "publicDemoTemplateExactDelete",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
@@ -942,7 +950,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicTemplateDetachedCatalogItems",
   "listSaveNoopHistoryGuard"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-06-05.list-save-noop-history-guard-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-11.list-freshness-integrity-counts-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1425,7 +1433,7 @@ const appTailControllerDeps = {
   normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos, normalizeItemQuantity,
   normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse, normalizePackingViewMode,
   normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore, normalizePublicTemplateMetadataResponse,
-  normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRecoveryPayload, normalizeRemoteListRecord, normalizeRemoteState,
+  normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRemoteListRecord, normalizeRemoteState,
   normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision, normalizeUiLanguage,
   nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad, offerSaveGuestLocalLayouts,
   offlineRememberedUser, openAdminDemoLayout, openAuthDialog, openCategoryFilterDialog, openConfirmDialog,
@@ -1437,18 +1445,18 @@ const appTailControllerDeps = {
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
-  printHtmlDocument, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
+  printHtmlDocument, copyCrossesPublicNamespaceBoundary, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   containerPlacementSnapshotChanged, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
   isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
   publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue, publicLayoutDeleteConfirm,
   publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice, publicTemplateDeleteBlockReason,
-  publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
+  publicDemoTemplateExactDeletePath, publicTemplateDeletePath, publicTemplateDeleteResponseMatches, canonicalCatalogConfirmsDemoTemplateAbsent, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
   publicTemplatePayloadPath, publishPublicHistoryRecord, publishedItemKeyStateCache, publishedLayoutSaveLayoutId, publishedLayoutSaveTimer,
   publishedPhotoUploadRequest,
   publishedLayoutTarget, publishedListStateCache, publishedPayloadWithTemplateMetadata, publishedTemplateBlockReason, purgeDeletedSharedTemplateFromFrontendState,
   purgeUnconfirmedSharedTemplatesFromFrontendState, putCachedPhoto, readBackupArchiveFile, readBackupImportFile, readOnlyLayoutDictionariesForState,
-  readableGuestDemoLayoutName, readonlyPublicTemplateOptionLabel, readonlyTemplateMessage, reconcilePublishedTemplateCopyDraft, recoverBetterLocalSnapshotIfNeeded,
+  readableGuestDemoLayoutName, readonlyPublicTemplateOptionLabel, readonlyTemplateMessage, reconcilePublishedTemplateCopyDraft,
   recoverUnsyncedLocalChanges, refreshActiveReadOnlyPublicTemplate, refreshHistoryDialog, refreshOpenPhotoDialogPreviews, refreshPublicSharedLayoutCatalog,
   refreshPublicSharedLayoutCatalogFlow, refreshPublicSharedLayoutIndex, refreshPublicSharedTemplates, refreshPublishedLayoutView, refs,
   registerAppServiceWorker, rememberActiveLayoutChoice, rememberAuthenticatedUser, rememberAuthenticatedUserInStorage, rememberConflictRemoteMeta,
@@ -1474,7 +1482,7 @@ const appTailControllerDeps = {
   resolvePreferredLayoutId, resolveStoredPrivateLayoutChoice, resolveStoredPrivateLayoutChoiceForState, restorableStoredPrivateLayoutChoiceId, restoreAdminPublishedLayoutContext,
   restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState, restorePrivateHistoryRecordOnServer,
   restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow, restoreSelectedBackupLayoutsToState,
-  restoreTemplateCopyDraftsFromRecovery, reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm, rootContainerSortMode,
+  reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm, rootContainerSortMode,
   rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow, runSyncNowFlow,
   safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice, saveActivePackingListId,
   saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner, saveGuestImportToRemote,
@@ -1509,7 +1517,7 @@ const appTailControllerDeps = {
   syncDemoStatePayloadForLanguage, syncDevice, syncInFlight, syncMeta, syncMetaAccountKey,
   syncMetaBelongsToCurrentUser, syncNow, syncPackingVisualStyleControls, syncPayloadSizeReport, syncPublishedEntityPhotos,
   syncPublishedEntityPhotosValue, syncQueued, syncQueuedForce, syncTimer, t,
-  templateCopySourceRootIds, templateDraftLayoutId, timeValue, toggleActiveLayoutNestedContainers, toggleActiveLayoutNestedContainersCollapsedForState,
+  templateCopySourceKindFromChoice, templateCopySourceRootIds, templateDraftLayoutId, timeValue, toggleActiveLayoutNestedContainers, toggleActiveLayoutNestedContainersCollapsedForState,
   toggleCollectionMode, toggleCollectionModeEnabled, toggleFilterContext, toggleForcedOfflineMode, toggleItemDisplayMode,
   togglePackingViewMode, togglePackingVisualStylePanel, toggleShowOnlyUnpacked, toggleTopMenu, touchContainer,
   touchItem, touchLayout, touchLayoutsReferencingItemInState, tryApplyRemoteEntityChanges, uiLanguage,
@@ -2935,14 +2943,6 @@ function loadState() {
     restorePrivateLayoutChoiceInState(parsed);
     applyLayoutArrangement(parsed.activeLayoutId, parsed);
     applyDefaultCollapsedContainers(parsed);
-    const recovered = recoverBetterLocalSnapshotIfNeeded(parsed);
-    if (recovered) {
-      restorePrivateLayoutChoiceInState(recovered);
-      applyLayoutArrangement(recovered.activeLayoutId, recovered);
-      installRuntimeActiveLayoutId(recovered, recovered.activeLayoutId);
-      persistStateSnapshot(recovered);
-      return recovered;
-    }
     if (isSuspiciousEmptyPackingState(parsed)) {
       const fallback = createEmptyUserState();
       ensureItemDisplayModeState(fallback);
@@ -3032,76 +3032,6 @@ function saveRecoverySnapshot(reason, snapshot = state) {
   } catch {
     // Recovery snapshots are best-effort and must never interrupt the app.
   }
-}
-
-function restoreTemplateCopyDraftsFromRecovery() {
-  if (!canOpenAdminPublishedEdit()) return false;
-  const restored = { layouts: {}, containers: {}, items: {} };
-  loadRecoverySnapshots().forEach((entry) => {
-    const draftRecords = collectManagedPublicDraftRecords(entry?.payload);
-    Object.entries(draftRecords?.layouts || {}).forEach(([layoutId, layout]) => {
-      if (!isManagedPublicTemplateDraft(layout) || state.layouts?.[layoutId] || restored.layouts[layoutId]) return;
-      restored.layouts[layoutId] = layout;
-      Object.entries(draftRecords.containers || {}).forEach(([containerId, container]) => {
-        if (!restored.containers[containerId]) restored.containers[containerId] = container;
-      });
-      Object.entries(draftRecords.items || {}).forEach(([itemId, item]) => {
-        if (!restored.items[itemId]) restored.items[itemId] = item;
-      });
-    });
-  });
-  if (!mergeManagedPublicDraftRecords(state, restored)) return false;
-  persistStateSnapshot(state);
-  return true;
-}
-
-function recoverBetterLocalSnapshotIfNeeded(currentState) {
-  try {
-    const currentStats = stateStats(currentState);
-    if (currentStats.nestedContainers >= 4 && currentStats.items < 250) return null;
-    const snapshots = loadRecoverySnapshots();
-    let best = null;
-    let bestScore = 0;
-    snapshots.forEach((entry) => {
-      const candidate = normalizeRecoveryPayload(entry?.payload);
-      if (!candidate) return;
-      const stats = stateStats(candidate);
-      if (stats.items < 10 || stats.containers < 6 || stats.nestedContainers < 6) return;
-      if (stats.items < Math.max(10, Math.floor(currentStats.items * 0.25))) return;
-      if (stats.placedItems < Math.max(5, Math.floor(currentStats.placedItems * 0.5))) return;
-      const hierarchyGain = stats.nestedContainers - currentStats.nestedContainers;
-      const bloatDrop = currentStats.items - stats.items;
-      if (hierarchyGain < 4 && bloatDrop < 50) return;
-      const score = stats.nestedContainers * 5 + Math.max(stats.placedItems, stats.linkedItems) + bloatDrop;
-      if (score > bestScore) {
-        best = candidate;
-        bestScore = score;
-      }
-    });
-    if (!best) return null;
-    return best;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeRecoveryPayload(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  const candidate = JSON.parse(JSON.stringify(payload));
-  if (!candidate.locations || !candidate.categories || !candidate.containers || !candidate.items || !candidate.layouts) return null;
-  if (!candidate.collapsedContainers) candidate.collapsedContainers = {};
-  if (!candidate.packedItems || typeof candidate.packedItems !== "object") candidate.packedItems = {};
-  normalizeContainerFields(candidate);
-  normalizeItemFields(candidate);
-  cleanupGeneratedCatalogArtifacts(candidate);
-  repairContainerMembershipFromItemLinks(candidate);
-  normalizeLayoutFields(candidate);
-  isolateLinkedLayoutEntities(candidate);
-  normalizeItemCategories(candidate);
-  migrateContainerOrder(candidate);
-  applyLayoutArrangement(candidate.activeLayoutId, candidate);
-  applyDefaultCollapsedContainers(candidate);
-  return candidate;
 }
 
 function loadSyncMeta() {
@@ -3727,10 +3657,10 @@ function rememberRemoteIntegrityMeta(...sources) {
   if (!hasStateIntegrityMeta(meta)) return;
   syncMeta.payloadHash = meta.payloadHash || syncMeta.payloadHash || null;
   syncMeta.entityHash = meta.entityHash || syncMeta.entityHash || null;
-  syncMeta.itemCount = meta.itemCount;
-  syncMeta.containerCount = meta.containerCount;
-  syncMeta.layoutCount = meta.layoutCount;
-  syncMeta.payloadSize = meta.payloadSize;
+  if (meta.itemCount != null) syncMeta.itemCount = meta.itemCount;
+  if (meta.containerCount != null) syncMeta.containerCount = meta.containerCount;
+  if (meta.layoutCount != null) syncMeta.layoutCount = meta.layoutCount;
+  if (meta.payloadSize != null) syncMeta.payloadSize = meta.payloadSize;
   syncMeta.stateRevision = meta.stateRevision ?? syncMeta.stateRevision ?? null;
 }
 
@@ -4837,6 +4767,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
     syncMeta.localUpdatedAt = nowIso();
   }
   rememberRemoteIntegrityMeta(integrityMeta);
+  syncMeta.cacheIntegrityVersion = STARTUP_CACHE_INTEGRITY_VERSION;
   rememberCurrentSyncAccount();
   saveSyncMeta();
   repairPrivateMojibakeLayoutNames();
@@ -5634,7 +5565,6 @@ async function checkAuthAndLoad(options = {}) {
       renderCachedPrivateStateDuringRemoteLoad,
       renderInitialLocalFallbackIfNeeded,
       restoreSavedLayoutChoice,
-      restoreTemplateCopyDraftsFromRecovery,
       setExplicitlySignedOut,
       setLayoutLoadStatus,
       setPersonalLayoutsLoadedStatus,

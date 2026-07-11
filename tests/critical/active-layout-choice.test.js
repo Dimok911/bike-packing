@@ -179,6 +179,7 @@ test("CRITICAL sync-save: runtime active layout id is readable but not serialize
 test("CRITICAL sync-save: auth load keeps visible private layout as remote preferred choice", async () => {
   let activeLayoutId = "layout-last";
   const remoteLoads = [];
+  let automaticRecoveryCalls = 0;
   const runtime = {
     appUnlocked: false,
     currentUser: null,
@@ -218,7 +219,7 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
     renderCachedPrivateStateDuringRemoteLoad: async () => {},
     renderInitialLocalFallbackIfNeeded: () => {},
     restoreSavedLayoutChoice: async () => {},
-    restoreTemplateCopyDraftsFromRecovery: () => {},
+    restoreTemplateCopyDraftsFromRecovery: () => { automaticRecoveryCalls += 1; },
     setExplicitlySignedOut: () => {},
     setLayoutLoadStatus: () => {},
     setPersonalLayoutsLoadedStatus: () => {},
@@ -232,6 +233,7 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
   await checkAuthAndLoadFlow({ runtime, dependencies });
 
   assert.equal(activeLayoutId, "layout-last");
+  assert.equal(automaticRecoveryCalls, 0);
   assert.equal(remoteLoads.length, 1);
   assert.equal(remoteLoads[0].preferredLayout.id, "layout-last");
 });

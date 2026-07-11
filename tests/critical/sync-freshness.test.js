@@ -46,7 +46,10 @@ test("CRITICAL sync-save: freshness metadata can be normalized without payload",
     serverUpdatedAt: "2026-05-27T20:00:00.000Z",
     stateRevision: 7,
     payloadHash: "",
-    entityHash: ""
+    entityHash: "",
+    itemCount: null,
+    containerCount: null,
+    layoutCount: null
   });
 });
 
@@ -591,6 +594,7 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
       hasLocalState: true,
       syncMeta: {
         dirty: false,
+        cacheIntegrityVersion: 1,
         listId: "list-1",
         serverUpdatedAt: "2026-05-27T20:00:00.000Z",
         stateRevision: 7,
@@ -605,6 +609,51 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
     }),
     true
   );
+});
+
+test("CRITICAL offline-start: legacy cache requires one full server verification", () => {
+  assert.equal(canUseCachedStartupState({
+    currentListId: "list-1",
+    hasLocalState: true,
+    syncMeta: {
+      dirty: false,
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    },
+    remoteFreshness: {
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    }
+  }), false);
+});
+
+test("CRITICAL offline-start: incomplete local cache cannot mask server items behind unchanged freshness", () => {
+  assert.equal(canUseCachedStartupState({
+    currentListId: "list-1",
+    hasLocalState: true,
+    localState: {
+      items: {},
+      containers: { "bag-1": { id: "bag-1" } },
+      layouts: { "layout-1": { id: "layout-1" } }
+    },
+    syncMeta: {
+      dirty: false,
+      cacheIntegrityVersion: 1,
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    },
+    remoteFreshness: {
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7,
+      itemCount: 120,
+      containerCount: 18,
+      layoutCount: 9
+    }
+  }), false);
 });
 
 test("CRITICAL offline-start: startup tries entity changes before full state when freshness changed", async () => {

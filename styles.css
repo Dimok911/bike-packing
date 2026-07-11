@@ -1188,25 +1188,92 @@ button.filter-active {
 
 .layout-notes-summary {
   grid-column: 1 / -1;
-  padding: 10px 12px;
   border: 1px solid rgba(31, 111, 91, 0.18);
   border-radius: 8px;
   background: #eef8f4;
   color: var(--ink);
   line-height: 1.35;
+  overflow: hidden;
 }
 
-.layout-notes-summary strong {
-  display: block;
-  margin-bottom: 4px;
+.layout-notes-header {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  padding-left: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.layout-notes-header > strong {
   color: var(--green);
   font-size: 13px;
 }
 
+.layout-notes-actions {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+.layout-notes-edit-button {
+  color: rgba(65, 82, 76, 0.46);
+}
+
+.layout-notes-collapse-button {
+  display: inline-grid;
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--green);
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.layout-notes-collapse-button:hover,
+.layout-notes-collapse-button:focus-visible {
+  background: rgba(31, 111, 91, 0.07);
+}
+
+.layout-notes-chevron {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(225deg) translate(-1px, -1px);
+  transition: transform 0.16s ease;
+}
+
+.layout-notes-summary.collapsed .layout-notes-chevron {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
 .layout-notes-summary p {
   margin: 0;
+  padding: 0 12px 10px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .layout-notes-header {
+    min-height: 48px;
+  }
+
+  .layout-notes-edit-button,
+  .layout-notes-collapse-button {
+    width: 44px;
+    min-height: 48px;
+  }
 }
 
 .tabs-row {

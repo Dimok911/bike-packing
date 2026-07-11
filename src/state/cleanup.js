@@ -5,25 +5,34 @@ import {
   isGeneratedCatalogSyncArtifact
 } from "../public/generated-artifacts.js";
 import { uniqueLayoutIds } from "./layout-arrangement.js";
+import { collectLayoutEntityReferences } from "./layout-delete.js";
+import { isPublicLayoutRecord } from "./public-layout-scope.js";
 
 export function cleanupGeneratedCatalogArtifacts(targetState, { forSync = false } = {}) {
   const items = targetState?.items && typeof targetState.items === "object" ? targetState.items : {};
   const containers = targetState?.containers && typeof targetState.containers === "object" ? targetState.containers : {};
+  const privateReferences = collectPrivateLayoutEntityReferences(targetState);
   const containerIdsToDrop = new Set();
   Object.entries(containers).forEach(([containerId, container]) => {
+    if (privateReferences.containers.has(containerId)) return;
     const shouldDrop = forSync
       ? isGeneratedCatalogContainerSyncArtifact(containerId, container)
       : isGeneratedCatalogContainerStateArtifact(containerId, container, targetState);
-    if (shouldDrop) collectContainerTreeForDrop(targetState, containerId, containerIdsToDrop);
+    if (shouldDrop) collectContainerTreeForDrop(targetState, containerId, containerIdsToDrop, privateReferences.containers);
   });
   const itemIdsToDrop = Object.entries(items)
+    .filter(([itemId]) => !privateReferences.items.has(itemId))
     .filter(([itemId, item]) => forSync
       ? isGeneratedCatalogSyncArtifact(itemId, item)
       : isGeneratedCatalogStateArtifact(itemId, item, targetState)
     )
     .map(([itemId]) => itemId);
   Object.entries(items).forEach(([itemId, item]) => {
-    if (item?.containerId && containerIdsToDrop.has(item.containerId)) itemIdsToDrop.push(itemId);
+    if (
+      !privateReferences.items.has(itemId) &&
+      item?.containerId &&
+      containerIdsToDrop.has(item.containerId)
+    ) itemIdsToDrop.push(itemId);
   });
   if (!itemIdsToDrop.length && !containerIdsToDrop.size) return 0;
 
@@ -91,13 +100,24 @@ export function scrubMissingEntityReferences(targetState) {
   });
 }
 
-function collectContainerTreeForDrop(targetState, containerId, containerIdsToDrop) {
-  if (!containerId || containerIdsToDrop.has(containerId)) return;
+function collectContainerTreeForDrop(targetState, containerId, containerIdsToDrop, protectedContainerIds = new Set()) {
+  if (!containerId || protectedContainerIds.has(containerId) || containerIdsToDrop.has(containerId)) return;
   const container = targetState?.containers?.[containerId];
   if (!container) return;
   containerIdsToDrop.add(containerId);
-  (container.childIds || []).forEach((childId) => collectContainerTreeForDrop(targetState, childId, containerIdsToDrop));
+  (container.childIds || []).forEach((childId) => collectContainerTreeForDrop(targetState, childId, containerIdsToDrop, protectedContainerIds));
   Object.entries(targetState.containers || {}).forEach(([childId, child]) => {
-    if (child?.parentId === containerId) collectContainerTreeForDrop(targetState, childId, containerIdsToDrop);
+    if (child?.parentId === containerId) collectContainerTreeForDrop(targetState, childId, containerIdsToDrop, protectedContainerIds);
   });
+}
+
+function collectPrivateLayoutEntityReferences(targetState) {
+  const result = { containers: new Set(), items: new Set() };
+  Object.values(targetState?.layouts || {}).forEach((layout) => {
+    if (!layout || isPublicLayoutRecord(layout)) return;
+    const references = collectLayoutEntityReferences(targetState, layout);
+    references.containers.forEach((id) => result.containers.add(id));
+    references.items.forEach((id) => result.items.add(id));
+  });
+  return result;
 }

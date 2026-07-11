@@ -27,7 +27,6 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     renderCachedPrivateStateDuringRemoteLoad,
     renderInitialLocalFallbackIfNeeded,
     restoreSavedLayoutChoice,
-    restoreTemplateCopyDraftsFromRecovery,
     applyPreferredPrivateLayoutChoice,
     storedPrivateLayoutChoiceRef,
     setExplicitlySignedOut,
@@ -130,7 +129,6 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     currentPrivateLayoutRef?.() ||
     null;
   rememberAuthenticatedUser();
-  restoreTemplateCopyDraftsFromRecovery();
   if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
   setLayoutLoadStatus("loading", localText("Loading personal layouts...", "Загружаем личные укладки..."));
   updateSyncUi(localText("Signed in · loading data...", "Вход выполнен · загружаем данные..."));

@@ -130,6 +130,21 @@ export function isDemoTemplateCopySource(sourceLayout, copySourceLayout) {
   return Boolean(sourceLayout?.adminDemo || copySourceLayout?.adminDemo);
 }
 
+export function templateCopySourceKindFromChoice(choice, {
+  isDemoLayoutChoice = () => false,
+  state = null,
+  templateDraftLayoutId = () => ""
+} = {}) {
+  const value = String(choice || "").trim();
+  if (isDemoLayoutChoice(value)) return "demo";
+  if (value.startsWith("shared:")) return "shared";
+  const draftId = templateDraftLayoutId(value);
+  const draft = draftId ? state?.layouts?.[draftId] : null;
+  if (draft?.adminDemo && !draft?.adminSharedSourceId) return "demo";
+  if (draft?.adminSharedSourceId) return "shared";
+  return "";
+}
+
 export function demoTemplateCopyTakenListIds(serverConfirmedDemoTemplates = [], layouts = {}) {
   return [
     ...serverConfirmedDemoTemplates.map((entry) => entry?.listId || entry?.id),
@@ -156,6 +171,7 @@ export function createTemplateCopyLayoutRecord({
   requestedName = "",
   rootSnapshots = [],
   serverConfirmedDemoTemplates = [],
+  sourceKind = "",
   sourceLayout = null,
   sourceState = null,
   uiLanguage = "",
@@ -166,7 +182,10 @@ export function createTemplateCopyLayoutRecord({
     ? ensureLayoutDictionaries(copySourceLayout)
     : ensureLayoutDictionaries(copySourceLayout, sourceState);
   const copyLanguage = templateCopyLanguage({ language, copySourceLayout, sourceLayout, uiLanguage, normalizeUiLanguage });
-  const isDemoTemplateCopy = isDemoTemplateCopySource(sourceLayout, copySourceLayout);
+  const normalizedSourceKind = sourceKind === "demo" || sourceKind === "shared" ? sourceKind : "";
+  const isDemoTemplateCopy = normalizedSourceKind
+    ? normalizedSourceKind === "demo"
+    : isDemoTemplateCopySource(sourceLayout, copySourceLayout);
   const demoListId = isDemoTemplateCopy && typeof createDemoTemplateListId === "function"
     ? createDemoTemplateListId({
       language: copyLanguage,

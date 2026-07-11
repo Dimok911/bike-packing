@@ -38,6 +38,27 @@ export function publicTemplateDeletePath(target, {
   return "";
 }
 
+export function publicDemoTemplateExactDeletePath(listId) {
+  const id = normalizeText(listId);
+  return id ? `/bike-packing/admin/demo-templates/${encodeURIComponent(id)}` : "";
+}
+
+export function publicTemplateDeleteResponseMatches(data, listId) {
+  const expectedId = normalizeText(listId);
+  return Boolean(expectedId && data?.deleted === true && normalizeText(data?.listId) === expectedId);
+}
+
+export function canonicalCatalogConfirmsDemoTemplateAbsent(data, listId) {
+  const expectedId = normalizeText(listId);
+  if (!expectedId || data?.canonical !== true || data?.unified !== true) return false;
+  const records = Array.isArray(data?.lists) ? data.lists : [];
+  return !records.some((record) => {
+    const recordId = normalizeText(record?.id || record?.listId || record?.list_id);
+    const kind = normalizeText(record?.publicTemplateKind || record?.role);
+    return recordId === expectedId && (kind === "demo" || recordId === "public-demo-state" || recordId.startsWith("public-demo-state-"));
+  });
+}
+
 export function publicTemplateMetadataTarget(target, {
   previousTarget = null
 } = {}) {

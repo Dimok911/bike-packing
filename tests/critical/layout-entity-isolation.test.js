@@ -5,6 +5,7 @@ import {
   isolateLinkedLayoutEntities
 } from "../../src/state/layout-entity-isolation.js";
 import { removeLayoutTreeFromState } from "../../src/state/layout-delete.js";
+import { cleanupGeneratedCatalogArtifacts } from "../../src/state/cleanup.js";
 
 function placement({ parentId = "", itemIds = [], childIds = [] } = {}) {
   return {
@@ -18,7 +19,7 @@ function placement({ parentId = "", itemIds = [], childIds = [] } = {}) {
   };
 }
 
-test("CRITICAL catalog model: layouts may share global item and container ids", () => {
+test("CRITICAL legacy safety: deleting a template tolerates old cross-namespace shared ids", () => {
   const state = {
     containers: {
       "shared-root": {
@@ -85,7 +86,7 @@ test("CRITICAL catalog model: layouts may share global item and container ids", 
   assert.equal(state.items["shared-item"].containerId, "shared-root");
 });
 
-test("CRITICAL catalog model: nested shared ids survive template delete", () => {
+test("CRITICAL legacy safety: nested old cross-namespace shared ids survive template delete", () => {
   const state = {
     containers: {
       "private-root": {
@@ -321,4 +322,59 @@ test("CRITICAL catalog model: unreferenced managed template entities are still r
   assert.equal(state.items["template-item"], undefined);
   assert.equal(state.collapsedContainers["template-root"], undefined);
   assert.equal(state.packedItems["template-item"], undefined);
+});
+
+test("CRITICAL layout lock: stale template cleanup preserves entities referenced by a locked private layout", () => {
+  const state = {
+    layouts: {
+      "layout-locked": {
+        id: "layout-locked",
+        locked: true,
+        rootContainerIds: ["container-shared-root"],
+        arrangement: {
+          rootContainerIds: ["container-shared-root"],
+          containers: {
+            "container-shared-root": placement({ itemIds: ["item-shared-item"] })
+          },
+          items: { "item-shared-item": "container-shared-root" },
+          packedItems: {}
+        }
+      }
+    },
+    containers: {
+      "container-shared-root": {
+        id: "container-shared-root",
+        publicCatalogLayoutId: "deleted-template-layout",
+        parentId: null,
+        childIds: [],
+        itemIds: ["item-shared-item"],
+        order: [{ type: "item", id: "item-shared-item" }]
+      },
+      "container-shared-unreferenced": {
+        id: "container-shared-unreferenced",
+        publicCatalogLayoutId: "deleted-template-layout",
+        parentId: null,
+        childIds: [],
+        itemIds: [],
+        order: []
+      }
+    },
+    items: {
+      "item-shared-item": {
+        id: "item-shared-item",
+        publicCatalogLayoutId: "deleted-template-layout",
+        containerId: "container-shared-root"
+      }
+    },
+    collapsedContainers: {},
+    packedItems: {}
+  };
+
+  assert.equal(cleanupGeneratedCatalogArtifacts(state), 1);
+  assert.ok(state.containers["container-shared-root"]);
+  assert.ok(state.items["item-shared-item"]);
+  assert.deepEqual(state.layouts["layout-locked"].arrangement.items, {
+    "item-shared-item": "container-shared-root"
+  });
+  assert.equal(state.containers["container-shared-unreferenced"], undefined);
 });
