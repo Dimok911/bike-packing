@@ -4276,10 +4276,282 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
 
+#layoutEditDialog {
+  width: min(720px, calc(100vw - 24px));
+}
+
+#layoutOrderDialog {
+  width: min(760px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: visible;
+}
+
 .dialog-card {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.layout-edit-dialog-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  max-height: min(760px, calc(100dvh - 24px));
+  overflow-x: hidden;
+}
+
+.layout-edit-dialog-card > * {
+  min-width: 0;
+}
+
+.dialog-card footer.layout-edit-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.dialog-card footer.layout-edit-actions #deleteEditedLayoutBtn {
+  justify-self: start;
+}
+
+.dialog-card footer.layout-edit-actions .layout-order-toggle {
+  justify-self: center;
+}
+
+.dialog-card footer.layout-edit-actions #saveEditedLayoutBtn {
+  justify-self: end;
+}
+
+.layout-order-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.layout-order-toggle-icon {
+  display: none;
+  font-size: 22px;
+  line-height: 1;
+}
+
+[data-touch-tooltip] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button.touch-tooltip-open,
+button.touch-tooltip-open:hover,
+button.touch-tooltip-open:focus,
+button.touch-tooltip-open:active {
+  translate: 0;
+  filter: none;
+}
+
+.layout-order-dialog-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: min(760px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.layout-order-dialog-card > * {
+  min-width: 0;
+}
+
+.layout-order-dialog-card .layout-order-list {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.layout-order-list {
+  display: grid;
+  gap: 12px;
+}
+
+.layout-order-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.layout-order-section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.layout-order-section-header h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.layout-order-section-tools {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.layout-order-sort,
+.layout-order-step,
+.layout-order-handle {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.layout-order-section-list {
+  display: grid;
+  gap: 6px;
+}
+
+.layout-order-empty {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed rgba(98, 112, 107, 0.32);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.layout-order-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 54px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.layout-order-row.active {
+  border-color: #b9d3ca;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.layout-order-row.dragging {
+  opacity: 0.58;
+}
+
+.layout-order-row.drag-pending {
+  box-shadow: inset 0 0 0 2px rgba(31, 111, 91, 0.18);
+}
+
+.layout-order-row.drag-over {
+  border-color: var(--accent);
+  background: rgba(220, 236, 230, 0.72);
+}
+
+.layout-order-placeholder {
+  box-sizing: border-box;
+  min-height: 54px;
+  border: 2px dashed rgba(31, 111, 91, 0.72);
+  border-radius: 8px;
+  background: rgba(31, 111, 91, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68);
+  transition: opacity 120ms ease, height 120ms ease, width 120ms ease;
+}
+
+.layout-order-drag-ghost {
+  position: fixed;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.96;
+  border: 2px dashed rgba(31, 111, 91, 0.82);
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+  transform: translate(0, 0);
+}
+
+.layout-order-drag-ghost .layout-order-handle,
+.layout-order-drag-ghost .layout-order-row-actions {
+  opacity: 0.38;
+}
+
+.layout-order-handle {
+  cursor: grab;
+  color: var(--muted);
+}
+
+.layout-order-step,
+.layout-order-sort {
+  cursor: pointer;
+}
+
+.touch-tooltip {
+  position: fixed;
+  z-index: 500;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  max-width: min(280px, calc(100vw - 20px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(22, 32, 29, 0.96);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  box-shadow: 0 10px 24px rgba(21, 31, 28, 0.22);
+}
+
+.touch-tooltip.touch-tooltip-dialog-local {
+  position: absolute;
+}
+
+.touch-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.layout-order-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.layout-order-title strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.18;
+  font-size: 14px;
+}
+
+.layout-order-title span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.layout-order-row-actions {
+  display: flex;
+  gap: 4px;
 }
 
 .conflict-dialog-card {
@@ -5223,6 +5495,25 @@ dialog.photo-lightbox::backdrop {
     max-height: inherit;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .dialog-card footer.layout-edit-actions {
+    gap: 6px;
+  }
+
+  .dialog-card footer.layout-edit-actions .layout-order-toggle {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .layout-order-toggle-icon {
+    display: inline-block;
+  }
+
+  .layout-order-toggle-text {
+    display: none;
   }
 
   #confirmDialog {

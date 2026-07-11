@@ -11,6 +11,13 @@ export function compareSharedTemplateAdminOrder(a, b, {
   fallbackLanguage = "ru",
   locale = "ru"
 } = {}) {
+  const aOrder = Number(a?.layoutOrder);
+  const bOrder = Number(b?.layoutOrder);
+  const aHasOrder = Number.isFinite(aOrder);
+  const bHasOrder = Number.isFinite(bOrder);
+  if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+  if (aHasOrder && !bHasOrder) return -1;
+  if (!aHasOrder && bHasOrder) return 1;
   const languageRank = (layout) => {
     const language = normalizeLanguage(layout?.language || fallbackLanguage);
     const index = supportedLanguages.map(normalizeLanguage).indexOf(language);

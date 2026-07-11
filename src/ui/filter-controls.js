@@ -2,6 +2,7 @@ import {
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG
 } from "../config/constants.js";
+import { orderedLayouts } from "../state/layout-order.js";
 
 function setScopedControlState(element, active, keepSpace) {
   if (!element) return;
@@ -96,9 +97,13 @@ export function renderFilterControls({
   updateLayoutLoadStatusUi = () => {},
   updateMetaToggle = () => {}
 } = {}) {
-  const personalLayouts = canUsePrivateState()
-    ? Object.values(state.layouts || {}).filter((layout) => !layout.adminDemo && !layout.adminSharedSourceId)
-    : Object.values(state.layouts || {}).filter((layout) => layout?.[GUEST_DEMO_COPY_FLAG]);
+  const personalLayouts = orderedLayouts(state.layouts || {}, {
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    includeLayout: (layout) => canUsePrivateState()
+      ? !layout.adminDemo && !layout.adminSharedSourceId
+      : Boolean(layout?.[GUEST_DEMO_COPY_FLAG]),
+    locale: uiLanguage || "ru"
+  });
   const readonlyLayoutId = activeReadOnlyLayoutId();
   const activeEditableLayoutId = getActiveEditableLayoutId();
   const activeLayout = state.layouts?.[activeEditableLayoutId];

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1156" />
+    <link rel="stylesheet" href="./styles.css?v=1167" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -393,7 +393,7 @@
     </dialog>
 
     <dialog id="layoutEditDialog">
-      <form method="dialog" class="dialog-card">
+      <form method="dialog" class="dialog-card layout-edit-dialog-card">
         <header>
           <h2 id="layoutEditTitle">Редактировать укладку</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
@@ -416,7 +416,25 @@
         </label>
         <footer class="layout-edit-actions">
           <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Delete</button>
+          <button id="layoutOrderToggleBtn" class="ghost layout-order-toggle" type="button" aria-expanded="false" aria-controls="layoutOrderDialog">
+            <span class="layout-order-toggle-icon" aria-hidden="true">↕</span>
+            <span class="layout-order-toggle-text">Порядок укладок</span>
+          </button>
           <button id="saveEditedLayoutBtn" value="default">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="layoutOrderDialog">
+      <form method="dialog" class="dialog-card layout-order-dialog-card">
+        <header>
+          <h2 id="layoutOrderTitle">Порядок укладок</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div id="layoutOrderList" class="layout-order-list"></div>
+        <footer>
+          <button id="saveLayoutOrderBtn" value="default" type="submit">Save</button>
+          <button value="cancel" class="ghost" type="submit">Закрыть</button>
         </footer>
       </form>
     </dialog>
@@ -634,6 +652,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1156" type="module"></script>
+    <script src="./app.js?v=1167" type="module"></script>
   </body>
 </html>

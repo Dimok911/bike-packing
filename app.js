@@ -383,6 +383,15 @@ import {
   withoutPhotoReferences
 } from "./src/state/layout-manage.js";
 import {
+  applyLayoutOrderToSources,
+  layoutOrderIdsFromSections,
+  layoutOrderSectionsFromSources,
+  moveLayoutBeforeInSections,
+  moveLayoutWithinSections,
+  sortLayoutSectionByDate,
+  sortLayoutSectionByName
+} from "./src/state/layout-order.js";
+import {
   applyItemAvailabilityStatus,
   applyLayoutLocked,
   containerPlacementSnapshotChanged,
@@ -690,6 +699,8 @@ import {
   renderRootContainersEditorHtml
 } from "./src/ui/settings-render.js";
 import { bindSettingsPointerDrag as bindSettingsPointerDragUi } from "./src/ui/settings-pointer-drag.js";
+import { bindLayoutOrderPointerDrag } from "./src/ui/layout-order-drag.js";
+import { bindLongPressTooltips } from "./src/ui/long-press-tooltip.js";
 import {
   renderSharedLayoutsHtml
 } from "./src/ui/shared-layout-render.js";
@@ -1289,7 +1300,7 @@ const appTailControllerDeps = {
   askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog, assertAdminApiCompatibility,
   assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity, backupDownloadName,
   bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls, bindFixedScrollbar, bindStickyRootHeaderRow,
-  bindHorizontalTouchScroll, bindLayoutEditorControls, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
+  bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
   bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi, blockDestructiveLocalSave,
   blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions, buildAdminSharedTemplateOptions,
   buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync, buildCurrentBackupManifestValue,
@@ -1389,7 +1400,7 @@ const appTailControllerDeps = {
   itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel, languageOptionLabelValue,
   lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap, lastToastAt,
   lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState, layoutCreateModeState,
-  layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage,
+    layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources,
   layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys, legacyComparableTopLevelDiffKeysForSync,
   legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged, listRecordVisibility,
   loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState, loadCurrentHistoryComparisonState,
@@ -1406,7 +1417,7 @@ const appTailControllerDeps = {
   mergeBuiltInSharedEntriesIntoAdminLayoutValue, mergeDemoTemplateCatalogEntry, mergeDemoTemplateEntriesForAdmin, mergeLocalCollapsedContainers, mergeManagedPublicDraftRecords,
   mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries, mergeStateFromBase,
   mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState, moveContainerInLayoutArrangementForState,
-  moveItemInLayoutArrangementForState, moveRootColumnInState, addRootContainerToLayoutInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue, nextServerConfirmedSharedLayoutAfter,
+  moveItemInLayoutArrangementForState, moveLayoutBeforeInSections, moveLayoutWithinSections, moveRootColumnInState, addRootContainerToLayoutInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue, nextServerConfirmedSharedLayoutAfter,
   normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms, normalizeBike3dViewState,
   normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, normalizeContainerFields,
   normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues, normalizeIntegrityCount,
@@ -1489,7 +1500,7 @@ const appTailControllerDeps = {
   shouldShowItemLabelsForMode, shouldShowItemPhotos, shouldShowItemPhotosForMode, shouldUseStickyFilterControls, shouldWarnAboutSharedLayoutCatalog,
   snapshotContainerTreeFromLayoutArrangement, snapshotContainerTreeFromLiveStateValue, snapshotHasLocalPublicCopyOrigin, snapshotHasPrivateSyncBlockedPublicOrigin, snapshotModeState,
   snapshotsEqual, solidifyManagedTemplateDrafts, solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayout, solidifyTemplateDraftLayoutForState,
-  sortDictionaryValues, sortHistoryRecords, sortedDictionaryValues, splitEntitySyncEntries, splitEntitySyncEntriesForSync,
+  sortDictionaryValues, sortHistoryRecords, sortLayoutSectionByDate, sortLayoutSectionByName, sortedDictionaryValues, splitEntitySyncEntries, splitEntitySyncEntriesForSync,
   startRemoteStateWatcher, startupLocalStateWasFallback, startupSyncMeta, state, stateIntegrityMetaFromResponse,
   statePrivateLayoutCount, stateStats, stateStatsForDestructiveComparison, storedGuestLocalLayoutCandidate, storedGuestLocalLayoutCandidateOffered,
   storedPrivateLayoutChoiceRef, stripPublicOriginForPrivateCopy, stripPublishedPublicOriginMarkers, subcontainerTitleHtml, submitAuthDialog,
@@ -1587,7 +1598,11 @@ const {
   resolveLayoutCreateTemplateCopyLayout, createPrivateLayoutFromTemplateSource, createAndPublishTemplateCopy, openLayoutDialog,
   updateLayoutCopyVisibility, layoutCreateSelectedSourceName, canReplaceLayoutCreateNameSuggestion, updateLayoutCreateNameSuggestion,
   createNewPublicTemplateLayout, saveNewLayout, openLayoutEditDialog, publicTemplateDeleteBlockReasonForLayout,
-  updateLayoutEditDeleteButton, canDeleteManagedLayout, saveEditedLayout, confirmDeleteEditedLayout,
+  updateLayoutEditDeleteButton, updateLayoutEditSaveState, handleLayoutEditFormSubmit, requestCloseLayoutEditDialog, handleLayoutEditDialogClose,
+  toggleLayoutOrderPanel, handleLayoutOrderFormSubmit, requestCloseLayoutOrderDialog, handleLayoutOrderListClick, handleLayoutOrderDragStart,
+  handleLayoutOrderDragOver, handleLayoutOrderDragLeave, handleLayoutOrderDrop, handleLayoutOrderDragEnd,
+  handleLayoutOrderDialogClose, bindLayoutOrderDragControls,
+  canDeleteManagedLayout, saveEditedLayout, confirmDeleteEditedLayout,
   confirmDeleteEditableLayout, confirmDeleteManagedPublicLayout, deletePublishedSharedTemplate, deletePublishedDemoTemplate,
   deletePublishedTemplate, shouldDeletePublishedTemplateForLayout, deleteManagedPublicLayout, userEditableLayouts,
   canDeleteActiveLayout, deleteActiveLayout, handleRootContainerFormSubmit, handleItemFormSubmit,
@@ -2682,14 +2697,28 @@ async function init() {
     openLayoutDialog();
   });
   refs.editLayoutBtn?.addEventListener("click", openLayoutEditDialog);
-  refs.layoutEditLanguage?.addEventListener("change", () => {
+  refs.layoutEditDialog?.querySelector("form")?.addEventListener("input", updateLayoutEditSaveState);
+  refs.layoutEditDialog?.querySelector("form")?.addEventListener("change", () => {
     updateLayoutEditDeleteButton(state.layouts?.[layoutEditTargetId]);
+    updateLayoutEditSaveState();
   });
-  refs.layoutLocked?.addEventListener("change", () => {
-    updateLayoutEditDeleteButton(state.layouts?.[layoutEditTargetId]);
+  refs.layoutEditDialog?.querySelector("form")?.addEventListener("submit", handleLayoutEditFormSubmit);
+  refs.layoutEditDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    requestCloseLayoutEditDialog();
   });
+  refs.layoutEditDialog?.addEventListener("close", handleLayoutEditDialogClose);
   refs.saveEditedLayoutBtn?.addEventListener("click", saveEditedLayout);
   refs.deleteEditedLayoutBtn?.addEventListener("click", confirmDeleteEditedLayout);
+  refs.layoutOrderToggleBtn?.addEventListener("click", toggleLayoutOrderPanel);
+  refs.layoutOrderDialog?.querySelector("form")?.addEventListener("submit", handleLayoutOrderFormSubmit);
+  refs.layoutOrderList?.addEventListener("click", handleLayoutOrderListClick);
+  refs.layoutOrderDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    requestCloseLayoutOrderDialog();
+  });
+  refs.layoutOrderDialog?.addEventListener("close", handleLayoutOrderDialogClose);
+  bindLayoutOrderDragControls();
   refs.layoutCreateMode.addEventListener("change", updateLayoutCopyVisibility);
   refs.layoutTemplateKind?.addEventListener("change", updateLayoutCreateNameSuggestion);
   refs.layoutTemplateLanguage?.addEventListener("change", updateLayoutCreateNameSuggestion);

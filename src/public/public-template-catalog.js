@@ -197,6 +197,13 @@ export function removePublicTemplateCatalogEntry(catalog = [], {
 }
 
 export function compareDemoTemplateOrder(a, b) {
+  const aOrder = Number(a?.layoutOrder);
+  const bOrder = Number(b?.layoutOrder);
+  const aHasOrder = Number.isFinite(aOrder);
+  const bHasOrder = Number.isFinite(bOrder);
+  if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+  if (aHasOrder && !bHasOrder) return -1;
+  if (!aHasOrder && bHasOrder) return 1;
   const aName = normalizeComparableName(a?.name || a?.title || a?.id);
   const bName = normalizeComparableName(b?.name || b?.title || b?.id);
   const byName = aName.localeCompare(bName, "ru", { numeric: true, sensitivity: "base" });
@@ -311,6 +318,7 @@ export function localDemoTemplateEntriesFromLayouts(layouts = {}, {
         role: PUBLIC_TEMPLATE_KIND_DEMO,
         serverConfirmed: false,
         localDraftLayoutId: layout.id || "",
+        layoutOrder: Number.isFinite(Number(layout.layoutOrder)) ? Number(layout.layoutOrder) : undefined,
         updatedAt: normalizeText(layout.updatedAt)
       };
     })

@@ -200,6 +200,13 @@ export function applyStaticTranslationsUi({
   setText(refs.layoutLockedLabel?.querySelector("span"), t("layout.lockedLabel"));
   setText(refs.deleteEditedLayoutBtn, t("buttons.deleteLayout"));
   setText(refs.saveEditedLayoutBtn, t("buttons.save"));
+  const layoutOrderButtonText = t("layoutOrder.button");
+  setText(refs.layoutOrderToggleBtn?.querySelector(".layout-order-toggle-text"), layoutOrderButtonText);
+  setAttr(refs.layoutOrderToggleBtn, "aria-label", layoutOrderButtonText);
+  setAttr(refs.layoutOrderToggleBtn, "title", layoutOrderButtonText);
+  if (refs.layoutOrderToggleBtn) refs.layoutOrderToggleBtn.dataset.touchTooltip = layoutOrderButtonText;
+  setText(refs.layoutOrderTitle, t("layoutOrder.title"));
+  setText(refs.saveLayoutOrderBtn, t("buttons.save"));
 
   setText(refs.backupDialog?.querySelector("h2"), t("backup.title"));
   setText(refs.backupCreateBtn, t("backup.createArchive"));

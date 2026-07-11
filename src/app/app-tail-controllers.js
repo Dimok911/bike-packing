@@ -15,6 +15,10 @@ export function createAppTailControllers(ctx) {
   let itemDialogPhotoPreviewPhotoCount = 0;
   let rootContainerDialogPhotoPreviewPhotoCount = 0;
   let containerPickerSourceIsNestedContainer = false;
+  let layoutOrderDragId = "";
+  let layoutEditInitialSnapshot = null;
+  let layoutOrderDraftSections = null;
+  let layoutOrderInitialSignature = "";
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
     ADMIN_USER_IDS, API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -44,7 +48,7 @@ export function createAppTailControllers(ctx) {
     arePublishedTemplatesBlocked, askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog,
     assertAdminApiCompatibility, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity,
     backupDownloadName, bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls,
-    bindFixedScrollbar, bindStickyRootHeaderRow, bindHorizontalTouchScroll, bindLayoutEditorControls, bindPackingEventsUi, bindPhotoGalleries,
+    bindFixedScrollbar, bindStickyRootHeaderRow, bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries,
     bindRootContainersEditorControls, bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi,
     blockDestructiveLocalSave, blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions,
     buildAdminSharedTemplateOptions, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync,
@@ -146,7 +150,7 @@ export function createAppTailControllers(ctx) {
     languageOptionLabelValue, lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap,
     lastToastAt, lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState,
     layoutCreateModeState, layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus,
-    layoutManageLanguage, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
+    layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
     legacyComparableTopLevelDiffKeysForSync, legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged,
     listRecordVisibility, loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState,
     loadCurrentHistoryComparisonState, loadCurrentServerStateDirectly, loadGuestPublishedDemoOnStartup, loadPublishedDemoState, loadPublishedTemplateCopySourceValue,
@@ -161,7 +165,7 @@ export function createAppTailControllers(ctx) {
     mergeBuiltInSharedEntriesIntoAdminLayout, mergeBuiltInSharedEntriesIntoAdminLayoutValue, mergeDemoTemplateCatalogEntry, mergeDemoTemplateEntriesForAdmin, mergeLocalCollapsedContainers,
     mergeManagedPublicDraftRecords, mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries,
     mergeStateFromBase, mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState,
-    moveContainerInLayoutArrangementForState, moveItemInLayoutArrangementForState, moveRootColumnInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue,
+    moveContainerInLayoutArrangementForState, moveItemInLayoutArrangementForState, moveLayoutBeforeInSections, moveLayoutWithinSections, moveRootColumnInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue,
     itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, unavailableSnapshotItems, nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
     normalizeBike3dViewState, normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions,
     normalizeContainerFields, normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues,
@@ -241,7 +245,7 @@ export function createAppTailControllers(ctx) {
     shouldShowItemLabels, shouldShowItemLabelsForMode, shouldShowItemPhotos, shouldShowItemPhotosForMode, shouldUseStickyFilterControls,
     shouldWarnAboutSharedLayoutCatalog, snapshotContainerTreeFromLayoutArrangement, snapshotContainerTreeFromLiveStateValue, snapshotHasLocalPublicCopyOrigin, snapshotHasPrivateSyncBlockedPublicOrigin,
     snapshotModeState, snapshotsEqual, solidifyManagedTemplateDrafts, solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayout,
-    solidifyTemplateDraftLayoutForState, sortDictionaryValues, sortHistoryRecords, sortedDictionaryValues, splitEntitySyncEntries,
+    solidifyTemplateDraftLayoutForState, sortDictionaryValues, sortHistoryRecords, sortLayoutSectionByDate, sortLayoutSectionByName, sortedDictionaryValues, splitEntitySyncEntries,
     splitEntitySyncEntriesForSync, startRemoteStateWatcher, startupLocalStateWasFallback, startupSyncMeta, state,
     stateIntegrityMetaFromResponse, statePrivateLayoutCount, stateStats, stateStatsForDestructiveComparison, storedGuestLocalLayoutCandidate,
     storedGuestLocalLayoutCandidateOffered, storedPrivateLayoutChoiceRef, stripPublicOriginForPrivateCopy, stripPublishedPublicOriginMarkers, subcontainerTitleHtml,
@@ -4897,6 +4901,9 @@ function openLayoutEditDialog() {
     fillSelect(refs.layoutEditLanguage, languageSelectEntries(), normalizeUiLanguage(layoutManageLanguage(layout, uiLanguage)));
   }
   updateLayoutEditDeleteButton(layout);
+  layoutEditInitialSnapshot = getLayoutEditSnapshot();
+  updateLayoutEditSaveState();
+  renderLayoutOrderPanel();
   openModalDialog(refs.layoutEditDialog);
 }
 
@@ -4926,6 +4933,377 @@ function updateLayoutEditDeleteButton(layout) {
   refs.deleteEditedLayoutBtn.disabled = Boolean(publicReason) || !canDeleteManagedLayout(layout?.id);
 }
 
+function editableLayoutOrderSections() {
+  const showPublicTemplates = canViewAdminPublishedCatalog();
+  return layoutOrderSectionsFromSources({
+    layouts: state.layouts,
+    demoTemplates: showPublicTemplates ? runtime.serverConfirmedDemoTemplates : demoTemplatesForUiLanguage(uiLanguage),
+    sharedTemplates: showPublicTemplates ? serverConfirmedSharedLayoutsByAdminOrder() : currentSharedLayouts(uiLanguage),
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    includeLayout: (layout) => Boolean(layout?.id && canManageLayout(layout.id)),
+    locale: uiLanguage || "ru"
+  });
+}
+
+function cloneLayoutOrderSections(sections = []) {
+  return sections.map((section) => ({ ...section, layouts: [...(section.layouts || [])] }));
+}
+
+function layoutOrderSectionsSignature(sections = []) {
+  return sections.map((section) =>
+    `${section?.id || ""}:${(section?.layouts || []).map((layout) => layout?.id || "").join(",")}`
+  ).join("|");
+}
+
+function currentLayoutOrderSections() {
+  return layoutOrderDraftSections ? cloneLayoutOrderSections(layoutOrderDraftSections) : editableLayoutOrderSections();
+}
+
+function startLayoutOrderDraft() {
+  layoutOrderDraftSections = editableLayoutOrderSections();
+  layoutOrderInitialSignature = layoutOrderSectionsSignature(layoutOrderDraftSections);
+  updateLayoutOrderSaveState();
+}
+
+function setLayoutOrderDraftSections(sections) {
+  layoutOrderDraftSections = cloneLayoutOrderSections(sections);
+  renderLayoutOrderPanel();
+}
+
+function updateLayoutOrderSaveState() {
+  if (!refs.saveLayoutOrderBtn) return;
+  const changed = refs.layoutOrderDialog?.open && layoutOrderSectionsSignature(currentLayoutOrderSections()) !== layoutOrderInitialSignature;
+  updateModalSaveButton(refs.saveLayoutOrderBtn, { hasName: true, changed });
+}
+
+function hasSavableLayoutOrderChanges() {
+  updateLayoutOrderSaveState();
+  return refs.layoutOrderDialog?.open && refs.saveLayoutOrderBtn && !refs.saveLayoutOrderBtn.disabled;
+}
+
+function setLayoutOrderButtonTooltip(button, text) {
+  button.title = text;
+  button.dataset.touchTooltip = text;
+  button.setAttribute("aria-label", text);
+}
+
+function layoutOrderSectionTitle(sectionId) {
+  if (sectionId === "demo") return t("layoutOrder.sectionDemo");
+  if (sectionId === "shared") return t("layoutOrder.sectionShared");
+  return t("layoutOrder.sectionPersonal");
+}
+
+function layoutOrderDateText(layout) {
+  const created = layout?.createdAt || "";
+  const updated = layout?.updatedAt || "";
+  const value = created || updated;
+  if (!value) return t("layoutOrder.dateNotSet");
+  const label = created ? t("layoutOrder.created") : t("layoutOrder.updated");
+  return `${label}: ${formatFullDateTime(value)}`;
+}
+
+function renderLayoutOrderPanel() {
+  if (!refs.layoutOrderToggleBtn || !refs.layoutOrderDialog || !refs.layoutOrderList) return;
+  const open = Boolean(refs.layoutOrderDialog.open);
+  refs.layoutOrderToggleBtn.setAttribute("aria-expanded", String(open));
+  if (!open) {
+    refs.layoutOrderList.replaceChildren();
+    return;
+  }
+  const sections = currentLayoutOrderSections();
+  refs.layoutOrderList.replaceChildren(...sections.map(renderLayoutOrderSection));
+  updateLayoutOrderSaveState();
+}
+
+function renderLayoutOrderSection(section) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "layout-order-section";
+  wrapper.dataset.layoutOrderSection = section.id;
+
+  const header = document.createElement("div");
+  header.className = "layout-order-section-header";
+  const title = document.createElement("h3");
+  title.textContent = layoutOrderSectionTitle(section.id);
+  const tools = document.createElement("div");
+  tools.className = "layout-order-section-tools";
+  [
+    ["name-asc", "A-Z", t("layoutOrder.sortNameAsc")],
+    ["name-desc", "Z-A", t("layoutOrder.sortNameDesc")],
+    ["date-asc", "1-9", t("layoutOrder.sortDateAsc")],
+    ["date-desc", "9-1", t("layoutOrder.sortDateDesc")]
+  ].forEach(([action, label, tooltipText]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost layout-order-sort";
+    button.dataset.layoutOrderAction = action;
+    button.dataset.layoutOrderSection = section.id;
+    button.textContent = label;
+    setLayoutOrderButtonTooltip(button, tooltipText);
+    button.disabled = section.layouts.length < 2;
+    tools.append(button);
+  });
+  header.append(title, tools);
+  wrapper.append(header);
+
+  const list = document.createElement("div");
+  list.className = "layout-order-section-list";
+  list.dataset.layoutOrderSectionList = section.id;
+  if (!section.layouts.length) {
+    const empty = document.createElement("p");
+    empty.className = "layout-order-empty";
+    empty.textContent = t("layoutOrder.emptySection");
+    list.append(empty);
+  } else {
+    section.layouts.forEach((layout, index) => list.append(renderLayoutOrderRow(layout, section, index)));
+  }
+  wrapper.append(list);
+  return wrapper;
+}
+
+function renderLayoutOrderRow(layout, section, index) {
+  const row = document.createElement("div");
+  row.className = "layout-order-row";
+  row.dataset.layoutOrderId = layout.id;
+  row.dataset.layoutOrderSection = section.id;
+  row.draggable = false;
+  if (layout.id === runtime.layoutEditTargetId) row.classList.add("active");
+
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "layout-order-handle";
+  handle.textContent = "↕";
+  setLayoutOrderButtonTooltip(handle, t("layoutOrder.dragToReorder"));
+
+  const title = document.createElement("div");
+  title.className = "layout-order-title";
+  const name = document.createElement("strong");
+  name.textContent = layout.name || t("labels.layout");
+  const meta = document.createElement("span");
+  meta.textContent = layoutOrderDateText(layout);
+  title.append(name, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "layout-order-row-actions";
+  [
+    ["up", "↑", t("layoutOrder.moveUp"), index === 0],
+    ["down", "↓", t("layoutOrder.moveDown"), index >= section.layouts.length - 1]
+  ].forEach(([action, label, tooltipText, disabled]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost layout-order-step";
+    button.dataset.layoutOrderAction = action;
+    button.dataset.layoutOrderId = layout.id;
+    button.textContent = label;
+    setLayoutOrderButtonTooltip(button, tooltipText);
+    button.setAttribute("aria-label", `${tooltipText}: ${layout.name || ""}`.trim());
+    button.disabled = disabled;
+    actions.append(button);
+  });
+
+  row.append(handle, title, actions);
+  return row;
+}
+
+function applyLayoutOrderSections(sections) {
+  const orderedIds = layoutOrderIdsFromSections(sections);
+  const result = applyLayoutOrderToSources(state, orderedIds, {
+    demoTemplates: runtime.serverConfirmedDemoTemplates,
+    sharedTemplates: runtime.serverConfirmedSharedLayouts,
+    changedAt: nowIso(),
+    markEdited
+  });
+  if (!result.changed) return false;
+  if (result.demoTemplatesChanged) runtime.serverConfirmedDemoTemplates = result.demoTemplates;
+  if (result.sharedTemplatesChanged) runtime.serverConfirmedSharedLayouts = result.sharedTemplates;
+  if (result.stateChanged) saveState();
+  renderFilters();
+  renderLayoutOrderPanel();
+  return true;
+}
+
+function toggleLayoutOrderPanel() {
+  if (!refs.layoutOrderDialog) return;
+  if (refs.layoutOrderDialog.open) {
+    requestCloseLayoutOrderDialog();
+    return;
+  }
+  startLayoutOrderDraft();
+  openModalDialog(refs.layoutOrderDialog);
+  renderLayoutOrderPanel();
+}
+
+function handleLayoutOrderFormSubmit(event) {
+  event.preventDefault();
+  if (event.submitter === refs.saveLayoutOrderBtn) {
+    saveLayoutOrder(event);
+    return;
+  }
+  if (event.submitter?.value === "cancel") {
+    requestCloseLayoutOrderDialog();
+  }
+}
+
+async function requestCloseLayoutOrderDialog() {
+  if (!hasSavableLayoutOrderChanges()) {
+    refs.layoutOrderDialog.close("cancel");
+    return;
+  }
+  const action = await askUnsavedChangesDialog();
+  if (action === "save") {
+    saveLayoutOrder();
+    return;
+  }
+  if (action === "discard") refs.layoutOrderDialog.close("cancel");
+}
+
+function saveLayoutOrder(event) {
+  event?.preventDefault();
+  if (!hasSavableLayoutOrderChanges()) return;
+  applyLayoutOrderSections(currentLayoutOrderSections());
+  refs.layoutOrderDialog.close("default");
+}
+
+function handleLayoutOrderListClick(event) {
+  const button = event.target.closest("[data-layout-order-action]");
+  if (!button || !refs.layoutOrderList?.contains(button)) return;
+  const action = button.dataset.layoutOrderAction || "";
+  const sections = currentLayoutOrderSections();
+  let nextSections = sections;
+  if (action === "up" || action === "down") {
+    nextSections = moveLayoutWithinSections(sections, button.dataset.layoutOrderId || "", action === "up" ? -1 : 1);
+  } else if (action === "name-asc" || action === "name-desc") {
+    nextSections = sortLayoutSectionByName(sections, button.dataset.layoutOrderSection || "", action === "name-desc" ? "desc" : "asc", uiLanguage || "ru");
+  } else if (action === "date-asc" || action === "date-desc") {
+    nextSections = sortLayoutSectionByDate(sections, button.dataset.layoutOrderSection || "", action === "date-desc" ? "desc" : "asc");
+  }
+  setLayoutOrderDraftSections(nextSections);
+}
+
+function bindLayoutOrderDragControls() {
+  bindLayoutOrderPointerDrag({
+    list: refs.layoutOrderList,
+    getSections: currentLayoutOrderSections,
+    applySections: setLayoutOrderDraftSections,
+    moveBeforeInSections: moveLayoutBeforeInSections,
+    moveWithinSections: moveLayoutWithinSections,
+    getTouchPoint,
+    isHoldDragInput,
+    markDragPending,
+    clearDragPending,
+    preventDragContextMenu,
+    pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
+    touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
+    touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
+    touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,
+    vibrateDragStart
+  });
+  bindLongPressTooltips({
+    root: refs.layoutOrderList,
+    selector: "[data-touch-tooltip]"
+  });
+  bindLongPressTooltips({
+    root: refs.layoutEditDialog,
+    selector: "[data-touch-tooltip]"
+  });
+}
+
+function handleLayoutOrderDragStart(event) {
+  const row = event.target.closest("[data-layout-order-id]");
+  if (!row || !refs.layoutOrderList?.contains(row)) return;
+  layoutOrderDragId = row.dataset.layoutOrderId || "";
+  row.classList.add("dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", layoutOrderDragId);
+}
+
+function handleLayoutOrderDragOver(event) {
+  if (!layoutOrderDragId) return;
+  const row = event.target.closest("[data-layout-order-id]");
+  if (!row || !refs.layoutOrderList?.contains(row)) return;
+  const source = refs.layoutOrderList.querySelector(`[data-layout-order-id="${CSS.escape(layoutOrderDragId)}"]`);
+  if (!source || source.dataset.layoutOrderSection !== row.dataset.layoutOrderSection) return;
+  event.preventDefault();
+  row.classList.add("drag-over");
+}
+
+function handleLayoutOrderDragLeave(event) {
+  const row = event.target.closest("[data-layout-order-id]");
+  if (row) row.classList.remove("drag-over");
+}
+
+function handleLayoutOrderDrop(event) {
+  if (!layoutOrderDragId) return;
+  const row = event.target.closest("[data-layout-order-id]");
+  if (!row || !refs.layoutOrderList?.contains(row)) return;
+  event.preventDefault();
+  row.classList.remove("drag-over");
+  setLayoutOrderDraftSections(moveLayoutBeforeInSections(currentLayoutOrderSections(), layoutOrderDragId, row.dataset.layoutOrderId || ""));
+  layoutOrderDragId = "";
+}
+
+function handleLayoutOrderDragEnd() {
+  layoutOrderDragId = "";
+  refs.layoutOrderList?.querySelectorAll(".dragging, .drag-over").forEach((row) => row.classList.remove("dragging", "drag-over"));
+}
+
+function handleLayoutOrderDialogClose() {
+  handleLayoutOrderDragEnd();
+  layoutOrderDraftSections = null;
+  layoutOrderInitialSignature = "";
+  renderLayoutOrderPanel();
+}
+
+function getLayoutEditSnapshot() {
+  const layout = state.layouts?.[runtime.layoutEditTargetId];
+  const adminPublished = Boolean(layout?.id && isAdminEditablePublishedLayout(layout.id));
+  return {
+    name: refs.layoutEditName?.value.trim() || "",
+    language: adminPublished ? normalizeUiLanguage(refs.layoutEditLanguage?.value || layoutManageLanguage(layout, uiLanguage)) : "",
+    notes: adminPublished ? "" : normalizeLayoutNotes(refs.layoutEditNotes?.value || ""),
+    locked: adminPublished ? false : Boolean(refs.layoutLocked?.checked)
+  };
+}
+
+function updateLayoutEditSaveState() {
+  if (!refs.saveEditedLayoutBtn) return;
+  const snapshot = getLayoutEditSnapshot();
+  const changed = !layoutEditInitialSnapshot || !snapshotsEqual(snapshot, layoutEditInitialSnapshot);
+  updateModalSaveButton(refs.saveEditedLayoutBtn, { hasName: Boolean(snapshot.name), changed });
+}
+
+function hasSavableLayoutEditChanges() {
+  updateLayoutEditSaveState();
+  return refs.layoutEditDialog?.open && refs.saveEditedLayoutBtn && !refs.saveEditedLayoutBtn.disabled;
+}
+
+function handleLayoutEditFormSubmit(event) {
+  event.preventDefault();
+  if (event.submitter === refs.saveEditedLayoutBtn) {
+    saveEditedLayout(event);
+    return;
+  }
+  if (event.submitter?.value === "cancel") {
+    requestCloseLayoutEditDialog();
+  }
+}
+
+async function requestCloseLayoutEditDialog() {
+  if (!hasSavableLayoutEditChanges()) {
+    refs.layoutEditDialog.close("cancel");
+    return;
+  }
+  const action = await askUnsavedChangesDialog();
+  if (action === "save") {
+    saveEditedLayout();
+    return;
+  }
+  if (action === "discard") refs.layoutEditDialog.close("cancel");
+}
+
+function handleLayoutEditDialogClose() {
+  layoutEditInitialSnapshot = null;
+}
+
 function canDeleteManagedLayout(layoutId = runtime.layoutEditTargetId || state.activeLayoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout) return false;
@@ -4935,7 +5313,8 @@ function canDeleteManagedLayout(layoutId = runtime.layoutEditTargetId || state.a
 }
 
 async function saveEditedLayout(event) {
-  event.preventDefault();
+  event?.preventDefault();
+  if (refs.saveEditedLayoutBtn?.disabled) return;
   const layout = state.layouts?.[runtime.layoutEditTargetId];
   if (!layout || !canManageLayout(layout.id)) return;
   const adminPublished = isAdminEditablePublishedLayout(layout.id);
@@ -6531,7 +6910,11 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     resolveLayoutCreateTemplateCopyLayout, createPrivateLayoutFromTemplateSource, createAndPublishTemplateCopy, openLayoutDialog,
     updateLayoutCopyVisibility, layoutCreateSelectedSourceName, canReplaceLayoutCreateNameSuggestion, updateLayoutCreateNameSuggestion,
     createNewPublicTemplateLayout, saveNewLayout, openLayoutEditDialog, publicTemplateDeleteBlockReasonForLayout,
-    updateLayoutEditDeleteButton, canDeleteManagedLayout, saveEditedLayout, confirmDeleteEditedLayout,
+    updateLayoutEditDeleteButton, updateLayoutEditSaveState, handleLayoutEditFormSubmit, requestCloseLayoutEditDialog, handleLayoutEditDialogClose,
+    toggleLayoutOrderPanel, handleLayoutOrderFormSubmit, requestCloseLayoutOrderDialog, handleLayoutOrderListClick, handleLayoutOrderDragStart,
+    handleLayoutOrderDragOver, handleLayoutOrderDragLeave, handleLayoutOrderDrop, handleLayoutOrderDragEnd,
+    handleLayoutOrderDialogClose, bindLayoutOrderDragControls,
+    canDeleteManagedLayout, saveEditedLayout, confirmDeleteEditedLayout,
     confirmDeleteEditableLayout, confirmDeleteManagedPublicLayout, deletePublishedSharedTemplate, deletePublishedDemoTemplate,
     deletePublishedTemplate, shouldDeletePublishedTemplateForLayout, deleteManagedPublicLayout, userEditableLayouts,
     canDeleteActiveLayout, deleteActiveLayout, handleRootContainerFormSubmit, handleItemFormSubmit,
