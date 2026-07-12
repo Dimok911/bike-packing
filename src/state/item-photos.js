@@ -106,14 +106,17 @@ export function draftPhotosToCleanup(draft, sourceRecord = null) {
   return draftPhotos.filter((photo) => !photoIdentityMatches(sourceIds, photo));
 }
 
-export function removePhotoFromDraft(draft, index = 0) {
+export function removePhotoFromDraft(draft, index = 0, sourceRecord = null) {
   const target = draft || { photos: [], deletedPhotos: [] };
   const safeIndex = Math.max(0, Math.min(Number(index) || 0, target.photos.length - 1));
   const [removed] = target.photos.splice(safeIndex, 1);
-  if (removed) target.deletedPhotos.push(removed);
+  const sourceIds = photoIdentitySet(normalizeItemPhotos(sourceRecord || { photos: [] }));
+  const removedFromSource = Boolean(removed && photoIdentityMatches(sourceIds, removed));
+  if (removedFromSource) target.deletedPhotos.push(removed);
   return {
     draft: target,
     removed,
+    discardedPhoto: removed && !removedFromSource ? removed : null,
     nextIndex: Math.max(0, Math.min(safeIndex, target.photos.length - 1))
   };
 }
@@ -139,7 +142,7 @@ export function setPrimaryPhotoInDraft(draft, index = 0) {
 
 export function photoDraftChanged(draft, record) {
   if (!draft) return false;
-  return itemPhotosSignature({ photos: draft.photos }) !== itemPhotosSignature(record) || draft.deletedPhotos.length > 0;
+  return itemPhotosSignature({ photos: draft.photos }) !== itemPhotosSignature(record);
 }
 
 function photoIdentitySet(photos = []) {

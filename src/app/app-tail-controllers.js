@@ -5881,7 +5881,7 @@ function getItemDialogSnapshot() {
 }
 
 function getItemDialogPhotoSnapshot() {
-  if (runtime.itemDialogPhotoDraft) return `draft:${itemPhotoSignature({ photos: runtime.itemDialogPhotoDraft.photos })}:${runtime.itemDialogPhotoDraft.deletedPhotos.length}`;
+  if (runtime.itemDialogPhotoDraft) return itemPhotoSignature({ photos: runtime.itemDialogPhotoDraft.photos });
   return runtime.editingItemId ? itemPhotoSignature(state.items[runtime.editingItemId]) : "";
 }
 
@@ -5922,9 +5922,15 @@ async function removeItemDialogPhoto() {
   if (!draft.photos.length) return;
   const confirmed = await confirmDialogPhotoDelete("item");
   if (!confirmed) return;
-  const result = removePhotoFromDraft(draft, runtime.itemDialogPhotoActiveIndex);
+  const result = removePhotoFromDraft(draft, runtime.itemDialogPhotoActiveIndex, source);
   runtime.itemDialogPhotoDraft = result.draft;
   runtime.itemDialogPhotoActiveIndex = result.nextIndex;
+  if (result.discardedPhoto) {
+    deleteCachedDraftPhotos(result.discardedPhoto);
+    if (result.discardedPhoto.url || result.discardedPhoto.thumbUrl) {
+      deleteRemotePhotoIfPossible(runtime.editingItemId, result.discardedPhoto);
+    }
+  }
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
   if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
   updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft.photos);
@@ -6209,7 +6215,7 @@ function deleteCachedDraftPhotos(photos = []) {
 }
 
 function getRootContainerDialogPhotoSnapshot() {
-  if (runtime.rootContainerDialogPhotoDraft) return `draft:${itemPhotoSignature({ photos: runtime.rootContainerDialogPhotoDraft.photos })}:${runtime.rootContainerDialogPhotoDraft.deletedPhotos.length}`;
+  if (runtime.rootContainerDialogPhotoDraft) return itemPhotoSignature({ photos: runtime.rootContainerDialogPhotoDraft.photos });
   return runtime.editingRootContainerId ? itemPhotoSignature(state.containers[runtime.editingRootContainerId]) : "";
 }
 
@@ -6250,9 +6256,15 @@ async function removeRootContainerDialogPhoto() {
   if (!draft.photos.length) return;
   const confirmed = await confirmDialogPhotoDelete("container");
   if (!confirmed) return;
-  const result = removePhotoFromDraft(draft, runtime.rootContainerDialogPhotoActiveIndex);
+  const result = removePhotoFromDraft(draft, runtime.rootContainerDialogPhotoActiveIndex, source);
   runtime.rootContainerDialogPhotoDraft = result.draft;
   runtime.rootContainerDialogPhotoActiveIndex = result.nextIndex;
+  if (result.discardedPhoto) {
+    deleteCachedDraftPhotos(result.discardedPhoto);
+    if (result.discardedPhoto.url || result.discardedPhoto.thumbUrl) {
+      deleteRemotePhotoIfPossible(runtime.editingRootContainerId, result.discardedPhoto, "container");
+    }
+  }
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
   if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
   updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft.photos);

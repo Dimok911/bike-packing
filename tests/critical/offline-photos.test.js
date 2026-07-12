@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { draftPhotosToCleanup, normalizeItemPhotos } from "../../src/state/item-photos.js";
+import {
+  addPhotosToDraft,
+  createPhotoDraftFromRecord,
+  draftPhotosToCleanup,
+  normalizeItemPhotos,
+  photoDraftChanged,
+  removePhotoFromDraft
+} from "../../src/state/item-photos.js";
 import {
   applyPendingPhotoUploadRetry,
   applySyncedPhotoUploadResult,
@@ -11,6 +18,7 @@ import {
   copyRecordPhotosForLocalDuplicate,
   inspectRecordRemotePhotoSources,
   materializeSelectedPhotoFile,
+  paintImageOnJpegCanvas,
   photoRecordIdMatchesRemoteSource,
   photoRemoteSrc,
   removeRecordPhotoReference,
@@ -52,6 +60,63 @@ function setNavigatorOnline(value) {
     configurable: true
   });
 }
+
+test("CRITICAL offline-photos: JPEG conversion replaces transparent pixels with a white background", () => {
+  const calls = [];
+  const context = {
+    fillStyle: "",
+    fillRect: (...args) => calls.push(["fillRect", ...args]),
+    drawImage: (...args) => calls.push(["drawImage", ...args])
+  };
+  const bitmap = { width: 800, height: 800 };
+
+  paintImageOnJpegCanvas(context, bitmap, 640, 640);
+
+  assert.equal(context.fillStyle, "#fff");
+  assert.deepEqual(calls, [
+    ["fillRect", 0, 0, 640, 640],
+    ["drawImage", bitmap, 0, 0, 640, 640]
+  ]);
+});
+
+test("CRITICAL offline-photos: adding and removing a new photo restores a clean dialog draft", () => {
+  const source = {
+    photos: [{ id: "photo-existing", status: "synced", updatedAt: "2026-07-12T10:00:00.000Z" }]
+  };
+  const draft = createPhotoDraftFromRecord(source);
+  const added = { id: "photo-new", localId: "photo-new", status: "pending", updatedAt: "2026-07-12T11:00:00.000Z" };
+
+  addPhotosToDraft(draft, added);
+  const result = removePhotoFromDraft(draft, 1, source);
+
+  assert.equal(result.discardedPhoto, added);
+  assert.deepEqual(result.draft.deletedPhotos, []);
+  assert.equal(photoDraftChanged(result.draft, source), false);
+});
+
+test("CRITICAL offline-photos: dialog snapshots compare the resulting photo list without draft bookkeeping", () => {
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+  const itemSnapshot = controllers.match(/function getItemDialogPhotoSnapshot\(\) \{([\s\S]*?)\n\}/)?.[1] || "";
+  const containerSnapshot = controllers.match(/function getRootContainerDialogPhotoSnapshot\(\) \{([\s\S]*?)\n\}/)?.[1] || "";
+
+  [itemSnapshot, containerSnapshot].forEach((snapshot) => {
+    assert.match(snapshot, /itemPhotoSignature\(\{ photos:/);
+    assert.doesNotMatch(snapshot, /deletedPhotos|`draft:/);
+  });
+});
+
+test("CRITICAL offline-photos: removing a saved photo remains a pending dialog change", () => {
+  const source = {
+    photos: [{ id: "photo-existing", status: "synced", updatedAt: "2026-07-12T10:00:00.000Z" }]
+  };
+  const draft = createPhotoDraftFromRecord(source);
+
+  const result = removePhotoFromDraft(draft, 0, source);
+
+  assert.equal(result.discardedPhoto, null);
+  assert.equal(result.draft.deletedPhotos[0].id, "photo-existing");
+  assert.equal(photoDraftChanged(result.draft, source), true);
+});
 
 test("CRITICAL offline-photos: offline photos keep remote URLs as a fallback", () => {
   setNavigatorOnline(false);

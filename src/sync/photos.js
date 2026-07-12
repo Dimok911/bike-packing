@@ -649,7 +649,7 @@ export async function resizeImageFile(file, maxSize, quality, {
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
-      context.drawImage(bitmap, 0, 0, width, height);
+      paintImageOnJpegCanvas(context, bitmap, width, height);
       for (let nextQuality = quality; nextQuality >= minQuality; nextQuality -= qualityStep) {
         const blob = await canvasToJpegBlob(canvas, nextQuality);
         best = { blob, width, height };
@@ -661,6 +661,12 @@ export async function resizeImageFile(file, maxSize, quality, {
   } finally {
     if (typeof bitmap.close === "function") bitmap.close();
   }
+}
+
+export function paintImageOnJpegCanvas(context, bitmap, width, height) {
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(bitmap, 0, 0, width, height);
 }
 
 async function canvasToJpegBlob(canvas, quality) {
