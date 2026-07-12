@@ -2,11 +2,9 @@ export function matchesItemFieldsFilter(item, {
   query = "",
   location = "",
   categories = [],
-  includeContainerPath = false,
   ignoreLocation = false,
   ignoreCategories = false,
-  itemCategories = () => [],
-  containerPath = () => ""
+  itemCategories = () => []
 } = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
   if (!ignoreLocation && location && item?.location !== location) return false;
@@ -15,10 +13,7 @@ export function matchesItemFieldsFilter(item, {
   if (!normalizedQuery) return true;
   return [
     item?.name,
-    itemCategoryValues.join(" "),
-    item?.location,
-    item?.note || "",
-    includeContainerPath && item?.containerId ? containerPath(item.containerId) : ""
+    item?.note || ""
   ]
     .join(" ")
     .toLowerCase()
@@ -41,9 +36,6 @@ export function matchesRootContainerFieldsFilter(container, {
   if (!normalizedQuery) return true;
   return [
     container?.name,
-    containerCategoryValues.join(" "),
-    container?.color || "",
-    containerLocation,
     container?.note || ""
   ].join(" ").toLowerCase().includes(normalizedQuery);
 }

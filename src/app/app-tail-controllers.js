@@ -138,6 +138,7 @@ export function createAppTailControllers(ctx) {
     installRuntimeActiveLayoutId, isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminIdentity, isAdminPublicEditScope,
     isAdminSession, isAdminUser, isAutomaticGuestDemoCopyLayout, isBike3dPackingView, isCollectionPackedVisible,
     isConcretePublicSharedLayoutListRecord, isConflictMetaField, isContainerPickerContainerCopyModeValue, isContainerPickerCopyModeValue, isContainerPickerItemCopyModeValue,
+    isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
     isCurrentLocalStateDestructiveRegression, isDefaultDemoSeedLayoutRecord, isDeletedSharedLayoutId, isDemoLayoutChoice, isDemoLayoutChoiceValue,
     isDemoPublicTemplateMissing, isDestructiveStateRegression, isDisposableManagedPublicDraft, isEditableElement, isEntitySyncTypeUnavailable,
     isEntitySyncUnavailableError, isExplicitlySignedOut, isForcedOffline, isForeignLocalSyncState, isGeneratedCatalogContainerStateArtifact,
@@ -176,7 +177,7 @@ export function createAppTailControllers(ctx) {
     mergeManagedPublicDraftRecords, mergePublishedSharedStateIntoAdminLayout, mergePublishedSharedStateIntoAdminLayoutValue, mergeServerDemoTemplateCatalog, mergeSharedLayoutCatalogEntries,
     mergeStateFromBase, mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState,
     moveContainerInLayoutArrangementForState, moveItemInLayoutArrangementForState, moveLayoutBeforeInSections, moveLayoutWithinSections, moveRootColumnInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue,
-    itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, unavailableSnapshotItems, nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
+    itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, selectUnlockedLayoutTargetId, unavailableSnapshotItems, nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
     normalizeBike3dViewState, normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions,
     normalizeContainerFields, normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues,
     normalizeIntegrityCount, normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos,
@@ -1030,10 +1031,11 @@ function getContainerCopyExcludedLayoutIds() {
 function openItemContainerPickerDialog(event) {
   event?.preventDefault();
   const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
-  if (warnLockedLayoutMutation(layoutId)) return;
+  const pickerMode = itemDialogContainerPickerMode(runtime.editingItemId);
+  if (!isNewItemPlacementPickerMode(pickerMode) && warnLockedLayoutMutation(layoutId)) return;
   if (warnUnavailableItemDialogPlacement()) return;
   containerPickerSourceIsNestedContainer = false;
-  runtime.containerPickerMode = "item";
+  runtime.containerPickerMode = pickerMode;
   runtime.containerPickerTargetContainerId = "";
   runtime.containerPickerLayoutId = layoutId;
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
@@ -1133,7 +1135,10 @@ async function openSharedContainerCopyPicker(sourceId, { sourceIsNestedContainer
 
 function renderContainerPicker() {
   const layoutOptions = getContainerPickerLayoutOptions();
-  if (!layoutOptions.some((layout) => layout.id === runtime.containerPickerLayoutId)) {
+  const newItemPlacementMode = isNewItemPlacementPickerMode(runtime.containerPickerMode);
+  if (newItemPlacementMode) {
+    runtime.containerPickerLayoutId = selectUnlockedLayoutTargetId(layoutOptions, runtime.containerPickerLayoutId);
+  } else if (!layoutOptions.some((layout) => layout.id === runtime.containerPickerLayoutId)) {
     runtime.containerPickerLayoutId = layoutOptions[0]?.id || getPublishedEditLayoutId();
   }
   updateContainerPickerTitle();
@@ -1143,15 +1148,17 @@ function renderContainerPicker() {
   refs.containerPickerBoard.classList.toggle("root-copy-placement-board", rootCopyPicker);
   if (rootCopyPicker) {
     boardHtml = renderRootCopyPlacementBoard();
-  } else {
+  } else if (runtime.containerPickerLayoutId) {
     withLayoutArrangementApplied(runtime.containerPickerLayoutId, () => {
-      const layout = state.layouts?.[runtime.containerPickerLayoutId] || getPublishedWorkLayout();
+      const layout = state.layouts?.[runtime.containerPickerLayoutId] || (newItemPlacementMode ? null : getPublishedWorkLayout());
       const rootIds = getVisibleLayoutRootIds(layout);
       boardHtml = rootIds.map(renderContainerPickerColumn).join("");
     });
   }
   refs.containerPickerBoard.innerHTML = boardHtml ||
-    `<div class="empty">${escapeHtml(t("forms.emptyTopLevel"))}</div>`;
+    `<div class="empty">${escapeHtml(t(newItemPlacementMode && !runtime.containerPickerLayoutId
+      ? "forms.noUnlockedLayouts"
+      : "forms.emptyTopLevel"))}</div>`;
   refs.containerPickerNoneBtn.hidden = runtime.containerPickerMode === "container" || isContainerPickerItemCopyMode() || rootCopyPicker;
   refs.containerPickerNoneBtn.classList.toggle("active", runtime.containerPickerMode === "item" && !refs.itemContainer.value);
   refs.containerPickerNoneBtn.textContent = isContainerPickerContainerCopyMode()
@@ -1201,7 +1208,8 @@ function renderRootCopyPlacementSlot(slotIndex) {
 function getContainerPickerLayoutOptions() {
   const currentLayout = getPublishedWorkLayout();
   const copyMode = isContainerPickerCopyMode();
-  if (!copyMode) {
+  const newItemPlacementMode = isNewItemPlacementPickerMode(runtime.containerPickerMode);
+  if (!copyMode && !newItemPlacementMode) {
     return currentLayout ? [currentLayout] : [];
   }
   const allLayouts = Object.values(state.layouts || {});
@@ -1217,18 +1225,30 @@ function getContainerPickerLayoutOptions() {
 
 function renderContainerPickerLayoutSelect(layoutOptions) {
   if (!refs.containerPickerLayoutField || !refs.containerPickerLayoutSelect) return;
-  const visible = isContainerPickerCopyMode() && layoutOptions.length > 1;
+  const newItemPlacementMode = isNewItemPlacementPickerMode(runtime.containerPickerMode);
+  const visible = newItemPlacementMode
+    ? layoutOptions.length > 0
+    : isContainerPickerCopyMode() && layoutOptions.length > 1;
   refs.containerPickerLayoutField.hidden = !visible;
   if (!visible) return;
   fillSelect(
     refs.containerPickerLayoutSelect,
-    layoutOptions.map((layout) => [layout.id, copyPickerLayoutLabel(layout)]),
+    layoutOptions.map((layout) => [
+      layout.id,
+      `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${copyPickerLayoutLabel(layout)}`,
+      "",
+      newItemPlacementMode && isLayoutLocked(layout)
+    ]),
     runtime.containerPickerLayoutId
   );
 }
 
 function updateContainerPickerTitle() {
   if (!refs.containerPickerTitle) return;
+  if (isNewItemPlacementPickerMode(runtime.containerPickerMode)) {
+    refs.containerPickerTitle.textContent = t("forms.chooseLayoutPlace");
+    return;
+  }
   if (runtime.containerPickerMode === SHARED_ITEM_COPY_PICKER_MODE) {
     refs.containerPickerTitle.textContent = t("forms.copySharedItemTitle");
     return;
@@ -1414,7 +1434,11 @@ async function selectContainerPickerRootTarget(targetIndex = null) {
 }
 
 function selectItemContainer(containerId) {
-  const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
+  const layoutId = itemDialogTargetLayoutFromPicker({
+    currentLayoutId: runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId(),
+    mode: runtime.containerPickerMode,
+    pickerLayoutId: runtime.containerPickerLayoutId
+  });
   if (warnLockedLayoutMutation(layoutId)) return;
   runtime.itemDialogTargetLayoutId = layoutId;
   refs.itemContainer.value = containerId || "";
@@ -1837,7 +1861,9 @@ function updateItemContainerPickerButton() {
     refs.itemContainerCurrent.textContent = path;
     refs.itemContainerCurrent.classList.toggle("active", hasContainer);
   }
-  refs.itemContainerPickerBtn.textContent = t("forms.moveInsideLayout");
+  refs.itemContainerPickerBtn.textContent = runtime.editingItemId
+    ? t("forms.moveInsideLayout")
+    : t("forms.placeInLayout");
   refs.itemContainerPickerBtn.classList.remove("active");
   refs.itemContainerPickerBtn.classList.add("repack-button");
   refs.itemContainerPickerBtn.setAttribute("aria-label", hasContainer

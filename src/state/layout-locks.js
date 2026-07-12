@@ -19,6 +19,13 @@ export function isLayoutLocked(layout) {
   return Boolean(layout?.locked);
 }
 
+export function selectUnlockedLayoutTargetId(layouts = [], preferredLayoutId = "") {
+  const candidates = Array.isArray(layouts) ? layouts : [];
+  const preferred = candidates.find((layout) => layout?.id === preferredLayoutId);
+  if (preferred && !isLayoutLocked(preferred)) return preferred.id;
+  return candidates.find((layout) => layout?.id && !isLayoutLocked(layout))?.id || "";
+}
+
 export function applyLayoutLocked(layout, locked) {
   if (!layout) return false;
   const nextLocked = Boolean(locked);

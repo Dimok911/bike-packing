@@ -410,6 +410,7 @@ import {
   lockedLayoutsContainingItem,
   lockedLayoutsContainingNestedContainer,
   normalizeItemAvailabilityStatus,
+  selectUnlockedLayoutTargetId,
   unavailableSnapshotItems
 } from "./src/state/layout-locks.js";
 import {
@@ -729,6 +730,9 @@ import {
   renderSharedItemsViewHtml
 } from "./src/ui/items-view-render.js";
 import {
+  isNewItemPlacementPickerMode,
+  itemDialogContainerPickerMode,
+  itemDialogTargetLayoutFromPicker,
   saveItemDialogAction,
   saveRootContainerDialogAction
 } from "./src/ui/item-dialog-save.js";
@@ -1501,6 +1505,7 @@ const appTailControllerDeps = {
   rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow, runSyncNowFlow,
   safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice, saveActivePackingListId,
   saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner, saveGuestImportToRemote,
+  isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
@@ -1522,7 +1527,7 @@ const appTailControllerDeps = {
   shouldKeepReadonlyDemoAfterAuthCheck, shouldKeepScopedControlsStable, shouldRecoverUnsyncedLocalChanges, shouldRenderGuestDemoPreviewDuringAuthCheck, shouldShowItemLabels,
   shouldShowItemLabelsForMode, shouldShowItemPhotos, shouldShowItemPhotosForMode, shouldUseStickyFilterControls, shouldWarnAboutSharedLayoutCatalog,
   snapshotContainerTreeFromLayoutArrangement, snapshotContainerTreeFromLiveStateValue, snapshotHasLocalPublicCopyOrigin, snapshotHasPrivateSyncBlockedPublicOrigin, snapshotModeState,
-  snapshotsEqual, solidifyManagedTemplateDrafts, solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayout, solidifyTemplateDraftLayoutForState,
+  selectUnlockedLayoutTargetId, snapshotsEqual, solidifyManagedTemplateDrafts, solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayout, solidifyTemplateDraftLayoutForState,
   sortDictionaryValues, sortHistoryRecords, sortLayoutSectionByDate, sortLayoutSectionByName, sortedDictionaryValues, splitEntitySyncEntries, splitEntitySyncEntriesForSync,
   startRemoteStateWatcher, startupLocalStateWasFallback, startupSyncMeta, state, stateIntegrityMetaFromResponse,
   statePrivateLayoutCount, stateStats, stateStatsForDestructiveComparison, storedGuestLocalLayoutCandidate, storedGuestLocalLayoutCandidateOffered,

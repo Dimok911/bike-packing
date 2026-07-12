@@ -14,6 +14,7 @@ import {
   lockedLayoutsContainingItem,
   lockedLayoutsContainingNestedContainer,
   normalizeItemAvailabilityStatus,
+  selectUnlockedLayoutTargetId,
   unavailableSnapshotItems
 } from "../../src/state/layout-locks.js";
 import {
@@ -105,6 +106,14 @@ test("CRITICAL layout lock: applying lock uses a compact boolean field", () => {
   assert.equal(applyLayoutLocked(layout, false), true);
   assert.equal(isLayoutLocked(layout), false);
   assert.deepEqual(layout, { id: "layout-a" });
+});
+
+test("CRITICAL layout lock: new item placement selects only an unlocked target", () => {
+  const layouts = Object.values(createState().layouts);
+
+  assert.equal(selectUnlockedLayoutTargetId(layouts, "layout-locked"), "layout-open");
+  assert.equal(selectUnlockedLayoutTargetId(layouts, "layout-open"), "layout-open");
+  assert.equal(selectUnlockedLayoutTargetId([layouts[0]], "layout-locked"), "");
 });
 
 test("CRITICAL item availability: lost, broken, and retired items are unavailable for packing", () => {
@@ -201,6 +210,7 @@ test("CRITICAL layout lock: app tail receives placement and lock helpers", () =>
     "itemAvailabilityBlocksPlacement",
     "itemPlacementSnapshotChanged",
     "lockedLayoutsContainingNestedContainer",
+    "selectUnlockedLayoutTargetId",
     "unavailableSnapshotItems"
   ].forEach((name) => {
     assert.match(depsSource, new RegExp(`\\b${name}\\b`), `${name} must be passed to app tail controllers`);
@@ -224,6 +234,25 @@ test("CRITICAL item availability: move and copy buttons warn before opening plac
     assert.ok(guardIndex < source.indexOf("renderContainerPicker()"), "unavailable guard must run before rendering the picker");
     assert.ok(guardIndex < source.indexOf("openModalDialog(refs.containerPickerDialog)"), "unavailable guard must run before opening the picker");
   });
+});
+
+test("CRITICAL layout lock: new item picker opens from a locked layout and disables locked targets", () => {
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+  const moveStart = controllers.indexOf("function openItemContainerPickerDialog");
+  const copyStart = controllers.indexOf("async function openItemCopyContainerPickerDialog");
+  const selectStart = controllers.indexOf("function renderContainerPickerLayoutSelect");
+  const titleStart = controllers.indexOf("function updateContainerPickerTitle");
+  assert.notEqual(moveStart, -1);
+  assert.notEqual(copyStart, -1);
+  assert.notEqual(selectStart, -1);
+  assert.notEqual(titleStart, -1);
+
+  const moveSource = controllers.slice(moveStart, copyStart);
+  assert.match(moveSource, /!isNewItemPlacementPickerMode\(pickerMode\)\s*&&\s*warnLockedLayoutMutation\(layoutId\)/);
+
+  const selectSource = controllers.slice(selectStart, titleStart);
+  assert.match(selectSource, /t\("layout\.lockedOptionPrefix"\)/);
+  assert.match(selectSource, /newItemPlacementMode\s*&&\s*isLayoutLocked\(layout\)/);
 });
 
 test("CRITICAL backup restore: selected restore preserves locked layout protection", () => {

@@ -1,3 +1,23 @@
+export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
+
+export function itemDialogContainerPickerMode(editingItemId = "") {
+  return editingItemId ? "item" : NEW_ITEM_PLACEMENT_PICKER_MODE;
+}
+
+export function isNewItemPlacementPickerMode(mode = "") {
+  return mode === NEW_ITEM_PLACEMENT_PICKER_MODE;
+}
+
+export function itemDialogTargetLayoutFromPicker({
+  currentLayoutId = "",
+  mode = "",
+  pickerLayoutId = ""
+} = {}) {
+  return isNewItemPlacementPickerMode(mode) && pickerLayoutId
+    ? pickerLayoutId
+    : currentLayoutId;
+}
+
 export function saveRootContainerDialogAction({
   applyRootContainerDialogParent = () => false,
   applyRootContainerDialogPhotoDraft = () => {},
@@ -135,7 +155,7 @@ export function saveItemDialogAction({
     item.note = refs.itemNote.value.trim();
     applyItemAvailabilityStatus(item, availabilityStatus);
     applyItemDialogPhotoDraft(item, changedAt);
-    markRecordActivePublicCatalog(item);
+    markRecordActivePublicCatalog(item, layoutId);
     touchItem(editingItemId, changedAt);
     if (previousContainerId !== containerId) {
       closeDialogWithoutRestoringFocus(refs.dialog);
@@ -179,7 +199,7 @@ export function saveItemDialogAction({
       ...currentEditMeta(changedAt)
     };
     applyItemAvailabilityStatus(state.items[id], availabilityStatus);
-    markRecordActivePublicCatalog(state.items[id]);
+    markRecordActivePublicCatalog(state.items[id], layoutId);
     if (containerId && state.containers[containerId] && layout) {
       if (itemIsUnavailable) {
         showToast(unavailablePlacementText, "warning");

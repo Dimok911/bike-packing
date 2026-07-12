@@ -30,6 +30,9 @@ import {
   updateSyncUiControls
 } from "../../src/ui/sync-ui.js";
 import {
+  isNewItemPlacementPickerMode,
+  itemDialogContainerPickerMode,
+  itemDialogTargetLayoutFromPicker,
   saveItemDialogAction
 } from "../../src/ui/item-dialog-save.js";
 import { shouldPreserveLinkedSharedListOnLanguageChange } from "../../src/public/shared-link-language.js";
@@ -818,6 +821,63 @@ test("new item dialog defaults to no categories", () => {
   assert.ok(item);
   assert.deepEqual(item.categories, []);
   assert.equal(item.category, "");
+});
+
+test("new item placement can target another layout before the item is saved", () => {
+  const mode = itemDialogContainerPickerMode("");
+
+  assert.equal(isNewItemPlacementPickerMode(mode), true);
+  assert.equal(itemDialogTargetLayoutFromPicker({
+    currentLayoutId: "layout-a",
+    mode,
+    pickerLayoutId: "layout-b"
+  }), "layout-b");
+  assert.equal(itemDialogTargetLayoutFromPicker({
+    currentLayoutId: "layout-a",
+    mode: itemDialogContainerPickerMode("item-a"),
+    pickerLayoutId: "layout-b"
+  }), "layout-a");
+});
+
+test("new item save places the item into the layout selected by the placement picker", () => {
+  const state = {
+    layouts: {
+      "layout-a": { id: "layout-a", arrangement: { containers: {} } },
+      "layout-b": { id: "layout-b", arrangement: { containers: {} } }
+    },
+    containers: {
+      "container-b": { id: "container-b", childIds: [], itemIds: [] }
+    },
+    items: {}
+  };
+  let placedLayoutId = "";
+
+  saveItemDialogAction({
+    changedAt: "2026-07-12T00:00:00.000Z",
+    currentEditMeta: () => ({}),
+    getDialogSelectedCategories: () => [],
+    getPublishedEditLayoutId: () => "layout-a",
+    itemDialogTargetLayoutId: "layout-b",
+    placeExistingItemInLayout: (_itemId, _containerId, layoutId) => {
+      placedLayoutId = layoutId;
+      return true;
+    },
+    refs: {
+      dialog: { close() {} },
+      itemAvailabilityStatus: { value: "available" },
+      itemContainer: { value: "container-b" },
+      itemLocation: { value: "Home" },
+      itemName: { value: "New thing" },
+      itemNote: { value: "" },
+      itemQuantity: { value: "1" },
+      itemWeight: { value: "0" },
+      saveItemBtn: { disabled: false }
+    },
+    state
+  });
+
+  assert.equal(placedLayoutId, "layout-b");
+  assert.equal(Object.keys(state.items).length, 1);
 });
 
 test("new item form does not preselect the first dictionary category", () => {
