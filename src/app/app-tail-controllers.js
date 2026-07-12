@@ -50,18 +50,18 @@ export function createAppTailControllers(ctx) {
     adminDemoTemplateOptionsForLanguage, adminPublicLayoutOptions, adminReportsDialogController, adminSharedTemplateOptions, adminTemplateDraftChoice,
     allActiveLayoutNestedContainersCollapsedForState, allSharedLayoutsByAdminOrder, annotatePayloadError, apiCapabilitySet, apiErrorMessage,
     apiFetch, apiFetchRequest, apiUploadFormData, apiUploadFormDataRequest, appUnlocked,
-    appendCopiedFromTemplateNote, applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState,
+    appendCopiedFromTemplateNote, applyBackupRestoreModeUi, applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState,
     applyDefaultCollapsedContainers, applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyItemAvailabilityStatus, applyLayoutArrangement,
     applyLayoutArrangementToState, applyLayoutEditFields, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass,
     applyLayoutLocked, applyPreferredPrivateLayoutChoice, applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState,
     applySearchInputNow, applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState,
     arePublishedTemplatesBlocked, askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog,
     assertAdminApiCompatibility, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity,
-    backupDownloadName, bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls,
+    adminBackupPayloads, backupDownloadName, bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls,
     bindFixedScrollbar, bindStickyRootHeaderRow, bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries,
     bindRootContainersEditorControls, bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi,
     blockDestructiveLocalSave, blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions,
-    buildAdminSharedTemplateOptions, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync,
+    backupAdminTemplateRows, buildAdminSharedTemplateOptions, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync,
     buildCurrentBackupManifestValue, buildEntitySyncBody, buildEntitySyncBodyForSync, buildListSaveBody, buildListSaveBodyForSync,
     buildPrintableDocument, buildRememberedOfflineUser, buildSharedListUrl, buildSharedListUrlFromHref, canAddUsageEntries,
     canDeleteActiveLayoutForState, canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue,
@@ -215,7 +215,7 @@ export function createAppTailControllers(ctx) {
     removeCustomDictionaryValue, removeItemFromLayoutArrangement, removeItemFromLayoutInState, removeLayoutTree, removeLayoutTreeFromState,
     removeManagedDemoTemplateTreesFromState, removeManagedSharedTemplateTreesFromState, removePhotoFromDraft, removePublicLayoutDrafts, removePublicTemplateCatalogEntry,
     removeScopedLocalValue, renameCustomDictionaryValue, renameDictionaryEntryValue, renameReusableGuestDemoCopy, render,
-    renderAndScrollToTop, renderBackupAnalysisUi, renderBackupRules, renderBackupSelectionSummary, renderBike3dPackingView,
+    renderAndScrollToTop, renderBackupAnalysisUi, renderBackupProgress, renderBackupRules, renderBackupSelectionSummary, renderBike3dPackingView,
     renderCachedPrivateStateDuringRemoteLoad, renderCatalogCard, renderCatalogPills, renderConflictDetails, renderConflictSyncContext,
     renderContainerWeightText, renderDictionaryHtml, renderEmptyState, renderFilterControls, renderFilteredRootContainerColumnHtml,
     renderFilters, renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls,
@@ -227,7 +227,7 @@ export function createAppTailControllers(ctx) {
     repairPublishedLayoutArrangement, repairRemoteStateFromLocalReferences, replaceState, requirePublishedTemplatesAvailable, requireUsageCapacity,
     resetBackupImportUi, resetData, resetGuestDemoScopeToCanonical, resolveExistingBackupPhotosValue, resolveLayoutCreateTemplateCopyLayoutValue,
     resolveLayoutCreateTemplateCopySourceValue, resolvePreferredLayoutId, resolveStoredPrivateLayoutChoice, resolveStoredPrivateLayoutChoiceForState, restorableStoredPrivateLayoutChoiceId,
-    restoreAdminPublishedLayoutContext, restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState,
+    restoreAdminPublishedLayoutContext, restoreBackupAdminTemplates, restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState,
     restorePrivateHistoryRecordOnServer, restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow,
     restoreSelectedBackupLayoutsToState, reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm,
     rootContainerSortMode, rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow,
@@ -239,7 +239,7 @@ export function createAppTailControllers(ctx) {
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
-    selectLocalAdminTemplateCopyLayouts, selectedBackupLayoutIdsFromUi, selectedBackupRestoreConfirm, selectedHistoryPublishedTarget, selectedSharedTargetLayoutId,
+    selectLocalAdminTemplateCopyLayouts, selectedBackupAdminTemplateKeys, selectedBackupLayoutIdsFromUi, selectedBackupRestoreModeFromUi, selectedBackupRestoreConfirm, selectedHistoryPublishedTarget, selectedSharedTargetLayoutId,
     serializeState, serverChangedSinceLastSync, serverConfirmedDemoTemplates, serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsByAdminOrder,
     serverConfirmedSharedLayoutsFromPublicRecords, setActiveLocalEditableScope, setActivePrivateScope, setActiveReadOnlyScope, setDemoPublicTemplateMissing,
     setDemoStatePayloadForLanguage, setDictionarySortModeForType, setExplicitlySignedOut, setForcedOffline, setLayoutLoadProgress,
@@ -272,7 +272,7 @@ export function createAppTailControllers(ctx) {
     updateCatalogSelection, updateCategoryFilterButton, updateCompactStickyControls, updateFilterContextToggle, updateFilterHighlights,
     updateLayoutCollapseAllToggle, updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState,
     updateSharedLayoutCatalogEntryMetadata, updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls,
-    updateViewScopedControlsUi, uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos,
+    updateViewScopedControlsUi, uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPhotoToPath, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos,
     upsertDemoTemplateCatalogEntry, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState,
     userStorageScopeKey, validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
@@ -6957,6 +6957,7 @@ function buildCurrentBackupManifest(snapshot, photos) {
     appVersion: APP_VERSION,
     canIncludeAdmin: canOpenAdminPublishedEdit(),
     cloneValue: clone,
+    currentDemoTemplates: () => runtime.serverConfirmedDemoTemplates,
     currentSharedLayouts,
     demoStatePayloadForLanguage,
     language: uiLanguage,
@@ -6968,20 +6969,54 @@ function buildCurrentBackupManifest(snapshot, photos) {
 }
 
 async function createBackupArchive() {
+  if (refs.backupCreateBtn) refs.backupCreateBtn.disabled = true;
   try {
-    setBackupStatus("Собираю данные и подтягиваю фото...");
+    renderBackupProgress(refs.backupStatus, { percent: 2, title: localText("Preparing data", "Подготавливаю данные"), detail: localText("Step 1 of 4", "Шаг 1 из 4") });
+    if (canOpenAdminPublishedEdit()) await refreshPublicSharedTemplates().catch(() => null);
+    renderBackupProgress(refs.backupStatus, { percent: 8, title: localText("Template catalog updated", "Каталог шаблонов обновлён"), detail: localText("Step 1 of 4", "Шаг 1 из 4") });
     captureActiveLayoutArrangement();
     const snapshot = clone(state);
     const adminPhotoSnapshots = canOpenAdminPublishedEdit()
-      ? SUPPORTED_LANGUAGES.map((language) => demoStatePayloadForLanguage(language)).filter(Boolean)
+      ? adminBackupPayloads({
+        currentDemoTemplates: () => runtime.serverConfirmedDemoTemplates,
+        currentSharedLayouts,
+        demoStatePayloadForLanguage,
+        languages: SUPPORTED_LANGUAGES
+      })
       : [];
+    const personalLayoutCount = buildBackupLayoutRows(snapshot, { layouts: {} }).length;
+    const adminTemplateCount = canOpenAdminPublishedEdit()
+      ? runtime.serverConfirmedDemoTemplates.length + SUPPORTED_LANGUAGES.reduce((sum, language) => sum + currentSharedLayouts(language).length, 0)
+      : 0;
+    renderBackupProgress(refs.backupStatus, {
+      percent: 15,
+      title: localText("Layouts and templates prepared", "Укладки и шаблоны подготовлены"),
+      detail: localText(`Step 2 of 4 · Layouts: ${personalLayoutCount} of ${personalLayoutCount}; templates: ${adminTemplateCount} of ${adminTemplateCount}`, `Шаг 2 из 4 · Укладки: ${personalLayoutCount} из ${personalLayoutCount}; шаблоны: ${adminTemplateCount} из ${adminTemplateCount}`)
+    });
     const { entries: photoEntries, photos, missing } = await buildBackupPhotoEntries(snapshot, {
       extraSnapshots: adminPhotoSnapshots,
       normalizePhotos: normalizeItemPhotos,
-      fetchPhotoBlob: fetchBackupPhotoBlob
+      fetchPhotoBlob: fetchBackupPhotoBlob,
+      onProgress: ({ current, total, missing: missingCount }) => {
+        const fraction = total ? current / total : 1;
+        renderBackupProgress(refs.backupStatus, {
+          percent: 15 + fraction * 65,
+          title: localText("Copying photos", "Копирую фотографии"),
+          detail: localText(`Step 3 of 4 · Photos: ${current} of ${total}; unavailable: ${missingCount}`, `Шаг 3 из 4 · Фото: ${current} из ${total}; недоступно: ${missingCount}`)
+        });
+      }
     });
     const manifest = buildCurrentBackupManifest(snapshot, photos);
-    const zip = await createBackupZip(manifest, photoEntries);
+    const zip = await createBackupZip(manifest, photoEntries, {
+      onProgress: ({ current, total }) => {
+        const fraction = total ? current / total : 1;
+        renderBackupProgress(refs.backupStatus, {
+          percent: 80 + fraction * 19,
+          title: localText("Packing archive", "Упаковываю архив"),
+          detail: localText(`Step 4 of 4 · ZIP files: ${current} of ${total}`, `Шаг 4 из 4 · Файлы ZIP: ${current} из ${total}`)
+        });
+      }
+    });
     const url = URL.createObjectURL(zip);
     const a = document.createElement("a");
     a.href = url;
@@ -6990,17 +7025,20 @@ async function createBackupArchive() {
     URL.revokeObjectURL(url);
     setBackupStatus(
       missing.length
-        ? `Архив создан, но ${missing.length} фото не удалось подтянуть. Проверьте старые/недоступные фото.`
-        : `Архив создан: ${Object.keys(snapshot.layouts || {}).length} укладок, ${photos.length} фото.`,
+        ? localText(`Archive created, but ${missing.length} photos could not be retrieved. Check old or unavailable photos.`, `Архив создан, но ${missing.length} фото не удалось подтянуть. Проверьте старые/недоступные фото.`)
+        : localText(`Archive created: ${Object.keys(snapshot.layouts || {}).length} layouts, ${photos.length} photos.`, `Архив создан: ${Object.keys(snapshot.layouts || {}).length} укладок, ${photos.length} фото.`),
       missing.length ? "error" : "success"
     );
   } catch (error) {
-    setBackupStatus(`Не удалось создать архив: ${error.message}`, "error");
+    setBackupStatus(localText(`Could not create archive: ${error.message}`, `Не удалось создать архив: ${error.message}`), "error");
+  } finally {
+    if (refs.backupCreateBtn) refs.backupCreateBtn.disabled = false;
   }
 }
 
 async function handleBackupFileSelected(event) {
   const nextImportState = await readBackupImportFile(event, {
+    localText,
     normalizeRemoteState,
     readBackupArchiveFile,
     refs,
@@ -7019,8 +7057,12 @@ function selectedBackupLayoutIds() {
   return selectedBackupLayoutIdsFromUi(refs.backupAnalysis);
 }
 
-function summarizeSelectedBackupLayouts(layoutIds = new Set()) {
-  if (!runtime.backupImportState) return { replace: 0, create: 0, newItems: [], newContainers: [], photos: [] };
+function selectedBackupRestoreMode() {
+  return selectedBackupRestoreModeFromUi(refs.backupAnalysis);
+}
+
+function summarizeSelectedBackupLayouts(layoutIds = new Set(), restoreMode = "replace") {
+  if (!runtime.backupImportState) return { replace: 0, create: 0, unchanged: 0, matchesCurrentState: false, newItems: [], newContainers: [], newPhotos: [], photos: [] };
   return summarizeBackupLayouts({
     backupState: runtime.backupImportState.state,
     currentState: state,
@@ -7028,32 +7070,58 @@ function summarizeSelectedBackupLayouts(layoutIds = new Set()) {
     layoutIds,
     getLayoutContainerIdSet: getLayoutContainerIdSetForState,
     getLayoutItemIdSet: getLayoutItemIdSetForState,
-    normalizePhotos: normalizeItemPhotos
+    normalizePhotos: normalizeItemPhotos,
+    restoreMode
   });
 }
 
 function renderBackupAnalysis() {
   if (!runtime.backupImportState || !refs.backupAnalysis) return;
   const rows = backupLayoutRows();
+  const adminTemplateRows = canOpenAdminPublishedEdit()
+    ? backupAdminTemplateRows(runtime.backupImportState.manifest, { demoPublicListIdForLanguage })
+    : [];
   runtime.backupImportState.selectedLayoutIds = new Set(rows.map((row) => row.layout.id));
+  runtime.backupImportState.adminTemplateRows = adminTemplateRows;
   renderBackupAnalysisUi(refs, {
+    adminTemplateRows,
     backupState: runtime.backupImportState.state,
+    language: uiLanguage,
     rows,
     photoCount: runtime.backupImportState.photoFiles.size
   });
+  setBackupStatus(
+    localText(
+      `Archive loaded: ${rows.length} personal layouts, ${adminTemplateRows.length} public templates, ${runtime.backupImportState.photoFiles.size} photos.`,
+      `Архив прочитан: ${rows.length} личных укладок, ${adminTemplateRows.length} public-шаблонов, ${runtime.backupImportState.photoFiles.size} фото.`
+    ),
+    "success"
+  );
   updateBackupSelectionSummary();
 }
 
 function handleBackupSelectionChange(event) {
-  if (!event.target.closest("[data-backup-layout-id]")) return;
-  updateBackupSelectionSummary();
+  if (event.target.closest("[data-backup-admin-template-key]")) {
+    updateBackupAdminSelection();
+    return;
+  }
+  if (event.target.closest("[data-backup-layout-id], [data-backup-restore-mode]")) updateBackupSelectionSummary();
+}
+
+function updateBackupAdminSelection() {
+  if (!refs.backupRestoreAdminBtn) return;
+  refs.backupRestoreAdminBtn.disabled = selectedBackupAdminTemplateKeys(refs.backupAnalysis).size === 0;
 }
 
 function updateBackupSelectionSummary() {
   if (!runtime.backupImportState) return;
   runtime.backupImportState.selectedLayoutIds = selectedBackupLayoutIds();
-  const summary = summarizeSelectedBackupLayouts(runtime.backupImportState.selectedLayoutIds);
+  const restoreMode = selectedBackupRestoreMode();
+  applyBackupRestoreModeUi(refs.backupAnalysis, restoreMode);
+  const summary = summarizeSelectedBackupLayouts(runtime.backupImportState.selectedLayoutIds, restoreMode);
   renderBackupSelectionSummary(refs, {
+    language: uiLanguage,
+    restoreMode,
     selectedCount: runtime.backupImportState.selectedLayoutIds.size,
     summary
   });
@@ -7089,6 +7157,7 @@ async function restoreSelectedBackupLayouts() {
     cloneValue: clone,
     getLayoutContainerIdSet: getLayoutContainerIdSetForState,
     getLayoutItemIdSet: getLayoutItemIdSetForState,
+    localText,
     markEdited,
     normalizePhotos: normalizeItemPhotos,
     normalizeRestoredBackupState: (targetState) => normalizeRestoredBackupState(targetState, {
@@ -7108,7 +7177,8 @@ async function restoreSelectedBackupLayouts() {
     saveRemoteState,
     saveState,
     selectedBackupLayoutIds,
-    selectedBackupRestoreConfirm,
+    selectedBackupRestoreMode,
+    selectedBackupRestoreConfirm: (summary, options) => selectedBackupRestoreConfirm(summary, { ...options, language: uiLanguage }),
     setBackupStatus,
     showToast,
     state,
@@ -7117,11 +7187,71 @@ async function restoreSelectedBackupLayouts() {
     uniqueLayoutId: () => `layout-backup-${Date.now()}-${Math.random().toString(16).slice(2)}`
   });
 }
+
+async function restoreSelectedBackupAdminTemplates() {
+  if (!runtime.backupImportState || !canOpenAdminPublishedEdit()) return;
+  const selectedKeys = selectedBackupAdminTemplateKeys(refs.backupAnalysis);
+  if (!selectedKeys.size) return;
+  const rows = runtime.backupImportState.adminTemplateRows || [];
+  const confirmed = await askConfirmDialog({
+    title: localText("Restore selected public templates?", "Восстановить выбранные public-шаблоны?"),
+    text: localText("Published versions of the selected demo/shared templates will be replaced by archived versions. Other languages and templates remain unchanged.", "Текущие опубликованные версии выбранных demo/shared-шаблонов будут заменены версиями из архива. Остальные языки и шаблоны не изменятся."),
+    highlightText: localText(`Templates to restore: ${selectedKeys.size}.`, `Будет восстановлено шаблонов: ${selectedKeys.size}.`),
+    okText: localText("Restore templates", "Восстановить шаблоны"),
+    tone: "danger"
+  });
+  if (!confirmed) return;
+  try {
+    setBackupStatus(localText("Restoring demo/shared templates...", "Восстанавливаю demo/shared-шаблоны..."));
+    const restored = await restoreBackupAdminTemplates({
+      apiFetch,
+      apiUploadFormData,
+      demoAdminPathForPublicListId,
+      demoAdminStatePathForPublicListId,
+      getCachedPhoto,
+      localText,
+      normalizePhotos: normalizeItemPhotos,
+      onProgress: ({
+        itemPercent = 0,
+        photosCompleted = 0,
+        stage,
+        templateName = "",
+        templatesCompleted = 0,
+        totalPhotos = 0,
+        totalTemplates = 0
+      }) => {
+        const totalWork = Math.max(1, totalTemplates + totalPhotos);
+        const activePhotoFraction = stage === "photos" ? Math.max(0, Math.min(1, Number(itemPercent) / 100)) : 0;
+        const completedWork = templatesCompleted + photosCompleted + activePhotoFraction;
+        renderBackupProgress(refs.backupStatus, {
+          percent: 5 + (completedWork / totalWork) * 94,
+          title: stage === "photos" ? localText("Restoring template photos", "Восстанавливаю фотографии шаблонов") : localText("Restoring public templates", "Восстанавливаю public-шаблоны"),
+          detail: localText(`Templates: ${templatesCompleted} of ${totalTemplates}; photos: ${photosCompleted} of ${totalPhotos}${templateName ? ` · ${templateName}` : ""}`, `Шаблоны: ${templatesCompleted} из ${totalTemplates}; фото: ${photosCompleted} из ${totalPhotos}${templateName ? ` · ${templateName}` : ""}`)
+        });
+      },
+      photoFiles: runtime.backupImportState.photoFiles,
+      publicListIdForPublishedTarget,
+      putCachedPhoto,
+      rows,
+      selectedKeys,
+      timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+      uploadPhotoToPath,
+      withoutPhotoReferences
+    });
+    await refreshPublicSharedTemplates({ renderAfter: true }).catch(() => null);
+    const uploaded = restored.reduce((sum, entry) => sum + Number(entry.uploaded || 0), 0);
+    setBackupStatus(localText(`Public templates restored: ${restored.length}; photos: ${uploaded}.`, `Восстановлено public-шаблонов: ${restored.length}; фото: ${uploaded}.`), "success");
+    showToast(localText(`Public templates restored: ${restored.length}.`, `Восстановлено public-шаблонов: ${restored.length}.`), "success");
+  } catch (error) {
+    setBackupStatus(localText(`Could not restore public templates: ${error.message}`, `Не удалось восстановить public-шаблоны: ${error.message}`), "error");
+  }
+}
 async function restoreFullBackup() {
   await restoreFullBackupFlow({
     askConfirmDialog,
     backupImportState: runtime.backupImportState,
-    fullBackupRestoreConfirm,
+    fullBackupRestoreConfirm: (stats) => fullBackupRestoreConfirm(stats, { language: uiLanguage }),
+    localText,
     normalizeRemoteState,
     nowIso,
     prepareBackupPhotosForState,
@@ -7281,7 +7411,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     fetchBackupPhotoBlob, buildCurrentBackupManifest, createBackupArchive, handleBackupFileSelected,
     backupLayoutRows, selectedBackupLayoutIds, summarizeSelectedBackupLayouts, renderBackupAnalysis,
     handleBackupSelectionChange, updateBackupSelectionSummary, resolveExistingBackupPhotos, prepareBackupPhotosForState,
-    restoreSelectedBackupLayouts, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
+    restoreSelectedBackupLayouts, restoreSelectedBackupAdminTemplates, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
     readRootContainerDialogDimensions, applyRootContainerDimensions
   };
 }

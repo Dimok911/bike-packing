@@ -201,6 +201,7 @@ export function createRefs(root = document) {
     backupStatus: root.querySelector("#backupStatus"),
     backupAnalysis: root.querySelector("#backupAnalysis"),
     backupRestoreSelectedBtn: root.querySelector("#backupRestoreSelectedBtn"),
+    backupRestoreAdminBtn: root.querySelector("#backupRestoreAdminBtn"),
     backupRestoreFullBtn: root.querySelector("#backupRestoreFullBtn"),
     sharedLayoutsDialog: root.querySelector("#sharedLayoutsDialog"),
     sharedLayoutsList: root.querySelector("#sharedLayoutsList"),

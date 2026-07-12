@@ -4652,8 +4652,23 @@ button.touch-tooltip-open:active {
 .backup-dialog-card {
   width: min(760px, calc(100vw - 24px));
   max-height: min(760px, calc(100dvh - 24px));
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.backup-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.backup-section-actions button {
+  flex: 1 1 220px;
+}
+
+.backup-personal-actions #backupRestoreFullBtn {
+  margin-left: auto;
 }
 
 .admin-reports-dialog-card {
@@ -4709,14 +4724,28 @@ button.touch-tooltip-open:active {
 }
 
 .backup-rule-section {
-  display: grid;
-  align-content: start;
-  gap: 6px;
   padding: 10px;
   border: 1px solid rgba(31, 122, 100, 0.22);
   border-radius: 8px;
-  background: #f4fbf8;
+  background: #f8faf7;
+  color: var(--muted);
+}
+
+.backup-rule-section summary {
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 800;
+  list-style-position: inside;
+}
+
+.backup-rule-section[open] summary {
   color: #1f3a36;
+}
+
+.backup-rule-content {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
 }
 
 .backup-rule-section.warning {
@@ -4748,6 +4777,73 @@ button.touch-tooltip-open:active {
   padding-right: 2px;
 }
 
+.backup-restore-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.backup-restore-mode legend {
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+.backup-restore-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.backup-admin-templates {
+  padding: 10px;
+  border: 1px solid rgba(31, 122, 100, 0.28);
+  border-radius: 8px;
+  background: #f4fbf8;
+}
+
+.backup-admin-templates > summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.backup-admin-templates > p {
+  margin: 8px 0;
+  color: var(--muted);
+}
+
+.backup-admin-language-list,
+.backup-admin-language-group {
+  display: grid;
+  gap: 10px;
+}
+
+.backup-admin-language-group h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.backup-progress-status {
+  display: grid;
+  gap: 6px;
+}
+
+.backup-progress-status progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--accent);
+}
+
+.backup-progress-status small {
+  color: var(--muted);
+}
+
 .backup-layout-list {
   display: grid;
   gap: 8px;
@@ -4774,10 +4870,19 @@ button.touch-tooltip-open:active {
   background: #eef7f3;
 }
 
+.backup-layout-row.same {
+  border-color: rgba(31, 122, 100, 0.28);
+  background: #f4fbf8;
+}
+
 .backup-layout-row strong,
 .backup-layout-row small {
   display: block;
   min-width: 0;
+}
+
+[data-backup-mode][hidden] {
+  display: none;
 }
 
 .backup-warning {
@@ -4803,6 +4908,11 @@ button.touch-tooltip-open:active {
   color: var(--accent);
 }
 
+.backup-badge.same {
+  background: #dcece6;
+  color: var(--accent);
+}
+
 .backup-summary {
   padding: 10px;
   border: 1px solid var(--line);
@@ -4810,6 +4920,18 @@ button.touch-tooltip-open:active {
   background: #f8faf7;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.backup-summary.same {
+  border-color: rgba(31, 122, 100, 0.28);
+  background: #eef7f3;
+  color: var(--accent);
+}
+
+.backup-summary > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
 }
 
 .shared-layouts-dialog-card {

@@ -48,13 +48,15 @@ async function entryBytes(content) {
   return textEncoder.encode(String(content ?? ""));
 }
 
-export async function createStoredZip(entries = []) {
+export async function createStoredZip(entries = [], { onProgress = () => {} } = {}) {
   const fileParts = [];
   const centralParts = [];
   let offset = 0;
   const dos = dateToDosParts();
 
-  for (const entry of entries) {
+  onProgress({ current: 0, total: entries.length });
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
     const nameBytes = textEncoder.encode(String(entry.name || "").replace(/^\/+/, ""));
     if (!nameBytes.length) continue;
     const data = await entryBytes(entry.content);
@@ -92,6 +94,7 @@ export async function createStoredZip(entries = []) {
     centralParts.push(central);
 
     offset += local.length + data.length;
+    onProgress({ current: index + 1, total: entries.length, name: entry.name || "" });
   }
 
   const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);

@@ -654,6 +654,7 @@ import { preflightRemoteSaveConflictFlow } from "./src/sync/save-preflight.js";
 import { createQueuedRemoteSave } from "./src/sync/save-queue.js";
 import { registerAppServiceWorker } from "./src/sync/service-worker.js";
 import {
+  adminBackupPayloads,
   backupDownloadName,
   buildCurrentBackupManifest as buildCurrentBackupManifestValue,
   buildBackupPhotoEntries,
@@ -673,11 +674,19 @@ import {
   restoreSelectedBackupLayoutsFlow
 } from "./src/backup/restore-flow.js";
 import {
+  backupAdminTemplateRows,
+  restoreBackupAdminTemplates,
+  selectedBackupAdminTemplateKeys
+} from "./src/backup/admin-restore.js";
+import {
+  applyBackupRestoreMode as applyBackupRestoreModeUi,
   renderBackupAnalysis as renderBackupAnalysisUi,
+  renderBackupProgress,
   renderBackupRules,
   renderBackupSelectionSummary,
   resetBackupImportUi,
   selectedBackupLayoutIds as selectedBackupLayoutIdsFromUi,
+  selectedBackupRestoreMode as selectedBackupRestoreModeFromUi,
   selectedBackupRestoreConfirm,
   fullBackupRestoreConfirm
 } from "./src/ui/backup-dialog.js";
@@ -1306,18 +1315,18 @@ const appTailControllerDeps = {
   adminPublicLayoutOptions, adminReportsDialogController, adminSharedTemplateOptions, adminTemplateDraftChoice, allActiveLayoutNestedContainersCollapsedForState,
   allSharedLayoutsByAdminOrder, annotatePayloadError, apiCapabilitySet, apiErrorMessage, apiFetch,
   apiFetchRequest, apiUploadFormData, apiUploadFormDataRequest, appUnlocked, appendCopiedFromTemplateNote,
-  applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState, applyDefaultCollapsedContainers,
+  applyBackupRestoreModeUi, applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState, applyDefaultCollapsedContainers,
   applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyItemAvailabilityStatus, applyLayoutArrangement, applyLayoutArrangementToState,
   applyLayoutEditFields, applyLayoutLocked, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass, applyPreferredPrivateLayoutChoice,
   applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState, applySearchInputNow,
   applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState, arePublishedTemplatesBlocked,
   askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog, assertAdminApiCompatibility,
-  assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity, backupDownloadName,
+  adminBackupPayloads, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity, backupDownloadName,
   bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls, bindFixedScrollbar, bindStickyRootHeaderRow,
   bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
   bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi, blockDestructiveLocalSave,
   blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions, buildAdminSharedTemplateOptions,
-  buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync, buildCurrentBackupManifestValue,
+  backupAdminTemplateRows, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync, buildCurrentBackupManifestValue,
   buildEntitySyncBody, buildEntitySyncBodyForSync, buildListSaveBody, buildListSaveBodyForSync, buildPrintableDocument,
   buildRememberedOfflineUser, buildSharedListUrl, buildSharedListUrlFromHref, canAddUsageEntries, canDeleteActiveLayoutForState,
   canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue, canRequestEntityChanges,
@@ -1473,7 +1482,7 @@ const appTailControllerDeps = {
   removeItemFromLayoutArrangement, removeItemFromLayoutInState, removeLayoutTree, removeLayoutTreeFromState, removeManagedDemoTemplateTreesFromState,
   removeManagedSharedTemplateTreesFromState, removePhotoFromDraft, removePublicLayoutDrafts, removePublicTemplateCatalogEntry, removeScopedLocalValue,
   renameCustomDictionaryValue, renameDictionaryEntryValue, renameReusableGuestDemoCopy, render, renderAndScrollToTop,
-  renderBackupAnalysisUi, renderBackupRules, renderBackupSelectionSummary, renderBike3dPackingView, renderCachedPrivateStateDuringRemoteLoad,
+  renderBackupAnalysisUi, renderBackupProgress, renderBackupRules, renderBackupSelectionSummary, renderBike3dPackingView, renderCachedPrivateStateDuringRemoteLoad,
   renderCatalogCard, renderCatalogPills, renderConflictDetails, renderConflictSyncContext, renderContainerWeightText,
   renderDictionaryHtml, renderEmptyState, renderFilterControls, renderFilteredRootContainerColumnHtml, renderFilters,
   renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls, renderInitialLocalFallbackIfNeeded,
@@ -1487,7 +1496,7 @@ const appTailControllerDeps = {
   resetData, resetGuestDemoScopeToCanonical, resolveExistingBackupPhotosValue, resolveLayoutCreateTemplateCopyLayoutValue, resolveLayoutCreateTemplateCopySourceValue,
   resolvePreferredLayoutId, resolveStoredPrivateLayoutChoice, resolveStoredPrivateLayoutChoiceForState, restorableStoredPrivateLayoutChoiceId, restoreAdminPublishedLayoutContext,
   restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState, restorePrivateHistoryRecordOnServer,
-  restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow, restoreSelectedBackupLayoutsToState,
+  restoreBackupAdminTemplates, restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow, restoreSelectedBackupLayoutsToState,
   reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm, rootContainerSortMode,
   rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow, runSyncNowFlow,
   safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice, saveActivePackingListId,
@@ -1498,7 +1507,7 @@ const appTailControllerDeps = {
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
-  selectedBackupLayoutIdsFromUi, selectedBackupRestoreConfirm, selectedHistoryPublishedTarget, selectedSharedTargetLayoutId, serializeState,
+  selectedBackupAdminTemplateKeys, selectedBackupLayoutIdsFromUi, selectedBackupRestoreModeFromUi, selectedBackupRestoreConfirm, selectedHistoryPublishedTarget, selectedSharedTargetLayoutId, serializeState,
   serverChangedSinceLastSync, serverConfirmedDemoTemplates, serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsByAdminOrder, serverConfirmedSharedLayoutsFromPublicRecords,
   setActiveLocalEditableScope, setActivePrivateScope, setActiveReadOnlyScope, setDemoPublicTemplateMissing, setDemoStatePayloadForLanguage,
   setDictionarySortModeForType, setExplicitlySignedOut, setForcedOffline, setLayoutLoadProgress, setLayoutLoadStatus,
@@ -1531,7 +1540,7 @@ const appTailControllerDeps = {
   updateCategoryFilterButton, updateCompactStickyControls, updateFilterContextToggle, updateFilterHighlights, updateLayoutCollapseAllToggle,
   updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState, updateSharedLayoutCatalogEntryMetadata,
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
-  uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
+  uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPhotoToPath, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
   unavailableSnapshotItems, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
   validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
@@ -1644,7 +1653,7 @@ const {
   fetchBackupPhotoBlob, buildCurrentBackupManifest, createBackupArchive, handleBackupFileSelected,
   backupLayoutRows, selectedBackupLayoutIds, summarizeSelectedBackupLayouts, renderBackupAnalysis,
   handleBackupSelectionChange, updateBackupSelectionSummary, resolveExistingBackupPhotos, prepareBackupPhotosForState,
-  restoreSelectedBackupLayouts, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
+  restoreSelectedBackupLayouts, restoreSelectedBackupAdminTemplates, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
   readRootContainerDialogDimensions, applyRootContainerDimensions
 } = createAppTailControllers(appTailControllerDeps);
 
@@ -2770,6 +2779,7 @@ async function init() {
   refs.backupFileInput?.addEventListener("change", handleBackupFileSelected);
   refs.backupAnalysis?.addEventListener("change", handleBackupSelectionChange);
   refs.backupRestoreSelectedBtn?.addEventListener("click", restoreSelectedBackupLayouts);
+  refs.backupRestoreAdminBtn?.addEventListener("click", restoreSelectedBackupAdminTemplates);
   refs.backupRestoreFullBtn?.addEventListener("click", restoreFullBackup);
   refs.historySourceTabs?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-history-source]");

@@ -13,6 +13,44 @@ export function currentLayoutByBackupName(currentState, name) {
   ) || null;
 }
 
+function stableBackupComparisonValue(value) {
+  if (Array.isArray(value)) return value.map(stableBackupComparisonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableBackupComparisonValue(value[key])]));
+}
+
+function comparableBackupLayout(layout) {
+  const value = clonePlain(layout || {});
+  delete value.id;
+  delete value.updatedAt;
+  return stableBackupComparisonValue(value);
+}
+
+export function backupLayoutMatchesCurrent(layout, existing) {
+  if (!layout || !existing) return false;
+  const restored = clonePlain(layout);
+  if (existing.locked && !restored.locked) restored.locked = true;
+  const existingNotes = normalizeLayoutNotes(existing.notes);
+  if (existing.locked && existingNotes && !normalizeLayoutNotes(restored.notes)) restored.notes = existingNotes;
+  return JSON.stringify(comparableBackupLayout(restored)) === JSON.stringify(comparableBackupLayout(existing));
+}
+
+export function backupCopyLayoutName(name, createdAt, layouts = {}, language = "ru") {
+  const english = String(language || "").toLowerCase().startsWith("en");
+  const date = new Date(createdAt || "");
+  const dateLabel = Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat(english ? "en-GB" : "ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date)
+    : english ? "unknown date" : "без даты";
+  const baseName = english
+    ? `${String(name || "Unnamed layout").trim()} — from backup ${dateLabel}`
+    : `${String(name || "Укладка без названия").trim()} — из бэкапа ${dateLabel}`;
+  const usedNames = new Set(Object.values(layouts || {}).map((layout) => backupLayoutNameKey(layout)));
+  if (!usedNames.has(backupLayoutNameKey({ name: baseName }))) return baseName;
+  let index = 2;
+  while (usedNames.has(backupLayoutNameKey({ name: `${baseName} (${index})` }))) index += 1;
+  return `${baseName} (${index})`;
+}
+
 export function backupLayoutRows(backupState, currentState) {
   return Object.values(backupState?.layouts || {})
     .filter((layout) => layout && !layout.adminDemo && !layout.adminSharedSourceId)
@@ -21,7 +59,8 @@ export function backupLayoutRows(backupState, currentState) {
       return {
         layout,
         mode: existing ? "replace" : "create",
-        existing
+        existing,
+        matchesCurrent: backupLayoutMatchesCurrent(layout, existing)
       };
     });
 }
@@ -33,10 +72,11 @@ export function summarizeBackupLayouts({
   layoutIds = new Set(),
   getLayoutContainerIdSet,
   getLayoutItemIdSet,
-  normalizePhotos
+  normalizePhotos,
+  restoreMode = "replace"
 } = {}) {
   const rows = backupLayoutRows(backupState, currentState).filter((row) => layoutIds.has(row.layout.id));
-  const lockedLayoutProtections = rows
+  const lockedLayoutProtections = restoreMode === "copy" ? [] : rows
     .filter(({ layout, existing }) => existing?.locked && !layout?.locked)
     .map(({ layout, existing }) => ({
       id: layout.id,
@@ -48,16 +88,33 @@ export function summarizeBackupLayouts({
     getLayoutContainerIdSet(backupState, layout).forEach((id) => containerIds.add(id));
     getLayoutItemIdSet(backupState, layout).forEach((id) => itemIds.add(id));
   });
-  const photoIds = new Set();
-  [...itemIds].forEach((id) => normalizePhotos(backupState.items?.[id] || {}).forEach((photo) => photoIds.add(photo.id)));
-  [...containerIds].forEach((id) => normalizePhotos(backupState.containers?.[id] || {}).forEach((photo) => photoIds.add(photo.id)));
+  const newPhotoIds = new Set();
+  const collectNewPhotoIds = (sourceRecord, currentRecord) => {
+    const currentPhotoIds = new Set(normalizePhotos(clonePlain(currentRecord || {}))
+      .map((photo) => String(photo.id || photo.localId || "").trim())
+      .filter(Boolean));
+    normalizePhotos(clonePlain(sourceRecord || {})).forEach((photo) => {
+      const photoId = String(photo.id || photo.localId || "").trim();
+      if (photoId && !currentPhotoIds.has(photoId)) newPhotoIds.add(photoId);
+    });
+  };
+  [...itemIds].forEach((id) => collectNewPhotoIds(backupState.items?.[id], currentState.items?.[id]));
+  [...containerIds].forEach((id) => collectNewPhotoIds(backupState.containers?.[id], currentState.containers?.[id]));
+  const unchangedLayouts = rows.filter((row) => row.matchesCurrent);
+  const newItems = [...itemIds].filter((id) => !currentState.items?.[id]);
+  const newContainers = [...containerIds].filter((id) => !currentState.containers?.[id]);
+  const newPhotos = [...newPhotoIds];
   return {
-    replace: rows.filter((row) => row.mode === "replace").length,
-    create: rows.filter((row) => row.mode === "create").length,
+    replace: restoreMode === "copy" ? 0 : rows.filter((row) => row.mode === "replace").length,
+    create: restoreMode === "copy" ? rows.length : rows.filter((row) => row.mode === "create").length,
+    unchanged: restoreMode === "copy" ? 0 : unchangedLayouts.length,
+    matchesCurrentState: restoreMode !== "copy" && rows.length > 0 && unchangedLayouts.length === rows.length &&
+      newItems.length === 0 && newContainers.length === 0 && newPhotos.length === 0,
     lockedLayoutProtections,
-    newItems: [...itemIds].filter((id) => !currentState.items?.[id]),
-    newContainers: [...containerIds].filter((id) => !currentState.containers?.[id]),
-    photos: [...photoIds].filter((id) => photoFiles?.has(id))
+    newItems,
+    newContainers,
+    newPhotos,
+    photos: newPhotos.filter((id) => photoFiles?.has(id))
   };
 }
 
@@ -92,6 +149,8 @@ export function addBackupDictionaryValues(targetState, sourceState) {
 }
 
 export function restoreSelectedBackupLayoutsToState({
+  backupCreatedAt = "",
+  backupLanguage = "ru",
   backupRows = [],
   changedAt = "",
   cloneValue = clonePlain,
@@ -99,6 +158,7 @@ export function restoreSelectedBackupLayoutsToState({
   getLayoutItemIdSet,
   markEdited = () => {},
   normalizePhotos,
+  restoreMode = "replace",
   selectedIds = new Set(),
   sourceState = null,
   targetState = null,
@@ -111,19 +171,23 @@ export function restoreSelectedBackupLayoutsToState({
   backupRows
     .filter((row) => selectedIds.has(row.layout?.id))
     .forEach(({ layout, existing }) => {
-      const targetLayoutId = existing?.id || (!targetState.layouts?.[layout.id] ? layout.id : uniqueLayoutId(layout));
-      const existingWasLocked = Boolean(existing?.locked);
-      const existingNotes = normalizeLayoutNotes(existing?.notes);
+      const createCopy = restoreMode === "copy";
+      const targetLayoutId = createCopy
+        ? uniqueLayoutId(layout)
+        : existing?.id || (!targetState.layouts?.[layout.id] ? layout.id : uniqueLayoutId(layout));
+      const existingWasLocked = !createCopy && Boolean(existing?.locked);
+      const existingNotes = existingWasLocked ? normalizeLayoutNotes(existing?.notes) : "";
       const restoredLayout = {
         ...cloneValue(layout),
         id: targetLayoutId,
         updatedAt: changedAt
       };
+      if (createCopy) restoredLayout.name = backupCopyLayoutName(layout.name, backupCreatedAt, targetState.layouts, backupLanguage);
       if (existingWasLocked && !restoredLayout.locked) restoredLayout.locked = true;
       if (existingWasLocked && existingNotes && !normalizeLayoutNotes(restoredLayout.notes)) {
         restoredLayout.notes = existingNotes;
       }
-      if (existing?.id) delete targetState.layouts[existing.id];
+      if (!createCopy && existing?.id) delete targetState.layouts[existing.id];
       getLayoutContainerIdSet(sourceState, layout).forEach((containerId) => {
         const result = mergeBackupRecordWithExisting(targetState.containers, sourceState.containers?.[containerId], { normalizePhotos });
         result.photoIds.forEach((id) => importedPhotoIds.add(id));

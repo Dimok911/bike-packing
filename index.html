@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1191" />
+    <link rel="stylesheet" href="./styles.css?v=1201" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -621,16 +621,16 @@
           </label>
         </div>
         <div id="backupRules" class="backup-rules">
-          <p><strong>Полное восстановление:</strong> всё текущее состояние пользователя будет потеряно и заменено данными из архива.</p>
-          <p><strong>Восстановление отдельных укладок:</strong> заменяются только укладки с совпадающим именем, новые создаются, недостающие вещи/сумки/фото добавляются.</p>
+          <details class="backup-rule-section"><summary>Справка: создание архива</summary></details>
+          <details class="backup-rule-section"><summary>Справка: восстановление данных</summary></details>
         </div>
         <p id="backupStatus" class="dialog-status" aria-live="polite"></p>
         <div id="backupAnalysis" class="backup-analysis"></div>
-        <footer>
-          <button value="cancel" class="ghost">Закрыть</button>
-          <button id="backupRestoreSelectedBtn" type="button" class="ghost" hidden>Восстановить выбранные</button>
-          <button id="backupRestoreFullBtn" type="button" class="danger-action" hidden>Восстановить всё</button>
-        </footer>
+        <div class="backup-action-staging" hidden>
+          <button id="backupRestoreSelectedBtn" type="button" class="ghost" hidden>Восстановить выбранные личные</button>
+          <button id="backupRestoreAdminBtn" type="button" class="ghost" hidden>Восстановить выбранные шаблоны</button>
+          <button id="backupRestoreFullBtn" type="button" class="danger-action" hidden>Личные данные целиком (без шаблонов)</button>
+        </div>
       </form>
     </dialog>
 
@@ -669,6 +669,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1191" type="module"></script>
+    <script src="./app.js?v=1201" type="module"></script>
   </body>
 </html>

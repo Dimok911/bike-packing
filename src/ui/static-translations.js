@@ -216,7 +216,7 @@ export function applyStaticTranslationsUi({
   const backupPick = refs.backupFileInput?.closest(".backup-file-pick");
   setText(backupPick, t("backup.loadArchive"));
   if (backupPick && refs.backupFileInput) backupPick.append(refs.backupFileInput);
-  setText(refs.backupRestoreSelectedBtn, uiLanguage === "en" ? "Restore selected" : "Восстановить выбранные");
-  setText(refs.backupRestoreFullBtn, uiLanguage === "en" ? "Restore all" : "Восстановить всё");
-  setText(refs.backupDialog?.querySelector("footer .ghost"), t("buttons.close"));
+  setText(refs.backupRestoreSelectedBtn, uiLanguage === "en" ? "Restore selected personal layouts" : "Восстановить выбранные личные");
+  setText(refs.backupRestoreAdminBtn, uiLanguage === "en" ? "Restore selected templates" : "Восстановить выбранные шаблоны");
+  setText(refs.backupRestoreFullBtn, uiLanguage === "en" ? "All personal data (excluding templates)" : "Личные данные целиком (без шаблонов)");
 }

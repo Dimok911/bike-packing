@@ -23,6 +23,7 @@ import {
 import { renderListItemHtml } from "../../src/ui/items-view-render.js";
 import { renderPackingItemCardHtml } from "../../src/ui/packing-board-render.js";
 import {
+  backupCopyLayoutName,
   backupLayoutRows,
   restoreSelectedBackupLayoutsToState,
   summarizeBackupLayouts
@@ -260,4 +261,77 @@ test("CRITICAL backup restore: selected restore preserves locked layout protecti
   assert.deepEqual(result.restoredLayoutIds, ["layout-locked"]);
   assert.equal(currentState.layouts["layout-locked"].locked, true);
   assert.equal(currentState.layouts["layout-locked"].notes, "После похода добавить мелкую отвертку");
+});
+
+test("CRITICAL backup analysis: identical layouts and photos are reported as matching", () => {
+  const backupState = createState();
+  const currentState = structuredClone(backupState);
+  backupState.layouts["layout-locked"].updatedAt = "2026-07-01T10:00:00.000Z";
+  currentState.layouts["layout-locked"].updatedAt = "2026-07-12T10:00:00.000Z";
+  backupState.items["item-a"].photos = [{ id: "photo-a" }];
+  currentState.items["item-a"].photos = [{ id: "photo-a" }];
+
+  const summary = summarizeBackupLayouts({
+    backupState,
+    currentState,
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet,
+    layoutIds: new Set(["layout-locked"]),
+    normalizePhotos: (record) => Array.isArray(record?.photos) ? record.photos : [],
+    photoFiles: new Map([["photo-a", {}]])
+  });
+
+  assert.equal(summary.unchanged, 1);
+  assert.equal(summary.matchesCurrentState, true);
+  assert.deepEqual(summary.newPhotos, []);
+  assert.deepEqual(summary.photos, []);
+});
+
+test("CRITICAL backup analysis: only photos missing from the current entity are counted", () => {
+  const backupState = createState();
+  const currentState = structuredClone(backupState);
+  backupState.items["item-a"].photos = [{ id: "photo-existing" }, { id: "photo-missing" }];
+  currentState.items["item-a"].photos = [{ id: "photo-existing" }];
+
+  const summary = summarizeBackupLayouts({
+    backupState,
+    currentState,
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet,
+    layoutIds: new Set(["layout-locked"]),
+    normalizePhotos: (record) => Array.isArray(record?.photos) ? record.photos : [],
+    photoFiles: new Map([["photo-existing", {}], ["photo-missing", {}]])
+  });
+
+  assert.equal(summary.matchesCurrentState, false);
+  assert.deepEqual(summary.newPhotos, ["photo-missing"]);
+  assert.deepEqual(summary.photos, ["photo-missing"]);
+});
+
+test("CRITICAL backup restore: copy mode keeps the current layout and creates a dated layout", () => {
+  const backupState = createState();
+  const currentState = createState();
+  const rows = backupLayoutRows(backupState, currentState);
+
+  const result = restoreSelectedBackupLayoutsToState({
+    backupCreatedAt: "2026-07-01T10:00:00.000Z",
+    backupRows: rows,
+    changedAt: "2026-07-12T10:00:00.000Z",
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet,
+    normalizePhotos: (record) => Array.isArray(record?.photos) ? record.photos : [],
+    restoreMode: "copy",
+    selectedIds: new Set(["layout-locked"]),
+    sourceState: backupState,
+    targetState: currentState,
+    uniqueLayoutId: () => "layout-backup-copy"
+  });
+
+  assert.deepEqual(result.restoredLayoutIds, ["layout-backup-copy"]);
+  assert.equal(currentState.layouts["layout-locked"].name, "Locked");
+  assert.equal(currentState.layouts["layout-backup-copy"].name, "Locked — из бэкапа 01.07.2026");
+  assert.equal(Object.keys(currentState.items).length, 2);
+  assert.equal(Object.keys(currentState.containers).length, 3);
+  assert.equal(backupCopyLayoutName("Locked", "2026-07-01", currentState.layouts), "Locked — из бэкапа 01.07.2026 (2)");
+  assert.equal(backupCopyLayoutName("Locked", "2026-07-01", {}, "en"), "Locked — from backup 01/07/2026");
 });
