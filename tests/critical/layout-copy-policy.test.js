@@ -124,7 +124,7 @@ test("CRITICAL private copy: duplicate policy distinguishes link, missing and ex
   }), "cancel");
 });
 
-test("CRITICAL private copy: explicit private duplicates do not queue remote photos for list copy", () => {
+test("CRITICAL private copy: namespace boundary detection remains explicit", () => {
   assert.equal(shouldCopyPhotosToCurrentListForLayoutCopy({
     targetIsPublic: false,
     sourceIsPublicCopy: false
@@ -141,12 +141,12 @@ test("CRITICAL private copy: explicit private duplicates do not queue remote pho
   }), true);
 });
 
-test("CRITICAL private copy: template-boundary photo duplicate options skip unusable local-only photos", () => {
+test("CRITICAL private copy: explicit duplicate always copies remote photos and drops missing files only across namespaces", () => {
   assert.deepEqual(photoDuplicateOptionsForLayoutCopy({
     targetIsPublic: false,
     sourceIsPublicCopy: false
   }), {
-    copyRemotePhotosToCurrentList: false,
+    copyRemotePhotosToCurrentList: true,
     dropMissingLocalPhotos: false
   });
 

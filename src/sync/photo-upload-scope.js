@@ -6,6 +6,7 @@ import {
   isPhotoStoredForList,
   isPhotoUsableFromServer,
   keepRemoteOnlyPhotoReference,
+  photoRecordIdMatchesRemoteSource,
   photoShouldBeCopiedToCurrentList
 } from "./photos.js";
 
@@ -42,6 +43,10 @@ export function getUploadablePhotoEntries(targetState, {
   const scope = getPhotoUploadScope(targetState, layoutId);
   const entries = [];
   collectPhotoEntities(targetState, scope, (entity, entityType, photo) => {
+    if (hasRemotePhotoUrl(photo) && !photoRecordIdMatchesRemoteSource(photo)) {
+      photo._copyToCurrentList = true;
+      photo.status = "pending";
+    }
     if (!photoShouldBeCopiedToCurrentList(photo) && isPhotoUsableFromServer(photo, listId)) return;
     const needsListReupload = listId && hasRemotePhotoUrl(photo) && !isPhotoStoredForList(photo, listId);
     if (needsListReupload && allowRemoteOnlyReferences && !photoShouldBeCopiedToCurrentList(photo) && keepRemoteOnlyPhotoReference(photo)) return;

@@ -9,6 +9,7 @@ import {
   applySyncedPhotoUploadResult,
   clonePhotoUploadBlob,
   copyRecordPhotosForLocalDuplicate,
+  inspectRecordRemotePhotoSources,
   materializeSelectedPhotoFile,
   photoRecordIdMatchesRemoteSource,
   photoRemoteSrc,
@@ -19,7 +20,8 @@ import {
 import { apiUploadFormDataRequest, isTimeoutError } from "../../src/sync/api-client.js";
 import {
   markPhotoUploadStarted,
-  uploadPhotoToPath
+  uploadPhotoToPath,
+  verifyRemotePhotoAssets
 } from "../../src/sync/photo-upload-flow.js";
 import {
   getUnsyncedPhotoEntries,
@@ -92,7 +94,7 @@ test("CRITICAL offline-photos: online photos may use versioned remote URLs", () 
   assert.equal(src, "https://api.example.test/thumb.jpg?v=2026-05-21T00%3A00%3A00.000Z");
 });
 
-test("CRITICAL offline-photos: private-layout remote photos are reused without physical copy", async () => {
+test("CRITICAL offline-photos: explicit duplicate queues an independent physical remote photo", async () => {
   const original = {
     id: "photo-original",
     url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-original/file",
@@ -103,19 +105,20 @@ test("CRITICAL offline-photos: private-layout remote photos are reused without p
   };
 
   const [copy] = await copyRecordPhotosForLocalDuplicate({ photos: [original] }, {
-    changedAt: "2026-05-24T00:00:00.000Z"
+    changedAt: "2026-05-24T00:00:00.000Z",
+    copyRemotePhotosToCurrentList: true
   });
 
   assert.match(copy.id, /^photo-/);
   assert.notEqual(copy.id, original.id);
   assert.equal(copy.localId, "");
-  assert.equal(copy.status, "synced");
-  assert.equal(copy._copyToCurrentList, undefined);
+  assert.equal(copy.status, "pending");
+  assert.equal(copy._copyToCurrentList, true);
   assert.equal(copy.url, original.url);
   assert.equal(copy.thumbUrl, original.thumbUrl);
 });
 
-test("CRITICAL offline-photos: private-layout remote photos keep server URLs even when cached locally", async () => {
+test("CRITICAL offline-photos: explicit duplicate keeps an independent cached fallback for a legacy remote photo", async () => {
   const original = {
     id: "photo-original",
     localId: "photo-original",
@@ -127,25 +130,144 @@ test("CRITICAL offline-photos: private-layout remote photos keep server URLs eve
   };
   let cacheReads = 0;
   let cacheWrites = 0;
+  let cachedCopy = null;
+  const blob = new Blob(["legacy-full"], { type: "image/jpeg" });
+  const thumbBlob = new Blob(["legacy-thumb"], { type: "image/jpeg" });
 
   const [copy] = await copyRecordPhotosForLocalDuplicate({ photos: [original] }, {
     changedAt: "2026-05-24T00:00:00.000Z",
+    cachedFallbackSourceIds: [original.localId],
+    copyRemotePhotosToCurrentList: true,
     getCachedPhotoForCopy: async () => {
       cacheReads += 1;
-      return { blob: { size: 1 }, thumbBlob: { size: 1 } };
+      return { id: original.localId, blob, thumbBlob };
     },
-    putCachedPhotoForCopy: async () => {
+    putCachedPhotoForCopy: async (record) => {
       cacheWrites += 1;
+      cachedCopy = record;
     }
   });
 
-  assert.equal(cacheReads, 0);
-  assert.equal(cacheWrites, 0);
-  assert.equal(copy.localId, "");
-  assert.equal(copy.status, "synced");
-  assert.equal(copy._copyToCurrentList, undefined);
+  assert.equal(cacheReads, 1);
+  assert.equal(cacheWrites, 1);
+  assert.equal(copy.localId, copy.id);
+  assert.equal(cachedCopy.id, copy.id);
+  assert.notEqual(cachedCopy.blob, blob);
+  assert.notEqual(cachedCopy.thumbBlob, thumbBlob);
+  assert.equal(copy.status, "pending");
+  assert.equal(copy._copyToCurrentList, true);
   assert.equal(copy.url, original.url);
   assert.equal(copy.thumbUrl, original.thumbUrl);
+});
+
+test("CRITICAL offline-photos: online inspection reports a missing server photo and its local recovery option", async () => {
+  const calls = [];
+  const result = await inspectRecordRemotePhotoSources({
+    photos: [{
+      id: "photo-legacy",
+      localId: "photo-legacy",
+      status: "synced",
+      url: "https://api.example.test/lists/list-1/photos/photo-legacy/file",
+      thumbUrl: "https://api.example.test/lists/list-1/photos/photo-legacy/thumb"
+    }]
+  }, {
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { status: 404, ok: false };
+    },
+    getCachedPhotoForInspection: async (id) => ({ id, blob: new Blob(["legacy"]) })
+  });
+
+  assert.equal(result.missing.length, 1);
+  assert.equal(result.missing[0].sourceLocalId, "photo-legacy");
+  assert.equal(result.missing[0].cached, true);
+  assert.deepEqual(result.missing[0].statuses, [404, 404]);
+  assert.ok(calls.every((call) => call.options.method === "HEAD"));
+});
+
+test("CRITICAL offline-photos: missing legacy source row falls back to the independent cached copy", async () => {
+  const photo = {
+    id: "photo-copy",
+    localId: "photo-copy",
+    status: "pending",
+    url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-legacy/file",
+    thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-legacy/thumb",
+    _copyToCurrentList: true
+  };
+  const entity = { id: "item-copy", photos: [photo] };
+  const copyError = new Error("Source photo not found");
+  copyError.status = 404;
+  copyError.data = { code: "not_found", message: "Source photo not found" };
+  let uploadCalls = 0;
+
+  await uploadPhotoToPath({
+    path: "/bike-packing/lists/list-1/photos",
+    listId: "list-1",
+    entity,
+    photo,
+    apiFetch: async () => {
+      throw copyError;
+    },
+    apiUploadFormData: async () => {
+      uploadCalls += 1;
+      return {
+        photo: {
+          id: "photo-copy",
+          url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-copy/file",
+          thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-copy/thumb",
+          updatedAt: "2026-07-12T11:00:00.000Z"
+        }
+      };
+    },
+    getCachedPhoto: async (id) => id === "photo-copy" ? {
+      id,
+      blob: new Blob(["legacy-full"], { type: "image/jpeg" }),
+      thumbBlob: new Blob(["legacy-thumb"], { type: "image/jpeg" })
+    } : null,
+    persistStateSnapshot: () => {}
+  });
+
+  assert.equal(uploadCalls, 1);
+  assert.equal(photo.id, "photo-copy");
+  assert.equal(photo.localId, "photo-copy");
+  assert.equal(photo.status, "synced");
+  assert.equal(photo._copyToCurrentList, undefined);
+  assert.match(photo.url, /photo-copy\/file$/);
+  assert.match(photo.thumbUrl, /photo-copy\/thumb$/);
+});
+
+test("CRITICAL offline-photos: unapproved missing server photo is exposed instead of silently using cache", async () => {
+  const photo = {
+    id: "photo-copy",
+    localId: "",
+    status: "pending",
+    url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-legacy/file",
+    thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-legacy/thumb",
+    _copyToCurrentList: true
+  };
+  const entity = { id: "item-copy", photos: [photo] };
+  const copyError = new Error("Source photo not found");
+  copyError.status = 404;
+  copyError.data = { message: "Source photo not found" };
+  let uploadCalls = 0;
+
+  await uploadPhotoToPath({
+    path: "/bike-packing/lists/list-1/photos",
+    listId: "list-1",
+    entity,
+    photo,
+    apiFetch: async () => { throw copyError; },
+    apiUploadFormData: async () => { uploadCalls += 1; },
+    getCachedPhoto: async () => ({ blob: new Blob(["must-not-be-used"]) }),
+    persistStateSnapshot: () => {}
+  });
+
+  assert.equal(uploadCalls, 0);
+  assert.equal(photo.status, "missing-local-file");
+  assert.equal(photo.error, "Фото отсутствует на сервере.");
+  assert.equal(photo.url, "");
+  assert.equal(photo.thumbUrl, "");
+  assert.equal(photo._copyToCurrentList, undefined);
 });
 
 test("CRITICAL offline-photos: template-boundary remote photos remain queued for copy", async () => {
@@ -207,6 +329,28 @@ test("CRITICAL offline-photos: private duplicate keeps missing local-only marker
   assert.equal(copy.error, "local-photo-copy-missing");
 });
 
+test("CRITICAL offline-photos: local duplicate stores independent blob instances", async () => {
+  const calls = [];
+  const blob = { size: 10, type: "image/jpeg", slice: (...args) => ({ cloned: "full", args }) };
+  const thumbBlob = { size: 4, type: "image/webp", slice: (...args) => ({ cloned: "thumb", args }) };
+  let stored = null;
+  const [copy] = await copyRecordPhotosForLocalDuplicate({
+    photos: [{ id: "local-photo", localId: "local-photo", status: "pending" }]
+  }, {
+    changedAt: "2026-07-12T12:00:00.000Z",
+    getCachedPhotoForCopy: async () => ({ id: "local-photo", blob, thumbBlob }),
+    putCachedPhotoForCopy: async (record) => {
+      stored = record;
+      calls.push(record.id);
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(stored.blob.cloned, "full");
+  assert.equal(stored.thumbBlob.cloned, "thumb");
+  assert.equal(copy.localId, copy.id);
+  assert.equal(copy.status, "pending");
+});
+
 test("CRITICAL offline-photos: remote copy marker survives photo normalization", () => {
   const record = {
     photos: [{
@@ -221,6 +365,31 @@ test("CRITICAL offline-photos: remote copy marker survives photo normalization",
 
   assert.equal(record.photos[0]._copyToCurrentList, true);
   assert.equal(record.photos[0].status, "pending");
+});
+
+test("CRITICAL offline-photos: queued physical copy is not synced before its file exists", () => {
+  assert.equal(compactPhotoForSync({
+    id: "photo-copy",
+    status: "pending",
+    url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-source/file",
+    thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-source/thumb",
+    _copyToCurrentList: true
+  }), null);
+});
+
+test("CRITICAL offline-photos: copied server photo is accepted only when both assets exist", async () => {
+  const calls = [];
+  assert.equal(await verifyRemotePhotoAssets({
+    url: "https://api.example.test/photo/file",
+    thumbUrl: "https://api.example.test/photo/thumb"
+  }, {
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: !url.endsWith("/thumb") };
+    }
+  }), false);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.options.method === "HEAD"));
 });
 
 test("CRITICAL offline-photos: public catalog item photos are in the published upload scope", () => {
@@ -302,6 +471,27 @@ test("CRITICAL offline-photos: stale copied photo ids are not treated as remote 
   }, {
     baseUrl: "https://app.example.test/bike-packing/"
   }), true);
+});
+
+test("CRITICAL offline-photos: stale copied references are queued for physical repair", () => {
+  const photo = {
+    id: "photo-copy",
+    url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-original/file",
+    thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-original/thumb",
+    status: "synced"
+  };
+  const state = {
+    items: { "item-copy": { id: "item-copy", photos: [photo] } },
+    containers: {},
+    layouts: {}
+  };
+
+  const entries = getUploadablePhotoEntries(state, { listId: "list-1" });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].photo.id, "photo-copy");
+  assert.equal(entries[0].photo._copyToCurrentList, true);
+  assert.equal(entries[0].photo.status, "pending");
 });
 
 test("CRITICAL offline-photos: missing public photo references can be dropped from copied records", () => {
@@ -556,6 +746,20 @@ test("CRITICAL offline-photos: upload load event does not complete photo progres
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
   }
+});
+
+test("CRITICAL offline-photos: item copy audits online server loss but keeps offline cached copying available", () => {
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+  const copyBlock = controllers.slice(
+    controllers.indexOf("async function copyItem(itemId"),
+    controllers.indexOf("async function copyRootContainer")
+  );
+  assert.match(copyBlock, /const offlineCopy = isForcedOffline\(\) \|\| !runtime\.currentUser \|\| globalThis\.navigator\?\.onLine === false/);
+  assert.match(copyBlock, /normalizeItemPhotos\(item\).*localId \|\| photo\.id/s);
+  assert.match(copyBlock, /await inspectRecordRemotePhotoSources\(item\)/);
+  assert.match(copyBlock, /title: localText\("Photo is missing from the server", "Фото отсутствует на сервере"\)/);
+  assert.match(copyBlock, /okText: localText\("Copy anyway", "Всё равно копировать"\)/);
+  assert.match(copyBlock, /cachedFallbackSourceIds,/);
 });
 
 test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued pending state", () => {

@@ -38,15 +38,19 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     highlightCount = "",
     tone = "",
     hideClose = false,
+    hideCancel = false,
+    keepOpenOnOk = false,
     onOk = null,
     onCancel = null
   }) {
     const isDestructiveAction = isDestructiveConfirmAction(okText, tone);
     const closeBtn = refs.confirmCloseBtn || refs.confirmDialog.querySelector("header .icon-button");
     const previousCloseHidden = closeBtn?.hidden || false;
+    const previousCancelHidden = refs.confirmCancelBtn.hidden;
     refs.confirmTitle.textContent = title;
     refs.confirmText.innerHTML = confirmMessageHtml({ text, highlightText, highlightHtml, highlightCount, tone });
     refs.confirmCancelBtn.textContent = cancelText;
+    refs.confirmCancelBtn.hidden = Boolean(hideCancel);
     refs.confirmOkBtn.textContent = okText;
     if (closeBtn) closeBtn.hidden = Boolean(hideClose);
     if (refs.confirmAlternateBtn) {
@@ -59,6 +63,12 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
     setConfirmButtonOrder();
     refs.confirmDialog.returnValue = "";
     return new Promise((resolve) => {
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
       const cleanup = () => {
         refs.confirmDialog.removeEventListener("close", handleClose);
         refs.confirmCancelBtn.onclick = null;
@@ -73,13 +83,14 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
         refs.confirmOkBtn.classList.remove("danger-action");
         refs.confirmDialog.classList.remove("danger-confirm-dialog");
         if (closeBtn) closeBtn.hidden = previousCloseHidden;
+        refs.confirmCancelBtn.hidden = previousCancelHidden;
         setConfirmButtonOrder();
       };
       const handleClose = () => {
         const value = refs.confirmDialog.returnValue;
         const confirmed = value === "close" ? null : value === "alternate" ? "alternate" : value === "default";
         cleanup();
-        resolve(confirmed);
+        settle(confirmed);
       };
       const handleCloseButton = (event) => {
         event.preventDefault();
@@ -100,6 +111,11 @@ export function createConfirmDialogController({ refs, openModalDialog }) {
       refs.confirmOkBtn.onclick = (event) => {
         event.preventDefault();
         runAction(onOk);
+        if (keepOpenOnOk) {
+          refs.confirmOkBtn.disabled = true;
+          settle(true);
+          return;
+        }
         refs.confirmDialog.close("default");
       };
       if (refs.confirmAlternateBtn) {

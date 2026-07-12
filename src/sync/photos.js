@@ -252,6 +252,7 @@ export async function cacheRecordRemotePhotosForUploadFallback(record, { changed
 
 export async function copyRecordPhotosForLocalDuplicate(record, {
   changedAt = nowIso(),
+  cachedFallbackSourceIds = [],
   copyRemotePhotosToCurrentList = false,
   dropMissingLocalPhotos = false,
   getCachedPhotoForCopy = getCachedPhoto,
@@ -262,6 +263,7 @@ export async function copyRecordPhotosForLocalDuplicate(record, {
   for (const photo of photos) {
     const copy = await copyPhotoForLocalDuplicate(photo, {
       changedAt,
+      cachedFallbackSourceIds,
       copyRemotePhotosToCurrentList,
       dropMissingLocalPhotos,
       getCachedPhotoForCopy,
@@ -272,8 +274,14 @@ export async function copyRecordPhotosForLocalDuplicate(record, {
   return copies;
 }
 
+export function clonePhotoBlobForCache(blob) {
+  if (!blob || typeof blob.slice !== "function") return blob;
+  return blob.slice(0, Number(blob.size) || undefined, blob.type || "image/jpeg");
+}
+
 async function copyPhotoForLocalDuplicate(photo, {
   changedAt = nowIso(),
+  cachedFallbackSourceIds = [],
   copyRemotePhotosToCurrentList = false,
   dropMissingLocalPhotos = false,
   getCachedPhotoForCopy = getCachedPhoto,
@@ -283,6 +291,9 @@ async function copyPhotoForLocalDuplicate(photo, {
   normalizePhotoUrlFields(photo);
   const nextId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const sourceLocalId = String(photo.localId || photo.id || "").trim();
+  const allowCachedRemoteFallback = new Set((Array.isArray(cachedFallbackSourceIds) ? cachedFallbackSourceIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean)).has(sourceLocalId);
   const remote = hasRemotePhotoUrl(photo);
   const copy = {
     ...photo,
@@ -300,12 +311,44 @@ async function copyPhotoForLocalDuplicate(photo, {
     delete copy.copyToCurrentList;
     return copy;
   }
-  const cached = sourceLocalId ? await getCachedPhotoForCopy(sourceLocalId) : null;
+  let cached = null;
+  if (sourceLocalId && (!remote || allowCachedRemoteFallback)) {
+    try {
+      cached = await getCachedPhotoForCopy(sourceLocalId);
+    } catch {
+      cached = null;
+    }
+  }
+  if (remote && copyRemotePhotosToCurrentList) {
+    let cachedCopyStored = false;
+    if (cached?.blob) {
+      try {
+        await putCachedPhotoForCopy({
+          ...cached,
+          id: nextId,
+          blob: clonePhotoBlobForCache(cached.blob),
+          thumbBlob: clonePhotoBlobForCache(cached.thumbBlob),
+          createdAt: changedAt,
+          updatedAt: changedAt
+        });
+        cachedCopyStored = true;
+      } catch {
+        // The server copy remains the primary path; its fallback can still download the legacy URL.
+      }
+    }
+    copy.localId = cachedCopyStored ? nextId : "";
+    copy.status = "pending";
+    copy._copyToCurrentList = true;
+    delete copy.copyToCurrentList;
+    return copy;
+  }
   if (cached?.blob) {
     try {
       await putCachedPhotoForCopy({
         ...cached,
         id: nextId,
+        blob: clonePhotoBlobForCache(cached.blob),
+        thumbBlob: clonePhotoBlobForCache(cached.thumbBlob),
         createdAt: changedAt,
         updatedAt: changedAt
       });
@@ -321,20 +364,53 @@ async function copyPhotoForLocalDuplicate(photo, {
       // Fall through to remote copy when the original has already been synced.
     }
   }
-  if (remote) {
-    copy.localId = "";
-    copy.status = copyRemotePhotosToCurrentList ? "pending" : "synced";
-    if (copyRemotePhotosToCurrentList) copy._copyToCurrentList = true;
-    else delete copy._copyToCurrentList;
-    delete copy.copyToCurrentList;
-    return copy;
-  }
   if (sourceLocalId) {
     if (dropMissingLocalPhotos) return null;
     copy.status = "missing-local-file";
     copy.error = photo.error || "local-photo-copy-missing";
   }
   return copy;
+}
+
+export async function inspectRecordRemotePhotoSources(record, {
+  fetchImpl = globalThis.fetch,
+  getCachedPhotoForInspection = getCachedPhoto
+} = {}) {
+  const photos = Array.isArray(record?.photos)
+    ? record.photos.filter((photo) => photo && typeof photo === "object")
+    : [];
+  const missing = [];
+  if (typeof fetchImpl !== "function") return { missing };
+  for (const photo of photos) {
+    if (!hasRemotePhotoUrl(photo)) continue;
+    const urls = [...new Set([photo.url, photo.thumbUrl].filter(Boolean))];
+    let responses = [];
+    try {
+      responses = await Promise.all(urls.map((url) => fetchImpl(url, {
+        method: "HEAD",
+        credentials: "include",
+        cache: "no-store"
+      })));
+    } catch {
+      continue;
+    }
+    if (!responses.some((response) => Number(response?.status) === 404)) continue;
+    const sourceLocalId = String(photo.localId || photo.id || "").trim();
+    let cached = null;
+    try {
+      cached = sourceLocalId ? await getCachedPhotoForInspection(sourceLocalId) : null;
+    } catch {
+      cached = null;
+    }
+    missing.push({
+      photoId: String(photo.id || ""),
+      sourceLocalId,
+      cached: Boolean(cached?.blob),
+      statuses: responses.map((response) => Number(response?.status) || 0),
+      urls
+    });
+  }
+  return { missing };
 }
 
 export function isPhotoStoredForList(photo, listId) {

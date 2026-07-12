@@ -124,6 +124,7 @@ export function applyStaticTranslationsUi({
   if (itemCameraPick && refs.itemPhotoCameraInput) itemCameraPick.append(refs.itemPhotoCameraInput);
   setText(refs.itemPhotoRemoveBtn, t("buttons.removePhoto"));
   setText(refs.itemPhotoPrimaryBtn, t("buttons.primaryPhoto"));
+  setText(refs.itemPhotoOrderBtn, t("buttons.photoOrder"));
   setText(refs.copySharedItemDialogBtn, t("buttons.copy"));
 
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerName)"), t("forms.name"));
@@ -152,6 +153,8 @@ export function applyStaticTranslationsUi({
   if (rootCameraPick && refs.rootContainerPhotoCameraInput) rootCameraPick.append(refs.rootContainerPhotoCameraInput);
   setText(refs.rootContainerPhotoRemoveBtn, t("buttons.removePhoto"));
   setText(refs.rootContainerPhotoPrimaryBtn, t("buttons.primaryPhoto"));
+  setText(refs.rootContainerPhotoOrderBtn, t("buttons.photoOrder"));
+  documentRef.querySelectorAll(".photo-paste-hint").forEach((hint) => setText(hint, t("photo.pasteHint")));
 
   setText(refs.rootPlacementTitle, t("forms.inCurrentLayout"));
   setText(refs.rootPlacementDialog?.querySelector(".dialog-subtitle"), t("forms.choosePlace"));

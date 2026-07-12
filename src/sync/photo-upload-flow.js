@@ -75,7 +75,8 @@ export async function uploadPhotoToPath({
     listId,
     photo,
     uploadPath: path,
-    markEntityChanged: markChanged
+    markEntityChanged: markChanged,
+    fetchImpl
   });
   if (copiedOnServer === "missing-source") {
     const targetPhoto = resolvePhoto();
@@ -85,19 +86,23 @@ export async function uploadPhotoToPath({
       markChanged(changedAt);
       return true;
     }
-    const changedAt = nowIso();
-    applyPhotoPairState(targetPhoto, (candidate) => {
-      candidate.status = "missing-local-file";
-      candidate.error = "Файл фото не найден на сервере.";
-      candidate.updatedAt = changedAt;
-      delete candidate._copyToCurrentList;
-      delete candidate.copyToCurrentList;
-    });
-    clearPhotoPairProgress(targetPhoto);
-    markChanged(changedAt);
-    return true;
+    if (!targetPhoto?.localId) {
+      const changedAt = nowIso();
+      applyPhotoPairState(targetPhoto, (candidate) => {
+        candidate.status = "missing-local-file";
+        candidate.error = "Фото отсутствует на сервере.";
+        candidate.url = "";
+        candidate.thumbUrl = "";
+        candidate.updatedAt = changedAt;
+        delete candidate._copyToCurrentList;
+        delete candidate.copyToCurrentList;
+      });
+      clearPhotoPairProgress(targetPhoto);
+      markChanged(changedAt);
+      return true;
+    }
   }
-  if (copiedOnServer) return true;
+  if (copiedOnServer === true) return true;
 
   updatePhotoProgress(resolvePhoto(), 0);
   const uploadSource = await getPhotoUploadSource(photo, localId, {
@@ -286,7 +291,8 @@ export async function copyRemotePhotoToList({
   listId = "",
   photo = null,
   uploadPath = "",
-  markEntityChanged = () => {}
+  markEntityChanged = () => {},
+  fetchImpl = globalThis.fetch
 } = {}) {
   if (!listId || !entity?.id || !hasRemotePhotoUrl(photo) || typeof apiFetch !== "function") return false;
   const source = remotePhotoSourceFromRecord(photo);
@@ -307,6 +313,9 @@ export async function copyRemotePhotoToList({
       })
     });
     const serverPhoto = normalizeUploadedPhotoAssetUrls(data.photo || data, listId, copyPath, photo.id || source.sourcePhotoId);
+    if (!await verifyRemotePhotoAssets(serverPhoto, { fetchImpl })) {
+      throw new Error("Copied photo files are not available from the server");
+    }
     Object.assign(photo, {
       ...photo,
       ...serverPhoto,
@@ -333,6 +342,24 @@ export async function copyRemotePhotoToList({
         error
       });
     }
+    return false;
+  }
+}
+
+export async function verifyRemotePhotoAssets(photo, {
+  fetchImpl = globalThis.fetch
+} = {}) {
+  if (typeof fetchImpl !== "function") return false;
+  const urls = [...new Set([photo?.url, photo?.thumbUrl].filter(Boolean))];
+  if (!urls.length) return false;
+  try {
+    const responses = await Promise.all(urls.map((url) => fetchImpl(url, {
+      method: "HEAD",
+      credentials: "include",
+      cache: "no-store"
+    })));
+    return responses.every((response) => response?.ok);
+  } catch {
     return false;
   }
 }

@@ -230,6 +230,8 @@ import {
   sharedLayoutIdFromUrl,
   sharedListIdFromUrl
 } from "./src/public/shared-link-url.js";
+import { shouldPreserveLinkedSharedListOnLanguageChange } from "./src/public/shared-link-language.js";
+import { readSharedListPublishOptions, sharedListLinkResultHtml, sharedListPublishDialogHtml } from "./src/public/shared-list-publish.js";
 import {
   createSharedVirtualState as createSharedVirtualStateForPublic
 } from "./src/public/shared-virtual-state.js";
@@ -611,6 +613,7 @@ import {
   deleteCachedPhoto,
   getCachedPhoto,
   hasRemotePhotoUrl,
+  inspectRecordRemotePhotoSources,
   isPhotoUsableFromServer,
   isPhotoStoredForList,
   keepRemoteOnlyPhotoReference,
@@ -948,9 +951,12 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",
-  "listSaveNoopHistoryGuard"
+  "listSaveNoopHistoryGuard",
+  "sharedListSnapshots",
+  "sharedListOptionalAuthor",
+  "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-11.list-freshness-integrity-counts-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-12.shared-list-snapshots-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1379,7 +1385,7 @@ const appTailControllerDeps = {
   hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton, handlePackingTabTouchEnd,
   handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn, hasContainerDimensions,
   hasGeneratedPublicArtifacts, hasGuestDemoCopyLayoutRecord, hasLegacyPayloadChanges, hasLegacyPayloadChangesForSync, hasListFreshnessSignal,
-  hasLocalSavedState, hasLocalSyncChanges, hasPrivateSyncBlockedPublicOrigin, hasPublicOriginMarker, hasRemotePhotoUrl,
+  hasLocalSavedState, hasLocalSyncChanges, hasPrivateSyncBlockedPublicOrigin, hasPublicOriginMarker, hasRemotePhotoUrl, inspectRecordRemotePhotoSources,
   hasStateIntegrityMeta, hasStoredLocalValue, highlight, highlightSearchText, historyComparisonState,
   historyPayloadTitle, historyRecordKey, historyRecordState, historyRecordStateForSync, historyRecords,
   historySourceLabel, hydrateItemPhotos, hydrateLocalSharedTemplateCatalogFromState, importDemoStateAsEditableLayout, importDemoStateAsEditableLayoutValue,
@@ -1615,7 +1621,7 @@ const {
   deletePublishedTemplate, shouldDeletePublishedTemplateForLayout, deleteManagedPublicLayout, userEditableLayouts,
   canDeleteActiveLayout, deleteActiveLayout, handleRootContainerFormSubmit, handleItemFormSubmit,
   requestCloseItemDialog, requestCloseRootContainerDialog, getItemDialogSnapshot, getItemDialogPhotoSnapshot,
-  handleItemPhotoInputChange, removeItemDialogPhoto, setItemDialogPhotoPrimary, resetItemDialogPhotoDraft,
+  handleItemPhotoInputChange, removeItemDialogPhoto, setItemDialogPhotoPrimary, bindPhotoOrderDialogControls, bindPhotoClipboardControls, resetItemDialogPhotoDraft,
   cleanupUnsavedItemDialogPhotoDraft, updateItemDialogPhotoPreview, updateItemDialogPhotoPrimaryButton, setItemDialogPhotoStatus,
   revokeObjectUrls, getRootContainerDialogPhotoSnapshot, handleRootContainerPhotoInputChange, removeRootContainerDialogPhoto,
   confirmDialogPhotoDelete, uploadItemDialogDraftPhotos, uploadRootContainerDialogDraftPhotos, uploadDialogDraftPhotos,
@@ -2391,7 +2397,12 @@ async function setUiLanguage(language) {
     isReadOnlyStateScope() &&
     previousReadOnlyLayoutId &&
     previousReadOnlyLayoutId !== DEMO_SHARED_LAYOUT_ID;
-  const sharedLanguageTarget = wasSharedView
+  const preserveLinkedSharedList = wasSharedView && shouldPreserveLinkedSharedListOnLanguageChange({
+    isSharedListRoute: isSharedListLinkRoute(),
+    linkedLayoutId: linkedSharedListLayout?.id,
+    activeReadOnlyLayoutId: previousReadOnlyLayoutId
+  });
+  const sharedLanguageTarget = wasSharedView && !preserveLinkedSharedList
     ? findSharedLayoutForLanguage(sharedLayoutsByLanguage, previousReadOnlyLayoutId, nextLanguage, {
       sourceLanguage: previousLanguage,
       serverConfirmedSharedLayouts
@@ -2424,7 +2435,7 @@ async function setUiLanguage(language) {
     updateSyncUi();
     return;
   }
-  if (wasSharedView && !sharedLanguageTarget) {
+  if (wasSharedView && !preserveLinkedSharedList && !sharedLanguageTarget) {
     applyStaticTranslations();
     await openDemoLayoutFromSelect({ language: uiLanguage, remember: true });
     updateSyncUi();
@@ -2659,6 +2670,8 @@ async function init() {
   refs.rootContainerPhotoCameraInput?.addEventListener("change", handleRootContainerPhotoInputChange);
   refs.rootContainerPhotoRemoveBtn?.addEventListener("click", removeRootContainerDialogPhoto);
   refs.rootContainerPhotoPrimaryBtn?.addEventListener("click", setRootContainerDialogPhotoPrimary);
+  bindPhotoOrderDialogControls();
+  bindPhotoClipboardControls();
   refs.dialog.querySelector("form")?.addEventListener("input", updateItemDialogSaveState);
   refs.dialog.querySelector("form")?.addEventListener("change", updateItemDialogSaveState);
   refs.dialog.querySelector("form")?.addEventListener("submit", handleItemFormSubmit);
@@ -6123,6 +6136,18 @@ async function shareCurrentPackingListByLink() {
     return;
   }
   try {
+    const authorLabel = String(currentUser.displayName || currentUser.email || "").trim();
+    let publishOptions = { mode: "live", includeAuthor: false };
+    const confirmed = await askConfirmDialog({
+      title: uiLanguage === "en" ? "Create list link" : "Создать ссылку на список",
+      text: uiLanguage === "en" ? "Choose how the link should work." : "Выберите, как должна работать ссылка.",
+      highlightHtml: sharedListPublishDialogHtml({ authorLabel, language: uiLanguage }),
+      okText: uiLanguage === "en" ? "Create link" : "Создать ссылку",
+      hideCancel: true,
+      keepOpenOnOk: true,
+      onOk: () => { publishOptions = readSharedListPublishOptions(refs.confirmDialog); }
+    });
+    if (!confirmed) return;
     updateSyncUi("Готовлю список к публикации по ссылке...");
     await flushActivePublishedEditSave();
     const uploadedPhotos = await uploadPendingPhotos({ markDirty: true });
@@ -6140,18 +6165,40 @@ async function shareCurrentPackingListByLink() {
     body.title = currentPackingListMeta?.title || state.layouts?.[state.activeLayoutId]?.name || "Велоукладка";
     body.description = currentPackingListMeta?.description || "";
     body.title = state.layouts?.[state.activeLayoutId]?.name || currentPackingListMeta?.title || body.title || "Bikepacking layout";
-    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}`, {
-      method: "PUT",
-      timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-      body: JSON.stringify(body)
-    });
-    rememberCurrentPackingListRecord(data);
     const sharedLayoutId = state.activeLayoutId;
-    const link = buildSharedListUrl(listId, sharedLayoutId);
-    await copySharedListLink(link);
-    updateSyncUi("Ссылка на список создана и скопирована");
-    showToast("Ссылка на список скопирована.", "success");
+    const authorName = publishOptions.includeAuthor ? authorLabel : "";
+    let sharedListId = listId;
+    if (publishOptions.mode === "snapshot") {
+      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/snapshots`, {
+        method: "POST",
+        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+        body: JSON.stringify({ ...body, layoutId: sharedLayoutId, includeAuthor: publishOptions.includeAuthor, authorName })
+      });
+      sharedListId = data?.snapshot?.id || data?.list?.id || "";
+      if (!sharedListId) throw new Error("Snapshot id is missing");
+    } else {
+      body.authorName = authorName;
+      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}`, {
+        method: "PUT",
+        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+        body: JSON.stringify(body)
+      });
+      rememberCurrentPackingListRecord(data);
+    }
+    const link = buildSharedListUrl(sharedListId, sharedLayoutId);
+    refs.confirmTitle.textContent = uiLanguage === "en" ? "List link" : "Ссылка на список";
+    refs.confirmText.innerHTML = sharedListLinkResultHtml(link, { language: uiLanguage });
+    refs.confirmOkBtn.textContent = uiLanguage === "en" ? "Copy link" : "Скопировать ссылку";
+    refs.confirmOkBtn.disabled = false;
+    refs.confirmOkBtn.onclick = async (event) => {
+      event.preventDefault();
+      await copySharedListLink(link);
+      showToast(uiLanguage === "en" ? "Link copied." : "Ссылка скопирована.", "success");
+    };
+    refs.confirmText.querySelector("input")?.select();
+    updateSyncUi(uiLanguage === "en" ? "List link created" : "Ссылка на список создана");
   } catch (error) {
+    if (refs.confirmDialog.open) refs.confirmDialog.close("close");
     updateSyncUi(`Не удалось создать shared-ссылку: ${error.message}`);
     showToast(`Не удалось создать ссылку: ${error.message}`, "error");
   }

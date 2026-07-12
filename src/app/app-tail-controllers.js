@@ -12,6 +12,9 @@ import {
   LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
   setLayoutNotesCollapsed
 } from "../ui/layout-notes-collapse.js";
+import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
+import { moveOrderedPhoto, photoOrderIdentity, renderPhotoOrderRows } from "../ui/photo-order-dialog.js";
+import { clipboardImageFiles, shouldHandlePhotoPasteTarget } from "../ui/photo-clipboard.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -24,6 +27,8 @@ export function createAppTailControllers(ctx) {
   let layoutEditInitialSnapshot = null;
   let layoutOrderDraftSections = null;
   let layoutOrderInitialSignature = "";
+  let photoOrderContext = null;
+  let photoOrderInitialSignature = "";
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
     ADMIN_USER_IDS, API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -126,7 +131,7 @@ export function createAppTailControllers(ctx) {
     handlePackingTabTouchEnd, handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn,
     hasContainerDimensions, hasGeneratedPublicArtifacts, hasGuestDemoCopyLayoutRecord, hasLegacyPayloadChanges, hasLegacyPayloadChangesForSync,
     hasListFreshnessSignal, hasLocalSavedState, hasLocalSyncChanges, hasPrivateSyncBlockedPublicOrigin, hasPublicOriginMarker,
-    hasRemotePhotoUrl, hasStateIntegrityMeta, hasStoredLocalValue, highlight, highlightSearchText,
+    hasRemotePhotoUrl, inspectRecordRemotePhotoSources, hasStateIntegrityMeta, hasStoredLocalValue, highlight, highlightSearchText,
     historyComparisonState, historyPayloadTitle, historyRecordKey, historyRecordState, historyRecordStateForSync,
     historyRecords, historySourceLabel, hydrateItemPhotos, hydrateLocalSharedTemplateCatalogFromState, importDemoStateAsEditableLayout,
     importDemoStateAsEditableLayoutValue, importGuestLocalLayouts, importGuestLocalLayoutsToState, init, initialRemoteLoadPending,
@@ -2352,10 +2357,12 @@ function renderSharedModeBanner(layout = currentSharedLayout(), { compact = fals
       ? "Original demo template is read-only."
       : "\u0418\u0441\u0445\u043e\u0434\u043d\u044b\u0439 \u0434\u0435\u043c\u043e-\u0448\u0430\u0431\u043b\u043e\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.")
     : t("shared.viewerText");
+  const authorName = String(layout?.listRecord?.authorName || "").trim();
   return `
     <div class="shared-mode-banner ${compact ? "shared-mode-banner-compact" : ""}">
       <div class="shared-mode-banner-text">
         <strong>${escapeHtml(layout?.name || t("shared.layout"))}</strong>
+        ${authorName ? `<span>${escapeHtml(uiLanguage === "en" ? `Author: ${authorName}` : `Автор: ${authorName}`)}</span>` : ""}
         <span>${escapeHtml(viewerText)}</span>
       </div>
       ${showCopyButton ? `<button type="button" class="ghost" data-copy-shared-layout="${escapeHtml(layout?.id || "")}">${escapeHtml(buttonText)}</button>` : ""}
@@ -3540,6 +3547,7 @@ function renderSettings() {
   }
   const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
+    ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
     <div class="settings-grid">
       ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
       ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
@@ -3547,11 +3555,32 @@ function renderSettings() {
   `;
   bindDictionary("location", dictionaryOwner);
   bindDictionary("category", dictionaryOwner);
+  bindProfileSettingsControls();
+}
+
+function bindProfileSettingsControls() {
+  refs.settingsView.querySelector("#saveProfileDisplayName")?.addEventListener("click", async () => {
+    const button = refs.settingsView.querySelector("#saveProfileDisplayName");
+    const status = refs.settingsView.querySelector("#profileDisplayNameStatus");
+    button.disabled = true;
+    try {
+      const data = await apiFetch("/auth/me", profileDisplayNameRequest(refs.settingsView.querySelector("#profileDisplayName")?.value));
+      runtime.currentUser = data.user || runtime.currentUser;
+      status.textContent = localText("Name saved.", "Имя сохранено.");
+      status.className = "dialog-status success";
+    } catch (error) {
+      status.textContent = error.message;
+      status.className = "dialog-status error";
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 function renderSharedSettingsView() {
   withSharedVirtualState(() => {
     refs.settingsView.innerHTML = `
+      ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
       ${renderSharedModeBanner(currentSharedLayout(), { compact: true })}
       <div class="settings-grid">
         ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForUi("location"))}
@@ -3559,6 +3588,7 @@ function renderSharedSettingsView() {
       </div>
     `;
   });
+  bindProfileSettingsControls();
   bindSharedVirtualEvents(refs.settingsView);
 }
 
@@ -4059,7 +4089,42 @@ async function copyItem(itemId, options = {}) {
   if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
   if (keepPlacement && warnLockedLayoutMutation(state.activeLayoutId)) return;
-  if (options.confirm !== false) {
+  const offlineCopy = isForcedOffline() || !runtime.currentUser || globalThis.navigator?.onLine === false;
+  let cachedFallbackSourceIds = offlineCopy
+    ? normalizeItemPhotos(item).map((photo) => String(photo.localId || photo.id || "").trim()).filter(Boolean)
+    : [];
+  let missingRemotePhotos = [];
+  if (!offlineCopy) {
+    const inspection = await inspectRecordRemotePhotoSources(item);
+    missingRemotePhotos = inspection.missing || [];
+    cachedFallbackSourceIds = missingRemotePhotos
+      .filter((entry) => entry.cached)
+      .map((entry) => entry.sourceLocalId)
+      .filter(Boolean);
+  }
+  if (missingRemotePhotos.length) {
+    const recoverableCount = cachedFallbackSourceIds.length;
+    const confirmed = await askConfirmDialog({
+      title: localText("Photo is missing from the server", "Фото отсутствует на сервере"),
+      text: recoverableCount === missingRemotePhotos.length
+        ? localText(
+          "The server could not find this item's photo. A local copy remains in this browser. Use it to create an independent photo for the new item?",
+          "Сервер не нашёл фото этой вещи. В браузере сохранилась локальная копия. Использовать её для создания независимого фото у новой вещи?"
+        )
+        : recoverableCount
+          ? localText(
+            `The server could not find ${missingRemotePhotos.length} photos. ${recoverableCount} are available locally; the others will not be copied.`,
+            `Сервер не нашёл ${missingRemotePhotos.length} фото. Локально доступны ${recoverableCount}; остальные фото не будут скопированы.`
+          )
+          : localText(
+            "The server could not find this item's photo, and no local copy is available. The new item will be created without an available photo.",
+            "Сервер не нашёл фото этой вещи, и локальной копии нет. Новая вещь будет создана без доступного фото."
+          ),
+      okText: localText("Copy anyway", "Всё равно копировать"),
+      tone: "warning"
+    });
+    if (!confirmed) return;
+  } else if (options.confirm !== false) {
     const confirmed = await askConfirmDialog(itemCopyConfirm({ item, keepPlacement, t }));
     if (!confirmed) return;
   }
@@ -4069,7 +4134,11 @@ async function copyItem(itemId, options = {}) {
     activeLayoutId: state.activeLayoutId,
     changedAt,
     copyName: makeItemCopyName,
-    copyPhotos: copyRecordPhotosForLocalDuplicate,
+    copyPhotos: (record, copyOptions) => copyRecordPhotosForLocalDuplicate(record, {
+      ...copyOptions,
+      cachedFallbackSourceIds,
+      copyRemotePhotosToCurrentList: true
+    }),
     currentEditMeta,
     id,
     keepPlacement,
@@ -4077,6 +4146,18 @@ async function copyItem(itemId, options = {}) {
     touchLayout
   });
   if (!copied) return;
+  if (runtime.currentUser && !isForcedOffline()) {
+    try {
+      const copiedItem = state.items[copied.id];
+      const targetListId = await ensureCurrentPackingListId();
+      for (const photo of normalizeItemPhotos(copiedItem)) {
+        if (!photo._copyToCurrentList && !photo.copyToCurrentList) continue;
+        await uploadEntityPhoto(targetListId, copiedItem, photo, "item");
+      }
+    } catch {
+      // The copy marker remains local and the normal sync retry will finish it later.
+    }
+  }
   if (copied.placed) applyLayoutArrangement(state.activeLayoutId);
   saveState();
   scheduleActivePublishedEditSave();
@@ -4103,7 +4184,10 @@ async function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) 
     addToLayoutId,
     changedAt,
     copyName: makeContainerCopyName,
-    copyPhotos: copyRecordPhotosForLocalDuplicate,
+    copyPhotos: (record, copyOptions) => copyRecordPhotosForLocalDuplicate(record, {
+      ...copyOptions,
+      copyRemotePhotosToCurrentList: true
+    }),
     currentEditMeta,
     id: copyId,
     markRecordActivePublicCatalog,
@@ -5833,6 +5917,185 @@ function setItemDialogPhotoPrimary(event) {
   if (result.changed) updateItemDialogSaveState();
 }
 
+function bindPhotoOrderDialogControls() {
+  refs.itemPhotoOrderBtn?.addEventListener("click", () => openPhotoOrderDialog("item"));
+  refs.rootContainerPhotoOrderBtn?.addEventListener("click", () => openPhotoOrderDialog("container"));
+  refs.photoOrderApplyBtn?.addEventListener("click", applyPhotoOrderDialog);
+  refs.photoOrderDialog?.querySelector("form")?.addEventListener("submit", handlePhotoOrderFormSubmit);
+  refs.photoOrderDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    requestClosePhotoOrderDialog();
+  });
+  refs.photoOrderDialog?.addEventListener("close", () => {
+    photoOrderContext = null;
+    photoOrderInitialSignature = "";
+  });
+  refs.photoOrderList?.addEventListener("click", handlePhotoOrderListClick);
+  bindLayoutOrderPointerDrag({
+    list: refs.photoOrderList,
+    getSections: currentPhotoOrderSections,
+    applySections: applyPhotoOrderSections,
+    moveBeforeInSections: moveLayoutBeforeInSections,
+    moveWithinSections: moveLayoutWithinSections,
+    getTouchPoint,
+    isHoldDragInput,
+    markDragPending,
+    clearDragPending,
+    preventDragContextMenu,
+    pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
+    touchDragCancelDistance: TOUCH_DRAG_CANCEL_DISTANCE,
+    touchDragDelayMs: TOUCH_DRAG_DELAY_MS,
+    touchScrollCancelDistance: TOUCH_SCROLL_CANCEL_DISTANCE,
+    vibrateDragStart
+  });
+}
+
+function bindPhotoClipboardControls() {
+  refs.dialog?.addEventListener("paste", (event) => handleDialogPhotoPaste(event, "item"));
+  refs.rootContainerDialog?.addEventListener("paste", (event) => handleDialogPhotoPaste(event, "container"));
+}
+
+function handleDialogPhotoPaste(event, kind = "item") {
+  if (!shouldHandlePhotoPasteTarget(event.target)) return;
+  const files = clipboardImageFiles(event.clipboardData);
+  if (!files.length) return;
+  event.preventDefault();
+  if (kind === "container") handleRootContainerPhotoInputChange({ target: { files } });
+  else handleItemPhotoInputChange({ target: { files } });
+}
+
+function openPhotoOrderDialog(kind = "item") {
+  const itemMode = kind === "item";
+  const source = itemMode
+    ? (runtime.editingItemId ? state.items?.[runtime.editingItemId] : { photos: [] })
+    : (runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : { photos: [] });
+  const draft = itemMode
+    ? (runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source))
+    : (runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source));
+  if (draft.photos.length < 2) return;
+  const activeIndex = itemMode ? runtime.itemDialogPhotoActiveIndex : runtime.rootContainerDialogPhotoActiveIndex;
+  const previewRoot = itemMode ? refs.itemPhotoPreview : refs.rootContainerPhotoPreview;
+  const previewSources = new Map();
+  [...(previewRoot?.querySelectorAll(".photo-gallery-slide img") || [])].forEach((image, index) => {
+    const id = photoOrderIdentity(draft.photos[index]);
+    const src = image.currentSrc || image.src || "";
+    if (id && src) previewSources.set(id, src);
+  });
+  photoOrderContext = { kind, photos: [...draft.photos], activeId: photoOrderIdentity(draft.photos[activeIndex]), previewSources };
+  photoOrderInitialSignature = photoOrderSignature(photoOrderContext.photos);
+  refs.photoOrderTitle.textContent = isEnglishUi() ? "Photo order" : "Порядок фото";
+  refs.photoOrderHint.textContent = isEnglishUi()
+    ? "Drag by the handle or use the arrow buttons. The primary photo stays first."
+    : "Перетаскивайте за ручку или используйте стрелки. Главное фото остаётся первым.";
+  renderPhotoOrderDialog();
+  openModalDialog(refs.photoOrderDialog);
+}
+
+function renderPhotoOrderDialog() {
+  if (!photoOrderContext) return;
+  refs.photoOrderList.innerHTML = renderPhotoOrderRows(photoOrderContext.photos, {
+    language: uiLanguage,
+    previewSources: photoOrderContext.previewSources
+  });
+  updatePhotoOrderSaveState();
+}
+
+function photoOrderSignature(photos = []) {
+  return photos.map(photoOrderIdentity).join("|");
+}
+
+function updatePhotoOrderSaveState() {
+  if (!refs.photoOrderApplyBtn) return;
+  const changed = Boolean(photoOrderContext) && photoOrderSignature(photoOrderContext.photos) !== photoOrderInitialSignature;
+  updateModalSaveButton(refs.photoOrderApplyBtn, { hasName: true, changed });
+}
+
+function hasSavablePhotoOrderChanges() {
+  updatePhotoOrderSaveState();
+  return Boolean(refs.photoOrderDialog?.open && refs.photoOrderApplyBtn && !refs.photoOrderApplyBtn.disabled);
+}
+
+function handlePhotoOrderFormSubmit(event) {
+  event.preventDefault();
+  if (event.submitter === refs.photoOrderApplyBtn) {
+    applyPhotoOrderDialog(event);
+    return;
+  }
+  if (event.submitter?.value === "cancel") requestClosePhotoOrderDialog();
+}
+
+async function requestClosePhotoOrderDialog() {
+  if (!hasSavablePhotoOrderChanges()) {
+    refs.photoOrderDialog.close("cancel");
+    return;
+  }
+  const action = await askUnsavedChangesDialog();
+  if (action === "save") {
+    applyPhotoOrderDialog();
+    return;
+  }
+  if (action === "discard") refs.photoOrderDialog.close("cancel");
+}
+
+function movePhotoOrder(fromIndex, toIndex) {
+  if (!photoOrderContext) return false;
+  const result = moveOrderedPhoto(photoOrderContext.photos, fromIndex, toIndex, { preservePrimary: true });
+  photoOrderContext.photos = result.photos;
+  if (result.changed) renderPhotoOrderDialog();
+  return result.changed;
+}
+
+function currentPhotoOrderSections() {
+  return [{
+    id: "photos",
+    layouts: (photoOrderContext?.photos || []).slice(1).map((photo) => ({ id: photoOrderIdentity(photo) }))
+  }];
+}
+
+function applyPhotoOrderSections(sections = []) {
+  if (!photoOrderContext) return false;
+  const primary = photoOrderContext.photos[0];
+  const byId = new Map(photoOrderContext.photos.slice(1).map((photo) => [photoOrderIdentity(photo), photo]));
+  const ordered = (sections[0]?.layouts || []).map((entry) => byId.get(entry.id)).filter(Boolean);
+  if (ordered.length !== byId.size) return false;
+  photoOrderContext.photos = [primary, ...ordered];
+  renderPhotoOrderDialog();
+  return true;
+}
+
+function handlePhotoOrderListClick(event) {
+  const up = event.target.closest("[data-photo-order-up]");
+  const down = event.target.closest("[data-photo-order-down]");
+  if (up) movePhotoOrder(Number(up.dataset.photoOrderUp), Number(up.dataset.photoOrderUp) - 1);
+  if (down) movePhotoOrder(Number(down.dataset.photoOrderDown), Number(down.dataset.photoOrderDown) + 1);
+}
+
+function applyPhotoOrderDialog(event) {
+  event?.preventDefault();
+  if (!photoOrderContext) return;
+  const itemMode = photoOrderContext.kind === "item";
+  const source = itemMode
+    ? (runtime.editingItemId ? state.items?.[runtime.editingItemId] : { photos: [] })
+    : (runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : { photos: [] });
+  const draft = itemMode
+    ? (runtime.itemDialogPhotoDraft || createPhotoDraftFromRecord(source))
+    : (runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source));
+  draft.photos = [...photoOrderContext.photos];
+  const activeIndex = Math.max(0, draft.photos.findIndex((photo) => photoOrderIdentity(photo) === photoOrderContext.activeId));
+  if (itemMode) {
+    runtime.itemDialogPhotoDraft = draft;
+    runtime.itemDialogPhotoActiveIndex = activeIndex;
+    updateItemDialogPhotoPreview(draft.photos);
+    updateItemDialogSaveState();
+  } else {
+    runtime.rootContainerDialogPhotoDraft = draft;
+    runtime.rootContainerDialogPhotoActiveIndex = activeIndex;
+    updateRootContainerDialogPhotoPreview(draft.photos);
+    updateRootContainerDialogSaveState();
+  }
+  refs.photoOrderDialog.close("default");
+}
+
 function resetItemDialogPhotoDraft() {
   cleanupUnsavedItemDialogPhotoDraft();
   runtime.itemDialogPhotoDraft = null;
@@ -5869,6 +6132,7 @@ async function updateItemDialogPhotoPreview(photos) {
     refs.itemPhotoPreview.classList.add("empty");
     refs.itemPhotoRemoveBtn.hidden = true;
     if (refs.itemPhotoPrimaryBtn) refs.itemPhotoPrimaryBtn.hidden = true;
+    if (refs.itemPhotoOrderBtn) refs.itemPhotoOrderBtn.hidden = true;
     setItemDialogPhotoStatus("");
     return;
   }
@@ -5888,6 +6152,7 @@ async function updateItemDialogPhotoPreview(photos) {
   refs.itemPhotoPreview.classList.toggle("empty", !rendered);
   refs.itemPhotoRemoveBtn.hidden = false;
   updateItemDialogPhotoPrimaryButton(list.length);
+  if (refs.itemPhotoOrderBtn) refs.itemPhotoOrderBtn.hidden = list.length < 2 || Boolean(runtime.sharedDialogCopyItemId);
   bindPhotoGalleries(refs.itemPhotoPreview, photoGalleryBindingOptions());
   setItemDialogPhotoStatus(photoDialogStatusText(list));
 }
@@ -6170,6 +6435,7 @@ async function updateRootContainerDialogPhotoPreview(photos) {
     refs.rootContainerPhotoPreview.classList.add("empty");
     refs.rootContainerPhotoRemoveBtn.hidden = true;
     if (refs.rootContainerPhotoPrimaryBtn) refs.rootContainerPhotoPrimaryBtn.hidden = true;
+    if (refs.rootContainerPhotoOrderBtn) refs.rootContainerPhotoOrderBtn.hidden = true;
     setRootContainerDialogPhotoStatus("");
     return;
   }
@@ -6189,6 +6455,7 @@ async function updateRootContainerDialogPhotoPreview(photos) {
   refs.rootContainerPhotoPreview.classList.toggle("empty", !rendered);
   refs.rootContainerPhotoRemoveBtn.hidden = false;
   updateRootContainerDialogPhotoPrimaryButton(list.length);
+  if (refs.rootContainerPhotoOrderBtn) refs.rootContainerPhotoOrderBtn.hidden = list.length < 2;
   bindPhotoGalleries(refs.rootContainerPhotoPreview, photoGalleryBindingOptions());
   setRootContainerDialogPhotoStatus(photoDialogStatusText(list));
 }
@@ -6991,7 +7258,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     deletePublishedTemplate, shouldDeletePublishedTemplateForLayout, deleteManagedPublicLayout, userEditableLayouts,
     canDeleteActiveLayout, deleteActiveLayout, handleRootContainerFormSubmit, handleItemFormSubmit,
     requestCloseItemDialog, requestCloseRootContainerDialog, getItemDialogSnapshot, getItemDialogPhotoSnapshot,
-    handleItemPhotoInputChange, removeItemDialogPhoto, setItemDialogPhotoPrimary, resetItemDialogPhotoDraft,
+    handleItemPhotoInputChange, removeItemDialogPhoto, setItemDialogPhotoPrimary, bindPhotoOrderDialogControls, bindPhotoClipboardControls, resetItemDialogPhotoDraft,
     cleanupUnsavedItemDialogPhotoDraft, updateItemDialogPhotoPreview, updateItemDialogPhotoPrimaryButton, setItemDialogPhotoStatus,
     revokeObjectUrls, getRootContainerDialogPhotoSnapshot, handleRootContainerPhotoInputChange, removeRootContainerDialogPhoto,
     confirmDialogPhotoDelete, uploadItemDialogDraftPhotos, uploadRootContainerDialogDraftPhotos, uploadDialogDraftPhotos,

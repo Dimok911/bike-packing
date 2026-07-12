@@ -30,12 +30,12 @@ export function photoDuplicateOptionsForLayoutCopy({
   targetIsPublic = false,
   sourceIsPublicCopy = false
 } = {}) {
-  const copyRemotePhotosToCurrentList = shouldCopyPhotosToCurrentListForLayoutCopy({
+  const crossesPublicNamespaceBoundary = shouldCopyPhotosToCurrentListForLayoutCopy({
     targetIsPublic,
     sourceIsPublicCopy
   });
   return {
-    copyRemotePhotosToCurrentList,
-    dropMissingLocalPhotos: copyRemotePhotosToCurrentList
+    copyRemotePhotosToCurrentList: true,
+    dropMissingLocalPhotos: crossesPublicNamespaceBoundary
   };
 }

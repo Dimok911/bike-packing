@@ -32,6 +32,8 @@ import {
 import {
   saveItemDialogAction
 } from "../../src/ui/item-dialog-save.js";
+import { shouldPreserveLinkedSharedListOnLanguageChange } from "../../src/public/shared-link-language.js";
+import { readSharedListPublishOptions } from "../../src/public/shared-list-publish.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const privateIds = new Set(["layout-a", "layout-b", "layout-c"]);
@@ -42,6 +44,37 @@ const isPrivateUserLayoutId = (choice) => privateIds.has(choice);
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
 }
+
+test("CRITICAL shared-link: language switch preserves the linked list layout", () => {
+  assert.equal(
+    shouldPreserveLinkedSharedListOnLanguageChange({
+      isSharedListRoute: true,
+      linkedLayoutId: "linked-list-list-1-layout-2",
+      activeReadOnlyLayoutId: "linked-list-list-1-layout-2"
+    }),
+    true
+  );
+  assert.equal(
+    shouldPreserveLinkedSharedListOnLanguageChange({
+      isSharedListRoute: false,
+      linkedLayoutId: "shared-template-ru",
+      activeReadOnlyLayoutId: "shared-template-ru"
+    }),
+    false
+  );
+});
+
+test("CRITICAL shared-link: publish options distinguish live links and immutable snapshots", () => {
+  const root = {
+    querySelector(selector) {
+      if (selector.includes(":checked")) return { value: "snapshot" };
+      if (selector === "[data-share-author]") return { checked: true };
+      return null;
+    }
+  };
+  assert.deepEqual(readSharedListPublishOptions(root), { mode: "snapshot", includeAuthor: true });
+  assert.deepEqual(readSharedListPublishOptions(null), { mode: "live", includeAuthor: false });
+});
 
 test("CRITICAL sync-save: stored private layout choice wins over server active layout", () => {
   assert.equal(

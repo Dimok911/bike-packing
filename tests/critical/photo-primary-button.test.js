@@ -4,6 +4,41 @@ import {
   photoPrimaryButtonState,
   resolvePhotoPrimaryButtonPhotoCount
 } from "../../src/ui/photo-primary-button.js";
+import { moveOrderedPhoto } from "../../src/ui/photo-order-dialog.js";
+import { clipboardImageFiles, shouldHandlePhotoPasteTarget } from "../../src/ui/photo-clipboard.js";
+
+test("CRITICAL photos: clipboard paste accepts images without hijacking text fields", () => {
+  const image = { name: "paste.png", type: "image/png", size: 12, lastModified: 1 };
+  const text = { name: "note.txt", type: "text/plain", size: 5, lastModified: 1 };
+  assert.deepEqual(clipboardImageFiles({
+    items: [
+      { kind: "file", type: "image/png", getAsFile: () => image },
+      { kind: "file", type: "text/plain", getAsFile: () => text }
+    ],
+    files: [image]
+  }), [image]);
+  assert.equal(shouldHandlePhotoPasteTarget({ closest: () => ({}) }), false);
+  assert.equal(shouldHandlePhotoPasteTarget({ closest: () => null }), true);
+});
+
+test("CRITICAL photos: clipboard file list wins over duplicate item representation", () => {
+  const file = { name: "clipboard.png", type: "image/png", size: 12, lastModified: 1 };
+  const itemCopy = { name: "image.png", type: "image/png", size: 12, lastModified: 0 };
+  assert.deepEqual(clipboardImageFiles({
+    files: [file],
+    items: [{ kind: "file", type: "image/png", getAsFile: () => itemCopy }]
+  }), [file]);
+});
+
+test("CRITICAL photos: ordering moves secondary photos without changing the primary photo", () => {
+  const photos = [{ id: "primary" }, { id: "second" }, { id: "third" }];
+  const moved = moveOrderedPhoto(photos, 2, 1);
+  assert.deepEqual(moved.photos.map((photo) => photo.id), ["primary", "third", "second"]);
+  assert.equal(moved.changed, true);
+  const blocked = moveOrderedPhoto(photos, 1, 0);
+  assert.deepEqual(blocked.photos.map((photo) => photo.id), ["primary", "second", "third"]);
+  assert.equal(blocked.changed, false);
+});
 
 test("CRITICAL photos: primary button is hidden only when there are fewer than two photos", () => {
   assert.equal(photoPrimaryButtonState({ photoCount: 0 }).hidden, true);

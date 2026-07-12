@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1176" />
+    <link rel="stylesheet" href="./styles.css?v=1191" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -218,7 +218,9 @@
             </label>
             <button id="itemPhotoRemoveBtn" class="ghost" type="button" hidden>Remove photo</button>
             <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
+            <button id="itemPhotoOrderBtn" class="ghost" type="button" hidden>Photo order</button>
           </div>
+          <button class="photo-paste-hint" type="button">Нажмите сюда, затем вставьте изображение (Ctrl+V)</button>
           <small id="itemPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
@@ -303,7 +305,9 @@
             </label>
             <button id="rootContainerPhotoRemoveBtn" class="ghost" type="button" hidden>Remove photo</button>
             <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
+            <button id="rootContainerPhotoOrderBtn" class="ghost" type="button" hidden>Photo order</button>
           </div>
+          <button class="photo-paste-hint" type="button">Нажмите сюда, затем вставьте изображение (Ctrl+V)</button>
           <small id="rootContainerPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
@@ -434,7 +438,6 @@
         <div id="layoutOrderList" class="layout-order-list"></div>
         <footer>
           <button id="saveLayoutOrderBtn" value="default" type="submit">Save</button>
-          <button value="cancel" class="ghost" type="submit">Закрыть</button>
         </footer>
       </form>
     </dialog>
@@ -478,6 +481,20 @@
         </label>
         <footer>
           <button id="saveLayoutBtn" value="default">Добавить</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="photoOrderDialog">
+      <form method="dialog" class="dialog-card photo-order-dialog-card">
+        <header>
+          <h2 id="photoOrderTitle">Порядок фото</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="photoOrderHint" class="dialog-note"></p>
+        <div id="photoOrderList" class="photo-order-list"></div>
+        <footer>
+          <button id="photoOrderApplyBtn" value="default" type="button">Готово</button>
         </footer>
       </form>
     </dialog>
@@ -652,6 +669,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1176" type="module"></script>
+    <script src="./app.js?v=1191" type="module"></script>
   </body>
 </html>

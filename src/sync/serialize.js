@@ -90,6 +90,7 @@ export function prunePhotoPayloadForSync(cloned) {
 export function compactPhotoForSync(photo) {
   if (!photo || typeof photo !== "object") return null;
   normalizePhotoUrlFields(photo);
+  if (photo._copyToCurrentList || photo.copyToCurrentList) return null;
   const id = String(photo.id || photo.photoId || "").trim();
   if (!id) return null;
   const url = normalizeRemotePhotoUrl(photo.url);
