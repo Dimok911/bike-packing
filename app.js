@@ -621,7 +621,10 @@ import {
   historyRecordScopeText,
   historyRecordState as historyRecordStateForSync,
   historyRecordTitle,
+  historySummaryRequestPath,
+  normalizeHistorySummaryPage,
   restorableHistoryRecords,
+  restorableHistorySummaryRecords,
   sortHistoryRecords,
   summarizeHistoryPayload
 } from "./src/sync/history.js";
@@ -994,6 +997,8 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "historyActionJournal",
   "historyMeaningfulActions",
   "historyTechnicalMetadataGuard",
+  "historySummaryPagination",
+  "historySnapshotDetail",
   "historyDailyCheckpoints",
   "historyLayoutScopedRestore",
   "historyPhotoTrashRetention",
@@ -1001,7 +1006,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "sharedListOptionalAuthor",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-16.history-action-journal-v3";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-17.history-summary-pagination-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1100,6 +1105,9 @@ let layoutEntitySyncUnavailable = false;
 let dictionaryEntitySyncUnavailable = false;
 let historyRecords = [];
 let historyComparisonState = null;
+let historyPageState = null;
+let historyLoadMoreInFlight = false;
+const historyDetailCache = new Map();
 let activeHistorySource = "private";
 let selectedHistoryDetailRecordKey = "";
 let adminReportsDialogController = null;
@@ -2823,6 +2831,8 @@ async function init() {
     if (!button) return;
     activeHistorySource = button.dataset.historySource || "private";
     historyComparisonState = null;
+    historyPageState = null;
+    historyDetailCache.clear();
     selectedHistoryDetailRecordKey = "";
     refs.historyDetailDialog?.close();
     refreshHistoryDialog();
@@ -2831,12 +2841,16 @@ async function init() {
     const target = selectedHistoryDemoTarget();
     if (target?.demoListId) activeDemoTemplateListId = target.demoListId;
     historyComparisonState = null;
+    historyPageState = null;
+    historyDetailCache.clear();
     selectedHistoryDetailRecordKey = "";
     refs.historyDetailDialog?.close();
     refreshHistoryDialog();
   });
   refs.historySharedSelect?.addEventListener("change", () => {
     historyComparisonState = null;
+    historyPageState = null;
+    historyDetailCache.clear();
     selectedHistoryDetailRecordKey = "";
     refs.historyDetailDialog?.close();
     refreshHistoryDialog();
@@ -2846,6 +2860,10 @@ async function init() {
   });
   bindLongPressTooltips({ root: refs.historyList });
   bindLongPressTooltips({ root: refs.historyDetailDialog });
+  refs.historyList?.addEventListener("scroll", () => {
+    const remaining = refs.historyList.scrollHeight - refs.historyList.scrollTop - refs.historyList.clientHeight;
+    if (remaining < 160) loadMoreHistoryRecords();
+  }, { passive: true });
   document.addEventListener("click", (event) => {
     resetCatalogSelectionOnPlainClick(event);
     if (event.target.closest(".top-menu-wrap")) return;
@@ -5905,6 +5923,7 @@ async function runSyncNow(options = {}) {
       canOpenAdminPublishedEdit,
       checkAdminApiCompatibility,
       checkAuthAndLoad,
+      checkRemoteStateFreshness,
       clearStaleDirtyFlagIfNoLocalChanges,
       currentPublicTemplateStatusMessage,
       flushActivePublishedEditSave,
@@ -8708,6 +8727,8 @@ async function openHistoryDialog() {
   }
   if (!canOpenAdminPublishedEdit()) activeHistorySource = "private";
   historyComparisonState = null;
+  historyPageState = null;
+  historyDetailCache.clear();
   selectedHistoryDetailRecordKey = "";
   renderHistorySourceControls();
   openModalDialog(refs.historyDialog);
@@ -8803,16 +8824,11 @@ async function refreshHistoryDialog() {
   refs.historyList.innerHTML = "";
   try {
     const source = activeHistorySource;
-    const [records, comparisonState] = await Promise.all([
-      loadRemoteHistory(source),
-      loadCurrentHistoryComparisonState(source).catch(() => null)
-    ]);
+    const result = await loadRemoteHistory(source);
     if (source !== activeHistorySource) return;
-    historyRecords = restorableHistoryRecords(records, comparisonState, {
-      recordState: (record) => historyRecordState(record, source),
-      statesDiffer: hasHistoryStateChanges
-    });
-    historyComparisonState = comparisonState;
+    historyRecords = restorableHistorySummaryRecords(result.records);
+    historyPageState = result.pageState;
+    historyComparisonState = null;
     renderHistoryRecords(historyRecords);
   } catch (error) {
     refs.historyStatus.className = "dialog-status error";
@@ -8835,7 +8851,15 @@ async function loadCurrentHistoryComparisonState(source = activeHistorySource) {
   return normalizeRemoteState(serializeState({ forSync: true }));
 }
 
-async function loadRemoteHistory(source = "private") {
+function historyPageHasMore(pageState = historyPageState) {
+  if (!pageState) return false;
+  if (pageState.type === "private") {
+    return pageState.targets.some((target) => target.hasMore);
+  }
+  return Boolean(pageState.hasMore);
+}
+
+async function loadRemoteHistory(source = "private", pageState = null) {
   let path = "";
   if (source === "demo") {
     const target = selectedHistoryDemoTarget();
@@ -8849,19 +8873,71 @@ async function loadRemoteHistory(source = "private") {
     if (!sharedId) throw new Error("Нет shared-укладок для истории.");
     path = `/bike-packing/admin/shared-layouts/${encodeURIComponent(sharedId)}/history`;
   } else {
-    return loadPrivateRemoteHistory();
+    return loadPrivateRemoteHistory(pageState);
 
   }
-  const data = await apiFetch(path);
-  const records = Array.isArray(data.records)
-    ? data.records
-    : Array.isArray(data.history)
-      ? data.history
-      : [];
-  return sortHistoryRecords(records);
+  const cursor = pageState?.type === "single" ? pageState.cursor : "";
+  const data = await apiFetch(historySummaryRequestPath(path, { cursor, limit: 25 }));
+  const page = normalizeHistorySummaryPage(data);
+  return {
+    records: page.records.map((record) => ({
+      ...record,
+      historyPath: path,
+      source: record.source || "bike_packing_list_history"
+    })),
+    pageState: {
+      type: "single",
+      path,
+      cursor: page.nextCursor,
+      hasMore: page.hasMore
+    }
+  };
 }
 
-async function loadPrivateRemoteHistory() {
+async function loadPrivateRemoteHistory(pageState = null) {
+  if (pageState?.type === "private") {
+    const pendingTargets = pageState.targets.filter((target) => target.hasMore);
+    const results = await Promise.allSettled(pendingTargets.map(async (target) => {
+      const data = await apiFetch(historySummaryRequestPath(target.path, {
+        cursor: target.cursor,
+        limit: 25
+      }), { timeoutMs: LIST_API_TIMEOUT_MS });
+      return { target, page: normalizeHistorySummaryPage(data) };
+    }));
+    const updates = new Map();
+    const records = [];
+    results.forEach((result) => {
+      if (result.status !== "fulfilled") return;
+      const { target, page } = result.value;
+      updates.set(target.listId, {
+        ...target,
+        cursor: page.nextCursor,
+        hasMore: page.hasMore
+      });
+      page.records.forEach((record) => records.push({
+        ...record,
+        listId: record.listId || record.list_id || target.listId,
+        listTitle: record.listTitle || record.list_title || target.listTitle,
+        historyPath: target.path,
+        source: record.source || "bike_packing_list_history"
+      }));
+    });
+    if (!results.some((result) => result.status === "fulfilled")) {
+      const firstError = results.find((result) => result.status === "rejected")?.reason;
+      throw new Error(`History is unavailable: ${apiErrorMessage(firstError)}`);
+    }
+    return {
+      records: sortHistoryRecords(records),
+      pageState: {
+        type: "private",
+        targets: pageState.targets.map((target) => updates.get(target.listId) || {
+          ...target,
+          hasMore: false
+        })
+      }
+    };
+  }
+
   let lists = [];
   try {
     const catalog = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
@@ -8886,36 +8962,93 @@ async function loadPrivateRemoteHistory() {
     uniqueLists.push(list);
   });
 
-  const results = await Promise.allSettled(uniqueLists.map(async (list) => {
+  const targets = uniqueLists.map((list) => {
     const listId = remoteRecordId(list);
-    const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history`, {
+    return {
+      listId,
+      listTitle: String(list.title || list.name || list.listTitle || "").trim(),
+      path: `/bike-packing/lists/${encodeURIComponent(listId)}/history`,
+      cursor: "",
+      hasMore: true
+    };
+  });
+  const results = await Promise.allSettled(targets.map(async (target) => {
+    const data = await apiFetch(historySummaryRequestPath(target.path, { limit: 25 }), {
       timeoutMs: LIST_API_TIMEOUT_MS
     });
-    const records = Array.isArray(data.records)
-      ? data.records
-      : Array.isArray(data.history)
-        ? data.history
-        : [];
-    const listTitle = String(list.title || list.name || list.listTitle || "").trim();
-    return records.map((record) => ({
-      ...record,
-      listId: record.listId || record.list_id || listId,
-      listTitle: record.listTitle || record.list_title || listTitle || historyPayloadTitle(record.payload, historySourceLabel()),
-      source: record.source || "bike_packing_list_history"
-    }));
+    return { target, page: normalizeHistorySummaryPage(data) };
   }));
 
-  const records = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-  if (records.length || results.some((result) => result.status === "fulfilled")) return sortHistoryRecords(records);
+  const records = [];
+  const loadedTargets = new Map();
+  results.forEach((result) => {
+    if (result.status !== "fulfilled") return;
+    const { target, page } = result.value;
+    loadedTargets.set(target.listId, {
+      ...target,
+      cursor: page.nextCursor,
+      hasMore: page.hasMore
+    });
+    page.records.forEach((record) => records.push({
+      ...record,
+      listId: record.listId || record.list_id || target.listId,
+      listTitle: record.listTitle || record.list_title || target.listTitle,
+      historyPath: target.path,
+      source: record.source || "bike_packing_list_history"
+    }));
+  });
+  if (records.length || results.some((result) => result.status === "fulfilled")) {
+    return {
+      records: sortHistoryRecords(records),
+      pageState: {
+        type: "private",
+        targets: targets.map((target) => loadedTargets.get(target.listId) || {
+          ...target,
+          hasMore: false
+        })
+      }
+    };
+  }
   const firstError = results.find((result) => result.status === "rejected")?.reason;
   throw new Error(`History is unavailable: ${apiErrorMessage(firstError)}`);
 }
 
+async function loadMoreHistoryRecords() {
+  if (historyLoadMoreInFlight || !historyPageHasMore()) return;
+  historyLoadMoreInFlight = true;
+  renderHistoryRecords(historyRecords);
+  const source = activeHistorySource;
+  let loadError = null;
+  try {
+    const result = await loadRemoteHistory(source, historyPageState);
+    if (source !== activeHistorySource) return;
+    historyPageState = result.pageState;
+    historyRecords = restorableHistorySummaryRecords([...historyRecords, ...result.records]);
+  } catch (error) {
+    loadError = error;
+  } finally {
+    historyLoadMoreInFlight = false;
+    if (source === activeHistorySource) {
+      renderHistoryRecords(historyRecords);
+      if (loadError) {
+        refs.historyStatus.className = "dialog-status error";
+        refs.historyStatus.textContent = `${t("history.loadFailed")} ${loadError.message}`;
+      }
+    }
+  }
+}
+
 function renderHistoryRecords(records) {
+  const loadMoreButton = historyPageHasMore()
+    ? `<button type="button" class="ghost history-load-more" data-history-load-more${historyLoadMoreInFlight ? " disabled" : ""}>${escapeHtml(historyLoadMoreInFlight
+      ? localText("Loading...", "Загрузка...")
+      : localText("Load more", "Загрузить ещё"))}</button>`
+    : "";
   if (!records.length) {
     refs.historyStatus.className = "dialog-status";
     refs.historyStatus.textContent = t("history.empty", { source: historySourceLabel() });
-    refs.historyList.innerHTML = "";
+    refs.historyList.innerHTML = loadMoreButton;
+    refs.historyList.querySelector("[data-history-load-more]")?.addEventListener("click", loadMoreHistoryRecords);
     return;
   }
   refs.historyStatus.className = "dialog-status success";
@@ -8939,7 +9072,7 @@ function renderHistoryRecords(records) {
     restoreText: t("history.undoChanges"),
     showTitle: false,
     summarizePayload: summarizeHistoryPayload
-  })).join("");
+  })).join("") + loadMoreButton;
   syncHistoryActionButtonTooltips(refs.historyList);
   refs.historyList.querySelectorAll("[data-history-record]").forEach((recordElement) => {
     recordElement.addEventListener("click", (event) => {
@@ -8959,6 +9092,7 @@ function renderHistoryRecords(records) {
   refs.historyList.querySelectorAll("[data-restore-history]").forEach((button) => {
     button.addEventListener("click", () => restoreHistoryRecord(button.dataset.restoreHistory));
   });
+  refs.historyList.querySelector("[data-history-load-more]")?.addEventListener("click", loadMoreHistoryRecords);
 }
 
 function historyUndoActionText(record, index, records = historyRecords) {
@@ -8989,7 +9123,32 @@ function findHistoryRecordByKey(recordKey) {
   };
 }
 
-function openHistoryRecordDetails(recordKey) {
+async function loadHistoryRecordDetail(record, index = 0) {
+  const cacheKey = historyRecordKey(record, index);
+  if (historyDetailCache.has(cacheKey)) return historyDetailCache.get(cacheKey);
+  const historyPath = String(record?.historyPath || "").trim();
+  const historyId = Number(record?.id || 0);
+  if (!historyPath || !Number.isFinite(historyId) || historyId <= 0) {
+    throw new Error(localText("The history entry has no detail address.", "У записи истории нет адреса деталей."));
+  }
+  const data = await apiFetch(`${historyPath}/${encodeURIComponent(historyId)}`, {
+    timeoutMs: LIST_API_TIMEOUT_MS
+  });
+  const detailRecord = {
+    ...record,
+    ...(data?.record || {}),
+    action: data?.action || record?.action || null,
+    historyPath
+  };
+  const comparisonState = activeHistorySource === "private"
+    ? normalizeRemoteState(data?.comparisonPayload)
+    : normalizePublishedStatePayload(data?.comparisonPayload);
+  const detail = { record: detailRecord, comparisonState };
+  historyDetailCache.set(cacheKey, detail);
+  return detail;
+}
+
+async function openHistoryRecordDetails(recordKey) {
   const { record, index, records } = findHistoryRecordByKey(recordKey);
   if (!record || index < 0) return;
   selectedHistoryDetailRecordKey = historyRecordKey(record, index);
@@ -9003,26 +9162,41 @@ function openHistoryRecordDetails(recordKey) {
         : localText("Version details", "Детали версии");
   }
   if (refs.historyDetailContent) {
-    refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(record, index, records, {
-      activeSource: activeHistorySource,
-      currentComparisonState: currentHistoryComparisonState,
-      formatDateTime: (value) => formatHistoryDateTime(value, { language: uiLanguage }),
-      localText,
-      recordState: historyRecordState,
-      recordTitle: historyRecordTitle,
-      restoreComparisonTitle: t(
-        String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
-          ? "history.checkpointChangesTitle"
-          : "history.restoreChangesTitle"
-      ),
-      summarizePayload: summarizeHistoryPayload
-    });
+    refs.historyDetailContent.textContent = localText("Loading version details...", "Загружаю детали версии...");
   }
   if (refs.historyDetailRestoreBtn) {
     refs.historyDetailRestoreBtn.textContent = historyUndoActionText(record, index, records);
   }
   openModalDialog(refs.historyDetailDialog);
   syncHistoryActionButtonTooltips(refs.historyDetailDialog);
+  try {
+    const selectedKey = selectedHistoryDetailRecordKey;
+    const detail = await loadHistoryRecordDetail(record, index);
+    if (selectedKey !== selectedHistoryDetailRecordKey || !refs.historyDetailDialog?.open) return;
+    if (refs.historyDetailContent) {
+      refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(detail.record, 0, [detail.record], {
+        activeSource: activeHistorySource,
+        currentComparisonState: () => detail.comparisonState,
+        formatDateTime: (value) => formatHistoryDateTime(value, { language: uiLanguage }),
+        localText,
+        recordState: historyRecordState,
+        recordTitle: historyRecordTitle,
+        restoreComparisonTitle: t(
+          String(detail.record?.snapshotKind || detail.record?.snapshot_kind || "undo") === "daily"
+            ? "history.checkpointChangesTitle"
+            : "history.restoreChangesTitle"
+        ),
+        summarizePayload: summarizeHistoryPayload
+      });
+    }
+  } catch (error) {
+    if (refs.historyDetailContent) {
+      refs.historyDetailContent.textContent = localText(
+        `Could not load version details: ${error.message}`,
+        `Не удалось загрузить детали версии: ${error.message}`
+      );
+    }
+  }
 }
 
 function historyRecordState(record, source = activeHistorySource) {
@@ -9058,19 +9232,30 @@ function historySourceLabel(source = activeHistorySource) {
 
 async function restoreHistoryRecord(recordKey) {
   const { record, index, records } = findHistoryRecordByKey(recordKey);
-  const restoredState = historyRecordState(record);
-  if ((activeHistorySource === "demo" || activeHistorySource === "shared") && record && restoredState) {
-    await publishPublicHistoryRecord(record, restoredState, { index, records });
+  if (!record) {
+    showToast(localText("Could not read the selected version.", "Не удалось прочитать выбранную версию."), "error");
     return;
   }
-  if (!record || !restoredState) {
-    showToast(localText("Could not read the selected version.", "Не удалось прочитать выбранную версию."), "error");
+  if (activeHistorySource === "demo" || activeHistorySource === "shared") {
+    try {
+      const detail = await loadHistoryRecordDetail(record, index);
+      const restoredState = historyRecordState(detail.record);
+      if (!restoredState) throw new Error(localText("Version data is empty.", "Данные версии пусты."));
+      await publishPublicHistoryRecord(detail.record, restoredState, { index, records });
+    } catch (error) {
+      showToast(localText(
+        `Could not load the selected version: ${error.message}`,
+        `Не удалось загрузить выбранную версию: ${error.message}`
+      ), "error");
+    }
     return;
   }
   const impact = historyRollbackImpact(record, index, records);
   const restoreLayoutIds = impact.isDeepRollback ? [] : historyRecordRestoreLayoutIds(record);
+  const affectedLayout = (Array.isArray(record?.affectedLayouts) ? record.affectedLayouts : [])
+    .find((layout) => String(layout?.id || "") === restoreLayoutIds[0]);
   const restoredLayoutName = restoreLayoutIds.length
-    ? String(restoredState.layouts?.[restoreLayoutIds[0]]?.name || state.layouts?.[restoreLayoutIds[0]]?.name || restoreLayoutIds[0])
+    ? String(affectedLayout?.name || state.layouts?.[restoreLayoutIds[0]]?.name || restoreLayoutIds[0])
     : "";
   const confirmed = await askConfirmDialog(historyUndoConfirmation({
     actionText: historyUndoActionText(record, index, records),

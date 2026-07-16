@@ -1,9 +1,14 @@
+function localText(language, en, ru) {
+  return language === "en" ? en : ru;
+}
+
 export async function runSyncNowFlow({ runtime, dependencies }, { force = false } = {}) {
   const {
     activeReadOnlyLayoutId,
     canOpenAdminPublishedEdit,
     checkAdminApiCompatibility,
     checkAuthAndLoad,
+    checkRemoteStateFreshness,
     clearStaleDirtyFlagIfNoLocalChanges,
     currentPublicTemplateStatusMessage,
     flushActivePublishedEditSave,
@@ -131,8 +136,12 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
       await saveRemoteState({ notify: true });
       return;
     }
+    updateSyncUi(localText(runtime.uiLanguage, "Checking the server...", "Проверяю сервер..."));
+    await checkRemoteStateFreshness({
+      notify: true,
+      preferredLayout: preferredCurrentLayoutRef()
+    });
     updateSyncUi();
-    showToast("Уже синхронизировано.", "success");
     return;
   }
   if (force && runtime.syncMeta.dirty) {

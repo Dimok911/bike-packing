@@ -9,7 +9,10 @@ import {
   historyRecordScopeText,
   historyRollbackImpact,
   historyRecordTitle,
+  historySummaryRequestPath,
+  normalizeHistorySummaryPage,
   restorableHistoryRecords,
+  restorableHistorySummaryRecords,
   summarizeHistoryPayload
 } from "../../src/sync/history.js";
 import { replaceActivePublishedHistoryDraft } from "../../src/public/history-restore-view.js";
@@ -310,6 +313,40 @@ test("CRITICAL history: current-state snapshots are not offered as restore targe
   });
 
   assert.deepEqual(records.map((record) => record.id), [1]);
+});
+
+test("CRITICAL history: the timeline requests lightweight paginated summaries", () => {
+  const path = historySummaryRequestPath("/bike-packing/lists/list-1/history", {
+    cursor: "next page",
+    limit: 25
+  });
+  const url = new URL(path, "https://example.test");
+  assert.equal(url.searchParams.get("view"), "summary");
+  assert.equal(url.searchParams.get("limit"), "25");
+  assert.equal(url.searchParams.get("cursor"), "next page");
+
+  assert.deepEqual(normalizeHistorySummaryPage({
+    records: [{ id: 1, hasPayload: false }],
+    page: { hasMore: true, nextCursor: "cursor-2" }
+  }), {
+    records: [{ id: 1, hasPayload: false }],
+    hasMore: true,
+    nextCursor: "cursor-2"
+  });
+});
+
+test("CRITICAL history: summary rows hide empty technical steps without loading payloads", () => {
+  const action = { entityType: "items", operation: "added", count: 1, title: "Pump" };
+  const records = restorableHistorySummaryRecords([
+    { id: 4, listId: "list-1", snapshotKind: "undo", createdAt: "2026-07-17T12:00:00.000Z", action },
+    { id: 3, listId: "list-1", snapshotKind: "undo", createdAt: "2026-07-17T11:00:00.000Z", action: null },
+    { id: 2, listId: "list-1", snapshotKind: "daily", snapshotDay: "2026-07-17", createdAt: "2026-07-17T10:00:00.000Z" },
+    { id: 1, listId: "list-1", snapshotKind: "daily", snapshotDay: "2026-07-16", createdAt: "2026-07-16T10:00:00.000Z" }
+  ]);
+
+  assert.deepEqual(records.map((record) => record.id), [4, 1]);
+  assert.equal(records.some((record) => "payload" in record), false);
+  assert.deepEqual(historyRecordAction(records[0], 0, records), action);
 });
 
 test("CRITICAL history: service-only newest snapshot is hidden and exposes the real undo action", () => {

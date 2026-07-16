@@ -37,8 +37,43 @@ import { ensurePersonalListId } from "../../src/sync/personal-list-bootstrap.js"
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
 import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
+import { runSyncNowFlow } from "../../src/sync/run-sync-now-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
+
+test("CRITICAL sync-save: manual sync checks remote freshness when local state is clean", async () => {
+  const statuses = [];
+  const freshnessCalls = [];
+  const preferredLayout = { id: "layout-current" };
+  const runtime = {
+    currentUser: { id: "user-1" },
+    state: { items: {}, containers: {}, layouts: {} },
+    syncMeta: { dirty: false },
+    syncTimer: null,
+    uiLanguage: "en"
+  };
+
+  await runSyncNowFlow({
+    runtime,
+    dependencies: {
+      canOpenAdminPublishedEdit: () => false,
+      checkRemoteStateFreshness: async (options) => { freshnessCalls.push(options); },
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      isAdminEditablePublishedLayout: () => false,
+      isForcedOffline: () => false,
+      isReadOnlyBikePackingContext: () => false,
+      isReadOnlyStateScope: () => false,
+      preferredCurrentLayoutRef: () => preferredLayout,
+      saveRemoteState: async () => { throw new Error("clean manual sync must not save local state"); },
+      showToast: () => {},
+      updateSyncUi: (message) => { statuses.push(message); },
+      uploadPendingPhotos: async () => false
+    }
+  }, { force: true });
+
+  assert.deepEqual(freshnessCalls, [{ notify: true, preferredLayout }]);
+  assert.deepEqual(statuses, ["Checking the server...", undefined]);
+});
 
 test("CRITICAL sync-save: empty-layout warning follows the English interface", async () => {
   let status = "";

@@ -101,7 +101,11 @@ export function updateSyncUiControls({
     readOnlyScope: isReadOnlyStateScope(),
     dirty: syncMeta.dirty
   });
-  applySyncVisualState({ syncButton: refs.syncBtn, stateName: syncVisualState });
+  applySyncVisualState({
+    syncButton: refs.syncBtn,
+    stateName: syncVisualState,
+    language: currentDocumentLanguage()
+  });
   if (adminApiWarning) {
     refs.syncStatus.textContent = adminApiWarning;
     return syncVisualState;

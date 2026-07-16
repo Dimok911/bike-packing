@@ -155,6 +155,7 @@ export function historyRecordAction(record, index, records, {
 } = {}) {
   const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
   if (kind === "daily") return null;
+  if (record?.action && typeof record.action === "object") return record.action;
   const beforeState = recordState(record);
   const newerRecord = historyNewerRecord(record, index, records);
   const afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();

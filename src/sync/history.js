@@ -49,6 +49,56 @@ export function restorableHistoryRecords(records, currentState, {
   });
 }
 
+export function restorableHistorySummaryRecords(records) {
+  const sorted = sortHistoryRecords(Array.isArray(records) ? records : []);
+  const meaningful = sorted.filter((record) => {
+    const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
+    return kind === "daily" || Boolean(record?.action);
+  });
+  const detailedDaysByList = new Map();
+  meaningful.forEach((record) => {
+    if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") return;
+    const listKey = String(record?.listId || record?.list_id || "default");
+    const day = historyRecordDay(record);
+    if (!day) return;
+    if (!detailedDaysByList.has(listKey)) detailedDaysByList.set(listKey, new Set());
+    detailedDaysByList.get(listKey).add(day);
+  });
+  const seen = new Set();
+  return meaningful.filter((record, index) => {
+    const listKey = String(record?.listId || record?.list_id || "default");
+    const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
+    if (kind === "daily" && detailedDaysByList.get(listKey)?.has(historyRecordDay(record))) return false;
+    const key = historyRecordKey(record, index);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function historySummaryRequestPath(path, { cursor = "", limit = 25 } = {}) {
+  const separator = String(path || "").includes("?") ? "&" : "?";
+  const params = new URLSearchParams({
+    view: "summary",
+    limit: String(Math.max(1, Number(limit) || 25))
+  });
+  if (cursor) params.set("cursor", String(cursor));
+  return `${path}${separator}${params.toString()}`;
+}
+
+export function normalizeHistorySummaryPage(data) {
+  const records = Array.isArray(data?.records)
+    ? data.records
+    : Array.isArray(data?.history)
+      ? data.history
+      : [];
+  return {
+    records,
+    hasMore: Boolean(data?.page?.hasMore),
+    nextCursor: String(data?.page?.nextCursor || "")
+  };
+}
+
 export function historyRecordDay(record) {
   const explicit = String(record?.snapshotDay || record?.snapshot_day || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
@@ -82,7 +132,9 @@ export function historyRecordScopeText(record, payload, {
   if (scope === "multiple") return multiple;
   const layoutId = historyRecordRestoreLayoutIds(record)[0] || "";
   if (!layoutId) return "";
-  const name = String(payload?.layouts?.[layoutId]?.name || layoutId).trim() || layoutId;
+  const affectedLayout = (Array.isArray(record?.affectedLayouts) ? record.affectedLayouts : [])
+    .find((entry) => String(entry?.id || "") === layoutId);
+  const name = String(payload?.layouts?.[layoutId]?.name || affectedLayout?.name || layoutId).trim() || layoutId;
   return layout(name);
 }
 
