@@ -24,6 +24,7 @@ import {
 import {
   hasHistoryStateChanges,
   buildHistoryStateDiff,
+  historyActionDescription,
   historyRecordAction,
   renderHistoryRecordArticle,
   renderHistoryRecordDetails,
@@ -219,6 +220,7 @@ test("CRITICAL history: missing device is omitted instead of rendered as a noisy
     listId: "list-2026",
     listTitle: "Полная компоновка 2026",
     createdAt: "2026-06-04T09:00:00.000Z",
+    sourceUpdatedAt: "2026-06-04T09:00:00.000Z",
     payload: {
       activeLayoutId: "layout-active",
       layouts: {
@@ -240,6 +242,7 @@ test("CRITICAL history: missing device is omitted instead of rendered as a noisy
   });
 
   assert.doesNotMatch(html, /устройство не указано/);
+  assert.doesNotMatch(html, /изменение:|changed:/);
   assert.match(html, /04\.06\.2026, 09:00/);
 });
 
@@ -347,6 +350,15 @@ test("CRITICAL history: summary rows hide empty technical steps without loading 
   assert.deepEqual(records.map((record) => record.id), [4, 1]);
   assert.equal(records.some((record) => "payload" in record), false);
   assert.deepEqual(historyRecordAction(records[0], 0, records), action);
+});
+
+test("CRITICAL history: timeline metadata names the changed object in both languages", () => {
+  const action = { entityType: "items", operation: "changed", count: 1, title: "Valve core" };
+  assert.equal(historyActionDescription(action, { localText: (_en, ru) => ru }), "Изменена вещь «Valve core»");
+  assert.equal(historyActionDescription(action, { localText: (en) => en }), "Changed item “Valve core”");
+  assert.equal(historyActionDescription({ entityType: "settings", operation: "changed" }, {
+    localText: (_en, ru) => ru
+  }), "Изменены настройки");
 });
 
 test("CRITICAL history: service-only newest snapshot is hidden and exposes the real undo action", () => {

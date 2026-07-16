@@ -618,7 +618,6 @@ import {
   historyRollbackImpact,
   historyRecordKey,
   historyRecordRestoreLayoutIds,
-  historyRecordScopeText,
   historyRecordState as historyRecordStateForSync,
   historyRecordTitle,
   historySummaryRequestPath,
@@ -853,6 +852,7 @@ import {
 } from "./src/ui/conflict-format.js";
 import {
   hasHistoryStateChanges,
+  historyActionDescription,
   historyRecordAction,
   historyUndoConfirmation,
   renderHistoryRecordArticle as renderHistoryRecordArticleHtml,
@@ -9060,12 +9060,13 @@ function renderHistoryRecords(records) {
     latestRestoreText: t("history.undoLatest"),
     publishText: t("history.publishVersion"),
     recordKey: historyRecordKey,
-    recordMetaText: (record, payload) => historyRecordScopeText(record, payload, {
-      daily: t("history.dailyCheckpoint"),
-      global: t("history.globalAction"),
-      layout: (name) => t("history.layoutAction", { name }),
-      multiple: t("history.multipleAction")
-    }),
+    recordMetaText: (record, _payload, recordIndex, recordList) =>
+      String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
+        ? t("history.dailyCheckpoint")
+        : historyActionDescription(historyRecordAction(record, recordIndex, recordList, {
+          currentComparisonState: currentHistoryComparisonState,
+          recordState: historyRecordState
+        }), { localText }),
     recordState: historyRecordState,
     recordTitle: historyRecordTitle,
     restoreTextForRecord: historyUndoActionText,

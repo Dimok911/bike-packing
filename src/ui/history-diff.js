@@ -180,6 +180,36 @@ export function historyRecordAction(record, index, records, {
   };
 }
 
+export function historyActionDescription(action, {
+  localText = historyRuText
+} = {}) {
+  if (!action || action.operation === "mixed" || action.entityType === "mixed") {
+    return localText("Several changes", "Несколько изменений");
+  }
+  if (action.entityType === "settings") {
+    return localText("Settings changed", "Изменены настройки");
+  }
+  if (action.entityType === "packed") {
+    return localText("Packing status changed", "Изменён статус сборов");
+  }
+  const entityNames = {
+    items: localText("item", "вещь"),
+    containers: localText("bag", "сумка"),
+    layouts: localText("layout", "укладка")
+  };
+  const entityName = entityNames[action.entityType];
+  if (!entityName) return localText("Several changes", "Несколько изменений");
+  const operation = action.operation === "added"
+    ? localText("Added", "Добавлена")
+    : action.operation === "removed"
+      ? localText("Removed", "Удалена")
+      : localText("Changed", "Изменена");
+  const title = String(action.title || "").trim();
+  return title
+    ? localText(`${operation} ${entityName} “${title}”`, `${operation} ${entityName} «${title}»`)
+    : `${operation} ${entityName}`;
+}
+
 export function historyUndoConfirmation({
   actionText = "",
   crossesCheckpoint = false,
@@ -408,16 +438,14 @@ export function renderHistoryRecordArticle(record, index, records, {
   const payload = recordState(record);
   const title = recordTitle(record, payload, localText("Untitled", "Без названия"));
   const createdAt = formatDateTime(record.createdAt || record.created_at);
-  const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
-  const context = String(recordMetaText(record, payload) || "").trim();
+  const context = String(recordMetaText(record, payload, index, records) || "").trim();
   const actionRestoreText = typeof restoreTextForRecord === "function"
     ? restoreTextForRecord(record, index, records)
     : (activeSource === "private" ? (index === 0 ? latestRestoreText : restoreText) : publishText);
   const meta = [
     context,
-    device,
-    sourceAt ? localText(`changed: ${sourceAt}`, `изменение: ${sourceAt}`) : ""
+    device
   ].filter(Boolean).join(" · ");
   return `
     <article class="history-record" data-history-record="${escapeHtml(key)}" tabindex="0" role="button">
