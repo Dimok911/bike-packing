@@ -188,6 +188,19 @@ export function isAutomaticGuestDemoCopyLayout(layout) {
   );
 }
 
+export function isGeneratedEmptyLayoutPlaceholder(layout) {
+  if (!layout || layout.id !== "layout-main") return false;
+  if (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId || layout.guestDemoCopy) return false;
+  if (layout.createdAt || layout.updatedAt) return false;
+  const name = normalizeText(layout.name);
+  if (name !== "Текущая укладка" && name !== "Current layout") return false;
+  const arrangement = layout.arrangement && typeof layout.arrangement === "object" ? layout.arrangement : {};
+  return !(layout.rootContainerIds || []).length &&
+    !(arrangement.rootContainerIds || []).length &&
+    !Object.keys(arrangement.containers || {}).length &&
+    !Object.keys(arrangement.items || {}).length;
+}
+
 export function isGuestLocalPersonalLayout(layout) {
   return Boolean(
     layout?.id &&
@@ -206,7 +219,9 @@ export function guestLocalLayoutImportPlan({
   hasUserEdits = () => false
 } = {}) {
   const copies = Object.values(layouts || {}).filter((layout) =>
-    layout?.id && (isGuestDemoCopy(layout) || isGuestPersonalLayout(layout))
+    layout?.id &&
+    !isGeneratedEmptyLayoutPlaceholder(layout) &&
+    (isGuestDemoCopy(layout) || isGuestPersonalLayout(layout))
   );
   const order = new Map(copies.map((layout, index) => [layout.id, index]));
   const candidates = copies.filter((layout) =>

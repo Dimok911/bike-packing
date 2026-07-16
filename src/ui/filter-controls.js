@@ -80,6 +80,7 @@ export function renderFilterControls({
   isLayoutLocked = () => false,
   isReadOnlyStateScope = () => false,
   isSharedLayoutView = () => false,
+  layoutDisplayNameForLanguage = (layout) => layout?.name || "",
   linkedSharedListLayout = null,
   publicLayoutChoiceForLayout = () => "",
   readonlyPublicTemplateOptionLabel = (label) => label,
@@ -145,7 +146,7 @@ export function renderFilterControls({
     ...publicOptions,
     ...personalLayouts.map((layout) => [
       layout.id,
-      `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layout.name}`,
+      `${isLayoutLocked(layout) ? t("layout.lockedOptionPrefix") : ""}${layoutDisplayNameForLanguage(layout, uiLanguage)}`,
       "personal"
     ])
   ];
@@ -169,7 +170,11 @@ export function renderFilterControls({
     refs.editLayoutBtn.disabled = !canManageLayout;
     refs.editLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideManageLayout);
   }
-  fillSelect(refs.layoutCopyFrom, personalLayouts.map((layout) => [layout.id, layout.name]), activeEditableLayoutId);
+  fillSelect(
+    refs.layoutCopyFrom,
+    personalLayouts.map((layout) => [layout.id, layoutDisplayNameForLanguage(layout, uiLanguage)]),
+    activeEditableLayoutId
+  );
   const nextSelectedCategoryFilters = selectedCategoryFilters.filter((category) => dictionaryOptionsForUi("category").includes(category));
   const locationOptions = dictionaryOptionsForUi("location");
   fillSelect(refs.locationFilter, [["", t("filters.allPlaces")], ...locationOptions.map((loc) => [loc, dictionaryValueLabel(loc)])], refs.locationFilter.value);

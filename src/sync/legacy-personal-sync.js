@@ -5,7 +5,7 @@ export function shouldBlockLegacyPersonalSyncWriteFallback(error) {
 }
 
 export function createLegacyPersonalSyncWriteBlockedError(cause = null) {
-  const error = new Error("Personal list API is unavailable; legacy bike-packing-data.json writes are disabled.");
+  const error = new Error("Personal list save failed; legacy bike-packing-data.json writes are disabled.");
   error.code = LEGACY_PERSONAL_SYNC_WRITE_BLOCKED_CODE;
   error.status = 503;
   error.path = "/bike-packing-data.json";

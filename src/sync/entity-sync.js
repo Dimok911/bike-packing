@@ -159,6 +159,7 @@ export function isItemEntitySyncUnavailableError(error) {
 
 export function buildEntitySyncBody(type, entries, {
   forceOverwrite = false,
+  historyAction = {},
   syncDevice,
   syncMeta
 } = {}) {
@@ -168,6 +169,9 @@ export function buildEntitySyncBody(type, entries, {
     clientDeviceName: syncDevice.name,
     baseStateRevision: syncMeta.stateRevision ?? null,
     stateRevision: syncMeta.stateRevision ?? null,
+    changeGroupId: historyAction.changeGroupId || null,
+    affectedLayoutIds: historyAction.affectedLayoutIds || [],
+    changeScope: historyAction.changeScope || null,
     force: forceOverwrite,
     forceOverwrite
   };
@@ -214,6 +218,40 @@ export function splitEntitySyncEntries(type, entries, options = {}) {
 
 export function splitItemSyncEntries(entries, options = {}) {
   return splitEntitySyncEntries("item", entries, options);
+}
+
+export async function syncEntityBatchesSequentially(batches = [], {
+  onBatchResult = () => {},
+  sendBatch = async () => ({})
+} = {}) {
+  const results = [];
+  for (const batch of batches) {
+    const result = await sendBatch(batch);
+    results.push(result);
+    onBatchResult(result, batch);
+  }
+  return results;
+}
+
+export async function syncEntityBatchWithRevisionRetry(batch, {
+  refreshRevision = () => false,
+  sendBatch = async () => ({})
+} = {}) {
+  try {
+    return await sendBatch(batch);
+  } catch (error) {
+    if (!isEntitySyncRevisionConflict(error) || !refreshRevision(error)) throw error;
+    return sendBatch(batch);
+  }
+}
+
+export function isEntitySyncRevisionConflict(error) {
+  const code = String(error?.data?.code || error?.code || "").trim();
+  return error?.status === 409 && [
+    "stale_state_revision",
+    "state_revision_mismatch",
+    "missing_base_state_revision"
+  ].includes(code);
 }
 
 function sameJson(a, b) {

@@ -11,6 +11,15 @@ import {
 import { repairContainerMembershipFromItemLinks } from "./repair.js";
 
 const DEFAULT_LAYOUT_NAME = "Текущая укладка";
+const DEFAULT_LAYOUT_NAMES = new Set([DEFAULT_LAYOUT_NAME, "Current layout"]);
+
+export function layoutDisplayNameForLanguage(layout, language = "ru") {
+  const storedName = String(layout?.name || "").trim();
+  if (layout?.id === "layout-main" && (!storedName || DEFAULT_LAYOUT_NAMES.has(storedName))) {
+    return language === "en" ? "Current layout" : DEFAULT_LAYOUT_NAME;
+  }
+  return storedName || (language === "en" ? "Current layout" : DEFAULT_LAYOUT_NAME);
+}
 
 export function normalizeLayoutFields(targetState) {
   const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};

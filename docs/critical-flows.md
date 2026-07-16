@@ -27,6 +27,22 @@ test:critical` дополнительно к `npm.cmd run check`.
   - единственный приватный scope на устройстве, если он ровно один
 - Явный sign-out должен отключать приватный offline-доступ.
 
+## CRITICAL: guest-magic-link-import
+
+- Pending email от запроса magic-link не подтверждает сессию и не разрешает
+  переключение из `guest` в пустой `email:*` storage scope. Приватный scope
+  активируется только после успешного `/auth/me`.
+- После полной перезагрузки страницы оперативный guest-кандидат может
+  отсутствовать. После загрузки серверного профиля импорт обязан повторно
+  прочитать изменённую локальную demo-копию из сохранённого `guest` scope.
+- Существующий серверный профиль и совпадающее имя укладки не блокируют импорт:
+  гостевая укладка добавляется отдельной записью с уникальным именем вместе с
+  сумками, вещами, размещением и справочниками.
+- Контракт одинаков для обычных и admin-аккаунтов. Guest storage очищается
+  только после сохранения и повторного чтения импортированной укладки с сервера.
+- Recovery snapshots не участвуют в автоматическом входе или импорте и не могут
+  использоваться как источник отсутствующего guest-кандидата.
+
 ## CRITICAL: offline-photos
 
 - Явный дубль вещи или сумки должен получать собственные ID фотографий, записи в базе, оригиналы файлов и миниатюры. Удаление фото у одной из копий не должно ломать другую. Общая ссылка на фото допустима только тогда, когда одна и та же каталожная вещь или сумка добавляется в другую личную укладку без создания дубля.
@@ -153,3 +169,12 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Recovery snapshots are diagnostic/safety copies only. Application startup and authentication must never merge or replace working state from them automatically.
 - An old recovery snapshot may contain intentionally deleted layouts, templates, bags, or items, so absence from current state is not evidence of accidental data loss.
 - Restoring any recovery/history/backup payload must require an explicit user action. Normal server-state replacement may preserve managed public drafts from the current working state, but must not resurrect them from an older recovery snapshot.
+- Canonical history stores the state left behind by a successful change; it must not add the new current state as a restorable no-op snapshot. Legacy records equal to the current state are not restore targets.
+- Restoring a demo/shared history snapshot must replace the matching active admin draft and its public payload cache immediately, without requiring a page reload.
+- History details form an action chain: each stored pre-action snapshot is compared forward with the current state or the immediately newer snapshot. The displayed added/removed/changed rows describe what that one action originally did, not the inverse restore effect.
+- Demo, shared-template, and private history use the same undo-action language. Undoing a deep action restores its full snapshot and must explicitly warn that all later actions shown above in the same history stream will also be undone. Only the latest safe single-layout action may use layout-scoped restore.
+- The undo journal keeps the newest 100 grouped user actions regardless of their age. Older depth is represented by one final daily checkpoint for each of the previous 30 days; a daily checkpoint is hidden while detailed actions for that day are still present.
+- Changes limited to service metadata such as timestamps, device ids, payload hashes, or state revisions are not user actions: they must neither consume the 100-action buffer nor appear as empty restore points.
+- Changes limited to template/copy provenance markers are also technical metadata: they must not create a user action or appear as raw internal field names in history details.
+- A history record may be restored independently only when its trusted metadata marks exactly one affected layout and no shared item/container data changed. Global and multi-layout records must restore the full canonical state.
+- Deleting a photo is a 30-day soft delete. Historical asset URLs remain readable during retention, and restoring a snapshot that references the photo must clear its trash marker in the same transaction.

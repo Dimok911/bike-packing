@@ -115,8 +115,14 @@ import {
   importDemoStateAsEditableLayout as importDemoStateAsEditableLayoutValue,
   repairAdminDemoLayout as repairAdminDemoLayoutValue
 } from "./src/public/admin-demo-layout.js";
+import { replaceActivePublishedHistoryDraft } from "./src/public/history-restore-view.js";
 import {
+  canImportGuestLayoutsForAuthenticatedUser,
+  guestLayoutHasUserContentEdits,
+  guestLocalLayoutCandidateFromState,
   importGuestLocalLayoutsToState,
+  persistGuestImportBeforeCleanup,
+  removeLegacyGuestImportPlaceholders,
   validateGuestImportSyncState
 } from "./src/public/guest-login-import.js";
 import {
@@ -414,6 +420,7 @@ import {
   unavailableSnapshotItems
 } from "./src/state/layout-locks.js";
 import {
+  layoutDisplayNameForLanguage,
   normalizeLayoutArrangement,
   normalizeLayoutFields,
   repairPublishedLayoutArrangement,
@@ -554,8 +561,14 @@ import {
   legacyComparableStateForSync as legacyComparableStateForSyncPayload,
   legacyComparableTopLevelDiffKeys as legacyComparableTopLevelDiffKeysForSync,
   rememberEntitySyncResultMeta,
-  splitEntitySyncEntries as splitEntitySyncEntriesForSync
+  splitEntitySyncEntries as splitEntitySyncEntriesForSync,
+  syncEntityBatchWithRevisionRetry,
+  syncEntityBatchesSequentially
 } from "./src/sync/entity-sync.js";
+import {
+  createdLayoutSyncErrorText,
+  syncCreatedLayoutEntityTypes
+} from "./src/sync/created-layout-entity-sync.js";
 import {
   applyEntityChangesToState,
   canRequestEntityChanges
@@ -596,17 +609,23 @@ import {
 } from "./src/sync/legacy-personal-sync.js";
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
+import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
   historySharedTemplateOptions,
   historyPayloadTitle,
+  historyRollbackImpact,
   historyRecordKey,
+  historyRecordRestoreLayoutIds,
+  historyRecordScopeText,
   historyRecordState as historyRecordStateForSync,
   historyRecordTitle,
+  restorableHistoryRecords,
   sortHistoryRecords,
   summarizeHistoryPayload
 } from "./src/sync/history.js";
+import { buildHistoryActionContext } from "./src/sync/history-action.js";
 import {
   cacheRecordRemotePhotosForUploadFallback,
   copyRecordPhotosForLocalDuplicate,
@@ -830,8 +849,12 @@ import {
   formatMergeConflicts
 } from "./src/ui/conflict-format.js";
 import {
+  hasHistoryStateChanges,
+  historyRecordAction,
+  historyUndoConfirmation,
   renderHistoryRecordArticle as renderHistoryRecordArticleHtml,
-  renderHistoryRecordDetails as renderHistoryRecordDetailsHtml
+  renderHistoryRecordDetails as renderHistoryRecordDetailsHtml,
+  syncHistoryActionButtonTooltips
 } from "./src/ui/history-diff.js";
 import {
   ITEM_DISPLAY_MODE_DEFAULT,
@@ -860,7 +883,9 @@ import {
 } from "./src/ui/layout-manage-dialog.js";
 import {
   countPrivateLayouts,
-  createLayoutLoadStatusController
+  createLayoutLoadStatusController,
+  formatLayoutLoadProgress,
+  formatPersonalLayoutsLoadedStatus
 } from "./src/ui/layout-load-status.js";
 import {
   itemDeleteConfirm,
@@ -965,11 +990,18 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",
   "listSaveNoopHistoryGuard",
+  "historyPreviousSnapshots",
+  "historyActionJournal",
+  "historyMeaningfulActions",
+  "historyTechnicalMetadataGuard",
+  "historyDailyCheckpoints",
+  "historyLayoutScopedRestore",
+  "historyPhotoTrashRetention",
   "sharedListSnapshots",
   "sharedListOptionalAuthor",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-12.shared-list-snapshots-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-16.history-action-journal-v3";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -2812,6 +2844,8 @@ async function init() {
   refs.historyDetailRestoreBtn?.addEventListener("click", () => {
     if (selectedHistoryDetailRecordKey) restoreHistoryRecord(selectedHistoryDetailRecordKey);
   });
+  bindLongPressTooltips({ root: refs.historyList });
+  bindLongPressTooltips({ root: refs.historyDetailDialog });
   document.addEventListener("click", (event) => {
     resetCatalogSelectionOnPlainClick(event);
     if (event.target.closest(".top-menu-wrap")) return;
@@ -2863,6 +2897,8 @@ async function init() {
     updateViewScopedControls();
     updateCompactStickyControls();
     scheduleFixedScrollbarRefresh();
+    syncHistoryActionButtonTooltips(refs.historyDialog);
+    syncHistoryActionButtonTooltips(refs.historyDetailDialog);
   }, { passive: true });
   window.addEventListener("scroll", () => {
     updateCompactStickyControls();
@@ -3192,13 +3228,7 @@ function setOfflineRememberedLayoutLoadStatus() {
 }
 
 function setLayoutLoadProgress({ loaded = 0, total = null, prefix = localText("Loading personal layouts", "Загружаем личные укладки") } = {}) {
-  const knownTotal = Number.isFinite(total) && total >= 0;
-  const safeLoaded = Math.max(0, Number(loaded) || 0);
-  const safeTotal = knownTotal ? Math.max(safeLoaded, Number(total) || 0) : null;
-  const countText = knownTotal
-    ? `${safeLoaded} из ${safeTotal}`
-    : `${safeLoaded} загружено · уточняю полный список`;
-  setLayoutLoadStatus("loading", `${prefix}: ${countText}`);
+  setLayoutLoadStatus("loading", formatLayoutLoadProgress({ loaded, total, prefix, language: uiLanguage }));
 }
 
 function statePrivateLayoutCount(targetState) {
@@ -3221,8 +3251,8 @@ function bestCatalogListRecord(lists) {
   return remoteListRecords.bestCatalogListRecord(lists);
 }
 
-function setLoadedRemoteListProgress(record, prefix = "Личные укладки получены", { final = false } = {}) {
-  const count = Math.max(remoteRecordPrivateLayoutCount(record), privateLayoutCount());
+function setLoadedRemoteListProgress(record, prefix = localText("Personal layouts received", "Личные укладки получены"), { final = false } = {}) {
+  const count = remoteRecordPrivateLayoutCount(record);
   setLayoutLoadProgress({ loaded: count, total: final || count > 1 ? count : null, prefix });
 }
 
@@ -3243,8 +3273,7 @@ function privateLayoutCount() {
 }
 
 function setPersonalLayoutsLoadedStatus() {
-  const count = privateLayoutCount();
-  setLayoutLoadStatus("success", count ? `Личные укладки загружены: ${count} из ${count}` : "Личные укладки загружены: 0 из 0 · список пока пустой");
+  setLayoutLoadStatus("success", () => formatPersonalLayoutsLoadedStatus(privateLayoutCount(), uiLanguage));
 }
 
 function updateLayoutLoadStatusUi() {
@@ -3916,69 +3945,31 @@ function privateMojibakeLayoutFallbackName(layout) {
 }
 
 function repairPrivateMojibakeLayoutNames({ sync = true } = {}) {
+  const stateBeforePlaceholderRepair = clone(state);
+  const removedPlaceholderIds = removeLegacyGuestImportPlaceholders(state);
+  if (removedPlaceholderIds.length) {
+    saveRecoverySnapshot("before-guest-placeholder-repair", stateBeforePlaceholderRepair);
+  }
   const changed = repairMojibakeLayoutNames(state, {
     fallbackNameForLayout: privateMojibakeLayoutFallbackName
-  });
+  }) || removedPlaceholderIds.length > 0;
   if (changed) saveState({ sync });
   return changed;
 }
 
-function guestLayoutHasUserContentEdits(sourceState, layout) {
-  if (!layout) return false;
-  if (!isGuestDemoCopyLayoutRecord(layout)) return false;
-  if (guestDemoCopyRecordWasEdited(layout, layout)) return true;
-  const containerIds = getLayoutContainerIdSetForState(sourceState, layout);
-  const itemIds = getLayoutItemIdSetForState(sourceState, layout);
-  for (const containerId of containerIds) {
-    if (guestDemoCopyRecordWasEdited(sourceState.containers?.[containerId], layout)) return true;
-  }
-  for (const itemId of itemIds) {
-    if (guestDemoCopyRecordWasEdited(sourceState.items?.[itemId], layout)) return true;
-  }
-  return false;
-}
-
 function guestLocalLayoutCandidate(sourceState = state) {
-  if (!Object.values(sourceState.layouts || {}).some(isGuestLocalPersonalLayout)) return null;
-  try {
-    if (sameJson(cloneStateForSync(sourceState, { forSync: true }), cloneStateForSync(createEmptyUserState(), { forSync: true }))) {
-      return null;
-    }
-  } catch {
-    // If normalization fails, continue with the shape checks below.
-  }
-  const plan = guestLocalLayoutImportPlan({
-    layouts: sourceState.layouts,
-    activeLayoutId: sourceState.activeLayoutId,
-    isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
-    isGuestPersonalLayout: isGuestLocalPersonalLayout,
-    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
-    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(sourceState, layout)
+  return guestLocalLayoutCandidateFromState(sourceState, {
+    cloneStateForSync,
+    cloneValue: clone,
+    createEmptyUserState,
+    fallbackName: GUEST_LAYOUT_FALLBACK_NAME,
+    fallbackNameForLayout: guestLayoutImportFallbackName,
+    snapshotsEqual: sameJson
   });
-  if (!plan.layoutIds.length) return null;
-  const layouts = plan.layoutIds
-    .map((layoutId) => sourceState.layouts?.[layoutId])
-    .filter(Boolean)
-    .map((layout) => {
-      const fallbackName = guestLayoutImportFallbackName(layout);
-      return {
-        layoutId: layout.id,
-        layoutName: readableGuestDemoLayoutName(layout.name, fallbackName),
-        fallbackName
-      };
-    });
-  const primary = layouts.find((entry) => entry.layoutId === plan.primaryLayoutId) || layouts[0];
-  return {
-    sourceState: clone(sourceState),
-    displayPreferences: guestLocalDisplayPreferences(sourceState),
-    layouts,
-    layoutId: primary?.layoutId || "",
-    layoutName: primary?.layoutName || GUEST_LAYOUT_FALLBACK_NAME
-  };
 }
 
 function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, sourceState = state) {
-  if (isAdminSession()) return false;
+  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return false;
   if (previousScope !== GUEST_STORAGE_SCOPE || nextScope === GUEST_STORAGE_SCOPE) return false;
   if (isSharedListLinkRoute() || syncMetaAccountKey(syncMeta)) return false;
   if (currentViewScope() !== VIEW_SCOPE_GUEST_LOCAL && !hasGuestDemoCopyLayoutRecord(sourceState.layouts)) return false;
@@ -4010,7 +4001,7 @@ function consumeGuestLocalLayoutCandidate() {
 }
 
 function storedGuestLocalLayoutCandidate() {
-  if (isAdminSession()) return null;
+  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return null;
   if (storedGuestLocalLayoutCandidateOffered || localStorageScopeKey === GUEST_STORAGE_SCOPE) return null;
   if (!hasStoredLocalValue(STORAGE_KEY, GUEST_STORAGE_SCOPE)) return null;
   const candidate = guestLocalLayoutCandidate(loadStateForScope(GUEST_STORAGE_SCOPE));
@@ -4400,9 +4391,22 @@ function entitySyncStateDeps() {
 
 function entitySyncBodyContext() {
   return {
+    historyAction: currentHistoryActionContext(),
     syncDevice,
     syncMeta
   };
+}
+
+function currentHistoryActionContext() {
+  const afterState = serializeState({ forSync: true });
+  return buildHistoryActionContext({
+    beforeState: loadBaseState() || createEmptyUserState(),
+    afterState,
+    changedAt: syncMeta.localUpdatedAt,
+    deviceId: syncDevice.id,
+    getLayoutContainerIds: getLayoutContainerIdSetForState,
+    getLayoutItemIds: getLayoutItemIdSetForState
+  });
 }
 
 async function syncChangedEntityType(type, { baseState = null, forceOverwrite = false, listId = "" } = {}) {
@@ -4420,15 +4424,29 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
   if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
   if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true, changedIds, deletedIds };
   try {
-    const results = [];
-    for (const batch of splitEntitySyncEntries(type, entries)) {
-      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(targetListId)}/${config.endpoint}/sync`, {
-        method: "POST",
-        timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
-        body: JSON.stringify(buildEntitySyncBody(type, batch, { forceOverwrite }))
-      });
-      results.push(data);
-    }
+    const results = await syncEntityBatchesSequentially(splitEntitySyncEntries(type, entries), {
+      sendBatch: (batch) => syncEntityBatchWithRevisionRetry(batch, {
+        sendBatch: (currentBatch) => apiFetch(`/bike-packing/lists/${encodeURIComponent(targetListId)}/${config.endpoint}/sync`, {
+          method: "POST",
+          timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+          body: JSON.stringify(buildEntitySyncBody(type, currentBatch, { forceOverwrite }))
+        }),
+        refreshRevision: (error) => {
+          const conflictRecord = error.data?.record || error.data?.currentRecord || error.data || null;
+          const conflictMeta = stateIntegrityMetaFromResponse(conflictRecord, error.data);
+          const conflictUpdatedAt = remoteUpdatedAt(conflictRecord) || error.data?.serverUpdatedAt || "";
+          if (conflictMeta?.stateRevision == null && !conflictUpdatedAt) return false;
+          rememberConflictRemoteMeta(conflictRecord, conflictMeta, conflictUpdatedAt);
+          return true;
+        }
+      }),
+      onBatchResult: (data) => {
+        const batchMeta = stateIntegrityMetaFromResponse(data);
+        if (data?.serverUpdatedAt) syncMeta.serverUpdatedAt = data.serverUpdatedAt;
+        rememberRemoteIntegrityMeta(batchMeta);
+        saveSyncMeta();
+      }
+    });
     const conflicts = results.flatMap((data) => Array.isArray(data?.conflicts) ? data.conflicts : []);
     if (conflicts.length) {
       const remote = await fetchRemoteStateRecord().catch(() => null);
@@ -4528,22 +4546,31 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
   const baseState = loadBaseState();
   const expectedItemIds = [...getLayoutItemIdSet(layout)];
   const expectedContainerIds = [...getLayoutContainerIdSet(layout)];
-  let listId = currentPackingListId || "";
   try {
-    const item = await syncChangedEntityType("item", { baseState, listId });
-    if (!listId && currentPackingListId) listId = currentPackingListId;
-    const container = await syncChangedEntityType("container", { baseState, listId });
-    if (!listId && currentPackingListId) listId = currentPackingListId;
-    const layoutResult = await syncChangedEntityType("layout", { baseState, listId });
-    assertEntitySyncConfirmed(item, "items", expectedItemIds);
-    assertEntitySyncConfirmed(container, "containers", expectedContainerIds);
-    assertEntitySyncConfirmed(layoutResult, "layouts", [layoutId]);
-    const integrityMeta = layoutResult.integrityMeta || container.integrityMeta || item.integrityMeta || null;
+    const result = await syncCreatedLayoutEntityTypes({
+      assertConfirmed: assertEntitySyncConfirmed,
+      baseState,
+      expectedContainerIds,
+      expectedItemIds,
+      getCurrentListId: () => currentPackingListId,
+      layoutId,
+      listId: currentPackingListId || "",
+      refreshRevisionFromConflict: async (error) => {
+        const conflictRecord = error.data?.record || error.data?.currentRecord || error.data || null;
+        const conflictMeta = stateIntegrityMetaFromResponse(conflictRecord, error.data);
+        const conflictUpdatedAt = remoteUpdatedAt(conflictRecord) || error.data?.serverUpdatedAt || "";
+        if (conflictMeta?.stateRevision == null && !conflictUpdatedAt) return false;
+        rememberConflictRemoteMeta(conflictRecord, conflictMeta, conflictUpdatedAt);
+        return true;
+      },
+      rememberResult: (entityResult) => rememberEntitySyncResultMeta(entityResult, { rememberRemoteIntegrityMeta, syncMeta }),
+      syncEntityType: syncChangedEntityType
+    });
     syncMeta.dirty = false;
-    syncMeta.serverUpdatedAt = layoutResult.serverUpdatedAt || container.serverUpdatedAt || item.serverUpdatedAt || syncMeta.serverUpdatedAt;
+    syncMeta.serverUpdatedAt = result.serverUpdatedAt || syncMeta.serverUpdatedAt;
     syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || syncMeta.serverUpdatedAt || nowIso();
     syncMeta.lastSyncedLocalUpdatedAt = syncMeta.localUpdatedAt;
-    rememberRemoteIntegrityMeta(integrityMeta);
+    rememberRemoteIntegrityMeta(result.integrityMeta);
     rememberCurrentSyncAccount();
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
@@ -4552,7 +4579,11 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
     syncMeta.dirty = true;
     syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
     saveSyncMeta();
-    updateSyncUi(`Не удалось сохранить копию укладки: ${error.message}`);
+    updateSyncUi(localText(
+      `Could not finish saving the layout copy: ${createdLayoutSyncErrorText(error, "en")} · sync will retry automatically`,
+      `Не удалось завершить сохранение копии укладки: ${createdLayoutSyncErrorText(error, "ru")} · синхронизация повторится автоматически`
+    ));
+    scheduleRemoteSave();
     throw error;
   }
 }
@@ -5550,15 +5581,31 @@ function chooseDefaultPackingList(lists) {
 }
 
 async function ensureCurrentPackingListId() {
-  if (isPublicTemplateListId(currentPackingListId)) saveActivePackingListId("");
-  if (currentPackingListId) return currentPackingListId;
-  const data = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
-  const list = chooseDefaultPackingList(normalizePackingListsResponse(data));
-  if (list?.id) {
-    saveActivePackingListId(list.id);
-    return currentPackingListId;
-  }
-  throw new Error("Список для загрузки фото не найден.");
+  return ensurePersonalListId({
+    chooseDefaultList: chooseDefaultPackingList,
+    clearCurrentListId: () => saveActivePackingListId(""),
+    createList: () => apiFetch("/bike-packing/lists", {
+      method: "POST",
+      timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
+      body: JSON.stringify({
+        ...buildListSaveBody({ forceOverwrite: true }),
+        title: localText("My packing lists", "Мои укладки")
+      })
+    }),
+    fetchLists: () => apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS }),
+    getCurrentListId: () => currentPackingListId,
+    isPublicTemplateListId,
+    missingListMessage: localText("Personal list could not be created.", "Не удалось создать личный список укладок."),
+    normalizeLists: normalizePackingListsResponse,
+    recordId: remoteRecordId,
+    rememberRecord: rememberCurrentPackingListRecord,
+    onResolved: (record, data) => {
+      const updatedAt = remoteUpdatedAt(record);
+      rememberRemoteIntegrityMeta(record, data);
+      syncMeta.serverUpdatedAt = updatedAt || syncMeta.serverUpdatedAt;
+      saveSyncMeta();
+    }
+  });
 }
 
 async function checkAuthAndLoad(options = {}) {
@@ -5930,6 +5977,7 @@ async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
 function buildListSaveBody({ forceOverwrite = false } = {}) {
   return buildListSaveBodyForSync({
     forceOverwrite,
+    historyAction: currentHistoryActionContext(),
     nowIso,
     serializeState,
     syncDevice,
@@ -6230,7 +6278,7 @@ async function copySharedListLink(link) {
 async function fetchRemoteListStateSnapshot(listId) {
   let stateRecord = null;
   try {
-    setLayoutLoadProgress({ loaded: 0, total: null, prefix: "Получаю данные укладок" });
+    setLayoutLoadProgress({ loaded: 0, total: null, prefix: localText("Loading layout data", "Получаю данные укладок") });
     const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/state`, {
       timeoutMs: LIST_API_TIMEOUT_MS
     });
@@ -6239,7 +6287,7 @@ async function fetchRemoteListStateSnapshot(listId) {
     try {
       const detailRecord = await fetchRemoteListDetailRecord(listId);
       const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
-      setLoadedRemoteListProgress(bestRecord, "Данные укладок получены", { final: true });
+      setLoadedRemoteListProgress(bestRecord, localText("Layout data received", "Данные укладок получены"), { final: true });
       return bestRecord;
     } catch {
       throw stateError;
@@ -6247,16 +6295,16 @@ async function fetchRemoteListStateSnapshot(listId) {
   }
   const stateCount = remoteRecordPrivateLayoutCount(stateRecord);
   if (stateRecord?.payload && stateCount > 1) {
-    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены");
+    setLoadedRemoteListProgress(stateRecord, localText("Layout data received", "Данные укладок получены"));
     return stateRecord;
   }
   try {
     const detailRecord = await fetchRemoteListDetailRecord(listId);
     const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
-    setLoadedRemoteListProgress(bestRecord, "Данные укладок получены", { final: true });
+    setLoadedRemoteListProgress(bestRecord, localText("Layout data received", "Данные укладок получены"), { final: true });
     return bestRecord;
   } catch {
-    setLoadedRemoteListProgress(stateRecord, "Данные укладок получены", { final: true });
+    setLoadedRemoteListProgress(stateRecord, localText("Layout data received", "Данные укладок получены"), { final: true });
     return stateRecord;
   }
 }
@@ -6282,7 +6330,7 @@ async function fetchRemoteListStateRecord() {
   let savedRecord = null;
   if (currentPackingListId) {
     try {
-      setLayoutLoadStatus("loading", "Загружаю сохранённую личную укладку...");
+      setLayoutLoadStatus("loading", localText("Loading the saved personal layout...", "Загружаю сохранённую личную укладку..."));
       savedRecord = await fetchRemoteListStateSnapshot(currentPackingListId);
     } catch (error) {
       if (error.status === 404) saveActivePackingListId("");
@@ -6298,7 +6346,9 @@ async function fetchRemoteListStateRecord() {
 
   setLayoutLoadStatus(
     "loading",
-    savedRecord?.payload ? "Проверяю, нет ли полного списка личных укладок..." : "Получаю список личных укладок..."
+    savedRecord?.payload
+      ? localText("Checking for the full list of personal layouts...", "Проверяю, нет ли полного списка личных укладок...")
+      : localText("Loading the list of personal layouts...", "Получаю список личных укладок...")
   );
   let data = null;
   try {
@@ -6319,7 +6369,7 @@ async function fetchRemoteListStateRecord() {
   setLayoutLoadProgress({
     loaded: 0,
     total: null,
-    prefix: "Найден список, загружаю укладки"
+    prefix: localText("List found, loading layouts", "Найден список, загружаю укладки")
   });
   const catalogRecord = normalizeRemoteListRecord(list);
   const listId = remoteRecordId(catalogRecord);
@@ -6334,7 +6384,7 @@ async function fetchRemoteListStateRecord() {
   const bestRecord = pickRicherRemoteListRecord(savedRecord, snapshotRecord);
   if (bestRecord) {
     rememberCurrentPackingListRecord(bestRecord);
-    setLoadedRemoteListProgress(bestRecord, "Личные укладки выбраны", { final: true });
+    setLoadedRemoteListProgress(bestRecord, localText("Personal layouts selected", "Личные укладки выбраны"), { final: true });
   }
   return bestRecord;
 }
@@ -6706,6 +6756,7 @@ const queuedSaveRemoteState = createQueuedRemoteSave((options = {}) => saveRemot
       isSuspiciousEmptyPackingState,
       isTemporaryServerStorageError,
       isTimeoutError,
+      localText,
       loadBaseState,
       nowIso,
       remoteUpdatedAt,
@@ -6753,7 +6804,8 @@ async function handleRemoteSaveConflict(error, options = {}) {
       get appUnlocked() { return appUnlocked; },
       set appUnlocked(value) { appUnlocked = value; },
       get state() { return state; },
-      get syncMeta() { return syncMeta; }
+      get syncMeta() { return syncMeta; },
+      get uiLanguage() { return uiLanguage; }
     },
     dependencies: {
       applyConflictChoices,
@@ -6808,12 +6860,18 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
     syncMeta.dirty = true;
     syncMeta.localUpdatedAt = nowIso();
     saveSyncMeta();
-    updateSyncUi("Гостевые укладки перенесены локально, но не отправлены: импорт не содержит вещей или сумок");
+    updateSyncUi(localText(
+      "Guest layouts were imported locally but not uploaded: the import has no items or bags",
+      "Гостевые укладки перенесены локально, но не отправлены: импорт не содержит вещей или сумок"
+    ));
     return false;
   }
   await saveRemoteState({ notify: false, forceOverwrite: true });
   if (syncMeta.dirty) {
-    updateSyncUi("Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз...");
+    updateSyncUi(localText(
+      "The server requested another sync · saving the guest layout again...",
+      "Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз..."
+    ));
     await saveRemoteState({ notify: false, forceOverwrite: false });
   }
   const remoteValidation = await confirmGuestImportRemoteState(importedLayoutIds);
@@ -6821,12 +6879,15 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
   syncMeta.dirty = true;
   syncMeta.localUpdatedAt = nowIso();
   saveSyncMeta();
-  updateSyncUi("Гостевые укладки перенесены локально, но сервер пока не вернул их после сохранения");
+  updateSyncUi(localText(
+    "Guest layouts were imported locally, but the server has not returned them after saving yet",
+    "Гостевые укладки перенесены локально, но сервер пока не вернул их после сохранения"
+  ));
   return false;
 }
 
 async function offerPendingGuestLocalLayoutsAfterRemoteLoad() {
-  if (isAdminSession()) {
+  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) {
     pendingGuestLocalLayoutCandidate = null;
     return false;
   }
@@ -6835,44 +6896,58 @@ async function offerPendingGuestLocalLayoutsAfterRemoteLoad() {
   appUnlocked = true;
   initialRemoteLoadPending = false;
   renderPreservingPackingScroll();
-  updateSyncUi("Личные укладки загружены · переношу гостевые укладки в аккаунт...");
+  updateSyncUi(localText(
+    "Personal layouts loaded · importing guest layouts into the account...",
+    "Личные укладки загружены · переношу гостевые укладки в аккаунт..."
+  ));
   await offerSaveGuestLocalLayouts(guestCandidate);
   return true;
 }
 
 async function offerSaveGuestLocalLayouts(candidate) {
-  if (isAdminSession()) return false;
+  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return false;
   const layouts = guestCandidateLayouts(candidate);
   if (!candidate?.sourceState || !layouts.length || !currentUser) return false;
   const importedLayoutIds = importGuestLocalLayouts({ ...candidate, layouts }, { renameConflicts: true });
   if (!importedLayoutIds.length) {
-    updateSyncUi("Гостевые укладки уже были перенесены или в них нет данных для импорта");
+    updateSyncUi(localText(
+      "Guest layouts were already imported or contain no data to import",
+      "Гостевые укладки уже были перенесены или в них нет данных для импорта"
+    ));
     return false;
   }
   renderPreservingPackingScroll();
   updateSyncUi(importedLayoutIds.length > 1
-    ? "Гостевые укладки добавлены в аккаунт · сохраняю на сервер..."
-    : "Гостевая укладка добавлена в аккаунт · сохраняю на сервер...");
-  const saved = await saveGuestImportToRemote(importedLayoutIds);
+    ? localText("Guest layouts added to the account · saving to the server...", "Гостевые укладки добавлены в аккаунт · сохраняю на сервер...")
+    : localText("Guest layout added to the account · saving to the server...", "Гостевая укладка добавлена в аккаунт · сохраняю на сервер..."));
+  const saved = await persistGuestImportBeforeCleanup(importedLayoutIds, {
+    persistImport: saveGuestImportToRemote,
+    clearGuestStorage: () => clearLocalStorageScope(GUEST_STORAGE_SCOPE, [
+      STORAGE_KEY,
+      BASE_STATE_KEY,
+      SYNC_META_KEY,
+      RECOVERY_STATE_KEY,
+      ACTIVE_LIST_ID_KEY,
+      ACTIVE_LAYOUT_CHOICE_KEY,
+      ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
+      ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY
+    ])
+  });
   if (!saved) {
-    updateSyncUi("Гостевые укладки перенесены в аккаунт · сохраню на сервер автоматически при следующей проверке");
-    showToast("Гостевые укладки перенесены в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически.", "warning");
+    updateSyncUi(localText(
+      "Guest layouts were imported into the account · they will be saved to the server automatically during the next check",
+      "Гостевые укладки перенесены в аккаунт · сохраню на сервер автоматически при следующей проверке"
+    ));
+    showToast(localText(
+      "Guest layouts were imported into the account. The local version is safe; sync will retry automatically.",
+      "Гостевые укладки перенесены в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически."
+    ), "warning");
     scheduleRemoteSave();
     return false;
   }
-  clearLocalStorageScope(GUEST_STORAGE_SCOPE, [
-    STORAGE_KEY,
-    BASE_STATE_KEY,
-    SYNC_META_KEY,
-    RECOVERY_STATE_KEY,
-    ACTIVE_LIST_ID_KEY,
-    ACTIVE_LAYOUT_CHOICE_KEY,
-    ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
-    ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY
-  ]);
   showToast(importedLayoutIds.length > 1
-    ? "Гостевые укладки сохранены в аккаунт."
-    : "Гостевая укладка сохранена в аккаунт.", "success");
+    ? localText("Guest layouts were saved to the account.", "Гостевые укладки сохранены в аккаунт.")
+    : localText("Guest layout was saved to the account.", "Гостевая укладка сохранена в аккаунт."), "success");
   return true;
 }
 
@@ -6949,6 +7024,7 @@ async function loadRemoteState(options = {}) {
       isSuspiciousEmptyPackingState,
       isTemporaryServerStorageError,
       isTimeoutError,
+      localText,
       loadBaseState,
       mergeStateFromBase,
       normalizeRemoteState,
@@ -8344,8 +8420,9 @@ async function copySharedLayout(layoutId) {
   if (!layout) return;
   if (layout.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()) {
     await createLocalDemoCopy({ forceNew: true }).catch((error) => {
-      updateSyncUi(`Demo copy failed: ${error.message}`);
-      showToast(`Не удалось сохранить демо-копию: ${error.message}`, "error");
+      const errorText = createdLayoutSyncErrorText(error, uiLanguage);
+      updateSyncUi(localText(`Could not save the demo copy: ${errorText}`, `Не удалось сохранить демо-копию: ${errorText}`));
+      showToast(localText(`Could not save the demo copy: ${errorText}`, `Не удалось сохранить демо-копию: ${errorText}`), "error");
     });
     return;
   }
@@ -8378,9 +8455,16 @@ async function copySharedLayout(layoutId) {
   render();
   try {
     await syncCreatedPrivateLayoutEntities(nextLayoutId);
-    showToast(`Укладка «${layout.name}» скопирована.`, "success");
+    showToast(localText(
+      `Layout “${layout.name}” copied and saved to the server.`,
+      `Укладка «${layout.name}» скопирована и сохранена на сервере.`
+    ), "success");
   } catch (error) {
-    showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
+    const errorText = createdLayoutSyncErrorText(error, uiLanguage);
+    showToast(localText(
+      `The layout was created locally but was not saved to the server: ${errorText}`,
+      `Укладка создана локально, но не сохранена на сервере: ${errorText}`
+    ), "error");
   }
 }
 
@@ -8715,7 +8799,7 @@ function renderHistorySourceControls() {
 async function refreshHistoryDialog() {
   renderHistorySourceControls();
   refs.historyStatus.className = "dialog-status";
-  refs.historyStatus.textContent = "Загружаю историю...";
+  refs.historyStatus.textContent = t("history.loading");
   refs.historyList.innerHTML = "";
   try {
     const source = activeHistorySource;
@@ -8724,12 +8808,15 @@ async function refreshHistoryDialog() {
       loadCurrentHistoryComparisonState(source).catch(() => null)
     ]);
     if (source !== activeHistorySource) return;
-    historyRecords = records;
+    historyRecords = restorableHistoryRecords(records, comparisonState, {
+      recordState: (record) => historyRecordState(record, source),
+      statesDiffer: hasHistoryStateChanges
+    });
     historyComparisonState = comparisonState;
     renderHistoryRecords(historyRecords);
   } catch (error) {
     refs.historyStatus.className = "dialog-status error";
-    refs.historyStatus.textContent = `Не удалось загрузить историю: ${error.message}`;
+    refs.historyStatus.textContent = `${t("history.loadFailed")} ${error.message}`;
   }
 }
 
@@ -8827,21 +8914,33 @@ async function loadPrivateRemoteHistory() {
 function renderHistoryRecords(records) {
   if (!records.length) {
     refs.historyStatus.className = "dialog-status";
-    refs.historyStatus.textContent = `${historySourceLabel()} · истории пока нет. Она появится после нескольких успешных сохранений.`;
+    refs.historyStatus.textContent = t("history.empty", { source: historySourceLabel() });
     refs.historyList.innerHTML = "";
     return;
   }
   refs.historyStatus.className = "dialog-status success";
-  refs.historyStatus.textContent = `${historySourceLabel()} · найдено версий: ${records.length}`;
+  refs.historyStatus.textContent = t("history.found", { source: historySourceLabel(), count: records.length });
   refs.historyList.innerHTML = records.map((record, index) => renderHistoryRecordArticleHtml(record, index, records, {
     activeSource: activeHistorySource,
-    formatDateTime: formatHistoryDateTime,
+    formatDateTime: (value) => formatHistoryDateTime(value, { language: uiLanguage }),
+    localText,
+    latestRestoreText: t("history.undoLatest"),
+    publishText: t("history.publishVersion"),
     recordKey: historyRecordKey,
+    recordMetaText: (record, payload) => historyRecordScopeText(record, payload, {
+      daily: t("history.dailyCheckpoint"),
+      global: t("history.globalAction"),
+      layout: (name) => t("history.layoutAction", { name }),
+      multiple: t("history.multipleAction")
+    }),
     recordState: historyRecordState,
     recordTitle: historyRecordTitle,
+    restoreTextForRecord: historyUndoActionText,
+    restoreText: t("history.undoChanges"),
     showTitle: false,
     summarizePayload: summarizeHistoryPayload
   })).join("");
+  syncHistoryActionButtonTooltips(refs.historyList);
   refs.historyList.querySelectorAll("[data-history-record]").forEach((recordElement) => {
     recordElement.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -8862,6 +8961,24 @@ function renderHistoryRecords(records) {
   });
 }
 
+function historyUndoActionText(record, index, records = historyRecords) {
+  if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") {
+    return t("history.undoAfterCheckpoint");
+  }
+  const action = historyRecordAction(record, index, records, {
+    currentComparisonState: currentHistoryComparisonState,
+    recordState: historyRecordState
+  });
+  if (!action) return t("history.undoMixed");
+  if (action.operation === "mixed" || !action.title) return t("history.undoMixed");
+  const key = action.operation === "added"
+    ? "history.undoAdded"
+    : action.operation === "removed"
+      ? "history.undoRemoved"
+      : "history.undoChanged";
+  return t(key, { name: action.title });
+}
+
 function findHistoryRecordByKey(recordKey) {
   const key = String(recordKey || "");
   const index = historyRecords.findIndex((item, itemIndex) => historyRecordKey(item, itemIndex) === key);
@@ -8876,22 +8993,36 @@ function openHistoryRecordDetails(recordKey) {
   const { record, index, records } = findHistoryRecordByKey(recordKey);
   if (!record || index < 0) return;
   selectedHistoryDetailRecordKey = historyRecordKey(record, index);
-  const createdAt = formatHistoryDateTime(record.createdAt || record.created_at);
-  if (refs.historyDetailTitle) refs.historyDetailTitle.textContent = createdAt ? `Версия ${createdAt}` : "Детали версии";
+  const createdAt = formatHistoryDateTime(record.createdAt || record.created_at, { language: uiLanguage });
+  const undoActionText = historyUndoActionText(record, index, records);
+  if (refs.historyDetailTitle) {
+    refs.historyDetailTitle.textContent = undoActionText
+      ? undoActionText
+      : createdAt
+        ? localText(`Version ${createdAt}`, `Версия ${createdAt}`)
+        : localText("Version details", "Детали версии");
+  }
   if (refs.historyDetailContent) {
     refs.historyDetailContent.innerHTML = renderHistoryRecordDetailsHtml(record, index, records, {
       activeSource: activeHistorySource,
       currentComparisonState: currentHistoryComparisonState,
-      formatDateTime: formatHistoryDateTime,
+      formatDateTime: (value) => formatHistoryDateTime(value, { language: uiLanguage }),
+      localText,
       recordState: historyRecordState,
       recordTitle: historyRecordTitle,
+      restoreComparisonTitle: t(
+        String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily"
+          ? "history.checkpointChangesTitle"
+          : "history.restoreChangesTitle"
+      ),
       summarizePayload: summarizeHistoryPayload
     });
   }
   if (refs.historyDetailRestoreBtn) {
-    refs.historyDetailRestoreBtn.textContent = activeHistorySource === "private" ? "Восстановить" : "Опубликовать";
+    refs.historyDetailRestoreBtn.textContent = historyUndoActionText(record, index, records);
   }
   openModalDialog(refs.historyDetailDialog);
+  syncHistoryActionButtonTooltips(refs.historyDetailDialog);
 }
 
 function historyRecordState(record, source = activeHistorySource) {
@@ -8916,46 +9047,51 @@ function currentHistoryComparisonState() {
 function historySourceLabel(source = activeHistorySource) {
   if (source === "demo") {
     const target = selectedHistoryDemoTarget();
-    return target?.name ? `Демо · ${target.name} · ${languageOptionLabel(target.language)}` : "Демо";
+    return target?.name ? `${t("history.sourceDemo")} · ${target.name} · ${languageOptionLabel(target.language)}` : t("history.sourceDemo");
   }
   if (source === "shared") {
     const layout = findSharedLayout(refs.historySharedSelect?.value);
-    return layout?.name ? `Шаблон · ${layout.name}` : "Шаблон";
+    return layout?.name ? `${t("history.sourceTemplate")} · ${layout.name}` : t("history.sourceTemplate");
   }
-  return "Моя история";
+  return t("history.sourceMine");
 }
 
 async function restoreHistoryRecord(recordKey) {
-  const { record } = findHistoryRecordByKey(recordKey);
+  const { record, index, records } = findHistoryRecordByKey(recordKey);
   const restoredState = historyRecordState(record);
   if ((activeHistorySource === "demo" || activeHistorySource === "shared") && record && restoredState) {
-    await publishPublicHistoryRecord(record, restoredState);
+    await publishPublicHistoryRecord(record, restoredState, { index, records });
     return;
   }
   if (!record || !restoredState) {
-    showToast("Не удалось прочитать выбранную версию.", "error");
+    showToast(localText("Could not read the selected version.", "Не удалось прочитать выбранную версию."), "error");
     return;
   }
-  const confirmed = await askConfirmDialog({
-    title: "Восстановить версию?",
-    text: `Будет восстановлена версия от ${formatHistoryDateTime(record.createdAt || record.created_at) || "неизвестной даты"}. Текущая версия перед этим останется в истории.`,
-    okText: "Восстановить",
-    cancelText: "Отмена"
-  });
+  const impact = historyRollbackImpact(record, index, records);
+  const restoreLayoutIds = impact.isDeepRollback ? [] : historyRecordRestoreLayoutIds(record);
+  const restoredLayoutName = restoreLayoutIds.length
+    ? String(restoredState.layouts?.[restoreLayoutIds[0]]?.name || state.layouts?.[restoreLayoutIds[0]]?.name || restoreLayoutIds[0])
+    : "";
+  const confirmed = await askConfirmDialog(historyUndoConfirmation({
+    actionText: historyUndoActionText(record, index, records),
+    ...impact,
+    layoutName: restoredLayoutName,
+    localText
+  }));
   if (!confirmed) return;
   refs.historyDialog.close();
   refs.historyDetailDialog?.close();
-  updateSyncUi("Восстанавливаю версию на сервере...");
+  updateSyncUi(localText("Undoing the action on the server...", "Отменяю действие на сервере..."));
   try {
-    await restorePrivateHistoryRecordOnServer(record);
-    showToast("Версия восстановлена.", "success");
+    await restorePrivateHistoryRecordOnServer(record, { layoutScoped: !impact.isDeepRollback });
+    showToast(localText("Action undone.", "Действие отменено."), "success");
   } catch (error) {
-    updateSyncUi(`Не удалось восстановить версию: ${error.message}`);
-    showToast(`Не удалось восстановить версию: ${error.message}`, "error");
+    updateSyncUi(localText(`Could not undo the action: ${error.message}`, `Не удалось отменить действие: ${error.message}`));
+    showToast(localText(`Could not undo the action: ${error.message}`, `Не удалось отменить действие: ${error.message}`), "error");
   }
 }
 
-async function restorePrivateHistoryRecordOnServer(record) {
+async function restorePrivateHistoryRecordOnServer(record, { layoutScoped = true } = {}) {
   const historyId = Number(record?.id || 0);
   if (!Number.isFinite(historyId) || historyId <= 0) {
     throw new Error("Не удалось определить ID версии из истории.");
@@ -8975,12 +9111,14 @@ async function restorePrivateHistoryRecordOnServer(record) {
   const baseStateRevision = currentMeta.stateRevision ?? currentRecord?.stateRevision ?? currentRecord?.state_revision ?? null;
   rememberRemoteIntegrityMeta(currentRecord);
   saveSyncMeta();
+  const layoutIds = layoutScoped ? historyRecordRestoreLayoutIds(record) : [];
   const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history/${encodeURIComponent(historyId)}/restore`, {
     method: "POST",
     timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
     body: JSON.stringify({
       baseStateRevision,
-      stateRevision: baseStateRevision
+      stateRevision: baseStateRevision,
+      ...(layoutIds.length ? { layoutIds } : {})
     })
   });
   const recordData = normalizeRemoteListRecord(data);
@@ -9009,22 +9147,28 @@ function selectedHistoryPublishedTarget() {
   return sharedId ? { type: "shared", sharedId } : null;
 }
 
-async function publishPublicHistoryRecord(record, payload) {
+async function publishPublicHistoryRecord(record, payload, { index = 0, records = historyRecords } = {}) {
   if (!canOpenAdminPublishedEdit()) {
-    showToast("Публиковать версии demo/shared может только админ.", "error");
+    showToast(localText(
+      "Only an admin can undo demo/template actions.",
+      "Отменять действия в демо и шаблонах может только администратор."
+    ), "error");
     return;
   }
   const target = selectedHistoryPublishedTarget();
   if (!target) {
-    showToast("Не удалось определить public-укладку для истории.", "error");
+    showToast(localText(
+      "Could not identify the public layout for history.",
+      "Не удалось определить public-укладку для истории."
+    ), "error");
     return;
   }
-  const confirmed = await askConfirmDialog({
-    title: "Опубликовать версию?",
-    text: `Будет опубликована версия ${historySourceLabel()} от ${formatHistoryDateTime(record.createdAt || record.created_at) || "неизвестной даты"}. Текущая public-версия перед этим должна остаться в истории.`,
-    okText: "Опубликовать",
-    cancelText: "Отмена"
-  });
+  const impact = historyRollbackImpact(record, index, records);
+  const confirmed = await askConfirmDialog(historyUndoConfirmation({
+    actionText: historyUndoActionText(record, index, records),
+    ...impact,
+    localText
+  }));
   if (!confirmed) return;
   const path = target.type === "demo"
     ? demoAdminStatePathForPublicListId(target.demoListId || "", target.language || uiLanguage)
@@ -9034,8 +9178,10 @@ async function publishPublicHistoryRecord(record, payload) {
     : findSharedLayout(target.sharedId)?.language || uiLanguage;
   refs.historyDialog.close();
   refs.historyDetailDialog?.close();
-  updateSyncUi(target.type === "demo" ? "Публикую demo-версию из истории..." : "Публикую shared-версию из истории...");
-  await apiFetch(path, {
+  updateSyncUi(target.type === "demo"
+    ? localText("Undoing the demo action...", "Отменяю действие в демо...")
+    : localText("Undoing the template action...", "Отменяю действие в шаблоне..."));
+  const data = await apiFetch(path, {
     method: "POST",
     timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
     body: JSON.stringify({
@@ -9045,15 +9191,35 @@ async function publishPublicHistoryRecord(record, payload) {
       payload
     })
   });
+  const responseRecord = normalizeRemoteListRecord(data);
+  const publishedPayload = normalizePublishedStatePayload(responseRecord?.payload) || payload;
+  const publishedUpdatedAt = remoteUpdatedAt(responseRecord) || data?.updatedAt || data?.serverUpdatedAt || nowIso();
   if (target.type === "demo") {
-    setDemoStatePayloadForLanguage(target.language || uiLanguage, payload, { listId: target.demoListId || "" });
+    setDemoStatePayloadForLanguage(target.language || uiLanguage, publishedPayload, { listId: target.demoListId || "" });
+    publishedListStateCache.set(target.demoListId || demoPublicListIdForLanguage(target.language || uiLanguage), publishedPayload, {
+      updatedAt: publishedUpdatedAt
+    });
   } else {
     const sharedLayout = findSharedLayout(target.sharedId);
-    if (sharedLayout) sharedLayout.statePayload = payload;
+    if (sharedLayout) sharedLayout.statePayload = publishedPayload;
+    publishedItemKeyStateCache.set(sharedLayoutItemKey(target.sharedId), publishedPayload, {
+      updatedAt: publishedUpdatedAt
+    });
   }
+  replaceActivePublishedHistoryDraft({
+    activateLayout: activateAdminPublishedLayout,
+    demoPublicListIdForLanguage,
+    importDemoState: importDemoStateAsEditableLayout,
+    materializeSharedLayout: materializeSharedLayoutForAdmin,
+    normalizeLanguage: normalizeUiLanguage,
+    payload: publishedPayload,
+    removeLayoutTree,
+    state,
+    target
+  });
   refreshPublishedLayoutView(target);
   updateSyncUi();
-  showToast("Версия из истории опубликована.", "success");
+  showToast(localText("Action undone.", "Действие отменено."), "success");
 }
 
 function switchView(view) {
@@ -9265,10 +9431,13 @@ async function renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice = 
   setLayoutLoadStatus(
     "loading",
     count
-      ? `Показана локальная копия: ${count} загружено · проверяю сервер`
-      : "Показана локальная копия · проверяю сервер"
+      ? localText(
+        `Local copy shown: ${count} loaded · checking the server`,
+        `Показана локальная копия: ${count} загружено · проверяю сервер`
+      )
+      : localText("Local copy shown · checking the server", "Показана локальная копия · проверяю сервер")
   );
-  updateSyncUi("Показана локальная копия · проверяю сервер...");
+  updateSyncUi(localText("Local copy shown · checking the server...", "Показана локальная копия · проверяю сервер..."));
   return true;
 }
 
@@ -9298,6 +9467,7 @@ function renderFilters() {
     isLayoutLocked,
     isReadOnlyStateScope,
     isSharedLayoutView,
+    layoutDisplayNameForLanguage,
     linkedSharedListLayout,
     publicLayoutChoiceForLayout,
     readonlyPublicTemplateOptionLabel,

@@ -32,6 +32,13 @@ test("CRITICAL offline-auth-scope: explicit sign-out disables private offline ac
   assert.equal(buildRememberedOfflineUser({ storage, signedOut: true }), null);
 });
 
+test("CRITICAL offline-auth-scope: pending magic-link email cannot replace the guest scope", () => {
+  const storage = new MemoryStorage();
+  storage.setItem(AUTH_EMAIL_KEY, "pending@example.com");
+
+  assert.equal(buildRememberedOfflineUser({ storage }), null);
+});
+
 test("CRITICAL offline-auth-scope: legacy email metadata can recover an id scope", () => {
   const storage = new MemoryStorage();
   storage.setItem(AUTH_EMAIL_KEY, "person@example.com");

@@ -36,6 +36,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     updateSyncUi,
     uploadPendingPhotos
   } = dependencies;
+  const localText = dependencies.localText || ((en, ru) => runtime.uiLanguage === "en" ? en : ru);
   if (!runtime.currentUser) return;
   if (forceOverwrite) {
     runtime.syncMeta.localUpdatedAt = nowIso();
@@ -56,19 +57,28 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     if (isSuspiciousEmptyPackingState(runtime.state)) {
       runtime.syncMeta.dirty = false;
       saveSyncMeta();
-      updateSyncUi("Пустая локальная укладка не отправлена на сервер · загрузите восстановленную версию");
-      if (notify) showToast("Пустая локальная укладка не отправлена на сервер.", "error");
+      updateSyncUi(localText(
+        "The empty local layout was not sent to the server · load the recovered version",
+        "Пустая локальная укладка не отправлена на сервер · загрузите восстановленную версию"
+      ));
+      if (notify) showToast(localText(
+        "The empty local layout was not sent to the server.",
+        "Пустая локальная укладка не отправлена на сервер."
+      ), "error");
       return;
     }
     if (!forceOverwrite && blockDestructiveLocalSave()) {
-      if (notify) showToast("Локальная версия похожа на усечённую. Я не отправил её на сервер.", "error");
+      if (notify) showToast(localText(
+        "The local version appears to be incomplete. It was not sent to the server.",
+        "Локальная версия похожа на усечённую. Я не отправил её на сервер."
+      ), "error");
       return;
     }
     if (!forceOverwrite && typeof preflightRemoteSaveConflict === "function") {
       const handled = await preflightRemoteSaveConflict({ notify, preferredLayout });
       if (handled) return;
     }
-    updateSyncUi("Сохраняю на сервер...");
+    updateSyncUi(localText("Saving to the server...", "Сохраняю на сервер..."));
     const baseBeforeSave = loadBaseState();
     const entitySync = forceOverwrite
       ? { attempted: false, skipped: true, unavailable: false, integrityMeta: null, upserted: [], deleted: [] }
@@ -92,7 +102,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       saveBaseState(serializeState({ forSync: true }));
       saveSyncMeta();
       updateSyncUi();
-      if (notify) showToast("Синхронизация завершена.", "success");
+      if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
       return;
     }
     if (!forceOverwrite && entitySync.attempted && hasLegacyChanges) {
@@ -100,7 +110,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       // records, but an audited top-level legacy diff remains. New ordinary
       // fields should be modeled as entities/local UI state instead.
       const fallbackReason = legacyPayloadFallbackReasonText([...confirmationFailures, ...legacyDiffKeys]);
-      updateSyncUi(`Сохраняю полный payload · ${fallbackReason}`);
+      updateSyncUi(localText(`Saving the full payload · ${fallbackReason}`, `Сохраняю полный payload · ${fallbackReason}`));
       console.info("[bike-packing] Full payload fallback after entity sync", {
         confirmationFailures,
         legacyDiffKeys
@@ -123,7 +133,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     saveBaseState(serializeState({ forSync: true }));
     saveSyncMeta();
     updateSyncUi();
-    if (notify) showToast("Синхронизация завершена.", "success");
+    if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
   } catch (error) {
     if (isReadOnlyBikePackingError(error)) {
       runtime.syncMeta.dirty = false;
@@ -136,8 +146,15 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
     runtime.syncMeta.dirty = true;
     saveSyncMeta();
     if (isLegacyPersonalSyncWriteBlockedError(error)) {
-      updateSyncUi("Новый API синхронизации недоступен · legacy-запись отключена, изменения сохранены на устройстве");
-      if (notify) showToast("Новый API синхронизации недоступен. Изменения остались на устройстве и не отправлены в старый legacy-путь.", "error");
+      const causeMessage = String(error.cause?.message || "").trim();
+      updateSyncUi(localText(
+        `Could not save personal layouts${causeMessage ? `: ${causeMessage}` : ""} · changes are saved on this device`,
+        `Не удалось сохранить личные укладки${causeMessage ? `: ${causeMessage}` : ""} · изменения сохранены на устройстве`
+      ));
+      if (notify) showToast(localText(
+        "Personal layouts were not saved to the server. Changes remain on this device.",
+        "Личные укладки не сохранены на сервере. Изменения остались на устройстве."
+      ), "error");
       return;
     }
     if (error.status === 409) {
@@ -158,8 +175,14 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
             return;
           }
         }
-        updateSyncUi("Сервер всё ещё отклоняет принудительное сохранение · локальная версия оставлена");
-        if (notify) showToast("Сервер не принял принудительное сохранение. Локальная версия не потеряна.", "error");
+        updateSyncUi(localText(
+          "The server still rejects the forced save · the local version was kept",
+          "Сервер всё ещё отклоняет принудительное сохранение · локальная версия оставлена"
+        ));
+        if (notify) showToast(localText(
+          "The server rejected the forced save. The local version was not lost.",
+          "Сервер не принял принудительное сохранение. Локальная версия не потеряна."
+        ), "error");
         return;
       }
       await handleRemoteSaveConflict(error, {
@@ -170,22 +193,38 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       return;
     }
     if (isTemporaryServerStorageError(error)) {
-      updateSyncUi("Серверная синхронизация временно недоступна · изменения сохранены на устройстве");
-      if (notify) showToast("Серверная синхронизация временно недоступна. Изменения остались на устройстве.", "error");
+      updateSyncUi(localText(
+        "Server sync is temporarily unavailable · changes are saved on this device",
+        "Серверная синхронизация временно недоступна · изменения сохранены на устройстве"
+      ));
+      if (notify) showToast(localText(
+        "Server sync is temporarily unavailable. Changes remain on this device.",
+        "Серверная синхронизация временно недоступна. Изменения остались на устройстве."
+      ), "error");
       return;
     }
     if (isTimeoutError(error)) {
-      updateSyncUi("Сервер долго отвечает · изменения сохранены на устройстве");
-      if (notify) showToast("Сервер долго отвечает. Изменения остались на устройстве.", "error");
+      updateSyncUi(localText(
+        "The server is taking too long to respond · changes are saved on this device",
+        "Сервер долго отвечает · изменения сохранены на устройстве"
+      ));
+      if (notify) showToast(localText(
+        "The server is taking too long to respond. Changes remain on this device.",
+        "Сервер долго отвечает. Изменения остались на устройстве."
+      ), "error");
       return;
     }
     if (isNetworkError(error)) {
-      updateSyncUi("Офлайн · изменения сохранены на устройстве");
-      if (notify) showToast("Нет соединения. Изменения остались на устройстве.", "error");
+      updateSyncUi(localText("Offline · changes are saved on this device", "Офлайн · изменения сохранены на устройстве"));
+      if (notify) showToast(localText(
+        "No connection. Changes remain on this device.",
+        "Нет соединения. Изменения остались на устройстве."
+      ), "error");
       return;
     }
-    updateSyncUi(`Не удалось синхронизировать: ${error.message}`);
-    if (notify) showToast(`Не удалось синхронизировать: ${error.message}`, "error");
+    const failureMessage = localText(`Could not sync: ${error.message}`, `Не удалось синхронизировать: ${error.message}`);
+    updateSyncUi(failureMessage);
+    if (notify) showToast(failureMessage, "error");
   }
 }
 
@@ -227,23 +266,30 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     stateIntegrityMetaFromResponse,
     updateSyncUi
   } = dependencies;
+  const localText = dependencies.localText || ((en, ru) => runtime.uiLanguage === "en" ? en : ru);
   const record = error.data?.record || error.data?.currentRecord || null;
   const remoteState = normalizeRemoteState(record?.payload || error.data?.payload || error.data?.serverPayload);
   const remoteIntegrityMeta = stateIntegrityMetaFromResponse(record, error.data);
   const updatedAt = remoteUpdatedAt(record) || error.data?.serverUpdatedAt || null;
   rememberConflictRemoteMeta(record, remoteIntegrityMeta, updatedAt);
   runtime.appUnlocked = true;
-  updateSyncUi("Сервер изменился · нужно выбрать версию...");
+  updateSyncUi(localText("The server version changed · choose a version...", "Сервер изменился · нужно выбрать версию..."));
   const remoteRawPayload = record?.payload || error.data?.payload || error.data?.serverPayload || null;
   if (blockRemoteIntegrityFailureIfNeeded(remoteState, remoteIntegrityMeta, remoteRawPayload)) return;
   if (!remoteState) {
-    if (notify) showToast("Сервер сообщил о конфликте. Локальные изменения не отправлены.", "error");
+    if (notify) showToast(localText(
+      "The server reported a conflict. Local changes were not sent.",
+      "Сервер сообщил о конфликте. Локальные изменения не отправлены."
+    ), "error");
     return;
   }
   if (preferServerWithoutPrompt || !canLocalStateOverrideRemote()) {
     const guestCandidate = consumeGuestLocalLayoutCandidate();
     if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
-      const message = "Загружена серверная версия · временная локальная копия не отправлена";
+      const message = localText(
+        "The server version was loaded · the temporary local copy was not sent",
+        "Загружена серверная версия · временная локальная копия не отправлена"
+      );
       updateSyncUi(message);
       if (notify) showToast(message, "warning");
       if (guestCandidate) await offerSaveGuestLocalLayouts(guestCandidate);
@@ -262,20 +308,28 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
   }
   if (mergeResult?.merged && mergeResult.conflicts.length) {
     if (isOwnLayoutEchoConflict(mergeResult.conflicts)) {
-      updateSyncUi("Раскладка изменена на этом устройстве · отправляю без окна конфликта...");
+      updateSyncUi(localText(
+        "The layout was changed on this device · sending without a conflict dialog...",
+        "Раскладка изменена на этом устройстве · отправляю без окна конфликта..."
+      ));
       await saveRemoteState({ notify, forceOverwrite: true });
       return;
     }
     const resolution = await askConflictResolution(mergeResult.conflicts);
     if (resolution === "server") {
-      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
+      if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
+        showToast(localText("The server version was loaded.", "Загружена серверная версия."), "success");
+      }
       return;
     }
     if (resolution === "cancel") {
       runtime.syncMeta.dirty = true;
       runtime.syncMeta.localUpdatedAt = runtime.syncMeta.localUpdatedAt || nowIso();
       saveSyncMeta();
-      updateSyncUi("Конфликты не применены · локальные изменения сохранены на устройстве");
+      updateSyncUi(localText(
+        "Conflicts were not applied · local changes are saved on this device",
+        "Конфликты не применены · локальные изменения сохранены на устройстве"
+      ));
       return;
     }
     applyConflictChoices(mergeResult.merged, mergeResult.conflicts, resolution);
@@ -285,7 +339,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     runtime.syncMeta.serverUpdatedAt = updatedAt || runtime.syncMeta.serverUpdatedAt;
     saveSyncMeta();
     renderPreservingPackingScroll();
-    updateSyncUi("Конфликты объединены · отправляю на сервер...");
+    updateSyncUi(localText("Conflicts merged · sending to the server...", "Конфликты объединены · отправляю на сервер..."));
     await saveRemoteState({ notify, forceOverwrite: true });
     return;
   }
@@ -300,14 +354,19 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     return;
   }
   const useLocal = await askConfirmDialog({
-    title: "Список меняли на другом устройстве",
-    text: "Серверная версия изменилась после последней загрузки. Оставить локальные изменения и отправить их поверх серверной версии?",
-    okText: "Оставить локальную",
-    cancelText: "Загрузить серверную"
+    title: localText("The list was changed on another device", "Список меняли на другом устройстве"),
+    text: localText(
+      "The server version changed after the last load. Keep the local changes and save them over the server version?",
+      "Серверная версия изменилась после последней загрузки. Оставить локальные изменения и отправить их поверх серверной версии?"
+    ),
+    okText: localText("Keep local", "Оставить локальную"),
+    cancelText: localText("Load server version", "Загрузить серверную")
   });
   if (useLocal) {
     await saveRemoteState({ notify, forceOverwrite: true });
     return;
   }
-  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) showToast("Загружена серверная версия.", "success");
+  if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout }) && notify) {
+    showToast(localText("The server version was loaded.", "Загружена серверная версия."), "success");
+  }
 }

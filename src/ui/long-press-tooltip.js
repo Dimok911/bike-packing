@@ -1,3 +1,7 @@
+export function closestEventTarget(event, selector) {
+  return event?.target?.closest?.(selector) || null;
+}
+
 export function bindLongPressTooltips({
   root,
   selector = "[data-touch-tooltip]",
@@ -104,7 +108,7 @@ export function bindLongPressTooltips({
 
   root.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" || event.button !== 0) return;
-    const target = event.target.closest(selector);
+    const target = closestEventTarget(event, selector);
     if (!target || !root.contains(target) || target.disabled) return;
     hideTooltip();
     clearTimer();
@@ -122,8 +126,9 @@ export function bindLongPressTooltips({
   }, { capture: true });
 
   root.addEventListener("click", (event) => {
-    if (!suppressClickTarget || !event.target.closest(selector)) return;
-    const target = event.target.closest(selector);
+    if (!suppressClickTarget) return;
+    const target = closestEventTarget(event, selector);
+    if (!target) return;
     if (target !== suppressClickTarget) return;
     event.preventDefault();
     event.stopPropagation();
@@ -131,19 +136,19 @@ export function bindLongPressTooltips({
   }, true);
 
   root.addEventListener("contextmenu", (event) => {
-    const target = event.target.closest(selector);
+    const target = closestEventTarget(event, selector);
     if (!target || !root.contains(target) || target.disabled) return;
     event.preventDefault();
   });
 
   root.addEventListener("selectstart", (event) => {
-    const target = event.target.closest(selector);
+    const target = closestEventTarget(event, selector);
     if (!target || !root.contains(target) || target.disabled) return;
     event.preventDefault();
   });
 
   document.addEventListener("pointerdown", (event) => {
     if (tooltip && !tooltip.contains(event.target)) hideTooltip();
-    if (suppressClickTarget && event.target.closest(selector) !== suppressClickTarget) suppressClickTarget = null;
+    if (suppressClickTarget && closestEventTarget(event, selector) !== suppressClickTarget) suppressClickTarget = null;
   }, true);
 }

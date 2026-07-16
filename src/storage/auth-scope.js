@@ -152,11 +152,12 @@ export function rememberedOfflineScopeKey({ id = "", email = "", storage = defau
 
 export function buildRememberedOfflineUser({ user = null, storage = defaultStorage(), signedOut = false } = {}) {
   // CRITICAL: offline-auth-scope. Never fall back to guest/demo when a private local scope is known.
+  // A saved email from a pending magic-link request is not a remembered session by itself.
   if (signedOut) return null;
   const fromUser = authIdentityFromUser(user);
   const id = fromUser.id || currentUserIdFromStorage(null, storage);
   const email = fromUser.email || getSavedAuthEmailFromStorage(storage);
   const scopeKey = rememberedOfflineScopeKey({ id, email, storage });
-  if (!id && !email && !scopeKey) return null;
+  if (!scopeKey) return null;
   return { id, email, scopeKey, offlineRemembered: true };
 }

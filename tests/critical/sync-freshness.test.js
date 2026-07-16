@@ -16,7 +16,15 @@ import {
   applyEntityChangesToState,
   canRequestEntityChanges
 } from "../../src/sync/entity-changes.js";
-import { rememberEntitySyncResultMeta } from "../../src/sync/entity-sync.js";
+import {
+  rememberEntitySyncResultMeta,
+  syncEntityBatchWithRevisionRetry,
+  syncEntityBatchesSequentially
+} from "../../src/sync/entity-sync.js";
+import {
+  createdLayoutSyncErrorText,
+  syncCreatedLayoutEntityTypes
+} from "../../src/sync/created-layout-entity-sync.js";
 import {
   createLegacyPersonalSyncWriteBlockedError,
   isLegacyPersonalSyncWriteBlockedError,
@@ -25,11 +33,228 @@ import {
 import { rememberConflictRemoteMeta } from "../../src/sync/save-body.js";
 import { createQueuedRemoteSave } from "../../src/sync/save-queue.js";
 import { preflightRemoteSaveConflictFlow } from "../../src/sync/save-preflight.js";
+import { ensurePersonalListId } from "../../src/sync/personal-list-bootstrap.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
 import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
 import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
+
+test("CRITICAL sync-save: empty-layout warning follows the English interface", async () => {
+  let status = "";
+  const runtime = {
+    currentUser: { id: "user-1" },
+    state: { items: {}, containers: {}, layouts: {} },
+    syncMeta: { dirty: true },
+    uiLanguage: "en"
+  };
+
+  await saveRemoteStateFlow({
+    runtime,
+    dependencies: {
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      currentPublicTemplateStatusMessage: () => "",
+      isDemoPublicTemplateMissing: () => false,
+      isReadOnlyBikePackingContext: () => false,
+      isSuspiciousEmptyPackingState: () => true,
+      repairCollapsedActiveLayoutBeforeSave: () => {},
+      saveSyncMeta: () => {},
+      updateSyncUi: (message) => { status = message; },
+      uploadPendingPhotos: async () => {}
+    }
+  });
+
+  assert.equal(status, "The empty local layout was not sent to the server · load the recovered version");
+  assert.equal(runtime.syncMeta.dirty, false);
+});
+
+test("CRITICAL template-copy: copy-all advances revision after every entity sync step", async () => {
+  const syncMeta = { stateRevision: 4 };
+  const calls = [];
+  const result = await syncCreatedLayoutEntityTypes({
+    assertConfirmed: () => {},
+    baseState: { items: {}, containers: {}, layouts: {} },
+    expectedContainerIds: ["bag-1"],
+    expectedItemIds: ["item-1"],
+    layoutId: "layout-copy",
+    listId: "list-1",
+    rememberResult: (entityResult) => {
+      syncMeta.stateRevision = entityResult.integrityMeta.stateRevision;
+    },
+    syncEntityType: async (type) => {
+      calls.push([type, syncMeta.stateRevision]);
+      const nextRevision = syncMeta.stateRevision + 1;
+      return {
+        integrityMeta: { stateRevision: nextRevision },
+        serverUpdatedAt: `revision-${nextRevision}`
+      };
+    }
+  });
+
+  assert.deepEqual(calls, [
+    ["item", 4],
+    ["container", 5],
+    ["layout", 6],
+    ["dictionary", 7]
+  ]);
+  assert.equal(result.integrityMeta.stateRevision, 8);
+  assert.equal(result.serverUpdatedAt, "revision-8");
+  assert.equal(
+    createdLayoutSyncErrorText({ data: { code: "stale_state_revision" } }, "ru"),
+    "Серверная версия изменилась во время сохранения копии"
+  );
+});
+
+test("CRITICAL template-copy: large copy-all advances revision after every item batch", async () => {
+  const syncMeta = { stateRevision: 10 };
+  const sentRevisions = [];
+  const results = await syncEntityBatchesSequentially([["item-1"], ["item-2"], ["item-3"]], {
+    sendBatch: async () => {
+      sentRevisions.push(syncMeta.stateRevision);
+      return { stateRevision: syncMeta.stateRevision + 1 };
+    },
+    onBatchResult: (response) => { syncMeta.stateRevision = response.stateRevision; }
+  });
+
+  assert.deepEqual(sentRevisions, [10, 11, 12]);
+  assert.equal(results.at(-1).stateRevision, 13);
+});
+
+test("CRITICAL sync-save: an old partial batch refreshes its list revision and resumes", async () => {
+  let revision = 12;
+  const sentRevisions = [];
+  const result = await syncEntityBatchWithRevisionRetry(["item-101", "item-102", "item-103"], {
+    sendBatch: async () => {
+      sentRevisions.push(revision);
+      if (sentRevisions.length === 1) {
+        const error = new Error("stale revision");
+        error.status = 409;
+        error.data = { code: "stale_state_revision", stateRevision: 18 };
+        throw error;
+      }
+      return { stateRevision: revision + 1, upserted: ["item-101", "item-102", "item-103"] };
+    },
+    refreshRevision: (error) => {
+      revision = error.data.stateRevision;
+      return true;
+    }
+  });
+
+  assert.deepEqual(sentRevisions, [12, 18]);
+  assert.equal(result.stateRevision, 19);
+  assert.deepEqual(result.upserted, ["item-101", "item-102", "item-103"]);
+});
+
+test("CRITICAL template-copy: stale starting revision is refreshed and retried once", async () => {
+  let revision = 20;
+  let attempts = 0;
+  const result = await syncCreatedLayoutEntityTypes({
+    assertConfirmed: () => {},
+    layoutId: "layout-copy",
+    refreshRevisionFromConflict: async (error) => {
+      revision = error.data.stateRevision;
+      return true;
+    },
+    rememberResult: (entityResult) => { revision = entityResult.integrityMeta.stateRevision; },
+    syncEntityType: async (type) => {
+      attempts += 1;
+      if (type === "item" && attempts === 1) {
+        const error = new Error("stale");
+        error.status = 409;
+        error.data = { code: "stale_state_revision", stateRevision: 24 };
+        throw error;
+      }
+      return {
+        integrityMeta: { stateRevision: revision + 1 },
+        serverUpdatedAt: `revision-${revision + 1}`
+      };
+    }
+  });
+
+  assert.equal(attempts, 5);
+  assert.equal(result.integrityMeta.stateRevision, 28);
+});
+
+test("CRITICAL sync-save: account without a personal list creates one before entity sync", async () => {
+  let currentListId = "";
+  let createCalls = 0;
+  const listId = await ensurePersonalListId({
+    chooseDefaultList: (lists) => lists[0] || null,
+    clearCurrentListId: () => { currentListId = ""; },
+    createList: async () => {
+      createCalls += 1;
+      return { list: { id: "list-created" } };
+    },
+    fetchLists: async () => ({ lists: [] }),
+    getCurrentListId: () => currentListId,
+    normalizeLists: (data) => data.lists,
+    recordId: (record) => record?.list?.id || record?.id || "",
+    rememberRecord: (record) => {
+      currentListId = record?.list?.id || record?.id || "";
+      return record;
+    }
+  });
+
+  assert.equal(listId, "list-created");
+  assert.equal(currentListId, "list-created");
+  assert.equal(createCalls, 1);
+});
+
+test("CRITICAL sync-save: blank server list revision is remembered before guest import", async () => {
+  let offeredRevision = null;
+  const runtime = {
+    appUnlocked: false,
+    currentUser: { id: "user-new" },
+    initialRemoteLoadPending: true,
+    pendingGuestLocalLayoutCandidate: { sourceState: {} },
+    remoteRefreshInFlight: false,
+    state: { items: {}, containers: {}, layouts: {} },
+    syncMeta: { dirty: false },
+    uiLanguage: "en"
+  };
+
+  await loadRemoteStateFlow({
+    runtime,
+    dependencies: {
+      blockRemoteIntegrityFailureIfNeeded: () => false,
+      canLocalStateOverrideRemote: () => false,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      consumeGuestLocalLayoutCandidate: () => ({ sourceState: {} }),
+      createBlankBikePackingState: () => ({ items: {}, containers: {}, layouts: {} }),
+      currentPackingListId: () => "list-new",
+      fetchRemoteStateRecord: async () => ({
+        record: {
+          id: "list-new",
+          payload: null,
+          stateRevision: 1,
+          updatedAt: "2026-07-16T18:00:00.000Z"
+        },
+        source: "catalog"
+      }),
+      hasLocalSavedState: () => false,
+      isMeaningfulPackingState: () => false,
+      isPublicLayoutContext: () => false,
+      isSharedListLinkRoute: () => false,
+      normalizeRemoteState: () => ({ items: {}, containers: {}, layouts: {} }),
+      offerSaveGuestLocalLayouts: async () => { offeredRevision = runtime.syncMeta.stateRevision; },
+      remoteUpdatedAt: (record) => record?.updatedAt || "",
+      rememberCurrentSyncAccount: () => {},
+      rememberRemoteIntegrityMeta: (_record, meta) => { runtime.syncMeta.stateRevision = meta.stateRevision; },
+      renderPreservingPackingScroll: () => {},
+      replaceState: (nextState) => { runtime.state = nextState; },
+      saveSyncMeta: () => {},
+      setLayoutLoadProgress: () => {},
+      setLayoutLoadStatus: () => {},
+      stateIntegrityMetaFromResponse: () => ({ stateRevision: 1 }),
+      statePrivateLayoutCount: () => 0,
+      shouldImportGuestLayoutBeforeRemote: () => true,
+      timeValue: (value) => Date.parse(value) || 0,
+      updateSyncUi: () => {}
+    }
+  });
+
+  assert.equal(offeredRevision, 1);
+});
 
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {
   const freshness = normalizeListFreshness({

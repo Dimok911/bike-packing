@@ -12,6 +12,7 @@ import {
 import {
   installRuntimeActiveLayoutId
 } from "../../src/state/active-layout-runtime.js";
+import { layoutDisplayNameForLanguage } from "../../src/state/layout-normalize.js";
 import {
   containerCategories,
   itemCategories,
@@ -30,6 +31,11 @@ import {
   updateSyncUiControls
 } from "../../src/ui/sync-ui.js";
 import {
+  createLayoutLoadStatusController,
+  formatLayoutLoadProgress,
+  formatPersonalLayoutsLoadedStatus
+} from "../../src/ui/layout-load-status.js";
+import {
   isNewItemPlacementPickerMode,
   itemDialogContainerPickerMode,
   itemDialogTargetLayoutFromPicker,
@@ -47,6 +53,42 @@ const isPrivateUserLayoutId = (choice) => privateIds.has(choice);
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
 }
+
+test("CRITICAL layout-ui: system layout and load progress follow the interface language", () => {
+  const systemLayout = { id: "layout-main", name: "Текущая укладка" };
+  const userLayout = { id: "layout-custom", name: "Текущая укладка" };
+
+  assert.equal(layoutDisplayNameForLanguage(systemLayout, "en"), "Current layout");
+  assert.equal(layoutDisplayNameForLanguage(systemLayout, "ru"), "Текущая укладка");
+  assert.equal(layoutDisplayNameForLanguage(userLayout, "en"), "Текущая укладка");
+  assert.equal(
+    formatLayoutLoadProgress({ loaded: 2, total: 3, prefix: "Personal layouts received", language: "en" }),
+    "Personal layouts received: 2 of 3"
+  );
+  assert.equal(formatPersonalLayoutsLoadedStatus(2, "en"), "Personal layouts loaded: 2 of 2");
+  assert.equal(formatPersonalLayoutsLoadedStatus(0, "ru"), "Личные укладки загружены: 0 из 0 · список пока пустой");
+});
+
+test("CRITICAL layout-ui: loaded status is reformatted after an interface language change", () => {
+  let language = "ru";
+  const classes = new Set();
+  const element = {
+    hidden: true,
+    textContent: "",
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      toggle: (name, active) => active ? classes.add(name) : classes.delete(name)
+    }
+  };
+  const controller = createLayoutLoadStatusController({ getElement: () => element });
+  controller.setStatus("success", () => formatPersonalLayoutsLoadedStatus(1, language));
+  assert.equal(element.textContent, "Личные укладки загружены: 1 из 1");
+
+  language = "en";
+  controller.render();
+  assert.equal(element.textContent, "Personal layouts loaded: 1 of 1");
+});
 
 test("CRITICAL shared-link: language switch preserves the linked list layout", () => {
   assert.equal(

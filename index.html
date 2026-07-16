@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1209" />
+    <link rel="stylesheet" href="./styles.css?v=1226" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -553,7 +553,7 @@
           <h2>История версий</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
-        <p class="dialog-note">Сервер хранит последние 20 версий. При восстановлении текущая версия тоже попадёт в историю.</p>
+        <p id="historyRetentionNote" class="dialog-note">100 последних действий хранятся по шагам. Глубже — по одной итоговой точке за каждый из предыдущих 30 дней. Фото после удаления доступны истории 30 дней.</p>
         <div id="historySourceControls" class="history-source-controls" hidden>
           <div id="historySourceTabs" class="history-source-tabs" role="group" aria-label="Источник истории">
             <button type="button" data-history-source="private">Моя</button>
@@ -571,9 +571,6 @@
         </div>
         <p id="historyStatus" class="dialog-status" aria-live="polite"></p>
         <div id="historyList" class="history-list"></div>
-        <footer>
-          <button value="cancel" class="ghost">Закрыть</button>
-        </footer>
       </form>
     </dialog>
 
@@ -585,8 +582,7 @@
         </header>
         <div id="historyDetailContent" class="history-detail-content"></div>
         <footer>
-          <button type="button" id="historyDetailRestoreBtn" class="primary">Восстановить</button>
-          <button value="cancel" class="ghost">Закрыть</button>
+          <button type="button" id="historyDetailRestoreBtn" class="primary history-action-button" data-history-action-button>Восстановить</button>
         </footer>
       </form>
     </dialog>
@@ -669,6 +665,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1209" type="module"></script>
+    <script src="./app.js?v=1226" type="module"></script>
   </body>
 </html>

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   applyGuestLocalDisplayPreferences,
   guestDemoCopyCleanupPlan,
@@ -8,6 +9,7 @@ import {
   guestLocalDisplayPreferencesWereChanged,
   guestLocalLayoutImportPlan,
   isAutomaticGuestDemoCopyLayout,
+  isGeneratedEmptyLayoutPlaceholder,
   isGuestLocalPersonalLayout,
   normalizeDemoTemplateName,
   normalizePublishedDemoTemplatePayload
@@ -118,7 +120,13 @@ import {
   guestDemoCopyLayoutName,
   guestDemoStartupAction
 } from "../../src/public/guest-demo-startup.js";
-import { validateGuestImportSyncState } from "../../src/public/guest-login-import.js";
+import {
+  canImportGuestLayoutsForAuthenticatedUser,
+  importedGuestLayoutName,
+  importGuestLocalLayoutsToState,
+  removeLegacyGuestImportPlaceholders,
+  validateGuestImportSyncState
+} from "../../src/public/guest-login-import.js";
 import {
   containerCopyExcludedLayoutIds,
   createTemplateCopyLayoutRecord,
@@ -1488,6 +1496,180 @@ test("guest import plan includes personal guest layouts without legacy guest fla
   });
 
   assert.deepEqual(plan.layoutIds, ["layout-personal"]);
+});
+
+test("guest import plan skips the generated empty layout placeholder", () => {
+  const placeholder = {
+    id: "layout-main",
+    name: "Текущая укладка",
+    rootContainerIds: [],
+    arrangement: { rootContainerIds: [], containers: {}, items: {} }
+  };
+  const editedDemo = {
+    id: "layout-guest-demo-edited",
+    name: "Demo-packing",
+    guestDemoCopy: true,
+    demoSourceLanguage: "en",
+    rootContainerIds: ["bag-a"],
+    createdAt: "2026-05-24T08:00:00.000Z",
+    updatedAt: "2026-05-24T08:05:00.000Z"
+  };
+
+  assert.equal(isGeneratedEmptyLayoutPlaceholder(placeholder), true);
+  const plan = guestLocalLayoutImportPlan({
+    layouts: { [placeholder.id]: placeholder, [editedDemo.id]: editedDemo },
+    activeLayoutId: editedDemo.id,
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: (layout) => layout.id === editedDemo.id
+  });
+
+  assert.deepEqual(plan.layoutIds, [editedDemo.id]);
+});
+
+test("guest login import replaces the generated placeholder and promotes custom dictionaries", () => {
+  const sourceState = {
+    locations: [],
+    categories: [],
+    containers: {
+      "bag-a": { id: "bag-a", name: "Renamed bag", location: "Home", categories: ["Gear"], childIds: [], itemIds: ["item-a"] }
+    },
+    items: {
+      "item-a": { id: "item-a", name: "Renamed item", location: "Home", categories: ["Gear"], containerId: "bag-a" }
+    },
+    layouts: {
+      "layout-guest-demo-edited": {
+        id: "layout-guest-demo-edited",
+        name: "Demo-packing",
+        guestDemoCopy: true,
+        demoSourceLanguage: "en",
+        rootContainerIds: ["bag-a"],
+        locations: ["New storage", "Home"],
+        categories: ["New category", "Gear"],
+        customLocations: ["New storage"],
+        customCategories: ["New category"]
+      }
+    }
+  };
+  const targetState = {
+    locations: [],
+    categories: [],
+    customLocations: [],
+    customCategories: [],
+    containers: {},
+    items: {},
+    collapsedContainers: {},
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Текущая укладка",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {} }
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
+  const normalizeValues = (values = [], fallbackValues = []) => [...new Set([
+    ...(Array.isArray(values) ? values : []),
+    ...(Array.isArray(fallbackValues) ? fallbackValues : [])
+  ])];
+
+  const importedIds = importGuestLocalLayoutsToState(targetState, {
+    sourceState,
+    layouts: [{ layoutId: "layout-guest-demo-edited", layoutName: "Demo-packing" }]
+  }, {
+    addBackupDictionaryValues: () => {},
+    applyLayoutArrangement: () => {},
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    copyPublishedContainerToState: (_source, _rootId) => {
+      targetState.containers["copied-bag"] = { id: "copied-bag", name: "Renamed bag", childIds: [], itemIds: ["copied-item"] };
+      targetState.items["copied-item"] = { id: "copied-item", name: "Renamed item", containerId: "copied-bag" };
+      return "copied-bag";
+    },
+    createLayoutArrangementFromCurrentState: (_state, rootContainerIds) => ({
+      rootContainerIds,
+      containers: { "copied-bag": { parentId: "", childIds: [], itemIds: ["copied-item"], order: [] } },
+      items: { "copied-item": "copied-bag" }
+    }),
+    currentCreateMeta: () => ({ createdAt: "2026-07-16T10:00:00.000Z", updatedAt: "2026-07-16T10:00:00.000Z" }),
+    guestCandidateLayouts: (candidate) => candidate.layouts,
+    guestDemoCopyFlag: "guestDemoCopy",
+    layoutDictionaryValues: (_layout, type) => type === "location" ? ["Home"] : ["Gear"],
+    normalizeDictionaryValues: normalizeValues,
+    readableGuestDemoLayoutName: (name) => name,
+    saveState: () => {},
+    uniqueLayoutName: (name) => name
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(targetState.layouts["layout-main"], undefined);
+  assert.deepEqual(Object.values(targetState.layouts).map((layout) => layout.name), ["Demo-packing"]);
+  assert.deepEqual(targetState.locations, ["New storage", "Home"]);
+  assert.deepEqual(targetState.categories, ["New category", "Gear"]);
+  assert.deepEqual(targetState.customLocations, ["New storage"]);
+  assert.deepEqual(targetState.customCategories, ["New category"]);
+});
+
+test("CRITICAL guest login import: admin accounts keep edited guest layouts and rename conflicts", () => {
+  assert.equal(canImportGuestLayoutsForAuthenticatedUser({ id: "admin-user", admin: true }), true);
+  assert.equal(canImportGuestLayoutsForAuthenticatedUser(null), false);
+  assert.equal(importedGuestLayoutName("Weekend", {
+    renameConflicts: true,
+    uniqueLayoutName: (name) => `${name} 2`
+  }), "Weekend 2");
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const captureStart = appSource.indexOf("function shouldCaptureGuestLocalLayoutCandidate");
+  const candidateStart = appSource.indexOf("function guestCandidateLayouts", captureStart);
+  const offerStart = appSource.indexOf("async function offerPendingGuestLocalLayoutsAfterRemoteLoad");
+  const importStart = appSource.indexOf("function importGuestLocalLayouts", offerStart);
+  assert.ok(captureStart >= 0 && candidateStart > captureStart);
+  assert.ok(offerStart >= 0 && importStart > offerStart);
+  assert.doesNotMatch(appSource.slice(captureStart, candidateStart), /isAdminSession\(\)/);
+  assert.doesNotMatch(appSource.slice(offerStart, importStart), /isAdminSession\(\)/);
+});
+
+test("legacy guest import cleanup removes only generated empty placeholders beside real content", () => {
+  const targetState = {
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Текущая укладка",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {} }
+      },
+      "layout-guest-import-old": {
+        id: "layout-guest-import-old",
+        name: "Текущая укладка 2",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {} },
+        createdAt: "2026-07-16T10:00:00.000Z",
+        updatedAt: "2026-07-16T10:00:00.000Z"
+      },
+      "layout-user-empty": {
+        id: "layout-user-empty",
+        name: "My empty route",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {} }
+      },
+      "layout-guest-import-demo": {
+        id: "layout-guest-import-demo",
+        name: "Demo-packing",
+        rootContainerIds: ["bag-a"],
+        arrangement: {
+          rootContainerIds: ["bag-a"],
+          containers: { "bag-a": { parentId: "", childIds: [], itemIds: [], order: [] } },
+          items: {}
+        }
+      }
+    },
+    activeLayoutId: "layout-guest-import-old"
+  };
+
+  const removedIds = removeLegacyGuestImportPlaceholders(targetState);
+
+  assert.deepEqual(removedIds.sort(), ["layout-guest-import-old", "layout-main"]);
+  assert.deepEqual(Object.keys(targetState.layouts).sort(), ["layout-guest-import-demo", "layout-user-empty"]);
+  assert.equal(targetState.activeLayoutId, "layout-guest-import-demo");
 });
 
 test("guest display preference changes do not import an unedited automatic demo layout", () => {

@@ -59,6 +59,18 @@ export function applyStaticTranslationsUi({
   setText(refs.collectionMenuBtn, t("menu.collectionOff"));
   setText(refs.forceOfflineBtn, t("menu.offline"));
   documentRef.querySelector("#historyBtn")?.replaceChildren(documentRef.createTextNode(t("menu.history")));
+  setText(refs.historyDialog?.querySelector("header h2"), t("history.title"));
+  setText(documentRef.querySelector("#historyRetentionNote"), t("history.retentionNote"));
+  setAttr(refs.historySourceTabs, "aria-label", t("history.sourceAria"));
+  setText(refs.historySourceTabs?.querySelector('[data-history-source="private"]'), t("history.sourceMineTab"));
+  setText(refs.historySourceTabs?.querySelector('[data-history-source="demo"]'), t("history.sourceDemoTab"));
+  setText(refs.historySourceTabs?.querySelector('[data-history-source="shared"]'), t("history.sourceTemplatesTab"));
+  setText(refs.historyDemoField?.querySelector("span"), t("history.demoTemplateLabel"));
+  setText(refs.historySharedField?.querySelector("span"), t("history.templateLabel"));
+  if (!refs.historyDetailDialog?.open) {
+    setText(refs.historyDetailTitle, t("history.detailsTitle"));
+    setText(refs.historyDetailRestoreBtn, t("history.restore"));
+  }
   documentRef.querySelector("#backupBtn")?.replaceChildren(documentRef.createTextNode(t("menu.backups")));
   documentRef.querySelector("#visualStyleMenuBtn")?.replaceChildren(documentRef.createTextNode(t("menu.viewOptions")));
   documentRef.querySelector("#exportBtn")?.replaceChildren(documentRef.createTextNode(t("menu.print")));

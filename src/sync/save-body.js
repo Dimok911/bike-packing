@@ -30,6 +30,7 @@ export function buildRemoteSaveBody({
 
 export function buildListSaveBody({
   forceOverwrite = false,
+  historyAction = {},
   nowIso,
   serializeState,
   syncDevice,
@@ -47,6 +48,9 @@ export function buildListSaveBody({
     sourceUpdatedAt,
     sourceDeviceId: syncDevice.id,
     sourceDeviceName: syncDevice.name,
+    changeGroupId: historyAction.changeGroupId || null,
+    affectedLayoutIds: historyAction.affectedLayoutIds || [],
+    changeScope: historyAction.changeScope || null,
     force: forceOverwrite,
     forceOverwrite,
     fullReplace: forceOverwrite,

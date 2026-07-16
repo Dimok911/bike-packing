@@ -1,6 +1,7 @@
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
 import { isConflictMetaField } from "../sync/conflict-meta.js";
+import { historyNewerRecord } from "../sync/history.js";
 import { escapeHtml } from "../utils/html.js";
 import {
   formatCompactJson,
@@ -11,21 +12,213 @@ import {
   parseWeightInput
 } from "../utils/weight.js";
 import {
-  conflictDiffFieldDefinitions,
-  formatArrangementConflictValue
+  conflictDiffFieldDefinitions
 } from "./conflict-format.js";
 
-export function buildHistoryStateDiff(fromState = {}, toState = {}) {
+const HISTORY_TECHNICAL_FIELDS = new Set([
+  "originListId",
+  "origin_list_id",
+  "publicListId",
+  "listId",
+  "list_id",
+  "sourceId",
+  "sourceItemId",
+  "source_item_id",
+  "sourceContainerId",
+  "source_container_id",
+  "sourceLayoutId",
+  "source_layout_id",
+  "sharedSourceId",
+  "sharedSourceItemId",
+  "sharedSourceContainerId",
+  "sharedSourceLayoutId",
+  "publicSourceId",
+  "publicSourceItemId",
+  "publicSourceContainerId",
+  "publicSourceLayoutId",
+  "publicCopySourceId",
+  "publicCatalogLayoutId",
+  "publicCatalogItemId",
+  "publicCatalogContainerId",
+  "templateId",
+  "templateSourceId",
+  "adminDemo",
+  "adminDemoListId",
+  "isAdminDemo",
+  "demo",
+  "isDemo",
+  "adminShared",
+  "isAdminShared",
+  "adminSharedSourceId",
+  "adminTemplateCopy",
+  "isPublicCatalog",
+  "publicCatalog",
+  "guestDemoCopy",
+  "guestDemoCopyCreatedAt"
+]);
+
+export function isHistoryTechnicalField(key) {
+  const normalizedKey = String(key || "");
+  return normalizedKey.startsWith("_") || HISTORY_TECHNICAL_FIELDS.has(normalizedKey);
+}
+
+const historyRuText = (_english, russian) => russian;
+
+function historyFieldDefinitions(type, localText = historyRuText) {
+  const labels = {
+    item: {
+      name: localText("Name", "Название"),
+      weight: localText("Weight", "Вес"),
+      quantity: localText("Quantity", "Количество"),
+      location: localText("Storage location", "Место хранения"),
+      categories: localText("Categories", "Категории"),
+      category: localText("Category", "Категория"),
+      containerId: localText("Stored in", "Где лежит"),
+      note: localText("Note", "Заметка"),
+      photos: localText("Photos", "Фото"),
+      availabilityStatus: localText("Availability", "Доступность")
+    },
+    container: {
+      name: localText("Name", "Название"),
+      weight: localText("Weight", "Вес"),
+      volume: localText("Volume", "Объём"),
+      location: localText("Storage location", "Место хранения"),
+      parentId: localText("Nested in", "Вложено в"),
+      itemIds: localText("Items inside", "Вещи внутри"),
+      childIds: localText("Nested bags", "Вложенные сумки"),
+      order: localText("Order inside", "Порядок внутри"),
+      note: localText("Note", "Заметка"),
+      color: localText("Color", "Цвет"),
+      photos: localText("Photos", "Фото"),
+      categories: localText("Categories", "Категории"),
+      category: localText("Category", "Категория"),
+      dimensions: localText("Dimensions", "Размеры")
+    },
+    layout: {
+      name: localText("Name", "Название"),
+      rootContainerIds: localText("Bags in layout", "Сумки в укладке"),
+      arrangement: localText("Column arrangement", "Раскладка колонок"),
+      notes: localText("Layout notes", "Заметки к укладке"),
+      locked: localText("Layout lock", "Блокировка укладки")
+    }
+  };
+  const definitions = conflictDiffFieldDefinitions({ type });
+  if (type === "item") definitions.push(["availabilityStatus", labels.item.availabilityStatus, "availability"]);
+  if (type === "container") {
+    definitions.push(
+      ["categories", labels.container.categories, "list"],
+      ["category", labels.container.category, ""],
+      ["dimensions", labels.container.dimensions, ""]
+    );
+  }
+  if (type === "layout") {
+    definitions.push(
+      ["notes", labels.layout.notes, ""],
+      ["locked", labels.layout.locked, "boolean"]
+    );
+  }
+  return definitions.map(([key, fallback, format]) => [
+    key,
+    labels[type]?.[key] || fallback,
+    format
+  ]);
+}
+
+export function buildHistoryStateDiff(fromState = {}, toState = {}, {
+  localText = historyRuText
+} = {}) {
   return {
-    items: diffHistoryMap("item", fromState.items || {}, toState.items || {}, fromState, toState),
-    containers: diffHistoryMap("container", fromState.containers || {}, toState.containers || {}, fromState, toState),
-    layouts: diffHistoryMap("layout", fromState.layouts || {}, toState.layouts || {}, fromState, toState),
-    packed: diffHistoryPacked(fromState.packedItems || {}, toState.packedItems || {}, fromState, toState),
-    settings: diffHistorySettings(fromState, toState)
+    items: diffHistoryMap("item", fromState.items || {}, toState.items || {}, fromState, toState, localText),
+    containers: diffHistoryMap("container", fromState.containers || {}, toState.containers || {}, fromState, toState, localText),
+    layouts: diffHistoryMap("layout", fromState.layouts || {}, toState.layouts || {}, fromState, toState, localText),
+    packed: diffHistoryPacked(fromState.packedItems || {}, toState.packedItems || {}, fromState, toState, localText),
+    settings: diffHistorySettings(fromState, toState, localText)
   };
 }
 
-function diffHistoryMap(type, fromMap, toMap, fromState, toState) {
+function historyDiffRows(diff = {}) {
+  return ["items", "containers", "layouts", "packed", "settings"].flatMap((entityType) =>
+    ["added", "removed", "changed"].flatMap((operation) =>
+      (diff?.[entityType]?.[operation] || []).map((row) => ({ entityType, operation, row }))
+    )
+  );
+}
+
+export function hasHistoryStateChanges(fromState, toState) {
+  if (!fromState || !toState) return false;
+  return historyDiffRows(buildHistoryStateDiff(fromState, toState)).length > 0;
+}
+
+export function historyRecordAction(record, index, records, {
+  currentComparisonState = () => null,
+  recordState = () => null
+} = {}) {
+  const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
+  if (kind === "daily") return null;
+  const beforeState = recordState(record);
+  const newerRecord = historyNewerRecord(record, index, records);
+  const afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();
+  if (!beforeState || !afterState) return null;
+  const rows = historyDiffRows(buildHistoryStateDiff(beforeState, afterState));
+  if (!rows.length) return null;
+  const catalogRows = rows.filter((entry) => entry.entityType === "items" || entry.entityType === "containers");
+  const catalogStructuralRows = catalogRows.filter((entry) => entry.operation === "added" || entry.operation === "removed");
+  const primaryRows = catalogStructuralRows.length === 1
+    ? catalogStructuralRows
+    : catalogRows.length
+      ? catalogRows
+      : rows.filter((entry) => entry.entityType === "layouts");
+  const selectedRows = primaryRows.length ? primaryRows : rows;
+  if (selectedRows.length !== 1) return { operation: "mixed", count: rows.length, title: "" };
+  const selected = selectedRows[0];
+  return {
+    entityType: selected.entityType,
+    operation: selected.operation,
+    count: rows.length,
+    title: String(selected.row?.title || "").trim()
+  };
+}
+
+export function historyUndoConfirmation({
+  actionText = "",
+  crossesCheckpoint = false,
+  isDeepRollback = false,
+  layoutName = "",
+  localText = (en, ru) => ru,
+  newerActionCount = 0
+} = {}) {
+  const deepWarning = isDeepRollback
+    ? crossesCheckpoint
+      ? localText(
+        "All changes after this checkpoint, including the later actions shown above, will also be undone.",
+        "Также будут отменены все изменения после этой точки, включая более поздние действия, расположенные выше."
+      )
+      : localText(
+        `Later actions shown above will also be undone: ${newerActionCount}.`,
+        `Также будут отменены более поздние действия, расположенные выше: ${newerActionCount}.`
+      )
+    : "";
+  const text = layoutName && !isDeepRollback
+    ? localText(
+      `This action will be undone only in the layout “${layoutName}”. Other layouts and shared item data will remain unchanged. The current state will first be saved in history.`,
+      `Действие будет отменено только в укладке «${layoutName}». Другие укладки и общие данные вещей не изменятся. Текущее состояние сначала сохранится в истории.`
+    )
+    : localText(
+      "The selected action will be undone. The current state will first be saved in history.",
+      "Выбранное действие будет отменено. Текущее состояние сначала сохранится в истории."
+    );
+  return {
+    title: actionText || localText("Undo action?", "Отменить действие?"),
+    text,
+    highlightText: deepWarning,
+    highlightCount: isDeepRollback && newerActionCount ? `+${newerActionCount}` : "",
+    tone: isDeepRollback ? "danger" : "",
+    okText: localText("Undo action", "Отменить действие"),
+    cancelText: localText("Cancel", "Отмена")
+  };
+}
+
+function diffHistoryMap(type, fromMap, toMap, fromState, toState, localText) {
   const added = [];
   const removed = [];
   const changed = [];
@@ -34,11 +227,11 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState) {
     const before = fromMap?.[id];
     const after = toMap?.[id];
     if (!before && after) {
-      added.push(historyEntityLine(type, id, after, toState, "added"));
+      added.push(historyEntityLine(type, id, after, toState, "added", localText));
       return;
     }
     if (before && !after) {
-      removed.push(historyEntityLine(type, id, before, fromState, "removed"));
+      removed.push(historyEntityLine(type, id, before, fromState, "removed", localText));
       return;
     }
     const beforeValue = historyComparableEntity(type, before);
@@ -46,7 +239,7 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState) {
     if (!snapshotsEqual(beforeValue, afterValue)) {
       changed.push({
         title: historyEntityTitle(type, after || before) || id,
-        details: historyChangedFields(type, beforeValue, afterValue, fromState, toState)
+        details: historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText)
       });
     }
   });
@@ -57,27 +250,27 @@ function historyComparableEntity(type, value) {
   const comparable = comparableValueForMerge(type, value) || {};
   const cloned = JSON.parse(JSON.stringify(comparable));
   Object.keys(cloned).forEach((key) => {
-    if (isConflictMetaField(key)) delete cloned[key];
+    if (isConflictMetaField(key) || isHistoryTechnicalField(key)) delete cloned[key];
   });
   return cloned;
 }
 
-function historyEntityLine(type, id, value, targetState, mode) {
+function historyEntityLine(type, id, value, targetState, mode, localText = historyRuText) {
   const title = historyEntityTitle(type, value) || id;
   const meta = [];
   if (type === "item") {
-    if (value?.containerId) meta.push(historyContainerName(targetState, value.containerId));
+    if (value?.containerId) meta.push(historyContainerName(targetState, value.containerId, localText));
     if (itemCategories(value).length) meta.push(itemCategories(value).join(", "));
     if (Number(value?.weight || 0)) meta.push(formatWeight(value.weight));
   }
   if (type === "container") {
     const count = Array.isArray(value?.itemIds) ? value.itemIds.length : 0;
-    if (count) meta.push(`${count} вещей`);
+    if (count) meta.push(localText(`${count} items`, `${count} вещей`));
     if (Number(value?.weight || 0)) meta.push(formatWeight(value.weight));
   }
   if (type === "layout") {
     const roots = Array.isArray(value?.rootContainerIds) ? value.rootContainerIds.length : 0;
-    meta.push(`${roots} корневых сумок`);
+    meta.push(localText(`${roots} root bags`, `${roots} корневых сумок`));
   }
   return {
     title,
@@ -92,44 +285,57 @@ function historyEntityTitle(type, value) {
   return String(value.id || "");
 }
 
-function historyContainerName(targetState, containerId) {
+function historyContainerName(targetState, containerId, localText = historyRuText) {
   const id = String(containerId || "");
-  if (!id) return "вне укладки";
+  if (!id) return localText("outside the layout", "вне укладки");
   return targetState?.containers?.[id]?.name || id;
 }
 
-function historyChangedFields(type, beforeValue, afterValue, fromState, toState) {
-  const definitions = conflictDiffFieldDefinitions({ type });
+function historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText = historyRuText) {
+  const definitions = historyFieldDefinitions(type, localText);
   const rows = definitions
     .filter(([key]) => !snapshotsEqual(beforeValue?.[key], afterValue?.[key]))
     .map(([key, label, format]) => {
-      const before = formatHistoryDiffValue(beforeValue?.[key], format, fromState);
-      const after = formatHistoryDiffValue(afterValue?.[key], format, toState);
-      return `${label}: ${before} -> ${after}`;
+      const before = formatHistoryDiffValue(beforeValue?.[key], format, fromState, localText);
+      const after = formatHistoryDiffValue(afterValue?.[key], format, toState, localText);
+      return `${label}: ${before} → ${after}`;
     });
-  const knownKeys = new Set(definitions.map(([key]) => key));
-  Object.keys({ ...(beforeValue || {}), ...(afterValue || {}) })
-    .filter((key) => !knownKeys.has(key) && !isConflictMetaField(key))
-    .filter((key) => !snapshotsEqual(beforeValue?.[key], afterValue?.[key]))
-    .forEach((key) => rows.push(`${key}: ${formatCompactJson(beforeValue?.[key])} -> ${formatCompactJson(afterValue?.[key])}`));
   return rows;
 }
 
-function formatHistoryDiffValue(value, format = "", targetState = {}) {
-  if (value == null || value === "") return "пусто";
+function formatHistoryDiffValue(value, format = "", targetState = {}, localText = historyRuText) {
+  if (value == null || value === "") return localText("empty", "пусто");
   if (format === "weight") return formatWeight(parseWeightInput(value));
-  if (format === "list") return Array.isArray(value) ? value.filter(Boolean).join(", ") || "пусто" : String(value);
-  if (format === "container") return historyContainerName(targetState, value);
-  if (format === "photos") return Array.isArray(value) ? `${value.length} фото` : (value ? "есть" : "нет");
+  if (format === "list") return Array.isArray(value) ? value.filter(Boolean).join(", ") || localText("empty", "пусто") : String(value);
+  if (format === "container") return historyContainerName(targetState, value, localText);
+  if (format === "photos") return Array.isArray(value)
+    ? localText(`${value.length} photos`, `${value.length} фото`)
+    : (value ? localText("yes", "есть") : localText("no", "нет"));
   if (format === "count") return Array.isArray(value) ? `${value.length}` : formatCompactJson(value);
-  if (format === "arrangement") return formatArrangementConflictValue(value);
-  if (format === "boolean") return value ? "да" : "нет";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "пусто";
+  if (format === "arrangement") {
+    if (!value || typeof value !== "object") return localText("empty", "пусто");
+    const containers = value.containers && typeof value.containers === "object" ? Object.keys(value.containers).length : 0;
+    const items = value.items && typeof value.items === "object" ? Object.keys(value.items).length : 0;
+    const roots = Array.isArray(value.rootContainerIds) ? value.rootContainerIds.length : 0;
+    return localText(
+      `${roots} root bags, ${containers} bags, ${items} items`,
+      `${roots} корневых, ${containers} сумок, ${items} вещей`
+    );
+  }
+  if (format === "availability") {
+    const status = String(value || "available");
+    if (status === "lost") return localText("lost", "потеряно");
+    if (status === "broken") return localText("broken", "сломано");
+    if (status === "retired") return localText("retired", "больше не используется");
+    return localText("available", "доступно");
+  }
+  if (format === "boolean") return value ? localText("yes", "да") : localText("no", "нет");
+  if (Array.isArray(value)) return value.length ? value.join(", ") : localText("empty", "пусто");
   if (typeof value === "object") return formatCompactJson(value);
   return String(value);
 }
 
-function diffHistoryPacked(fromPacked, toPacked, fromState, toState) {
+function diffHistoryPacked(fromPacked, toPacked, fromState, toState, localText = historyRuText) {
   const changed = [];
   const ids = new Set([...Object.keys(fromPacked || {}), ...Object.keys(toPacked || {})]);
   ids.forEach((itemId) => {
@@ -139,33 +345,35 @@ function diffHistoryPacked(fromPacked, toPacked, fromState, toState) {
     const item = toState.items?.[itemId] || fromState.items?.[itemId] || { name: itemId };
     changed.push({
       title: item.name || itemId,
-      details: [`${before ? "собрано" : "не собрано"} -> ${after ? "собрано" : "не собрано"}`]
+      details: [`${before ? localText("packed", "собрано") : localText("not packed", "не собрано")} → ${after ? localText("packed", "собрано") : localText("not packed", "не собрано")}`]
     });
   });
   return { added: [], removed: [], changed };
 }
 
-function diffHistorySettings(fromState, toState) {
+function diffHistorySettings(fromState, toState, localText = historyRuText) {
   const changed = [];
   const fields = [
-    ["locations", "Места хранения", "list"],
-    ["categories", "Категории", "list"],
-    ["showItemMeta", "Метаданные вещей", "boolean"],
-    ["collectionMode", "Режим сбора", "boolean"],
-    ["showOnlyUnpacked", "Только несобранное", "boolean"],
-    ["activeLayoutId", "Активная укладка", ""]
+    ["locations", localText("Storage locations", "Места хранения"), "list"],
+    ["categories", localText("Categories", "Категории"), "list"],
+    ["showItemMeta", localText("Item metadata", "Метаданные вещей"), "boolean"],
+    ["collectionMode", localText("Packing mode", "Режим сбора"), "boolean"],
+    ["showOnlyUnpacked", localText("Unpacked only", "Только несобранное"), "boolean"],
+    ["activeLayoutId", localText("Active layout", "Активная укладка"), ""]
   ];
   fields.forEach(([key, label, format]) => {
     if (snapshotsEqual(fromState?.[key], toState?.[key])) return;
     changed.push({
       title: label,
-      details: [`${formatHistoryDiffValue(fromState?.[key], format, fromState)} -> ${formatHistoryDiffValue(toState?.[key], format, toState)}`]
+      details: [`${formatHistoryDiffValue(fromState?.[key], format, fromState, localText)} → ${formatHistoryDiffValue(toState?.[key], format, toState, localText)}`]
     });
   });
   return { added: [], removed: [], changed };
 }
 
-export function renderHistoryDiffSection(title, diff) {
+export function renderHistoryDiffSection(title, diff, {
+  localText = historyRuText
+} = {}) {
   if (!diff) return "";
   const added = diff.added || [];
   const removed = diff.removed || [];
@@ -174,9 +382,9 @@ export function renderHistoryDiffSection(title, diff) {
   return `
     <section class="history-diff-section">
       <h4>${escapeHtml(title)}</h4>
-      ${renderHistoryDiffGroup("Добавлено", added, "added")}
-      ${renderHistoryDiffGroup("Удалено", removed, "removed")}
-      ${renderHistoryDiffGroup("Изменено", changed, "changed")}
+      ${renderHistoryDiffGroup(localText("Added", "Добавлено"), added, "added", localText)}
+      ${renderHistoryDiffGroup(localText("Removed", "Удалено"), removed, "removed", localText)}
+      ${renderHistoryDiffGroup(localText("Changed", "Изменено"), changed, "changed", localText)}
     </section>
   `;
 }
@@ -184,100 +392,129 @@ export function renderHistoryDiffSection(title, diff) {
 export function renderHistoryRecordArticle(record, index, records, {
   activeSource = "private",
   formatDateTime = (value) => String(value || ""),
+  localText = historyRuText,
+  latestRestoreText = "Отменить последний шаг",
+  publishText = "Опубликовать",
   recordKey = (_record, recordIndex) => String(recordIndex),
+  recordMetaText = () => "",
   recordState = () => null,
   recordTitle = (_record, _payload, fallback) => fallback || "",
+  restoreTextForRecord = null,
+  restoreText = "Восстановить",
   showTitle = true
 } = {}) {
   const key = recordKey(record, index);
   const payload = recordState(record);
-  const title = recordTitle(record, payload, "Без названия");
+  const title = recordTitle(record, payload, localText("Untitled", "Без названия"));
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
+  const context = String(recordMetaText(record, payload) || "").trim();
+  const actionRestoreText = typeof restoreTextForRecord === "function"
+    ? restoreTextForRecord(record, index, records)
+    : (activeSource === "private" ? (index === 0 ? latestRestoreText : restoreText) : publishText);
   const meta = [
+    context,
     device,
-    sourceAt ? `изменение: ${sourceAt}` : ""
+    sourceAt ? localText(`changed: ${sourceAt}`, `изменение: ${sourceAt}`) : ""
   ].filter(Boolean).join(" · ");
   return `
     <article class="history-record" data-history-record="${escapeHtml(key)}" tabindex="0" role="button">
       <div class="history-record-main">
-        <strong>${escapeHtml(createdAt || "без даты")}</strong>
+        <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
         ${showTitle ? `<p class="history-record-title">${escapeHtml(title)}</p>` : ""}
         ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       </div>
       <div class="history-record-actions">
-        <button type="button" class="ghost" data-history-detail="${escapeHtml(key)}">Детали</button>
-        <button type="button" class="ghost" data-restore-history="${escapeHtml(key)}">${activeSource === "private" ? "Восстановить" : "Опубликовать"}</button>
+        <button type="button" class="ghost" data-history-detail="${escapeHtml(key)}">${escapeHtml(localText("Details", "Детали"))}</button>
+        <button type="button" class="ghost history-action-button" data-history-action-button data-restore-history="${escapeHtml(key)}" aria-label="${escapeHtml(actionRestoreText)}">${escapeHtml(actionRestoreText)}</button>
       </div>
     </article>
   `;
+}
+
+export function syncHistoryActionButtonTooltips(root) {
+  root?.querySelectorAll?.("[data-history-action-button]").forEach((button) => {
+    const fullText = String(button.textContent || "").trim();
+    if (fullText) button.setAttribute("aria-label", fullText);
+    const truncated = button.scrollWidth > button.clientWidth + 1;
+    if (truncated && fullText) {
+      button.setAttribute("title", fullText);
+      button.dataset.touchTooltip = fullText;
+      return;
+    }
+    button.removeAttribute("title");
+    delete button.dataset.touchTooltip;
+  });
 }
 
 export function renderHistoryRecordDetails(record, index, records, {
   activeSource = "private",
   currentComparisonState = () => null,
   formatDateTime = (value) => String(value || ""),
+  localText = historyRuText,
   recordState = () => null,
   recordTitle = (_record, _payload, fallback) => fallback || "",
+  restoreComparisonTitle = "Изменения этого шага относительно следующей версии",
   summarizePayload = () => ""
 } = {}) {
   const payload = recordState(record);
-  const summary = summarizePayload(payload, { record, source: activeSource, includeTitle: false });
+  const summary = summarizePayload(payload, { record, source: activeSource, includeTitle: false, localText });
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
   const meta = [
     device,
-    sourceAt ? `изменение: ${sourceAt}` : ""
+    sourceAt ? localText(`changed: ${sourceAt}`, `изменение: ${sourceAt}`) : ""
   ].filter(Boolean).join(" · ");
   return `
     <div class="history-detail-meta">
-      <strong>${escapeHtml(createdAt || "без даты")}</strong>
+      <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
       ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       <p>${escapeHtml(summary)}</p>
     </div>
     ${renderHistoryRecordComparison(record, index, records, {
       currentComparisonState,
-      recordState
+      localText,
+      recordState,
+      restoreComparisonTitle
     })}
   `;
 }
 
 function renderHistoryRecordComparison(record, index, records, {
   currentComparisonState,
-  recordState
+  localText = historyRuText,
+  recordState,
+  restoreComparisonTitle
 } = {}) {
   const selectedState = recordState(record);
-  const previousState = records[index + 1] ? recordState(records[index + 1]) : null;
-  const newerState = index === 0
-    ? currentComparisonState()
-    : recordState(records[index - 1]);
-  const fromState = previousState || selectedState;
-  const toState = previousState ? selectedState : newerState;
-  const targetLabel = previousState
-    ? "Изменения относительно предыдущей версии"
-    : "Отличия от более новой версии";
+  const currentState = currentComparisonState();
+  const newerRecord = historyNewerRecord(record, index, records);
+  const newerState = newerRecord ? recordState(newerRecord) : currentState;
+  const fromState = selectedState;
+  const toState = newerState;
+  const targetLabel = restoreComparisonTitle;
   if (!fromState || !toState) {
-    return `<div class="history-record-details"><p class="history-diff-empty">Не удалось сравнить payload этой записи.</p></div>`;
+    return `<div class="history-record-details"><p class="history-diff-empty">${escapeHtml(localText("This history entry could not be compared.", "Не удалось сравнить эту запись истории."))}</p></div>`;
   }
-  const diff = buildHistoryStateDiff(fromState, toState);
+  const diff = buildHistoryStateDiff(fromState, toState, { localText });
   const sections = [
-    renderHistoryDiffSection("Вещи", diff.items),
-    renderHistoryDiffSection("Сумки и места", diff.containers),
-    renderHistoryDiffSection("Укладки", diff.layouts),
-    renderHistoryDiffSection("Собранность", diff.packed),
-    renderHistoryDiffSection("Справочники и настройки", diff.settings)
+    renderHistoryDiffSection(localText("Items", "Вещи"), diff.items, { localText }),
+    renderHistoryDiffSection(localText("Bags and places", "Сумки и места"), diff.containers, { localText }),
+    renderHistoryDiffSection(localText("Layouts", "Укладки"), diff.layouts, { localText }),
+    renderHistoryDiffSection(localText("Packing status", "Собранность"), diff.packed, { localText }),
+    renderHistoryDiffSection(localText("Lists and settings", "Справочники и настройки"), diff.settings, { localText })
   ].filter(Boolean).join("");
   return `
     <div class="history-record-details">
       <h3>${escapeHtml(targetLabel)}</h3>
-      ${sections || `<p class="history-diff-empty">Отличий не найдено.</p>`}
+      ${sections || `<p class="history-diff-empty">${escapeHtml(localText("No user-visible changes found.", "Пользовательских изменений не найдено."))}</p>`}
     </div>
   `;
 }
 
-function renderHistoryDiffGroup(title, rows, mode) {
+function renderHistoryDiffGroup(title, rows, mode, localText = historyRuText) {
   if (!rows?.length) return "";
   return `
     <div class="history-diff-group ${escapeHtml(mode)}">
@@ -285,7 +522,7 @@ function renderHistoryDiffGroup(title, rows, mode) {
       <ul>
         ${rows.map((row) => `
           <li>
-            <span>${escapeHtml(row.title || "без названия")}</span>
+            <span>${escapeHtml(row.title || localText("untitled", "без названия"))}</span>
             ${Array.isArray(row.details)
               ? `<small>${row.details.map((detail) => escapeHtml(detail)).join("<br>")}</small>`
               : row.details
