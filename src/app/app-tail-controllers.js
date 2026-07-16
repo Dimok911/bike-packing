@@ -194,7 +194,7 @@ export function createAppTailControllers(ctx) {
     persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoObjectUrls,
     photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     updatePhotoGalleryUploadProgress,
-    pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
+    pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
     primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
@@ -476,7 +476,7 @@ function openLayoutRootDialog() {
 function renderLayoutRootResults() {
   const query = refs.layoutRootSearch.value.trim().toLowerCase();
   refs.clearLayoutRootSearchBtn.hidden = !query;
-  const activeIds = new Set(getVisibleLayoutRootIds(getPublishedWorkLayout()));
+  const activeIds = getLayoutContainerIdSet(getPublishedWorkLayout());
   const roots = getRootContainers()
     .filter(isRootContainerInActiveCatalog)
     .filter((container) => !activeIds.has(container.id))
@@ -519,7 +519,8 @@ function updateRootContainerPlacementButton() {
     refs.rootContainerPlacementField.hidden = true;
     return;
   }
-  const isPackage = Boolean(container.parentId);
+  const pendingParentId = runtime.rootContainerDialogPendingParentId;
+  const isPackage = pendingParentId !== undefined ? Boolean(pendingParentId) : Boolean(container.parentId);
   const active = isPackage || getRootContainerDialogLayoutRootIds().includes(containerId);
   const currentText = isPackage
     ? layoutContainerPath(layout, getRootContainerDialogParentId())
@@ -542,15 +543,17 @@ function updateRootContainerPlacementButton() {
 function updateRootContainerRemoveFromLayoutButton() {
   if (!refs.rootContainerRemoveFromLayoutBtn) return;
   const layout = state.layouts?.[getPublishedEditLayoutId()];
+  const container = state.containers?.[runtime.editingRootContainerId];
   const isNested = Boolean(layout && runtime.editingRootContainerId && !getLayoutContainerRootStatus(layout, runtime.editingRootContainerId));
+  const isPersistentNested = isNested && container?.nestable === true;
   const canRemove = canRemoveContainerFromActiveLayout(runtime.editingRootContainerId);
-  const label = isNested ? t("buttons.deleteForever") : t("forms.removeFromLayout");
+  const label = isNested && !isPersistentNested ? t("buttons.deleteForever") : t("forms.removeFromLayout");
   refs.rootContainerRemoveFromLayoutBtn.textContent = label;
-  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("delete-forever-button", isNested);
-  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("remove-from-layout-button", !isNested);
+  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("delete-forever-button", isNested && !isPersistentNested);
+  refs.rootContainerRemoveFromLayoutBtn.classList.toggle("remove-from-layout-button", !isNested || isPersistentNested);
   refs.rootContainerRemoveFromLayoutBtn.setAttribute(
     "aria-label",
-    isNested
+    isNested && !isPersistentNested
       ? localText("Delete nested bag or place forever", "Удалить вложенную сумку или место навсегда")
       : localText("Remove bag or place from layout", "Убрать сумку или место из укладки")
   );
@@ -565,7 +568,7 @@ function updateRootContainerDeleteForeverButton() {
   const canDelete = Boolean(
     runtime.editingRootContainerId &&
     container &&
-    !container.parentId &&
+    (!container.parentId || container.nestable === true) &&
     !isReadOnlyStateScope() &&
     !isSharedLayoutView()
   );
@@ -593,6 +596,7 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
   if (warnLockedLayoutMutation(layout.id)) return;
   const itemCount = getLayoutSubtreeItemCount(layout, containerId);
   const isRoot = getLayoutContainerRootStatus(layout, containerId);
+  const remainsInCatalog = isRoot || container.nestable === true;
   const layoutName = layout.name || defaultLayoutName();
   const currentLayoutText = localText(`Current layout: ${layoutName}`, `Текущая укладка: ${layoutName}`);
   const currentLayoutHtml = localText(
@@ -609,8 +613,8 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
   );
   const affectedItemsText = itemCount
     ? localText(
-      `${formatThingCount(itemCount)} from ${isRoot ? "this bag/place" : "this pouch"} will be removed from the layout and become outside the layout. Nested pouches inside will be deleted.`,
-      `${formatThingCount(itemCount)} из ${isRoot ? "этой сумки/места" : "этого пакета"} будут убраны из укладки и окажутся вне укладки. Вложенные пакеты внутри будут удалены.`
+      `${formatThingCount(itemCount)} from ${remainsInCatalog ? "this bag/place" : "this pouch"} will be removed from the layout and become outside the layout. Nested pouches inside will be deleted.`,
+      `${formatThingCount(itemCount)} из ${remainsInCatalog ? "этой сумки/места" : "этого пакета"} будут убраны из укладки и окажутся вне укладки. Вложенные пакеты внутри будут удалены.`
     )
     : "";
   const emptyRootText = localText(
@@ -618,10 +622,10 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
     "Эта сумка/место уже пустые, поэтому из текущей укладки уйдёт только пустая оболочка."
   );
   const confirmed = await askConfirmDialog({
-    title: isRoot
+    title: remainsInCatalog
       ? localText("Remove from layout?", "Убрать из укладки?")
       : localText("Delete forever?", "Удалить навсегда?"),
-    text: isRoot
+    text: remainsInCatalog
       ? localText(
         `${quoteName(container.name)} will be removed from the current layout.`,
         `${quoteName(container.name)} исчезнет из текущей укладки.`
@@ -631,17 +635,17 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
         `${quoteName(container.name)} будет удалён навсегда из текущей укладки как вложенная сумка/место.`
       ),
     highlightText: itemCount
-      ? `${isRoot ? `${currentLayoutText}\n` : `${nestedSubject}\n`}${affectedItemsText}`
-      : isRoot
+      ? `${remainsInCatalog ? `${currentLayoutText}\n` : `${nestedSubject}\n`}${affectedItemsText}`
+      : remainsInCatalog
         ? `${currentLayoutText}\n${emptyRootText}`
         : nestedSubject,
     highlightHtml: itemCount
-      ? `${isRoot ? `${currentLayoutHtml}\n` : `${nestedSubjectHtml}\n`}${escapeHtml(affectedItemsText)}`
-      : isRoot
+      ? `${remainsInCatalog ? `${currentLayoutHtml}\n` : `${nestedSubjectHtml}\n`}${escapeHtml(affectedItemsText)}`
+      : remainsInCatalog
         ? `${currentLayoutHtml}\n${escapeHtml(emptyRootText)}`
         : nestedSubjectHtml,
-    tone: itemCount || !isRoot ? "danger" : "safe",
-    okText: isRoot ? localText("Remove", "Убрать") : t("buttons.deleteForever"),
+    tone: itemCount || !remainsInCatalog ? "danger" : "safe",
+    okText: remainsInCatalog ? localText("Remove", "Убрать") : t("buttons.deleteForever"),
     hideClose: true
   });
   if (confirmed) removeContainerFromLayoutWithAnimation(containerId);
@@ -702,7 +706,7 @@ function openRootContainerPlacementAction(event) {
   const container = state.containers[runtime.editingRootContainerId];
   if (!container) return;
   if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
-  if (container.parentId) {
+  if (container.parentId || refs.rootContainerNestable?.checked) {
     openContainerParentPickerDialog();
     return;
   }
@@ -1059,7 +1063,9 @@ async function openItemCopyContainerPickerDialog(event) {
 
 function openContainerParentPickerDialog(event) {
   event?.preventDefault();
-  if (!runtime.editingRootContainerId || !state.containers[runtime.editingRootContainerId]?.parentId) return;
+  const container = state.containers[runtime.editingRootContainerId];
+  if (!runtime.editingRootContainerId || !container) return;
+  if (!container.parentId && !refs.rootContainerNestable?.checked) return;
   if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   containerPickerSourceIsNestedContainer = false;
   runtime.containerPickerMode = "container";
@@ -3100,6 +3106,8 @@ function getPackingDragController() {
       onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
       moveContainer,
       moveContainerIntoContainerTop,
+      moveContainerToRoot: (containerId, targetIndex) =>
+        placeExistingContainerInLayout(containerId, "", state.activeLayoutId, { targetIndex }),
       moveItem,
       moveItemIntoContainerTop,
       moveRootColumn,
@@ -3680,6 +3688,7 @@ function cleanupLayoutDropState(list, placeholder) {
 function bindSettingsPointerDrag() {
   bindSettingsPointerDragUi({
     addRootContainerToActiveLayout,
+    canNestContainer: (containerId) => state.containers?.[containerId]?.nestable === true,
     cleanupLayoutDropState,
     dropList: document.querySelector("#layoutDropList"),
     getCurrentView,
@@ -3688,11 +3697,14 @@ function bindSettingsPointerDrag() {
     getPackingRoot: () => refs.packingView,
     getPackingTab: () => document.querySelector('.tab[data-view="packing"]'),
     getColumnPlaceholderIndex,
+    getDescendantContainerIds,
     getState: () => state,
     getTouchPoint,
     isHoldDragInput,
     markDragPending,
     onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
+    placeContainerInActiveLayout: (containerId, parentId, targetIndex, options = {}) =>
+      placeExistingContainerInLayout(containerId, parentId, state.activeLayoutId, { ...options, targetIndex }),
     pointerDragStartDistance: POINTER_DRAG_START_DISTANCE,
     preventDragContextMenu,
     render,
@@ -3731,7 +3743,7 @@ function renderRootContainersEditor() {
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
     isRootContainerInActiveCatalog,
-    isRootContainerInActiveLayout
+    isRootContainerInActiveLayout: (containerId) => getLayoutContainerIdSet(getPublishedWorkLayout()).has(containerId)
   });
   return renderRootContainersEditorHtml({
     counts,
@@ -3750,6 +3762,7 @@ function renderRootContainersEditor() {
 function renderRootContainerCard(container) {
   const filterMatch = isFilterContextActive() && matchesRootContainerFieldsFilter(container);
   const inCurrentLayout = isRootContainerInActiveLayout(container.id);
+  const nestedInCurrentLayout = !inCurrentLayout && getLayoutContainerIdSet(getPublishedWorkLayout()).has(container.id);
   const location = container.location || defaultRootContainerLocation(state);
   const photoSlot = shouldShowItemPhotos()
     ? primaryItemPhoto(container)
@@ -3762,6 +3775,7 @@ function renderRootContainerCard(container) {
     filterMatch,
     highlightText: highlight,
     inCurrentLayout,
+    nestedInCurrentLayout,
     location,
     selected: runtime.selectedCatalogRootIds.has(container.id),
     photoHtml: photoSlot,
@@ -3977,6 +3991,32 @@ function placeExistingItemInLayout(itemId, containerId, layoutId = state.activeL
     targetIndex,
     touchLayout
   });
+}
+
+function placeExistingContainerInLayout(containerId, parentId, layoutId = state.activeLayoutId, {
+  changedAt = nowIso(),
+  renderAfter = true,
+  targetIndex = null
+} = {}) {
+  const container = state.containers?.[containerId];
+  const layout = state.layouts?.[layoutId];
+  const currentParentId = layout?.arrangement?.containers?.[containerId]?.parentId || "";
+  if (!container || !layout) return false;
+  if (parentId && container.nestable !== true) return false;
+  if (!parentId && !currentParentId) return false;
+  if (warnLockedLayoutMutation(layoutId)) return false;
+  capturePackingScroll();
+  const placed = placeExistingContainerInLayoutInState(state, containerId, parentId, layoutId, {
+    activeLayoutId: state.activeLayoutId,
+    applyLayoutArrangement,
+    changedAt,
+    targetIndex,
+    touchLayout
+  });
+  if (!placed) return false;
+  saveLayoutMutation(layoutId, { publishDelay: 500 });
+  if (renderAfter) render();
+  return true;
 }
 
 function moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex = null) {
@@ -4244,11 +4284,11 @@ function confirmDeleteEditingRootContainerForever(event) {
 
 function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
-  if (!container || container.parentId) return;
+  if (!container || (container.parentId && container.nestable !== true)) return;
   if (warnLockedContainerDelete(containerId)) return;
   const itemCount = getContainerItemIdsDeep(containerId).length;
   const layoutRows = Object.values(state.layouts)
-    .filter((layout) => (layout.rootContainerIds || []).includes(containerId))
+    .filter((layout) => getLayoutContainerIdSet(layout).has(containerId))
     .map((layout) => ({
       id: layout.id || "",
       name: layout.name || defaultLayoutName()
@@ -4422,6 +4462,7 @@ function openRootContainerDialog(containerId = null) {
   if (refs.rootContainerDepth) refs.rootContainerDepth.value = dimensions.depth ? String(dimensions.depth).replace(".", ",") : "";
   fillRootContainerLocationSelect(container?.location || defaultRootContainerLocation(state));
   renderRootContainerCategoryPicker(container ? containerCategories(container) : [], { fallbackDefault: false });
+  if (refs.rootContainerNestable) refs.rootContainerNestable.checked = container?.nestable === true;
   updateRootContainerPlacementButton();
   updateRootContainerRemoveFromLayoutButton();
   updateRootContainerDeleteForeverButton();
@@ -6558,15 +6599,20 @@ function getRootContainerDialogSnapshot() {
     depth: dimensions.depth,
     location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
     categories: getRootContainerDialogSelectedCategories().join("\u0000"),
+    nestable: Boolean(refs.rootContainerNestable?.checked),
     note: refs.rootContainerNote.value.trim(),
     photo: getRootContainerDialogPhotoSnapshot(),
-    parentId: runtime.editingRootContainerId && state.containers[runtime.editingRootContainerId]?.parentId
+    parentId: runtime.editingRootContainerId && (
+      runtime.rootContainerDialogPendingParentId !== undefined || state.containers[runtime.editingRootContainerId]?.parentId
+    )
       ? getRootContainerDialogParentId()
       : "",
-    parentIndex: runtime.editingRootContainerId && state.containers[runtime.editingRootContainerId]?.parentId
+    parentIndex: runtime.editingRootContainerId && (
+      runtime.rootContainerDialogPendingParentId !== undefined || state.containers[runtime.editingRootContainerId]?.parentId
+    )
       ? getRootContainerDialogParentIndex()
       : "",
-    layoutRootIds: runtime.editingRootContainerId && !state.containers[runtime.editingRootContainerId]?.parentId
+    layoutRootIds: runtime.editingRootContainerId && !state.containers[runtime.editingRootContainerId]?.parentId && runtime.rootContainerDialogPendingParentId === undefined
       ? getRootContainerDialogLayoutRootIds().join("\u0000")
       : ""
   };
@@ -6659,7 +6705,8 @@ function saveDialogItem(event) {
     applyItemDialogPhotoDraft,
     applyLayoutArrangement,
     changedAt: nowIso(),
-    cleanupEmptyContainersInLayoutArrangement,
+    cleanupEmptyContainersInLayoutArrangement: (layout, containerId) =>
+      cleanupEmptyContainersInLayoutArrangement(layout, containerId, state),
     closeDialogWithoutRestoringFocus,
     currentEditMeta,
     editingItemId: runtime.editingItemId,
@@ -6714,8 +6761,17 @@ function applyRootContainerDialogParent(changedAt = nowIso()) {
   const layout = state.layouts?.[layoutId];
   const container = state.containers[runtime.editingRootContainerId];
   const targetParent = state.containers[runtime.rootContainerDialogPendingParentId];
-  const placement = layout?.arrangement?.containers?.[runtime.editingRootContainerId];
-  if (!layout || !container || !placement?.parentId || !targetParent) return false;
+  if (!layout || !container || !targetParent) return false;
+  let placement = layout.arrangement?.containers?.[runtime.editingRootContainerId];
+  if (!placement) {
+    if (!addRootContainerToLayoutInState(state, layoutId, container.id, null, {
+      changedAt,
+      markRecordActivePublicCatalog,
+      touchLayout
+    })) return false;
+    placement = layout.arrangement?.containers?.[container.id];
+  }
+  if (!placement) return false;
   if (container.id === targetParent.id) return false;
   const requestedIndex = runtime.rootContainerDialogPendingParentIndex;
   if (placement.parentId === targetParent.id && requestedIndex === null) return false;
@@ -6897,7 +6953,7 @@ function getRootContainersForSettings() {
     isPrivateCatalogContainerRecord,
     isRootContainerForEditor,
     isRootContainerInActiveCatalog,
-    isRootContainerInActiveLayout,
+    isRootContainerInActiveLayout: (containerId) => getLayoutContainerIdSet(getPublishedWorkLayout()).has(containerId),
     matchesRootContainerFieldsFilter,
     rootContainerSortMode: runtime.rootContainerSortMode,
     rootContainerUsageFilter: runtime.rootContainerUsageFilter

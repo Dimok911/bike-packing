@@ -150,6 +150,7 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerDepth)"), t("forms.depthShort"));
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerLocation)"), t("forms.storage"));
   setFirstText(refs.rootContainerDialog?.querySelector(".field-label:has(#rootContainerCategoryList)"), t("forms.categories"));
+  setText(refs.rootContainerNestableLabel, t("rootContainers.nestable"));
   setText(refs.rootContainerPlacementLabel, t("forms.locatedIn"));
   setText(refs.rootContainerPlacementBtn, t("forms.moveInsideLayout"));
   setText(refs.rootContainerCopyToContainerBtn, t("forms.copyToLayout"));

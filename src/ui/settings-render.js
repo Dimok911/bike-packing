@@ -95,17 +95,21 @@ export function renderRootContainerCardHtml({
   filterMatch,
   highlightText,
   inCurrentLayout,
+  nestedInCurrentLayout = false,
   location,
   photoHtml,
   selected = false,
   showLabels,
   t = (key) => key
 }) {
-  const placementText = inCurrentLayout
-    ? tr(t, "settings.inCurrentLayout", "В текущей укладке")
-    : tr(t, "settings.outsideCurrentLayout", "Вне текущей укладки");
+  const placementText = nestedInCurrentLayout
+    ? tr(t, "rootContainers.nestedInCurrent", "Вложена в текущей укладке")
+    : inCurrentLayout
+      ? tr(t, "settings.inCurrentLayout", "В текущей укладке")
+      : tr(t, "settings.outsideCurrentLayout", "Вне текущей укладки");
   const metaTags = [
     Number(container.weight || 0) ? formatWeight(container.weight) : "",
+    container.nestable === true ? tr(t, "rootContainers.nestableBadge", "Можно вкладывать") : "",
     ...categories.map((category) => highlightText(category)),
     highlightText(location)
   ].filter(Boolean);
@@ -117,7 +121,7 @@ export function renderRootContainerCardHtml({
   return renderCatalogCard({
     classes: [
       "root-container-card",
-      inCurrentLayout ? "in-current-layout" : "",
+      inCurrentLayout || nestedInCurrentLayout ? "in-current-layout" : "",
       selected ? "catalog-selected" : "",
       filterMatch ? "filter-match" : ""
     ],

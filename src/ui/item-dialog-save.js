@@ -70,6 +70,7 @@ export function saveRootContainerDialogAction({
       ...(hasContainerDimensions(dimensions) ? { dimensions } : {}),
       location: refs.rootContainerLocation.value || defaultRootContainerLocation(state),
       note: refs.rootContainerNote.value.trim(),
+      nestable: Boolean(refs.rootContainerNestable?.checked),
       photos: rootContainerDialogPhotoDraft?.photos ? [...rootContainerDialogPhotoDraft.photos] : [],
       ...currentCreateMeta(changedAt)
     };
@@ -90,6 +91,7 @@ export function saveRootContainerDialogAction({
   applyRootContainerDimensions(container, dimensions);
   container.location = refs.rootContainerLocation.value || defaultRootContainerLocation(state);
   container.note = refs.rootContainerNote.value.trim();
+  container.nestable = Boolean(refs.rootContainerNestable?.checked);
   applyRootContainerDialogPhotoDraft(container, changedAt);
   markRecordActivePublicCatalog(container);
   touchContainer(container.id, changedAt);

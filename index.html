@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1230" />
+    <link rel="stylesheet" href="./styles.css?v=1233" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -277,6 +277,10 @@
           Categories
           <div id="rootContainerCategoryList" class="category-picker"></div>
         </div>
+        <label class="checkbox-row root-container-nestable-field">
+          <input id="rootContainerNestable" type="checkbox" />
+          <span id="rootContainerNestableLabel">Can be nested in other bags</span>
+        </label>
         <div id="rootContainerPlacementField" class="field-label item-container-field">
           <span id="rootContainerPlacementLabel">Находится в</span>
           <div class="item-container-control root-container-placement-control">
@@ -665,6 +669,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1230" type="module"></script>
+    <script src="./app.js?v=1233" type="module"></script>
   </body>
 </html>

@@ -118,6 +118,7 @@ export function isNestedContainerInAnyLayoutArrangement(targetState, containerId
 
 export function isRootContainerForEditor(targetState, layout, container) {
   if (!container?.id) return false;
+  if (container.nestable === true) return true;
   if (isRootContainerInLayout(layout, container.id)) return true;
   if (isNestedContainerInAnyLayoutArrangement(targetState, container.id)) return false;
   return !container.parentId;

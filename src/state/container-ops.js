@@ -410,25 +410,110 @@ export function clearRootContainerContentsInState(targetState, containerId, {
   return true;
 }
 
+function removeContainerPlacementTreeFromLayout(layout, containerId) {
+  const arrangement = layout?.arrangement;
+  const rootIds = Array.isArray(arrangement?.rootContainerIds)
+    ? arrangement.rootContainerIds
+    : (layout?.rootContainerIds || []);
+  const hasPlacement = Boolean(arrangement?.containers?.[containerId]);
+  if (!hasPlacement && !rootIds.includes(containerId)) {
+    return { changed: false, containerIds: new Set(), itemIds: new Set() };
+  }
+
+  const containerIds = new Set();
+  const itemIds = new Set();
+  const collect = (id) => {
+    if (!id || containerIds.has(id)) return;
+    containerIds.add(id);
+    const placement = arrangement?.containers?.[id];
+    if (!placement) return;
+    (placement.itemIds || []).forEach((itemId) => itemIds.add(itemId));
+    (placement.order || []).forEach((entry) => {
+      if (entry?.type === "item") itemIds.add(entry.id);
+      if (entry?.type === "container") collect(entry.id);
+    });
+    (placement.childIds || []).forEach(collect);
+  };
+  collect(containerId);
+
+  if (arrangement && typeof arrangement === "object") {
+    arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => !containerIds.has(id));
+    Object.values(arrangement.containers || {}).forEach((placement) => {
+      if (!placement || typeof placement !== "object") return;
+      placement.childIds = (placement.childIds || []).filter((id) => !containerIds.has(id));
+      placement.order = (placement.order || []).filter((entry) =>
+        !(entry?.type === "container" && containerIds.has(entry.id))
+      );
+    });
+    containerIds.forEach((id) => delete arrangement.containers?.[id]);
+    Object.entries(arrangement.items || {}).forEach(([itemId, placedContainerId]) => {
+      if (!containerIds.has(placedContainerId)) return;
+      itemIds.add(itemId);
+      delete arrangement.items[itemId];
+    });
+    itemIds.forEach((itemId) => delete arrangement.packedItems?.[itemId]);
+    layout.rootContainerIds = [...arrangement.rootContainerIds];
+  } else {
+    layout.rootContainerIds = (layout.rootContainerIds || []).filter((id) => id !== containerId);
+  }
+  return { changed: true, containerIds, itemIds };
+}
+
 export function deleteRootContainerFromState(targetState, containerId, {
   beforeDeleteContainer = () => {},
   changedAt = "",
   markEdited = () => {}
 } = {}) {
   const container = targetState?.containers?.[containerId];
-  if (!container || container.parentId) return false;
-  getContainerItemIdsDeepForState(targetState, containerId).forEach((itemId) => {
+  if (!container || (container.parentId && container.nestable !== true)) return false;
+  const removedContainerIds = new Set();
+  const affectedItemIds = new Set(getContainerItemIdsDeepForState(targetState, containerId));
+  const collectEntityTree = (id) => {
+    if (!id || removedContainerIds.has(id)) return;
+    removedContainerIds.add(id);
+    (targetState.containers?.[id]?.childIds || []).forEach(collectEntityTree);
+  };
+  collectEntityTree(containerId);
+  Object.values(targetState.layouts || {}).forEach((layout) => {
+    const removed = removeContainerPlacementTreeFromLayout(layout, containerId);
+    if (!removed.changed) return;
+    removed.containerIds.forEach((id) => removedContainerIds.add(id));
+    removed.itemIds.forEach((id) => affectedItemIds.add(id));
+    markEdited(layout, changedAt);
+  });
+  affectedItemIds.forEach((itemId) => {
     if (!targetState.items?.[itemId]) return;
     targetState.items[itemId].containerId = "";
     markEdited(targetState.items[itemId], changedAt);
     delete targetState.packedItems?.[itemId];
   });
-  Object.values(targetState.layouts || {}).forEach((layout) => {
-    if (!(layout.rootContainerIds || []).includes(containerId)) return;
-    layout.rootContainerIds = layout.rootContainerIds.filter((id) => id !== containerId);
-    markEdited(layout, changedAt);
+  Object.values(targetState.containers || {}).forEach((record) => {
+    if (!record || removedContainerIds.has(record.id)) return;
+    const previousChildCount = (record.childIds || []).length;
+    const previousOrderCount = (record.order || []).length;
+    record.childIds = (record.childIds || []).filter((id) => !removedContainerIds.has(id));
+    record.order = (record.order || []).filter((entry) =>
+      !(entry?.type === "container" && removedContainerIds.has(entry.id))
+    );
+    if (record.childIds.length !== previousChildCount || record.order.length !== previousOrderCount) {
+      markEdited(record, changedAt);
+    }
   });
-  removeContainerTreeFromState(targetState, containerId, { beforeDeleteContainer });
+  removedContainerIds.forEach((id) => {
+    if (id === containerId) return;
+    const removedContainer = targetState.containers?.[id];
+    if (!removedContainer) return;
+    if (removedContainer.nestable === true) {
+      removedContainer.parentId = null;
+      removedContainer.childIds = [];
+      removedContainer.itemIds = [];
+      removedContainer.order = [];
+      markEdited(removedContainer, changedAt);
+      return;
+    }
+    deleteContainerEntityRecordFromState(targetState, id, { beforeDeleteContainer });
+  });
+  deleteContainerEntityRecordFromState(targetState, containerId, { beforeDeleteContainer });
   return true;
 }
 
@@ -439,6 +524,7 @@ export function cleanupEmptyContainersInState(targetState, containerId, {
   while (currentId) {
     const container = targetState?.containers?.[currentId];
     if (!container || !container.parentId) return;
+    if (container.nestable === true) return;
     if ((container.itemIds || []).length || (container.childIds || []).length) return;
     const parent = targetState.containers?.[container.parentId];
     if (!parent) return;

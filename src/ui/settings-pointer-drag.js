@@ -1,5 +1,6 @@
 export function bindSettingsPointerDrag({
   addRootContainerToActiveLayout,
+  canNestContainer = () => false,
   cleanupLayoutDropState,
   dropList,
   getCurrentView = () => "",
@@ -8,12 +9,14 @@ export function bindSettingsPointerDrag({
   getPackingRoot = () => null,
   getPackingTab = () => document.querySelector?.('.tab[data-view="packing"]') || null,
   getColumnPlaceholderIndex = null,
+  getDescendantContainerIds = () => [],
   getState,
   getTouchPoint,
   onBeforePackingDragEnter = () => {},
   isHoldDragInput,
   markDragPending,
   pointerDragStartDistance,
+  placeContainerInActiveLayout = () => false,
   preventDragContextMenu,
   render,
   switchToPacking = () => {},
@@ -34,6 +37,7 @@ export function bindSettingsPointerDrag({
     const containerId = handle.dataset.layoutMemberRowDrag || handle.dataset.rootDrag;
     const sourceRow = handle.closest(".layout-member-row, .root-container-card");
     if (!containerId || !sourceRow || !state.containers[containerId]) return;
+    const sourceBox = sourceRow.getBoundingClientRect();
 
     const placeholder = document.createElement("div");
     placeholder.className = "drop-placeholder";
@@ -108,12 +112,11 @@ export function bindSettingsPointerDrag({
         event.preventDefault();
       }
       clearDragPending(sourceRow);
-      const box = sourceRow.getBoundingClientRect();
-      ghost.style.width = `${box.width}px`;
-      ghost.style.left = `${box.left}px`;
-      ghost.style.top = `${box.top}px`;
-      placeholder.style.height = `${box.height}px`;
-      placeholder.style.width = `${box.width}px`;
+      ghost.style.width = `${sourceBox.width}px`;
+      ghost.style.left = `${sourceBox.left}px`;
+      ghost.style.top = `${sourceBox.top}px`;
+      placeholder.style.height = `${sourceBox.height}px`;
+      placeholder.style.width = `${sourceBox.width}px`;
       placeholder.style.maxWidth = "100%";
       document.body.appendChild(ghost);
       sourceRow.classList.add("dragging", "drag-origin");
@@ -232,6 +235,53 @@ export function bindSettingsPointerDrag({
       }
 
       const board = packingRoot.querySelector?.(".board");
+      const targetContainer = target.closest?.("[data-root-container-id], [data-subcontainer-id]");
+      const targetZone = target.closest?.(".dropzone") || targetContainer?.querySelector?.(":scope > .dropzone");
+      const targetContainerId = targetZone?.dataset?.containerId || "";
+      const canUseNestedTarget = sourceIsRootCatalog &&
+        canNestContainer(containerId) &&
+        targetZone &&
+        targetContainerId &&
+        targetContainerId !== containerId &&
+        !getDescendantContainerIds(containerId).includes(targetContainerId);
+      if (canUseNestedTarget) {
+        packingRoot.querySelectorAll?.(".dropzone.drag-over").forEach((entry) => entry.classList.remove("drag-over"));
+        packingRoot.querySelectorAll?.(".subcontainer.container-drop-target").forEach((entry) => entry.classList.remove("container-drop-target"));
+        targetZone.classList.add("drag-over");
+        targetZone.parentElement?.classList?.toggle("container-drop-target", targetZone.parentElement.classList.contains("subcontainer"));
+        placeholder.className = "drop-placeholder";
+        placeholder.style.height = `${sourceBox.height}px`;
+        placeholder.style.width = `${Math.max(0, Math.min(sourceBox.width, targetZone.clientWidth || sourceBox.width))}px`;
+        placeholder.style.maxWidth = "100%";
+        const entries = [...targetZone.children].filter((child) =>
+          child === placeholder ||
+          (
+            (child.classList?.contains("item-card") || child.classList?.contains("subcontainer")) &&
+            !child.classList.contains("dragging")
+          )
+        );
+        const after = entries.reduce(
+          (closest, entry) => {
+            if (entry === placeholder) return closest;
+            const box = entry.getBoundingClientRect();
+            const offset = clientY - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) return { offset, entry };
+            return closest;
+          },
+          { offset: Number.NEGATIVE_INFINITY, entry: null }
+        ).entry;
+        placePlaceholder(targetZone, after);
+        const orderedEntries = [...targetZone.children].filter((child) =>
+          child === placeholder || child.classList?.contains("item-card") || child.classList?.contains("subcontainer")
+        );
+        packingDrop = {
+          type: "container",
+          parentId: targetContainerId,
+          index: Math.max(0, orderedEntries.indexOf(placeholder))
+        };
+        packingDropBoard = targetZone;
+        return true;
+      }
       const boardTarget = target.closest?.(".board");
       if (board && boardTarget === board) {
         packingRoot.querySelectorAll?.(".dropzone.drag-over").forEach((entry) => entry.classList.remove("drag-over"));
@@ -280,7 +330,7 @@ export function bindSettingsPointerDrag({
       }
       cleanupPackingDropState();
       placeholder.className = "drop-placeholder";
-      setLayoutPlaceholderSize(sourceRow.getBoundingClientRect());
+      setLayoutPlaceholderSize(sourceBox);
       dropList.classList.add("drag-over");
       const afterRow = getLayoutRowAfterPointer(dropList, clientY);
       if (afterRow) dropList.insertBefore(placeholder, afterRow);
@@ -331,6 +381,8 @@ export function bindSettingsPointerDrag({
         dropped = true;
         if (packingDrop.type === "root") {
           addRootContainerToActiveLayout(containerId, packingDrop.index, { closeDialog: false, renderAfter: false });
+        } else if (packingDrop.type === "container") {
+          placeContainerInActiveLayout(containerId, packingDrop.parentId, packingDrop.index, { renderAfter: false });
         }
       }
       if (started) {

@@ -162,7 +162,7 @@ export function moveItemInLayoutArrangement(targetState, layout, itemId, targetC
   if (!oldContainerId && !targetState.items?.[itemId]) return false;
   const moved = addItemToLayoutArrangement(targetState, layout, itemId, targetContainerId, targetIndex);
   if (moved && oldContainerId && oldContainerId !== targetContainerId) {
-    cleanupEmptyContainersInLayoutArrangement(layout, oldContainerId);
+    cleanupEmptyContainersInLayoutArrangement(layout, oldContainerId, targetState);
   }
   return moved;
 }
@@ -190,6 +190,7 @@ export function moveContainerInLayoutArrangement(targetState, layout, containerI
   const targetPlacement = ensureLayoutContainerPlacement(targetState, layout, targetParentId);
   if (!sourcePlacement || !targetPlacement) return false;
   const oldParentId = sourcePlacement.parentId || "";
+  if (!oldParentId && targetState.containers[containerId].nestable !== true) return false;
   if (oldParentId) {
     const oldParent = layout.arrangement?.containers?.[oldParentId];
     if (oldParent) {
@@ -210,7 +211,7 @@ export function moveContainerInLayoutArrangement(targetState, layout, containerI
     : Math.max(0, Math.min(targetIndex, targetPlacement.order.length));
   targetPlacement.childIds.push(containerId);
   targetPlacement.order.splice(index, 0, { type: "container", id: containerId });
-  if (oldParentId && oldParentId !== targetParentId) cleanupEmptyContainersInLayoutArrangement(layout, oldParentId);
+  if (oldParentId && oldParentId !== targetParentId) cleanupEmptyContainersInLayoutArrangement(layout, oldParentId, targetState);
   return true;
 }
 
@@ -223,7 +224,7 @@ export function removeItemFromLayoutInState(targetState, layoutId, itemId, {
   const containerId = getItemContainerIdInLayout(targetState, layout, itemId);
   if (!item || !layout || !containerId) return false;
   if (!removeItemFromLayoutArrangement(layout, itemId)) return false;
-  cleanupEmptyContainersInLayoutArrangement(layout, containerId);
+  cleanupEmptyContainersInLayoutArrangement(layout, containerId, targetState);
   touchLayout(layoutId, changedAt);
   return true;
 }
@@ -285,10 +286,21 @@ export function placeExistingContainerInLayoutInState(targetState, containerId, 
     targetState.collapsedContainers[parentId] = false;
   } else {
     const arrangement = layout.arrangement || createEmptyLayoutArrangement();
+    const placement = arrangement.containers?.[containerId];
+    const oldParentId = placement?.parentId || "";
+    if (oldParentId && arrangement.containers?.[oldParentId]) {
+      const oldParent = arrangement.containers[oldParentId];
+      oldParent.childIds = (oldParent.childIds || []).filter((id) => id !== containerId);
+      oldParent.order = (oldParent.order || []).filter((entry) => !(entry?.type === "container" && entry.id === containerId));
+    }
     arrangement.rootContainerIds = (arrangement.rootContainerIds || []).filter((id) => id !== containerId);
-    arrangement.rootContainerIds.push(containerId);
-    if (arrangement.containers?.[containerId]) arrangement.containers[containerId].parentId = "";
+    const index = targetIndex === null
+      ? arrangement.rootContainerIds.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, arrangement.rootContainerIds.length));
+    arrangement.rootContainerIds.splice(index, 0, containerId);
+    if (placement) placement.parentId = "";
     layout.rootContainerIds = [...arrangement.rootContainerIds];
+    if (oldParentId) cleanupEmptyContainersInLayoutArrangement(layout, oldParentId, targetState);
   }
   normalizeLayoutArrangement(layout, targetState);
   touchLayout(layoutId, changedAt);
@@ -456,9 +468,19 @@ export function removeContainerFromLayoutOnlyInState(targetState, layout, contai
     delete arrangement.containers[id];
     delete targetState.collapsedContainers?.[id];
     if (id === containerId && isRoot) return;
+    const removedContainer = targetState.containers?.[id];
+    if (removedContainer?.nestable === true) {
+      removedContainer.parentId = null;
+      removedContainer.childIds = [];
+      removedContainer.itemIds = [];
+      removedContainer.order = [];
+      markRecordActivePublicCatalog(removedContainer);
+      markEdited(removedContainer, changedAt);
+      return;
+    }
     deleteUnusedLayoutContainerEntity(id, layout.id);
   });
-  if (parentId) cleanupEmptyContainersInLayoutArrangement(layout, parentId);
+  if (parentId) cleanupEmptyContainersInLayoutArrangement(layout, parentId, targetState);
   return true;
 }
 
@@ -535,11 +557,11 @@ export function createGroupFromItemsInState(targetState, layoutId, itemId, targe
   targetParent.order.splice(Math.min(insertIndex, targetParent.order.length), 0, { type: "container", id: groupId });
   touchLayout(layoutId, changedAt);
   targetState.collapsedContainers[groupId] = false;
-  if (sourceContainerId !== targetContainerId) cleanupEmptyContainersInLayoutArrangement(layout, sourceContainerId);
+  if (sourceContainerId !== targetContainerId) cleanupEmptyContainersInLayoutArrangement(layout, sourceContainerId, targetState);
   return { groupId, sourceContainerId, targetContainerId };
 }
 
-export function cleanupEmptyContainersInLayoutArrangement(layout, containerId) {
+export function cleanupEmptyContainersInLayoutArrangement(layout, containerId, targetState = null) {
   const arrangement = layout?.arrangement;
   if (!arrangement || typeof arrangement !== "object") return false;
   let currentId = containerId;
@@ -547,6 +569,7 @@ export function cleanupEmptyContainersInLayoutArrangement(layout, containerId) {
   while (currentId) {
     const placement = arrangement.containers?.[currentId];
     if (!placement) break;
+    if (targetState?.containers?.[currentId]?.nestable === true) break;
     const hasItems = (placement.itemIds || []).some((id) => arrangement.items?.[id] === currentId);
     const hasChildren = (placement.childIds || []).some((id) => arrangement.containers?.[id]);
     if (hasItems || hasChildren || (arrangement.rootContainerIds || []).includes(currentId)) break;

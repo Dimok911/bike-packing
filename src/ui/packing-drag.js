@@ -18,6 +18,7 @@ export function createPackingDragController({
   canStartPackingDrag = () => true,
   moveContainer,
   moveContainerIntoContainerTop,
+  moveContainerToRoot = () => false,
   moveItem,
   moveItemIntoContainerTop,
   moveRootColumn,
@@ -356,6 +357,8 @@ export function createPackingDragController({
         let ghostTargetX = startX;
         let ghostTargetY = startY;
         let currentIndex = -1;
+        let nestedTargetContainerId = "";
+        let nestedTargetZone = null;
         let holdTimer = null;
         let blockingTouchMove = false;
         const rect = source.getBoundingClientRect();
@@ -363,7 +366,7 @@ export function createPackingDragController({
         const dragOffsetY = startY - rect.top;
         const preDragScroller = createPreDragScroller(board, startX, startY);
         const edgeScroller = createBoardEdgeScroller(board, () => {
-          if (started) place(latestX);
+          if (started) place(latestX, latestY);
         }, () => Math.min(rect.height, 180));
         const placeholder = document.createElement("div");
         placeholder.className = "column-placeholder";
@@ -427,7 +430,30 @@ export function createPackingDragController({
           ghostFrame = requestAnimationFrame(tick);
         };
 
-        const place = (clientX) => {
+        const place = (clientX, clientY) => {
+          const pointerTarget = document.elementFromPoint(clientX, clientY);
+          const targetContainer = pointerTarget?.closest?.("[data-root-container-id], [data-subcontainer-id]");
+          const targetZone = pointerTarget?.closest?.(".dropzone") || targetContainer?.querySelector?.(":scope > .dropzone");
+          const targetContainerId = targetZone?.dataset?.containerId || "";
+          const sourceCanBeNested = state().containers?.[containerId]?.nestable === true;
+          const invalidNestedTarget = !targetContainerId ||
+            targetContainerId === containerId ||
+            getDescendantContainerIds(containerId).includes(targetContainerId);
+          if (sourceCanBeNested && targetZone && board.contains(targetZone) && !invalidNestedTarget) {
+            placeholder.className = "drop-placeholder";
+            placeholder.style.width = `${Math.max(0, Math.min(rect.width, targetZone.clientWidth || rect.width))}px`;
+            markDropzoneDragOver(root, targetZone);
+            placePlaceholder(targetZone, placeholder, getEntryAfterPointer(targetZone, clientY));
+            nestedTargetContainerId = targetContainerId;
+            nestedTargetZone = targetZone;
+            currentIndex = -1;
+            return;
+          }
+          clearDropzoneDragOvers(root);
+          nestedTargetContainerId = "";
+          nestedTargetZone = null;
+          placeholder.className = "column-placeholder";
+          placeholder.style.width = `${rect.width}px`;
           const cards = [...board.children].filter((child) =>
             child.classList?.contains("container-card") && child !== source && !child.classList.contains("dragging")
           );
@@ -478,7 +504,7 @@ export function createPackingDragController({
           if (!begin()) return;
           moveGhost(movePoint.clientX, movePoint.clientY);
           edgeScroller.update(movePoint.clientX, movePoint.clientY);
-          place(movePoint.clientX);
+          place(movePoint.clientX, movePoint.clientY);
         };
 
         const finish = () => {
@@ -490,12 +516,15 @@ export function createPackingDragController({
           if (inputType !== "touch" && header.hasPointerCapture?.(event.pointerId)) {
             header.releasePointerCapture(event.pointerId);
           }
-          if (!canceled && started && currentIndex >= 0 && !isOriginalRootColumnPosition(containerId, currentIndex)) {
+          if (!canceled && started && nestedTargetContainerId && nestedTargetZone && placeholder.parentElement === nestedTargetZone) {
+            moveContainer(containerId, nestedTargetContainerId, getPlaceholderContainerIndex(nestedTargetZone, placeholder));
+          } else if (!canceled && started && currentIndex >= 0 && !isOriginalRootColumnPosition(containerId, currentIndex)) {
             moveRootColumn(containerId, currentIndex);
           }
           if (ghostFrame) cancelAnimationFrame(ghostFrame);
           ghost?.remove();
           placeholder.remove();
+          clearDropzoneDragOvers(root);
           clearDragPending(source);
           source.classList.remove("dragging");
           source.classList.remove("drag-source-collapsed");
@@ -567,6 +596,7 @@ export function createPackingDragController({
       let groupTargetItemId = null;
       let packageTargetContainerId = null;
       let packageTargetUsesPointer = false;
+      let rootTargetIndex = -1;
       let itemIntoDraggedContainerId = null;
       let nestedGroupCandidateItemId = null;
       let nestedGroupCandidateStartedAt = 0;
@@ -584,6 +614,8 @@ export function createPackingDragController({
       let holdTimer = null;
       let blockingTouchMove = false;
       const board = root.querySelector(".board");
+      const sourcePlacement = state().layouts?.[state().activeLayoutId]?.arrangement?.containers?.[id];
+      const sourceIsNestedContainer = kind === "container" && Boolean(sourcePlacement?.parentId);
       const sourceRect = source.getBoundingClientRect();
       const preDragScroller = createPreDragScroller(board, startX, startY);
       const edgeScroller = createBoardEdgeScroller(board, () => {
@@ -700,6 +732,7 @@ export function createPackingDragController({
         groupTargetItemId = null;
         packageTargetContainerId = null;
         packageTargetUsesPointer = false;
+        rootTargetIndex = -1;
         itemIntoDraggedContainerId = null;
         resetNestedGroupCandidate();
       };
@@ -727,6 +760,7 @@ export function createPackingDragController({
             groupTargetItemId = null;
             packageTargetContainerId = null;
             packageTargetUsesPointer = false;
+            rootTargetIndex = -1;
             itemIntoDraggedContainerId = targetItemId;
             return;
           }
@@ -741,11 +775,54 @@ export function createPackingDragController({
           itemIntoDraggedContainerId = null;
           packageTargetContainerId = packageTarget.containerId;
           packageTargetUsesPointer = packageTarget.insertByPointer;
+          rootTargetIndex = -1;
           resetNestedGroupCandidate();
+          placeholder.className = "drop-placeholder";
+          placeholder.style.height = `${sourceRect.height}px`;
+          placeholder.style.width = `${sourceRect.width}px`;
+          placeholder.style.maxWidth = "100%";
           const insertBefore = packageTarget.insertByPointer
             ? getEntryAfterPointer(packageTarget.zone, clientY)
             : getFirstEntry(packageTarget.zone);
           placePlaceholder(packageTarget.zone, placeholder, insertBefore);
+          return;
+        }
+
+        const rootCard = target?.closest?.(".container-card");
+        const rootSurface = target === board || target === placeholder || Boolean(
+          rootCard &&
+          board?.contains(rootCard) &&
+          !target?.closest?.(".dropzone") &&
+          !target?.closest?.(".subcontainer")
+        );
+        if (sourceIsNestedContainer && board && rootSurface) {
+          clearDropzoneDragOvers(root);
+          root.querySelectorAll(".item-card.group-target, .item-card.move-into-target").forEach((card) => card.classList.remove("group-target", "move-into-target"));
+          currentZone = null;
+          groupTargetItemId = null;
+          packageTargetContainerId = null;
+          packageTargetUsesPointer = false;
+          itemIntoDraggedContainerId = null;
+          resetNestedGroupCandidate();
+          placeholder.className = "column-placeholder";
+          placeholder.style.height = "";
+          placeholder.style.maxWidth = "none";
+          const referenceCard = board.querySelector(".container-card");
+          placeholder.style.width = `${referenceCard?.getBoundingClientRect?.().width || sourceRect.width}px`;
+          const cards = [...board.children].filter((child) =>
+            child.classList?.contains("container-card") && !child.classList.contains("dragging")
+          );
+          const after = cards.reduce(
+            (closest, card) => {
+              const box = card.getBoundingClientRect();
+              const offset = clientX - box.left - box.width / 2;
+              if (offset < 0 && offset > closest.offset) return { offset, card };
+              return closest;
+            },
+            { offset: Number.NEGATIVE_INFINITY, card: null }
+          ).card;
+          placePlaceholder(board, placeholder, after);
+          rootTargetIndex = getColumnPlaceholderIndex(board, placeholder, id);
           return;
         }
 
@@ -772,6 +849,7 @@ export function createPackingDragController({
               targetCard.classList.add("group-target");
               currentZone = zone;
               groupTargetItemId = targetItemId;
+              rootTargetIndex = -1;
               return;
             }
           } else {
@@ -784,9 +862,14 @@ export function createPackingDragController({
         itemIntoDraggedContainerId = null;
         packageTargetContainerId = null;
         packageTargetUsesPointer = false;
+        rootTargetIndex = -1;
         markDropzoneDragOver(root, zone);
         currentZone = zone;
 
+        placeholder.className = "drop-placeholder";
+        placeholder.style.height = `${sourceRect.height}px`;
+        placeholder.style.width = `${sourceRect.width}px`;
+        placeholder.style.maxWidth = "100%";
         const afterEntry = getEntryAfterPointer(zone, clientY);
         placePlaceholder(zone, placeholder, afterEntry);
       };
@@ -841,6 +924,8 @@ export function createPackingDragController({
           moveItemIntoContainerTop(itemIntoDraggedContainerId, id);
         } else if (!canceled && started && kind === "item" && groupTargetItemId) {
           createGroupFromItems(id, groupTargetItemId);
+        } else if (!canceled && started && kind === "container" && rootTargetIndex >= 0 && placeholder.parentElement === board) {
+          moveContainerToRoot(id, rootTargetIndex);
         } else if (!canceled && started && currentZone && packageTargetContainerId && placeholder.parentElement === currentZone) {
           if (kind === "container") {
             if (!isOriginalContainerPosition(currentZone, placeholder)) {
@@ -882,6 +967,7 @@ export function createPackingDragController({
           }, 250);
         }
         placeholder.removeAttribute("style");
+        placeholder.className = "drop-placeholder";
         setDraggingItemId(null);
         setDraggingContainerId(null);
         document.body.classList.remove("dragging-ui");

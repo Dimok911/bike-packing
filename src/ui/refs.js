@@ -108,6 +108,8 @@ export function createRefs(root = document) {
     rootContainerDepth: root.querySelector("#rootContainerDepth"),
     rootContainerLocation: root.querySelector("#rootContainerLocation"),
     rootContainerCategoryList: root.querySelector("#rootContainerCategoryList"),
+    rootContainerNestable: root.querySelector("#rootContainerNestable"),
+    rootContainerNestableLabel: root.querySelector("#rootContainerNestableLabel"),
     rootContainerPlacementField: root.querySelector("#rootContainerPlacementField"),
     rootContainerPlacementLabel: root.querySelector("#rootContainerPlacementLabel"),
     rootContainerPlacementCurrent: root.querySelector("#rootContainerPlacementCurrent"),
