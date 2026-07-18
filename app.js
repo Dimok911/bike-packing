@@ -251,6 +251,7 @@ import {
   sharedEntityTargetFromUrl
 } from "./src/public/shared-entity-link.js";
 import { focusSharedEntityTarget } from "./src/ui/shared-entity-focus.js";
+import { finishAppStartup, renderBeforeFinishingAppStartup } from "./src/ui/app-startup.js";
 import {
   reconcilePublishedTemplateCopyDraft,
   repairEmptyTemplateCopyDraftFromPublishedLayout
@@ -2946,6 +2947,7 @@ async function init() {
 
   appUnlocked = true;
   const sharedListId = sharedListIdFromLocation();
+  if (!sharedListId) finishAppStartup(document);
   const signedOut = isExplicitlySignedOut();
   const offlineNow = "onLine" in navigator && !navigator.onLine;
   const shouldLoadLocalFirst = Boolean(sharedListId) || (!signedOut && isForcedOffline());
@@ -2961,9 +2963,8 @@ async function init() {
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
   }
   startRemoteStateWatcher();
-  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: true }).catch(() => null);
+  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: !sharedListId }).catch(() => null);
   if (sharedListId) {
-    await publicIndexRefresh;
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
   } else if (isForcedOffline()) {
     publicIndexRefresh.catch(() => null);
@@ -6245,14 +6246,19 @@ async function openSharedListFromLink(listId, layoutId = "") {
     }
     setActiveReadOnlyScope(linkedSharedListLayout.id);
     switchView("packing");
-    render();
-    if (entityTarget) focusSharedEntityTarget(refs.packingView, entityTarget);
+    renderBeforeFinishingAppStartup({
+      documentRef: document,
+      render: () => {
+        render();
+        if (entityTarget) focusSharedEntityTarget(refs.packingView, entityTarget);
+      }
+    });
     updateSyncUi(`Общий список · ${linkedSharedListLayout.name}`);
     return true;
   } catch (error) {
     await hydrateAuthForSharedLink();
     setActivePrivateScope();
-    render();
+    renderBeforeFinishingAppStartup({ documentRef: document, render });
     updateSyncUi(`Не удалось открыть shared-список: ${error.message}`);
     return false;
   }

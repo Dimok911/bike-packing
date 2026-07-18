@@ -2,6 +2,8 @@ export const I18N = {
   ru: {
     "app.title": "Сборы в велопоход",
     "app.initialStatus": "Локальный прототип · данные сохраняются на этом устройстве",
+    "startup.title": "Открываем сборы",
+    "startup.loading": "Загружаем список, вещь или сумку...",
     "menu.signIn": "Войти",
     "menu.signOut": "Выйти",
     "menu.sharedLayouts": "Шаблоны",
@@ -343,6 +345,8 @@ export const I18N = {
   en: {
     "app.title": "Bikepacking List",
     "app.initialStatus": "Local prototype · data is saved on this device",
+    "startup.title": "Opening bikepacking list",
+    "startup.loading": "Loading the list, item, or bag...",
     "menu.signIn": "Sign in",
     "menu.signOut": "Sign out",
     "menu.sharedLayouts": "Templates",

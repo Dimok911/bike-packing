@@ -606,6 +606,49 @@ body.admin-session .admin-menu-item {
   box-shadow: var(--shadow);
 }
 
+.app-startup {
+  display: none;
+  max-width: 680px;
+  margin-top: 26px;
+  padding: 18px;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.app-startup h2 {
+  font-size: 24px;
+}
+
+.app-startup p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.app-startup-spinner {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-startup-spin 0.8s linear infinite;
+}
+
+@keyframes app-startup-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-startup-spinner {
+    animation: none;
+  }
+}
+
 .auth-gate h2 {
   font-size: 24px;
 }
@@ -618,6 +661,15 @@ body.admin-session .admin-menu-item {
 
 body.auth-gated .auth-gate {
   display: block;
+}
+
+body.app-starting .app-startup {
+  display: flex;
+}
+
+body.app-starting .auth-gate,
+body.app-starting .auth-required {
+  display: none !important;
 }
 
 body.auth-gated .auth-required {
@@ -7450,12 +7502,14 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
     min-width: 33px;
   }
 
-  .auth-gate {
+  .auth-gate,
+  .app-startup {
     margin-top: 14px;
     padding: 14px;
   }
 
-  .auth-gate h2 {
+  .auth-gate h2,
+  .app-startup h2 {
     font-size: 19px;
   }
 
