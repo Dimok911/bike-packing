@@ -3100,6 +3100,7 @@ function getPackingDragController() {
       getItemContainerIdInLayout,
       getPackingRoot: () => refs.packingView,
       getPackingTab: () => document.querySelector('.tab[data-view="packing"]'),
+      getDragCancelLabel: () => t("packing.dragCancel"),
       getState: () => state,
       isOriginalRootColumnPosition,
       canStartPackingDrag: () => !warnLockedLayoutMutation(state.activeLayoutId),

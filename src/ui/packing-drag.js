@@ -1,10 +1,18 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
+import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
+import {
+  calculatePackingEdgeScroll,
+  getPackingBottomScrollRoom,
+  getPackingDragBottomBoundary,
+  getPackingDragTopBoundary
+} from "./packing-edge-scroll.js";
 
 export function createPackingDragController({
   edgeScrollMaxSpeed,
   edgeScrollZone,
   getContainerItemIdsDeep,
   getCurrentView = () => "",
+  getDragCancelLabel = () => "",
   getDescendantContainerIds,
   getDraggingContainerId,
   getDraggingItemId,
@@ -76,6 +84,14 @@ export function createPackingDragController({
     return getPackingRoot?.()?.querySelector?.(".board") || null;
   }
 
+  function createDragCancelTarget() {
+    return createPackingDragCancelTarget({
+      getLabel: getDragCancelLabel,
+      getStickyBottom: ({ viewportTop, viewportHeight }) =>
+        getPackingDragTopBoundary({ viewportTop, viewportHeight })
+    });
+  }
+
   function getPackingPortalTabTarget(target) {
     const tab = getPackingTab?.();
     if (!tab || !target) return null;
@@ -102,7 +118,7 @@ export function createPackingDragController({
     if (!ghost) return targetTop;
     const viewportTop = window.visualViewport?.offsetTop || 0;
     const viewportHeight = window.visualViewport?.height || window.innerHeight;
-    const topLimit = viewportTop + 8;
+    const topLimit = getPackingDragTopBoundary({ viewportTop, viewportHeight }) + 8;
     const bottomLimit = getDragSafeViewportBottom(viewportTop, viewportHeight);
     const ghostHeight = ghost.getBoundingClientRect?.().height || ghost.offsetHeight || 0;
     if (!ghostHeight) return Math.max(topLimit, targetTop);
@@ -110,21 +126,11 @@ export function createPackingDragController({
   }
 
   function getDragSafeViewportBottom(viewportTop = window.visualViewport?.offsetTop || 0, viewportHeight = window.visualViewport?.height || window.innerHeight) {
-    return getDragViewportBottomWithReserve(viewportTop, viewportHeight, 42);
+    return getPackingDragBottomBoundary({ viewportTop, viewportHeight, reserveAboveFixedBar: 42 });
   }
 
   function getDragScrollTriggerBottom(viewportTop = window.visualViewport?.offsetTop || 0, viewportHeight = window.visualViewport?.height || window.innerHeight) {
-    return getDragViewportBottomWithReserve(viewportTop, viewportHeight, 16);
-  }
-
-  function getDragViewportBottomWithReserve(viewportTop, viewportHeight, reserveAboveFixedBar) {
-    const viewportBottom = viewportTop + viewportHeight;
-    const fixedScrollbar = document.querySelector?.("#kanbanScrollbar:not(.hidden)");
-    const fixedScrollbarTop = fixedScrollbar?.getBoundingClientRect?.().top;
-    const fixedBottomReserve = Number.isFinite(fixedScrollbarTop)
-      ? Math.max(18, viewportBottom - fixedScrollbarTop + reserveAboveFixedBar)
-      : 18;
-    return viewportBottom - fixedBottomReserve;
+    return getPackingDragBottomBoundary({ viewportTop, viewportHeight, reserveAboveFixedBar: 16 });
   }
 
   function setDragGhostPosition(ghost, left, top, { fitTop = true } = {}) {
@@ -183,11 +189,13 @@ export function createPackingDragController({
     return { update, stop };
   }
 
-  function createBoardEdgeScroller(board, onScroll, getDragHeight = () => 0) {
+  function createBoardEdgeScroller(board, onScroll, getDragMetrics = () => ({})) {
     let frame = null;
     let speedX = 0;
     let speedY = 0;
     let baseBoardHeight = 0;
+    let lastClientY = null;
+    let verticalDirection = 0;
 
     const ensureBottomScrollRoom = (reserve = 0) => {
       if (!board) return;
@@ -196,13 +204,18 @@ export function createPackingDragController({
       const pageScrollTop = window.scrollY || page.scrollTop;
       const maxScroll = Math.max(0, page.scrollHeight - page.clientHeight);
       const remaining = Math.max(0, maxScroll - pageScrollTop);
-      const dragHeight = Math.ceil(Number(getDragHeight?.()) || 0);
-      const needed = Math.max(48, dragHeight || reserve || viewportHeight * 0.25);
-      if (remaining >= needed) return;
+      const dragHeight = Math.ceil(Number(getDragMetrics?.()?.height) || 0);
       const currentHeight = parseFloat(board.style.height) || board.getBoundingClientRect?.().height || 0;
       if (!baseBoardHeight) baseBoardHeight = currentHeight;
-      const maxDragHeight = Math.max(48, dragHeight || needed);
-      ensureBoardMinHeightForDrag(board, Math.min(baseBoardHeight + maxDragHeight, currentHeight + needed));
+      const { minBoardHeight } = getPackingBottomScrollRoom({
+        baseBoardHeight,
+        currentBoardHeight: currentHeight,
+        dragHeight,
+        remainingScroll: remaining,
+        reserve,
+        viewportHeight
+      });
+      ensureBoardMinHeightForDrag(board, minBoardHeight);
     };
 
     const scrollTarget = (target, delta) => {
@@ -230,6 +243,8 @@ export function createPackingDragController({
       if (!maxScroll) return false;
       const before = window.scrollY || page.scrollTop;
       window.scrollBy({ left: 0, top: delta, behavior: "auto" });
+      if ((window.scrollY || page.scrollTop) !== before) return true;
+      page.scrollTop = before + delta;
       return (window.scrollY || page.scrollTop) !== before;
     };
 
@@ -251,37 +266,36 @@ export function createPackingDragController({
 
     const update = (clientX, clientY) => {
       if (!board) return;
+      if (Number.isFinite(lastClientY)) {
+        const deltaY = clientY - lastClientY;
+        if (Math.abs(deltaY) >= 0.5) verticalDirection = Math.sign(deltaY);
+      }
+      lastClientY = clientY;
       const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
       const viewportLeft = window.visualViewport?.offsetLeft || 0;
       const viewportWidth = window.visualViewport?.width || window.innerWidth;
       const viewportRight = viewportLeft + viewportWidth;
       const viewportTop = window.visualViewport?.offsetTop || 0;
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const scrollTriggerTop = getPackingDragTopBoundary({ viewportTop, viewportHeight });
       const scrollTriggerBottom = getDragScrollTriggerBottom(viewportTop, viewportHeight);
       const horizontalZone = Math.min(edgeScrollZone, viewportWidth / 3);
       const verticalZone = Math.min(Math.max(edgeScrollZone * 1.5, 60), viewportHeight / 4);
-      const leftDistance = clientX - viewportLeft;
-      const rightDistance = viewportRight - clientX;
-      const topDistance = clientY - viewportTop;
-      const bottomDistance = scrollTriggerBottom - clientY;
-      if (leftDistance < horizontalZone) {
-        const ratio = Math.max(0, Math.min(1, (horizontalZone - leftDistance) / horizontalZone)) ** 1.35;
-        speedX = -Math.ceil(ratio * edgeScrollMaxSpeed);
-      } else if (rightDistance < horizontalZone) {
-        const ratio = Math.max(0, Math.min(1, (horizontalZone - rightDistance) / horizontalZone)) ** 1.35;
-        speedX = Math.ceil(ratio * edgeScrollMaxSpeed);
-      } else {
-        speedX = 0;
-      }
-      if (topDistance < verticalZone) {
-        const ratio = Math.max(0, Math.min(1, (verticalZone - topDistance) / verticalZone)) ** 1.35;
-        speedY = -Math.ceil(ratio * edgeScrollMaxSpeed);
-      } else if (bottomDistance < verticalZone) {
-        const ratio = Math.max(0, Math.min(1, (verticalZone - bottomDistance) / verticalZone)) ** 1.35;
-        speedY = Math.ceil(ratio * edgeScrollMaxSpeed);
-      } else {
-        speedY = 0;
-      }
+      const dragMetrics = getDragMetrics?.(clientY) || {};
+      ({ speedX, speedY } = calculatePackingEdgeScroll({
+        clientX,
+        clientY,
+        maxSpeed: edgeScrollMaxSpeed,
+        horizontalZone,
+        verticalZone,
+        viewportLeft,
+        viewportRight,
+        topBoundary: scrollTriggerTop,
+        bottomBoundary: scrollTriggerBottom,
+        dragTop: dragMetrics.top,
+        dragBottom: dragMetrics.bottom,
+        verticalDirection
+      }));
       const page = document.scrollingElement || document.documentElement;
       if (speedY > 0) ensureBottomScrollRoom(verticalZone + 80);
       const pageMaxScroll = Math.max(0, page.scrollWidth - page.clientWidth);
@@ -314,7 +328,15 @@ export function createPackingDragController({
       }, 180);
     };
 
-    return { update, stop };
+    const pause = () => {
+      speedX = 0;
+      speedY = 0;
+      if (frame) cancelAnimationFrame(frame);
+      frame = null;
+      board?.classList?.remove("edge-scrolling");
+    };
+
+    return { pause, update, stop };
   }
 
   function bindRootColumnDrag(root) {
@@ -361,13 +383,14 @@ export function createPackingDragController({
         let nestedTargetZone = null;
         let holdTimer = null;
         let blockingTouchMove = false;
+        const dragCancelTarget = createDragCancelTarget();
         const rect = source.getBoundingClientRect();
         const dragOffsetX = startX - rect.left;
         const dragOffsetY = startY - rect.top;
         const preDragScroller = createPreDragScroller(board, startX, startY);
         const edgeScroller = createBoardEdgeScroller(board, () => {
           if (started) place(latestX, latestY);
-        }, () => Math.min(rect.height, 180));
+        }, () => ({ height: Math.min(rect.height, 180) }));
         const placeholder = document.createElement("div");
         placeholder.className = "column-placeholder";
         placeholder.style.width = `${rect.width}px`;
@@ -391,6 +414,7 @@ export function createPackingDragController({
           }
           clearDragPending(source);
           document.body.classList.add("dragging-ui");
+          if (needsHold) dragCancelTarget.show();
           vibrateDragStart(holdInput);
           source.classList.add("dragging");
           lockBoardHeightForDrag(board);
@@ -503,6 +527,15 @@ export function createPackingDragController({
           moveEvent.preventDefault();
           if (!begin()) return;
           moveGhost(movePoint.clientX, movePoint.clientY);
+          if (dragCancelTarget.update(movePoint.clientX, movePoint.clientY)) {
+            edgeScroller.pause();
+            clearDropzoneDragOvers(root);
+            nestedTargetContainerId = "";
+            nestedTargetZone = null;
+            currentIndex = -1;
+            placeholder.classList.add("hidden");
+            return;
+          }
           edgeScroller.update(movePoint.clientX, movePoint.clientY);
           place(movePoint.clientX, movePoint.clientY);
         };
@@ -513,6 +546,8 @@ export function createPackingDragController({
           if (holdTimer) window.clearTimeout(holdTimer);
           preDragScroller.stop();
           if (started) edgeScroller.stop();
+          if (dragCancelTarget.isActive()) canceled = true;
+          dragCancelTarget.hide();
           if (inputType !== "touch" && header.hasPointerCapture?.(event.pointerId)) {
             header.releasePointerCapture(event.pointerId);
           }
@@ -533,14 +568,25 @@ export function createPackingDragController({
           if (inputType === "touch") {
             document.removeEventListener("touchmove", onMove);
             document.removeEventListener("touchend", finish);
-            document.removeEventListener("touchcancel", finish);
+            document.removeEventListener("touchcancel", cancelAndFinish);
           } else {
             document.removeEventListener("pointermove", onMove);
             document.removeEventListener("pointerup", finish);
-            document.removeEventListener("pointercancel", finish);
+            document.removeEventListener("pointercancel", cancelAndFinish);
           }
+          window.removeEventListener("blur", cancelAndFinish);
+          document.removeEventListener("visibilitychange", cancelWhenHidden);
           document.removeEventListener("keydown", onKeyDown);
         };
+
+        function cancelAndFinish() {
+          canceled = true;
+          finish();
+        }
+
+        function cancelWhenHidden() {
+          if (document.hidden) cancelAndFinish();
+        }
 
         const onKeyDown = (keyEvent) => {
           if (keyEvent.key !== "Escape") return;
@@ -555,12 +601,14 @@ export function createPackingDragController({
         if (inputType === "touch") {
           document.addEventListener("touchmove", onMove, { passive: true });
           document.addEventListener("touchend", finish, { passive: false });
-          document.addEventListener("touchcancel", finish, { passive: false });
+          document.addEventListener("touchcancel", cancelAndFinish, { passive: false });
         } else {
           document.addEventListener("pointermove", onMove);
           document.addEventListener("pointerup", finish);
-          document.addEventListener("pointercancel", finish);
+          document.addEventListener("pointercancel", cancelAndFinish);
         }
+        window.addEventListener("blur", cancelAndFinish);
+        document.addEventListener("visibilitychange", cancelWhenHidden);
         document.addEventListener("keydown", onKeyDown);
       };
 
@@ -613,17 +661,25 @@ export function createPackingDragController({
       let ghostTargetY = startY;
       let holdTimer = null;
       let blockingTouchMove = false;
+      const dragCancelTarget = createDragCancelTarget();
       const board = root.querySelector(".board");
       const sourcePlacement = state().layouts?.[state().activeLayoutId]?.arrangement?.containers?.[id];
       const sourceIsNestedContainer = kind === "container" && Boolean(sourcePlacement?.parentId);
       const sourceRect = source.getBoundingClientRect();
+      const dragOffsetY = startY - sourceRect.top;
       const preDragScroller = createPreDragScroller(board, startX, startY);
       const edgeScroller = createBoardEdgeScroller(board, () => {
         if (!started) return;
         place(latestX, latestY);
-      }, () => sourceRect.height);
+      }, (clientY) => {
+        const top = clientY - dragOffsetY;
+        return {
+          height: sourceRect.height,
+          top: kind === "item" ? top : null,
+          bottom: kind === "item" ? top + sourceRect.height : null
+        };
+      });
       const dragOffsetX = startX - sourceRect.left;
-      const dragOffsetY = startY - sourceRect.top;
 
       const resetNestedGroupCandidate = () => {
         nestedGroupCandidateItemId = null;
@@ -674,6 +730,7 @@ export function createPackingDragController({
         }
         clearDragPending(source);
         document.body.classList.add("dragging-ui");
+        if (needsHold) dragCancelTarget.show();
         vibrateDragStart(holdInput);
         setDraggingItemId(kind === "item" ? id : null);
         setDraggingContainerId(kind === "container" ? id : null);
@@ -906,6 +963,11 @@ export function createPackingDragController({
         moveEvent.preventDefault();
         if (!begin()) return;
         moveGhost(movePoint.clientX, movePoint.clientY);
+        if (dragCancelTarget.update(movePoint.clientX, movePoint.clientY)) {
+          edgeScroller.pause();
+          clearZones();
+          return;
+        }
         edgeScroller.update(movePoint.clientX, movePoint.clientY);
         place(movePoint.clientX, movePoint.clientY);
       };
@@ -917,6 +979,8 @@ export function createPackingDragController({
         if (holdTimer) window.clearTimeout(holdTimer);
         preDragScroller.stop();
         if (started) edgeScroller.stop();
+        if (dragCancelTarget.isActive()) canceled = true;
+        dragCancelTarget.hide();
         if (inputType !== "touch" && handle.hasPointerCapture?.(event.pointerId)) {
           handle.releasePointerCapture(event.pointerId);
         }
@@ -977,14 +1041,25 @@ export function createPackingDragController({
         if (inputType === "touch") {
           document.removeEventListener("touchmove", onMove);
           document.removeEventListener("touchend", finish);
-          document.removeEventListener("touchcancel", finish);
+          document.removeEventListener("touchcancel", cancelAndFinish);
         } else {
           document.removeEventListener("pointermove", onMove);
           document.removeEventListener("pointerup", finish);
-          document.removeEventListener("pointercancel", finish);
+          document.removeEventListener("pointercancel", cancelAndFinish);
         }
+        window.removeEventListener("blur", cancelAndFinish);
+        document.removeEventListener("visibilitychange", cancelWhenHidden);
         document.removeEventListener("keydown", onKeyDown);
       };
+
+      function cancelAndFinish() {
+        canceled = true;
+        finish();
+      }
+
+      function cancelWhenHidden() {
+        if (document.hidden) cancelAndFinish();
+      }
 
       const onKeyDown = (keyEvent) => {
         if (keyEvent.key !== "Escape") return;
@@ -999,12 +1074,14 @@ export function createPackingDragController({
       if (inputType === "touch") {
         document.addEventListener("touchmove", onMove, { passive: true });
         document.addEventListener("touchend", finish, { passive: false });
-        document.addEventListener("touchcancel", finish, { passive: false });
+        document.addEventListener("touchcancel", cancelAndFinish, { passive: false });
       } else {
         document.addEventListener("pointermove", onMove);
         document.addEventListener("pointerup", finish);
-        document.addEventListener("pointercancel", finish);
+        document.addEventListener("pointercancel", cancelAndFinish);
       }
+      window.addEventListener("blur", cancelAndFinish);
+      document.addEventListener("visibilitychange", cancelWhenHidden);
       document.addEventListener("keydown", onKeyDown);
     };
 
@@ -1087,14 +1164,18 @@ export function createPackingDragController({
       let ghostTargetY = startY;
       let holdTimer = null;
       let blockingTouchMove = false;
+      const dragCancelTarget = createDragCancelTarget();
       const sourceRect = source.getBoundingClientRect();
+      const dragOffsetY = startY - sourceRect.top;
       const preDragScroller = createPreDragScroller(null, startX, startY);
       const edgeScroller = createBoardEdgeScroller(getPackingBoard(), () => {
         if (!started) return;
         place(latestX, latestY);
-      }, () => sourceRect.height);
+      }, (clientY) => {
+        const top = clientY - dragOffsetY;
+        return { height: sourceRect.height, top, bottom: top + sourceRect.height };
+      });
       const dragOffsetX = startX - sourceRect.left;
-      const dragOffsetY = startY - sourceRect.top;
       const placeholder = document.createElement("div");
       placeholder.className = "drop-placeholder";
 
@@ -1147,6 +1228,7 @@ export function createPackingDragController({
         }
         clearDragPending(source);
         document.body.classList.add("dragging-ui");
+        if (needsHold) dragCancelTarget.show();
         vibrateDragStart(holdInput);
         setDraggingItemId(id);
         setDraggingContainerId(null);
@@ -1310,6 +1392,11 @@ export function createPackingDragController({
         moveEvent.preventDefault();
         if (!begin()) return;
         moveGhost(latestX, latestY);
+        if (dragCancelTarget.update(latestX, latestY)) {
+          edgeScroller.pause();
+          clearZones();
+          return;
+        }
         edgeScroller.update(latestX, latestY);
         place(latestX, latestY);
       };
@@ -1321,6 +1408,8 @@ export function createPackingDragController({
         if (holdTimer) window.clearTimeout(holdTimer);
         preDragScroller.stop();
         if (started) edgeScroller.stop();
+        if (dragCancelTarget.isActive()) canceled = true;
+        dragCancelTarget.hide();
         if (inputType !== "touch" && source.hasPointerCapture?.(event.pointerId)) {
           source.releasePointerCapture(event.pointerId);
         }
@@ -1358,14 +1447,25 @@ export function createPackingDragController({
         if (inputType === "touch") {
           document.removeEventListener("touchmove", onMove);
           document.removeEventListener("touchend", finish);
-          document.removeEventListener("touchcancel", finish);
+          document.removeEventListener("touchcancel", cancelAndFinish);
         } else {
           document.removeEventListener("pointermove", onMove);
           document.removeEventListener("pointerup", finish);
-          document.removeEventListener("pointercancel", finish);
+          document.removeEventListener("pointercancel", cancelAndFinish);
         }
+        window.removeEventListener("blur", cancelAndFinish);
+        document.removeEventListener("visibilitychange", cancelWhenHidden);
         document.removeEventListener("keydown", onKeyDown);
       };
+
+      function cancelAndFinish() {
+        canceled = true;
+        finish();
+      }
+
+      function cancelWhenHidden() {
+        if (document.hidden) cancelAndFinish();
+      }
 
       const onKeyDown = (keyEvent) => {
         if (keyEvent.key !== "Escape") return;
@@ -1380,12 +1480,14 @@ export function createPackingDragController({
       if (inputType === "touch") {
         document.addEventListener("touchmove", onMove, { passive: true });
         document.addEventListener("touchend", finish, { passive: false });
-        document.addEventListener("touchcancel", finish, { passive: false });
+        document.addEventListener("touchcancel", cancelAndFinish, { passive: false });
       } else {
         document.addEventListener("pointermove", onMove);
         document.addEventListener("pointerup", finish);
-        document.addEventListener("pointercancel", finish);
+        document.addEventListener("pointercancel", cancelAndFinish);
       }
+      window.addEventListener("blur", cancelAndFinish);
+      document.addEventListener("visibilitychange", cancelWhenHidden);
       document.addEventListener("keydown", onKeyDown);
     };
 

@@ -3664,6 +3664,46 @@ button.photo-gallery-slide.touch-feedback-active {
   box-shadow: 0 20px 42px rgba(29, 37, 34, 0.24);
 }
 
+.packing-drag-cancel-target {
+  position: fixed;
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 1100;
+  width: min(220px, calc(100vw - 20px));
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 2px dashed rgba(108, 92, 33, 0.48);
+  border-radius: 12px;
+  background: rgba(255, 251, 232, 0.96);
+  color: #6c5c21;
+  box-shadow: 0 10px 26px rgba(29, 37, 34, 0.18);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.15;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  backdrop-filter: blur(8px);
+  transition: transform 100ms ease, background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+
+.packing-drag-cancel-target.is-active {
+  border-style: solid;
+  border-color: rgba(156, 77, 54, 0.8);
+  background: rgba(253, 233, 221, 0.98);
+  color: #8d3f2a;
+  transform: scale(1.04);
+}
+
+.packing-drag-cancel-icon {
+  flex: 0 0 auto;
+  font-size: 24px;
+  line-height: 1;
+}
+
 .column-ghost {
   max-width: none;
 }
