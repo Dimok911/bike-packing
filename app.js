@@ -18,6 +18,7 @@ import {
   DEMO_SHARED_LAYOUT_ID,
   GUEST_DEMO_COPY_FLAG,
   SHARED_LAYOUTS_STORAGE_KEY,
+  PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY,
   SESSION_MODE_GUEST,
   SESSION_MODE_USER,
   SESSION_MODE_ADMIN,
@@ -33,8 +34,6 @@ import {
   SHARED_LAYOUT_QUERY_PARAM,
   DEFAULT_LANGUAGE,
   SUPPORTED_LANGUAGES,
-  ADMIN_EMAILS,
-  ADMIN_USER_IDS,
   API_TIMEOUT_MS,
   LIST_API_TIMEOUT_MS,
   LIST_SAVE_API_TIMEOUT_MS,
@@ -131,8 +130,15 @@ import {
 } from "./src/public/guest-login-import.js";
 import {
   publishedTemplateBlockReason,
-  readonlyPublicTemplateOptionLabel
+  readonlyPublicTemplateOptionLabel,
+  shouldUseReadonlyTemplateCache
 } from "./src/public/public-template-availability.js";
+import {
+  createPublicTemplateOfflineCache,
+  hydratePublicTemplateOfflineCache,
+  loadPublicTemplateOfflineCache,
+  savePublicTemplateOfflineCache
+} from "./src/public/public-template-offline-cache.js";
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
 import {
   publicTemplateDeleteBlockReason,
@@ -242,6 +248,7 @@ import {
 } from "./src/public/shared-link-url.js";
 import { shouldPreserveLinkedSharedListOnLanguageChange } from "./src/public/shared-link-language.js";
 import { readSharedListPublishOptions, sharedListLinkResultHtml, sharedListPublishDialogHtml } from "./src/public/shared-list-publish.js";
+import { FRONTEND_PERMISSION_ACTIONS, can as canPermission } from "./src/auth/permissions.js";
 import {
   createSharedVirtualState as createSharedVirtualStateForPublic,
   sharedVirtualContainerId
@@ -1002,6 +1009,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
   "adminUsageReports",
+  "authUserCapabilities",
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",
   "listSaveNoopHistoryGuard",
@@ -1037,6 +1045,19 @@ let hadRemoteBaselineAtStartup = hasStoredLocalValue(BASE_STATE_KEY) ||
   Boolean(startupSyncMeta.serverUpdatedAt || startupSyncMeta.stateRevision || startupSyncMeta.payloadHash);
 const state = loadState();
 hydrateLocalSharedTemplateCatalogFromState(state);
+const hydratedPublicTemplateCache = hydratePublicTemplateOfflineCache(
+  loadPublicTemplateOfflineCache(PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY),
+  {
+    demoTemplates: serverConfirmedDemoTemplates,
+    sharedTemplates: serverConfirmedSharedLayouts,
+    mergeDemoTemplates: mergeServerDemoTemplateCatalog,
+    mergeSharedTemplates: mergeSharedLayoutCatalogEntries,
+    setDemoPayload: setDemoStatePayloadForLanguage,
+    upsertSharedTemplate: (entry) => upsertRuntimeSharedLayout(sharedLayoutsByLanguage, entry)
+  }
+);
+serverConfirmedDemoTemplates = hydratedPublicTemplateCache.demoTemplates;
+serverConfirmedSharedLayouts = hydratedPublicTemplateCache.sharedTemplates;
 let startupLocalStateWasFallback = hadLocalStateAtStartup && !hadRemoteBaselineAtStartup && isGeneratedStartupFallbackState(state);
 let hadAuthoritativeLocalStateAtStartup = hadLocalStateAtStartup && !startupLocalStateWasFallback;
 const uiSettings = loadUiSettings();
@@ -1097,6 +1118,7 @@ const conflictFormatter = createConflictValueFormatter({
   valuesEqual: sameJson
 });
 let currentUser = null;
+let currentAuthorization = null;
 let offlineRememberedUser = null;
 let syncTimer = null;
 let syncInFlight = false;
@@ -1233,6 +1255,8 @@ const appTailRuntime = {
   set containerPickerTargetContainerId(value) { containerPickerTargetContainerId = value; },
   get currentUser() { return currentUser; },
   set currentUser(value) { currentUser = value; },
+  get currentAuthorization() { return currentAuthorization; },
+  set currentAuthorization(value) { currentAuthorization = value; },
   get draggingContainerId() { return draggingContainerId; },
   set draggingContainerId(value) { draggingContainerId = value; },
   get draggingItemId() { return draggingItemId; },
@@ -1352,8 +1376,8 @@ const appTailRuntime = {
 };
 const appTailControllerDeps = {
   runtime: appTailRuntime,
-  ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
-  ADMIN_USER_IDS, API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
+  ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+  API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
   EDGE_SCROLL_MAX_SPEED, EDGE_SCROLL_ZONE, ENTITY_SYNC_CONFIG, FORCE_OFFLINE_KEY, GUEST_DEMO_COPY_FLAG,
   GUEST_STORAGE_SCOPE, I18N, ITEM_DISPLAY_MODE_DEFAULT, ITEM_DISPLAY_MODE_PUBLIC_DEFAULT, LIST_API_TIMEOUT_MS,
@@ -1456,7 +1480,7 @@ const appTailControllerDeps = {
   historyPayloadTitle, historyRecordKey, historyRecordState, historyRecordStateForSync, historyRecords,
   historySourceLabel, hydrateItemPhotos, hydrateLocalSharedTemplateCatalogFromState, importDemoStateAsEditableLayout, importDemoStateAsEditableLayoutValue,
   importGuestLocalLayouts, importGuestLocalLayoutsToState, init, initialRemoteLoadPending, installRuntimeActiveLayoutId,
-  isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminIdentity, isAdminPublicEditScope, isAdminSession,
+  isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminPublicEditScope, isAdminSession,
   isAdminUser, isAutomaticGuestDemoCopyLayout, isBike3dPackingView, isCollectionPackedVisible, isConcretePublicSharedLayoutListRecord,
   isConflictMetaField, isContainerPickerContainerCopyModeValue, isContainerPickerCopyModeValue, isContainerPickerItemCopyModeValue, isCurrentLocalStateDestructiveRegression,
   isDefaultDemoSeedLayoutRecord, isDeletedSharedLayoutId, isDemoLayoutChoice, isDemoLayoutChoiceValue, isDemoPublicTemplateMissing,
@@ -2597,31 +2621,21 @@ async function init() {
     await flushActivePublishedEditSave();
     const value = event.target.value;
     if (isDemoLayoutChoice(value)) {
-      const openReadonly = canViewAdminPublishedCatalog() && !canEditPublishedTemplatesNow();
-      if (!openReadonly && !requirePublishedTemplatesAvailable()) {
-        renderFilters();
-        return;
-      }
       const language = demoLanguageFromLayoutChoice(value);
       const templateId = demoTemplateIdFromLayoutChoice(value);
       if (await confirmPublicLayoutTransition("demo")) {
         if (canEditPublishedTemplatesNow()) await openAdminDemoLayout({ language, templateId });
-        else await openDemoLayoutFromSelect({ language, templateId, allowOfflineCache: openReadonly });
+        else await openDemoLayoutFromSelect({ language, templateId });
       } else {
         renderFilters();
       }
       return;
     }
     if (value.startsWith("shared:")) {
-      const openReadonly = canViewAdminPublishedCatalog() && !canEditPublishedTemplatesNow();
-      if (!openReadonly && !requirePublishedTemplatesAvailable()) {
-        renderFilters();
-        return;
-      }
       const layoutId = value.slice("shared:".length);
       if (await confirmPublicLayoutTransition("shared", findSharedLayout(layoutId))) {
         if (canEditPublishedTemplatesNow()) await openSharedLayoutForAdmin(layoutId);
-        else await openSharedLayoutViewer(layoutId, { allowOfflineCache: openReadonly });
+        else await openSharedLayoutViewer(layoutId);
       } else {
         renderFilters();
       }
@@ -5179,17 +5193,11 @@ function rememberCurrentSyncAccount() {
   syncMeta.accountId = currentUserId() || null;
 }
 
-function isAdminIdentity(user = null) {
-  const email = String(user?.email || user?.mail || user?.login || "").trim().toLowerCase();
-  const userId = String(user?.id || user?.userId || user?.user_id || user?.sub || "").trim().toLowerCase();
-  return ADMIN_EMAILS.includes(email) || ADMIN_USER_IDS.includes(userId);
-}
-
 function isAdminUser() {
   if (!currentUser) return false;
-  return isAdminIdentity({
-    id: currentUserId(),
-    email: currentUserEmail()
+  return canPermission(FRONTEND_PERMISSION_ACTIONS.ADMIN_SESSION, {
+    authorization: currentAuthorization,
+    serverSessionConfirmed: true
   });
 }
 
@@ -5198,7 +5206,14 @@ function canOpenAdminPublishedEdit() {
 }
 
 function isOfflineRememberedAdminSession() {
-  return Boolean(!currentUser && offlineRememberedUser && isAdminIdentity(offlineRememberedUser));
+  return Boolean(
+    !currentUser &&
+    offlineRememberedUser &&
+    canPermission(FRONTEND_PERMISSION_ACTIONS.TEMPLATES_CATALOG_VIEW, {
+      authorization: offlineRememberedUser.authorization,
+      serverSessionConfirmed: false
+    })
+  );
 }
 
 function canViewAdminPublishedCatalog() {
@@ -5653,6 +5668,8 @@ async function checkAuthAndLoad(options = {}) {
       set appUnlocked(value) { appUnlocked = value; },
       get currentUser() { return currentUser; },
       set currentUser(value) { currentUser = value; },
+      get currentAuthorization() { return currentAuthorization; },
+      set currentAuthorization(value) { currentAuthorization = value; },
       get syncMeta() { return syncMeta; }
     },
     dependencies: {
@@ -5756,7 +5773,7 @@ function saveAuthEmail(email) {
 }
 
 function rememberAuthenticatedUser(user = currentUser) {
-  rememberAuthenticatedUserInStorage(user, localStorage);
+  rememberAuthenticatedUserInStorage(user, localStorage, currentAuthorization);
 }
 
 function isExplicitlySignedOut() {
@@ -6618,6 +6635,17 @@ async function refreshPublicSharedLayoutCatalog(options = {}) {
       pruneRuntimeSharedLayouts,
       publicDemoTemplateEntryFromRecord,
       publishedPayloadWithTemplateMetadata,
+      persistPublicTemplateOfflineCache: ({ demoTemplateIds, sharedLayoutIds }) => savePublicTemplateOfflineCache(
+        PUBLIC_TEMPLATE_OFFLINE_CACHE_KEY,
+        createPublicTemplateOfflineCache({
+          demoTemplates: serverConfirmedDemoTemplates,
+          demoPayloadsByLanguage: demoSharedLayout.statePayloadByLanguage,
+          demoPayloadsByTemplateId: demoSharedLayout.statePayloadByTemplateId,
+          sharedLayoutsByLanguage,
+          demoTemplateIds,
+          sharedLayoutIds
+        })
+      ),
       purgeUnconfirmedSharedTemplatesFromFrontendState,
       reconcilePublishedTemplateCopyDraft,
       removeLayoutTree,
@@ -7297,7 +7325,11 @@ function clearActiveAdminDemoStateOnStartup() {
 }
 
 async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage, templateId = "", allowOfflineCache = false } = {}) {
-  if (!allowOfflineCache && !requirePublishedTemplatesAvailable()) {
+  const useReadonlyCache = shouldUseReadonlyTemplateCache({
+    allowOfflineCache,
+    templatesBlocked: arePublishedTemplatesBlocked()
+  });
+  if (!useReadonlyCache && !requirePublishedTemplatesAvailable()) {
     renderFilters();
     return;
   }
@@ -7313,7 +7345,7 @@ async function openDemoLayoutFromSelect({ remember = true, language = uiLanguage
   switchView("packing");
   render();
   try {
-    if (allowOfflineCache && arePublishedTemplatesBlocked()) {
+    if (useReadonlyCache) {
       const cachedDemoState = demoStatePayloadForLanguage(normalizedLanguage, demoListId);
       if (!isMeaningfulPackingState(cachedDemoState)) {
         updateSyncUi(t("demo.statusOfflineMissing"));
@@ -7533,7 +7565,11 @@ function openSharedLayoutsDialog() {
 }
 
 async function openSharedLayoutViewer(layoutId, { remember = true, allowOfflineCache = false } = {}) {
-  if (!allowOfflineCache && !requirePublishedTemplatesAvailable()) {
+  const useReadonlyCache = shouldUseReadonlyTemplateCache({
+    allowOfflineCache,
+    templatesBlocked: arePublishedTemplatesBlocked()
+  });
+  if (!useReadonlyCache && !requirePublishedTemplatesAvailable()) {
     renderFilters();
     return;
   }

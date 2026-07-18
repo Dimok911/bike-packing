@@ -3,6 +3,7 @@ import {
   GUEST_DEMO_COPY_FLAG
 } from "../config/constants.js";
 import { orderedLayouts } from "../state/layout-order.js";
+import { publicTemplateOptionAccess } from "../public/public-template-availability.js";
 
 function setScopedControlState(element, active, keepSpace) {
   if (!element) return;
@@ -114,22 +115,38 @@ export function renderFilterControls({
   const publicTemplatesBlocked = arePublishedTemplatesBlocked();
   const showAdminCatalog = canViewAdminPublishedCatalog();
   const adminCatalogReadOnly = showAdminCatalog && !canEditPublishedTemplatesNow();
+  const publicOptionAccess = publicTemplateOptionAccess({
+    adminCatalogReadOnly
+  });
   const demoTemplates = demoTemplatesForUiLanguage(uiLanguage);
   let publicOptions = showAdminCatalog
     ? adminPublicLayoutOptions({
-      disabled: false,
-      readonly: adminCatalogReadOnly,
+      disabled: publicOptionAccess.disabled,
+      readonly: publicOptionAccess.readonly,
       canView: true
     })
     : [
       ...demoTemplates.map((demoTemplate) => [
         demoTemplateChoiceForEntry(demoTemplate),
-        `${t("template.prefix")}: ${normalizeDemoName(demoTemplate?.name || demoTemplateFallbackName(uiLanguage), demoTemplate?.language || uiLanguage)}`,
+        readonlyPublicTemplateOptionLabel(
+          `${t("template.prefix")}: ${normalizeDemoName(demoTemplate?.name || demoTemplateFallbackName(uiLanguage), demoTemplate?.language || uiLanguage)}`,
+          { readonly: publicOptionAccess.readonly }
+        ),
         "demo",
-        publicTemplatesBlocked
+        publicOptionAccess.disabled
       ]),
-      ...(linkedSharedListLayout ? [[`shared:${linkedSharedListLayout.id}`, `${t("template.prefix")}: ${linkedSharedListLayout.name}`, "shared", publicTemplatesBlocked]] : []),
-      ...currentSharedLayouts(uiLanguage).map((layout) => [`shared:${layout.id}`, `${t("template.prefix")}: ${layout.name}`, "shared", publicTemplatesBlocked])
+      ...(linkedSharedListLayout ? [[
+        `shared:${linkedSharedListLayout.id}`,
+        readonlyPublicTemplateOptionLabel(`${t("template.prefix")}: ${linkedSharedListLayout.name}`, { readonly: publicOptionAccess.readonly }),
+        "shared",
+        publicOptionAccess.disabled
+      ]] : []),
+      ...currentSharedLayouts(uiLanguage).map((layout) => [
+        `shared:${layout.id}`,
+        readonlyPublicTemplateOptionLabel(`${t("template.prefix")}: ${layout.name}`, { readonly: publicOptionAccess.readonly }),
+        "shared",
+        publicOptionAccess.disabled
+      ])
     ];
   const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
   if (activeAdminLabel) {
@@ -156,8 +173,8 @@ export function renderFilterControls({
   const selectedTemplateDraft = selectedTemplateDraftId ? state.layouts?.[selectedTemplateDraftId] : null;
   refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue) || Boolean(selectedTemplateDraft?.adminDemo));
   refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(selectedTemplateDraftId && !selectedTemplateDraft?.adminDemo));
-  refs.layoutSelect.classList.toggle("layout-select-readonly-public", adminCatalogReadOnly);
-  refs.layoutSelect.title = adminCatalogReadOnly
+  refs.layoutSelect.classList.toggle("layout-select-readonly-public", publicOptionAccess.readonly);
+  refs.layoutSelect.title = publicOptionAccess.readonly
     ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
   refs.newLayoutBtn.textContent = isSharedLayoutView()

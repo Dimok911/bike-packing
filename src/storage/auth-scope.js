@@ -1,10 +1,12 @@
 import {
+  AUTH_AUTHORIZATION_KEY,
   AUTH_EMAIL_KEY,
   AUTH_STORAGE_SCOPE_KEY,
   AUTH_USER_ID_KEY,
   STORAGE_KEY,
   SYNC_META_KEY
 } from "../config/constants.js";
+import { normalizeAuthAuthorization } from "../auth/permissions.js";
 import { GUEST_STORAGE_SCOPE, scopedLocalStorageKey, userStorageScopeKey } from "./scope.js";
 
 function defaultStorage() {
@@ -82,11 +84,44 @@ export function saveAuthScopeKeyToStorage(scopeKey, storage = defaultStorage()) 
   return true;
 }
 
-export function rememberAuthenticatedUserInStorage(user, storage = defaultStorage()) {
+export function getSavedAuthAuthorizationFromStorage(scopeKey, storage = defaultStorage()) {
+  const expectedScopeKey = normalizeAuthScopeKey(scopeKey);
+  try {
+    const raw = storageGet(storage, AUTH_AUTHORIZATION_KEY);
+    const saved = raw ? JSON.parse(raw) : null;
+    if (!expectedScopeKey || normalizeAuthScopeKey(saved?.scopeKey) !== expectedScopeKey) {
+      return normalizeAuthAuthorization(null);
+    }
+    return normalizeAuthAuthorization(saved?.authorization);
+  } catch {
+    return normalizeAuthAuthorization(null);
+  }
+}
+
+export function saveAuthAuthorizationToStorage(authorization, scopeKey, storage = defaultStorage()) {
+  const normalized = normalizeAuthAuthorization(authorization);
+  const normalizedScopeKey = normalizeAuthScopeKey(scopeKey);
+  if (!normalized.serverProvided || !normalizedScopeKey) {
+    storageRemove(storage, AUTH_AUTHORIZATION_KEY);
+    return true;
+  }
+  return storageSet(storage, AUTH_AUTHORIZATION_KEY, JSON.stringify({
+    scopeKey: normalizedScopeKey,
+    authorization: {
+      version: normalized.version,
+      role: normalized.role,
+      capabilities: normalized.capabilities
+    }
+  }));
+}
+
+export function rememberAuthenticatedUserInStorage(user, storage = defaultStorage(), authorization = null) {
   const { id, email } = authIdentityFromUser(user);
+  const scopeKey = userStorageScopeKey({ id, email });
   if (id) saveAuthUserIdToStorage(id, storage);
   if (email) saveAuthEmailToStorage(email, storage);
-  saveAuthScopeKeyToStorage(userStorageScopeKey({ id, email }), storage);
+  saveAuthScopeKeyToStorage(scopeKey, storage);
+  saveAuthAuthorizationToStorage(authorization, scopeKey, storage);
 }
 
 export function currentUserIdFromStorage(user = null, storage = defaultStorage()) {
@@ -159,5 +194,6 @@ export function buildRememberedOfflineUser({ user = null, storage = defaultStora
   const email = fromUser.email || getSavedAuthEmailFromStorage(storage);
   const scopeKey = rememberedOfflineScopeKey({ id, email, storage });
   if (!scopeKey) return null;
-  return { id, email, scopeKey, offlineRemembered: true };
+  const authorization = getSavedAuthAuthorizationFromStorage(scopeKey, storage);
+  return { id, email, scopeKey, authorization, offlineRemembered: true };
 }

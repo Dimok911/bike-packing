@@ -105,8 +105,10 @@ import {
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
 import {
   isNetworkUnavailable,
+  publicTemplateOptionAccess,
   publishedTemplateBlockReason,
-  readonlyPublicTemplateOptionLabel
+  readonlyPublicTemplateOptionLabel,
+  shouldUseReadonlyTemplateCache
 } from "../../src/public/public-template-availability.js";
 import {
   layoutCreateModeState,
@@ -3836,7 +3838,7 @@ test("empty local template-copy draft is hydrated from meaningful published payl
   assert.equal(state.items["copy-item-b"].publicCatalogLayoutId, "layout-local-draft");
 });
 
-test("published templates are blocked when offline or forced offline", () => {
+test("published template network access is blocked when offline or forced offline", () => {
   assert.equal(isNetworkUnavailable({
     forcedOffline: false,
     hasNavigatorOnline: true,
@@ -3858,6 +3860,50 @@ test("published templates are blocked when offline or forced offline", () => {
     navigatorOnline: false,
     language: "ru"
   }), /нет интернета/);
+});
+
+test("readonly template cache can open offline for every role", () => {
+  assert.equal(shouldUseReadonlyTemplateCache({
+    allowOfflineCache: false,
+    templatesBlocked: false
+  }), false);
+  assert.equal(shouldUseReadonlyTemplateCache({
+    allowOfflineCache: false,
+    templatesBlocked: true
+  }), true);
+  assert.equal(shouldUseReadonlyTemplateCache({
+    allowOfflineCache: true,
+    templatesBlocked: false
+  }), true);
+  assert.deepEqual(publicTemplateOptionAccess({
+    adminCatalogReadOnly: false,
+    templatesBlocked: true
+  }), {
+    disabled: false,
+    readonly: false
+  });
+  assert.deepEqual(publicTemplateOptionAccess({
+    adminCatalogReadOnly: false,
+    templatesBlocked: false
+  }), {
+    disabled: false,
+    readonly: false
+  });
+  assert.deepEqual(publicTemplateOptionAccess({
+    adminCatalogReadOnly: true,
+    templatesBlocked: true
+  }), {
+    disabled: false,
+    readonly: true
+  });
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const filterSource = readFileSync(new URL("../../src/ui/filter-controls.js", import.meta.url), "utf8");
+  assert.match(appSource, /openDemoLayoutFromSelect[\s\S]*?shouldUseReadonlyTemplateCache\(/);
+  assert.match(appSource, /openSharedLayoutViewer[\s\S]*?shouldUseReadonlyTemplateCache\(/);
+  assert.doesNotMatch(appSource, /const openReadonly = canViewAdminPublishedCatalog\(\) && !canEditPublishedTemplatesNow\(\)/);
+  assert.match(filterSource, /publicTemplateOptionAccess\(\{\s*adminCatalogReadOnly\s*\}\)/);
+  assert.doesNotMatch(filterSource, /"demo",\s*publicTemplatesBlocked/);
 });
 
 test("readonly public template options get a stable lock marker", () => {

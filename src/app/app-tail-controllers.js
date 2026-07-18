@@ -38,6 +38,7 @@ import {
   shouldShowSharedEntityPlacement
 } from "../public/shared-entity-link.js";
 import { dialogHasSavableChanges } from "../ui/dialog-save-guard.js";
+import { normalizeAuthAuthorization } from "../auth/permissions.js";
 import { shouldCopySharedItemOutsideLayout } from "../public/copy-public-layout-target.js";
 import { focusCreatedCatalogCard } from "../ui/catalog-created-focus.js";
 import { shouldShowContainerPickerLayoutSelect } from "../ui/container-picker-layout-select.js";
@@ -59,8 +60,8 @@ export function createAppTailControllers(ctx) {
   let replacingPackingItemId = "";
   let replacingPackingContainerId = "";
   const {
-    ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
-    ADMIN_USER_IDS, API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
+    ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+    API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
     DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
     EDGE_SCROLL_MAX_SPEED, EDGE_SCROLL_ZONE, ENTITY_SYNC_CONFIG, FORCE_OFFLINE_KEY, GUEST_DEMO_COPY_FLAG,
     GUEST_LAYOUT_FALLBACK_NAME, GUEST_STORAGE_SCOPE, I18N, ITEM_DISPLAY_MODE_DEFAULT, ITEM_DISPLAY_MODE_PUBLIC_DEFAULT,
@@ -164,7 +165,7 @@ export function createAppTailControllers(ctx) {
     historyComparisonState, historyPayloadTitle, historyRecordKey, historyRecordState, historyRecordStateForSync,
     historyRecords, historySourceLabel, hydrateItemPhotos, hydrateLocalSharedTemplateCatalogFromState, importDemoStateAsEditableLayout,
     importDemoStateAsEditableLayoutValue, importGuestLocalLayouts, importGuestLocalLayoutsToState, init, initialRemoteLoadPending,
-    installRuntimeActiveLayoutId, isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminIdentity, isAdminPublicEditScope,
+    installRuntimeActiveLayoutId, isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminPublicEditScope,
     isAdminSession, isAdminUser, isAutomaticGuestDemoCopyLayout, isBike3dPackingView, isCollectionPackedVisible,
     isConcretePublicSharedLayoutListRecord, isConflictMetaField, isContainerPickerContainerCopyModeValue, isContainerPickerCopyModeValue, isContainerPickerItemCopyModeValue,
     isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
@@ -1649,6 +1650,7 @@ async function hydrateAuthForSharedLink() {
     const authData = await apiFetch("/auth/me", { silentErrors: true });
     runtime.currentUser = authData.user || authData.me || authData.account || null;
     if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
+    runtime.currentAuthorization = normalizeAuthAuthorization(authData.authorization);
     if (runtime.currentUser) {
       clearOfflineRememberedSession();
       setExplicitlySignedOut(false);
@@ -1657,6 +1659,7 @@ async function hydrateAuthForSharedLink() {
     }
   } catch {
     runtime.currentUser = null;
+    runtime.currentAuthorization = normalizeAuthAuthorization(null);
   }
 }
 

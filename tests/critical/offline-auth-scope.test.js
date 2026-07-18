@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  AUTH_AUTHORIZATION_KEY,
   AUTH_EMAIL_KEY,
   AUTH_STORAGE_SCOPE_KEY,
   STORAGE_KEY,
@@ -8,6 +9,7 @@ import {
 } from "../../src/config/constants.js";
 import {
   buildRememberedOfflineUser,
+  getSavedAuthAuthorizationFromStorage,
   rememberAuthenticatedUserInStorage
 } from "../../src/storage/auth-scope.js";
 import { scopedLocalStorageKey } from "../../src/storage/scope.js";
@@ -64,9 +66,38 @@ test("CRITICAL offline-auth-scope: ambiguous private scopes do not guess without
 
 test("CRITICAL offline-auth-scope: successful auth persists exact scope", () => {
   const storage = new MemoryStorage();
+  const authorization = {
+    version: 1,
+    role: "admin",
+    capabilities: ["templates:write"]
+  };
 
-  rememberAuthenticatedUserInStorage({ id: "USER 1", email: "Person@Example.com" }, storage);
+  rememberAuthenticatedUserInStorage({ id: "USER 1", email: "Person@Example.com" }, storage, authorization);
 
   assert.equal(storage.getItem(AUTH_STORAGE_SCOPE_KEY), "id:user_1");
   assert.equal(storage.getItem(AUTH_EMAIL_KEY), "person@example.com");
+  assert.ok(storage.getItem(AUTH_AUTHORIZATION_KEY));
+  assert.deepEqual(getSavedAuthAuthorizationFromStorage("id:user_1", storage), {
+    version: 1,
+    role: "admin",
+    capabilities: ["templates:write"],
+    serverProvided: true
+  });
+  assert.equal(getSavedAuthAuthorizationFromStorage("id:another-user", storage).serverProvided, false);
+});
+
+test("CRITICAL offline-auth-scope: remembered authorization follows the exact private scope", () => {
+  const storage = new MemoryStorage();
+  storage.setItem(scopedLocalStorageKey(STORAGE_KEY, "id:user-1"), "{}");
+  rememberAuthenticatedUserInStorage({ id: "user-1", email: "admin@example.com" }, storage, {
+    version: 1,
+    role: "admin",
+    capabilities: ["templates:write"]
+  });
+
+  const remembered = buildRememberedOfflineUser({ storage });
+
+  assert.equal(remembered.scopeKey, "id:user-1");
+  assert.equal(remembered.authorization.serverProvided, true);
+  assert.deepEqual(remembered.authorization.capabilities, ["templates:write"]);
 });

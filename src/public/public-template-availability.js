@@ -24,6 +24,22 @@ export function publishedTemplateBlockReason({
     : "Шаблоны заблокированы, пока нет интернета.";
 }
 
+export function shouldUseReadonlyTemplateCache({
+  allowOfflineCache = false,
+  templatesBlocked = false
+} = {}) {
+  return Boolean(allowOfflineCache || templatesBlocked);
+}
+
+export function publicTemplateOptionAccess({
+  adminCatalogReadOnly = false
+} = {}) {
+  return {
+    disabled: false,
+    readonly: Boolean(adminCatalogReadOnly)
+  };
+}
+
 export function readonlyPublicTemplateOptionLabel(label, {
   readonly = false,
   marker = "🔒"

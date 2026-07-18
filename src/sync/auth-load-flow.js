@@ -1,4 +1,5 @@
 import { currentDocumentLanguage } from "../utils/language.js";
+import { normalizeAuthAuthorization } from "../auth/permissions.js";
 
 function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
@@ -37,6 +38,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     updateSyncUi,
     GUEST_STORAGE_SCOPE
   } = dependencies;
+  runtime.currentAuthorization = normalizeAuthAuthorization(null);
   if (isSharedListLinkRoute()) return;
   if (isForcedOffline()) {
     setLayoutLoadStatus("warning", localText("Offline: showing the local layout", "Офлайн: показана локальная укладка"));
@@ -92,6 +94,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
 
   runtime.currentUser = authData.user || authData.me || authData.account || null;
   if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
+  runtime.currentAuthorization = normalizeAuthAuthorization(authData.authorization);
   if (!runtime.currentUser) {
     if (activateOfflineRememberedSession(localText(
       "Sign-in is not confirmed · local copy of personal layouts is open",

@@ -25,6 +25,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     pruneRuntimeSharedLayouts,
     publicDemoTemplateEntryFromRecord,
     publishedPayloadWithTemplateMetadata,
+    persistPublicTemplateOfflineCache,
     purgeUnconfirmedSharedTemplatesFromFrontendState,
     reconcilePublishedTemplateCopyDraft,
     removeLayoutTree,
@@ -181,6 +182,13 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     fallbackLanguage: runtime.uiLanguage
   });
   if (localDraftReconciled || purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
+  const completePublicPayloadSet = demoPayloadMerged === demoEntries.length && merged === concreteRecords.length;
+  if (completePublicPayloadSet) {
+    persistPublicTemplateOfflineCache?.({
+      demoTemplateIds: demoEntries.map((entry) => entry.id),
+      sharedLayoutIds: [...publicSharedIds]
+    });
+  }
   if (renderAfter && (demoMetadataMerged || demoPayloadMerged || merged || prunedMissingRuntime || purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
   return merged + demoMetadataMerged + demoPayloadMerged;
 }
