@@ -1,5 +1,6 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
 import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
+import { getPackingEntryAfterPointer } from "./packing-drop-target.js";
 import {
   calculatePackingEdgeScroll,
   getPackingBottomScrollRoom,
@@ -467,7 +468,7 @@ export function createPackingDragController({
             placeholder.className = "drop-placeholder";
             placeholder.style.width = `${Math.max(0, Math.min(rect.width, targetZone.clientWidth || rect.width))}px`;
             markDropzoneDragOver(root, targetZone);
-            placePlaceholder(targetZone, placeholder, getEntryAfterPointer(targetZone, clientY));
+            placePlaceholder(targetZone, placeholder, getEntryAfterPointer(targetZone, clientY, placeholder));
             nestedTargetContainerId = targetContainerId;
             nestedTargetZone = targetZone;
             currentIndex = -1;
@@ -839,7 +840,7 @@ export function createPackingDragController({
           placeholder.style.width = `${sourceRect.width}px`;
           placeholder.style.maxWidth = "100%";
           const insertBefore = packageTarget.insertByPointer
-            ? getEntryAfterPointer(packageTarget.zone, clientY)
+            ? getEntryAfterPointer(packageTarget.zone, clientY, placeholder)
             : getFirstEntry(packageTarget.zone);
           placePlaceholder(packageTarget.zone, placeholder, insertBefore);
           return;
@@ -927,7 +928,7 @@ export function createPackingDragController({
         placeholder.style.height = `${sourceRect.height}px`;
         placeholder.style.width = `${sourceRect.width}px`;
         placeholder.style.maxWidth = "100%";
-        const afterEntry = getEntryAfterPointer(zone, clientY);
+        const afterEntry = getEntryAfterPointer(zone, clientY, placeholder);
         placePlaceholder(zone, placeholder, afterEntry);
       };
 
@@ -1317,7 +1318,7 @@ export function createPackingDragController({
           packageTargetUsesPointer = packageTarget.insertByPointer;
           resetNestedGroupCandidate();
           const insertBefore = packageTarget.insertByPointer
-            ? getEntryAfterPointer(packageTarget.zone, clientY)
+            ? getEntryAfterPointer(packageTarget.zone, clientY, placeholder)
             : getFirstEntry(packageTarget.zone);
           placePlaceholder(packageTarget.zone, placeholder, insertBefore);
           return;
@@ -1357,7 +1358,7 @@ export function createPackingDragController({
         packageTargetUsesPointer = false;
         markDropzoneDragOver(packingRoot, zone);
         currentZone = zone;
-        placePlaceholder(zone, placeholder, getEntryAfterPointer(zone, clientY));
+        placePlaceholder(zone, placeholder, getEntryAfterPointer(zone, clientY, placeholder));
       };
 
       const onMove = (moveEvent) => {
@@ -1583,20 +1584,8 @@ export function createPackingDragController({
     return targetIndex === originalIndex;
   }
 
-  function getEntryAfterPointer(zone, pointerY) {
-    const entries = [...zone.children].filter((child) =>
-      (child.classList?.contains("item-card") || child.classList?.contains("subcontainer")) &&
-      !child.classList.contains("dragging")
-    );
-    return entries.reduce(
-      (closest, entry) => {
-        const box = entry.getBoundingClientRect();
-        const offset = pointerY - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) return { offset, entry };
-        return closest;
-      },
-      { offset: Number.NEGATIVE_INFINITY, entry: null }
-    ).entry;
+  function getEntryAfterPointer(zone, pointerY, placeholder = null) {
+    return getPackingEntryAfterPointer(zone, pointerY, placeholder);
   }
 
   function isInsideGroupDropZone(card, pointerX, pointerY) {

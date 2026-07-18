@@ -11,6 +11,7 @@ import {
   isPointInPackingDragCancelTarget
 } from "../../src/ui/packing-drag-cancel.js";
 import { I18N } from "../../src/data/i18n.js";
+import { getPackingEntryAfterPointer } from "../../src/ui/packing-drop-target.js";
 
 function createOverlay({ top, bottom, left = 0, right = 400, position = "sticky", display = "block" }) {
   return {
@@ -159,4 +160,30 @@ test("mobile drag cancel stays compact below sticky headers and has both transla
   assert.equal(isPointInPackingDragCancelTarget(20, 210, rect, 6), false);
   assert.match(I18N.ru["packing.dragCancel"], /\u043e\u0442\u043c\u0435\u043d/i);
   assert.match(I18N.en["packing.dragCancel"], /cancel/i);
+});
+
+test("a tall photo placeholder is removed before resolving its intended drop slot", () => {
+  let placeholderRemoved = false;
+  const createEntry = (name, topBefore, topAfter) => ({
+    name,
+    classList: { contains: (value) => value === "item-card" },
+    getBoundingClientRect: () => ({
+      height: 80,
+      top: placeholderRemoved ? topAfter : topBefore
+    })
+  });
+  const first = createEntry("first", 500, 390);
+  const second = createEntry("second", 590, 480);
+  const placeholder = {
+    classList: { contains: () => false },
+    remove() {
+      placeholderRemoved = true;
+    }
+  };
+  const zone = { children: [placeholder, first, second] };
+
+  const target = getPackingEntryAfterPointer(zone, 465, placeholder);
+
+  assert.equal(placeholderRemoved, true);
+  assert.equal(target, second);
 });

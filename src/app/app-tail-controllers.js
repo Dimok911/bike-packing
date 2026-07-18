@@ -3173,8 +3173,8 @@ function isBlockedDropzone(zone) {
   return getPackingDragController().isBlockedDropzone(zone);
 }
 
-function getEntryAfterPointer(zone, pointerY) {
-  return getPackingDragController().getEntryAfterPointer(zone, pointerY);
+function getEntryAfterPointer(zone, pointerY, placeholder = null) {
+  return getPackingDragController().getEntryAfterPointer(zone, pointerY, placeholder);
 }
 
 function placePlaceholder(parent, placeholder, beforeNode = null) {

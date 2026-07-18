@@ -255,14 +255,14 @@ export function bindPackingEvents(root, {
       }
       markDropzoneDragOver(root, zone);
       if (getDraggingContainerId()) {
-        const afterEntry = getEntryAfterPointer(zone, event.clientY);
+        const afterEntry = getEntryAfterPointer(zone, event.clientY, placeholder);
         placePlaceholder(zone, placeholder, afterEntry);
         if (isOriginalContainerPosition(zone, placeholder)) {
           removeDropzoneDragOver(zone);
           placeholder.remove();
         }
       } else {
-        const afterEntry = getEntryAfterPointer(zone, event.clientY);
+        const afterEntry = getEntryAfterPointer(zone, event.clientY, placeholder);
         placePlaceholder(zone, placeholder, afterEntry);
         if (isOriginalItemPosition(zone, placeholder)) {
           removeDropzoneDragOver(zone);

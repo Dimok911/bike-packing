@@ -2432,6 +2432,7 @@ button.ghost.context-toggle.active:focus-visible {
   border-radius: 8px;
   background: rgba(31, 111, 91, 0.1);
   min-height: 44px;
+  pointer-events: none;
   transition: opacity 120ms ease, min-height 120ms ease, width 120ms ease;
 }
 
