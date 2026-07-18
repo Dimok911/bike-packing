@@ -1,4 +1,5 @@
 import { clonePlain } from "../utils/json.js";
+import { GUEST_SHARED_LINK_COPY_TARGET_FLAG } from "./guest-shared-link-target.js";
 
 const DEMO_LAYOUT_ID = "layout-main";
 
@@ -183,6 +184,7 @@ export function applyGuestLocalDisplayPreferences(targetState, preferences = {})
 
 export function isAutomaticGuestDemoCopyLayout(layout) {
   return Boolean(
+    layout?.[GUEST_SHARED_LINK_COPY_TARGET_FLAG] ||
     layout?.demoSourceLanguage ||
     String(layout?.id || "").startsWith("layout-guest-demo-")
   );

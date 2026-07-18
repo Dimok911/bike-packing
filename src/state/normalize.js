@@ -51,6 +51,10 @@ export function normalizeItemFields(targetState) {
   Object.values(targetState.items || {}).forEach((item) => {
     item.weight = parseWeightInput(item.weight);
     item.quantity = normalizeItemQuantity(item.quantity);
+    item.color = normalizeContainerColor(item.color);
+    const dimensions = normalizeContainerDimensions(item.dimensions);
+    if (hasContainerDimensions(dimensions)) item.dimensions = dimensions;
+    else delete item.dimensions;
     normalizeItemPhotos(item);
   });
 }

@@ -58,19 +58,26 @@ export function createModalScrollLockController() {
     const { softLock, x, y, position, top, left, right, width, overflow } = modalScrollLock;
     modalScrollLock = null;
     document.body.classList.remove("modal-scroll-locked");
-    if (softLock) return;
-    document.body.style.position = position;
-    document.body.style.top = top;
-    document.body.style.left = left;
-    document.body.style.right = right;
-    document.body.style.width = width;
-    document.body.style.overflow = overflow;
-    window.scrollTo(x, y);
+    if (!softLock) {
+      document.body.style.position = position;
+      document.body.style.top = top;
+      document.body.style.left = left;
+      document.body.style.right = right;
+      document.body.style.width = width;
+      document.body.style.overflow = overflow;
+      window.scrollTo(x, y);
+    }
   }
 
   function shouldUseSoftModalScrollLock() {
     const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
-    return Boolean(coarsePointer && window.innerWidth <= 760);
+    const visibleStickyTabs = Array.from(document.querySelectorAll(".tabs-row")).some((tabsRow) => {
+      const rect = tabsRow.getBoundingClientRect();
+      return window.getComputedStyle(tabsRow).position === "sticky"
+        && rect.bottom > 0
+        && rect.top < window.innerHeight;
+    });
+    return Boolean(visibleStickyTabs || (coarsePointer && window.innerWidth <= 760));
   }
 
   function captureModalTouchStart(event) {

@@ -5,7 +5,11 @@ import {
   resolvePhotoPrimaryButtonPhotoCount
 } from "../../src/ui/photo-primary-button.js";
 import { moveOrderedPhoto } from "../../src/ui/photo-order-dialog.js";
-import { clipboardImageFiles, shouldHandlePhotoPasteTarget } from "../../src/ui/photo-clipboard.js";
+import {
+  clipboardImageFiles,
+  readClipboardImageFiles,
+  shouldHandlePhotoPasteTarget
+} from "../../src/ui/photo-clipboard.js";
 
 test("CRITICAL photos: clipboard paste accepts images without hijacking text fields", () => {
   const image = { name: "paste.png", type: "image/png", size: 12, lastModified: 1 };
@@ -28,6 +32,21 @@ test("CRITICAL photos: clipboard file list wins over duplicate item representati
     files: [file],
     items: [{ kind: "file", type: "image/png", getAsFile: () => itemCopy }]
   }), [file]);
+});
+
+test("CRITICAL photos: one-click clipboard read returns one image representation per item", async () => {
+  const image = { type: "image/png", size: 12 };
+  const files = await readClipboardImageFiles({
+    read: async () => [
+      { types: ["text/html", "image/png"], getType: async (type) => type === "image/png" ? image : null },
+      { types: ["text/plain"], getType: async () => ({ type: "text/plain" }) }
+    ]
+  });
+  assert.deepEqual(files, [image]);
+});
+
+test("CRITICAL photos: unsupported direct clipboard read keeps Ctrl+V fallback available", async () => {
+  assert.equal(await readClipboardImageFiles({}), null);
 });
 
 test("CRITICAL photos: ordering moves secondary photos without changing the primary photo", () => {

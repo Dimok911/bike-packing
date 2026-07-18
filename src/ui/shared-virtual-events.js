@@ -9,6 +9,48 @@ function tr(t, key, fallback) {
   return typeof t === "function" ? t(key) : fallback;
 }
 
+export function sharedCardSourceTarget(card) {
+  const virtualItemId = card?.dataset?.itemId || card?.dataset?.listItemId || "";
+  const itemId = originalSharedId(virtualItemId, "shared-virtual-item-");
+  if (itemId) return { type: "item", id: itemId };
+  const virtualContainerId = card?.dataset?.rootContainerId || card?.dataset?.subcontainerId || card?.dataset?.rootCard || "";
+  const containerId = originalSharedId(virtualContainerId, "shared-virtual-container-");
+  return containerId ? { type: "container", id: containerId } : null;
+}
+
+function bindSharedCardDetails(root, {
+  openSharedReadonlyContainerDialog,
+  openSharedReadonlyItemDialog,
+  t
+} = {}) {
+  const label = tr(t, "tooltips.viewDetails", "Посмотреть свойства");
+  root.querySelectorAll([
+    "[data-item-id]",
+    "[data-list-item-id]",
+    "[data-root-container-id]",
+    "[data-subcontainer-id]",
+    "[data-root-card]"
+  ].join(", ")).forEach((card) => {
+    const target = sharedCardSourceTarget(card);
+    if (!target) return;
+    card.classList.add("shared-details-card");
+    if (!card.hasAttribute("tabindex")) card.tabIndex = 0;
+    card.setAttribute("aria-label", `${label}: ${card.querySelector(".item-title, h2, strong")?.textContent?.trim() || target.id}`);
+    const open = (event) => {
+      if (event.target?.closest?.("button, a, input, select, textarea, label")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (target.type === "item") openSharedReadonlyItemDialog?.(target.id);
+      else openSharedReadonlyContainerDialog?.(target.id);
+    };
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      open(event);
+    });
+  });
+}
+
 function markReadonlyTemplateActionButtons(root = document, { t } = {}) {
   const copyTitle = tr(t, "tooltips.copyFromTemplate", TEMPLATE_COPY_TITLE);
   root.querySelectorAll("[data-add-to-container], [data-delete-root], [data-remove-from-layout], [data-delete-item]").forEach((button) => {
@@ -61,6 +103,7 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     isReadonlyTemplateView,
     openSharedContainerCopyPicker,
     openSharedItemCopyPicker,
+    openSharedReadonlyContainerDialog,
     openSharedReadonlyItemDialog,
     render,
     t,
@@ -150,6 +193,11 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
     button.addEventListener("click", () => copySharedLayout(activeReadOnlyLayoutId()));
   });
   if (!canOpenAdminPublishedEdit()) {
+    bindSharedCardDetails(root, {
+      openSharedReadonlyContainerDialog,
+      openSharedReadonlyItemDialog,
+      t
+    });
     if (readonlyTemplate) markReadonlyTemplateActionButtons(root, { t });
     root.querySelectorAll("[data-edit-item]").forEach((button) => {
       if (readonlyTemplate) {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1244" />
+    <link rel="stylesheet" href="./styles.css?v=1259" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -172,6 +172,27 @@
             <strong id="itemTotalWeight">0 g</strong>
           </div>
         </div>
+        <div class="dialog-two-columns item-physical-properties">
+          <label>
+            Color
+            <input id="itemColor" type="text" placeholder="for example: red" />
+          </label>
+          <fieldset class="container-dimensions-field item-dimensions-field">
+            <legend>Dimensions, cm</legend>
+            <label>
+              W
+              <input id="itemWidth" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+            <label>
+              H
+              <input id="itemHeight" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+            <label>
+              D
+              <input id="itemDepth" type="text" inputmode="decimal" enterkeyhint="done" />
+            </label>
+          </fieldset>
+        </div>
         <label>
           Storage place
           <select id="itemLocation"></select>
@@ -221,11 +242,12 @@
             <button id="itemPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
             <button id="itemPhotoOrderBtn" class="ghost" type="button" hidden>Photo order</button>
           </div>
-          <button class="photo-paste-hint" type="button">Нажмите сюда, затем вставьте изображение (Ctrl+V)</button>
+          <button class="photo-paste-hint" type="button">Вставить фото из буфера</button>
           <small id="itemPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
           <button id="copySharedItemDialogBtn" class="ghost" type="button" hidden>Copy</button>
+          <button id="shareItemLinkBtn" class="ghost" type="button" hidden></button>
           <button id="saveItemBtn" value="default">Save</button>
         </footer>
       </form>
@@ -317,10 +339,11 @@
             <button id="rootContainerPhotoPrimaryBtn" class="ghost item-photo-primary-button" type="button" hidden>Make primary</button>
             <button id="rootContainerPhotoOrderBtn" class="ghost" type="button" hidden>Photo order</button>
           </div>
-          <button class="photo-paste-hint" type="button">Нажмите сюда, затем вставьте изображение (Ctrl+V)</button>
+          <button class="photo-paste-hint" type="button">Вставить фото из буфера</button>
           <small id="rootContainerPhotoStatus" class="item-photo-status"></small>
         </div>
         <footer>
+          <button id="shareRootContainerLinkBtn" class="ghost" type="button" hidden></button>
           <button id="saveRootContainerBtn" value="default">Save</button>
         </footer>
       </form>
@@ -675,6 +698,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1244" type="module"></script>
+    <script src="./app.js?v=1259" type="module"></script>
   </body>
 </html>

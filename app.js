@@ -112,6 +112,10 @@ import {
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
 import {
+  ensureGuestSharedLinkCopyTargetLayout,
+  recordGuestSharedLinkDetachedItem
+} from "./src/public/guest-shared-link-target.js";
+import {
   importDemoStateAsEditableLayout as importDemoStateAsEditableLayoutValue,
   repairAdminDemoLayout as repairAdminDemoLayoutValue
 } from "./src/public/admin-demo-layout.js";
@@ -239,8 +243,14 @@ import {
 import { shouldPreserveLinkedSharedListOnLanguageChange } from "./src/public/shared-link-language.js";
 import { readSharedListPublishOptions, sharedListLinkResultHtml, sharedListPublishDialogHtml } from "./src/public/shared-list-publish.js";
 import {
-  createSharedVirtualState as createSharedVirtualStateForPublic
+  createSharedVirtualState as createSharedVirtualStateForPublic,
+  sharedVirtualContainerId
 } from "./src/public/shared-virtual-state.js";
+import {
+  sharedEntityAncestorContainerIds,
+  sharedEntityTargetFromUrl
+} from "./src/public/shared-entity-link.js";
+import { focusSharedEntityTarget } from "./src/ui/shared-entity-focus.js";
 import {
   reconcilePublishedTemplateCopyDraft,
   repairEmptyTemplateCopyDraftFromPublishedLayout
@@ -1005,9 +1015,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "historyPhotoTrashRetention",
   "sharedListSnapshots",
   "sharedListOptionalAuthor",
+  "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-17.history-summary-pagination-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-18.entity-share-links-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1660,7 +1671,8 @@ const {
   deleteContainerPhotos, makeItemCopyName, touchLayoutsReferencingItem, cleanupEmptyContainers,
   getColumnPlaceholderIndex, isOriginalRootColumnPosition, moveRootColumn, openRootContainerDialog,
   fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
-  resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, uniqueLayoutName, uniquePublishedTemplateName,
+  resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, openSharedReadonlyContainerDialog,
+  setSharedReadonlyRootContainerDialog, resetSharedReadonlyRootContainerDialog, uniqueLayoutName, uniquePublishedTemplateName,
   canManageLayout, canManageActiveLayout, languageSelectEntries, createLayoutCopyFromSource,
   templateCopyRootSnapshots, templateCopySourceScore, loadPublishedTemplateCopySource, createTemplateCopyFromSource,
   layoutCreateCopySourceOptions, isLayoutCreateTemplateLayoutMode, resolveLayoutCreateCopySource, resolveLayoutCreateTemplateCopySource,
@@ -1685,7 +1697,8 @@ const {
   updatePhotoPrimaryButton, setRootContainerDialogPhotoStatus, readItemDialogQuantity, normalizeItemQuantityInput,
   changeItemDialogQuantity, updateItemQuantityUi, getRootContainerDialogSnapshot, updateItemDialogSaveState,
   hasSavableItemDialogChanges, updateRootContainerDialogSaveState, updateModalSaveButton, hasSavableRootContainerDialogChanges,
-  saveRootContainerDialog, saveDialogItem, applyItemDialogPhotoDraft, applyRootContainerDialogPhotoDraft,
+  saveRootContainerDialog, saveDialogItem, shareEditingItemByLink, shareEditingContainerByLink,
+  applyItemDialogPhotoDraft, applyRootContainerDialogPhotoDraft,
   applyRootContainerDialogParent, normalizeContainerParentInsertIndex, getActiveLayoutItems, getItemsForItemsView,
   getItemsForActiveCatalog, itemCreatedTime, getItemsUsageCounts, isScopedCatalogLayout,
   getPublicLayoutRecordIdsForState, isPublicCatalogItemRecord, isPublicCatalogContainerRecord, isPrivateCatalogItemRecord,
@@ -2713,6 +2726,7 @@ async function init() {
   });
   refs.unpackAllBtn.addEventListener("click", unpackAllItems);
   refs.saveItemBtn.addEventListener("click", saveDialogItem);
+  refs.shareItemLinkBtn?.addEventListener("click", shareEditingItemByLink);
   refs.itemWeight.addEventListener("input", updateItemQuantityUi);
   refs.itemQuantity.addEventListener("input", updateItemQuantityUi);
   refs.itemQuantity.addEventListener("change", normalizeItemQuantityInput);
@@ -2737,6 +2751,7 @@ async function init() {
     requestCloseItemDialog();
   });
   refs.saveRootContainerBtn.addEventListener("click", saveRootContainerDialog);
+  refs.shareRootContainerLinkBtn?.addEventListener("click", shareEditingContainerByLink);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("input", updateRootContainerDialogSaveState);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("change", updateRootContainerDialogSaveState);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("submit", handleRootContainerFormSubmit);
@@ -2750,6 +2765,7 @@ async function init() {
     rootContainerDialogPendingRootIds = null;
     rootContainerDialogPendingParentId = undefined;
     rootContainerDialogPendingParentIndex = null;
+    resetSharedReadonlyRootContainerDialog();
     resetRootContainerDialogPhotoDraft();
   });
   refs.dialog.addEventListener("close", () => {
@@ -6039,7 +6055,7 @@ async function ensurePrivateStateForSharedCopy() {
 }
 
 function normalizeRemoteListRecord(data) {
-  const list = data?.list || data?.record || data;
+  const list = data?.list || data?.entityLink || data?.record || data;
   const integrityMeta = stateIntegrityMetaFromResponse(data, list);
   const payload =
     list?.payload ||
@@ -6157,7 +6173,11 @@ function listRecordVisibility(record) {
 }
 
 async function fetchSharedListLinkRecord(listId) {
-  const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}`, {
+  const entityTarget = sharedEntityTargetFromUrl(location.href);
+  const path = entityTarget
+    ? `/bike-packing/entity-links/${encodeURIComponent(listId)}`
+    : `/bike-packing/lists/${encodeURIComponent(listId)}`;
+  const data = await apiFetch(path, {
     timeoutMs: LIST_API_TIMEOUT_MS
   });
   const record = normalizeRemoteListRecord(data);
@@ -6177,9 +6197,19 @@ async function openSharedListFromLink(listId, layoutId = "") {
   updateSyncUi("Открываю shared-список по ссылке...");
   try {
     const record = await fetchSharedListLinkRecord(normalizedListId);
+    const entityTarget = sharedEntityTargetFromUrl(location.href);
     const payload = activateSharedPayloadLayout(record.payload, layoutId);
     assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record.payload);
     if (!payload) throw new Error("Сервер вернул пустую или повреждённую укладку.");
+    if (entityTarget) {
+      const targetExists = entityTarget.type === "item"
+        ? Boolean(payload.items?.[entityTarget.id])
+        : Boolean(payload.containers?.[entityTarget.id]);
+      if (!targetExists) throw new Error(t("shareEntity.targetMissing"));
+      sharedEntityAncestorContainerIds(payload, entityTarget).forEach((containerId) => {
+        sharedVirtualCollapsedContainers[sharedVirtualContainerId(containerId)] = false;
+      });
+    }
     const recordId = remoteRecordId(record, normalizedListId);
     const activeLayout = sharedPayloadActiveLayout(payload);
     const activeLayoutId = activeLayout?.id || payload.activeLayoutId || "";
@@ -6192,13 +6222,31 @@ async function openSharedListFromLink(listId, layoutId = "") {
       roots: [],
       statePayload: payload,
       listRecord: record,
-      linkedSharedList: true
+      linkedSharedList: true,
+      sharedEntityTarget: entityTarget
     };
     linkedSharedListLayout.name = activeLayout?.name || linkedSharedListLayout.name;
     await hydrateAuthForSharedLink();
+    if (!currentUser) {
+      const guestTarget = ensureGuestSharedLinkCopyTargetLayout(state, {
+        changedAt: nowIso(),
+        createEmptyLayoutArrangement,
+        createMeta: currentCreateMeta,
+        defaultName: localText("New layout", "Новая укладка"),
+        dictionaries: ensurePrivateDictionaries(state),
+        guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+        isCopyTargetLayout: (layout) => isSharedCopyTargetLayout(layout, { excludeEmptySystemDefault: true }),
+        uniqueLayoutName
+      });
+      if (guestTarget.created) {
+        rememberActiveLayoutChoice(guestTarget.layoutId);
+        saveState({ sync: false });
+      }
+    }
     setActiveReadOnlyScope(linkedSharedListLayout.id);
     switchView("packing");
     render();
+    if (entityTarget) focusSharedEntityTarget(refs.packingView, entityTarget);
     updateSyncUi(`Общий список · ${linkedSharedListLayout.name}`);
     return true;
   } catch (error) {
@@ -6980,6 +7028,7 @@ function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
     applyLayoutArrangement,
     cloneValue: clone,
     copyPublishedContainerToState,
+    copyPublishedItemToState,
     createLayoutArrangementFromCurrentState,
     currentCreateMeta,
     guestCandidateLayouts,
@@ -7559,6 +7608,7 @@ async function loadSharedLayoutPayload(layoutId) {
 
 function renderSharedLayouts() {
   const copyTargetLayouts = sharedCopyTargetLayouts(state.layouts, {
+    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   });
   fillSelect(
@@ -7631,6 +7681,7 @@ function bindSharedVirtualEvents(root = document) {
     isReadonlyTemplateView,
     openSharedContainerCopyPicker,
     openSharedItemCopyPicker,
+    openSharedReadonlyContainerDialog,
     openSharedReadonlyItemDialog,
     render,
     t,
@@ -7675,7 +7726,11 @@ function findSharedPublishedItem(itemId) {
 
 function findSharedRoot(rootId) {
   const published = findSharedPublishedContainer(rootId);
-  if (published) return { ...sharedRootFromPublishedContainer(published.container), sourceState: published.sourceState };
+  if (published) return {
+    ...sharedRootFromPublishedContainer(published.container),
+    sourceRecord: published.container,
+    sourceState: published.sourceState
+  };
   for (const layout of publicSharedLayouts()) {
     const root = sharedLayoutRoots(layout).find((item) => item.id === rootId);
     if (root) return root;
@@ -7685,7 +7740,13 @@ function findSharedRoot(rootId) {
 
 function findSharedItem(itemId) {
   const published = findSharedPublishedItem(itemId);
-  if (published) return { item: sharedItemFromPublishedItem(published.item), root: null, layout: published.layout, sourceState: published.sourceState };
+  if (published) return {
+    item: sharedItemFromPublishedItem(published.item),
+    root: null,
+    layout: published.layout,
+    sourceRecord: published.item,
+    sourceState: published.sourceState
+  };
   for (const layout of publicSharedLayouts()) {
     for (const root of sharedLayoutRoots(layout)) {
       const item = (root.items || []).find((entry) => entry.id === itemId);
@@ -7721,6 +7782,7 @@ function selectedSharedTargetLayoutId() {
   const selected = refs.sharedCopyLayoutSelect?.value;
   const layout = state.layouts[selected];
   return isSharedCopyTargetLayout(layout, {
+    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   })
     ? selected
@@ -7729,6 +7791,7 @@ function selectedSharedTargetLayoutId() {
 
 function chooseSharedCopyTargetLayoutId() {
   const layouts = sharedCopyTargetLayouts(state.layouts, {
+    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   });
   if (!layouts.length) return "";
@@ -7815,7 +7878,9 @@ async function copySharedItem(itemId) {
     if (!targetLayoutId) return;
     const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: published.item } };
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, published.item.name))) return;
-    const copiedItemId = copyPublishedItemToState(published.sourceState, itemId, { containerId: "" });
+    const changedAt = nowIso();
+    const copiedItemId = copyPublishedItemToState(published.sourceState, itemId, { containerId: "", changedAt });
+    if (!canUsePrivateState() && recordGuestSharedLinkDetachedItem(state, targetLayoutId, copiedItemId)) touchLayout(targetLayoutId, changedAt);
     await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId]);
     setActivePrivateScope();
     saveState();
@@ -7833,7 +7898,9 @@ async function copySharedItem(itemId) {
   if (!targetLayoutId) return;
   const sourceSnapshot = { rootId: "", containers: {}, items: { [itemId]: match.item } };
   if (!(await confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, match.item.name))) return;
-  const copiedItemId = copySharedItemToState(match.item, { containerId: "" });
+  const changedAt = nowIso();
+  const copiedItemId = copySharedItemToState(match.item, { containerId: "", changedAt });
+  if (!canUsePrivateState() && recordGuestSharedLinkDetachedItem(state, targetLayoutId, copiedItemId)) touchLayout(targetLayoutId, changedAt);
   await cacheGuestRecordPhotoFallbacks(state.items?.[copiedItemId]);
   setActivePrivateScope();
   saveState();

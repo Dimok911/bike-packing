@@ -70,6 +70,8 @@ function historyFieldDefinitions(type, localText = historyRuText) {
       name: localText("Name", "Название"),
       weight: localText("Weight", "Вес"),
       quantity: localText("Quantity", "Количество"),
+      color: localText("Color", "Цвет"),
+      dimensions: localText("Dimensions", "Размеры"),
       location: localText("Storage location", "Место хранения"),
       categories: localText("Categories", "Категории"),
       category: localText("Category", "Категория"),
@@ -103,7 +105,11 @@ function historyFieldDefinitions(type, localText = historyRuText) {
     }
   };
   const definitions = conflictDiffFieldDefinitions({ type });
-  if (type === "item") definitions.push(["availabilityStatus", labels.item.availabilityStatus, "availability"]);
+  if (type === "item") definitions.push(
+    ["color", labels.item.color, ""],
+    ["dimensions", labels.item.dimensions, ""],
+    ["availabilityStatus", labels.item.availabilityStatus, "availability"]
+  );
   if (type === "container") {
     definitions.push(
       ["categories", labels.container.categories, "list"],

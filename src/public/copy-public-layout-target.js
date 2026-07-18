@@ -3,16 +3,39 @@ function touchRecord(record, changedAt, touch) {
   touch(record, changedAt);
 }
 
-export function isSharedCopyTargetLayout(layout, { readonlySourceLayoutId = "" } = {}) {
+const DEFAULT_LAYOUT_NAMES = new Set(["Current layout", "Текущая укладка"]);
+
+export function isEmptySystemDefaultLayout(layout) {
+  if (String(layout?.id || "") !== "layout-main") return false;
+  if (!DEFAULT_LAYOUT_NAMES.has(String(layout?.name || "").trim())) return false;
+  const arrangement = layout?.arrangement;
+  return !(layout?.rootContainerIds || []).length &&
+    !(arrangement?.rootContainerIds || []).length &&
+    !Object.keys(arrangement?.containers || {}).length &&
+    !Object.keys(arrangement?.items || {}).length;
+}
+
+export function isSharedCopyTargetLayout(layout, {
+  excludeEmptySystemDefault = false,
+  readonlySourceLayoutId = ""
+} = {}) {
   const layoutId = String(layout?.id || "");
   if (!layoutId) return false;
   if (layout.adminDemo || layout.adminSharedSourceId || layout.publicCatalogLayoutId) return false;
   if (readonlySourceLayoutId && layoutId === String(readonlySourceLayoutId)) return false;
+  if (excludeEmptySystemDefault && isEmptySystemDefaultLayout(layout)) return false;
   return true;
 }
 
 export function sharedCopyTargetLayouts(layouts, options = {}) {
   return Object.values(layouts || {}).filter((layout) => isSharedCopyTargetLayout(layout, options));
+}
+
+export function shouldCopySharedItemOutsideLayout(layouts, {
+  layoutHasContainers = (layout) => Boolean((layout?.rootContainerIds || []).length)
+} = {}) {
+  const targets = Array.isArray(layouts) ? layouts.filter(Boolean) : [];
+  return targets.length > 0 && !targets.some((layout) => layoutHasContainers(layout));
 }
 
 function publicCopyTargetRank(layout) {

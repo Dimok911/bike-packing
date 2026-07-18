@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { shouldShowContainerPickerLayoutSelect } from "../../src/ui/container-picker-layout-select.js";
 import {
   applyGuestLocalDisplayPreferences,
   guestDemoCopyCleanupPlan,
@@ -80,9 +81,11 @@ import {
   summarizePublicCopyDuplicates
 } from "../../src/public/copy-duplicates.js";
 import {
+  isEmptySystemDefaultLayout,
   isSharedCopyTargetLayout,
   publicCopyTargetLayouts,
-  sharedCopyTargetLayouts
+  sharedCopyTargetLayouts,
+  shouldCopySharedItemOutsideLayout
 } from "../../src/public/copy-public-layout-target.js";
 import {
   createSharedLayoutsByLanguage,
@@ -121,7 +124,14 @@ import {
   guestDemoStartupAction
 } from "../../src/public/guest-demo-startup.js";
 import {
+  GUEST_SHARED_LINK_COPY_TARGET_FLAG,
+  ensureGuestSharedLinkCopyTargetLayout,
+  recordGuestSharedLinkDetachedItem
+} from "../../src/public/guest-shared-link-target.js";
+import { dialogHasSavableChanges } from "../../src/ui/dialog-save-guard.js";
+import {
   canImportGuestLayoutsForAuthenticatedUser,
+  guestLayoutHasUserContentEdits,
   importedGuestLayoutName,
   importGuestLocalLayoutsToState,
   removeLegacyGuestImportPlaceholders,
@@ -187,6 +197,21 @@ test("shared container copy picker excludes readonly and source layouts", () => 
 
   assert.equal(excluded.has("layout-source"), true);
   assert.equal(excluded.has("layout-readonly"), true);
+});
+
+test("copy picker keeps the layout selector visible for one target layout", () => {
+  assert.equal(shouldShowContainerPickerLayoutSelect({
+    copyMode: true,
+    optionCount: 1
+  }), true);
+  assert.equal(shouldShowContainerPickerLayoutSelect({
+    copyMode: true,
+    optionCount: 0
+  }), false);
+  assert.equal(shouldShowContainerPickerLayoutSelect({
+    copyMode: false,
+    optionCount: 1
+  }), false);
 });
 
 test("published entity id cleanup works when used as a callback without cssSafeId", () => {
@@ -461,6 +486,44 @@ test("shared copy targets keep private layouts while excluding readonly source l
     "layout-private-active",
     "layout-private-other"
   ]);
+});
+
+test("readonly template copy targets hide only the empty system current layout for non-admin viewers", () => {
+  const emptySystemLayout = {
+    id: "layout-main",
+    name: "Current layout",
+    rootContainerIds: [],
+    arrangement: { rootContainerIds: [], containers: {}, items: {} }
+  };
+  const usedSystemLayout = {
+    ...emptySystemLayout,
+    rootContainerIds: ["bag-a"],
+    arrangement: {
+      rootContainerIds: ["bag-a"],
+      containers: { "bag-a": { parentId: "", childIds: [], itemIds: [] } },
+      items: {}
+    }
+  };
+  const namedLayout = { id: "layout-trip", name: "Demo-packing", rootContainerIds: [] };
+
+  assert.equal(isEmptySystemDefaultLayout(emptySystemLayout), true);
+  assert.equal(isEmptySystemDefaultLayout(usedSystemLayout), false);
+  assert.equal(isSharedCopyTargetLayout(emptySystemLayout), true);
+  assert.equal(isSharedCopyTargetLayout(emptySystemLayout, { excludeEmptySystemDefault: true }), false);
+  assert.deepEqual(sharedCopyTargetLayouts({
+    "layout-main": emptySystemLayout,
+    "layout-trip": namedLayout
+  }, {
+    excludeEmptySystemDefault: true,
+    readonlySourceLayoutId: "shared-template"
+  }).map((layout) => layout.id), ["layout-trip"]);
+  assert.deepEqual(sharedCopyTargetLayouts({
+    "layout-main": usedSystemLayout,
+    "layout-trip": namedLayout
+  }, {
+    excludeEmptySystemDefault: true,
+    readonlySourceLayoutId: "shared-template"
+  }).map((layout) => layout.id), ["layout-main", "layout-trip"]);
 });
 
 test("admin public copy targets follow visible public choices without legacy demo duplicates", () => {
@@ -1841,6 +1904,130 @@ test("guest demo edit detection uses local copy time as baseline", () => {
     guestDemoCopyRecordWasEdited({ createdAt: "2026-05-24T10:00:00.000Z", updatedAt: "2026-05-24T10:00:01.000Z" }, layout),
     true
   );
+});
+
+test("guest shared link creates one uniquely named empty copy target", () => {
+  const state = { layouts: {}, activeLayoutId: "" };
+  const first = ensureGuestSharedLinkCopyTargetLayout(state, {
+    id: "layout-shared-guest-test",
+    changedAt: "2026-07-18T12:00:00.000Z",
+    defaultName: "New layout",
+    uniqueLayoutName: (name) => `${name} 2`,
+    createEmptyLayoutArrangement: () => ({ rootContainerIds: [], containers: {}, items: {}, packedItems: {} }),
+    createMeta: (changedAt) => ({ createdAt: changedAt, updatedAt: changedAt }),
+    dictionaries: { locations: ["Home"], categories: ["Clothing"] },
+    guestDemoCopyFlag: "guestDemoCopy",
+    isCopyTargetLayout: (layout) => isSharedCopyTargetLayout(layout, { excludeEmptySystemDefault: true })
+  });
+
+  assert.deepEqual(first, { layoutId: "layout-shared-guest-test", created: true });
+  assert.equal(state.activeLayoutId, first.layoutId);
+  assert.equal(state.layouts[first.layoutId].name, "New layout 2");
+  assert.equal(state.layouts[first.layoutId].guestDemoCopy, true);
+  assert.equal(state.layouts[first.layoutId][GUEST_SHARED_LINK_COPY_TARGET_FLAG], true);
+  assert.equal(isAutomaticGuestDemoCopyLayout(state.layouts[first.layoutId]), true);
+  assert.deepEqual(sharedCopyTargetLayouts(state.layouts).map((layout) => layout.id), [first.layoutId]);
+
+  const second = ensureGuestSharedLinkCopyTargetLayout(state, {
+    id: "layout-should-not-be-created",
+    isCopyTargetLayout: (layout) => isSharedCopyTargetLayout(layout, { excludeEmptySystemDefault: true })
+  });
+  assert.deepEqual(second, { layoutId: first.layoutId, created: false });
+  assert.deepEqual(Object.keys(state.layouts), [first.layoutId]);
+});
+
+test("empty guest shared-link target is skipped on login until it has user content", () => {
+  const layout = {
+    id: "layout-shared-guest-test",
+    name: "New layout",
+    guestDemoCopy: true,
+    [GUEST_SHARED_LINK_COPY_TARGET_FLAG]: true,
+    rootContainerIds: [],
+    arrangement: { rootContainerIds: [], containers: {}, items: {}, packedItems: {} }
+  };
+  const emptyPlan = guestLocalLayoutImportPlan({
+    layouts: { [layout.id]: layout },
+    activeLayoutId: layout.id,
+    hasUserEdits: () => false
+  });
+  assert.deepEqual(emptyPlan.layoutIds, []);
+
+  const editedPlan = guestLocalLayoutImportPlan({
+    layouts: { [layout.id]: layout },
+    activeLayoutId: layout.id,
+    hasUserEdits: () => true
+  });
+  assert.deepEqual(editedPlan.layoutIds, [layout.id]);
+});
+
+test("item copied outside the empty guest target is preserved during login import", () => {
+  const layoutId = "layout-shared-guest-test";
+  const sourceState = {
+    locations: [],
+    categories: [],
+    containers: {},
+    items: { "item-guest": { id: "item-guest", name: "Jacket", containerId: "" } },
+    layouts: {
+      [layoutId]: {
+        id: layoutId,
+        name: "New layout",
+        guestDemoCopy: true,
+        [GUEST_SHARED_LINK_COPY_TARGET_FLAG]: true,
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {}, packedItems: {} }
+      }
+    },
+    activeLayoutId: layoutId
+  };
+  assert.equal(recordGuestSharedLinkDetachedItem(sourceState, layoutId, "item-guest"), true);
+  assert.equal(guestLayoutHasUserContentEdits(sourceState, sourceState.layouts[layoutId]), true);
+
+  const targetState = { locations: [], categories: [], containers: {}, items: {}, layouts: {}, activeLayoutId: "" };
+  const importedIds = importGuestLocalLayoutsToState(targetState, {
+    sourceState,
+    layouts: [{ layoutId, layoutName: "New layout" }]
+  }, {
+    guestCandidateLayouts: (candidate) => candidate.layouts,
+    cloneValue: (value) => structuredClone(value),
+    copyPublishedItemToState: (source, sourceItemId, { idMap }) => {
+      const copiedId = `copy-${sourceItemId}`;
+      targetState.items[copiedId] = { ...structuredClone(source.items[sourceItemId]), id: copiedId };
+      idMap.items.set(sourceItemId, copiedId);
+      return copiedId;
+    },
+    createLayoutArrangementFromCurrentState: () => ({ rootContainerIds: [], containers: {}, items: {}, packedItems: {} }),
+    currentCreateMeta: () => ({}),
+    normalizeDictionaryValues: (values = []) => [...values],
+    layoutDictionaryValues: () => [],
+    readableGuestDemoLayoutName: (name) => name,
+    guestDemoCopyFlag: "guestDemoCopy"
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(targetState.items["copy-item-guest"].name, "Jacket");
+  assert.deepEqual(targetState.layouts[importedIds[0]].guestSharedLinkDetachedItemIds, ["copy-item-guest"]);
+  assert.equal(validateGuestImportSyncState(targetState, importedIds).ok, true);
+});
+
+test("readonly item and bag dialogs never prompt to save", () => {
+  assert.equal(dialogHasSavableChanges({
+    dialog: { open: true },
+    saveButton: { hidden: true, disabled: false }
+  }), false);
+  assert.equal(dialogHasSavableChanges({
+    dialog: { open: true },
+    saveButton: { hidden: false, disabled: false }
+  }), true);
+});
+
+test("shared item copies outside when every personal target layout has no bags", () => {
+  const emptyTargets = [{ id: "layout-a", rootContainerIds: [] }];
+  assert.equal(shouldCopySharedItemOutsideLayout(emptyTargets), true);
+  assert.equal(shouldCopySharedItemOutsideLayout([
+    ...emptyTargets,
+    { id: "layout-b", rootContainerIds: ["bag-b"] }
+  ]), false);
+  assert.equal(shouldCopySharedItemOutsideLayout([]), false);
 });
 
 test("guest startup creates one automatic demo layout only when startup policy allows it", () => {

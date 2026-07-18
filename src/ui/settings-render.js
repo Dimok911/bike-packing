@@ -47,7 +47,7 @@ export function renderRootContainersEditorHtml({
   const { label, title } = rootContainerSortMeta(rootContainerSortMode, t);
   return `
     <section class="settings-panel layout-editor">
-      <div class="items-toolbar root-containers-toolbar">
+      <div class="items-toolbar root-containers-toolbar catalog-toolbar-sticky">
         <button id="addRootContainerBtn">${tr(t, "rootContainers.add", "Добавить сумку или место")}</button>
         <div class="items-filter-row">
           <label>

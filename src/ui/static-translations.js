@@ -107,6 +107,12 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.dialog?.querySelector("label:has(#itemWeight)"), t("forms.weightGrams"));
   setFirstText(refs.dialog?.querySelector(".quantity-field"), t("forms.quantity"));
   setText(refs.dialog?.querySelector(".item-total-weight span"), t("forms.totalWeight"));
+  setFirstText(refs.dialog?.querySelector("label:has(#itemColor)"), t("forms.color"));
+  if (refs.itemColor) refs.itemColor.placeholder = t("forms.colorPlaceholder");
+  setText(refs.dialog?.querySelector(".item-dimensions-field legend"), t("forms.dimensionsCm"));
+  setFirstText(refs.dialog?.querySelector("label:has(#itemWidth)"), t("forms.widthShort"));
+  setFirstText(refs.dialog?.querySelector("label:has(#itemHeight)"), t("forms.heightShort"));
+  setFirstText(refs.dialog?.querySelector("label:has(#itemDepth)"), t("forms.depthShort"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemLocation)"), t("forms.storage"));
   setFirstText(refs.dialog?.querySelector(".field-label:has(#itemCategoryList)"), t("forms.categories"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemAvailabilityStatus)"), t("forms.availability"));
@@ -138,6 +144,7 @@ export function applyStaticTranslationsUi({
   setText(refs.itemPhotoPrimaryBtn, t("buttons.primaryPhoto"));
   setText(refs.itemPhotoOrderBtn, t("buttons.photoOrder"));
   setText(refs.copySharedItemDialogBtn, t("buttons.copy"));
+  setText(refs.shareItemLinkBtn, t("shareEntity.button"));
 
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerName)"), t("forms.name"));
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerWeight)"), t("forms.weightGrams"));
@@ -167,6 +174,7 @@ export function applyStaticTranslationsUi({
   setText(refs.rootContainerPhotoRemoveBtn, t("buttons.removePhoto"));
   setText(refs.rootContainerPhotoPrimaryBtn, t("buttons.primaryPhoto"));
   setText(refs.rootContainerPhotoOrderBtn, t("buttons.photoOrder"));
+  setText(refs.shareRootContainerLinkBtn, t("shareEntity.button"));
   documentRef.querySelectorAll(".photo-paste-hint").forEach((hint) => setText(hint, t("photo.pasteHint")));
 
   setText(refs.rootPlacementTitle, t("forms.inCurrentLayout"));

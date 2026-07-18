@@ -75,12 +75,12 @@ export function saveRootContainerDialogAction({
       ...currentCreateMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.containers[id]);
-    closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
+    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
     const layoutId = getPublishedEditLayoutId();
     restoreAdminPublishedLayoutContext(layoutId);
     saveLayoutMutation(layoutId, { publishDelay: 500 });
     render();
-    return;
+    return { created: true, dialogCloseSettled, id, type: "container" };
   }
   container.name = name;
   container.weight = parseWeightInput(refs.rootContainerWeight.value);
@@ -97,15 +97,17 @@ export function saveRootContainerDialogAction({
   touchContainer(container.id, changedAt);
   applyRootContainerDialogParent(changedAt);
   applyRootContainerDialogPlacement();
-  closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
+  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
   const layoutId = getPublishedEditLayoutId();
   restoreAdminPublishedLayoutContext(layoutId);
   saveLayoutMutation(layoutId, { publishDelay: 500 });
   render();
+  return { created: false, dialogCloseSettled, id: container.id, type: "container" };
 }
 
 export function saveItemDialogAction({
   applyItemAvailabilityStatus = () => false,
+  applyItemDimensions = () => {},
   applyItemDialogPhotoDraft = () => {},
   applyLayoutArrangement = () => {},
   changedAt = "",
@@ -116,12 +118,15 @@ export function saveItemDialogAction({
   getDialogSelectedCategories = () => [],
   getItemContainerIdInLayout = () => "",
   getPublishedEditLayoutId = () => "",
+  hasItemDimensions = () => false,
   itemDialogPhotoDraft = null,
   itemDialogTargetLayoutId = "",
   markRecordActivePublicCatalog = () => {},
+  normalizeItemColor = (value) => String(value || "").trim(),
   normalizeItemAvailabilityStatus = () => "available",
   parseWeightInput = () => 0,
   placeExistingItemInLayout = () => false,
+  readItemDialogDimensions = () => ({}),
   readItemDialogQuantity = () => 1,
   refs,
   removeItemFromLayoutArrangement = () => {},
@@ -142,8 +147,11 @@ export function saveItemDialogAction({
   const layoutId = itemDialogTargetLayoutId || getPublishedEditLayoutId();
   const layout = state.layouts?.[layoutId];
   const selectedCategories = getDialogSelectedCategories();
+  const dimensions = readItemDialogDimensions();
   const availabilityStatus = normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus?.value);
   const itemIsUnavailable = availabilityStatus !== "available";
+  let savedItemId = editingItemId || "";
+  let created = false;
 
   if (editingItemId) {
     const item = state.items[editingItemId];
@@ -151,6 +159,8 @@ export function saveItemDialogAction({
     item.name = name;
     item.weight = parseWeightInput(refs.itemWeight.value);
     item.quantity = readItemDialogQuantity();
+    item.color = normalizeItemColor(refs.itemColor?.value);
+    applyItemDimensions(item, dimensions);
     item.location = refs.itemLocation.value;
     item.categories = selectedCategories;
     item.category = selectedCategories[0] || "";
@@ -187,11 +197,15 @@ export function saveItemDialogAction({
   } else {
     if (!requireUsageCapacity("items")) return;
     const id = `item-${Date.now()}`;
+    savedItemId = id;
+    created = true;
     state.items[id] = {
       id,
       name,
       weight: parseWeightInput(refs.itemWeight.value),
       quantity: readItemDialogQuantity(),
+      color: normalizeItemColor(refs.itemColor?.value),
+      ...(hasItemDimensions(dimensions) ? { dimensions } : {}),
       location: refs.itemLocation.value,
       category: selectedCategories[0] || "",
       categories: selectedCategories,
@@ -218,6 +232,7 @@ export function saveItemDialogAction({
 
   restoreAdminPublishedLayoutContext(layoutId);
   saveLayoutMutation(layoutId);
-  closeDialogWithoutRestoringFocus(refs.dialog);
+  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.dialog);
   render();
+  return { created, dialogCloseSettled, id: savedItemId, type: "item" };
 }

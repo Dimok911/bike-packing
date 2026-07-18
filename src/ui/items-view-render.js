@@ -27,7 +27,7 @@ export function renderItemsViewHtml({
   const { label, title } = itemSortMeta(itemSortMode, t);
   return `
     <section class="items-panel">
-      <div class="items-toolbar">
+      <div class="items-toolbar catalog-toolbar-sticky">
         <button id="addItemBtn">${tr(t, "items.addItem", "Добавить вещь")}</button>
         <div class="items-filter-row">
           <label>

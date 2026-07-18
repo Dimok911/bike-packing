@@ -16,7 +16,7 @@ export function currentPageScrollPosition() {
 }
 
 export function closeDialogWithoutRestoringFocus(dialog, returnValue = "") {
-  if (!dialog?.open) return;
+  if (!dialog?.open) return Promise.resolve();
   const scroll = currentPageScrollPosition();
   dialog.close(returnValue);
   const restore = () => {
@@ -24,9 +24,26 @@ export function closeDialogWithoutRestoringFocus(dialog, returnValue = "") {
     if (active && active !== document.body && !dialog.contains(active)) active.blur();
     window.scrollTo({ left: scroll.x, top: scroll.y, behavior: "auto" });
   };
-  requestAnimationFrame(restore);
-  window.setTimeout(restore, 80);
-  window.setTimeout(restore, 180);
+  return Promise.all([
+    new Promise((resolve) => requestAnimationFrame(() => { restore(); resolve(); })),
+    new Promise((resolve) => window.setTimeout(() => { restore(); resolve(); }, 80)),
+    new Promise((resolve) => window.setTimeout(() => { restore(); resolve(); }, 180))
+  ]);
+}
+
+export function resetDialogScrollPosition(
+  dialog,
+  { requestFrame = (callback) => globalThis.requestAnimationFrame?.(callback) } = {}
+) {
+  if (!dialog) return false;
+  const reset = () => {
+    dialog.scrollTop = 0;
+    const card = dialog.querySelector?.(".dialog-card");
+    if (card) card.scrollTop = 0;
+  };
+  reset();
+  requestFrame(reset);
+  return true;
 }
 
 export function setupDialogKeyboardScrollGuard(dialogs = []) {

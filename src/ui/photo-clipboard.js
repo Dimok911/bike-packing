@@ -21,6 +21,21 @@ export function clipboardImageFiles(clipboardData) {
   return result;
 }
 
+export async function readClipboardImageFiles(clipboard) {
+  if (typeof clipboard?.read !== "function") return null;
+  const files = [];
+  const clipboardItems = await clipboard.read();
+  for (const item of clipboardItems || []) {
+    const imageType = [...(item?.types || [])].find((type) =>
+      String(type || "").toLowerCase().startsWith("image/")
+    );
+    if (!imageType || typeof item?.getType !== "function") continue;
+    const file = await item.getType(imageType);
+    if (String(file?.type || "").toLowerCase().startsWith("image/")) files.push(file);
+  }
+  return files;
+}
+
 export function shouldHandlePhotoPasteTarget(target) {
   return !target?.closest?.("input, textarea, select, [contenteditable='true'], [contenteditable='']");
 }

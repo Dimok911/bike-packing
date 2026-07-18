@@ -16,19 +16,32 @@ export function publicCopyPhotoFingerprint(record) {
     .join("|");
 }
 
+function publicCopyDimensionsFingerprint(record) {
+  const dimensions = record?.dimensions && typeof record.dimensions === "object" ? record.dimensions : {};
+  const values = [dimensions.width, dimensions.height, dimensions.depth]
+    .map((value) => Number(value || 0));
+  return values.some((value) => value > 0) ? values.join("x") : "";
+}
+
 export function publicCopyRecordContentHash(record, kind = "item", { containerCategories, itemCategories, itemQuantity } = {}) {
-  const content = kind === "container"
-    ? [
-      publicCopyContainerFingerprint(record, { containerCategories }),
+  let content = "";
+  if (kind === "container") {
+    const fields = [
+      publicCopyLegacyContainerFingerprint(record, { containerCategories }),
       publicCopyComparableText(record?.note),
       publicCopyComparableText(record?.color),
       publicCopyPhotoFingerprint(record)
-    ].join("\u001f")
-    : [
+    ];
+    const dimensions = publicCopyDimensionsFingerprint(record);
+    if (dimensions) fields.push(dimensions);
+    content = fields.join("\u001f");
+  } else {
+    content = [
       publicCopyItemContentFingerprint(record, { itemCategories, itemQuantity }),
       publicCopyComparableText(record?.note),
       publicCopyPhotoFingerprint(record)
     ].join("\u001f");
+  }
   return publicCopyStableHash(content);
 }
 
@@ -53,16 +66,28 @@ export function publicCopyItemFingerprint(item, { itemCategories = (record) => r
 export function publicCopyItemContentFingerprint(item, { itemCategories = (record) => record?.categories || (record?.category ? [record.category] : []), itemQuantity = (record) => record?.quantity ?? 1 } = {}) {
   if (!item) return "";
   const categories = itemCategories(item).map(publicCopyComparableText).sort().join("|");
-  return [
+  const fields = [
     publicCopyComparableText(item.name),
     Number(item.weight || 0),
     itemQuantity(item),
     publicCopyComparableText(item.location),
     categories
-  ].join("\u001f");
+  ];
+  const color = publicCopyComparableText(item.color);
+  const dimensions = publicCopyDimensionsFingerprint(item);
+  if (color || dimensions) fields.push(color, dimensions);
+  return fields.join("\u001f");
 }
 
 export function publicCopyContainerFingerprint(container, { containerCategories = (record) => record?.categories || (record?.category ? [record.category] : []) } = {}) {
+  const fields = publicCopyLegacyContainerFingerprint(container, { containerCategories }).split("\u001f");
+  const color = publicCopyComparableText(container?.color);
+  const dimensions = publicCopyDimensionsFingerprint(container);
+  if (color || dimensions) fields.push(color, dimensions);
+  return fields.join("\u001f");
+}
+
+function publicCopyLegacyContainerFingerprint(container, { containerCategories = (record) => record?.categories || (record?.category ? [record.category] : []) } = {}) {
   if (!container) return "";
   const categories = containerCategories(container).map(publicCopyComparableText).sort().join("|");
   return [

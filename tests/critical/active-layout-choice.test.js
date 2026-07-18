@@ -17,6 +17,7 @@ import {
   containerCategories,
   itemCategories,
   normalizeItemCategories,
+  normalizeItemFields,
   normalizeContainerFields
 } from "../../src/state/normalize.js";
 import {
@@ -863,6 +864,41 @@ test("new item dialog defaults to no categories", () => {
   assert.ok(item);
   assert.deepEqual(item.categories, []);
   assert.equal(item.category, "");
+});
+
+test("item dialog saves color and dimensions and normalization keeps their public payload shape", () => {
+  const state = {
+    layouts: { "layout-a": { id: "layout-a", arrangement: { containers: {} } } },
+    containers: {},
+    items: {}
+  };
+  saveItemDialogAction({
+    changedAt: "2026-07-18T00:00:00.000Z",
+    currentEditMeta: () => ({}),
+    getDialogSelectedCategories: () => [],
+    getPublishedEditLayoutId: () => "layout-a",
+    hasItemDimensions: (value) => Boolean(value.width || value.height || value.depth),
+    normalizeItemColor: (value) => String(value || "").trim(),
+    readItemDialogDimensions: () => ({ width: 12.5, height: 7, depth: 3 }),
+    refs: {
+      dialog: { close() {} },
+      itemAvailabilityStatus: { value: "available" },
+      itemColor: { value: " orange " },
+      itemContainer: { value: "" },
+      itemLocation: { value: "Home" },
+      itemName: { value: "New thing" },
+      itemNote: { value: "" },
+      itemQuantity: { value: "1" },
+      itemWeight: { value: "50" },
+      saveItemBtn: { disabled: false }
+    },
+    state
+  });
+
+  normalizeItemFields(state);
+  const item = Object.values(state.items)[0];
+  assert.equal(item.color, "orange");
+  assert.deepEqual(item.dimensions, { width: 12.5, height: 7, depth: 3 });
 });
 
 test("new item placement can target another layout before the item is saved", () => {

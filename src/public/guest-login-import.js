@@ -13,6 +13,11 @@ import {
 } from "./demo-template-state.js";
 import { readableGuestDemoLayoutName } from "./guest-demo-startup.js";
 import { isGuestDemoCopyLayoutRecord } from "./scope.js";
+import {
+  GUEST_SHARED_LINK_COPY_TARGET_FLAG,
+  GUEST_SHARED_LINK_DETACHED_ITEM_IDS,
+  guestSharedLinkDetachedItemIds
+} from "./guest-shared-link-target.js";
 
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
@@ -25,6 +30,7 @@ export function canImportGuestLayoutsForAuthenticatedUser(user = null) {
 export function guestLayoutHasUserContentEdits(sourceState, layout) {
   if (!layout || !isGuestDemoCopyLayoutRecord(layout)) return false;
   if (guestDemoCopyRecordWasEdited(layout, layout)) return true;
+  if (guestSharedLinkDetachedItemIds(layout).some((itemId) => sourceState?.items?.[itemId])) return true;
   const containerIds = getLayoutContainerIdSet(sourceState, layout);
   const itemIds = getLayoutItemIdSet(sourceState, layout);
   for (const containerId of containerIds) {
@@ -183,6 +189,11 @@ export function guestImportStateStats(targetState, importedLayoutIds) {
     const layout = layouts[layoutId] || null;
     const containerIds = layout ? getLayoutContainerIdSet(targetState, layout) : new Set();
     const itemIds = layout ? getLayoutItemIdSet(targetState, layout) : new Set();
+    if (layout) {
+      guestSharedLinkDetachedItemIds(layout).forEach((itemId) => {
+        if (targetState?.items?.[itemId]) itemIds.add(itemId);
+      });
+    }
     containerIds.forEach((id) => importedContainerIds.add(id));
     itemIds.forEach((id) => importedItemIds.add(id));
     return {
@@ -241,6 +252,7 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
   applyLayoutArrangement = () => {},
   cloneValue = (value) => value,
   copyPublishedContainerToState = () => "",
+  copyPublishedItemToState = () => "",
   createLayoutArrangementFromCurrentState = () => ({}),
   currentCreateMeta = () => ({}),
   guestCandidateLayouts = () => [],
@@ -288,6 +300,13 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
         sourceLayoutId: sourceLayout.id
       }))
       .filter(Boolean);
+    const detachedItemIds = guestSharedLinkDetachedItemIds(sourceLayout)
+      .map((sourceItemId) => idMap.items.get(sourceItemId) || copyPublishedItemToState(source, sourceItemId, {
+        containerId: "",
+        changedAt,
+        idMap
+      }))
+      .filter(Boolean);
     const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
     const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, guestLayoutFallbackName);
     const safeName = importedGuestLayoutName(requestedName, { renameConflicts, uniqueLayoutName });
@@ -307,11 +326,13 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
       arrangement: createLayoutArrangementFromCurrentState(targetState, rootContainerIds),
       locations: importedDictionaries.locations,
       categories: importedDictionaries.categories,
+      ...(detachedItemIds.length ? { [GUEST_SHARED_LINK_DETACHED_ITEM_IDS]: detachedItemIds } : {}),
       ...currentCreateMeta(changedAt)
     };
     if (guestDemoCopyFlag) delete targetState.layouts[layoutId][guestDemoCopyFlag];
     delete targetState.layouts[layoutId].demoSourceLanguage;
     delete targetState.layouts[layoutId].guestDemoCopyCreatedAt;
+    delete targetState.layouts[layoutId][GUEST_SHARED_LINK_COPY_TARGET_FLAG];
     importedLayoutIds.push(layoutId);
   });
   if (!importedLayoutIds.length) return [];
