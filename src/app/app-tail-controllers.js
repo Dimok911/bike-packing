@@ -15,6 +15,16 @@ import {
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
 import { moveOrderedPhoto, photoOrderIdentity, renderPhotoOrderRows } from "../ui/photo-order-dialog.js";
 import { clipboardImageFiles, shouldHandlePhotoPasteTarget } from "../ui/photo-clipboard.js";
+import {
+  isNestedContainerInLayoutState,
+  isTemporaryContainerInLayoutState,
+  replaceContainerInLayoutState,
+  replaceItemInLayoutState
+} from "../state/layout-replace.js";
+import {
+  capturePackingPhotoRenderState,
+  restorePackingPhotoRenderState
+} from "../ui/packing-photo-preservation.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -29,6 +39,8 @@ export function createAppTailControllers(ctx) {
   let layoutOrderInitialSignature = "";
   let photoOrderContext = null;
   let photoOrderInitialSignature = "";
+  let replacingPackingItemId = "";
+  let replacingPackingContainerId = "";
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY, ADMIN_EMAILS,
     ADMIN_USER_IDS, API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -388,6 +400,7 @@ function defaultTemplateName() {
 
 function openAddToContainerDialog(containerId) {
   if (!state.containers[containerId]) return;
+  replacingPackingItemId = "";
   runtime.addToContainerTargetId = containerId;
   runtime.addToContainerTargetLayoutId = resolveEditableLayoutIdForContainer(containerId);
   if (warnLockedLayoutMutation(runtime.addToContainerTargetLayoutId)) return;
@@ -396,6 +409,27 @@ function openAddToContainerDialog(containerId) {
   refs.addToContainerSearch.value = "";
   refs.clearAddToContainerSearchBtn.hidden = true;
   refs.newSubcontainerName.value = "";
+  if (refs.addToContainerCreateRow) refs.addToContainerCreateRow.hidden = false;
+  renderAddToContainerResults();
+  openModalDialog(refs.addToContainerDialog);
+  requestAnimationFrame(() => refs.addToContainerSearch.focus({ preventScroll: true }));
+}
+
+function openPackingItemReplacementDialog(itemId = runtime.editingItemId) {
+  const layoutId = getPublishedEditLayoutId();
+  const layout = state.layouts?.[layoutId];
+  const item = state.items?.[itemId];
+  const containerId = getItemContainerIdInLayout(layout, itemId);
+  if (!item || !layout || !containerId || warnLockedLayoutMutation(layoutId)) return;
+  replacingPackingItemId = itemId;
+  runtime.addToContainerTargetId = containerId;
+  runtime.addToContainerTargetLayoutId = layoutId;
+  refs.addToContainerTitle.textContent = t("replacement.itemTitle", { name: item.name });
+  refs.addToContainerPath.textContent = containerPath(containerId);
+  refs.addToContainerSearch.value = "";
+  refs.clearAddToContainerSearchBtn.hidden = true;
+  refs.newSubcontainerName.value = "";
+  if (refs.addToContainerCreateRow) refs.addToContainerCreateRow.hidden = true;
   renderAddToContainerResults();
   openModalDialog(refs.addToContainerDialog);
   requestAnimationFrame(() => refs.addToContainerSearch.focus({ preventScroll: true }));
@@ -467,19 +501,44 @@ function clearAddToContainerSearch() {
 }
 
 function openLayoutRootDialog() {
+  replacingPackingContainerId = "";
+  if (refs.layoutRootTitle) refs.layoutRootTitle.textContent = t("rootContainers.add");
+  if (refs.layoutRootPath) refs.layoutRootPath.textContent = t("replacement.currentLayout");
   refs.layoutRootSearch.value = "";
   refs.clearLayoutRootSearchBtn.hidden = true;
   renderLayoutRootResults();
   openModalDialog(refs.layoutRootDialog);
 }
 
+function openContainerReplacementDialog(event) {
+  event?.preventDefault();
+  const containerId = runtime.editingRootContainerId;
+  const container = state.containers?.[containerId];
+  const layoutId = getPublishedEditLayoutId();
+  const layout = state.layouts?.[layoutId];
+  if (!container || !layout || !getLayoutContainerIdSet(layout).has(containerId) || warnLockedLayoutMutation(layoutId)) return;
+  replacingPackingContainerId = containerId;
+  if (refs.layoutRootTitle) refs.layoutRootTitle.textContent = t("replacement.containerTitle", { name: container.name });
+  if (refs.layoutRootPath) refs.layoutRootPath.textContent = t("replacement.containerHint");
+  refs.layoutRootSearch.value = "";
+  refs.clearLayoutRootSearchBtn.hidden = true;
+  renderLayoutRootResults();
+  openModalDialog(refs.layoutRootDialog);
+  requestAnimationFrame(() => refs.layoutRootSearch.focus({ preventScroll: true }));
+}
+
 function renderLayoutRootResults() {
   const query = refs.layoutRootSearch.value.trim().toLowerCase();
   refs.clearLayoutRootSearchBtn.hidden = !query;
   const activeIds = getLayoutContainerIdSet(getPublishedWorkLayout());
+  const replacementSource = replacingPackingContainerId ? state.containers?.[replacingPackingContainerId] : null;
+  const replacementLayout = state.layouts?.[getPublishedEditLayoutId()];
+  const replacementRequiresNesting = Boolean(replacementSource &&
+    isNestedContainerInLayoutState(state, replacementLayout, replacingPackingContainerId));
   const roots = getRootContainers()
     .filter(isRootContainerInActiveCatalog)
     .filter((container) => !activeIds.has(container.id))
+    .filter((container) => !replacementRequiresNesting || container.nestable === true)
     .filter((container) => matchesLayoutRootSearch(container, query))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   refs.layoutRootResults.innerHTML = roots.map((container) => `
@@ -487,11 +546,19 @@ function renderLayoutRootResults() {
       <strong>${highlightSearchText(container.name, query)}</strong>
       <small>${formatWeight(Number(container.weight || 0))}${container.volume ? ` · ${formatVolume(container.volume)}` : ""}</small>
     </button>
-  `).join("") || `<div class="empty">Все подходящие сумки и места уже в укладке</div>`;
+  `).join("") || `<div class="empty">${escapeHtml(t("rootContainers.noneAvailable"))}</div>`;
 
   refs.layoutRootResults.querySelectorAll("[data-add-layout-root]").forEach((button) => {
-    button.addEventListener("click", () => addRootContainerToActiveLayout(button.dataset.addLayoutRoot));
+    button.addEventListener("click", () => selectRootContainerFromPicker(button.dataset.addLayoutRoot));
   });
+}
+
+function selectRootContainerFromPicker(containerId) {
+  if (replacingPackingContainerId) {
+    replaceExistingContainerInLayout(containerId);
+    return;
+  }
+  addRootContainerToActiveLayout(containerId);
 }
 
 function matchesLayoutRootSearch(container, query) {
@@ -560,6 +627,30 @@ function updateRootContainerRemoveFromLayoutButton() {
   refs.rootContainerRemoveFromLayoutBtn.title = label;
   refs.rootContainerRemoveFromLayoutBtn.hidden = !canRemove;
   refs.rootContainerRemoveFromLayoutBtn.disabled = !canRemove;
+}
+
+function updateRootContainerReplacementButton() {
+  if (!refs.rootContainerReplaceBtn) return;
+  const containerId = runtime.editingRootContainerId;
+  const container = state.containers?.[containerId];
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  const inLayout = Boolean(layout && containerId && getLayoutContainerIdSet(layout).has(containerId));
+  const isNested = Boolean(inLayout && !getLayoutContainerRootStatus(layout, containerId));
+  const canReplace = Boolean(container && inLayout && !isReadOnlyStateScope() && !isSharedLayoutView());
+  refs.rootContainerReplaceBtn.textContent = t("replacement.containerAction");
+  refs.rootContainerReplaceBtn.hidden = !canReplace;
+  refs.rootContainerReplaceBtn.disabled = !canReplace;
+}
+
+function updateRootContainerTemporaryStatus() {
+  if (!refs.rootContainerTemporaryStatus) return;
+  const containerId = runtime.editingRootContainerId;
+  const layout = state.layouts?.[getPublishedEditLayoutId()];
+  const temporary = isTemporaryContainerInLayoutState(state, layout, containerId);
+  refs.rootContainerTemporaryStatus.hidden = !temporary;
+  if (!temporary) return;
+  refs.rootContainerTemporaryStatusTitle.textContent = t("replacement.temporaryContainerLabel");
+  refs.rootContainerTemporaryStatusText.textContent = t("replacement.temporaryContainerHint");
 }
 
 function updateRootContainerDeleteForeverButton() {
@@ -822,7 +913,43 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   if (renderAfter) render();
 }
 
+function replaceExistingContainerInLayout(replacementContainerId) {
+  const sourceContainerId = replacingPackingContainerId;
+  const layoutId = getPublishedEditLayoutId();
+  const source = state.containers?.[sourceContainerId];
+  const replacement = state.containers?.[replacementContainerId];
+  const layout = state.layouts?.[layoutId];
+  const temporaryNestedSource = isTemporaryContainerInLayoutState(state, layout, sourceContainerId);
+  const changedAt = nowIso();
+  if (!source || !replacement || warnLockedLayoutMutation(layoutId)) return;
+  const replaced = replaceContainerInLayoutState(state, layoutId, sourceContainerId, replacementContainerId, {
+    activeLayoutId: state.activeLayoutId,
+    applyLayoutArrangement,
+    beforeRemoveSource: deleteContainerPhotos,
+    changedAt,
+    removeSourceRecord: temporaryNestedSource,
+    touchLayout
+  });
+  if (!replaced) {
+    showToast(t("replacement.failed"), "error");
+    return;
+  }
+  replacingPackingContainerId = "";
+  saveLayoutMutation(layoutId);
+  if (refs.layoutRootDialog.open) refs.layoutRootDialog.close();
+  if (refs.rootContainerDialog.open) refs.rootContainerDialog.close("cancel");
+  renderPreservingPackingScroll();
+  showToast(t(temporaryNestedSource ? "replacement.temporaryContainerSuccess" : "replacement.containerSuccess", {
+    oldName: source.name,
+    newName: replacement.name
+  }), "success");
+}
+
 function addExistingItemToContainer(itemId) {
+  if (replacingPackingItemId) {
+    replaceExistingItemInLayout(itemId);
+    return;
+  }
   const containerId = runtime.addToContainerTargetId;
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const changedAt = nowIso();
@@ -838,6 +965,31 @@ function addExistingItemToContainer(itemId) {
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
+}
+
+function replaceExistingItemInLayout(replacementItemId) {
+  const sourceItemId = replacingPackingItemId;
+  const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
+  const source = state.items?.[sourceItemId];
+  const replacement = state.items?.[replacementItemId];
+  const changedAt = nowIso();
+  if (!source || !replacement || warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(replacementItemId)) return;
+  const replaced = replaceItemInLayoutState(state, layoutId, sourceItemId, replacementItemId, {
+    activeLayoutId: state.activeLayoutId,
+    applyLayoutArrangement,
+    changedAt,
+    touchLayout
+  });
+  if (!replaced) {
+    showToast(t("replacement.failed"), "error");
+    return;
+  }
+  replacingPackingItemId = "";
+  saveLayoutMutation(layoutId);
+  if (refs.addToContainerDialog.open) refs.addToContainerDialog.close();
+  if (refs.dialog.open) refs.dialog.close("cancel");
+  renderPreservingPackingScroll();
+  showToast(t("replacement.itemSuccess", { oldName: source.name, newName: replacement.name }), "success");
 }
 
 function markRecentlyAddedItem(itemId, layoutId = state.activeLayoutId) {
@@ -1889,6 +2041,20 @@ function updateItemRemoveFromLayoutButton() {
   refs.itemRemoveFromLayoutBtn.disabled = !canRemove;
 }
 
+function updateItemReplacementButton() {
+  if (!refs.itemReplaceBtn) return;
+  const layout = state.layouts?.[runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId()];
+  const canReplace = Boolean(
+    runtime.editingItemId &&
+    getItemContainerIdInLayout(layout, runtime.editingItemId) &&
+    !isReadOnlyStateScope() &&
+    !isSharedLayoutView()
+  );
+  refs.itemReplaceBtn.textContent = t("replacement.itemAction");
+  refs.itemReplaceBtn.hidden = !canReplace;
+  refs.itemReplaceBtn.disabled = !canReplace;
+}
+
 function updateItemDeleteForeverButton() {
   if (!refs.itemDeleteForeverBtn) return;
   const canDelete = Boolean(runtime.editingItemId && state.items?.[runtime.editingItemId]);
@@ -2220,16 +2386,20 @@ function renderSharedSummary() {
 }
 
 function renderPacking() {
+  const photoRenderState = capturePackingPhotoRenderState(refs.packingView);
   if (isSharedLayoutView()) {
     if (isBike3dPackingView(runtime.packingViewMode)) {
       renderSharedPackingBike3d();
+      restorePackingPhotoRenderState(refs.packingView, photoRenderState);
       return;
     }
     renderSharedPacking();
+    restorePackingPhotoRenderState(refs.packingView, photoRenderState);
     return;
   }
   if (isBike3dPackingView(runtime.packingViewMode)) {
     renderCurrentPackingBike3d();
+    restorePackingPhotoRenderState(refs.packingView, photoRenderState);
     return;
   }
   const layout = state.layouts[state.activeLayoutId] || Object.values(state.layouts || {})[0] || { rootContainerIds: [] };
@@ -2246,6 +2416,7 @@ function renderPacking() {
     ${renderPackingRootHeaderRow(visibleRootIds, { filtered: hasActiveContentFilter() && !isFilterContextActive() })}
     <div class="board">${columns.join("") || renderEmptyState(emptyText, { extraClass: "board-empty", filtered: filteredEmpty })}</div>
   `;
+  restorePackingPhotoRenderState(refs.packingView, photoRenderState);
   bindPackingEvents(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
@@ -3025,7 +3196,6 @@ function bindPackingEvents(root) {
     capturePackingScroll,
     cleanupDropState,
     confirmRemoveItemFromActiveLayout,
-    copyItem,
     getDescendantContainerIds,
     getEditingContainerId: () => runtime.editingContainerId,
     getLastItemTitleTap: () => runtime.lastItemTitleTap,
@@ -3043,6 +3213,7 @@ function bindPackingEvents(root) {
     moveContainer,
     moveItem,
     openAddToContainerDialog,
+    openPackingItemReplacementDialog,
     openItemDialog,
     openRootContainerDialog,
     placePlaceholder,
@@ -4453,6 +4624,7 @@ function openRootContainerDialog(containerId = null) {
   runtime.rootContainerDialogPendingParentId = undefined;
   runtime.rootContainerDialogPendingParentIndex = null;
   refs.rootContainerDialogTitle.textContent = containerId ? t("rootContainers.edit") : t("rootContainers.add");
+  updateRootContainerTemporaryStatus();
   refs.rootContainerName.value = container?.name || "";
   refs.rootContainerWeight.value = Number(container?.weight || 0);
   refs.rootContainerVolume.value = container?.volume ? String(container.volume).replace(".", ",") : "";
@@ -4466,6 +4638,7 @@ function openRootContainerDialog(containerId = null) {
   if (refs.rootContainerNestable) refs.rootContainerNestable.checked = container?.nestable === true;
   updateRootContainerPlacementButton();
   updateRootContainerRemoveFromLayoutButton();
+  updateRootContainerReplacementButton();
   updateRootContainerDeleteForeverButton();
   if (refs.rootContainerCopyToContainerBtn) refs.rootContainerCopyToContainerBtn.hidden = !containerId;
   refs.rootContainerNote.value = container?.note || "";
@@ -4515,6 +4688,7 @@ function openItemDialog(itemId = null) {
   updateItemContainerPickerButton();
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = !itemId;
   updateItemRemoveFromLayoutButton();
+  updateItemReplacementButton();
   updateItemDeleteForeverButton();
   refs.itemNote.value = item.note || "";
   runtime.itemDialogPhotoDraft = null;
@@ -4558,6 +4732,7 @@ function setSharedReadonlyItemDialog(readonly) {
   refs.copySharedItemDialogBtn.hidden = !readonly;
   refs.saveItemBtn.hidden = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = readonly;
+  if (refs.itemReplaceBtn) refs.itemReplaceBtn.hidden = readonly || refs.itemReplaceBtn.hidden;
   if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.hidden = readonly || refs.itemRemoveFromLayoutBtn.hidden;
   if (refs.itemDeleteForeverBtn) refs.itemDeleteForeverBtn.hidden = readonly || refs.itemDeleteForeverBtn.hidden;
   refs.dialog.querySelectorAll("input, textarea, select").forEach((element) => {
@@ -4565,6 +4740,7 @@ function setSharedReadonlyItemDialog(readonly) {
   });
   refs.itemContainerPickerBtn.disabled = readonly;
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.disabled = readonly;
+  if (refs.itemReplaceBtn) refs.itemReplaceBtn.disabled = readonly || refs.itemReplaceBtn.disabled;
   if (refs.itemRemoveFromLayoutBtn) refs.itemRemoveFromLayoutBtn.disabled = readonly || refs.itemRemoveFromLayoutBtn.disabled;
   if (refs.itemDeleteForeverBtn) refs.itemDeleteForeverBtn.disabled = readonly || refs.itemDeleteForeverBtn.disabled;
   refs.itemPhotoRemoveBtn.disabled = readonly;
@@ -7466,6 +7642,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     deleteRootContainer, removeRootContainerFromActiveLayout, removeContainerFromLayoutOnly, deleteUnusedLayoutContainerEntity,
     deleteContainerPhotos, makeItemCopyName, touchLayoutsReferencingItem, cleanupEmptyContainers,
     getColumnPlaceholderIndex, isOriginalRootColumnPosition, moveRootColumn, openRootContainerDialog,
+    openPackingItemReplacementDialog, openContainerReplacementDialog,
     fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
     resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, uniqueLayoutName, uniquePublishedTemplateName,
     canManageLayout, canManageActiveLayout, languageSelectEntries, createLayoutCopyFromSource,

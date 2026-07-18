@@ -149,7 +149,7 @@ test("CRITICAL item availability: unavailable items are visible in cards and sna
       "item-b": { id: "item-b", name: "B" }
     }
   }), [{ id: "item-a", name: "A", status: "broken" }]);
-  assert.match(renderPackingItemCardHtml({
+  const packingCardHtml = renderPackingItemCardHtml({
     categoriesHtml: "",
     collection: false,
     filterMatch: false,
@@ -164,7 +164,13 @@ test("CRITICAL item availability: unavailable items are visible in cards and sna
     titleDragAttr: "",
     titleHtml: "A",
     weightHtml: "0 g"
-  }), /item-unavailable-broken/);
+  });
+  assert.match(packingCardHtml, /item-unavailable-broken/);
+  assert.match(
+    packingCardHtml,
+    /remove-layout-button[\s\S]*item-availability-badge/,
+    "availability badge must render below the packing-card action buttons"
+  );
   assert.match(renderListItemHtml({
     categories: [],
     filterMatch: false,

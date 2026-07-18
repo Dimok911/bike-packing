@@ -1592,7 +1592,7 @@ const appTailControllerDeps = {
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
 };
 const {
-  openAddToContainerDialog, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
+  openAddToContainerDialog, openPackingItemReplacementDialog, openContainerReplacementDialog, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
   clearAddToContainerSearch, openLayoutRootDialog, renderLayoutRootResults, matchesLayoutRootSearch,
   clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,
   canRemoveContainerFromActiveLayout, confirmRemoveEditingContainerFromActiveLayout, removeContainerFromLayoutWithAnimation, findContainerElementInPacking,
@@ -2678,11 +2678,13 @@ async function init() {
     refs.layoutRootSearch.value = "";
   });
   refs.rootContainerPlacementBtn.addEventListener("click", openRootContainerPlacementAction);
+  refs.rootContainerReplaceBtn?.addEventListener("click", openContainerReplacementDialog);
   refs.rootContainerCopyToContainerBtn?.addEventListener("click", openRootContainerCopyPickerDialog);
   refs.rootContainerRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingContainerFromActiveLayout);
   refs.rootContainerDeleteForeverBtn?.addEventListener("click", confirmDeleteEditingRootContainerForever);
   refs.itemContainerPickerBtn.addEventListener("click", openItemContainerPickerDialog);
   refs.itemCopyToContainerBtn?.addEventListener("click", openItemCopyContainerPickerDialog);
+  refs.itemReplaceBtn?.addEventListener("click", () => openPackingItemReplacementDialog());
   refs.itemRemoveFromLayoutBtn?.addEventListener("click", confirmRemoveEditingItemFromActiveLayout);
   refs.itemDeleteForeverBtn?.addEventListener("click", confirmDeleteEditingItemForever);
   refs.containerPickerLayoutSelect?.addEventListener("change", () => {

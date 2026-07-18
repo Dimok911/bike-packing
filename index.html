@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1237" />
+    <link rel="stylesheet" href="./styles.css?v=1244" />
   </head>
   <body class="auth-gated">
     <main class="app">
@@ -195,6 +195,7 @@
             <span id="itemContainerCurrent" class="item-container-current" hidden></span>
             <button id="itemContainerPickerBtn" class="container-picker-button" type="button">Переложить в пределах укладки</button>
             <button id="itemCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
+            <button id="itemReplaceBtn" class="container-picker-button replace-in-layout-button" type="button" hidden>Заменить вещь</button>
             <button id="itemRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button" hidden>Убрать из укладки</button>
             <button id="itemDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Delete item forever</button>
           </div>
@@ -236,6 +237,10 @@
           <h2 id="rootContainerDialogTitle">Bag or place</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
+        <div id="rootContainerTemporaryStatus" class="container-temporary-status" hidden>
+          <strong id="rootContainerTemporaryStatusTitle">Временный пакет</strong>
+          <span id="rootContainerTemporaryStatusText">Существует только в текущей укладке</span>
+        </div>
         <label>
           Name
           <input id="rootContainerName" />
@@ -287,6 +292,7 @@
             <span id="rootContainerPlacementCurrent" class="item-container-current" hidden></span>
             <button id="rootContainerPlacementBtn" class="container-picker-button repack-button" type="button">Переложить в пределах укладки</button>
             <button id="rootContainerCopyToContainerBtn" class="container-picker-button copy-to-container-button" type="button">Copy to another layout</button>
+            <button id="rootContainerReplaceBtn" class="container-picker-button replace-in-layout-button" type="button" hidden>Заменить сумку или место</button>
             <button id="rootContainerRemoveFromLayoutBtn" class="container-picker-button remove-from-layout-button" type="button">Remove</button>
             <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить навсегда</button>
           </div>
@@ -374,7 +380,7 @@
             <button id="clearAddToContainerSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
           </span>
         </label>
-        <div class="add-list-row">
+        <div id="addToContainerCreateRow" class="add-list-row">
           <input id="newSubcontainerName" type="text" placeholder="Новый список или пакет" />
           <button id="createSubcontainerBtn" type="button">Добавить</button>
         </div>
@@ -385,10 +391,10 @@
     <dialog id="layoutRootDialog">
       <form method="dialog" class="dialog-card add-item-dialog-card">
         <header>
-          <h2>Добавить сумку или место</h2>
+          <h2 id="layoutRootTitle">Добавить сумку или место</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
-        <p class="dialog-subtitle">В текущую укладку</p>
+        <p id="layoutRootPath" class="dialog-subtitle">В текущую укладку</p>
         <label>
           Поиск
           <span class="search-field add-item-search-field">
@@ -669,6 +675,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1237" type="module"></script>
+    <script src="./app.js?v=1244" type="module"></script>
   </body>
 </html>

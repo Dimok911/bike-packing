@@ -4,7 +4,6 @@ export function bindPackingEvents(root, {
   capturePackingScroll,
   cleanupDropState,
   confirmRemoveItemFromActiveLayout,
-  copyItem,
   getDescendantContainerIds,
   getEditingContainerId,
   getLastItemTitleTap,
@@ -22,6 +21,7 @@ export function bindPackingEvents(root, {
   moveContainer,
   moveItem,
   openAddToContainerDialog,
+  openPackingItemReplacementDialog,
   openItemDialog,
   openRootContainerDialog,
   placePlaceholder,
@@ -340,8 +340,8 @@ export function bindPackingEvents(root, {
   root.querySelectorAll("[data-remove-from-layout]").forEach((button) => {
     button.addEventListener("click", () => confirmRemoveItemFromActiveLayout(button.dataset.removeFromLayout));
   });
-  root.querySelectorAll("[data-copy-layout-item]").forEach((button) => {
-    button.addEventListener("click", () => copyItem(button.dataset.copyLayoutItem, { keepPlacement: true }));
+  root.querySelectorAll("[data-replace-layout-item]").forEach((button) => {
+    button.addEventListener("click", () => openPackingItemReplacementDialog(button.dataset.replaceLayoutItem));
   });
 
   root.querySelectorAll("[data-toggle-container]").forEach((button) => {

@@ -209,7 +209,7 @@ export function renderPackingItemCardHtml({
   const availabilityBadge = itemAvailabilityBadgeHtml(item, t);
   const packAriaLabel = packed ? tr(t, "tooltips.markUnpacked", "Отметить как не собранное") : tr(t, "tooltips.markPacked", "Отметить как собранное");
   const packTitle = packed ? tr(t, "tooltips.packed", "Собрано") : tr(t, "tooltips.unpacked", "Не собрано");
-  const copyLabel = tr(t, "tooltips.copy", "Скопировать");
+  const copyLabel = tr(t, "replacement.itemAction", "Заменить вещь");
   const editLabel = tr(t, "tooltips.edit", "Редактировать");
   const removeLabel = tr(t, "forms.removeFromLayout", "Убрать из укладки");
   return `
@@ -223,9 +223,9 @@ export function renderPackingItemCardHtml({
             title="${escapeHtml(packTitle)}"
           >${packedVisible ? "✓" : ""}</button>
         ` : ""}
-        <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}${availabilityBadge}</div>
-        <button class="copy-item-button" data-copy-layout-item="${item.id}" aria-label="${escapeHtml(copyLabel)}" title="${escapeHtml(copyLabel)}">
-          <span aria-hidden="true">⧉</span>
+        <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}</div>
+        <button class="copy-item-button replace-item-button" data-replace-layout-item="${item.id}" aria-label="${escapeHtml(copyLabel)}" title="${escapeHtml(copyLabel)}">
+          <span aria-hidden="true">&#8644;</span>
         </button>
         <button class="edit-button" data-edit-item="${item.id}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}">
           <span aria-hidden="true">&#9998;</span>
@@ -233,6 +233,7 @@ export function renderPackingItemCardHtml({
         <button class="remove-layout-button" data-remove-from-layout="${item.id}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}">
           <span aria-hidden="true">&times;</span>
         </button>
+        ${availabilityBadge}
       </div>
       <div class="meta ${labelsVisible ? "" : "meta-hidden"}">
         <span class="pill">${weightHtml}</span>

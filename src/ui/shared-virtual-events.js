@@ -15,7 +15,7 @@ function markReadonlyTemplateActionButtons(root = document, { t } = {}) {
     button.hidden = true;
     button.setAttribute("aria-hidden", "true");
   });
-  root.querySelectorAll("[data-edit-item], [data-copy-layout-item], [data-copy-item], [data-edit-root], [data-edit-container], [data-copy-root]").forEach((button) => {
+  root.querySelectorAll("[data-edit-item], [data-replace-layout-item], [data-copy-layout-item], [data-copy-item], [data-edit-root], [data-edit-container], [data-copy-root]").forEach((button) => {
     button.classList.remove("template-action-disabled");
     button.removeAttribute("aria-disabled");
     button.title = copyTitle;
@@ -70,11 +70,11 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
   const readonlyTemplate = isReadonlyTemplateView();
   if (!canOpenAdminPublishedEdit() && !readonlyTemplate) addSharedReadOnlyCopyButtons(root, { t });
   bindSharedLayoutEvents(root);
-  root.querySelectorAll("[data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
+  root.querySelectorAll("[data-replace-layout-item], [data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const virtualId = button.dataset.copyLayoutItem || button.dataset.copyItem || button.dataset.editItem;
+      const virtualId = button.dataset.replaceLayoutItem || button.dataset.copyLayoutItem || button.dataset.copyItem || button.dataset.editItem;
       const sourceId = originalSharedId(virtualId, "shared-virtual-item-");
       if (!sourceId) return;
       if (readonlyTemplate) {

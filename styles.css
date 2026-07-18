@@ -316,6 +316,7 @@ body.readonly-template [data-delete-root] {
 }
 
 body.readonly-template [data-copy-layout-item],
+body.readonly-template [data-replace-layout-item],
 body.readonly-template [data-copy-item] {
   display: none !important;
 }
@@ -980,7 +981,8 @@ button.filter-active {
   box-shadow: none;
 }
 
-.item-container-control .copy-to-container-button {
+.item-container-control .copy-to-container-button,
+.item-container-control .replace-in-layout-button {
   width: 100%;
   min-width: 0;
   min-height: 54px;
@@ -1022,7 +1024,9 @@ button.filter-active {
 .item-container-control .container-picker-button.repack-button:hover,
 .item-container-control .container-picker-button.repack-button:focus-visible,
 .item-container-control .copy-to-container-button:hover,
-.item-container-control .copy-to-container-button:focus-visible {
+.item-container-control .copy-to-container-button:focus-visible,
+.item-container-control .replace-in-layout-button:hover,
+.item-container-control .replace-in-layout-button:focus-visible {
   background: #e7f4ef;
   border-color: #8bc4b4;
   color: var(--green);
@@ -3220,6 +3224,14 @@ button.photo-gallery-slide.touch-feedback-active {
   font-weight: 850;
   line-height: 1.15;
   vertical-align: middle;
+}
+
+.item-card-top > .item-availability-badge {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: end;
+  margin: -2px 0 0;
+  white-space: nowrap;
 }
 
 .item-availability-icon {
@@ -5743,6 +5755,30 @@ dialog.photo-lightbox::backdrop {
   overflow-wrap: anywhere;
 }
 
+.container-temporary-status {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 126, 38, 0.28);
+  border-left: 4px solid #b47e26;
+  border-radius: 10px;
+  background: #fff8e8;
+  color: #73501a;
+}
+
+.container-temporary-status[hidden] {
+  display: none;
+}
+
+.container-temporary-status strong {
+  font-size: 14px;
+}
+
+.container-temporary-status span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .category-picker {
   display: flex;
   flex-wrap: wrap;
@@ -5923,6 +5959,7 @@ dialog.photo-lightbox::backdrop {
 
   .item-container-control .container-picker-button.repack-button,
   .item-container-control .copy-to-container-button,
+  .item-container-control .replace-in-layout-button,
   .item-container-control .remove-from-layout-button,
   .item-container-control .delete-forever-button {
     width: 100%;
