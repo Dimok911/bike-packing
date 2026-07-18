@@ -7290,6 +7290,34 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   flex: 1;
 }
 
+.auth-confirm-section {
+  display: grid;
+  gap: 9px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.auth-confirm-section[hidden] {
+  display: none;
+}
+
+.auth-confirm-section p,
+.auth-confirm-section small {
+  margin: 0;
+}
+
+.auth-confirm-section small {
+  color: var(--muted);
+}
+
+.auth-confirm-section button {
+  width: 100%;
+}
+
+.auth-confirm-reveal {
+  width: 100%;
+}
+
 .empty {
   color: var(--muted);
   padding: 12px;

@@ -250,6 +250,10 @@ import { shouldPreserveLinkedSharedListOnLanguageChange } from "./src/public/sha
 import { readSharedListPublishOptions, sharedListLinkResultHtml, sharedListPublishDialogHtml } from "./src/public/shared-list-publish.js";
 import { FRONTEND_PERMISSION_ACTIONS, can as canPermission } from "./src/auth/permissions.js";
 import {
+  magicLinkErrorI18nKey,
+  magicLinkTokenFromInput
+} from "./src/auth/magic-link-confirmation.js";
+import {
   createSharedVirtualState as createSharedVirtualStateForPublic,
   sharedVirtualContainerId
 } from "./src/public/shared-virtual-state.js";
@@ -1010,6 +1014,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "templateCopyMetadataSidecar",
   "adminUsageReports",
   "authUserCapabilities",
+  "inAppMagicLinkConfirmation",
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",
   "listSaveNoopHistoryGuard",
@@ -1027,7 +1032,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-18.entity-share-links-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-19.in-app-magic-link-confirm-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -2844,6 +2849,13 @@ async function init() {
   refs.copySharedLayoutBtn.addEventListener("click", () => copySharedLayout(currentSharedLayouts()[0]?.id));
   refs.forceOfflineBtn.addEventListener("click", toggleForcedOfflineMode);
   refs.authForm.addEventListener("submit", submitAuthDialog);
+  refs.authConfirmTitle?.addEventListener("click", () => revealAuthMagicLinkConfirmation());
+  refs.authConfirmBtn?.addEventListener("click", confirmAuthMagicLink);
+  refs.authMagicLink?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    confirmAuthMagicLink();
+  });
   refs.syncBtn.addEventListener("click", () => syncNow({ force: true }));
   refs.menuBtn.addEventListener("click", toggleTopMenu);
   refs.visualStyleMenuBtn?.addEventListener("click", togglePackingVisualStylePanel);
@@ -5834,16 +5846,29 @@ async function toggleForcedOfflineMode() {
 
 function openAuthDialog() {
   refs.authEmail.value = getSavedAuthEmail();
+  refs.authMagicLink.value = "";
   refs.authDialogStatus.textContent = "";
   refs.authDialogStatus.className = "dialog-status";
   const authTitle = refs.authDialog?.querySelector("h2");
-  if (authTitle) authTitle.textContent = localText("Sign in by link", "Вход по ссылке");
-  const authCloseBtn = refs.authDialog?.querySelector(".ghost");
-  if (authCloseBtn) authCloseBtn.textContent = localText("Close", "Закрыть");
+  if (authTitle) authTitle.textContent = t("auth.dialogTitle");
+  refs.authRequestNote.textContent = t("auth.requestNote");
+  refs.authEmailLabel.textContent = t("auth.emailLabel");
+  refs.authConfirmTitle.textContent = t("auth.confirmTitle");
+  refs.authConfirmTitle.hidden = false;
+  refs.authConfirmSection.hidden = true;
+  refs.authMagicLinkLabel.textContent = t("auth.magicLinkLabel");
+  refs.authMagicLink.placeholder = t("auth.magicLinkPlaceholder");
+  refs.authMagicLinkHint.textContent = t("auth.magicLinkHint");
+  const authCloseBtn = refs.authDialog?.querySelector("footer .ghost");
+  if (authCloseBtn) authCloseBtn.textContent = t("buttons.close");
   const authIconCloseBtn = refs.authDialog?.querySelector(".icon-button");
-  if (authIconCloseBtn) authIconCloseBtn.setAttribute("aria-label", localText("Close", "Закрыть"));
+  if (authIconCloseBtn) authIconCloseBtn.setAttribute("aria-label", t("buttons.close"));
   refs.authSubmitBtn.disabled = false;
-  refs.authSubmitBtn.textContent = localText("Send link", "Отправить ссылку");
+  refs.authSubmitBtn.classList.remove("ghost");
+  refs.authSubmitBtn.textContent = t("auth.sendLink");
+  refs.authConfirmBtn.disabled = false;
+  refs.authConfirmBtn.classList.remove("ghost");
+  refs.authConfirmBtn.textContent = t("auth.confirmButton");
   openModalDialog(refs.authDialog);
   window.setTimeout(() => {
     refs.authEmail.focus();
@@ -5888,15 +5913,10 @@ async function submitAuthDialog(event) {
     });
     saveAuthEmail(email);
     refs.authDialogStatus.className = "dialog-status success";
-    refs.authDialogStatus.textContent = localText(
-      "Link sent. Open the email on this device, then return here.",
-      "Ссылка отправлена. Откройте письмо на этом устройстве, затем вернитесь сюда."
-    );
-    refs.authSubmitBtn.textContent = localText("Send again", "Отправить ещё раз");
-    updateSyncUi(localText(
-      "Link sent · open the email and follow the magic link",
-      "Ссылка отправлена · откройте письмо и перейдите по ссылке"
-    ));
+    refs.authDialogStatus.textContent = t("auth.linkSent");
+    refs.authSubmitBtn.textContent = t("auth.sendAgain");
+    revealAuthMagicLinkConfirmation();
+    updateSyncUi(t("auth.linkSentSync"));
   } catch (error) {
     refs.authDialogStatus.className = "dialog-status error";
     refs.authDialogStatus.textContent = localText(
@@ -5916,6 +5936,58 @@ function scheduleRemoteSave(delay = 0) {
   if (isForcedOffline() || !currentUser || applyingRemoteState) return;
   if (syncTimer) window.clearTimeout(syncTimer);
   syncTimer = window.setTimeout(() => syncNow(), delay);
+}
+
+function revealAuthMagicLinkConfirmation({ focus = true } = {}) {
+  refs.authConfirmTitle.hidden = true;
+  refs.authConfirmSection.hidden = false;
+  refs.authSubmitBtn.classList.add("ghost");
+  refs.authConfirmBtn.classList.remove("ghost");
+  if (focus) refs.authMagicLink.focus();
+}
+
+async function confirmAuthMagicLink() {
+  if (isForcedOffline()) {
+    refs.authDialogStatus.className = "dialog-status error";
+    refs.authDialogStatus.textContent = localText(
+      "Offline mode is on. Turn it off in the menu to sign in.",
+      "Включён офлайн-режим. Отключите его в меню, чтобы войти."
+    );
+    return;
+  }
+  const token = magicLinkTokenFromInput(refs.authMagicLink.value, { baseUrl: location.href });
+  if (!token) {
+    refs.authDialogStatus.className = "dialog-status error";
+    refs.authDialogStatus.textContent = t("auth.magicLinkRequired");
+    refs.authMagicLink.focus();
+    return;
+  }
+  try {
+    refs.authSubmitBtn.disabled = true;
+    refs.authConfirmBtn.disabled = true;
+    refs.authDialogStatus.className = "dialog-status";
+    refs.authDialogStatus.textContent = t("auth.confirming");
+    updateSyncUi(t("auth.confirming"));
+    const authData = await apiFetch("/auth/verify-magic-link", {
+      method: "POST",
+      body: JSON.stringify({ token })
+    });
+    if (authData?.user?.email) saveAuthEmail(authData.user.email);
+    refs.authMagicLink.value = "";
+    refs.authDialogStatus.className = "dialog-status success";
+    refs.authDialogStatus.textContent = t("auth.confirmSuccess");
+    updateSyncUi(t("auth.confirmSuccess"));
+    refs.authDialog.close();
+    await checkAuthAndLoad();
+  } catch (error) {
+    const messageKey = magicLinkErrorI18nKey(error?.data?.code);
+    refs.authDialogStatus.className = "dialog-status error";
+    refs.authDialogStatus.textContent = t(messageKey);
+    updateSyncUi(t(messageKey));
+  } finally {
+    refs.authSubmitBtn.disabled = false;
+    refs.authConfirmBtn.disabled = false;
+  }
 }
 
 async function syncNow(options = {}) {

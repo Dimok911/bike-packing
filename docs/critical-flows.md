@@ -39,6 +39,11 @@ test:critical` дополнительно к `npm.cmd run check`.
 
 ## CRITICAL: guest-magic-link-import
 
+- Magic-link сохраняет оба совместимых пути: обычный GET-переход из письма и
+  POST-подтверждение вставленной ссылки/одноразового кода в уже открытой форме.
+  POST должен установить ту же HttpOnly session cookie, не возвращая её token в
+  JSON, после чего применяется обычный guest-login import и auth-scope flow.
+
 - Pending email от запроса magic-link не подтверждает сессию и не разрешает
   переключение из `guest` в пустой `email:*` storage scope. Приватный scope
   активируется только после успешного `/auth/me`.

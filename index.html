@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1268" />
+    <link rel="stylesheet" href="./styles.css?v=1271" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -575,11 +575,20 @@
           <h2>Вход по ссылке</h2>
           <button type="button" class="icon-button" aria-label="Закрыть" onclick="this.closest('dialog').close()">×</button>
         </header>
-        <p class="dialog-note">Enter your email. We will send a magic link, no password needed.</p>
+        <p id="authRequestNote" class="dialog-note">Enter your email. We will send a magic link, no password needed.</p>
         <label>
-          Email
+          <span id="authEmailLabel">Email</span>
           <input id="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required />
         </label>
+        <button id="authConfirmTitle" type="button" class="ghost auth-confirm-reveal">Already have a link or code?</button>
+        <section id="authConfirmSection" class="auth-confirm-section" hidden>
+          <label>
+            <span id="authMagicLinkLabel">Link or code from the email</span>
+            <input id="authMagicLink" type="text" inputmode="text" autocomplete="one-time-code" placeholder="https://... or code" />
+          </label>
+          <small id="authMagicLinkHint">Paste it here to sign in without opening another tab.</small>
+          <button id="authConfirmBtn" type="button">Sign in</button>
+        </section>
         <p id="authDialogStatus" class="dialog-status" aria-live="polite"></p>
         <footer>
           <button type="button" class="ghost" onclick="this.closest('dialog').close()">Закрыть</button>
@@ -706,6 +715,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1268" type="module"></script>
+    <script src="./app.js?v=1271" type="module"></script>
   </body>
 </html>
