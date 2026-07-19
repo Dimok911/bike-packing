@@ -72,6 +72,20 @@ import {
   exportLayoutAsPublishedState
 } from "../../src/public/published-state-export.js";
 import { savePublishedLayoutRecordFlow } from "../../src/public/published-layout-save-flow.js";
+import {
+  isManagedTemplateUnpublished,
+  isManagedTemplateUnpublishPending,
+  managedTemplatePublicationAction,
+  managedTemplateOptionLabel,
+  markManagedTemplatePublished,
+  shouldAutoPublishManagedTemplate,
+  shouldConfirmManagedTemplateTransition
+} from "../../src/public/template-publication.js";
+import { unpublishManagedTemplateFlow } from "../../src/public/template-unpublish-flow.js";
+import {
+  deletePublishedDemoTemplateRecord,
+  unpublishPublishedDemoTemplateRecord
+} from "../../src/public/public-demo-template-admin.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "../../src/public/published-payload-photos.js";
 import { createSharedVirtualStateFromPublishedState } from "../../src/public/shared-virtual-state.js";
 import {
@@ -87,6 +101,10 @@ import {
   sharedCopyTargetLayouts,
   shouldCopySharedItemOutsideLayout
 } from "../../src/public/copy-public-layout-target.js";
+import {
+  adminDemoCopyTargetRequests,
+  ensureAdminPublicCopyTargets
+} from "../../src/public/admin-public-copy-targets.js";
 import {
   createSharedLayoutsByLanguage,
   findSharedLayoutForLanguage,
@@ -112,7 +130,8 @@ import {
 } from "../../src/public/public-template-availability.js";
 import {
   layoutCreateModeState,
-  layoutSourceNameFromOptionLabel
+  layoutSourceNameFromOptionLabel,
+  publicTemplateOptionLabel
 } from "../../src/ui/layout-manage-dialog.js";
 import { publicTemplateDeleteBlockReason } from "../../src/public/public-template-delete-guard.js";
 import {
@@ -141,13 +160,16 @@ import {
 } from "../../src/public/guest-login-import.js";
 import {
   containerCopyExcludedLayoutIds,
+  createNewPublicTemplateDraftRecord,
   createTemplateCopyLayoutRecord,
   templateCopySourceKindFromChoice,
   SHARED_CONTAINER_COPY_PICKER_MODE
 } from "../../src/public/template-copy.js";
 import {
+  deletePublishedSharedTemplate,
   purgeDeletedSharedTemplateFromFrontendState,
-  purgeUnconfirmedSharedTemplatesFromFrontendState
+  purgeUnconfirmedSharedTemplatesFromFrontendState,
+  unpublishPublishedSharedTemplate
 } from "../../src/public/shared-layout-admin.js";
 import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
 import { materializeSharedLayoutForAdminState } from "../../src/public/shared-admin-materialize.js";
@@ -165,6 +187,7 @@ import {
   adoptTemplateCopySharedSourceId,
   createDemoTemplateCopyRecord,
   createEmptyPublicTemplateDraftRecord,
+  createTemplateCopyRecord,
   findAdoptableTemplateCopyDraft,
   isDisposableManagedPublicDraft,
   isManagedDemoTemplateLayout,
@@ -357,6 +380,7 @@ test("admin shared template save uploads photos left pending after server copy",
   const apiCalls = [];
   let uploaded = false;
   let uploadCalls = 0;
+  let persisted = 0;
   const runtime = {
     state: {
       activeLayoutId: "layout-admin-shared",
@@ -401,7 +425,7 @@ test("admin shared template save uploads photos left pending after server copy",
         { entityType: "item", entityId: "item-local", photo: { id: "photo-local", status: "pending" } }
       ],
       nowIso: () => "2026-07-04T00:00:00.000Z",
-      persistStateSnapshot: () => {},
+      persistStateSnapshot: () => { persisted += 1; },
       publicListIdForPublishedTarget: () => "public-shared-layout-shared-demo",
       publishedLayoutTarget: () => ({ type: "shared", sharedId: "shared-demo", language: "ru" }),
       publishedPayloadWithTemplateMetadata: (payload) => payload,
@@ -427,6 +451,8 @@ test("admin shared template save uploads photos left pending after server copy",
   assert.equal(apiCalls[0].path, "/bike-packing/admin/shared-layouts/shared-demo/state");
   assert.equal(apiCalls[0].body.copyPhotoReferences, true);
   assert.equal(apiCalls[1].body.copyPhotoReferences, undefined);
+  assert.equal(runtime.state.layouts["layout-admin-shared"].templatePublished, true);
+  assert.equal(persisted, 1);
 });
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
@@ -605,6 +631,54 @@ test("demo layout choices encode the selected UI language", () => {
   assert.equal(demoLanguageFromLayoutChoice("demo:default", options), "en");
 });
 
+test("admin copy targets materialize every demo template in the same language", async () => {
+  const calls = [];
+  const requests = adminDemoCopyTargetRequests(["ru", "en"], {
+    templatesForLanguage: (language) => language === "ru"
+      ? [
+          { listId: "public-demo-state", name: "Demo 1" },
+          { listId: "public-demo-state-copy-ru-2", name: "Demo 2" }
+        ]
+      : [{ listId: "public-demo-state-en", name: "Demo EN" }]
+  });
+
+  assert.deepEqual(requests, [
+    { language: "ru", templateId: "public-demo-state" },
+    { language: "ru", templateId: "public-demo-state-copy-ru-2" },
+    { language: "en", templateId: "public-demo-state-en" }
+  ]);
+
+  const result = await ensureAdminPublicCopyTargets({
+    canOpen: true,
+    languages: ["ru", "en"],
+    templatesForLanguage: (language) => requests
+      .filter((entry) => entry.language === language)
+      .map((entry) => ({ listId: entry.templateId })),
+    materializeDemoTemplate: async (language, templateId) => calls.push(`demo:${language}:${templateId}`),
+    linkedSharedLayout: { id: "shared-a" },
+    sharedLayouts: [{ id: "shared-a" }, { id: "shared-b" }],
+    loadSharedLayoutPayload: async (layoutId) => calls.push(`load:${layoutId}`),
+    materializeSharedLayout: (layoutId) => calls.push(`shared:${layoutId}`)
+  });
+
+  assert.deepEqual(calls, [
+    "demo:ru:public-demo-state",
+    "demo:ru:public-demo-state-copy-ru-2",
+    "demo:en:public-demo-state-en",
+    "load:shared-a",
+    "shared:shared-a",
+    "load:shared-b",
+    "shared:shared-b"
+  ]);
+  assert.deepEqual(result, { demoCount: 3, sharedCount: 2 });
+});
+
+test("admin copy target orchestration passes the linked shared-list runtime variable", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  assert.match(appSource, /linkedSharedLayout:\s*linkedSharedListLayout/);
+  assert.doesNotMatch(appSource, /\n\s*linkedSharedLayout,\s*\n/);
+});
+
 test("demo and shared templates use the same metadata request model", () => {
   const normalizeLanguage = (language) => String(language || "ru").trim().toLowerCase() || "ru";
   const normalizeDemoName = (name) => String(name || "").trim();
@@ -741,6 +815,110 @@ test("demo metadata rename keeps the edited public row while changing catalog la
     name: "Renamed demo",
     language: "en"
   });
+});
+
+test("CRITICAL template unpublish: an already absent demo record skips a duplicate delete", async () => {
+  let deleteCalls = 0;
+  const deleted = await deletePublishedDemoTemplateRecord({
+    listId: "public-demo-state-copy-ru-missing",
+    apiFetch: async () => {
+      deleteCalls += 1;
+      return null;
+    },
+    fetchCatalog: async () => ({
+      canonical: true,
+      unified: true,
+      lists: [{ id: "public-demo-state", publicTemplateKind: "demo" }]
+    })
+  });
+
+  assert.equal(deleted, true);
+  assert.equal(deleteCalls, 0);
+});
+
+test("CRITICAL template unpublish: catalog confirmation recovers from a lost demo delete response", async () => {
+  let catalogCalls = 0;
+  let deleteOptions = null;
+  const deleted = await deletePublishedDemoTemplateRecord({
+    listId: "public-demo-state-copy-ru-timeout",
+    apiFetch: async (_path, options) => {
+      deleteOptions = options;
+      throw new Error("network timeout");
+    },
+    fetchCatalog: async () => {
+      catalogCalls += 1;
+      return {
+        canonical: true,
+        unified: true,
+        lists: catalogCalls === 1
+          ? [{ id: "public-demo-state-copy-ru-timeout", publicTemplateKind: "demo" }]
+          : []
+      };
+    }
+  });
+
+  assert.equal(deleted, true);
+  assert.equal(catalogCalls, 2);
+  assert.equal(deleteOptions.silentErrors, true);
+});
+
+test("CRITICAL template unpublish: shared delete treats an exact 404 as idempotent success", async () => {
+  let deleteOptions = null;
+  const deleted = await deletePublishedSharedTemplate({
+    sharedId: "already-absent-shared-template",
+    apiFetch: async (_path, options) => {
+      deleteOptions = options;
+      const error = new Error("HTTP 404");
+      error.status = 404;
+      throw error;
+    },
+    layoutsByLanguage: { ru: [], en: [] }
+  });
+
+  assert.equal(deleted, true);
+  assert.equal(deleteOptions.silentErrors, true);
+});
+
+test("CRITICAL template unpublish: demo publication is hidden without deleting its server record", async () => {
+  let request = null;
+  const unpublished = await unpublishPublishedDemoTemplateRecord({
+    listId: "public-demo-state-copy-ru-draft",
+    apiFetch: async (path, options) => {
+      request = { path, options };
+      return {
+        ok: true,
+        listId: "public-demo-state-copy-ru-draft",
+        published: false
+      };
+    }
+  });
+
+  assert.equal(unpublished, true);
+  assert.equal(request.path, "/bike-packing/admin/demo-templates/public-demo-state-copy-ru-draft/publication");
+  assert.equal(request.options.method, "PATCH");
+  assert.equal(request.options.silentErrors, true);
+  assert.deepEqual(JSON.parse(request.options.body), { published: false });
+});
+
+test("CRITICAL template unpublish: shared publication is hidden without deleting its server record", async () => {
+  let request = null;
+  const unpublished = await unpublishPublishedSharedTemplate({
+    sharedId: "shared-template-draft",
+    apiFetch: async (path, options) => {
+      request = { path, options };
+      return {
+        ok: true,
+        id: "shared-template-draft",
+        published: false
+      };
+    },
+    layoutsByLanguage: { ru: [], en: [] }
+  });
+
+  assert.equal(unpublished, true);
+  assert.equal(request.path, "/bike-packing/admin/shared-layouts/shared-template-draft/publication");
+  assert.equal(request.options.method, "PATCH");
+  assert.deepEqual(JSON.parse(request.options.body), { published: false });
 });
 
 test("demo layout choices can target exact public template rows", () => {
@@ -994,6 +1172,84 @@ test("explicit shared source choice cannot be reclassified as demo by stale draf
   assert.equal(record.kind, "shared");
 });
 
+test("CRITICAL template publication: new empty and copied templates start as admin-only drafts", () => {
+  const emptyDraft = createNewPublicTemplateDraftRecord({
+    id: "layout-empty-draft",
+    requestedName: "Empty draft",
+    kind: "shared",
+    language: "en",
+    createEmptyLayoutArrangement: () => ({ rootContainerIds: [], containers: {}, items: {}, packedItems: {} }),
+    createEmptyPublicTemplateDraftRecord,
+    currentCreateMeta: () => ({ createdAt: "2026-07-19T00:00:00.000Z" }),
+    dictionaries: { locations: [], categories: [] }
+  });
+  const copiedDraft = createTemplateCopyLayoutRecord({
+    id: "layout-copy-draft",
+    requestedName: "Copied draft",
+    sourceLayout: { id: "source", name: "Source", adminSharedSourceId: "source-template", language: "en" },
+    copySourceLayout: { id: "source", name: "Source", language: "en" },
+    sourceState: {},
+    currentState: {},
+    rootSnapshots: [{ rootId: "bag-a" }],
+    arrangement: { rootContainerIds: ["bag-a"], containers: {}, items: {}, packedItems: {} },
+    sourceKind: "shared",
+    language: "en",
+    ensureLayoutDictionaries: () => ({ locations: [], categories: [] }),
+    ensurePrivateDictionaries: () => ({ locations: [], categories: [] }),
+    createTemplateCopyRecord
+  });
+
+  assert.equal(isManagedTemplateUnpublished(emptyDraft), true);
+  assert.equal(isManagedTemplateUnpublished(copiedDraft), true);
+  assert.equal(shouldAutoPublishManagedTemplate(emptyDraft), false);
+  assert.equal(shouldConfirmManagedTemplateTransition(emptyDraft), false);
+  markManagedTemplatePublished(emptyDraft);
+  assert.equal(shouldAutoPublishManagedTemplate(emptyDraft), true);
+  assert.equal(shouldConfirmManagedTemplateTransition(emptyDraft), true);
+});
+
+test("CRITICAL template publication: unpublished templates have a distinct draft icon in admin lists", () => {
+  assert.equal(
+    managedTemplateOptionLabel("Template: Demo packing (EN)", {
+      unpublished: true,
+      draftMarker: "📝 Draft"
+    }),
+    "📝 Draft · Template: Demo packing (EN)"
+  );
+  assert.equal(
+    publicTemplateOptionLabel({
+      prefix: "Шаблон",
+      name: "Демо",
+      languageLabel: "RU",
+      unpublished: true,
+      draftMarker: "📝 Черновик"
+    }),
+    "📝 Черновик · Шаблон: Демо (RU)"
+  );
+
+  const options = buildAdminDemoTemplateOptions({
+    canOpen: true,
+    localLayouts: [{
+      id: "layout-demo-draft",
+      name: "Demo draft",
+      adminDemo: true,
+      adminTemplateCopy: true,
+      adminDemoLanguage: "en",
+      adminDemoListId: "public-demo-state-copy-en-draft",
+      templatePublished: false
+    }],
+    fallbackLanguage: "en",
+    draftChoice: (layoutId) => `template-draft:${layoutId}`,
+    labels: {
+      templatePrefix: "Template",
+      draftMarker: "📝 Draft",
+      languageOptionLabel: (language) => language.toUpperCase(),
+      publicTemplateOptionLabel
+    }
+  });
+  assert.match(options[0][1], /^📝 Draft · /);
+});
+
 test("demo template delete removes server catalog entry and local admin drafts", () => {
   const demoListId = "public-demo-state-copy-ru-delete";
   const catalog = [
@@ -1182,7 +1438,21 @@ test("confirmed shared admin edit drafts survive catalog refresh cleanup", () =>
       "layout-stale-shared": {
         id: "layout-stale-shared",
         name: "Stale shared draft",
-        adminSharedSourceId: "missing-shared-template"
+        adminSharedSourceId: "missing-shared-template",
+        templatePublished: true
+      },
+      "layout-unpublished-shared": {
+        id: "layout-unpublished-shared",
+        name: "Local unpublished draft",
+        adminSharedSourceId: "missing-unpublished-template",
+        templatePublished: false
+      },
+      "layout-pending-unpublish": {
+        id: "layout-pending-unpublish",
+        name: "Pending unpublish draft",
+        adminSharedSourceId: "missing-pending-template",
+        templatePublished: false,
+        templateUnpublishPending: true
       }
     },
     containers: {},
@@ -1201,6 +1471,8 @@ test("confirmed shared admin edit drafts survive catalog refresh cleanup", () =>
 
   assert.deepEqual(removed, ["layout-stale-shared"]);
   assert.ok(targetState.layouts["layout-admin-shared"]);
+  assert.ok(targetState.layouts["layout-unpublished-shared"]);
+  assert.ok(targetState.layouts["layout-pending-unpublish"]);
   assert.equal(targetState.activeLayoutId, "layout-admin-shared");
 });
 
@@ -2371,7 +2643,10 @@ test("published template export keeps items removed from the layout in the catal
         id: layoutId,
         name: "Template",
         rootContainerIds: ["container-root"],
-        adminSharedSourceId: "shared-template"
+        adminSharedSourceId: "shared-template",
+        adminTemplateCopy: true,
+        templatePublished: false,
+        templateUnpublishPending: true
       }
     }
   };
@@ -2393,6 +2668,9 @@ test("published template export keeps items removed from the layout in the catal
   assert.equal(payload.items["item-detached"].publicCatalogLayoutId, undefined);
   assert.deepEqual(payload.locations, ["Garage"]);
   assert.deepEqual(payload.categories, ["Storage"]);
+  assert.equal(payload.layouts["layout-main"].adminTemplateCopy, undefined);
+  assert.equal(payload.layouts["layout-main"].templatePublished, undefined);
+  assert.equal(payload.layouts["layout-main"].templateUnpublishPending, undefined);
   assert.equal(payload.layouts["layout-main"].arrangement.containers["container-detached"], undefined);
   assert.equal(payload.layouts["layout-main"].arrangement.items["item-detached"], undefined);
 });
@@ -3921,9 +4199,153 @@ test("readonly public template options get a stable lock marker", () => {
   );
 });
 
+test("CRITICAL template publication: UI publishes explicitly and skips the public warning for local drafts", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const indexSource = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+
+  assert.match(indexSource, /id="publishEditedTemplateBtn"[^>]*type="button"[^>]*hidden/);
+  assert.match(appSource, /publishEditedTemplateBtn\?\.addEventListener\("click", handleEditedTemplatePublication\)/);
+  assert.match(appSource, /if \(shouldConfirmManagedTemplateTransition\(layout\)\)/);
+  assert.match(appSource, /shouldAutoPublishManagedTemplate\(state\.layouts\?\.\[layoutId\]\)/);
+  assert.match(controllerSource, /async function publishEditedTemplate\(event\)[\s\S]*?await savePublishedLayoutRecord\(layout\.id\)/);
+  const draftCreationSource = controllerSource.match(/async function createTemplateCopyDraft[\s\S]*?\n}\n\nfunction openLayoutDialog/)?.[0] || "";
+  assert.ok(draftCreationSource);
+  assert.doesNotMatch(draftCreationSource, /savePublishedLayoutRecord/);
+});
+
+test("CRITICAL template deletion: removing a published template keeps its server history", () => {
+  const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const deleteFlow = controllerSource.match(/async function deleteManagedPublicLayout[\s\S]*?\n}\n\nfunction userEditableLayouts/)?.[0] || "";
+  assert.ok(deleteFlow);
+  assert.match(deleteFlow, /await unpublishPublishedTemplate\(target, layout, \{ historyAction: "delete" \}\)/);
+  assert.doesNotMatch(deleteFlow, /await deletePublishedTemplate\(target, layout\)/);
+  assert.match(deleteFlow, /template\.removedRecoverable/);
+});
+
+test("CRITICAL template deletion: only explicit deletion is marked as a history action", async () => {
+  const bodies = [];
+  await unpublishPublishedDemoTemplateRecord({
+    listId: "public-demo-state-copy-ru-delete",
+    historyAction: "delete",
+    apiFetch: async (_path, options) => {
+      bodies.push(JSON.parse(options.body));
+      return { ok: true, published: false, listId: "public-demo-state-copy-ru-delete" };
+    }
+  });
+  await unpublishPublishedDemoTemplateRecord({
+    listId: "public-demo-state-copy-ru-unpublish",
+    apiFetch: async (_path, options) => {
+      bodies.push(JSON.parse(options.body));
+      return { ok: true, published: false, listId: "public-demo-state-copy-ru-unpublish" };
+    }
+  });
+
+  assert.deepEqual(bodies, [
+    { published: false, historyAction: "delete" },
+    { published: false }
+  ]);
+});
+
+test("CRITICAL template publication: published templates can return to an admin-only draft", async () => {
+  const layout = {
+    id: "layout-admin-shared",
+    name: "Template",
+    adminSharedSourceId: "shared-template",
+    templatePublished: true
+  };
+  const state = { layouts: { [layout.id]: layout } };
+  let persistedState = null;
+  const callOrder = [];
+
+  assert.equal(managedTemplatePublicationAction(layout), "unpublish");
+  const result = await unpublishManagedTemplateFlow({
+    layout,
+    target: { type: "shared", sharedId: "shared-template" },
+    state,
+    unpublishPublishedTemplate: async () => {
+      callOrder.push("unpublish");
+      return true;
+    },
+    persistStateSnapshot: (value) => {
+      callOrder.push(`persist:${value.layouts[layout.id].templateUnpublishPending === true ? "pending" : "complete"}`);
+      persistedState = value;
+    }
+  });
+
+  assert.equal(result, true);
+  assert.equal(layout.templatePublished, false);
+  assert.equal(managedTemplatePublicationAction(layout), "publish");
+  assert.equal(state.layouts[layout.id], layout);
+  assert.equal(persistedState, state);
+  assert.deepEqual(callOrder, ["persist:pending", "unpublish", "persist:complete"]);
+});
+
+test("CRITICAL template publication: uncertain unpublish preserves a local draft for retry", async () => {
+  const layout = { id: "layout-admin-demo", adminDemo: true, templatePublished: true };
+  const state = { layouts: { [layout.id]: layout } };
+  let persisted = 0;
+  const result = await unpublishManagedTemplateFlow({
+    layout,
+    target: { type: "demo", demoListId: "demo-list" },
+    state,
+    unpublishPublishedTemplate: async () => false,
+    persistStateSnapshot: () => { persisted += 1; }
+  });
+
+  assert.equal(result, false);
+  assert.equal(layout.templatePublished, false);
+  assert.equal(isManagedTemplateUnpublishPending(layout), true);
+  assert.equal(managedTemplatePublicationAction(layout), "retry-unpublish");
+  assert.equal(state.layouts[layout.id], layout);
+  assert.equal(persisted, 1);
+});
+
+test("CRITICAL template publication: a lost delete response cannot erase the local draft", async () => {
+  const layout = { id: "layout-admin-shared", adminSharedSourceId: "shared-template", templatePublished: true };
+  const state = { layouts: { [layout.id]: layout } };
+  const failure = new Error("network timeout");
+
+  await assert.rejects(unpublishManagedTemplateFlow({
+    layout,
+    target: { type: "shared", sharedId: "shared-template" },
+    state,
+    unpublishPublishedTemplate: async () => { throw failure; },
+    persistStateSnapshot: () => true
+  }), failure);
+
+  assert.equal(layout.templatePublished, false);
+  assert.equal(layout.templateUnpublishPending, true);
+  assert.equal(state.layouts[layout.id], layout);
+  assert.equal(managedTemplatePublicationAction(layout), "retry-unpublish");
+});
+
+test("CRITICAL template publication: retry completes an uncertain unpublish", async () => {
+  const layout = {
+    id: "layout-admin-demo",
+    adminDemo: true,
+    templatePublished: false,
+    templateUnpublishPending: true
+  };
+
+  const result = await unpublishManagedTemplateFlow({
+    layout,
+    target: { type: "demo", demoListId: "demo-list" },
+    state: { layouts: { [layout.id]: layout } },
+    unpublishPublishedTemplate: async () => true,
+    persistStateSnapshot: () => true
+  });
+
+  assert.equal(result, true);
+  assert.equal(layout.templatePublished, false);
+  assert.equal(layout.templateUnpublishPending, undefined);
+  assert.equal(managedTemplatePublicationAction(layout), "publish");
+});
+
 test("layout source option labels expose source names for copy suggestions", () => {
   assert.equal(layoutSourceNameFromOptionLabel("Template: Demo-packing (EN)"), "Demo-packing");
   assert.equal(layoutSourceNameFromOptionLabel("\u{1F512} Template: New layout 3 (RU)"), "New layout 3");
+  assert.equal(layoutSourceNameFromOptionLabel("📝 Draft · Template: New layout 4 (EN)"), "New layout 4");
   assert.equal(layoutSourceNameFromOptionLabel("Full kit"), "Full kit");
 });
 

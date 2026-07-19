@@ -120,6 +120,10 @@ export function removeUnconfirmedManagedSharedTemplateTreesFromState(targetState
   const layoutIds = Object.values(targetState.layouts)
     .filter((layout) => {
       if (!layout?.adminSharedSourceId || layout.adminDemo) return false;
+      // An unpublished local template is the recovery copy for an unpublish
+      // request whose server response may have been lost. Catalog refresh must
+      // never interpret that draft as a stale public template and delete it.
+      if (layout.templatePublished === false) return false;
       if (!layout.adminTemplateCopy) {
         return !confirmedSharedLayouts.some((confirmed) =>
           String(confirmed?.id || "").trim() === String(layout.adminSharedSourceId || "").trim()

@@ -88,6 +88,7 @@ export function buildAdminSharedTemplateOptions({
     `${prefix}: ${name} (${label})`);
   const templatePrefix = labels.templatePrefix || "Template";
   const defaultName = labels.defaultName || "Template";
+  const draftMarker = labels.draftMarker || "📝 Draft";
   const confirmedSharedTemplateKeys = new Set(serverConfirmedSharedLayouts.flatMap((layout) =>
     adminSharedTemplateIdentityKeys({
       sharedId: layout.id,
@@ -140,7 +141,9 @@ export function buildAdminSharedTemplateOptions({
         optionLabel({
           prefix: templatePrefix,
           name: layout.name || defaultName,
-          languageLabel: languageLabel(layout.language || fallbackLanguage)
+          languageLabel: languageLabel(layout.language || fallbackLanguage),
+          unpublished: layout.templatePublished === false,
+          draftMarker
         }),
         "shared"
       ]

@@ -197,9 +197,11 @@ export function applyStaticTranslationsUi({
   setAttr(refs.clearAddToContainerSearchBtn, "aria-label", uiLanguage === "en" ? "Clear search" : "Очистить поиск");
   if (refs.newSubcontainerName) refs.newSubcontainerName.placeholder = t("forms.newSubcontainerPlaceholder");
   setText(refs.createSubcontainerBtn, t("buttons.add"));
+  setText(refs.createItemForContainerBtn, t("items.createNewForContainer"));
   setText(refs.layoutRootDialog?.querySelector("h2"), t("rootContainers.add"));
   setText(refs.layoutRootDialog?.querySelector(".dialog-subtitle"), t("forms.inCurrentLayout"));
   setFirstText(refs.layoutRootDialog?.querySelector("label:has(#layoutRootSearch)"), t("forms.search"));
+  setText(refs.createRootForLayoutBtn, t("rootContainers.createNew"));
   if (refs.layoutRootSearch) refs.layoutRootSearch.placeholder = t("forms.bagOrPlaceNamePlaceholder");
   setAttr(refs.clearLayoutRootSearchBtn, "aria-label", uiLanguage === "en" ? "Clear search" : "Очистить поиск");
 

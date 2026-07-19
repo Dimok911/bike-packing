@@ -142,6 +142,9 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
   };
   delete demoLayout.adminDemo;
   delete demoLayout.adminSharedSourceId;
+  delete demoLayout.adminTemplateCopy;
+  delete demoLayout.templatePublished;
+  delete demoLayout.templateUnpublishPending;
   delete demoLayout.sharedSourceId;
   delete demoLayout.publicCatalogLayoutId;
   stripPublishedPublicOriginMarkers(demoLayout);

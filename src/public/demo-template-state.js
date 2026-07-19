@@ -94,6 +94,8 @@ export function normalizePublishedDemoTemplatePayload(payload, options = {}) {
   delete demoLayout.adminDemo;
   delete demoLayout.adminSharedSourceId;
   delete demoLayout.adminTemplateCopy;
+  delete demoLayout.templatePublished;
+  delete demoLayout.templateUnpublishPending;
   delete demoLayout.publicCatalogLayoutId;
   next.layouts = { [DEMO_LAYOUT_ID]: demoLayout };
   next.activeLayoutId = DEMO_LAYOUT_ID;

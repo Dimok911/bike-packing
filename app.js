@@ -83,6 +83,7 @@ import {
   sharedCopyTargetLayouts,
   writeContainerTreeToLayoutArrangement
 } from "./src/public/copy-public-layout-target.js";
+import { ensureAdminPublicCopyTargets } from "./src/public/admin-public-copy-targets.js";
 import {
   copyPublishedContainerToState as copyPublishedContainerToStateValue
 } from "./src/public/copy-published-container.js";
@@ -141,16 +142,24 @@ import {
 } from "./src/public/public-template-offline-cache.js";
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
 import {
+  isManagedTemplateUnpublished,
+  managedTemplatePublicationAction,
+  shouldAutoPublishManagedTemplate,
+  shouldConfirmManagedTemplateTransition
+} from "./src/public/template-publication.js";
+import { unpublishManagedTemplateFlow } from "./src/public/template-unpublish-flow.js";
+import {
+  deletePublishedDemoTemplateRecord,
+  unpublishPublishedDemoTemplateRecord
+} from "./src/public/public-demo-template-admin.js";
+import {
   publicTemplateDeleteBlockReason,
   shouldDeletePublishedTemplateForLayout as shouldDeletePublishedTemplateForLayoutValue
 } from "./src/public/public-template-delete-guard.js";
 import {
   applyPublicTemplateMetadataToPayload,
-  canonicalCatalogConfirmsDemoTemplateAbsent,
   normalizePublicTemplateMetadataResponse,
-  publicDemoTemplateExactDeletePath,
   publicTemplateDeletePath,
-  publicTemplateDeleteResponseMatches,
   publicTemplateMetadataPath,
   publicTemplateMetadataRequest,
   publicTemplateMetadataTarget
@@ -178,6 +187,11 @@ import {
   removePublicTemplateCatalogEntry,
   upsertDemoTemplateCatalogEntry as mergeDemoTemplateCatalogEntry
 } from "./src/public/public-template-catalog.js";
+import {
+  adminDemoHistoryEntries,
+  adminSharedHistoryEntries,
+  normalizeAdminTemplateHistoryRecords
+} from "./src/public/admin-template-history-catalog.js";
 import {
   demoLanguageFromLayoutChoice as demoLanguageFromLayoutChoiceValue,
   demoLayoutChoiceForLanguage as demoLayoutChoiceForLanguageValue,
@@ -239,7 +253,8 @@ import { publishedPhotoUploadRequest } from "./src/public/published-photo-upload
 import {
   deletePublishedSharedTemplate as deletePublishedSharedTemplateRecord,
   purgeDeletedSharedTemplateFromFrontendState,
-  purgeUnconfirmedSharedTemplatesFromFrontendState
+  purgeUnconfirmedSharedTemplatesFromFrontendState,
+  unpublishPublishedSharedTemplate
 } from "./src/public/shared-layout-admin.js";
 import {
   buildSharedListUrlFromHref,
@@ -746,7 +761,11 @@ import {
 } from "./src/ui/settings-editor-bindings.js";
 import { openHelpLimitsDialogUi } from "./src/ui/help-limits-dialog.js";
 import { bindHorizontalTouchScroll } from "./src/ui/horizontal-touch-scroll.js";
-import { renderEmptyState } from "./src/ui/empty-state.js";
+import {
+  renderEmptyState,
+  renderPackingAddRootCard,
+  renderPackingEmptyState
+} from "./src/ui/empty-state.js";
 import {
   renderFilterControls,
   updateViewScopedControlsUi
@@ -969,6 +988,7 @@ const locations = [];
 const categories = [];
 let serverConfirmedDemoTemplates = [];
 let serverConfirmedSharedLayouts = [];
+let adminTemplateHistoryRecords = [];
 let activeDemoTemplateListId = "";
 const publishedListStateCache = createPublicTemplatePayloadCache({
   cloneValue: clone,
@@ -1009,6 +1029,10 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicTemplateMetadataPatch",
   "publicTemplateDelete",
   "publicDemoTemplateExactDelete",
+  "publicTemplateSoftUnpublish",
+  "adminTemplateHistoryCatalog",
+  "publicHistoryMissingPhotoRecovery",
+  "templateDeletionHistoryAction",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
@@ -1032,7 +1056,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-19.in-app-magic-link-confirm-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-19.recoverable-template-history-v2";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1236,6 +1260,8 @@ const remoteListRecords = createRemoteListRecordSelector({
 });
 
 const appTailRuntime = {
+  get adminTemplateHistoryRecords() { return adminTemplateHistoryRecords; },
+  set adminTemplateHistoryRecords(value) { adminTemplateHistoryRecords = value; },
   get activeDemoTemplateListId() { return activeDemoTemplateListId; },
   set activeDemoTemplateListId(value) { activeDemoTemplateListId = value; },
   get addToContainerTargetId() { return addToContainerTargetId; },
@@ -1446,7 +1472,7 @@ const appTailControllerDeps = {
   currentPageScrollPosition, currentPublicTemplateStatusMessage, currentPublishedTemplateBlockReason, currentSessionMode, currentSharedLayouts,
   currentUsageLimit, currentUser, currentUserEmail, currentUserId, currentUserIdFromStorage,
   currentUserSyncKey, currentViewScope, cycleDictionarySortMode, defaultBike3dViewState, defaultDemoState,
-  defaultRootContainerLocation, deleteCachedPhoto, deleteItemFromState, deletePublishedSharedTemplateRecord, deleteRemotePhotoIfPossible,
+  defaultRootContainerLocation, deleteCachedPhoto, deleteItemFromState, deletePublishedDemoTemplateRecord, deletePublishedSharedTemplateRecord, deleteRemotePhotoIfPossible,
   deleteRootContainerFromState, deleteUnusedLayoutContainerEntityFromState, demoAdminPathForPublicListId, demoAdminPathForPublicListIdFromScope, demoAdminStatePathForPublicListId,
   demoAdminStatePathForPublicListIdFromScope, demoCopyActionText, demoCopyLayoutName, demoCopyPreferredTemplateName, demoCopyTemplateListId,
   demoLanguageFromLayoutChoice, demoLanguageFromLayoutChoiceValue, demoLayoutChoiceForLanguage, demoLayoutChoiceForLanguageValue, demoLayoutChoiceForTemplate,
@@ -1494,7 +1520,7 @@ const appTailControllerDeps = {
   isGeneratedCatalogStateArtifact, isGeneratedCatalogSyncArtifact, isGeneratedStartupFallbackState, isGuestDemoCopyLayout, isGuestDemoCopyLayoutRecord,
   isGuestLocalPersonalLayout, isGuestSession, isItemAwayFromHomeAndBikeValue, isItemInCatalogForState, isItemInLayoutForState,
   itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, isItemUnavailableForPacking, isItemWithoutWeightValue, isLayoutCreateTemplateLayoutModeValue, isLayoutLocked, isLayoutMeaningful, isLocalDevOrigin, isManagedDemoTemplateLayout,
-  isManagedPublicTemplateDraft, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession, isOfflineRememberedSession,
+  isManagedPublicTemplateDraft, isManagedTemplateUnpublished, managedTemplatePublicationAction, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession, isOfflineRememberedSession,
   isOwnLayoutEchoConflict, isOwnLayoutEchoConflictValue, isPackingStateShape, isPhotoStoredForList, isPhotoUsableFromServer,
   isPrivateCatalogRecord, isPrivateLayoutChoice, isPrivateLayoutChoiceForStateRestore, isPrivateLayoutChoiceValue, isPrivateUserLayoutId,
   isPublicCatalogContainerRecordForState, isPublicCatalogItemRecordForState, isPublicDemoTemplateRecord, isPublicLayoutContext, isPublicSharedLayoutListRecord,
@@ -1552,7 +1578,7 @@ const appTailControllerDeps = {
   isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
   publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue, publicLayoutDeleteConfirm,
   publicListIdForPublishedTarget, publicReadonlyItemDisplayMode, publicSharedLayouts, publicTemplateChoice, publicTemplateDeleteBlockReason,
-  publicDemoTemplateExactDeletePath, publicTemplateDeletePath, publicTemplateDeleteResponseMatches, canonicalCatalogConfirmsDemoTemplateAbsent, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
+  publicTemplateDeletePath, publicTemplateMetadataPath, publicTemplateMetadataRequest, publicTemplateMetadataTarget, publicTemplateOptionLabel,
   publicTemplatePayloadPath, publishPublicHistoryRecord, publishedItemKeyStateCache, publishedLayoutSaveLayoutId, publishedLayoutSaveTimer,
   publishedPhotoUploadRequest,
   publishedLayoutTarget, publishedListStateCache, publishedPayloadWithTemplateMetadata, publishedTemplateBlockReason, purgeDeletedSharedTemplateFromFrontendState,
@@ -1570,7 +1596,8 @@ const appTailControllerDeps = {
   renameCustomDictionaryValue, renameDictionaryEntryValue, renameReusableGuestDemoCopy, render, renderAndScrollToTop,
   renderBackupAnalysisUi, renderBackupProgress, renderBackupRules, renderBackupSelectionSummary, renderBike3dPackingView, renderCachedPrivateStateDuringRemoteLoad,
   renderCatalogCard, renderCatalogPills, renderConflictDetails, renderConflictSyncContext, renderContainerWeightText,
-  renderDictionaryHtml, renderEmptyState, renderFilterControls, renderFilteredRootContainerColumnHtml, renderFilters,
+  renderDictionaryHtml, renderEmptyState, renderPackingAddRootCard, renderPackingEmptyState,
+  renderFilterControls, renderFilteredRootContainerColumnHtml, renderFilters,
   renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls, renderInitialLocalFallbackIfNeeded,
   renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml, renderListItemHtml,
   renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml, renderRootContainerColumnHtml,
@@ -1605,7 +1632,8 @@ const appTailControllerDeps = {
   sharedLayoutIdFromUrl, sharedLayoutItemKey, sharedLayoutItemKeyFromScope, sharedLayoutLanguageFromPayload, sharedLayoutPublicSourceId,
   sharedLayoutRoots, sharedLayoutsByLanguage, sharedListIdFromLocation, sharedListIdFromUrl, sharedPayloadActiveLayout,
   sharedRootFromPublishedContainer, shouldBlockLegacyPersonalSyncWrite, shouldBlockLegacyPersonalSyncWriteFallback, shouldCaptureGuestLocalLayoutCandidate, shouldClearPackingListContextForPrivateMutation,
-  shouldCopyPublicTemplatePhotoReferencesOnServer, shouldCreatePublishedTemplateBeforePhotos, shouldDeletePublishedTemplateForLayoutValue, shouldImportGuestLayoutBeforeRemote, shouldKeepCurrentReadonlyDemoAfterAuthCheck,
+  shouldAutoPublishManagedTemplate, shouldConfirmManagedTemplateTransition, shouldCopyPublicTemplatePhotoReferencesOnServer,
+  shouldCreatePublishedTemplateBeforePhotos, shouldDeletePublishedTemplateForLayoutValue, shouldImportGuestLayoutBeforeRemote, shouldKeepCurrentReadonlyDemoAfterAuthCheck,
   shouldKeepReadonlyDemoAfterAuthCheck, shouldKeepScopedControlsStable, shouldRecoverUnsyncedLocalChanges, shouldRenderGuestDemoPreviewDuringAuthCheck, shouldShowItemLabels,
   shouldShowItemLabelsForMode, shouldShowItemPhotos, shouldShowItemPhotosForMode, shouldUseStickyFilterControls, shouldWarnAboutSharedLayoutCatalog,
   snapshotContainerTreeFromLayoutArrangement, snapshotContainerTreeFromLiveStateValue, snapshotHasLocalPublicCopyOrigin, snapshotHasPrivateSyncBlockedPublicOrigin, snapshotModeState,
@@ -1628,13 +1656,13 @@ const appTailControllerDeps = {
   updateLayoutLoadStatusUi, updateMetaToggle, updatePackingViewModeControl, updateSearchFocusState, updateSharedLayoutCatalogEntryMetadata,
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
   uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPhotoToPath, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
-  unavailableSnapshotItems, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
+  unavailableSnapshotItems, unpublishManagedTemplateFlow, unpublishPublishedDemoTemplateRecord, unpublishPublishedSharedTemplate, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
   validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
 };
 const {
-  openAddToContainerDialog, openPackingItemReplacementDialog, openContainerReplacementDialog, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
-  clearAddToContainerSearch, openLayoutRootDialog, renderLayoutRootResults, matchesLayoutRootSearch,
+  openAddToContainerDialog, openNewItemForAddTarget, openPackingItemReplacementDialog, openContainerReplacementDialog, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
+  clearAddToContainerSearch, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
   clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,
   canRemoveContainerFromActiveLayout, confirmRemoveEditingContainerFromActiveLayout, removeContainerFromLayoutWithAnimation, findContainerElementInPacking,
   getLayoutContainerRootStatus, getLayoutSubtreeItemCount, getRootContainerDialogParentId, getRootContainerDialogParentIndex,
@@ -1706,14 +1734,14 @@ const {
   canManageLayout, canManageActiveLayout, languageSelectEntries, createLayoutCopyFromSource,
   templateCopyRootSnapshots, templateCopySourceScore, loadPublishedTemplateCopySource, createTemplateCopyFromSource,
   layoutCreateCopySourceOptions, isLayoutCreateTemplateLayoutMode, resolveLayoutCreateCopySource, resolveLayoutCreateTemplateCopySource,
-  resolveLayoutCreateTemplateCopyLayout, createPrivateLayoutFromTemplateSource, createAndPublishTemplateCopy, openLayoutDialog,
+  resolveLayoutCreateTemplateCopyLayout, createPrivateLayoutFromTemplateSource, createTemplateCopyDraft, openLayoutDialog,
   updateLayoutCopyVisibility, layoutCreateSelectedSourceName, canReplaceLayoutCreateNameSuggestion, updateLayoutCreateNameSuggestion,
   createNewPublicTemplateLayout, saveNewLayout, openLayoutEditDialog, publicTemplateDeleteBlockReasonForLayout,
-  updateLayoutEditDeleteButton, updateLayoutEditSaveState, handleLayoutEditFormSubmit, requestCloseLayoutEditDialog, handleLayoutEditDialogClose,
+  updateLayoutEditDeleteButton, updateLayoutEditPublishButton, updateLayoutEditSaveState, handleLayoutEditFormSubmit, requestCloseLayoutEditDialog, handleLayoutEditDialogClose,
   toggleLayoutOrderPanel, handleLayoutOrderFormSubmit, requestCloseLayoutOrderDialog, handleLayoutOrderListClick, handleLayoutOrderDragStart,
   handleLayoutOrderDragOver, handleLayoutOrderDragLeave, handleLayoutOrderDrop, handleLayoutOrderDragEnd,
   handleLayoutOrderDialogClose, bindLayoutOrderDragControls,
-  canDeleteManagedLayout, saveEditedLayout, confirmDeleteEditedLayout,
+  canDeleteManagedLayout, saveEditedLayout, publishEditedTemplate, unpublishEditedTemplate, handleEditedTemplatePublication, confirmDeleteEditedLayout,
   confirmDeleteEditableLayout, confirmDeleteManagedPublicLayout, deletePublishedSharedTemplate, deletePublishedDemoTemplate,
   deletePublishedTemplate, shouldDeletePublishedTemplateForLayout, deleteManagedPublicLayout, userEditableLayouts,
   canDeleteActiveLayout, deleteActiveLayout, handleRootContainerFormSubmit, handleItemFormSubmit,
@@ -2149,6 +2177,7 @@ function adminDemoTemplateOptionsForLanguage(language, { disabled = false } = {}
     labels: {
       templatePrefix: t("template.prefix"),
       defaultName: demoTemplateFallbackName(normalized),
+      draftMarker: t("template.draftMarker"),
       languageOptionLabel,
       publicTemplateOptionLabel
     }
@@ -2194,6 +2223,7 @@ function adminSharedTemplateOptions({
     labels: {
       templatePrefix: t("template.prefix"),
       defaultName: "Шаблон",
+      draftMarker: t("template.draftMarker"),
       languageOptionLabel,
       publicTemplateOptionLabel
     }
@@ -2247,7 +2277,9 @@ function activeAdminDraftOptionLabel(layout) {
     languageLabel: languageOptionLabel(layout.adminDemo
       ? layout.adminDemoLanguage || uiLanguage
       : managedSharedDraftLanguage(layout, sharedSource, uiLanguage)),
-    demo: Boolean(layout.adminDemo)
+    demo: Boolean(layout.adminDemo),
+    unpublished: layout.templatePublished === false,
+    draftMarker: t("template.draftMarker")
   });
 }
 
@@ -2648,20 +2680,22 @@ async function init() {
     }
     const templateDraftId = templateDraftLayoutId(value);
     if (templateDraftId) {
-      if (!requirePublishedTemplatesAvailable()) {
+      const layoutId = templateDraftId;
+      const layout = state.layouts?.[layoutId];
+      if (!isManagedTemplateUnpublished(layout) && !requirePublishedTemplatesAvailable()) {
         renderFilters();
         return;
       }
-      const layoutId = templateDraftId;
-      const layout = state.layouts?.[layoutId];
       if (canOpenAdminPublishedEdit() && isManagedPublicTemplateDraft(layout)) {
-        const transitionKind = layout.adminDemo ? "demo" : "shared";
-        const transitionTarget = layout.adminDemo
-          ? layout
-          : findSharedLayout(layout.adminSharedSourceId) || layout;
-        if (!(await confirmPublicLayoutTransition(transitionKind, transitionTarget))) {
-          renderFilters();
-          return;
+        if (shouldConfirmManagedTemplateTransition(layout)) {
+          const transitionKind = layout.adminDemo ? "demo" : "shared";
+          const transitionTarget = layout.adminDemo
+            ? layout
+            : findSharedLayout(layout.adminSharedSourceId) || layout;
+          if (!(await confirmPublicLayoutTransition(transitionKind, transitionTarget))) {
+            renderFilters();
+            return;
+          }
         }
         activateAdminPublishedLayout(layoutId);
       } else {
@@ -2695,6 +2729,7 @@ async function init() {
   refs.clearAddToContainerSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
   refs.clearAddToContainerSearchBtn.addEventListener("click", clearAddToContainerSearch);
   refs.createSubcontainerBtn.addEventListener("click", createSubcontainerFromAddDialog);
+  refs.createItemForContainerBtn?.addEventListener("click", openNewItemForAddTarget);
   refs.addToContainerDialog.addEventListener("close", () => {
     addToContainerTargetId = null;
     addToContainerTargetLayoutId = "";
@@ -2707,6 +2742,7 @@ async function init() {
   refs.layoutRootSearch.addEventListener("input", renderLayoutRootResults);
   refs.clearLayoutRootSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
   refs.clearLayoutRootSearchBtn.addEventListener("click", clearLayoutRootSearch);
+  refs.createRootForLayoutBtn?.addEventListener("click", openCreateRootContainerForCurrentLayout);
   refs.layoutRootDialog.addEventListener("close", () => {
     refs.layoutRootSearch.value = "";
   });
@@ -2823,6 +2859,7 @@ async function init() {
   });
   refs.layoutEditDialog?.addEventListener("close", handleLayoutEditDialogClose);
   refs.saveEditedLayoutBtn?.addEventListener("click", saveEditedLayout);
+  refs.publishEditedTemplateBtn?.addEventListener("click", handleEditedTemplatePublication);
   refs.deleteEditedLayoutBtn?.addEventListener("click", confirmDeleteEditedLayout);
   refs.layoutOrderToggleBtn?.addEventListener("click", toggleLayoutOrderPanel);
   refs.layoutOrderDialog?.querySelector("form")?.addEventListener("submit", handleLayoutOrderFormSubmit);
@@ -3870,6 +3907,10 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
     return;
   }
   if (sync && !applyingRemoteState && isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout()) {
+    if (isManagedTemplateUnpublished(state.layouts?.[getPublishedEditLayoutId()])) {
+      updateSyncUi(t("template.draftStatus"));
+      return;
+    }
     scheduleActivePublishedEditSave();
     updateSyncUi("Public-укладка изменена · публикую...");
     return;
@@ -3899,8 +3940,10 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
 function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 900, publishNow = false, forcePublic = false } = {}) {
   solidifyTemplateDraftLayout(layoutId);
   const targetIsPublic = (forcePublic || isAdminPublicEditScope(modeState)) && isAdminEditablePublishedLayout(layoutId);
+  const shouldPublishTarget = targetIsPublic && shouldAutoPublishManagedTemplate(state.layouts?.[layoutId]);
   saveState({ sync: !targetIsPublic });
-  if (targetIsPublic) {
+  if (targetIsPublic && !shouldPublishTarget) updateSyncUi(t("template.draftStatus"));
+  if (shouldPublishTarget) {
     if (publishNow) {
       cancelPublishedLayoutSave(layoutId);
       return savePublishedLayoutRecord(layoutId);
@@ -4271,7 +4314,8 @@ function sharedLayoutItemKey(layoutId) {
 }
 
 function schedulePublishedLayoutSave(layoutId, delay = 900) {
-  if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId)) return;
+  const layout = state.layouts?.[layoutId];
+  if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId) || !shouldAutoPublishManagedTemplate(layout)) return;
   if (publishedLayoutSaveTimer && publishedLayoutSaveLayoutId && publishedLayoutSaveLayoutId !== layoutId) {
     const previousLayoutId = publishedLayoutSaveLayoutId;
     window.clearTimeout(publishedLayoutSaveTimer);
@@ -8737,25 +8781,16 @@ async function materializeDemoLayoutForAdminCopy(language = uiLanguage, template
 }
 
 async function ensureAdminPublicCopyTargetsAvailable() {
-  if (!canOpenAdminPublishedEdit()) return;
-  for (const language of SUPPORTED_LANGUAGES) {
-    await materializeDemoLayoutForAdminCopy(language);
-  }
-  const sharedLayoutsToMaterialize = [
-    ...(linkedSharedListLayout ? [linkedSharedListLayout] : []),
-    ...allSharedLayoutsByAdminOrder()
-  ];
-  const seen = new Set();
-  for (const layout of sharedLayoutsToMaterialize) {
-    if (!layout?.id || seen.has(layout.id)) continue;
-    seen.add(layout.id);
-    try {
-      await loadSharedLayoutPayload(layout.id);
-    } catch {
-      // Built-in shared templates remain available without the public endpoint.
-    }
-    materializeSharedLayoutForAdmin(layout.id);
-  }
+  await ensureAdminPublicCopyTargets({
+    canOpen: canOpenAdminPublishedEdit(),
+    languages: SUPPORTED_LANGUAGES,
+    templatesForLanguage: demoTemplatesForUiLanguage,
+    materializeDemoTemplate: (language, templateId) => materializeDemoLayoutForAdminCopy(language, templateId),
+    linkedSharedLayout: linkedSharedListLayout,
+    sharedLayouts: allSharedLayoutsByAdminOrder(),
+    loadSharedLayoutPayload,
+    materializeSharedLayout: materializeSharedLayoutForAdmin
+  });
 }
 
 function mergePublishedSharedStateIntoAdminLayout(layout, editableLayout) {
@@ -8925,6 +8960,7 @@ function historyDemoTemplateOptions() {
     ...SUPPORTED_LANGUAGES.map(normalizeUiLanguage).filter((language) => language !== normalizeUiLanguage(uiLanguage))
   ];
   const entries = [
+    ...adminDemoHistoryEntries(adminTemplateHistoryRecords),
     ...adminDemoTemplateCatalogEntries(),
     ...languageOrder.map((language) => fallbackDemoTemplateEntry(language))
   ];
@@ -8967,7 +9003,10 @@ function selectedHistoryDemoTarget() {
 }
 
 function historySharedTemplateSelectOptions() {
-  return historySharedTemplateOptions(allSharedLayoutsByAdminOrder(), {
+  return historySharedTemplateOptions([
+    ...adminSharedHistoryEntries(adminTemplateHistoryRecords),
+    ...allSharedLayoutsByAdminOrder()
+  ], {
     languageLabel: languageOptionLabel
   });
 }
@@ -9002,6 +9041,14 @@ function renderHistorySourceControls() {
 }
 
 async function refreshHistoryDialog() {
+  if (canOpenAdminPublishedEdit()) {
+    try {
+      const catalog = await apiFetch("/bike-packing/admin/template-records", { silentErrors: true });
+      adminTemplateHistoryRecords = normalizeAdminTemplateHistoryRecords(catalog?.lists);
+    } catch {
+      // The already loaded local/public catalogs still keep history usable on older APIs.
+    }
+  }
   renderHistorySourceControls();
   refs.historyStatus.className = "dialog-status";
   refs.historyStatus.textContent = t("history.loading");
@@ -9281,6 +9328,9 @@ function renderHistoryRecords(records) {
 }
 
 function historyUndoActionText(record, index, records = historyRecords) {
+  if (record?.action?.entityType === "templates" && record.action.operation === "removed") {
+    return t("history.restoreDeletedTemplate");
+  }
   if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") {
     return t("history.undoAfterCheckpoint");
   }
@@ -9409,7 +9459,8 @@ function historySourceLabel(source = activeHistorySource) {
     return target?.name ? `${t("history.sourceDemo")} · ${target.name} · ${languageOptionLabel(target.language)}` : t("history.sourceDemo");
   }
   if (source === "shared") {
-    const layout = findSharedLayout(refs.historySharedSelect?.value);
+    const sharedId = refs.historySharedSelect?.value || "";
+    const layout = historySharedTemplateSelectOptions().find((entry) => entry.id === sharedId);
     return layout?.name ? `${t("history.sourceTemplate")} · ${layout.name}` : t("history.sourceTemplate");
   }
   return t("history.sourceMine");
@@ -9514,7 +9565,13 @@ function selectedHistoryPublishedTarget() {
   }
   if (activeHistorySource !== "shared") return null;
   const sharedId = refs.historySharedSelect?.value || historySharedTemplateSelectOptions()[0]?.id || "";
-  return sharedId ? { type: "shared", sharedId } : null;
+  const selected = historySharedTemplateSelectOptions().find((entry) => entry.id === sharedId);
+  return sharedId ? {
+    type: "shared",
+    sharedId,
+    language: selected?.language || uiLanguage,
+    name: selected?.name || sharedId
+  } : null;
 }
 
 async function publishPublicHistoryRecord(record, payload, { index = 0, records = historyRecords } = {}) {
@@ -9533,19 +9590,28 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
     ), "error");
     return;
   }
+  const restoringDeletedTemplate = record?.action?.entityType === "templates" && record.action.operation === "removed";
   const impact = historyRollbackImpact(record, index, records);
-  const confirmed = await askConfirmDialog(historyUndoConfirmation({
-    actionText: historyUndoActionText(record, index, records),
-    ...impact,
-    localText
-  }));
+  const confirmed = await askConfirmDialog(restoringDeletedTemplate
+    ? {
+      title: t("history.restoreDeletedTemplateQuestion"),
+      text: t("history.restoreDeletedTemplateText"),
+      okText: t("history.restoreDeletedTemplate"),
+      cancelText: localText("Cancel", "Отмена")
+    }
+    : historyUndoConfirmation({
+      actionText: historyUndoActionText(record, index, records),
+      ...impact,
+      localText
+    }));
   if (!confirmed) return;
+  await assertAdminApiCompatibility({ force: true });
   const path = target.type === "demo"
     ? demoAdminStatePathForPublicListId(target.demoListId || "", target.language || uiLanguage)
     : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
   const targetLanguage = target.type === "demo"
     ? target.language || uiLanguage
-    : findSharedLayout(target.sharedId)?.language || uiLanguage;
+    : target.language || findSharedLayout(target.sharedId)?.language || uiLanguage;
   refs.historyDialog.close();
   refs.historyDetailDialog?.close();
   updateSyncUi(target.type === "demo"
@@ -9558,6 +9624,7 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
       title: record.title || record.listTitle || historyPayloadTitle(payload, historySourceLabel()),
       description: record.description || "",
       language: targetLanguage,
+      historyRestore: true,
       payload
     })
   });
@@ -9569,15 +9636,31 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
     publishedListStateCache.set(target.demoListId || demoPublicListIdForLanguage(target.language || uiLanguage), publishedPayload, {
       updatedAt: publishedUpdatedAt
     });
+    upsertDemoTemplateCatalogEntry(target.language || uiLanguage, {
+      listId: target.demoListId || "",
+      name: historyPayloadTitle(publishedPayload, record.title || demoTemplateFallbackName(target.language || uiLanguage)),
+      updatedAt: publishedUpdatedAt,
+      serverConfirmed: true,
+      missing: false
+    });
   } else {
-    const sharedLayout = findSharedLayout(target.sharedId);
-    if (sharedLayout) sharedLayout.statePayload = publishedPayload;
+    const sharedLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+      id: target.sharedId,
+      name: target.name || historyPayloadTitle(publishedPayload, target.sharedId),
+      language: targetLanguage,
+      statePayload: publishedPayload,
+      runtimeSharedTemplate: true,
+      updatedAt: publishedUpdatedAt
+    });
+    forgetDeletedSharedLayoutId(target.sharedId);
+    serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(serverConfirmedSharedLayouts, [sharedLayout]);
     publishedItemKeyStateCache.set(sharedLayoutItemKey(target.sharedId), publishedPayload, {
       updatedAt: publishedUpdatedAt
     });
   }
   replaceActivePublishedHistoryDraft({
     activateLayout: activateAdminPublishedLayout,
+    createWhenMissing: true,
     demoPublicListIdForLanguage,
     importDemoState: importDemoStateAsEditableLayout,
     materializeSharedLayout: materializeSharedLayoutForAdmin,
@@ -9589,7 +9672,13 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
   });
   refreshPublishedLayoutView(target);
   updateSyncUi();
-  showToast(localText("Action undone.", "Действие отменено."), "success");
+  const droppedPhotoCount = Number(data?.droppedMissingPhotoCount || 0);
+  showToast(
+    droppedPhotoCount
+      ? t("history.restoredWithoutMissingPhotos", { count: droppedPhotoCount })
+      : localText("Action undone.", "Действие отменено."),
+    droppedPhotoCount ? "warning" : "success"
+  );
 }
 
 function switchView(view) {

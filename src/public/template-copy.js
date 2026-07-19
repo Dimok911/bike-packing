@@ -1,4 +1,5 @@
 import { containerTreeSnapshotScore } from "../state/container-tree-snapshot.js";
+import { markManagedTemplateUnpublished } from "./template-publication.js";
 
 export const TEMPLATE_COPY_TITLE = "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0432 \u0441\u0432\u043e\u044e \u0443\u043a\u043b\u0430\u0434\u043a\u0443";
 export const TEMPLATE_COPY_ICON_HTML = '<span aria-hidden="true">\u29c9</span>';
@@ -198,33 +199,36 @@ export function createTemplateCopyLayoutRecord({
     dictionaries: dictionaries || ensurePrivateDictionaries(currentState),
     meta: currentCreateMeta(changedAt)
   };
+  let record = null;
   if (!rootSnapshots.length) {
     if (typeof createEmptyPublicTemplateDraftRecord !== "function" || typeof createEmptyLayoutArrangement !== "function") return null;
-    return createEmptyPublicTemplateDraftRecord({
+    record = createEmptyPublicTemplateDraftRecord({
       ...common,
       kind: isDemoTemplateCopy ? "demo" : "shared",
       language: copyLanguage,
       arrangement: createEmptyLayoutArrangement(),
       demoListId
     });
-  }
-  if (isDemoTemplateCopy) {
+  } else if (isDemoTemplateCopy) {
     if (typeof createDemoTemplateCopyRecord !== "function") return null;
-    return createDemoTemplateCopyRecord({
+    record = createDemoTemplateCopyRecord({
       ...common,
       sourceLayout: copySourceLayout,
       arrangement,
       language: copyLanguage,
       demoListId
     });
+  } else {
+    if (typeof createTemplateCopyRecord !== "function") return null;
+    record = createTemplateCopyRecord({
+      ...common,
+      sourceLayout: copySourceLayout,
+      arrangement,
+      language: copyLanguage
+    });
   }
-  if (typeof createTemplateCopyRecord !== "function") return null;
-  return createTemplateCopyRecord({
-    ...common,
-    sourceLayout: copySourceLayout,
-    arrangement,
-    language: copyLanguage
-  });
+  markManagedTemplateUnpublished(record);
+  return record;
 }
 
 export async function resolveLayoutCreateTemplateCopySource(choice, {
@@ -384,7 +388,7 @@ export function createNewPublicTemplateDraftRecord({
   const name = isDemo
     ? normalizeDemoLayoutName(uniquePublishedTemplateName(requestedName), language)
     : uniquePublishedTemplateName(requestedName);
-  return createEmptyPublicTemplateDraftRecord({
+  const record = createEmptyPublicTemplateDraftRecord({
     id,
     name,
     kind,
@@ -399,6 +403,8 @@ export function createNewPublicTemplateDraftRecord({
       })
       : ""
   });
+  markManagedTemplateUnpublished(record);
+  return record;
 }
 
 export function assertPublishedTemplateCopyConfirmed(layout, {

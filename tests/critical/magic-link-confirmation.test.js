@@ -37,6 +37,6 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /authConfirmBtn\.classList\.remove\("ghost"\)/);
   assert.match(appSource, /apiFetch\("\/auth\/verify-magic-link",\s*\{\s*method:\s*"POST"/);
   assert.match(appSource, /"inAppMagicLinkConfirmation"/);
-  assert.match(appSource, /2026-07-19\.in-app-magic-link-confirm-v1/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1271"/);
+  assert.match(appSource, /2026-07-19\.recoverable-template-history-v2/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1282"/);
 });

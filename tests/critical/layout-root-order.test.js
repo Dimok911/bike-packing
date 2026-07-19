@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   addRootContainerToLayoutInState,
   moveContainerInLayoutArrangement,
@@ -16,6 +18,123 @@ import {
   deleteRootContainerFromState,
   placeDuplicatedContainerSnapshotInLayoutState
 } from "../../src/state/container-ops.js";
+import {
+  bindPackingEmptyStateActions,
+  renderPackingAddRootCard,
+  renderPackingEmptyState
+} from "../../src/ui/empty-state.js";
+import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
+
+test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {
+  const html = renderPackingEmptyState({
+    title: "Начните с сумок",
+    text: "Сначала добавьте сумки.",
+    actionText: "Добавить сумку в укладку",
+    hint: "Новую сумку можно создать на вкладке «Сумки»."
+  });
+  assert.match(html, /packing-empty-state/);
+  assert.match(html, /data-add-packing-root/);
+  assert.doesNotMatch(html, /Ничего не найдено/);
+
+  let clickHandler = null;
+  let opened = 0;
+  const button = {
+    addEventListener(type, handler) {
+      if (type === "click") clickHandler = handler;
+    }
+  };
+  bindPackingEmptyStateActions({
+    querySelectorAll: (selector) => selector === "[data-add-packing-root]" ? [button] : []
+  }, {
+    onAddRoot: () => { opened += 1; }
+  });
+  clickHandler();
+  assert.equal(opened, 1);
+});
+
+test("CRITICAL filled packing: trailing card opens the bag picker", () => {
+  const html = renderPackingAddRootCard({
+    title: "Add bag or place",
+    text: "Choose an existing one or create a new one"
+  });
+  assert.match(html, /packing-add-root-card/);
+  assert.match(html, /data-add-packing-root/);
+
+  let clickHandler = null;
+  let opened = 0;
+  bindPackingEmptyStateActions({
+    querySelectorAll: (selector) => selector === "[data-add-packing-root]" ? [{
+      addEventListener(type, handler) {
+        if (type === "click") clickHandler = handler;
+      }
+    }] : []
+  }, {
+    onAddRoot: () => { opened += 1; }
+  });
+  clickHandler();
+  assert.equal(opened, 1);
+});
+
+test("CRITICAL bag picker: creating a new bag stays available beside existing choices", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const html = readFileSync(resolve(projectRoot, "index.html"), "utf8");
+  const app = readFileSync(resolve(projectRoot, "app.js"), "utf8");
+
+  assert.match(html, /id="createRootForLayoutBtn"/);
+  assert.match(html, /id="layoutRootResults"/);
+  assert.match(app, /createRootForLayoutBtn\?\.addEventListener\("click", openCreateRootContainerForCurrentLayout\)/);
+});
+
+test("CRITICAL add item to bag: a new item can be created directly for the target bag", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const html = readFileSync(resolve(projectRoot, "index.html"), "utf8");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.match(html, /id="createItemForContainerBtn"/);
+  assert.match(controllers, /function openNewItemForAddTarget\(\)/);
+  assert.match(controllers, /openItemDialog\(null, \{ targetContainerId, targetLayoutId \}\)/);
+  assert.match(controllers, /state\.containers\?\.\[targetContainerId\].*targetContainerId/s);
+});
+
+test("CRITICAL empty bag picker: a bag created from the picker is placed in the current layout", () => {
+  const state = {
+    containers: {},
+    layouts: {
+      "layout-a": {
+        id: "layout-a",
+        rootContainerIds: [],
+        arrangement: { rootContainerIds: [], containers: {}, items: {}, packedItems: {} }
+      }
+    }
+  };
+  const refs = {
+    saveRootContainerBtn: { disabled: false },
+    rootContainerName: { value: "New bag" },
+    rootContainerWeight: { value: "0" },
+    rootContainerVolume: { value: "" },
+    rootContainerColor: { value: "" },
+    rootContainerLocation: { value: "home" },
+    rootContainerNote: { value: "" },
+    rootContainerNestable: { checked: false },
+    rootContainerDialog: { open: true }
+  };
+
+  const result = saveRootContainerDialogAction({
+    changedAt: "2026-07-19T00:00:00.000Z",
+    getPublishedEditLayoutId: () => "layout-a",
+    placeCreatedRootContainer: (containerId) => addRootContainerToLayoutInState(
+      state,
+      "layout-a",
+      containerId
+    ),
+    refs,
+    state
+  });
+
+  assert.equal(result.created, true);
+  assert.deepEqual(state.layouts["layout-a"].rootContainerIds, [result.id]);
+  assert.equal(state.containers[result.id].name, "New bag");
+});
 
 function createState() {
   return {

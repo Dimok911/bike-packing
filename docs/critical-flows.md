@@ -174,6 +174,14 @@ test:critical` дополнительно к `npm.cmd run check`.
   его disposable draft, может удалить принадлежащие только этому namespace
   записи каталога и фото. Это не то же самое, что убрать вещь/сумку из одной
   пользовательской укладки.
+- Снятие шаблона с публикации не является удалением template namespace. Сервер
+  должен только скрыть запись из публичного каталога, сохранив payload, историю
+  и фото. Физический `DELETE` допустим только для отдельного явного действия
+  удаления шаблона.
+- Перед сетевым запросом снятия с публикации локальная admin-копия атомарно
+  сохраняется как черновик. Потерянный ответ или timeout оставляет черновик с
+  признаком повтора; очистка отсутствующих строк публичного каталога не имеет
+  права удалять неопубликованные или ожидающие подтверждения черновики.
 - Вкладки "Вещи", "Сумки" и "Настройки" не должны показывать отдельную копию
   одной и той же реальной вещи/сумки для каждой укладки. Пользовательские
   осознанные дубли допустимы, но технические `*-isolated-*` копии от старого
@@ -186,6 +194,8 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Restoring any recovery/history/backup payload must require an explicit user action. Normal server-state replacement may preserve managed public drafts from the current working state, but must not resurrect them from an older recovery snapshot.
 - Canonical history stores the state left behind by a successful change; it must not add the new current state as a restorable no-op snapshot. Legacy records equal to the current state are not restore targets.
 - Restoring a demo/shared history snapshot must replace the matching active admin draft and its public payload cache immediately, without requiring a page reload.
+- Removing a published demo/shared template from the template list is a soft delete: its server row, history, and photos remain available to admins through History. Restoring a retained snapshot republishes the template; photo references whose files no longer exist are skipped without blocking recovery of the remaining data.
+- Explicit template deletion creates its own history action (`templates/removed`) with the template name and a dedicated restore control. Merely unpublishing a template must not be recorded as deletion. History details must omit template bookkeeping fields and show concrete user-visible layout field changes; layout rows with only technical changes are hidden.
 - History details form an action chain: each stored pre-action snapshot is compared forward with the current state or the immediately newer snapshot. The displayed added/removed/changed rows describe what that one action originally did, not the inverse restore effect.
 - Opening the history timeline must fetch lightweight summary pages only (25 records per stream by default), without snapshot payloads. More summaries are loaded lazily. A full snapshot and its immediately newer comparison payload are fetched only for the selected Details view or for a demo/shared undo; private undo restores by history id on the server and must not download the snapshot first.
 - Demo, shared-template, and private history use the same undo-action language. Undoing a deep action restores its full snapshot and must explicitly warn that all later actions shown above in the same history stream will also be undone. Only the latest safe single-layout action may use layout-scoped restore.

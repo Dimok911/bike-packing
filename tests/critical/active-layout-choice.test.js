@@ -44,6 +44,10 @@ import {
 } from "../../src/ui/item-dialog-save.js";
 import { shouldPreserveLinkedSharedListOnLanguageChange } from "../../src/public/shared-link-language.js";
 import { readSharedListPublishOptions } from "../../src/public/shared-list-publish.js";
+import {
+  normalizeInlineCategoryName,
+  renderEmptyCategoryPicker
+} from "../../src/ui/category-picker-empty.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const privateIds = new Set(["layout-a", "layout-b", "layout-c"]);
@@ -963,6 +967,35 @@ test("new item form does not preselect the first dictionary category", () => {
   assert.match(controllers, /function renderItemCategoryPicker\(selected = null, \{ fallbackDefault = false \} = \{\}\)/);
   assert.match(controllers, /category:\s*"",\s*categories:\s*\[\],\s*containerId:/);
   assert.doesNotMatch(controllers, /const defaultCategory = dictionaryOptionsForUi\("category"\)\[0\]/);
+});
+
+test("empty category picker offers inline creation in editable item and bag dialogs", () => {
+  const html = renderEmptyCategoryPicker({
+    hint: "No <categories>",
+    placeholder: "Category name",
+    actionText: "Add"
+  });
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+
+  assert.match(html, /data-new-category-input/);
+  assert.match(html, /data-add-category-inline disabled/);
+  assert.match(html, /No &lt;categories&gt;/);
+  assert.equal(normalizeInlineCategoryName("  Camping  "), "Camping");
+  assert.match(controllers, /allowCreate:\s*true/);
+  assert.match(controllers, /addCustomDictionaryValue\(owner, "category", value\)/);
+  assert.match(controllers, /renderItemCategoryPicker\(selected, \{ fallbackDefault: false \}\)/);
+  assert.match(controllers, /renderRootContainerCategoryPicker\(selected, \{ fallbackDefault: false \}\)/);
+});
+
+test("new empty layouts and templates open on the packing tab", () => {
+  const controllers = readProjectFile("src/app/app-tail-controllers.js");
+  const saveNewLayout = controllers.slice(
+    controllers.indexOf("async function saveNewLayout"),
+    controllers.indexOf("function openLayoutEditDialog")
+  );
+
+  assert.doesNotMatch(saveNewLayout, /switchView\("bags"\)/);
+  assert.match(saveNewLayout, /switchView\("packing"\)/);
 });
 
 test("settings summary weight can include every bag in the active layout", () => {

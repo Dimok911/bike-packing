@@ -1,3 +1,5 @@
+import { markManagedTemplatePublished } from "./template-publication.js";
+
 export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, layoutId = runtime.state.activeLayoutId, { notify = false } = {}) {
   const {
     apiFetch,
@@ -184,6 +186,8 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
     if (sharedLayout) sharedLayout.statePayload = publishedPayload;
     await refreshPublicSharedLayoutCatalog().catch(() => null);
   }
+  markManagedTemplatePublished(layout);
+  persistStateSnapshot(runtime.state);
   refreshPublishedLayoutView(target);
   updateSyncUi();
   if (notify) showToast(target.type === "demo" ? "Демо-укладка сохранена." : "Шаблон сохранен.", "success");

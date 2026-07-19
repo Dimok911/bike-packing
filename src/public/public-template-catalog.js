@@ -370,6 +370,7 @@ export function buildAdminDemoTemplateOptions({
     `${prefix}: ${name} (${label})`);
   const templatePrefix = labels.templatePrefix || "Template";
   const defaultName = labels.defaultName || "Demo";
+  const draftMarker = labels.draftMarker || "📝 Draft";
   const candidates = [];
   let order = 0;
   const pushCandidate = (candidate) => {
@@ -402,7 +403,9 @@ export function buildAdminDemoTemplateOptions({
           prefix: templatePrefix,
           name,
           languageLabel: languageLabel(language),
-          demo: true
+          demo: true,
+          unpublished: layout.templatePublished === false,
+          draftMarker
         }),
         "demo"
       ]

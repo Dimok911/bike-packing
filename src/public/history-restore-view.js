@@ -17,6 +17,7 @@ export function publishedHistoryTargetMatchesLayout(layout, target, {
 
 export function replaceActivePublishedHistoryDraft({
   activateLayout = () => false,
+  createWhenMissing = false,
   demoPublicListIdForLanguage = () => "",
   importDemoState = () => null,
   materializeSharedLayout = () => null,
@@ -27,12 +28,18 @@ export function replaceActivePublishedHistoryDraft({
   target
 } = {}) {
   const activeLayout = state?.layouts?.[state?.activeLayoutId] || null;
-  if (!publishedHistoryTargetMatchesLayout(activeLayout, target, {
+  const matchingLayout = publishedHistoryTargetMatchesLayout(activeLayout, target, {
     demoPublicListIdForLanguage,
     normalizeLanguage
-  })) return null;
+  })
+    ? activeLayout
+    : Object.values(state?.layouts || {}).find((layout) => publishedHistoryTargetMatchesLayout(layout, target, {
+        demoPublicListIdForLanguage,
+        normalizeLanguage
+      })) || null;
+  if (!matchingLayout && !createWhenMissing) return null;
 
-  removeLayoutTree(activeLayout.id);
+  if (matchingLayout?.id) removeLayoutTree(matchingLayout.id);
   const replacement = target.type === "demo"
     ? importDemoState(payload, {
       language: target.language,

@@ -1,4 +1,5 @@
 import { currentDocumentLanguage } from "../utils/language.js";
+import { managedTemplateOptionLabel } from "../public/template-publication.js";
 
 function isEnglish() {
   return currentDocumentLanguage() === "en";
@@ -30,8 +31,11 @@ export function layoutEditTitle(layout) {
   return localText("Edit layout", "Редактировать укладку");
 }
 
-export function publicTemplateOptionLabel({ prefix, name, languageLabel }) {
-  return `${prefix}: ${name} (${languageLabel})`;
+export function publicTemplateOptionLabel({ prefix, name, languageLabel, unpublished = false, draftMarker = "" }) {
+  return managedTemplateOptionLabel(`${prefix}: ${name} (${languageLabel})`, {
+    draftMarker,
+    unpublished
+  });
 }
 
 export function layoutSourceNameFromOptionLabel(label = "") {
@@ -130,7 +134,7 @@ export function privateLayoutDeleteConfirm({ layout, containerCount, itemText, i
 export function publicLayoutDeleteConfirm({ layout, containerCount, itemText, deletePublished = false }) {
   if (isEnglish()) {
     const serverText = deletePublished
-      ? "The published template will be deleted from the server and the public template list."
+      ? "The template will disappear from the public list, while its server history and photos will be kept. It can be restored from History."
       : "The published version on the server will not be deleted.";
     return {
       title: "Delete template?",
@@ -141,7 +145,7 @@ export function publicLayoutDeleteConfirm({ layout, containerCount, itemText, de
     };
   }
   const serverText = deletePublished
-    ? "Опубликованный шаблон будет удалён с сервера и из публичного списка шаблонов."
+    ? "Шаблон исчезнет из публичного списка, но его серверная история и фотографии сохранятся. Его можно будет восстановить из истории."
     : "Опубликованная версия на сервере удалена не будет.";
   return {
     title: "Удалить шаблон?",

@@ -24,7 +24,8 @@ export async function deletePublishedSharedTemplate({
     try {
       await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(id)}`, {
         method: "DELETE",
-        timeoutMs
+        timeoutMs,
+        silentErrors: true
       });
     } catch (error) {
       if (!isAlreadyDeletedSharedTemplateError(error)) throw error;
@@ -35,6 +36,37 @@ export async function deletePublishedSharedTemplate({
   // fail on legacy broken photo references and keep deleted templates stuck.
   removeRuntimeSharedLayout(layoutsByLanguage, id);
   return true;
+}
+
+export async function unpublishPublishedSharedTemplate({
+  sharedId,
+  apiFetch,
+  historyAction = "",
+  layoutsByLanguage,
+  timeoutMs
+} = {}) {
+  const id = String(sharedId || "").trim();
+  if (!id || typeof apiFetch !== "function") return false;
+  try {
+    const result = await apiFetch(`/bike-packing/admin/shared-layouts/${encodeURIComponent(id)}/publication`, {
+      method: "PATCH",
+      timeoutMs,
+      silentErrors: true,
+      body: JSON.stringify({
+        published: false,
+        ...(historyAction ? { historyAction } : {})
+      })
+    });
+    const unpublished = Boolean(result?.ok !== false && result?.published === false && String(result?.id || "").trim() === id);
+    if (unpublished) removeRuntimeSharedLayout(layoutsByLanguage, id);
+    return unpublished;
+  } catch (error) {
+    if (error?.status === 404) {
+      removeRuntimeSharedLayout(layoutsByLanguage, id);
+      return true;
+    }
+    throw error;
+  }
 }
 
 function runtimeLayoutMatchesDeletedTemplate(layout, targetKeys, fallbackLanguage) {
@@ -102,7 +134,5 @@ export function purgeUnconfirmedSharedTemplatesFromFrontendState({
 }
 
 function isAlreadyDeletedSharedTemplateError(error) {
-  if (error?.status !== 404) return false;
-  const message = `${error?.message || ""} ${error?.data?.message || ""} ${error?.data?.error || ""}`;
-  return /not\s+found|not\s+been\s+created|has\s+not\s+been\s+created|missing/i.test(message);
+  return error?.status === 404;
 }

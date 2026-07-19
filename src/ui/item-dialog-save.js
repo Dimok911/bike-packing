@@ -35,6 +35,7 @@ export function saveRootContainerDialogAction({
   normalizeContainerColor = (value) => value,
   parseVolumeInput = () => 0,
   parseWeightInput = () => 0,
+  placeCreatedRootContainer = () => false,
   readRootContainerDialogDimensions = () => ({}),
   refs,
   render = () => {},
@@ -75,6 +76,7 @@ export function saveRootContainerDialogAction({
       ...currentCreateMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.containers[id]);
+    placeCreatedRootContainer(id, changedAt);
     const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
     const layoutId = getPublishedEditLayoutId();
     restoreAdminPublishedLayoutContext(layoutId);

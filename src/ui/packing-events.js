@@ -1,3 +1,5 @@
+import { bindPackingEmptyStateActions } from "./empty-state.js";
+
 export function bindPackingEvents(root, {
   bindPointerPackingDrag,
   bindRootColumnDrag,
@@ -23,6 +25,7 @@ export function bindPackingEvents(root, {
   openAddToContainerDialog,
   openPackingItemReplacementDialog,
   openItemDialog,
+  openLayoutRootDialog,
   openRootContainerDialog,
   placePlaceholder,
   removeDropzoneDragOver,
@@ -44,6 +47,7 @@ export function bindPackingEvents(root, {
   const state = getState();
   const placeholder = document.createElement("div");
   placeholder.className = "drop-placeholder";
+  bindPackingEmptyStateActions(root, { onAddRoot: openLayoutRootDialog });
   bindPointerPackingDrag(root, placeholder);
   bindRootColumnDrag(root);
 

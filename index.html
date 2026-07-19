@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Сборы в велопоход</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1271" />
+    <link rel="stylesheet" href="./styles.css?v=1282" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -411,9 +411,12 @@
             <button id="clearAddToContainerSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
           </span>
         </label>
-        <div id="addToContainerCreateRow" class="add-list-row">
-          <input id="newSubcontainerName" type="text" placeholder="Новый список или пакет" />
-          <button id="createSubcontainerBtn" type="button">Добавить</button>
+        <div id="addToContainerCreationActions" class="picker-create-actions">
+          <button id="createItemForContainerBtn" class="picker-create-primary" type="button">Создать новую вещь</button>
+          <div id="addToContainerCreateRow" class="add-list-row">
+            <input id="newSubcontainerName" type="text" placeholder="Новый список или пакет" />
+            <button id="createSubcontainerBtn" type="button">Добавить</button>
+          </div>
         </div>
         <div id="addToContainerResults" class="add-item-results"></div>
       </form>
@@ -433,6 +436,7 @@
             <button id="clearLayoutRootSearchBtn" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
           </span>
         </label>
+        <button id="createRootForLayoutBtn" class="picker-create-primary" type="button">Создать новую сумку или место</button>
         <div id="layoutRootResults" class="add-item-results"></div>
       </form>
     </dialog>
@@ -461,6 +465,7 @@
         </label>
         <footer class="layout-edit-actions">
           <button id="deleteEditedLayoutBtn" class="ghost danger" type="button">Delete</button>
+          <button id="publishEditedTemplateBtn" class="primary" type="button" hidden>Publish</button>
           <button id="layoutOrderToggleBtn" class="ghost layout-order-toggle" type="button" aria-expanded="false" aria-controls="layoutOrderDialog">
             <span class="layout-order-toggle-icon" aria-hidden="true">↕</span>
             <span class="layout-order-toggle-text">Порядок укладок</span>
@@ -715,6 +720,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1271" type="module"></script>
+    <script src="./app.js?v=1282" type="module"></script>
   </body>
 </html>

@@ -16,6 +16,11 @@ import {
   summarizeHistoryPayload
 } from "../../src/sync/history.js";
 import { replaceActivePublishedHistoryDraft } from "../../src/public/history-restore-view.js";
+import {
+  adminDemoHistoryEntries,
+  adminSharedHistoryEntries,
+  normalizeAdminTemplateHistoryRecords
+} from "../../src/public/admin-template-history-catalog.js";
 import { buildHistoryActionContext } from "../../src/sync/history-action.js";
 import { closestEventTarget } from "../../src/ui/long-press-tooltip.js";
 import {
@@ -196,6 +201,66 @@ test("CRITICAL history: one action identifies every layout affected by changed e
   });
 });
 
+test("CRITICAL history: deleting the last layout restores the removed layout instead of the temporary empty replacement", () => {
+  const beforeState = {
+    layouts: { last: { id: "last", name: "Last layout" } },
+    items: {},
+    containers: {}
+  };
+  const afterState = {
+    layouts: { empty: { id: "empty", name: "New layout" } },
+    items: {},
+    containers: {}
+  };
+  const context = buildHistoryActionContext({
+    beforeState,
+    afterState,
+    changedAt: "2026-07-19T12:00:00.000Z",
+    deviceId: "browser",
+    getLayoutContainerIds: () => new Set(),
+    getLayoutItemIds: () => new Set()
+  });
+
+  assert.deepEqual(context.affectedLayoutIds, ["empty", "last"]);
+  assert.equal(context.changeScope, "multiple");
+  assert.deepEqual(historyRecordRestoreLayoutIds({
+    snapshotKind: "undo",
+    changeScope: context.changeScope,
+    affectedLayoutIds: context.affectedLayoutIds
+  }), []);
+});
+
+test("CRITICAL history: hidden templates remain selectable from the admin history catalog", () => {
+  const records = normalizeAdminTemplateHistoryRecords([
+    {
+      id: "public-demo-state-copy-ru-hidden",
+      publicTemplateKind: "demo",
+      name: "Hidden demo",
+      language: "ru",
+      published: false
+    },
+    {
+      id: "public-shared-layout-hidden-shared",
+      sharedLayoutId: "hidden-shared",
+      publicTemplateKind: "shared-layout",
+      name: "Hidden shared",
+      language: "en",
+      published: false
+    }
+  ]);
+
+  assert.deepEqual(adminDemoHistoryEntries(records).map((entry) => entry.listId), [
+    "public-demo-state-copy-ru-hidden"
+  ]);
+  assert.deepEqual(adminSharedHistoryEntries(records).map((entry) => entry.id), ["hidden-shared"]);
+  assert.equal(records.every((entry) => entry.published === false), true);
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  assert.match(appSource, /apiFetch\("\/bike-packing\/admin\/template-records"/);
+  assert.match(appSource, /historyRestore:\s*true/);
+  assert.match(appSource, /droppedMissingPhotoCount/);
+});
+
 test("CRITICAL sync-save: forced list save keeps the current base revision for conflict retry", () => {
   const body = buildListSaveBody({
     forceOverwrite: true,
@@ -303,6 +368,55 @@ test("CRITICAL history: record details describe the action forward from its prev
   });
   assert.match(latestStepHtml, /Tent/);
   assert.doesNotMatch(latestStepHtml, /Pump/);
+});
+
+test("CRITICAL history: layout changes explain visible fields and hide template bookkeeping", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Демо-укладка 2 2",
+        rootContainerIds: ["bag-a", "bag-b"],
+        adminDemoLanguage: "ru",
+        templatePublished: false
+      }
+    },
+    containers: {
+      "bag-a": { id: "bag-a", name: "Передняя сумка" },
+      "bag-b": { id: "bag-b", name: "Задняя сумка" }
+    },
+    items: {}
+  };
+  const technicalOnly = structuredClone(before);
+  technicalOnly.layouts.layout.adminDemoLanguage = "en";
+  technicalOnly.layouts.layout.templatePublished = true;
+  assert.deepEqual(buildHistoryStateDiff(before, technicalOnly).layouts.changed, []);
+
+  const reordered = structuredClone(before);
+  reordered.layouts.layout.rootContainerIds = ["bag-b", "bag-a"];
+  const changed = buildHistoryStateDiff(before, reordered).layouts.changed;
+  assert.equal(changed.length, 1);
+  assert.match(changed[0].details[0], /Передняя сумка → Задняя сумка → Задняя сумка → Передняя сумка/);
+});
+
+test("CRITICAL history: deleted template has dedicated details and restore semantics", () => {
+  const record = {
+    id: 10,
+    createdAt: "2026-07-19T20:00:00.000Z",
+    action: { entityType: "templates", operation: "removed", count: 1, title: "Demo packing" },
+    payload: { activeLayoutId: "layout", layouts: { layout: { id: "layout", name: "Demo packing" } } }
+  };
+  assert.equal(historyActionDescription(record.action, { localText: (_en, ru) => ru }), "Удалён шаблон «Demo packing»");
+  const html = renderHistoryRecordDetails(record, 0, [record], {
+    activeSource: "demo",
+    currentComparisonState: () => record.payload,
+    localText: (_en, ru) => ru,
+    recordState: (value) => value.payload,
+    restoreComparisonTitle: "Что сделано",
+    summarizePayload: () => "1 укладка"
+  });
+  assert.match(html, /Шаблон «Demo packing» удалён из публичного списка/);
+  assert.doesNotMatch(html, /Пользовательских изменений не найдено/);
 });
 
 test("CRITICAL history: current-state snapshots are not offered as restore targets", () => {
@@ -622,4 +736,44 @@ test("CRITICAL history: restoring a published template replaces the active admin
   assert.equal(replacement?.id, "draft-new");
   assert.equal(state.activeLayoutId, "draft-new");
   assert.deepEqual(calls, ["remove:draft-old", "materialize:shared-one", "activate:draft-new"]);
+});
+
+test("CRITICAL history: a missing demo template can be recreated from its retained history", () => {
+  const state = {
+    activeLayoutId: "layout-private",
+    layouts: {
+      "layout-private": { id: "layout-private", name: "Private" }
+    }
+  };
+  const calls = [];
+  const replacement = replaceActivePublishedHistoryDraft({
+    activateLayout: (layoutId) => {
+      calls.push(`activate:${layoutId}`);
+      state.activeLayoutId = layoutId;
+    },
+    createWhenMissing: true,
+    importDemoState: (_payload, options) => {
+      calls.push(`import:${options.listId}`);
+      const layout = {
+        id: "layout-restored-demo",
+        adminDemo: true,
+        adminDemoLanguage: options.language,
+        adminDemoListId: options.listId
+      };
+      state.layouts[layout.id] = layout;
+      return layout;
+    },
+    payload: { activeLayoutId: "layout-main", layouts: { "layout-main": { id: "layout-main" } } },
+    state,
+    target: {
+      type: "demo",
+      language: "ru",
+      demoListId: "public-demo-state-copy-ru-restored"
+    }
+  });
+
+  assert.equal(replacement?.id, "layout-restored-demo");
+  assert.equal(state.layouts["layout-private"].id, "layout-private");
+  assert.equal(state.activeLayoutId, "layout-restored-demo");
+  assert.deepEqual(calls, ["import:public-demo-state-copy-ru-restored", "activate:layout-restored-demo"]);
 });

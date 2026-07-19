@@ -44,6 +44,7 @@ const HISTORY_TECHNICAL_FIELDS = new Set([
   "templateSourceId",
   "adminDemo",
   "adminDemoListId",
+  "adminDemoLanguage",
   "isAdminDemo",
   "demo",
   "isDemo",
@@ -51,6 +52,10 @@ const HISTORY_TECHNICAL_FIELDS = new Set([
   "isAdminShared",
   "adminSharedSourceId",
   "adminTemplateCopy",
+  "runtimeSharedTemplate",
+  "serverConfirmed",
+  "templatePublished",
+  "templateUnpublishPending",
   "isPublicCatalog",
   "publicCatalog",
   "guestDemoCopy",
@@ -98,6 +103,8 @@ function historyFieldDefinitions(type, localText = historyRuText) {
     },
     layout: {
       name: localText("Name", "Название"),
+      language: localText("Language", "Язык"),
+      layoutOrder: localText("Position in the list", "Позиция в списке"),
       rootContainerIds: localText("Bags in layout", "Сумки в укладке"),
       arrangement: localText("Column arrangement", "Раскладка колонок"),
       notes: localText("Layout notes", "Заметки к укладке"),
@@ -119,6 +126,8 @@ function historyFieldDefinitions(type, localText = historyRuText) {
   }
   if (type === "layout") {
     definitions.push(
+      ["language", labels.layout.language, ""],
+      ["layoutOrder", labels.layout.layoutOrder, ""],
       ["notes", labels.layout.notes, ""],
       ["locked", labels.layout.locked, "boolean"]
     );
@@ -198,6 +207,12 @@ export function historyActionDescription(action, {
   if (action.entityType === "packed") {
     return localText("Packing status changed", "Изменён статус сборов");
   }
+  if (action.entityType === "templates") {
+    const title = String(action.title || "").trim();
+    return title
+      ? localText(`Removed template “${title}”`, `Удалён шаблон «${title}»`)
+      : localText("Removed template", "Удалён шаблон");
+  }
   const entityNames = {
     items: localText("item", "вещь"),
     containers: localText("bag", "сумка"),
@@ -274,9 +289,11 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState, localText) {
     const beforeValue = historyComparableEntity(type, before);
     const afterValue = historyComparableEntity(type, after);
     if (!snapshotsEqual(beforeValue, afterValue)) {
+      const details = historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText);
+      if (!details.length) return;
       changed.push({
         title: historyEntityTitle(type, after || before) || id,
-        details: historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText)
+        details
       });
     }
   });
@@ -333,11 +350,24 @@ function historyChangedFields(type, beforeValue, afterValue, fromState, toState,
   const rows = definitions
     .filter(([key]) => !snapshotsEqual(beforeValue?.[key], afterValue?.[key]))
     .map(([key, label, format]) => {
+      if (type === "layout" && key === "rootContainerIds") {
+        const before = formatLayoutRootOrder(beforeValue?.[key], fromState, localText);
+        const after = formatLayoutRootOrder(afterValue?.[key], toState, localText);
+        return `${label}: ${before} → ${after}`;
+      }
       const before = formatHistoryDiffValue(beforeValue?.[key], format, fromState, localText);
       const after = formatHistoryDiffValue(afterValue?.[key], format, toState, localText);
+      if (type === "layout" && key === "arrangement" && before === after) {
+        return `${label}: ${localText("order or placement changed", "изменены порядок или размещение")}`;
+      }
       return `${label}: ${before} → ${after}`;
     });
   return rows;
+}
+
+function formatLayoutRootOrder(value, targetState, localText = historyRuText) {
+  if (!Array.isArray(value) || !value.length) return localText("empty", "пусто");
+  return value.map((id) => targetState?.containers?.[id]?.name || id).join(" → ");
 }
 
 function formatHistoryDiffValue(value, format = "", targetState = {}, localText = historyRuText) {
@@ -523,13 +553,26 @@ function renderHistoryRecordComparison(record, index, records, {
   recordState,
   restoreComparisonTitle
 } = {}) {
+  const targetLabel = restoreComparisonTitle;
+  if (record?.action?.entityType === "templates" && record.action.operation === "removed") {
+    const title = String(record.action.title || "").trim();
+    const text = title
+      ? localText(
+        `The template “${title}” was removed from the public list. Its data, history, and available photos were retained.`,
+        `Шаблон «${title}» удалён из публичного списка. Его данные, история и доступные фотографии сохранены.`
+      )
+      : localText(
+        "The template was removed from the public list. Its data, history, and available photos were retained.",
+        "Шаблон удалён из публичного списка. Его данные, история и доступные фотографии сохранены."
+      );
+    return `<div class="history-record-details"><h3>${escapeHtml(targetLabel)}</h3><p>${escapeHtml(text)}</p></div>`;
+  }
   const selectedState = recordState(record);
   const currentState = currentComparisonState();
   const newerRecord = historyNewerRecord(record, index, records);
   const newerState = newerRecord ? recordState(newerRecord) : currentState;
   const fromState = selectedState;
   const toState = newerState;
-  const targetLabel = restoreComparisonTitle;
   if (!fromState || !toState) {
     return `<div class="history-record-details"><p class="history-diff-empty">${escapeHtml(localText("This history entry could not be compared.", "Не удалось сравнить эту запись истории."))}</p></div>`;
   }
