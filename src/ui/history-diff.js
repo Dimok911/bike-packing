@@ -170,11 +170,15 @@ export function historyRecordAction(record, index, records, {
 } = {}) {
   const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
   if (kind === "daily") return null;
-  if (record?.action && typeof record.action === "object") return record.action;
+  const recordedAction = record?.action && typeof record.action === "object" ? record.action : null;
+  if (recordedAction && recordedAction.entityType !== "layouts") return recordedAction;
   const beforeState = recordState(record);
   const newerRecord = historyNewerRecord(record, index, records);
   const afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();
-  if (!beforeState || !afterState) return null;
+  if (!beforeState || !afterState) return recordedAction;
+  const placementAction = historyLayoutPlacementAction(beforeState, afterState);
+  if (placementAction) return placementAction;
+  if (recordedAction) return recordedAction;
   const rows = historyDiffRows(buildHistoryStateDiff(beforeState, afterState));
   if (!rows.length) return null;
   const catalogRows = rows.filter((entry) => entry.entityType === "items" || entry.entityType === "containers");
@@ -212,6 +216,23 @@ export function historyActionDescription(action, {
     return title
       ? localText(`Removed template “${title}”`, `Удалён шаблон «${title}»`)
       : localText("Removed template", "Удалён шаблон");
+  }
+  if (action.entityType === "layoutContainers" || action.entityType === "layoutItems") {
+    const title = String(action.title || "").trim();
+    const layoutTitle = String(action.layoutTitle || "").trim();
+    const isContainer = action.entityType === "layoutContainers";
+    if (action.operation === "added") {
+      return localText(
+        `${isContainer ? "Added bag" : "Added item"}${title ? ` “${title}”` : ""}${layoutTitle ? ` to layout “${layoutTitle}”` : ""}`,
+        `${isContainer ? "Добавлена сумка" : "Добавлена вещь"}${title ? ` «${title}»` : ""}${layoutTitle ? ` в укладку «${layoutTitle}»` : ""}`
+      );
+    }
+    if (action.operation === "removed") {
+      return localText(
+        `${isContainer ? "Removed bag" : "Removed item"}${title ? ` “${title}”` : ""}${layoutTitle ? ` from layout “${layoutTitle}”` : ""}`,
+        `${isContainer ? "Удалена сумка" : "Удалена вещь"}${title ? ` «${title}»` : ""}${layoutTitle ? ` из укладки «${layoutTitle}»` : ""}`
+      );
+    }
   }
   const entityNames = {
     items: localText("item", "вещь"),
@@ -345,24 +366,140 @@ function historyContainerName(targetState, containerId, localText = historyRuTex
   return targetState?.containers?.[id]?.name || id;
 }
 
+function historyMapKeys(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
+}
+
+function historyLayoutPlacementIds(layout = {}) {
+  const arrangement = layout?.arrangement && typeof layout.arrangement === "object"
+    ? layout.arrangement
+    : {};
+  return {
+    containers: new Set([
+      ...(Array.isArray(layout?.rootContainerIds) ? layout.rootContainerIds : []),
+      ...(Array.isArray(arrangement?.rootContainerIds) ? arrangement.rootContainerIds : []),
+      ...historyMapKeys(arrangement?.containers)
+    ].map(String)),
+    items: new Set(historyMapKeys(arrangement?.items).map(String))
+  };
+}
+
+function historySetDelta(beforeSet, afterSet) {
+  return {
+    added: [...afterSet].filter((id) => !beforeSet.has(id)),
+    removed: [...beforeSet].filter((id) => !afterSet.has(id))
+  };
+}
+
+function historyLayoutPlacementDelta(fromState = {}, toState = {}) {
+  const layoutIds = new Set([
+    ...historyMapKeys(fromState?.layouts),
+    ...historyMapKeys(toState?.layouts)
+  ]);
+  const changedLayouts = [...layoutIds].filter((id) => {
+    const before = fromState?.layouts?.[id];
+    const after = toState?.layouts?.[id];
+    if (!before || !after) return false;
+    const beforeIds = historyLayoutPlacementIds(before);
+    const afterIds = historyLayoutPlacementIds(after);
+    return !snapshotsEqual({
+      containers: [...beforeIds.containers].sort(),
+      items: [...beforeIds.items].sort()
+    }, {
+      containers: [...afterIds.containers].sort(),
+      items: [...afterIds.items].sort()
+    });
+  });
+  if (changedLayouts.length !== 1) return null;
+  const layoutId = changedLayouts[0];
+  const beforeLayout = fromState.layouts[layoutId];
+  const afterLayout = toState.layouts[layoutId];
+  const beforeIds = historyLayoutPlacementIds(beforeLayout);
+  const afterIds = historyLayoutPlacementIds(afterLayout);
+  return {
+    layoutId,
+    layoutTitle: String(afterLayout?.name || beforeLayout?.name || layoutId),
+    containers: historySetDelta(beforeIds.containers, afterIds.containers),
+    items: historySetDelta(beforeIds.items, afterIds.items)
+  };
+}
+
+function historyLayoutPlacementAction(fromState = {}, toState = {}) {
+  const delta = historyLayoutPlacementDelta(fromState, toState);
+  if (!delta) return null;
+  const changes = [
+    ...delta.containers.added.map((id) => ({ entityType: "layoutContainers", operation: "added", id, state: toState })),
+    ...delta.containers.removed.map((id) => ({ entityType: "layoutContainers", operation: "removed", id, state: fromState })),
+    ...delta.items.added.map((id) => ({ entityType: "layoutItems", operation: "added", id, state: toState })),
+    ...delta.items.removed.map((id) => ({ entityType: "layoutItems", operation: "removed", id, state: fromState }))
+  ];
+  if (changes.length !== 1) return null;
+  const change = changes[0];
+  const map = change.entityType === "layoutContainers" ? change.state?.containers : change.state?.items;
+  return {
+    entityType: change.entityType,
+    operation: change.operation,
+    count: 1,
+    title: String(map?.[change.id]?.name || change.id),
+    layoutTitle: delta.layoutTitle
+  };
+}
+
+function historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toState, localText) {
+  const syntheticFrom = { ...fromState, layouts: { [beforeValue?.id || "layout"]: beforeValue } };
+  const syntheticTo = { ...toState, layouts: { [afterValue?.id || beforeValue?.id || "layout"]: afterValue } };
+  const delta = historyLayoutPlacementDelta(syntheticFrom, syntheticTo);
+  if (!delta) return [];
+  const rows = [];
+  delta.containers.added.forEach((id) => rows.push(localText(
+    `Added bag: “${toState?.containers?.[id]?.name || id}”`,
+    `Добавлена сумка: «${toState?.containers?.[id]?.name || id}»`
+  )));
+  delta.containers.removed.forEach((id) => rows.push(localText(
+    `Removed bag: “${fromState?.containers?.[id]?.name || id}”`,
+    `Удалена сумка: «${fromState?.containers?.[id]?.name || id}»`
+  )));
+  delta.items.added.forEach((id) => rows.push(localText(
+    `Added item: “${toState?.items?.[id]?.name || id}”`,
+    `Добавлена вещь: «${toState?.items?.[id]?.name || id}»`
+  )));
+  delta.items.removed.forEach((id) => rows.push(localText(
+    `Removed item: “${fromState?.items?.[id]?.name || id}”`,
+    `Удалена вещь: «${fromState?.items?.[id]?.name || id}»`
+  )));
+  return rows;
+}
+
 function historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText = historyRuText) {
   const definitions = historyFieldDefinitions(type, localText);
+  const placementChanged = type === "layout" && (
+    !snapshotsEqual(beforeValue?.rootContainerIds, afterValue?.rootContainerIds)
+    || !snapshotsEqual(beforeValue?.arrangement, afterValue?.arrangement)
+  );
+  const placementDetails = placementChanged
+    ? historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toState, localText)
+    : [];
   const rows = definitions
+    .filter(([key]) => !(placementChanged && (key === "rootContainerIds" || key === "arrangement")))
     .filter(([key]) => !snapshotsEqual(beforeValue?.[key], afterValue?.[key]))
     .map(([key, label, format]) => {
-      if (type === "layout" && key === "rootContainerIds") {
-        const before = formatLayoutRootOrder(beforeValue?.[key], fromState, localText);
-        const after = formatLayoutRootOrder(afterValue?.[key], toState, localText);
-        return `${label}: ${before} → ${after}`;
-      }
       const before = formatHistoryDiffValue(beforeValue?.[key], format, fromState, localText);
       const after = formatHistoryDiffValue(afterValue?.[key], format, toState, localText);
-      if (type === "layout" && key === "arrangement" && before === after) {
-        return `${label}: ${localText("order or placement changed", "изменены порядок или размещение")}`;
-      }
       return `${label}: ${before} → ${after}`;
     });
-  return rows;
+  if (placementChanged && !placementDetails.length) {
+    const beforeRoots = Array.isArray(beforeValue?.rootContainerIds) ? beforeValue.rootContainerIds : [];
+    const afterRoots = Array.isArray(afterValue?.rootContainerIds) ? afterValue.rootContainerIds : [];
+    if (!snapshotsEqual(beforeRoots, afterRoots)) {
+      rows.push(localText(
+        `Changed bag order: ${formatLayoutRootOrder(afterRoots, toState, localText)}`,
+        `Изменён порядок сумок: ${formatLayoutRootOrder(afterRoots, toState, localText)}`
+      ));
+    } else {
+      rows.push(localText("Changed bag or item placement", "Изменено размещение сумок или вещей"));
+    }
+  }
+  return [...placementDetails, ...rows];
 }
 
 function formatLayoutRootOrder(value, targetState, localText = historyRuText) {

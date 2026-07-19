@@ -46,3 +46,17 @@ export function adminSharedHistoryEntries(records = []) {
       updatedAt: entry.updatedAt
     }));
 }
+
+export function isAdminTemplateHistoryListId(listId, records = []) {
+  const normalizedListId = normalizeText(listId);
+  if (!normalizedListId) return false;
+  return normalizeAdminTemplateHistoryRecords(records)
+    .some((entry) => entry.listId === normalizedListId);
+}
+
+export function privateHistoryListRecords(records = [], templateRecords = []) {
+  return (Array.isArray(records) ? records : []).filter((record) => {
+    const listId = normalizeText(record?.listId || record?.list_id || record?.id);
+    return !isAdminTemplateHistoryListId(listId, templateRecords);
+  });
+}

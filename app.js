@@ -190,6 +190,8 @@ import {
 import {
   adminDemoHistoryEntries,
   adminSharedHistoryEntries,
+  isAdminTemplateHistoryListId,
+  privateHistoryListRecords,
   normalizeAdminTemplateHistoryRecords
 } from "./src/public/admin-template-history-catalog.js";
 import {
@@ -1033,6 +1035,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminTemplateHistoryCatalog",
   "publicHistoryMissingPhotoRecovery",
   "templateDeletionHistoryAction",
+  "semanticLayoutPlacementHistory",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
@@ -1056,7 +1059,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-19.recoverable-template-history-v2";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-19.semantic-layout-history-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -9172,15 +9175,16 @@ async function loadPrivateRemoteHistory(pageState = null) {
   let lists = [];
   try {
     const catalog = await apiFetch("/bike-packing/lists", { timeoutMs: LIST_API_TIMEOUT_MS });
-    lists = normalizePackingListsResponse(catalog)
+    lists = privateHistoryListRecords(normalizePackingListsResponse(catalog)
       .map((list) => normalizeRemoteListRecord(list))
-      .filter((list) => remoteRecordId(list) && !isReadOnlyBikePackingRecord(list));
+      .filter((list) => remoteRecordId(list) && !isReadOnlyBikePackingRecord(list)), adminTemplateHistoryRecords);
   } catch {
     lists = [];
   }
 
   const currentListId = await ensureCurrentPackingListId();
-  if (!lists.some((list) => remoteRecordId(list) === currentListId)) {
+  if (!isAdminTemplateHistoryListId(currentListId, adminTemplateHistoryRecords)
+    && !lists.some((list) => remoteRecordId(list) === currentListId)) {
     lists.push({ id: currentListId, title: currentPackingListMeta?.title || "" });
   }
 

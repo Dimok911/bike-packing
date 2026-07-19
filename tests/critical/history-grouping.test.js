@@ -19,6 +19,8 @@ import { replaceActivePublishedHistoryDraft } from "../../src/public/history-res
 import {
   adminDemoHistoryEntries,
   adminSharedHistoryEntries,
+  isAdminTemplateHistoryListId,
+  privateHistoryListRecords,
   normalizeAdminTemplateHistoryRecords
 } from "../../src/public/admin-template-history-catalog.js";
 import { buildHistoryActionContext } from "../../src/sync/history-action.js";
@@ -254,6 +256,12 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
   ]);
   assert.deepEqual(adminSharedHistoryEntries(records).map((entry) => entry.id), ["hidden-shared"]);
   assert.equal(records.every((entry) => entry.published === false), true);
+  assert.equal(isAdminTemplateHistoryListId("public-demo-state-copy-ru-hidden", records), true);
+  assert.deepEqual(privateHistoryListRecords([
+    { id: "personal-list", title: "My packing" },
+    { id: "public-demo-state-copy-ru-hidden", title: "Hidden demo" },
+    { id: "public-shared-layout-hidden-shared", title: "Hidden shared" }
+  ], records).map((entry) => entry.id), ["personal-list"]);
 
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   assert.match(appSource, /apiFetch\("\/bike-packing\/admin\/template-records"/);
@@ -396,7 +404,58 @@ test("CRITICAL history: layout changes explain visible fields and hide template 
   reordered.layouts.layout.rootContainerIds = ["bag-b", "bag-a"];
   const changed = buildHistoryStateDiff(before, reordered).layouts.changed;
   assert.equal(changed.length, 1);
-  assert.match(changed[0].details[0], /Передняя сумка → Задняя сумка → Задняя сумка → Передняя сумка/);
+  assert.equal(changed[0].details[0], "Изменён порядок сумок: Задняя сумка → Передняя сумка");
+});
+
+test("CRITICAL history: adding an existing bag names the bag instead of dumping layout internals", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Новая укладка",
+        rootContainerIds: ["bag-a"],
+        arrangement: {
+          rootContainerIds: ["bag-a"],
+          containers: { "bag-a": { column: 0 } },
+          items: { item: { containerId: "bag-a" } }
+        }
+      }
+    },
+    containers: {
+      "bag-a": { id: "bag-a", name: "Сумка на руль Topeak Frontloader" },
+      "bag-b": { id: "bag-b", name: "Бардачок верхний Ortlieb" }
+    },
+    items: { item: { id: "item", name: "Блок питания 65 W" } }
+  };
+  const after = structuredClone(before);
+  after.layouts.layout.rootContainerIds.push("bag-b");
+  after.layouts.layout.arrangement.rootContainerIds.push("bag-b");
+  after.layouts.layout.arrangement.containers["bag-b"] = { column: 1 };
+
+  const changed = buildHistoryStateDiff(before, after).layouts.changed;
+  assert.equal(changed.length, 1);
+  assert.deepEqual(changed[0].details, ["Добавлена сумка: «Бардачок верхний Ortlieb»"]);
+  assert.doesNotMatch(changed[0].details.join(" "), /2 корневых|Сумка на руль.*→/);
+
+  const record = {
+    action: { entityType: "layouts", operation: "changed", title: "Новая укладка" },
+    payload: before
+  };
+  const action = historyRecordAction(record, 0, [record], {
+    currentComparisonState: () => after,
+    recordState: (value) => value.payload
+  });
+  assert.deepEqual(action, {
+    entityType: "layoutContainers",
+    operation: "added",
+    count: 1,
+    title: "Бардачок верхний Ortlieb",
+    layoutTitle: "Новая укладка"
+  });
+  assert.equal(historyActionDescription(action, { localText: (_en, ru) => ru }),
+    "Добавлена сумка «Бардачок верхний Ortlieb» в укладку «Новая укладка»");
+  assert.equal(historyActionDescription(action, { localText: (en) => en }),
+    "Added bag “Бардачок верхний Ortlieb” to layout “Новая укладка”");
 });
 
 test("CRITICAL history: deleted template has dedicated details and restore semantics", () => {
