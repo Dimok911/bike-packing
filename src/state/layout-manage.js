@@ -448,7 +448,7 @@ export function createLayoutCopyRecordFromSource({
       : createEmptyLayoutArrangement());
   const arrangement = clonePlain(sourceArrangement);
   const dictionaries = ensureLayoutDictionaries(sourceLayout) || ensurePrivateDictionaries(state);
-  return createManagedLayoutCopyRecord({
+  const record = createManagedLayoutCopyRecord({
     id,
     name: uniqueLayoutName(requestedName),
     sourceLayout,
@@ -460,6 +460,9 @@ export function createLayoutCopyRecordFromSource({
     language,
     publicTemplate
   });
+  record._historyCopySourceLayoutId = String(sourceLayout.id || "");
+  record._historyCopySourceLayoutName = String(sourceLayout.name || "");
+  return record;
 }
 
 export function applyLayoutEditFields(layout, {

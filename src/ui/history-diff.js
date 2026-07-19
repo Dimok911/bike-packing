@@ -176,6 +176,8 @@ export function historyRecordAction(record, index, records, {
   const newerRecord = historyNewerRecord(record, index, records);
   const afterState = newerRecord ? recordState(newerRecord) : currentComparisonState();
   if (!beforeState || !afterState) return recordedAction;
+  const copyAction = historyLayoutCopyAction(beforeState, afterState);
+  if (copyAction) return copyAction;
   const placementAction = historyLayoutPlacementAction(beforeState, afterState);
   if (placementAction) return placementAction;
   if (recordedAction) return recordedAction;
@@ -233,6 +235,14 @@ export function historyActionDescription(action, {
         `${isContainer ? "Удалена сумка" : "Удалена вещь"}${title ? ` «${title}»` : ""}${layoutTitle ? ` из укладки «${layoutTitle}»` : ""}`
       );
     }
+  }
+  if (action.entityType === "layoutCopies") {
+    const title = String(action.title || "").trim();
+    const sourceTitle = String(action.sourceTitle || "").trim();
+    return localText(
+      `Copied layout${sourceTitle ? ` “${sourceTitle}”` : ""}${title ? ` as “${title}”` : ""}`,
+      `Создана копия укладки${sourceTitle ? ` «${sourceTitle}»` : ""}${title ? ` с названием «${title}»` : ""}`
+    );
   }
   const entityNames = {
     items: localText("item", "вещь"),
@@ -300,11 +310,11 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState, localText) {
     const before = fromMap?.[id];
     const after = toMap?.[id];
     if (!before && after) {
-      added.push(historyEntityLine(type, id, after, toState, "added", localText));
+      added.push(historyEntityLine(type, id, after, toState, "added", localText, fromState));
       return;
     }
     if (before && !after) {
-      removed.push(historyEntityLine(type, id, before, fromState, "removed", localText));
+      removed.push(historyEntityLine(type, id, before, fromState, "removed", localText, toState));
       return;
     }
     const beforeValue = historyComparableEntity(type, before);
@@ -330,7 +340,7 @@ function historyComparableEntity(type, value) {
   return cloned;
 }
 
-function historyEntityLine(type, id, value, targetState, mode, localText = historyRuText) {
+function historyEntityLine(type, id, value, targetState, mode, localText = historyRuText, comparisonState = {}) {
   const title = historyEntityTitle(type, value) || id;
   const meta = [];
   if (type === "item") {
@@ -344,8 +354,25 @@ function historyEntityLine(type, id, value, targetState, mode, localText = histo
     if (Number(value?.weight || 0)) meta.push(formatWeight(value.weight));
   }
   if (type === "layout") {
+    const copyInfo = mode === "added" ? historyLayoutCopyInfo(comparisonState, targetState, value) : null;
     const roots = Array.isArray(value?.rootContainerIds) ? value.rootContainerIds.length : 0;
-    meta.push(localText(`${roots} root bags`, `${roots} корневых сумок`));
+    const rootNames = historyLayoutRootIds(value)
+      .map((rootId) => targetState?.containers?.[rootId]?.name || rootId)
+      .filter(Boolean);
+    if (copyInfo?.sourceTitle) {
+      meta.push(localText(
+        `Copy of layout “${copyInfo.sourceTitle}” created as “${title}”`,
+        `Копия укладки «${copyInfo.sourceTitle}» создана с названием «${title}»`
+      ));
+    }
+    if (rootNames.length) {
+      meta.push(localText(
+        `Bags: ${rootNames.map((name) => `“${name}”`).join(", ")}`,
+        `Сумки: ${rootNames.map((name) => `«${name}»`).join(", ")}`
+      ));
+    } else if (!copyInfo?.sourceTitle) {
+      meta.push(localText(`${roots} root bags`, `${roots} корневых сумок`));
+    }
   }
   return {
     title,
@@ -381,6 +408,65 @@ function historyLayoutPlacementIds(layout = {}) {
       ...historyMapKeys(arrangement?.containers)
     ].map(String)),
     items: new Set(historyMapKeys(arrangement?.items).map(String))
+  };
+}
+
+function historyLayoutRootIds(layout = {}) {
+  return [...new Set([
+    ...(Array.isArray(layout?.rootContainerIds) ? layout.rootContainerIds : []),
+    ...(Array.isArray(layout?.arrangement?.rootContainerIds) ? layout.arrangement.rootContainerIds : [])
+  ].map(String).filter(Boolean))];
+}
+
+function historyLayoutCopyInfo(fromState = {}, toState = {}, addedLayout = null) {
+  if (!addedLayout) return null;
+  let sourceId = String(addedLayout?._historyCopySourceLayoutId || "").trim();
+  if (!sourceId) {
+    const addedIds = historyLayoutPlacementIds(addedLayout);
+    sourceId = historyMapKeys(fromState?.layouts).find((layoutId) => {
+      const sourceIds = historyLayoutPlacementIds(fromState.layouts[layoutId]);
+      return snapshotsEqual({
+        roots: historyLayoutRootIds(fromState.layouts[layoutId]),
+        containers: [...sourceIds.containers].sort(),
+        items: [...sourceIds.items].sort()
+      }, {
+        roots: historyLayoutRootIds(addedLayout),
+        containers: [...addedIds.containers].sort(),
+        items: [...addedIds.items].sort()
+      });
+    }) || "";
+  }
+  const sourceTitle = String(
+    fromState?.layouts?.[sourceId]?.name
+    || toState?.layouts?.[sourceId]?.name
+    || addedLayout?._historyCopySourceLayoutName
+    || ""
+  ).trim();
+  if (!sourceId && !sourceTitle) return null;
+  return {
+    sourceId,
+    sourceTitle,
+    title: String(addedLayout.name || addedLayout.id || "").trim(),
+    bagTitles: historyLayoutRootIds(addedLayout)
+      .map((id) => String(toState?.containers?.[id]?.name || id).trim())
+      .filter(Boolean)
+  };
+}
+
+function historyLayoutCopyAction(fromState = {}, toState = {}) {
+  const addedLayouts = historyMapKeys(toState?.layouts)
+    .filter((id) => !fromState?.layouts?.[id])
+    .map((id) => toState.layouts[id]);
+  if (addedLayouts.length !== 1) return null;
+  const info = historyLayoutCopyInfo(fromState, toState, addedLayouts[0]);
+  if (!info) return null;
+  return {
+    entityType: "layoutCopies",
+    operation: "added",
+    count: 1,
+    title: info.title,
+    sourceTitle: info.sourceTitle,
+    bagTitles: info.bagTitles
   };
 }
 

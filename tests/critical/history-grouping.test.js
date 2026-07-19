@@ -24,6 +24,7 @@ import {
   normalizeAdminTemplateHistoryRecords
 } from "../../src/public/admin-template-history-catalog.js";
 import { buildHistoryActionContext } from "../../src/sync/history-action.js";
+import { createLayoutCopyRecordFromSource } from "../../src/state/layout-manage.js";
 import { closestEventTarget } from "../../src/ui/long-press-tooltip.js";
 import {
   buildListSaveBody
@@ -46,8 +47,13 @@ function normalizeState(payload) {
 test("CRITICAL history: a single history row keeps its content height", () => {
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
   const historyListRule = styles.match(/\.history-list\s*\{([^}]*)\}/)?.[1] || "";
+  const historyRecordRule = styles.match(/\.history-record\s*\{([^}]*)\}/)?.[1] || "";
+  const historyActionsRule = styles.match(/\.history-record-actions\s*\{([^}]*)\}/)?.[1] || "";
   assert.match(historyListRule, /grid-auto-rows:\s*max-content/);
   assert.match(historyListRule, /align-content:\s*start/);
+  assert.match(historyRecordRule, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(historyActionsRule, /grid-template-columns:\s*116px\s+120px/);
+  assert.match(historyActionsRule, /width:\s*auto/);
 });
 
 test("CRITICAL history: private list titles keep separate layout groups", () => {
@@ -456,6 +462,74 @@ test("CRITICAL history: adding an existing bag names the bag instead of dumping 
     "Добавлена сумка «Бардачок верхний Ortlieb» в укладку «Новая укладка»");
   assert.equal(historyActionDescription(action, { localText: (en) => en }),
     "Added bag “Бардачок верхний Ortlieb” to layout “Новая укладка”");
+});
+
+test("CRITICAL history: a copied layout names its source, new name, and bags", () => {
+  const sourceLayout = {
+    id: "source-layout",
+    name: "Поход 2026",
+    rootContainerIds: ["bag-a", "bag-b"],
+    arrangement: {
+      rootContainerIds: ["bag-a", "bag-b"],
+      containers: { "bag-a": { column: 0 }, "bag-b": { column: 1 } },
+      items: {}
+    }
+  };
+  const before = {
+    layouts: { [sourceLayout.id]: sourceLayout },
+    containers: {
+      "bag-a": { id: "bag-a", name: "Передняя сумка" },
+      "bag-b": { id: "bag-b", name: "Задняя сумка" }
+    },
+    items: {}
+  };
+  const copiedLayout = createLayoutCopyRecordFromSource({
+    id: "copied-layout",
+    requestedName: "Поход 2026 — запасной",
+    sourceLayout,
+    state: before,
+    changedAt: "2026-07-20T10:00:00.000Z",
+    canUsePrivateState: () => true,
+    currentCreateMeta: () => ({}),
+    ensureLayoutDictionaries: () => ({ locations: [], categories: [] }),
+    ensurePrivateDictionaries: () => ({ locations: [], categories: [] })
+  });
+  const after = structuredClone(before);
+  after.layouts[copiedLayout.id] = copiedLayout;
+
+  assert.equal(copiedLayout._historyCopySourceLayoutId, "source-layout");
+  assert.equal(copiedLayout._historyCopySourceLayoutName, "Поход 2026");
+  const added = buildHistoryStateDiff(before, after).layouts.added;
+  assert.equal(added.length, 1);
+  assert.match(added[0].details, /Копия укладки «Поход 2026» создана с названием «Поход 2026 — запасной»/);
+  assert.match(added[0].details, /Сумки: «Передняя сумка», «Задняя сумка»/);
+
+  const record = {
+    action: { entityType: "layouts", operation: "added", title: copiedLayout.name },
+    payload: before
+  };
+  const action = historyRecordAction(record, 0, [record], {
+    currentComparisonState: () => after,
+    recordState: (value) => value.payload
+  });
+  assert.deepEqual(action, {
+    entityType: "layoutCopies",
+    operation: "added",
+    count: 1,
+    title: "Поход 2026 — запасной",
+    sourceTitle: "Поход 2026",
+    bagTitles: ["Передняя сумка", "Задняя сумка"]
+  });
+  assert.equal(historyActionDescription(action, { localText: (_en, ru) => ru }),
+    "Создана копия укладки «Поход 2026» с названием «Поход 2026 — запасной»");
+  assert.equal(historyActionDescription(action, { localText: (en) => en }),
+    "Copied layout “Поход 2026” as “Поход 2026 — запасной”");
+
+  const i18nSource = readFileSync(new URL("../../src/data/i18n.js", import.meta.url), "utf8");
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  assert.match(i18nSource, /"history\.undoShort": "Отменить"/);
+  assert.match(i18nSource, /"history\.undoShort": "Undo"/);
+  assert.match(appSource, /return t\("history\.undoShort"\)/);
 });
 
 test("CRITICAL history: deleted template has dedicated details and restore semantics", () => {

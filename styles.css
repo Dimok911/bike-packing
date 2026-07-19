@@ -6936,7 +6936,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
 .history-record {
   display: grid;
-  grid-template-columns: minmax(175px, 210px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   border: 1px solid var(--line);
@@ -6984,11 +6984,11 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
 .history-record-actions {
   display: grid;
-  grid-template-columns: 116px minmax(0, 360px);
+  grid-template-columns: 116px 120px;
   justify-content: start;
   gap: 6px;
   min-width: 0;
-  width: 100%;
+  width: auto;
 }
 
 .history-record-actions button {
@@ -7024,7 +7024,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   }
 
   .history-record-actions {
-    grid-template-columns: 100px minmax(0, 1fr);
+    grid-template-columns: 100px 120px;
   }
 }
 

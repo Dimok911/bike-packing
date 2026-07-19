@@ -1036,6 +1036,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicHistoryMissingPhotoRecovery",
   "templateDeletionHistoryAction",
   "semanticLayoutPlacementHistory",
+  "layoutCopyHistoryDetails",
   "templateCopyRequiresPublicSharedRow",
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
@@ -1059,7 +1060,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-19.semantic-layout-history-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-20.layout-copy-history-v2";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -9331,25 +9332,11 @@ function renderHistoryRecords(records) {
   refs.historyList.querySelector("[data-history-load-more]")?.addEventListener("click", loadMoreHistoryRecords);
 }
 
-function historyUndoActionText(record, index, records = historyRecords) {
-  if (record?.action?.entityType === "templates" && record.action.operation === "removed") {
-    return t("history.restoreDeletedTemplate");
-  }
+function historyUndoActionText(record) {
   if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") {
     return t("history.undoAfterCheckpoint");
   }
-  const action = historyRecordAction(record, index, records, {
-    currentComparisonState: currentHistoryComparisonState,
-    recordState: historyRecordState
-  });
-  if (!action) return t("history.undoMixed");
-  if (action.operation === "mixed" || !action.title) return t("history.undoMixed");
-  const key = action.operation === "added"
-    ? "history.undoAdded"
-    : action.operation === "removed"
-      ? "history.undoRemoved"
-      : "history.undoChanged";
-  return t(key, { name: action.title });
+  return t("history.undoShort");
 }
 
 function findHistoryRecordByKey(recordKey) {
