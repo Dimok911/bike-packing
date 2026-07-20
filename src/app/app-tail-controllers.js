@@ -982,6 +982,7 @@ function addRootContainerToActiveLayout(containerId, targetIndex = null, { close
   const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
   if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
+    includeContents: !pendingCopyTargetContainerSetup,
     markRecordActivePublicCatalog,
     touchLayout
   })) return;

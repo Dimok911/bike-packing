@@ -366,6 +366,7 @@ function ensureRootContainerTreePlacement(targetState, arrangement, containerId,
 
 export function addRootContainerToLayoutInState(targetState, layoutId, containerId, targetIndex = null, {
   changedAt = "",
+  includeContents = true,
   markRecordActivePublicCatalog = () => {},
   touchLayout = () => {}
 } = {}) {
@@ -374,7 +375,9 @@ export function addRootContainerToLayoutInState(targetState, layoutId, container
   if (!layout || !container) return false;
   const arrangement = normalizeLayoutArrangement(layout, targetState);
   removeContainerPlacementReferences(arrangement, containerId);
-  const placement = ensureRootContainerTreePlacement(targetState, arrangement, containerId, "");
+  const placement = includeContents
+    ? ensureRootContainerTreePlacement(targetState, arrangement, containerId, "")
+    : createEmptyRootContainerPlacement(arrangement, containerId);
   if (!placement) return false;
   placement.parentId = "";
   const index = targetIndex === null
@@ -385,6 +388,21 @@ export function addRootContainerToLayoutInState(targetState, layoutId, container
   markRecordActivePublicCatalog(container);
   touchLayout(layoutId, changedAt);
   return true;
+}
+
+function createEmptyRootContainerPlacement(arrangement, containerId) {
+  Object.entries(arrangement.items || {}).forEach(([itemId, placedContainerId]) => {
+    if (placedContainerId !== containerId) return;
+    delete arrangement.items[itemId];
+    delete arrangement.packedItems?.[itemId];
+  });
+  arrangement.containers[containerId] = {
+    parentId: "",
+    itemIds: [],
+    childIds: [],
+    order: []
+  };
+  return arrangement.containers[containerId];
 }
 
 export function rootColumnInsertIndexFromVisibleNeighbors(rootContainerIds = [], containerId, {

@@ -244,6 +244,25 @@ test("CRITICAL root column drag: adding a bag inserts it at the requested root i
   assert.deepEqual(touched, ["layout-a"]);
 });
 
+test("CRITICAL item-copy setup: an existing target bag can be linked without source-layout contents", () => {
+  const state = createState();
+
+  assert.equal(addRootContainerToLayoutInState(state, "layout-a", "bag-a", null, {
+    includeContents: false
+  }), true);
+
+  const layout = state.layouts["layout-a"];
+  assert.deepEqual(layout.arrangement.containers["bag-a"], {
+    parentId: "",
+    itemIds: [],
+    childIds: [],
+    order: []
+  });
+  assert.equal(layout.arrangement.items["item-a"], undefined);
+  assert.deepEqual(state.containers["bag-a"].itemIds, ["item-a"]);
+  assert.equal(state.items["item-a"].containerId, "bag-a");
+});
+
 test("CRITICAL root column drag: moving a root column updates arrangement order too", () => {
   const state = createState();
   const layout = state.layouts["layout-a"];

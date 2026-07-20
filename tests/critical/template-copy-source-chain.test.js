@@ -629,6 +629,7 @@ test("empty item-copy target reuses the bag picker and resumes the same copy flo
   assert.match(controllers, /emptyItemCopyTarget[\s\S]*?renderPackingAddRootCard\(\{[\s\S]*?packing\.addRootTitle/);
   assert.match(controllers, /function openCopyTargetContainerSetup\(event\)[\s\S]*?openLayoutRootDialog\(\{ targetLayoutId, returnToCopyPicker: true \}\)/);
   assert.match(controllers, /function addRootContainerToActiveLayout[\s\S]*?const layoutId = getLayoutRootTargetLayoutId\(\)/);
+  assert.match(controllers, /includeContents: !pendingCopyTargetContainerSetup/);
   assert.match(controllers, /openRootContainerDialog\(null, \{ placeInCurrentLayout: true, targetLayoutId \}\)/);
   assert.match(controllers, /function resumeCopyPickerAfterContainerSetup\(\)[\s\S]*?restoreContainerPickerContinuation\(pending\)/);
   assert.doesNotMatch(controllers, /shouldCopySharedItemOutsideLayout/);
