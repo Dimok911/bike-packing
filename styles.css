@@ -4209,6 +4209,30 @@ mark {
   min-width: 0;
 }
 
+.items-list .item-card .catalog-card-title-block {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.items-list .item-card .item-title {
+  padding-inline-end: 108px;
+}
+
+.items-list .item-card .copy-item-button {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.items-list .item-card .edit-button {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.items-list .item-card .delete-item-button {
+  grid-column: 4;
+  grid-row: 1;
+}
+
 .root-container-title {
   min-width: 0;
   overflow-wrap: anywhere;

@@ -97,6 +97,10 @@ test("CRITICAL item catalog: label rows share the fixed card text height with th
   assert.match(styles, /\.items-list\.with-photo-slots \.item-card \.item-card-top \{[\s\S]*?max-height: var\(--photo-top-row-height\);[\s\S]*?overflow: hidden;/);
   assert.match(styles, /\.items-list \.item-card \.meta \{[\s\S]*?min-height: 22px;[\s\S]*?max-height: none;/);
   assert.doesNotMatch(styles, /\.items-list \.item-card \.meta \{[\s\S]*?max-height: 22px;/);
+  assert.match(styles, /\.items-list \.item-card \.catalog-card-title-block \{[\s\S]*?grid-column: 1 \/ -1;/);
+  assert.match(styles, /\.items-list \.item-card \.item-title \{[\s\S]*?padding-inline-end: 108px;/);
+  assert.match(styles, /\.items-list \.item-card \.copy-item-button \{[\s\S]*?grid-column: 2;[\s\S]*?grid-row: 1;/);
+  assert.match(styles, /\.items-list \.item-card \.delete-item-button \{[\s\S]*?grid-column: 4;[\s\S]*?grid-row: 1;/);
 });
 
 test("CRITICAL root placement: the named move dialog title is localized", () => {
