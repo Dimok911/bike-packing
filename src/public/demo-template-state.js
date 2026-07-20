@@ -249,22 +249,30 @@ export function guestDemoCopyCleanupPlan({
   activeLayoutId = "",
   isGuestDemoCopy = (layout) => Boolean(layout?.guestDemoCopy),
   isAutomaticDemoCopy = () => true,
-  hasUserEdits = () => false
+  hasUserEdits = () => false,
+  automaticCopyGroupKey = () => "default"
 } = {}) {
   const copies = Object.values(layouts || {}).filter((layout) => layout?.id && isGuestDemoCopy(layout));
   const uneditedCopies = copies.filter((layout) => isAutomaticDemoCopy(layout) && !hasUserEdits(layout));
-  if (uneditedCopies.length <= 1) {
-    return {
-      keepLayoutId: uneditedCopies[0]?.id || "",
-      removeLayoutIds: []
-    };
-  }
-  const activeUnedited = uneditedCopies.find((layout) => layout.id === activeLayoutId) || null;
-  const keep = activeUnedited || [...uneditedCopies].sort((a, b) => updatedTime(b) - updatedTime(a))[0];
+  const groups = new Map();
+  uneditedCopies.forEach((layout) => {
+    const key = String(automaticCopyGroupKey(layout) || "default");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(layout);
+  });
+  const keptLayouts = [];
+  const removeLayoutIds = [];
+  groups.forEach((group) => {
+    const active = group.find((layout) => layout.id === activeLayoutId) || null;
+    const keep = active || [...group].sort((a, b) => updatedTime(b) - updatedTime(a))[0];
+    if (keep) keptLayouts.push(keep);
+    removeLayoutIds.push(...group
+      .filter((layout) => layout.id !== keep?.id)
+      .map((layout) => layout.id));
+  });
+  const keep = keptLayouts.find((layout) => layout.id === activeLayoutId) || keptLayouts[0] || null;
   return {
     keepLayoutId: keep?.id || "",
-    removeLayoutIds: uneditedCopies
-      .filter((layout) => layout.id !== keep?.id)
-      .map((layout) => layout.id)
+    removeLayoutIds
   };
 }

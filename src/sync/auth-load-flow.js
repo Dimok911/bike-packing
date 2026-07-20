@@ -41,7 +41,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   runtime.currentAuthorization = normalizeAuthAuthorization(null);
   if (isSharedListLinkRoute()) return;
   if (isForcedOffline()) {
-    setLayoutLoadStatus("warning", localText("Offline: showing the local layout", "Офлайн: показана локальная укладка"));
+    setLayoutLoadStatus("warning", () => localText("Offline: showing the local layout", "Офлайн: показана локальная укладка"));
     if (isExplicitlySignedOut()) {
       await enterSignedOutPublicMode(localText(
         "Signed out · personal lists are hidden, local demo copy is open",
@@ -54,13 +54,13 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   }
   let authData = null;
   try {
-    setLayoutLoadStatus("loading", localText("Checking sign-in and personal layouts...", "Проверяем вход и личные укладки..."));
+    setLayoutLoadStatus("loading", () => localText("Checking sign-in and personal layouts...", "Проверяем вход и личные укладки..."));
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
     authData = await apiFetch("/auth/me");
   } catch (error) {
     runtime.currentUser = null;
     if (isAuthCheckUnavailableError(error, isNetworkError)) {
-      setLayoutLoadStatus("warning", localText("Server unavailable, trying the local copy", "Сервер недоступен, пробуем локальную копию"));
+      setLayoutLoadStatus("warning", () => localText("Server unavailable, trying the local copy", "Сервер недоступен, пробуем локальную копию"));
       if (activateOfflineRememberedSession(localText(
         "Server unavailable · local copy of personal layouts is open",
         "Сервер недоступен · открыта локальная копия личных укладок"
@@ -76,7 +76,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
       ));
       return;
     }
-    setLayoutLoadStatus("warning", localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
+    setLayoutLoadStatus("warning", () => localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       runtime.appUnlocked = true;
       updateSyncUi(currentPublicTemplateStatusMessage());
@@ -103,7 +103,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     clearOfflineRememberedSession();
     runtime.appUnlocked = true;
     activateLocalStorageScope(GUEST_STORAGE_SCOPE);
-    setLayoutLoadStatus("warning", localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
+    setLayoutLoadStatus("warning", () => localText("Sign-in is not confirmed, personal layouts are hidden", "Вход не подтверждён, личные укладки скрыты"));
     if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
       updateSyncUi(currentPublicTemplateStatusMessage());
       return;
@@ -133,7 +133,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     null;
   rememberAuthenticatedUser();
   if (isAdminUser()) checkAdminApiCompatibility({ force: true }).catch(() => null);
-  setLayoutLoadStatus("loading", localText("Loading personal layouts...", "Загружаем личные укладки..."));
+  setLayoutLoadStatus("loading", () => localText("Loading personal layouts...", "Загружаем личные укладки..."));
   updateSyncUi(localText("Signed in · loading data...", "Вход выполнен · загружаем данные..."));
   await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });
 
@@ -151,12 +151,12 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   } catch (error) {
     if (isNetworkError(error)) {
       renderInitialLocalFallbackIfNeeded();
-      setLayoutLoadStatus("warning", localText("Server unavailable, showing the local layout", "Сервер недоступен, показана локальная укладка"));
+      setLayoutLoadStatus("warning", () => localText("Server unavailable, showing the local layout", "Сервер недоступен, показана локальная укладка"));
       updateSyncUi(localText("Signed in · offline, local layout is available", "Вход выполнен · офлайн, локальная укладка доступна"));
       return;
     }
     renderInitialLocalFallbackIfNeeded();
-    setLayoutLoadStatus("error", localText(`Could not load personal layouts: ${error.message}`, `Не удалось загрузить личные укладки: ${error.message}`));
+    setLayoutLoadStatus("error", () => localText(`Could not load personal layouts: ${error.message}`, `Не удалось загрузить личные укладки: ${error.message}`));
     updateSyncUi(localText(`Signed in · could not load data: ${error.message}`, `Вход выполнен · не удалось загрузить данные: ${error.message}`));
   }
 }

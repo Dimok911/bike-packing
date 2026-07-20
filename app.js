@@ -111,6 +111,7 @@ import {
   shouldImportGuestLayoutBeforeRemote,
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
+import { handleGuestLanguageLayoutSwitch } from "./src/public/guest-language-layout.js";
 import {
   ensureGuestSharedLinkCopyTargetLayout,
   recordGuestSharedLinkDetachedItem
@@ -279,7 +280,7 @@ import {
   sharedEntityTargetFromUrl
 } from "./src/public/shared-entity-link.js";
 import { focusSharedEntityTarget } from "./src/ui/shared-entity-focus.js";
-import { finishAppStartup, renderBeforeFinishingAppStartup } from "./src/ui/app-startup.js";
+import { finishAppStartup, renderBeforeFinishingAppStartup, resolveAppStartupLanguage } from "./src/ui/app-startup.js";
 import {
   reconcilePublishedTemplateCopyDraft,
   repairEmptyTemplateCopyDraftFromPublishedLayout
@@ -852,6 +853,7 @@ import {
   buildRememberedOfflineUser,
   currentUserIdFromStorage,
   getSavedAuthEmailFromStorage,
+  getSavedAuthScopeKeyFromStorage,
   rememberAuthenticatedUserInStorage,
   saveAuthEmailToStorage
 } from "./src/storage/auth-scope.js";
@@ -2563,22 +2565,61 @@ async function setUiLanguage(language) {
   saveUiLanguage(uiLanguage);
   applyPublicTemplateLanguage();
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
+  applyStaticTranslations();
+  updateLayoutLoadStatusUi();
   if (sharedLanguageTarget && sharedLanguageTarget.id !== previousReadOnlyLayoutId) {
-    applyStaticTranslations();
     await openSharedLayoutViewer(sharedLanguageTarget.id, { remember: true });
     updateSyncUi();
     return;
   }
   if (wasSharedView && !preserveLinkedSharedList && !sharedLanguageTarget) {
-    applyStaticTranslations();
     await openDemoLayoutFromSelect({ language: uiLanguage, remember: true });
     updateSyncUi();
     return;
   }
-  applyStaticTranslations();
   render();
   if (isOfflineRememberedSession()) setOfflineRememberedLayoutLoadStatus();
   updateSyncUi();
+  try {
+    const result = await handleGuestLanguageLayoutSwitch({
+      guestSession: isGuestSession(),
+      readOnlyStateScope: isReadOnlyStateScope(),
+      sharedListRoute: isSharedListLinkRoute(),
+      layouts: state.layouts,
+      activeLayoutId: state.activeLayoutId,
+      previousLanguage,
+      nextLanguage: uiLanguage,
+      templateCatalog: serverConfirmedDemoTemplates,
+      findTemplateForLanguage: findDemoTemplateForLanguage,
+      defaultTemplateListId: demoPublicListIdForLanguage,
+      guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+      createLayout: ({ templateId }) => createLocalDemoCopy({
+        forceNew: true,
+        remember: false,
+        exactTemplateName: true,
+        activate: false,
+        templateId
+      }),
+      confirmOpen: ({ layout }) => askConfirmDialog({
+        title: t("guest.languageLayoutCreatedTitle", {
+          language: t(`language.name.${uiLanguage}`)
+        }),
+        text: t("guest.languageLayoutCreatedText", {
+          language: t(`language.name.${uiLanguage}`),
+          name: layout.name || t("demo.layoutName")
+        }),
+        okText: t("guest.languageLayoutOpen"),
+        cancelText: t("guest.languageLayoutStay"),
+        tone: "warning"
+      }),
+      openLayout: (layoutId) => openPrivateLayout(layoutId, { remember: true })
+    });
+    if (result.status === "failed") {
+      showToast(t("guest.languageLayoutCreateFailed"), "warning");
+    }
+  } catch (error) {
+    showToast(t("guest.languageLayoutCreateFailedWithReason", { message: error.message }), "warning");
+  }
   if (wasAdminDemoEdit) {
     try {
       if (!currentUser) {
@@ -2616,6 +2657,13 @@ async function setUiLanguage(language) {
 }
 
 function applyStaticTranslations() {
+  const startupLanguage = resolveAppStartupLanguage({
+    uiLanguage,
+    authenticated: Boolean(currentUser),
+    rememberedSession: !isExplicitlySignedOut() && Boolean(getSavedAuthScopeKeyFromStorage(localStorage)),
+    defaultLanguage: DEFAULT_LANGUAGE
+  });
+  const startupDictionary = I18N[startupLanguage] || I18N[DEFAULT_LANGUAGE] || {};
   applyStaticTranslationsUi({
     activeReadOnlyLayoutId,
     canOpenAdminPublishedEdit,
@@ -2624,6 +2672,9 @@ function applyStaticTranslations() {
     documentRef: document,
     isSharedLayoutView,
     refs,
+    startupLanguage,
+    startupText: startupDictionary["startup.loading"] || "Loading...",
+    startupTitle: startupDictionary["startup.title"] || "Opening bikepacking list",
     t,
     uiLanguage
   });
@@ -2884,8 +2935,16 @@ async function init() {
   refs.authGateBtn.addEventListener("click", handleAuthButton);
   refs.sharedLayoutsBtn?.addEventListener("click", openSharedLayoutsDialog);
   refs.shareListBtn?.addEventListener("click", shareCurrentPackingListByLink);
-  refs.languageSelect?.addEventListener("change", (event) => {
-    setUiLanguage(event.target.value).catch((error) => updateSyncUi(`Language switch failed: ${error.message}`));
+  refs.languageSelect?.addEventListener("change", async (event) => {
+    const select = event.currentTarget;
+    select.disabled = true;
+    try {
+      await setUiLanguage(select.value);
+    } catch (error) {
+      updateSyncUi(t("language.switchFailed", { message: error.message }));
+    } finally {
+      select.disabled = false;
+    }
   });
   refs.copySharedLayoutBtn.addEventListener("click", () => copySharedLayout(currentSharedLayouts()[0]?.id));
   refs.forceOfflineBtn.addEventListener("click", toggleForcedOfflineMode);
@@ -3014,7 +3073,6 @@ async function init() {
 
   appUnlocked = true;
   const sharedListId = sharedListIdFromLocation();
-  if (!sharedListId) finishAppStartup(document);
   const signedOut = isExplicitlySignedOut();
   const offlineNow = "onLine" in navigator && !navigator.onLine;
   const shouldLoadLocalFirst = Boolean(sharedListId) || (!signedOut && isForcedOffline());
@@ -3030,21 +3088,27 @@ async function init() {
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
   }
   startRemoteStateWatcher();
-  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: !sharedListId }).catch(() => null);
+  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: false }).catch(() => null);
   if (sharedListId) {
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
-  } else if (isForcedOffline()) {
-    publicIndexRefresh.catch(() => null);
-    if (signedOut) enterSignedOutPublicMode(localText("Signed out · personal lists are hidden, local demo copy is open", "Вы вышли · личные списки скрыты, открыта локальная демо-копия"));
-    else unlockOfflineState(localText("Forced offline · local layout is available", "Принудительный офлайн · локальная укладка доступна"));
-  } else if (offlineNow) {
-    publicIndexRefresh.catch(() => null);
-    if (!activateOfflineRememberedSession(localText("Offline · local copy of personal layouts is open", "Офлайн · открыта локальная копия личных укладок"))) {
-      enterSignedOutPublicMode(localText("Offline · sign-in is not confirmed, local demo copy is open", "Офлайн · вход не подтверждён, открыта локальная демо-копия"));
+    return;
+  }
+  try {
+    if (isForcedOffline()) {
+      if (signedOut) await enterSignedOutPublicMode(localText("Signed out · personal lists are hidden, local demo copy is open", "Вы вышли · личные списки скрыты, открыта локальная демо-копия"));
+      else unlockOfflineState(localText("Forced offline · local layout is available", "Принудительный офлайн · локальная укладка доступна"));
+    } else if (offlineNow) {
+      if (!activateOfflineRememberedSession(localText("Offline · local copy of personal layouts is open", "Офлайн · открыта локальная копия личных укладок"))) {
+        await enterSignedOutPublicMode(localText("Offline · sign-in is not confirmed, local demo copy is open", "Офлайн · вход не подтверждён, открыта локальная демо-копия"));
+      }
+    } else {
+      await checkAuthAndLoad();
     }
-  } else {
-    publicIndexRefresh.catch(() => null);
-    checkAuthAndLoad();
+    await publicIndexRefresh;
+  } finally {
+    applyStaticTranslations();
+    render();
+    finishAppStartup(document);
   }
 }
 
@@ -6383,6 +6447,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
     }
     setActiveReadOnlyScope(linkedSharedListLayout.id);
     switchView("packing");
+    applyStaticTranslations();
     renderBeforeFinishingAppStartup({
       documentRef: document,
       render: () => {
@@ -6395,6 +6460,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
   } catch (error) {
     await hydrateAuthForSharedLink();
     setActivePrivateScope();
+    applyStaticTranslations();
     renderBeforeFinishingAppStartup({ documentRef: document, render });
     updateSyncUi(`Не удалось открыть shared-список: ${error.message}`);
     return false;
@@ -8362,7 +8428,8 @@ function pruneUneditedGuestDemoCopies() {
     activeLayoutId: state.activeLayoutId,
     isGuestDemoCopy: isGuestDemoCopyLayoutRecord,
     isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
-    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(state, layout)
+    hasUserEdits: (layout) => guestLayoutHasUserContentEdits(state, layout),
+    automaticCopyGroupKey: (layout) => layout.demoSourceLanguage || "other"
   });
   let dictionaryChanged = false;
   Object.values(state.layouts || {}).forEach((layout) => {
@@ -8406,7 +8473,13 @@ function renameReusableGuestDemoCopy(existing, demoState, { exactTemplateName = 
   return true;
 }
 
-async function createLocalDemoCopy({ forceNew = false, remember = true, exactTemplateName = false } = {}) {
+async function createLocalDemoCopy({
+  forceNew = false,
+  remember = true,
+  exactTemplateName = false,
+  activate = true,
+  templateId = ""
+} = {}) {
   if (!forceNew && localDemoCopyInFlight) return localDemoCopyInFlight;
   const task = (async () => {
     if (!forceNew) pruneUneditedGuestDemoCopies();
@@ -8415,6 +8488,7 @@ async function createLocalDemoCopy({ forceNew = false, remember = true, exactTem
       openPrivateLayout(existing.id, { remember });
       return existing.id;
     }
+    if (templateId) selectDemoTemplateForLanguage(uiLanguage, templateId);
     const demoState = await defaultDemoState(uiLanguage, activeDemoTemplateListId);
     if (existing) {
       renameReusableGuestDemoCopy(existing, demoState, { exactTemplateName });
@@ -8430,7 +8504,7 @@ async function createLocalDemoCopy({ forceNew = false, remember = true, exactTem
         return existing.id;
       }
     }
-    const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { remember, exactTemplateName });
+    const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { activate, remember, exactTemplateName });
     await cacheGuestTemplatePhotoFallbacks(layoutId);
     await syncCreatedPrivateLayoutEntities(layoutId);
     updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));

@@ -32,12 +32,16 @@ export function applyStaticTranslationsUi({
   documentRef = document,
   isSharedLayoutView = () => false,
   refs = {},
+  startupLanguage = "",
+  startupText = "",
+  startupTitle = "",
   t = (key) => key,
   uiLanguage = "ru"
 } = {}) {
   documentRef.documentElement.lang = uiLanguage;
   documentRef.title = t("app.title");
   const appTitle = documentRef.querySelector(".topbar h1");
+  const appStartup = documentRef.querySelector(".app-startup");
   const appStartupTitle = documentRef.querySelector("#appStartupTitle");
   const appStartupText = documentRef.querySelector("#appStartupText");
   const authGateTitle = documentRef.querySelector(".auth-gate h2");
@@ -48,8 +52,9 @@ export function applyStaticTranslationsUi({
   const locationLabel = documentRef.querySelector("#locationFilterLabel");
   const categoryLabel = documentRef.querySelector("#categoryFilterLabel");
   setText(appTitle, t("app.title"));
-  setText(appStartupTitle, t("startup.title"));
-  setText(appStartupText, t("startup.loading"));
+  setAttr(appStartup, "lang", startupLanguage || uiLanguage);
+  setText(appStartupTitle, startupTitle || t("startup.title"));
+  setText(appStartupText, startupText || t("startup.loading"));
   setText(authGateTitle, uiLanguage === "en" ? "Sign in to open your packing lists" : "Войдите, чтобы открыть сборы");
   setText(authGateText, uiLanguage === "en"
     ? "Layouts, weight and storage places will be available after signing in with a magic link."

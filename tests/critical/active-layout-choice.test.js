@@ -95,6 +95,75 @@ test("CRITICAL layout-ui: loaded status is reformatted after an interface langua
   assert.equal(element.textContent, "Personal layouts loaded: 1 of 1");
 });
 
+test("CRITICAL layout-ui: signed-out auth status follows an immediate language change", async () => {
+  const previousDocument = globalThis.document;
+  const documentElement = { lang: "en" };
+  globalThis.document = { documentElement };
+  let statusText = "";
+  const runtime = {
+    appUnlocked: false,
+    currentUser: null,
+    syncMeta: { dirty: false }
+  };
+  const dependencies = {
+    activateLocalStorageScope: () => {},
+    activateLocalStorageScopeForCurrentUser: () => {},
+    activateOfflineRememberedSession: () => false,
+    apiFetch: async () => ({ user: null, session: null }),
+    applyPreferredPrivateLayoutChoice: () => false,
+    checkAdminApiCompatibility: () => ({ catch: () => null }),
+    clearOfflineRememberedSession: () => {},
+    currentPrivateLayoutRef: () => null,
+    currentPublicTemplateStatusMessage: () => "Demo/public read-only",
+    enterSignedOutPublicMode: async () => {},
+    hasLocalSavedState: () => false,
+    isAdminUser: () => false,
+    isExplicitlySignedOut: () => false,
+    isForcedOffline: () => false,
+    isNetworkError: () => false,
+    isSharedListLinkRoute: () => false,
+    loadGuestPublishedDemoOnStartup: async () => {},
+    loadRemoteState: async () => {},
+    rememberAuthenticatedUser: () => {},
+    renderCachedPrivateStateDuringRemoteLoad: async () => {},
+    renderInitialLocalFallbackIfNeeded: () => {},
+    restoreSavedLayoutChoice: async () => {},
+    setExplicitlySignedOut: () => {},
+    setLayoutLoadStatus: (_tone, text) => {
+      statusText = text;
+    },
+    setPersonalLayoutsLoadedStatus: () => {},
+    shouldKeepCurrentReadonlyDemoAfterAuthCheck: () => true,
+    storedPrivateLayoutChoiceRef: () => null,
+    unlockOfflineState: () => {},
+    updateSyncUi: () => {},
+    GUEST_STORAGE_SCOPE: "guest"
+  };
+
+  try {
+    await checkAuthAndLoadFlow({ runtime, dependencies });
+    assert.equal(typeof statusText, "function");
+    assert.equal(statusText(), "Sign-in is not confirmed, personal layouts are hidden");
+    documentElement.lang = "ru";
+    assert.equal(statusText(), "Вход не подтверждён, личные укладки скрыты");
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
+test("CRITICAL layout-ui: language switching rerenders the current load status before async layout work", () => {
+  const appSource = readProjectFile("app.js");
+  const languageSwitchStart = appSource.indexOf("async function setUiLanguage");
+  const staticTranslationsStart = appSource.indexOf("applyStaticTranslations();", languageSwitchStart);
+  const statusRenderStart = appSource.indexOf("updateLayoutLoadStatusUi();", staticTranslationsStart);
+  const asyncLayoutBranchStart = appSource.indexOf("if (sharedLanguageTarget", statusRenderStart);
+  assert.notEqual(languageSwitchStart, -1);
+  assert.notEqual(staticTranslationsStart, -1);
+  assert.ok(statusRenderStart > staticTranslationsStart);
+  assert.ok(asyncLayoutBranchStart > statusRenderStart);
+});
+
 test("CRITICAL shared-link: language switch preserves the linked list layout", () => {
   assert.equal(
     shouldPreserveLinkedSharedListOnLanguageChange({

@@ -145,6 +145,11 @@ import {
   guestDemoStartupAction
 } from "../../src/public/guest-demo-startup.js";
 import {
+  createGuestDefaultLayoutForLanguageIfMissing,
+  guestDefaultLayoutForLanguage,
+  guestLanguageLayoutSwitchPlan
+} from "../../src/public/guest-language-layout.js";
+import {
   GUEST_SHARED_LINK_COPY_TARGET_FLAG,
   ensureGuestSharedLinkCopyTargetLayout,
   recordGuestSharedLinkDetachedItem
@@ -1765,6 +1770,25 @@ test("guest demo cleanup does not remove user-created guest layouts", () => {
   assert.deepEqual(plan.removeLayoutIds, ["layout-guest-demo-2"]);
 });
 
+test("guest demo cleanup keeps one automatic default layout for each language", () => {
+  const layouts = {
+    enActive: { id: "en-active", guestDemoCopy: true, demoSourceLanguage: "en", updatedAt: "2026-05-24T09:00:00.000Z" },
+    enStale: { id: "en-stale", guestDemoCopy: true, demoSourceLanguage: "en", updatedAt: "2026-05-24T08:00:00.000Z" },
+    ruOnly: { id: "ru-only", guestDemoCopy: true, demoSourceLanguage: "ru", updatedAt: "2026-05-24T07:00:00.000Z" }
+  };
+
+  const plan = guestDemoCopyCleanupPlan({
+    layouts,
+    activeLayoutId: "en-active",
+    isAutomaticDemoCopy: isAutomaticGuestDemoCopyLayout,
+    hasUserEdits: () => false,
+    automaticCopyGroupKey: (layout) => layout.demoSourceLanguage
+  });
+
+  assert.equal(plan.keepLayoutId, "en-active");
+  assert.deepEqual(plan.removeLayoutIds, ["en-stale"]);
+});
+
 test("guest import plan includes all user-created guest layouts and edited demo", () => {
   const layouts = {
     autoClean: {
@@ -2329,6 +2353,99 @@ test("guest startup creates one automatic demo layout only when startup policy a
     }),
     "keep"
   );
+});
+
+test("guest language switch creates and offers one default layout per language without duplicates", async () => {
+  const layouts = {
+    english: {
+      id: "english",
+      guestDemoCopy: true,
+      demoSourceLanguage: "en"
+    }
+  };
+  let createCalls = 0;
+  let confirmCalls = 0;
+  let openedLayoutId = "";
+  const createLayout = async (language) => {
+    createCalls += 1;
+    const layoutId = `created-${language}`;
+    layouts[layoutId] = {
+      id: layoutId,
+      name: language === "ru" ? "Демо-укладка" : "Demo layout",
+      guestDemoCopy: true,
+      demoSourceLanguage: language
+    };
+    return layoutId;
+  };
+  const confirmOpen = async () => {
+    confirmCalls += 1;
+    return true;
+  };
+
+  const created = await createGuestDefaultLayoutForLanguageIfMissing({
+    enabled: true,
+    layouts,
+    language: "RU",
+    createLayout,
+    confirmOpen,
+    openLayout: (layoutId) => { openedLayoutId = layoutId; }
+  });
+  const repeated = await createGuestDefaultLayoutForLanguageIfMissing({
+    enabled: true,
+    layouts,
+    language: "ru",
+    createLayout,
+    confirmOpen,
+    openLayout: () => { throw new Error("existing layout must not open automatically"); }
+  });
+
+  assert.equal(created.status, "opened");
+  assert.equal(created.layoutId, "created-ru");
+  assert.equal(openedLayoutId, "created-ru");
+  assert.equal(repeated.status, "exists");
+  assert.equal(createCalls, 1);
+  assert.equal(confirmCalls, 1);
+  assert.equal(guestDefaultLayoutForLanguage(layouts, "EN")?.id, "english");
+  assert.equal(guestDefaultLayoutForLanguage(layouts, "ru")?.id, "created-ru");
+});
+
+test("guest language switch resolves the matching template in the target language", () => {
+  const catalog = [
+    demoTemplateEntryForLanguage("en", { listId: "demo-en-family", name: "Family", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: "demo-ru-family", name: "Family", serverConfirmed: true })
+  ];
+  const plan = guestLanguageLayoutSwitchPlan({
+    guestSession: true,
+    layouts: {
+      active: {
+        id: "active",
+        guestDemoCopy: true,
+        demoSourceLanguage: "en",
+        demoSourceListId: "demo-en-family"
+      }
+    },
+    activeLayoutId: "active",
+    previousLanguage: "en",
+    nextLanguage: "ru",
+    templateCatalog: catalog,
+    findTemplateForLanguage: findDemoTemplateForLanguage,
+    defaultTemplateListId: (language) => `fallback-${language}`
+  });
+
+  assert.deepEqual(plan, {
+    enabled: true,
+    language: "ru",
+    templateId: "demo-ru-family"
+  });
+});
+
+test("guest language switch wires the catalog template resolver into the app flow", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const handlerStart = appSource.indexOf("handleGuestLanguageLayoutSwitch({");
+  assert.notEqual(handlerStart, -1);
+  const handlerSource = appSource.slice(handlerStart, handlerStart + 1600);
+  assert.match(handlerSource, /findTemplateForLanguage:\s*findDemoTemplateForLanguage/);
+  assert.doesNotMatch(handlerSource, /\n\s*findTemplateForLanguage,\s*\n/);
 });
 
 test("automatic guest demo layout keeps the template title without uniqueness suffixes", () => {
