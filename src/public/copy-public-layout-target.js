@@ -37,13 +37,6 @@ export function sharedCopyTargetLayouts(layouts, {
   return realTargets.length ? realTargets : targets;
 }
 
-export function shouldCopySharedItemOutsideLayout(layouts, {
-  layoutHasContainers = (layout) => Boolean((layout?.rootContainerIds || []).length)
-} = {}) {
-  const targets = Array.isArray(layouts) ? layouts.filter(Boolean) : [];
-  return targets.length > 0 && !targets.some((layout) => layoutHasContainers(layout));
-}
-
 function publicCopyTargetRank(layout) {
   return layout?.adminTemplateCopy ? 2 : 1;
 }

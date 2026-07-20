@@ -39,7 +39,6 @@ import {
 } from "../public/shared-entity-link.js";
 import { dialogHasSavableChanges } from "../ui/dialog-save-guard.js";
 import { normalizeAuthAuthorization } from "../auth/permissions.js";
-import { shouldCopySharedItemOutsideLayout } from "../public/copy-public-layout-target.js";
 import { focusCreatedCatalogCard } from "../ui/catalog-created-focus.js";
 import { shouldShowContainerPickerLayoutSelect } from "../ui/container-picker-layout-select.js";
 import { resetDialogScrollPosition } from "../ui/modal-focus.js";
@@ -64,7 +63,10 @@ export function createAppTailControllers(ctx) {
   let replacingPackingItemId = "";
   let replacingPackingContainerId = "";
   let placeNewRootInCurrentLayout = false;
+  let rootContainerPlacementTargetLayoutId = "";
+  let layoutRootTargetLayoutId = "";
   let pendingCopyTargetLayoutCreation = null;
+  let pendingCopyTargetContainerSetup = null;
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
     API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -527,20 +529,41 @@ function clearAddToContainerSearch() {
   refs.addToContainerSearch.focus({ preventScroll: true });
 }
 
-function openLayoutRootDialog() {
+function openLayoutRootDialog(options = {}) {
+  const requestedTargetLayoutId = options?.targetLayoutId || "";
+  layoutRootTargetLayoutId = state.layouts?.[requestedTargetLayoutId]
+    ? requestedTargetLayoutId
+    : getPublishedEditLayoutId();
   replacingPackingContainerId = "";
   if (refs.createRootForLayoutBtn) refs.createRootForLayoutBtn.hidden = false;
   if (refs.layoutRootTitle) refs.layoutRootTitle.textContent = t("rootContainers.add");
-  if (refs.layoutRootPath) refs.layoutRootPath.textContent = t("replacement.currentLayout");
+  if (refs.layoutRootPath) {
+    const targetLayout = state.layouts?.[layoutRootTargetLayoutId];
+    refs.layoutRootPath.textContent = requestedTargetLayoutId && targetLayout
+      ? t("copy.targetLayout", { name: targetLayout.name || defaultLayoutName() })
+      : t("replacement.currentLayout");
+  }
   refs.layoutRootSearch.value = "";
   refs.clearLayoutRootSearchBtn.hidden = true;
   renderLayoutRootResults();
+  refs.layoutRootDialog.returnValue = "";
   openModalDialog(refs.layoutRootDialog);
+  if (options?.returnToCopyPicker) {
+    refs.layoutRootDialog.addEventListener("close", () => {
+      if (refs.layoutRootDialog.returnValue === "create") return;
+      scheduleCopyPickerResumeAfterContainerSetup();
+    }, { once: true });
+  }
 }
 
 function openCreateRootContainerForCurrentLayout() {
+  const targetLayoutId = getLayoutRootTargetLayoutId();
+  const returnToCopyPicker = Boolean(pendingCopyTargetContainerSetup);
   if (refs.layoutRootDialog.open) refs.layoutRootDialog.close("create");
-  openRootContainerDialog(null, { placeInCurrentLayout: true });
+  openRootContainerDialog(null, { placeInCurrentLayout: true, targetLayoutId });
+  if (returnToCopyPicker) {
+    refs.rootContainerDialog.addEventListener("close", scheduleCopyPickerResumeAfterContainerSetup, { once: true });
+  }
 }
 
 function openNewItemForAddTarget() {
@@ -560,6 +583,7 @@ function openContainerReplacementDialog(event) {
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts?.[layoutId];
   if (!container || !layout || !getLayoutContainerIdSet(layout).has(containerId) || warnLockedLayoutMutation(layoutId)) return;
+  layoutRootTargetLayoutId = layoutId;
   replacingPackingContainerId = containerId;
   if (refs.createRootForLayoutBtn) refs.createRootForLayoutBtn.hidden = true;
   if (refs.layoutRootTitle) refs.layoutRootTitle.textContent = t("replacement.containerTitle", { name: container.name });
@@ -574,7 +598,7 @@ function openContainerReplacementDialog(event) {
 function renderLayoutRootResults() {
   const query = refs.layoutRootSearch.value.trim().toLowerCase();
   refs.clearLayoutRootSearchBtn.hidden = !query;
-  const activeIds = getLayoutContainerIdSet(getPublishedWorkLayout());
+  const activeIds = getLayoutContainerIdSet(state.layouts?.[getLayoutRootTargetLayoutId()]);
   const replacementSource = replacingPackingContainerId ? state.containers?.[replacingPackingContainerId] : null;
   const replacementLayout = state.layouts?.[getPublishedEditLayoutId()];
   const replacementRequiresNesting = Boolean(replacementSource &&
@@ -606,6 +630,12 @@ function selectRootContainerFromPicker(containerId) {
     return;
   }
   addRootContainerToActiveLayout(containerId);
+}
+
+function getLayoutRootTargetLayoutId() {
+  return state.layouts?.[layoutRootTargetLayoutId]
+    ? layoutRootTargetLayoutId
+    : getPublishedEditLayoutId();
 }
 
 function matchesLayoutRootSearch(container, query) {
@@ -949,7 +979,7 @@ function applyRootContainerDialogPlacement() {
 }
 
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
-  const layoutId = getPublishedEditLayoutId();
+  const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
   if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
     markRecordActivePublicCatalog,
@@ -1357,13 +1387,6 @@ async function openSharedItemCopyPicker(sourceId) {
   runtime.containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
   if (await offerCreateLayoutWhenNoCopyTargets()) return;
-  const targetLayouts = getContainerPickerLayoutOptions();
-  if (shouldCopySharedItemOutsideLayout(targetLayouts, {
-    layoutHasContainers: (layout) => getLayoutContainerIdSet(layout).size > 0
-  })) {
-    await copySharedItem(sourceId);
-    return;
-  }
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -1410,10 +1433,20 @@ function renderContainerPicker() {
       boardHtml = rootIds.map(renderContainerPickerColumn).join("");
     });
   }
-  refs.containerPickerBoard.innerHTML = boardHtml ||
-    `<div class="empty">${escapeHtml(t(newItemPlacementMode && !runtime.containerPickerLayoutId
-      ? "forms.noUnlockedLayouts"
-      : "forms.emptyTopLevel"))}</div>`;
+  const emptyItemCopyTarget = Boolean(
+    !boardHtml &&
+    isContainerPickerItemCopyMode() &&
+    runtime.containerPickerLayoutId &&
+    state.layouts?.[runtime.containerPickerLayoutId]
+  );
+  refs.containerPickerBoard.innerHTML = boardHtml || (emptyItemCopyTarget
+    ? renderPackingAddRootCard({
+        title: t("packing.addRootTitle"),
+        text: t("packing.addRootText")
+      })
+    : `<div class="empty">${escapeHtml(t(newItemPlacementMode && !runtime.containerPickerLayoutId
+        ? "forms.noUnlockedLayouts"
+        : "forms.emptyTopLevel"))}</div>`);
   refs.containerPickerNoneBtn.hidden = runtime.containerPickerMode === "container" || isContainerPickerItemCopyMode() || rootCopyPicker;
   refs.containerPickerNoneBtn.classList.toggle("active", runtime.containerPickerMode === "item" && !refs.itemContainer.value);
   refs.containerPickerNoneBtn.textContent = isContainerPickerContainerCopyMode()
@@ -1430,6 +1463,8 @@ function renderContainerPicker() {
   refs.containerPickerBoard.querySelectorAll("[data-pick-root-index]").forEach((button) => {
     button.addEventListener("click", () => selectContainerPickerRootTarget(Number(button.dataset.pickRootIndex)));
   });
+  refs.containerPickerBoard.querySelector("[data-add-packing-root]")
+    ?.addEventListener("click", openCopyTargetContainerSetup);
   bindHorizontalTouchScroll(refs.containerPickerBoard);
 }
 
@@ -1492,16 +1527,7 @@ async function offerCreateLayoutWhenNoCopyTargets() {
     cancelText: t("buttons.cancel")
   });
   if (confirmed) {
-    pendingCopyTargetLayoutCreation = {
-      activeLayoutId: state.activeLayoutId,
-      containerPickerLayoutId: runtime.containerPickerLayoutId,
-      containerPickerMode: runtime.containerPickerMode,
-      containerPickerSourceLayoutId: runtime.containerPickerSourceLayoutId,
-      containerPickerTargetContainerId: runtime.containerPickerTargetContainerId,
-      sharedPickerSourceContainerId: runtime.sharedPickerSourceContainerId,
-      sharedPickerSourceItemId: runtime.sharedPickerSourceItemId,
-      sourceIsNestedContainer: containerPickerSourceIsNestedContainer
-    };
+    pendingCopyTargetLayoutCreation = captureContainerPickerContinuation();
     if (refs.containerPickerDialog?.open) refs.containerPickerDialog.close();
     openLayoutDialog({ copyTargetFlow: true });
   }
@@ -1512,6 +1538,25 @@ function resumeCopyPickerAfterLayoutCreation(layoutId) {
   const pending = pendingCopyTargetLayoutCreation;
   if (!pending || !layoutId || !state.layouts?.[layoutId]) return false;
   pendingCopyTargetLayoutCreation = null;
+  restoreContainerPickerContinuation(pending, layoutId);
+  return true;
+}
+
+function captureContainerPickerContinuation() {
+  return {
+    activeLayoutId: state.activeLayoutId,
+    containerPickerLayoutId: runtime.containerPickerLayoutId,
+    containerPickerMode: runtime.containerPickerMode,
+    containerPickerSourceLayoutId: runtime.containerPickerSourceLayoutId,
+    containerPickerTargetContainerId: runtime.containerPickerTargetContainerId,
+    sharedPickerSourceContainerId: runtime.sharedPickerSourceContainerId,
+    sharedPickerSourceItemId: runtime.sharedPickerSourceItemId,
+    sourceIsNestedContainer: containerPickerSourceIsNestedContainer
+  };
+}
+
+function restoreContainerPickerContinuation(pending, layoutId = pending?.containerPickerLayoutId) {
+  if (!pending || !layoutId || !state.layouts?.[layoutId]) return false;
   if (pending.activeLayoutId && state.layouts?.[pending.activeLayoutId] && state.activeLayoutId !== pending.activeLayoutId) {
     switchActiveLayout(pending.activeLayoutId, { remember: false });
   }
@@ -1525,6 +1570,28 @@ function resumeCopyPickerAfterLayoutCreation(layoutId) {
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
   return true;
+}
+
+function openCopyTargetContainerSetup(event) {
+  event?.preventDefault();
+  const targetLayoutId = runtime.containerPickerLayoutId;
+  if (!isContainerPickerItemCopyMode() || !state.layouts?.[targetLayoutId]) return;
+  pendingCopyTargetContainerSetup = captureContainerPickerContinuation();
+  if (refs.containerPickerDialog?.open) refs.containerPickerDialog.close("add-copy-target-container");
+  openLayoutRootDialog({ targetLayoutId, returnToCopyPicker: true });
+}
+
+function scheduleCopyPickerResumeAfterContainerSetup() {
+  Promise.resolve().then(resumeCopyPickerAfterContainerSetup);
+}
+
+function resumeCopyPickerAfterContainerSetup() {
+  const pending = pendingCopyTargetContainerSetup;
+  if (!pending) return false;
+  pendingCopyTargetContainerSetup = null;
+  layoutRootTargetLayoutId = "";
+  rootContainerPlacementTargetLayoutId = "";
+  return restoreContainerPickerContinuation(pending);
 }
 
 function renderContainerPickerLayoutSelect(layoutOptions) {
@@ -4795,11 +4862,14 @@ function moveRootColumn(containerId, targetIndex) {
   render();
 }
 
-function openRootContainerDialog(containerId = null, { placeInCurrentLayout = false } = {}) {
+function openRootContainerDialog(containerId = null, { placeInCurrentLayout = false, targetLayoutId = "" } = {}) {
   resetSharedReadonlyRootContainerDialog();
   const container = containerId ? state.containers[containerId] : null;
   if (containerId && !container) return;
   placeNewRootInCurrentLayout = Boolean(!containerId && placeInCurrentLayout);
+  rootContainerPlacementTargetLayoutId = placeNewRootInCurrentLayout && state.layouts?.[targetLayoutId]
+    ? targetLayoutId
+    : "";
   runtime.editingRootContainerId = containerId || null;
   runtime.rootContainerDialogPendingRootIds = null;
   runtime.rootContainerDialogPendingParentId = undefined;
@@ -7526,6 +7596,8 @@ function saveRootContainerDialog(event) {
   event?.preventDefault();
   if (warnLockedRootContainerDialogPlacementChange()) return;
   const shouldPlaceInCurrentLayout = placeNewRootInCurrentLayout;
+  const placementTargetLayoutId = rootContainerPlacementTargetLayoutId;
+  const returningToCopyPicker = Boolean(pendingCopyTargetContainerSetup);
   let createdRootPlaced = false;
   const result = saveRootContainerDialogAction({
     applyRootContainerDialogParent,
@@ -7546,7 +7618,9 @@ function saveRootContainerDialog(event) {
     parseWeightInput,
     placeCreatedRootContainer: (containerId) => {
       if (!shouldPlaceInCurrentLayout) return false;
-      const layoutId = getPublishedEditLayoutId();
+      const layoutId = state.layouts?.[placementTargetLayoutId]
+        ? placementTargetLayoutId
+        : getPublishedEditLayoutId();
       if (warnLockedLayoutMutation(layoutId)) return false;
       createdRootPlaced = addRootContainerToLayoutInState(state, layoutId, containerId, null, {
         markRecordActivePublicCatalog,
@@ -7554,6 +7628,9 @@ function saveRootContainerDialog(event) {
       });
       if (createdRootPlaced && layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
       if (createdRootPlaced) markRecentlyAddedContainer(containerId, layoutId);
+      if (createdRootPlaced && layoutId !== getPublishedEditLayoutId()) {
+        saveLayoutMutation(layoutId, { publishDelay: 500 });
+      }
       return createdRootPlaced;
     },
     readRootContainerDialogDimensions,
@@ -7566,10 +7643,13 @@ function saveRootContainerDialog(event) {
     state,
     touchContainer
   });
-  if (result) placeNewRootInCurrentLayout = false;
-  if (result?.created && createdRootPlaced) {
+  if (result) {
+    placeNewRootInCurrentLayout = false;
+    rootContainerPlacementTargetLayoutId = "";
+  }
+  if (result?.created && createdRootPlaced && !returningToCopyPicker) {
     result.dialogCloseSettled?.then?.(() => focusRecentlyAddedContainer(result.id));
-  } else if (result?.created && getCurrentView() === "bags") {
+  } else if (result?.created && !returningToCopyPicker && getCurrentView() === "bags") {
     focusCreatedCatalogCard({
       after: result.dialogCloseSettled,
       recordId: result.id,

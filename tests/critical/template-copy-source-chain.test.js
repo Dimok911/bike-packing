@@ -100,8 +100,7 @@ import {
   isEmptySystemDefaultLayout,
   isSharedCopyTargetLayout,
   publicCopyTargetLayouts,
-  sharedCopyTargetLayouts,
-  shouldCopySharedItemOutsideLayout
+  sharedCopyTargetLayouts
 } from "../../src/public/copy-public-layout-target.js";
 import {
   adminDemoCopyTargetRequests,
@@ -614,10 +613,25 @@ test("copy picker resumes in the newly created layout without changing the sourc
   const projectRoot = resolve(import.meta.dirname, "../..");
   const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
 
-  assert.match(controllers, /pendingCopyTargetLayoutCreation = \{[\s\S]*?containerPickerSourceLayoutId: runtime\.containerPickerSourceLayoutId/);
+  assert.match(controllers, /pendingCopyTargetLayoutCreation = captureContainerPickerContinuation\(\)/);
+  assert.match(controllers, /function captureContainerPickerContinuation\(\)[\s\S]*?containerPickerSourceLayoutId: runtime\.containerPickerSourceLayoutId/);
   assert.match(controllers, /activate: !pendingCopyTargetLayoutCreation/);
-  assert.match(controllers, /runtime\.containerPickerLayoutId = layoutId;[\s\S]*?renderContainerPicker\(\);[\s\S]*?openModalDialog\(refs\.containerPickerDialog\)/);
+  assert.match(controllers, /function restoreContainerPickerContinuation\(pending, layoutId[\s\S]*?runtime\.containerPickerLayoutId = layoutId;[\s\S]*?renderContainerPicker\(\);[\s\S]*?openModalDialog\(refs\.containerPickerDialog\)/);
   assert.match(controllers, /if \(!resumeCopyPickerAfterLayoutCreation\(createdId\)\) switchView\("packing"\)/);
+});
+
+test("empty item-copy target reuses the bag picker and resumes the same copy flow", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.equal(I18N.ru["copy.targetLayout"], "В укладку «{name}»");
+  assert.equal(I18N.en["copy.targetLayout"], "Into layout “{name}”");
+  assert.match(controllers, /emptyItemCopyTarget[\s\S]*?renderPackingAddRootCard\(\{[\s\S]*?packing\.addRootTitle/);
+  assert.match(controllers, /function openCopyTargetContainerSetup\(event\)[\s\S]*?openLayoutRootDialog\(\{ targetLayoutId, returnToCopyPicker: true \}\)/);
+  assert.match(controllers, /function addRootContainerToActiveLayout[\s\S]*?const layoutId = getLayoutRootTargetLayoutId\(\)/);
+  assert.match(controllers, /openRootContainerDialog\(null, \{ placeInCurrentLayout: true, targetLayoutId \}\)/);
+  assert.match(controllers, /function resumeCopyPickerAfterContainerSetup\(\)[\s\S]*?restoreContainerPickerContinuation\(pending\)/);
+  assert.doesNotMatch(controllers, /shouldCopySharedItemOutsideLayout/);
 });
 
 test("admin public copy targets follow visible public choices without legacy demo duplicates", () => {
@@ -2377,16 +2391,6 @@ test("readonly item and bag dialogs never prompt to save", () => {
     dialog: { open: true },
     saveButton: { hidden: false, disabled: false }
   }), true);
-});
-
-test("shared item copies outside when every personal target layout has no bags", () => {
-  const emptyTargets = [{ id: "layout-a", rootContainerIds: [] }];
-  assert.equal(shouldCopySharedItemOutsideLayout(emptyTargets), true);
-  assert.equal(shouldCopySharedItemOutsideLayout([
-    ...emptyTargets,
-    { id: "layout-b", rootContainerIds: ["bag-b"] }
-  ]), false);
-  assert.equal(shouldCopySharedItemOutsideLayout([]), false);
 });
 
 test("guest startup creates one automatic demo layout only when startup policy allows it", () => {
