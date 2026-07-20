@@ -89,6 +89,16 @@ test("CRITICAL bag picker: creating a new bag stays available beside existing ch
   assert.match(app, /createRootForLayoutBtn\?\.addEventListener\("click", openCreateRootContainerForCurrentLayout\)/);
 });
 
+test("CRITICAL item catalog: label rows share the fixed card text height with the item title", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const styles = readFileSync(resolve(projectRoot, "styles.css"), "utf8");
+
+  assert.match(styles, /\.items-list \.item-card:not\(:has\(\.item-photo\)\) \{[\s\S]*?height: 148px;[\s\S]*?overflow: hidden;/);
+  assert.match(styles, /\.items-list\.with-photo-slots \.item-card \.item-card-top \{[\s\S]*?max-height: var\(--photo-top-row-height\);[\s\S]*?overflow: hidden;/);
+  assert.match(styles, /\.items-list \.item-card \.meta \{[\s\S]*?min-height: 22px;[\s\S]*?max-height: none;/);
+  assert.doesNotMatch(styles, /\.items-list \.item-card \.meta \{[\s\S]*?max-height: 22px;/);
+});
+
 test("CRITICAL root placement: the named move dialog title is localized", () => {
   const projectRoot = resolve(import.meta.dirname, "../..");
   const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");

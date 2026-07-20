@@ -4149,7 +4149,7 @@ mark {
 
   .items-list .item-card .meta {
     min-height: 22px;
-    max-height: 22px;
+    max-height: none;
     overflow: hidden;
     align-content: flex-start;
   }
