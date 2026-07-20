@@ -27,8 +27,14 @@ export function isSharedCopyTargetLayout(layout, {
   return true;
 }
 
-export function sharedCopyTargetLayouts(layouts, options = {}) {
-  return Object.values(layouts || {}).filter((layout) => isSharedCopyTargetLayout(layout, options));
+export function sharedCopyTargetLayouts(layouts, {
+  excludeRedundantEmptySystemDefault = false,
+  ...options
+} = {}) {
+  const targets = Object.values(layouts || {}).filter((layout) => isSharedCopyTargetLayout(layout, options));
+  if (!excludeRedundantEmptySystemDefault) return targets;
+  const realTargets = targets.filter((layout) => !isEmptySystemDefaultLayout(layout));
+  return realTargets.length ? realTargets : targets;
 }
 
 export function shouldCopySharedItemOutsideLayout(layouts, {

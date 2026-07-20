@@ -1,4 +1,5 @@
 import { escapeHtml } from "../utils/html.js";
+import { currentDocumentLanguage } from "../utils/language.js";
 
 export function renderEmptyState(text, {
   extraClass = "",
@@ -9,7 +10,8 @@ export function renderEmptyState(text, {
     extraClass,
     filtered ? "empty-filtered" : ""
   ].filter(Boolean).join(" ");
-  return `<div class="${classes}">${escapeHtml(text || "Ничего не найдено")}</div>`;
+  const fallbackText = currentDocumentLanguage() === "en" ? "Nothing found" : "Ничего не найдено";
+  return `<div class="${classes}">${escapeHtml(text || fallbackText)}</div>`;
 }
 
 export function renderPackingEmptyState({

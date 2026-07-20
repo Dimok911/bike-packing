@@ -25,12 +25,11 @@ export function containerCopyExcludedLayoutIds({
   sourceLayoutId = ""
 } = {}) {
   const ids = new Set();
-  if (mode === SHARED_ITEM_COPY_PICKER_MODE || mode === SHARED_CONTAINER_COPY_PICKER_MODE) {
-    if (sourceLayoutId) ids.add(sourceLayoutId);
-    if (readonlyLayoutId) ids.add(readonlyLayoutId);
-  }
-  if (isContainerPickerContainerCopyMode(mode) && sourceLayoutId) {
+  if (isContainerPickerCopyMode(mode) && sourceLayoutId) {
     ids.add(sourceLayoutId);
+  }
+  if (mode === SHARED_ITEM_COPY_PICKER_MODE || mode === SHARED_CONTAINER_COPY_PICKER_MODE) {
+    if (readonlyLayoutId) ids.add(readonlyLayoutId);
   }
   return ids;
 }

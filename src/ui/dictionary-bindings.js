@@ -1,3 +1,9 @@
+import { currentDocumentLanguage } from "../utils/language.js";
+
+function localText(en, ru) {
+  return currentDocumentLanguage() === "en" ? en : ru;
+}
+
 export function bindDictionaryControls(type, {
   activeDictionaryOwner,
   addCustomDictionaryValue,
@@ -110,16 +116,25 @@ export function bindDictionaryControls(type, {
         return containerCategories(container).includes(value);
       }).length;
       const fallback = dictionaryValues.find((item) => item !== value) || "";
-      const title = type === "location" ? "Удалить место хранения?" : "Удалить категорию?";
-      const subject = type === "location" ? "место хранения" : "категорию";
-      const fallbackText = fallback ? `«${fallback}»` : "пустое значение";
+      const title = type === "location"
+        ? localText("Delete storage place?", "Удалить место хранения?")
+        : localText("Delete category?", "Удалить категорию?");
+      const subject = type === "location"
+        ? localText("storage place", "место хранения")
+        : localText("category", "категорию");
+      const fallbackText = fallback
+        ? localText(`“${fallback}”`, `«${fallback}»`)
+        : localText("an empty value", "пустое значение");
       openConfirmDialog({
         title,
-        text: `Если удалить ${subject} «${value}», связанные вещи будут перенесены в ${fallbackText}.`,
+        text: localText(
+          `If you delete the ${subject} “${value}”, linked items will be moved to ${fallbackText}.`,
+          `Если удалить ${subject} «${value}», связанные вещи будут перенесены в ${fallbackText}.`
+        ),
         highlightText: affectedCount
-          ? `Сейчас применяется к ${formatThingCount(affectedCount)}.`
-          : "Сейчас не применяется ни к одной вещи.",
-        okText: "Удалить",
+          ? localText(`Currently used by ${affectedCount} item(s).`, `Сейчас применяется к ${formatThingCount(affectedCount)}.`)
+          : localText("Currently not used by any items.", "Сейчас не применяется ни к одной вещи."),
+        okText: localText("Delete", "Удалить"),
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
           const changedAt = nowIso();
@@ -185,7 +200,7 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
     return;
   }
   if (dictionaryOptionsForOwner(type, owner).includes(newValue)) {
-    showToast("Такое значение уже есть.", "warning");
+    showToast(localText("This value already exists.", "Такое значение уже есть."), "warning");
     return;
   }
   const changedAt = nowIso();

@@ -23,7 +23,11 @@ import {
   renderPackingAddRootCard,
   renderPackingEmptyState
 } from "../../src/ui/empty-state.js";
+import { I18N } from "../../src/data/i18n.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
+import { createConflictValueFormatter } from "../../src/ui/conflict-format.js";
+import { itemDisplayModeLabel } from "../../src/ui/item-display-mode.js";
+import { usageLimitExceededMessage } from "../../src/state/usage-limits.js";
 
 test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {
   const html = renderPackingEmptyState({
@@ -83,6 +87,62 @@ test("CRITICAL bag picker: creating a new bag stays available beside existing ch
   assert.match(html, /id="createRootForLayoutBtn"/);
   assert.match(html, /id="layoutRootResults"/);
   assert.match(app, /createRootForLayoutBtn\?\.addEventListener\("click", openCreateRootContainerForCurrentLayout\)/);
+});
+
+test("CRITICAL root placement: the named move dialog title is localized", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.equal(I18N.ru["forms.moveNamedContainer"], "Переставить «{name}»");
+  assert.equal(I18N.en["forms.moveNamedContainer"], "Move “{name}”");
+  assert.match(controllers, /rootPlacementTitle\.textContent = t\("forms\.moveNamedContainer", \{ name: container\.name \}\)/);
+  assert.doesNotMatch(controllers, /rootPlacementTitle\.textContent = `Переставить/);
+});
+
+test("CRITICAL root placement: every placement slot tooltip is localized", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+  const localizedSlotLabels = controllers.match(/escapeHtml\(t\("tooltips\.placeHere"\)\)/g) || [];
+
+  assert.equal(I18N.ru["tooltips.placeHere"], "Поставить сюда");
+  assert.equal(I18N.en["tooltips.placeHere"], "Place here");
+  assert.equal(localizedSlotLabels.length, 3);
+  assert.doesNotMatch(controllers, /(aria-label|title)="Поставить сюда"/);
+});
+
+test("CRITICAL English UI: secondary labels, limits, and conflict details do not fall back to Russian", () => {
+  const en = (english) => english;
+  const formatter = createConflictValueFormatter({ localText: en });
+  const rows = formatter.conflictDetailRows({
+    type: "item",
+    localHas: true,
+    remoteHas: true,
+    localValue: { name: "Pump", weight: 120, photos: [] },
+    remoteValue: { name: "Pump", weight: 140, photos: [{ id: "photo-1" }] }
+  });
+
+  assert.deepEqual(rows.map((row) => row.label), ["Weight", "Photos"]);
+  assert.equal(formatter.formatConflictFieldValue(null, "name", { type: "item" }), "empty");
+  assert.equal(itemDisplayModeLabel("meta-photos", en), "With labels and photos");
+  assert.equal(usageLimitExceededMessage("photosPerRecord", 3, "en"), "Photos: the standard-user limit is 3 per item or bag.");
+  assert.doesNotMatch(JSON.stringify(rows), /[А-Яа-яЁё]/);
+});
+
+test("CRITICAL localization audit: generated tooltip attributes do not contain direct Russian literals", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const files = [
+    "app.js",
+    "src/app/app-tail-controllers.js",
+    "src/ui/packing-bike3d.js",
+    "src/ui/photo-gallery.js",
+    "src/ui/shared-layout-render.js"
+  ];
+  const directRussianAttribute = /(?:aria-label|title)="(?!\$\{)[^"\r\n]*[А-Яа-яЁё][^"\r\n]*"/;
+
+  files.forEach((relativePath) => {
+    const source = readFileSync(resolve(projectRoot, relativePath), "utf8");
+    assert.doesNotMatch(source, directRussianAttribute, relativePath);
+  });
 });
 
 test("CRITICAL add item to bag: a new item can be created directly for the target bag", () => {

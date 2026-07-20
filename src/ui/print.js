@@ -15,7 +15,11 @@ const PRINT_COLUMN_CAPACITY = 40;
 const PRINT_COLUMN_CAPACITY_WITH_LABELS = 34;
 const PRINT_MAX_DEPTH = 6;
 
-const ATTENTION_LOCATIONS = ["Надо купить", "Не знаю где"];
+const ATTENTION_LOCATIONS = ["Надо купить", "Не знаю где", "Need to buy", "Unknown location"];
+
+function printText(en, ru) {
+  return currentDocumentLanguage() === "en" ? en : ru;
+}
 
 export function askPrintLabelsChoice(askConfirmDialog, { createPrintTarget = null } = {}) {
   if (typeof askConfirmDialog !== "function") {
@@ -108,17 +112,18 @@ function printHtmlInFrame(html) {
 
 function writePrintPlaceholder(printWindow) {
   try {
+    const language = currentDocumentLanguage();
     printWindow.document.open();
     printWindow.document.write(`<!doctype html>
-<html lang="ru">
+<html lang="${language}">
 <head>
   <meta charset="utf-8" />
-  <title>Печать</title>
+  <title>${printText("Print", "Печать")}</title>
   <style>
     body { margin: 24px; font-family: Arial, Helvetica, sans-serif; color: #111; }
   </style>
 </head>
-<body>Готовлю печатный список...</body>
+<body>${printText("Preparing the printable list...", "Готовлю печатный список...")}</body>
 </html>`);
     printWindow.document.close();
   } catch {
@@ -165,19 +170,20 @@ function waitForPrintableLayout(targetWindow) {
 
 export function buildPrintableDocument(targetState, { layoutId = targetState.activeLayoutId, includeGeneratedRoots = false, includeLabels = true } = {}) {
   migrateContainerOrder(targetState);
+  const language = currentDocumentLanguage();
   const layout = targetState.layouts?.[layoutId] || targetState.layouts?.[targetState.activeLayoutId] || Object.values(targetState.layouts || {})[0];
   const rootContainerIds = getVisibleLayoutRootIds(targetState, layout, { includeGenerated: includeGeneratedRoots });
-  const generatedAt = new Date().toLocaleString("ru-RU");
+  const generatedAt = new Date().toLocaleString(language === "en" ? "en-US" : "ru-RU");
   const totalWeight = rootContainerIds.reduce((sum, id) => sum + containerWeight(targetState, id), 0);
   const itemCount = rootContainerIds.reduce((sum, id) => sum + countItemsInContainer(targetState, id), 0);
   const missingCount = rootContainerIds.reduce((sum, id) => sum + countItemsByLocation(targetState, id, ATTENTION_LOCATIONS), 0);
-  const layoutName = layout?.name || "Укладка";
+  const layoutName = layout?.name || printText("Layout", "Укладка");
 
   return `<!doctype html>
-<html lang="ru">
+<html lang="${language}">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(layoutName)} - печатный чек-лист</title>
+  <title>${escapeHtml(layoutName)} - ${escapeHtml(printText("printable checklist", "печатный чек-лист"))}</title>
   <style>
     * { box-sizing: border-box; }
     html { color: #000; background: #fff; }
@@ -438,15 +444,15 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
   <main>
     <header>
       <div>
-        <h1>Чек-лист велоупаковки</h1>
-        <div class="muted">Укладка: ${escapeHtml(layoutName)}</div>
+        <h1>${escapeHtml(printText("Bikepacking checklist", "Чек-лист велоупаковки"))}</h1>
+        <div class="muted">${escapeHtml(printText("Layout", "Укладка"))}: ${escapeHtml(layoutName)}</div>
       </div>
-      <div class="muted">Сформировано: ${escapeHtml(generatedAt)}</div>
+      <div class="muted">${escapeHtml(printText("Generated", "Сформировано"))}: ${escapeHtml(generatedAt)}</div>
     </header>
-    <section class="stats" aria-label="Сводка">
-      <div class="stat"><strong>${escapeHtml(formatWeight(totalWeight))}</strong><span>общий вес</span></div>
-      <div class="stat"><strong>${itemCount}</strong><span>вещей в укладке</span></div>
-      <div class="stat optional-label"><strong>${missingCount}</strong><span>купить / найти</span></div>
+    <section class="stats" aria-label="${escapeHtml(printText("Summary", "Сводка"))}">
+      <div class="stat"><strong>${escapeHtml(formatWeight(totalWeight))}</strong><span>${escapeHtml(printText("total weight", "общий вес"))}</span></div>
+      <div class="stat"><strong>${itemCount}</strong><span>${escapeHtml(printText("items in layout", "вещей в укладке"))}</span></div>
+      <div class="stat optional-label"><strong>${missingCount}</strong><span>${escapeHtml(printText("buy / find", "купить / найти"))}</span></div>
     </section>
     ${renderOverview(targetState, rootContainerIds, { includeLabels })}
     <section class="bags">
@@ -465,14 +471,14 @@ export function buildPrintableDocument(targetState, { layoutId = targetState.act
 function renderOverview(targetState, rootContainerIds, { includeLabels = true } = {}) {
   if (!rootContainerIds.length) return "";
   return `<table class="overview">
-    <caption>Быстрый ориентир по сумкам</caption>
+    <caption>${escapeHtml(printText("Bag overview", "Быстрый ориентир по сумкам"))}</caption>
     <thead>
       <tr>
         <th class="num">#</th>
-        <th>Сумка / место</th>
-        <th>Вещей</th>
-        <th>Вес</th>
-        ${includeLabels ? `<th>Купить / найти</th>` : ""}
+        <th>${escapeHtml(printText("Bag / place", "Сумка / место"))}</th>
+        <th>${escapeHtml(printText("Items", "Вещей"))}</th>
+        <th>${escapeHtml(printText("Weight", "Вес"))}</th>
+        ${includeLabels ? `<th>${escapeHtml(printText("Buy / find", "Купить / найти"))}</th>` : ""}
       </tr>
     </thead>
     <tbody>
@@ -514,7 +520,7 @@ function renderPrintableContainer(targetState, containerId, { root = false, inde
   const depthStyle = root ? "" : ` style="--print-depth:${Math.min(Math.max(depth, 1), 6)}"`;
   const checklistHtml = `${renderChecklistHeader({ includeLabels })}
     <div class="checklist-flow">
-      ${entriesHtml || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}
+      ${entriesHtml || `<div class="empty-line">${escapeHtml(printText("Empty — you can write items in by hand.", "Пусто — можно вписать вручную."))}</div>`}
     </div>`;
 
   return `<${tag} class="${className}"${depthStyle}>
@@ -541,8 +547,8 @@ function renderPrintableRootContainer(targetState, containerId, { indexLabel = "
 
   return pages.map((page, pageIndex) => {
     const continued = pageIndex > 0;
-    const title = continued ? `${container.name} (продолжение)` : container.name;
-    const pageLabel = pages.length > 1 ? ` · лист ${pageIndex + 1}/${pages.length}` : "";
+    const title = continued ? `${container.name} (${printText("continued", "продолжение")})` : container.name;
+    const pageLabel = pages.length > 1 ? ` · ${printText("page", "лист")} ${pageIndex + 1}/${pages.length}` : "";
     return `<article class="bag">
       <div class="bag-heading">
         <div class="bag-title">
@@ -560,7 +566,7 @@ function renderPrintableRootContainer(targetState, containerId, { indexLabel = "
 }
 
 function renderRootChecklistPage(page, { includeLabels = true } = {}) {
-  const renderColumn = (blocks) => `${renderChecklistHeader({ includeLabels })}${blocks.map((block) => block.html).join("") || `<div class="empty-line">Пусто - можно вписать вручную.</div>`}`;
+  const renderColumn = (blocks) => `${renderChecklistHeader({ includeLabels })}${blocks.map((block) => block.html).join("") || `<div class="empty-line">${escapeHtml(printText("Empty — you can write items in by hand.", "Пусто — можно вписать вручную."))}</div>`}`;
   return `<div class="bag-columns">
     <div class="bag-column">${renderColumn(page[0])}</div>
     <div class="bag-column">${renderColumn(page[1])}</div>
@@ -615,7 +621,7 @@ function renderContainerFlowBlocks(targetState, container, indexLabel, depth, { 
       const childNote = printableNote(childContainer);
       const childBlocks = renderContainerFlowBlocks(targetState, childContainer, childLabel, depth + 1, { includeLabels });
       const emptyBlock = {
-        html: `<div class="empty-line flow-block-depth"${printDepthStyle(depth + 1)}>Пусто - можно вписать вручную.</div>`,
+        html: `<div class="empty-line flow-block-depth"${printDepthStyle(depth + 1)}>${escapeHtml(printText("Empty — you can write items in by hand.", "Пусто — можно вписать вручную."))}</div>`,
         weight: 1
       };
       const noteWeight = childNote ? printableNoteBlockWeight(childNote, { includeLabels }) : 0;
@@ -712,10 +718,10 @@ function printableContainerBlockWeight(targetState, containerId) {
 
 function renderContainerFacts(targetState, containerId, container, { includeLabels = true } = {}) {
   const facts = [
-    `${countItemsInContainer(targetState, containerId)} вещей`,
+    `${countItemsInContainer(targetState, containerId)} ${printText("items", "вещей")}`,
     formatWeight(containerWeight(targetState, containerId))
   ];
-  if (Number(container.volume || 0) > 0) facts.push(`${container.volume} л`);
+  if (Number(container.volume || 0) > 0) facts.push(`${container.volume} ${printText("L", "л")}`);
   if (includeLabels && container.location) facts.push(container.location);
   return facts.map((fact) => escapeHtml(fact)).join("<br>");
 }
@@ -723,10 +729,10 @@ function renderContainerFacts(targetState, containerId, container, { includeLabe
 function renderChecklistHeader({ includeLabels = true } = {}) {
   return `<div class="check-header ${includeLabels ? "" : "compact"}" aria-hidden="true">
     <div>OK</div>
-    <div>Вещь</div>
-    <div>Кол.</div>
-    <div>Вес</div>
-    ${includeLabels ? `<div>Где</div><div>Категория</div>` : ""}
+    <div>${escapeHtml(printText("Item", "Вещь"))}</div>
+    <div>${escapeHtml(printText("Qty", "Кол."))}</div>
+    <div>${escapeHtml(printText("Weight", "Вес"))}</div>
+    ${includeLabels ? `<div>${escapeHtml(printText("Where", "Где"))}</div><div>${escapeHtml(printText("Category", "Категория"))}</div>` : ""}
   </div>`;
 }
 

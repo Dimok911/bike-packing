@@ -1122,6 +1122,22 @@ test("CRITICAL offline-photos: pending photos with server URLs are not shown as 
   ]), "Фото загружено");
 });
 
+test("CRITICAL offline-photos: upload status and lightbox controls follow English UI language", () => {
+  const previousDocument = globalThis.document;
+  globalThis.document = { documentElement: { lang: "en" } };
+  try {
+    assert.equal(photoStatusText([{ id: "photo-1", status: "uploading" }]), "Uploading photo");
+    const source = readProjectFile("src/ui/photo-gallery.js");
+    assert.match(source, /localText\("Close", "Закрыть"\)/);
+    assert.match(source, /localText\("Previous photo", "Предыдущее фото"\)/);
+    assert.match(source, /localText\("Next photo", "Следующее фото"\)/);
+    assert.doesNotMatch(source, /aria-label="(Закрыть|Предыдущее фото|Следующее фото)"/);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
 test("CRITICAL offline-photos: local dialog drafts do not show upload progress before real upload", () => {
   const photos = [{
     id: "photo-local",

@@ -236,6 +236,7 @@ export function renderBike3dPackingView({
   containerWeight,
   formatWeight,
   escapeHtml,
+  localText = (en) => en,
   onSelect,
   onClose,
   onToggleAdjust,
@@ -255,20 +256,20 @@ export function renderBike3dPackingView({
     <section class="bike3d-shell ${selected ? "bike3d-has-selection" : ""}" data-bike3d-shell>
       <div class="bike3d-stage">
         <div class="bike3d-toolbar">
-          <span>3D-укладка</span>
+          <span>${escapeHtml(localText("3D packing", "3D-укладка"))}</span>
           <span data-bike3d-load-summary></span>
         </div>
         <div class="bike3d-viewport" data-bike3d-viewport>
           <div class="bike3d-webgl-host" data-bike3d-webgl></div>
-          ${renderBikeModel(bagSlots, { selectedId, escapeHtml, viewState: normalizedViewState })}
+          ${renderBikeModel(bagSlots, { selectedId, escapeHtml, localText, viewState: normalizedViewState })}
           ${selected && adjustingContainerId === selected.id
-            ? renderBike3dAdjustControls(selected.id, transforms[selected.id], escapeHtml)
+            ? renderBike3dAdjustControls(selected.id, transforms[selected.id], escapeHtml, localText)
             : ""}
-          <button class="bike3d-view-reset" type="button" data-bike3d-reset-view title="Вид по умолчанию" aria-label="Вид по умолчанию">↺</button>
+          <button class="bike3d-view-reset" type="button" data-bike3d-reset-view title="${escapeHtml(localText("Default view", "Вид по умолчанию"))}" aria-label="${escapeHtml(localText("Default view", "Вид по умолчанию"))}">↺</button>
         </div>
       </div>
       <aside class="bike3d-detail" ${selected ? "" : "hidden"}>
-        ${selected ? renderBike3dDetailPanel(selected.id, { renderContainer, escapeHtml }) : ""}
+        ${selected ? renderBike3dDetailPanel(selected.id, { renderContainer, escapeHtml, localText }) : ""}
       </aside>
     </section>
   `;
@@ -290,7 +291,7 @@ export function renderBike3dPackingView({
     onSelect,
     onViewStateChange
   });
-  renderBike3dLoadSummary(target, bagSlots, { containerWeight, formatWeight });
+  renderBike3dLoadSummary(target, bagSlots, { containerWeight, formatWeight, localText });
 }
 
 function bindBike3dDetailScrollChain(target) {
@@ -347,7 +348,7 @@ function canScrollPageBy(deltaY) {
   return false;
 }
 
-function renderBikeModel(bagSlots, { selectedId, escapeHtml, viewState }) {
+function renderBikeModel(bagSlots, { selectedId, escapeHtml, localText, viewState }) {
   const style = [
     `--bike-zoom: ${viewState.zoom}`,
     `--bike-pan-x: ${viewState.panX}px`,
@@ -356,7 +357,7 @@ function renderBikeModel(bagSlots, { selectedId, escapeHtml, viewState }) {
     `--bike-rotate-z: ${viewState.rotateZ}deg`
   ].join("; ");
   return `
-    <div class="bike3d-space" aria-label="3D модель велосипеда">
+    <div class="bike3d-space" aria-label="${escapeHtml(localText("3D bicycle model", "3D модель велосипеда"))}">
       <div class="bike3d-ground"></div>
       <div class="bike3d-model" data-bike3d-model style="${style}">
         <div class="bike3d-wheel bike3d-wheel-rear"><span></span></div>
@@ -373,14 +374,15 @@ function renderBikeModel(bagSlots, { selectedId, escapeHtml, viewState }) {
         <div class="bike3d-rack bike3d-rack-right"></div>
         ${bagSlots.map((slot) => renderBike3dBag(slot, {
           selected: slot.id === selectedId,
-          escapeHtml
+          escapeHtml,
+          localText
         })).join("")}
       </div>
     </div>
   `;
 }
 
-function renderBike3dBag(slot, { selected, escapeHtml }) {
+function renderBike3dBag(slot, { selected, escapeHtml, localText }) {
   const name = slot.name || slot.id;
   const label = shortContainerName(name);
   const style = [
@@ -404,7 +406,7 @@ function renderBike3dBag(slot, { selected, escapeHtml }) {
       type="button"
       data-bike3d-container="${escapeHtml(slot.id)}"
       style="${style}"
-      aria-label="Открыть ${escapeHtml(name)}"
+      aria-label="${escapeHtml(localText(`Open ${name}`, `Открыть ${name}`))}"
       title="${escapeHtml(name)}"
     >
       <span class="bike3d-bag-face bike3d-bag-front">${escapeHtml(label)}</span>
@@ -414,7 +416,7 @@ function renderBike3dBag(slot, { selected, escapeHtml }) {
   `;
 }
 
-function renderBike3dAdjustControls(containerId, transform, escapeHtml) {
+function renderBike3dAdjustControls(containerId, transform, escapeHtml, localText) {
   const normalized = normalizeBike3dTransform(transform);
   const controlRow = (key, axis, label, value, down, up) => `
     <div class="bike3d-adjust-axis bike3d-adjust-axis-${axis}">
@@ -426,44 +428,44 @@ function renderBike3dAdjustControls(containerId, transform, escapeHtml) {
   return `
     <div class="bike3d-adjust-controls" data-bike3d-adjust-controls data-bike3d-adjusting="${escapeHtml(containerId)}">
       <div class="bike3d-adjust-head">
-        <strong>Настройка</strong>
-        <button type="button" data-bike3d-adjust="reset" title="Сбросить">Сброс</button>
+        <strong>${escapeHtml(localText("Adjustment", "Настройка"))}</strong>
+        <button type="button" data-bike3d-adjust="reset" title="${escapeHtml(localText("Reset", "Сбросить"))}">${escapeHtml(localText("Reset", "Сброс"))}</button>
       </div>
-      <div class="bike3d-adjust-color" aria-label="Цвет">
+      <div class="bike3d-adjust-color" aria-label="${escapeHtml(localText("Color", "Цвет"))}">
         ${BIKE3D_COLOR_PALETTE.map((color) => `
           <button
             type="button"
             class="${(normalized.color || BIKE3D_COLOR_PALETTE[0]).toLowerCase() === color.toLowerCase() ? "active" : ""}"
             data-bike3d-color="${color}"
             style="--swatch: ${color}"
-            title="Цвет ${color}"
-            aria-label="Цвет ${color}"
+            title="${escapeHtml(localText(`Color ${color}`, `Цвет ${color}`))}"
+            aria-label="${escapeHtml(localText(`Color ${color}`, `Цвет ${color}`))}"
           ></button>
         `).join("")}
       </div>
       <div class="bike3d-adjust-grid">
-        <div class="bike3d-adjust-pad" aria-label="Позиция">
-          <button type="button" data-bike3d-adjust="move-up" title="Выше">↑</button>
-          <button type="button" data-bike3d-adjust="move-left" title="Левее">←</button>
-          <button type="button" data-bike3d-adjust="move-down" title="Ниже">↓</button>
-          <button type="button" data-bike3d-adjust="move-right" title="Правее">→</button>
-          <button type="button" data-bike3d-adjust="move-back" title="Дальше">Z-</button>
-          <button type="button" data-bike3d-adjust="move-forward" title="Ближе">Z+</button>
+        <div class="bike3d-adjust-pad" aria-label="${escapeHtml(localText("Position", "Позиция"))}">
+          <button type="button" data-bike3d-adjust="move-up" title="${escapeHtml(localText("Up", "Выше"))}">↑</button>
+          <button type="button" data-bike3d-adjust="move-left" title="${escapeHtml(localText("Left", "Левее"))}">←</button>
+          <button type="button" data-bike3d-adjust="move-down" title="${escapeHtml(localText("Down", "Ниже"))}">↓</button>
+          <button type="button" data-bike3d-adjust="move-right" title="${escapeHtml(localText("Right", "Правее"))}">→</button>
+          <button type="button" data-bike3d-adjust="move-back" title="${escapeHtml(localText("Farther", "Дальше"))}">Z-</button>
+          <button type="button" data-bike3d-adjust="move-forward" title="${escapeHtml(localText("Closer", "Ближе"))}">Z+</button>
         </div>
-        <div class="bike3d-adjust-values" aria-label="Масштаб и поворот">
-          ${controlRow("sx", "x", "шир.", `${Math.round(normalized.sx * 100)}%`, "scale-x-down", "scale-x-up")}
-          ${controlRow("sy", "y", "выс.", `${Math.round(normalized.sy * 100)}%`, "scale-y-down", "scale-y-up")}
-          ${controlRow("sz", "z", "гл.", `${Math.round(normalized.sz * 100)}%`, "scale-z-down", "scale-z-up")}
-          ${controlRow("rx", "x", "повор.", `${Math.round(normalized.rx)}°`, "rotate-x-down", "rotate-x-up")}
-          ${controlRow("ry", "y", "повор.", `${Math.round(normalized.ry)}°`, "rotate-y-down", "rotate-y-up")}
-          ${controlRow("rz", "z", "повор.", `${Math.round(normalized.rz)}°`, "rotate-z-down", "rotate-z-up")}
+        <div class="bike3d-adjust-values" aria-label="${escapeHtml(localText("Scale and rotation", "Масштаб и поворот"))}">
+          ${controlRow("sx", "x", localText("width", "шир."), `${Math.round(normalized.sx * 100)}%`, "scale-x-down", "scale-x-up")}
+          ${controlRow("sy", "y", localText("height", "выс."), `${Math.round(normalized.sy * 100)}%`, "scale-y-down", "scale-y-up")}
+          ${controlRow("sz", "z", localText("depth", "гл."), `${Math.round(normalized.sz * 100)}%`, "scale-z-down", "scale-z-up")}
+          ${controlRow("rx", "x", localText("rotate", "повор."), `${Math.round(normalized.rx)}°`, "rotate-x-down", "rotate-x-up")}
+          ${controlRow("ry", "y", localText("rotate", "повор."), `${Math.round(normalized.ry)}°`, "rotate-y-down", "rotate-y-up")}
+          ${controlRow("rz", "z", localText("rotate", "повор."), `${Math.round(normalized.rz)}°`, "rotate-z-down", "rotate-z-up")}
         </div>
       </div>
     </div>
   `;
 }
 
-function renderBike3dDetailPanel(containerId, { renderContainer, escapeHtml }) {
+function renderBike3dDetailPanel(containerId, { renderContainer, escapeHtml, localText }) {
   if (typeof renderContainer !== "function") return "";
   return `
     <div class="bike3d-detail-actions">
@@ -471,10 +473,10 @@ function renderBike3dDetailPanel(containerId, { renderContainer, escapeHtml }) {
         class="icon-button bike3d-detail-settings"
         type="button"
         data-bike3d-settings="${escapeHtml(containerId)}"
-        aria-label="Настроить 3D-положение"
-        title="Настроить 3D-положение"
+        aria-label="${escapeHtml(localText("Adjust 3D position", "Настроить 3D-положение"))}"
+        title="${escapeHtml(localText("Adjust 3D position", "Настроить 3D-положение"))}"
       >⚙</button>
-      <button class="icon-button bike3d-detail-close" type="button" data-bike3d-close aria-label="Закрыть">×</button>
+      <button class="icon-button bike3d-detail-close" type="button" data-bike3d-close aria-label="${escapeHtml(localText("Close", "Закрыть"))}">×</button>
     </div>
     <div class="bike3d-detail-column">
       ${renderContainer(containerId)}
@@ -1257,11 +1259,14 @@ function applyBike3dTransformToMesh(mesh, transform) {
   mesh.scale.copy(mesh.userData.baseScale);
 }
 
-function renderBike3dLoadSummary(target, slots, { containerWeight, formatWeight }) {
+function renderBike3dLoadSummary(target, slots, { containerWeight, formatWeight, localText }) {
   if (typeof containerWeight !== "function" || typeof formatWeight !== "function") return;
   const total = slots.reduce((sum, slot) => sum + (Number(containerWeight(slot.id)) || 0), 0);
   const label = target.querySelector("[data-bike3d-load-summary]");
-  if (label) label.textContent = `${slots.length} сумок · ${formatWeight(total)}`;
+  if (label) label.textContent = localText(
+    `${slots.length} ${slots.length === 1 ? "bag" : "bags"} · ${formatWeight(total)}`,
+    `${slots.length} сумок · ${formatWeight(total)}`
+  );
 }
 
 function bike3dBagSlots(rootIds, { containers, transforms }) {

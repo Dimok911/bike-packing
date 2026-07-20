@@ -111,7 +111,7 @@ function historyFieldDefinitions(type, localText = historyRuText) {
       locked: localText("Layout lock", "Блокировка укладки")
     }
   };
-  const definitions = conflictDiffFieldDefinitions({ type });
+  const definitions = conflictDiffFieldDefinitions({ type }, { localText });
   if (type === "item") definitions.push(
     ["color", labels.item.color, ""],
     ["dimensions", labels.item.dimensions, ""],

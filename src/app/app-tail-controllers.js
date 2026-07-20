@@ -64,6 +64,7 @@ export function createAppTailControllers(ctx) {
   let replacingPackingItemId = "";
   let replacingPackingContainerId = "";
   let placeNewRootInCurrentLayout = false;
+  let pendingCopyTargetLayoutCreation = null;
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
     API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -855,7 +856,7 @@ function openRootPlacementDialog() {
   const container = state.containers[containerId];
   if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
   if (!container || container.parentId) return;
-  refs.rootPlacementTitle.textContent = `Переставить «${container.name}»`;
+  refs.rootPlacementTitle.textContent = t("forms.moveNamedContainer", { name: container.name });
   renderRootPlacementBoard(containerId);
   openModalDialog(refs.rootPlacementDialog);
 }
@@ -878,14 +879,15 @@ function renderRootPlacementSlot(containerId, slotIndex) {
   const rootIds = getRootContainerDialogLayoutRootIds();
   const currentIndex = rootIds.indexOf(containerId);
   const disabled = currentIndex >= 0 && (slotIndex === currentIndex || slotIndex === currentIndex + 1);
+  const placeHereText = escapeHtml(t("tooltips.placeHere"));
   return `
     <button
       class="root-placement-slot"
       type="button"
       data-place-root-index="${slotIndex}"
       ${disabled ? "disabled" : ""}
-      aria-label="Поставить сюда"
-      title="Поставить сюда"
+      aria-label="${placeHereText}"
+      title="${placeHereText}"
     >+</button>
   `;
 }
@@ -1001,7 +1003,7 @@ function addExistingItemToContainer(itemId) {
   const changedAt = nowIso();
   if (warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(itemId)) return;
   if (!placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
-    showToast("Не удалось добавить вещь в эту укладку.", "error");
+    showToast(localText("Could not add the item to this layout.", "Не удалось добавить вещь в эту укладку."), "error");
     return;
   }
   state.collapsedContainers[containerId] = false;
@@ -1071,7 +1073,7 @@ function createSubcontainerFromAddDialog(event) {
     touchLayout
   });
   if (!created) {
-    showToast("Не удалось добавить новый список в эту укладку.", "error");
+    showToast(localText("Could not add the new list to this layout.", "Не удалось добавить новый список в эту укладку."), "error");
     return;
   }
   state.collapsedContainers[parentId] = false;
@@ -1298,6 +1300,7 @@ async function openItemCopyContainerPickerDialog(event) {
   runtime.containerPickerLayoutId = getPublishedEditLayoutId();
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
+  if (await offerCreateLayoutWhenNoCopyTargets()) return;
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -1326,21 +1329,15 @@ async function openRootContainerCopyPickerDialog(event) {
   runtime.containerPickerLayoutId = getPublishedEditLayoutId();
   runtime.containerPickerSourceLayoutId = getPublishedEditLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
+  if (await offerCreateLayoutWhenNoCopyTargets()) return;
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
-}
-
-function canUseLayoutAsSharedCopyTarget(layout) {
-  if (getContainerCopyExcludedLayoutIds().has(layout?.id)) return false;
-  return isSharedCopyTargetLayout(layout, {
-    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
-    readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
-  });
 }
 
 function firstPrivateLayoutId() {
   return sharedCopyTargetLayouts(state.layouts, {
     excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
+    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
     readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   })[0]?.id || "";
 }
@@ -1359,6 +1356,7 @@ async function openSharedItemCopyPicker(sourceId) {
   runtime.containerPickerSourceLayoutId = sourceLayoutId || "";
   runtime.containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
+  if (await offerCreateLayoutWhenNoCopyTargets()) return;
   const targetLayouts = getContainerPickerLayoutOptions();
   if (shouldCopySharedItemOutsideLayout(targetLayouts, {
     layoutHasContainers: (layout) => getLayoutContainerIdSet(layout).size > 0
@@ -1385,6 +1383,7 @@ async function openSharedContainerCopyPicker(sourceId, { sourceIsNestedContainer
   runtime.containerPickerSourceLayoutId = sourceLayoutId || "";
   runtime.containerPickerLayoutId = selectedSharedTargetLayoutId() || firstPrivateLayoutId() || ensureSharedCopyTargetLayoutId();
   await ensureAdminPublicCopyTargetsAvailable();
+  if (await offerCreateLayoutWhenNoCopyTargets()) return;
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
 }
@@ -1450,13 +1449,14 @@ function renderRootCopyPlacementBoard() {
 }
 
 function renderRootCopyPlacementSlot(slotIndex) {
+  const placeHereText = escapeHtml(t("tooltips.placeHere"));
   return `
     <button
       class="root-placement-slot"
       type="button"
       data-pick-root-index="${slotIndex}"
-      aria-label="Поставить сюда"
-      title="Поставить сюда"
+      aria-label="${placeHereText}"
+      title="${placeHereText}"
     >+</button>
   `;
 }
@@ -1468,15 +1468,63 @@ function getContainerPickerLayoutOptions() {
   if (!copyMode && !newItemPlacementMode) {
     return currentLayout ? [currentLayout] : [];
   }
-  const allLayouts = Object.values(state.layouts || {});
   const excludedLayoutIds = getContainerCopyExcludedLayoutIds();
-  const personalLayouts = allLayouts.filter(canUseLayoutAsSharedCopyTarget);
+  const allLayouts = Object.values(state.layouts || {});
+  const personalLayouts = sharedCopyTargetLayouts(state.layouts, {
+    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
+    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
+    readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
+  }).filter((layout) => !excludedLayoutIds.has(layout.id));
   if (!canOpenAdminPublishedEdit()) return personalLayouts;
   const publicDrafts = orderAdminPublicDraftsLikeMainSelect(publicCopyTargetLayouts(allLayouts, {
     choiceForLayout: publicLayoutChoiceForLayout,
     visibleChoices: adminPublicLayoutOptions().map(([value]) => value)
   }).filter((layout) => isPublishedLayoutEditable(layout) && !excludedLayoutIds.has(layout.id)));
   return [...publicDrafts, ...personalLayouts];
+}
+
+async function offerCreateLayoutWhenNoCopyTargets() {
+  if (getContainerPickerLayoutOptions().length) return false;
+  const confirmed = await askConfirmDialog({
+    title: t("copy.noOtherLayoutsTitle"),
+    text: t("copy.noOtherLayoutsText"),
+    okText: t("copy.createLayout"),
+    cancelText: t("buttons.cancel")
+  });
+  if (confirmed) {
+    pendingCopyTargetLayoutCreation = {
+      activeLayoutId: state.activeLayoutId,
+      containerPickerLayoutId: runtime.containerPickerLayoutId,
+      containerPickerMode: runtime.containerPickerMode,
+      containerPickerSourceLayoutId: runtime.containerPickerSourceLayoutId,
+      containerPickerTargetContainerId: runtime.containerPickerTargetContainerId,
+      sharedPickerSourceContainerId: runtime.sharedPickerSourceContainerId,
+      sharedPickerSourceItemId: runtime.sharedPickerSourceItemId,
+      sourceIsNestedContainer: containerPickerSourceIsNestedContainer
+    };
+    if (refs.containerPickerDialog?.open) refs.containerPickerDialog.close();
+    openLayoutDialog({ copyTargetFlow: true });
+  }
+  return true;
+}
+
+function resumeCopyPickerAfterLayoutCreation(layoutId) {
+  const pending = pendingCopyTargetLayoutCreation;
+  if (!pending || !layoutId || !state.layouts?.[layoutId]) return false;
+  pendingCopyTargetLayoutCreation = null;
+  if (pending.activeLayoutId && state.layouts?.[pending.activeLayoutId] && state.activeLayoutId !== pending.activeLayoutId) {
+    switchActiveLayout(pending.activeLayoutId, { remember: false });
+  }
+  runtime.containerPickerMode = pending.containerPickerMode;
+  runtime.containerPickerTargetContainerId = pending.containerPickerTargetContainerId;
+  runtime.containerPickerSourceLayoutId = pending.containerPickerSourceLayoutId;
+  runtime.sharedPickerSourceContainerId = pending.sharedPickerSourceContainerId;
+  runtime.sharedPickerSourceItemId = pending.sharedPickerSourceItemId;
+  containerPickerSourceIsNestedContainer = pending.sourceIsNestedContainer;
+  runtime.containerPickerLayoutId = layoutId;
+  renderContainerPicker();
+  openModalDialog(refs.containerPickerDialog);
+  return true;
 }
 
 function renderContainerPickerLayoutSelect(layoutOptions) {
@@ -1613,6 +1661,7 @@ function renderContainerPickerSlot(parentId, orderIndex, level, compact = false,
   if (!isContainerPickerTargetAllowed(parentId)) return "";
   if (isCurrentPosition) return renderContainerPickerCurrentSlot(level, compact);
   const selected = getContainerPickerSelectedId() === parentId && getContainerPickerSelectedIndex() === orderIndex;
+  const placeHereText = escapeHtml(t("tooltips.placeHere"));
   return `
     <button
       class="container-picker-slot ${compact ? "compact" : ""} ${selected ? "selected" : ""}"
@@ -1620,8 +1669,8 @@ function renderContainerPickerSlot(parentId, orderIndex, level, compact = false,
       data-pick-container-parent="${parentId}"
       data-pick-container-index="${orderIndex}"
       style="--level: ${level}"
-      aria-label="Поставить сюда"
-      title="Поставить сюда"
+      aria-label="${placeHereText}"
+      title="${placeHereText}"
     >+</button>
   `;
 }
@@ -1745,10 +1794,13 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (!crossesPublicNamespace) {
     if (layoutContainsItem(targetLayoutId, itemId)) {
       const duplicate = await askConfirmDialog({
-        title: "Вещь уже есть в этой укладке",
-        text: `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`,
-        okText: "Дублировать",
-        cancelText: "Не копировать",
+        title: localText("The item is already in this layout", "Вещь уже есть в этой укладке"),
+        text: localText(
+          `“${source.name || "Item"}” is already used in “${targetLayout.name || "Layout"}”. Create a separate copy of this item?`,
+          `«${source.name || "Вещь"}» уже участвует в укладке «${targetLayout.name || "Укладка"}». Создать отдельную копию этой вещи?`
+        ),
+        okText: localText("Duplicate", "Дублировать"),
+        cancelText: localText("Do not copy", "Не копировать"),
         tone: "safe"
       });
       if (duplicate) {
@@ -1756,7 +1808,7 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
         return;
       }
       refs.containerPickerDialog.close();
-      showToast("Копирование пропущено: вещь уже есть в целевой укладке.", "success");
+      showToast(localText("Copy skipped: the item is already in the target layout.", "Копирование пропущено: вещь уже есть в целевой укладке."), "success");
       return;
     }
     if (linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId)) return;
@@ -1811,7 +1863,7 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   closeSourceEditorAfterCopy("item", itemId);
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
-  showToast("Вещь добавлена в выбранную укладку без создания дубля.", "success");
+  showToast(localText("The item was added to the selected layout without creating a duplicate.", "Вещь добавлена в выбранную укладку без создания дубля."), "success");
   return true;
 }
 
@@ -1869,7 +1921,7 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   closeSourceEditorAfterCopy("item", itemId);
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(copyId));
-  showToast("Вещь скопирована в выбранную укладку.", "success");
+  showToast(localText("The item was copied to the selected layout.", "Вещь скопирована в выбранную укладку."), "success");
 }
 
 function snapshotContainerTree(containerId, { sourceLayoutId = "", excludeLayoutId = "", targetState = state } = {}) {
@@ -1923,7 +1975,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     });
     if (route === "link-existing") {
       if (!linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId, targetParentId, { targetIndex })) {
-        showToast("Не удалось добавить сумку или пакет в выбранную укладку.", "error");
+        showToast(localText("Could not add the bag or pouch to the selected layout.", "Не удалось добавить сумку или пакет в выбранную укладку."), "error");
       }
       return;
     }
@@ -1986,7 +2038,7 @@ function linkExistingContainerTreeToLayout(sourceSnapshot, targetLayoutId = stat
   closeSourceEditorAfterCopy("container", sourceSnapshot.rootId);
   render();
   requestAnimationFrame(() => focusRecentlyAddedContainer(sourceSnapshot.rootId));
-  showToast("Сумка или пакет добавлены в выбранную укладку без создания дублей.", "success");
+  showToast(localText("The bag or pouch was added to the selected layout without duplicates.", "Сумка или пакет добавлены в выбранную укладку без создания дублей."), "success");
   return true;
 }
 
@@ -2090,7 +2142,7 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
   render();
   renderSharedLayouts();
   requestAnimationFrame(() => focusRecentlyAddedContainer(nextRootId));
-  showToast("Сумка или пакет скопированы в выбранную укладку.", "success");
+  showToast(localText("The bag or pouch was copied to the selected layout.", "Сумка или пакет скопированы в выбранную укладку."), "success");
   return nextRootId;
 }
 
@@ -2564,6 +2616,7 @@ function renderCurrentPackingBike3d({ beforeHtml = "", shared = false } = {}) {
     containerWeight,
     formatWeight,
     escapeHtml,
+    localText,
     onSelect: selectBike3dContainer,
     onClose: closeBike3dDetail,
     onToggleAdjust: toggleBike3dAdjusting,
@@ -3247,9 +3300,9 @@ function unpackAllItems() {
   if (!Object.values(state.packedItems || {}).some(Boolean)) return;
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
   openConfirmDialog({
-    title: "Разобрать все вещи?",
-    text: "Все отметки «собрано» будут сняты. Сами вещи и укладка останутся на месте.",
-    okText: "Разобрать",
+    title: localText("Mark all items as unpacked?", "Разобрать все вещи?"),
+    text: localText("All packed marks will be removed. The items and layout will stay in place.", "Все отметки «собрано» будут сняты. Сами вещи и укладка останутся на месте."),
+    okText: localText("Mark as unpacked", "Разобрать"),
     onConfirm: () => {
       capturePackingScroll();
       const changedAt = nowIso();
@@ -3735,7 +3788,9 @@ function catalogRootActionIds(containerId) {
 function selectionNames(records, limit = 8) {
   const names = records.map((record) => record?.name).filter(Boolean);
   const visible = names.slice(0, limit).map((name) => `- ${name}`).join("\n");
-  return names.length > limit ? `${visible}\n- ещё ${names.length - limit}` : visible;
+  return names.length > limit
+    ? `${visible}\n- ${localText(`${names.length - limit} more`, `ещё ${names.length - limit}`)}`
+    : visible;
 }
 
 function formatRootContainerCount(count) {
@@ -3753,10 +3808,10 @@ async function copyCatalogItems(itemIds) {
     return;
   }
   const confirmed = await askConfirmDialog({
-    title: "Скопировать выбранные вещи?",
-    text: `Будет создано ${formatThingCount(ids.length)} во вкладке «Вещи».`,
+    title: localText("Copy selected items?", "Скопировать выбранные вещи?"),
+    text: localText(`${ids.length} item copies will be created on the Items tab.`, `Будет создано ${formatThingCount(ids.length)} во вкладке «Вещи».`),
     highlightText: selectionNames(ids.map((id) => state.items[id])),
-    okText: "Скопировать",
+    okText: localText("Copy", "Скопировать"),
     tone: "safe"
   });
   if (!confirmed) return;
@@ -3773,10 +3828,10 @@ async function confirmDeleteCatalogItems(itemIds) {
     return;
   }
   const confirmed = await askConfirmDialog({
-    title: "Удалить выбранные вещи навсегда?",
-    text: `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`,
+    title: localText("Delete selected items forever?", "Удалить выбранные вещи навсегда?"),
+    text: localText(`${ids.length} items will be removed from the item list and every layout. Bags and places will remain. This cannot be undone.`, `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`),
     highlightText: selectionNames(ids.map((id) => state.items[id])),
-    okText: "Удалить",
+    okText: localText("Delete", "Удалить"),
     tone: "danger",
     hideClose: true
   });
@@ -3796,10 +3851,10 @@ async function copyCatalogRootContainers(containerIds) {
     return;
   }
   const confirmed = await askConfirmDialog({
-    title: "Скопировать выбранные сумки и места?",
-    text: `Будет создано ${formatRootContainerCount(ids.length)} без вещей внутри.`,
+    title: localText("Copy selected bags and places?", "Скопировать выбранные сумки и места?"),
+    text: localText(`${ids.length} bag/place copies will be created without their contents.`, `Будет создано ${formatRootContainerCount(ids.length)} без вещей внутри.`),
     highlightText: selectionNames(ids.map((id) => state.containers[id])),
-    okText: "Скопировать",
+    okText: localText("Copy", "Скопировать"),
     tone: "safe"
   });
   if (!confirmed) return;
@@ -3816,10 +3871,10 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
     return;
   }
   const confirmed = await askConfirmDialog({
-    title: "Удалить выбранные сумки и места?",
-    text: `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`,
+    title: localText("Delete selected bags and places?", "Удалить выбранные сумки и места?"),
+    text: localText(`${ids.length} bags/places will be removed from the bag list and every layout.`, `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`),
     highlightText: selectionNames(ids.map((id) => state.containers[id])),
-    okText: "Удалить",
+    okText: localText("Delete", "Удалить"),
     tone: "danger",
     hideClose: true
   });
@@ -4604,10 +4659,10 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
     ? `\n${escapeHtml(t("rootContainers.deleteItemsRemain", { count: formatThingCount(itemCount) }))}`
     : "";
   openConfirmDialog({
-    title: "Удалить сумку или место?",
-    text: `«${container.name}» будет удалено из списка сумок и мест и из всех укладок.`,
+    title: localText("Delete bag or place?", "Удалить сумку или место?"),
+    text: localText(`“${container.name}” will be removed from the bag/place list and every layout.`, `«${container.name}» будет удалено из списка сумок и мест и из всех укладок.`),
     highlightText: `${layoutText}${itemsText}`,
-    okText: "Удалить",
+    okText: localText("Delete", "Удалить"),
     tone: layoutRows.length || itemCount ? "danger" : "safe",
     ...rootContainerDeleteConfirm({
       container,
@@ -5336,14 +5391,17 @@ async function createTemplateCopyDraft(sourceLayout, requestedName, { sourceKind
   return createdId;
 }
 
-function openLayoutDialog() {
+function openLayoutDialog({ copyTargetFlow = false } = {}) {
+  if (!copyTargetFlow) pendingCopyTargetLayoutCreation = null;
   if (refs.layoutCreateTitle) {
-    refs.layoutCreateTitle.textContent = canOpenAdminPublishedEdit()
+    refs.layoutCreateTitle.textContent = copyTargetFlow
+      ? t("copy.createLayout")
+      : canOpenAdminPublishedEdit()
       ? localText("New layout/template", "Новая укладка/шаблон")
       : defaultLayoutName();
   }
   const activePublicChoice = publicLayoutChoiceForLayout(state.layouts?.[state.activeLayoutId]);
-  const shouldSuggestActiveTemplateCopy = Boolean(canOpenAdminPublishedEdit() && activePublicChoice);
+  const shouldSuggestActiveTemplateCopy = Boolean(!copyTargetFlow && canOpenAdminPublishedEdit() && activePublicChoice);
   refs.layoutName.value = uniqueLayoutName(defaultLayoutName());
   refs.layoutCreateMode.value = shouldSuggestActiveTemplateCopy ? "template-copy" : "empty";
   fillSelect(
@@ -5435,7 +5493,7 @@ function updateLayoutCreateNameSuggestion({ force = false } = {}) {
 
 function createNewPublicTemplateLayout(requestedName, kind, language) {
   if (!canOpenAdminPublishedEdit()) {
-    showToast("Шаблоны может создавать только админ.", "error");
+    showToast(localText("Only an administrator can create templates.", "Шаблоны может создавать только админ."), "error");
     return "";
   }
   const normalizedLanguage = normalizeUiLanguage(language || uiLanguage);
@@ -5489,7 +5547,7 @@ async function saveNewLayout(event) {
     const sourceChoice = refs.layoutCopyFrom.value;
     const sourceLayout = await resolveLayoutCreateTemplateCopyLayout(sourceChoice);
     if (!sourceLayout) {
-      showToast("Источник шаблона не найден.", "error");
+      showToast(localText("Template source not found.", "Источник шаблона не найден."), "error");
       return;
     }
     try {
@@ -5504,25 +5562,28 @@ async function saveNewLayout(event) {
       switchView("packing");
       showToast(t("template.draftCreated"), "success");
     } catch (error) {
-      showToast(`Не удалось скопировать шаблон: ${error.message}`, "error");
+      showToast(localText(`Could not copy the template: ${error.message}`, `Не удалось скопировать шаблон: ${error.message}`), "error");
     }
     return;
   }
   if (shouldCreateFromTemplate) {
     const templateSource = await resolveLayoutCreateTemplateCopySource(refs.layoutCopyFrom.value);
     if (!templateSource) {
-      showToast("Источник шаблона не найден.", "error");
+      showToast(localText("Template source not found.", "Источник шаблона не найден."), "error");
       return;
     }
-    const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName);
+    const createdId = createPrivateLayoutFromTemplateSource(templateSource, requestedName, {
+      activate: !pendingCopyTargetLayoutCreation
+    });
     if (!createdId) return;
     refs.layoutDialog.close();
-    switchView("packing");
+    const resumedCopy = resumeCopyPickerAfterLayoutCreation(createdId);
+    if (!resumedCopy) switchView("packing");
     try {
       await syncCreatedPrivateLayoutEntities(createdId);
-      showToast("Укладка создана из шаблона.", "success");
+      showToast(localText("Layout created from the template.", "Укладка создана из шаблона."), "success");
     } catch (error) {
-      showToast(`Укладка создана локально, но не сохранена на сервере: ${error.message}`, "error");
+      showToast(localText(`The layout was created locally but was not saved to the server: ${error.message}`, `Укладка создана локально, но не сохранена на сервере: ${error.message}`), "error");
     }
     return;
   }
@@ -5533,16 +5594,19 @@ async function saveNewLayout(event) {
     showToast("Copy source was not found.", "error");
     return;
   }
-  createLayoutCopyFromSource(source, requestedName);
+  const createdId = createLayoutCopyFromSource(source, requestedName, {
+    activate: !pendingCopyTargetLayoutCreation
+  });
+  if (!createdId) return;
   refs.layoutDialog.close();
-  switchView("packing");
+  if (!resumeCopyPickerAfterLayoutCreation(createdId)) switchView("packing");
 }
 
 function openLayoutEditDialog() {
   const layoutId = getActiveEditableLayoutId();
   const layout = state.layouts?.[layoutId];
   if (!layout || !canManageActiveLayout()) {
-    showToast("Эту укладку нельзя редактировать.", "error");
+    showToast(localText("This layout cannot be edited.", "Эту укладку нельзя редактировать."), "error");
     return;
   }
   if (isAdminEditablePublishedLayout(layout.id) && state.activeLayoutId !== layout.id) {
@@ -6058,7 +6122,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
       await savePublishedTemplateMetadata(layout, previousLayout);
       if (closeDialog) refs.layoutEditDialog.close();
       render();
-      if (notify) showToast("Метка шаблона обновлена.", "success");
+      if (notify) showToast(localText("Template label updated.", "Метка шаблона обновлена."), "success");
       return true;
     } catch (error) {
       if (previousLayout?.id) state.layouts[previousLayout.id] = previousLayout;
@@ -6068,8 +6132,8 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
         updateSyncUi();
         showToast(error.message, "error");
       } else {
-        updateSyncUi(`Не удалось сохранить метку шаблона: ${error.message}`);
-        showToast(`Не удалось сохранить метку шаблона: ${error.message}`, "error");
+        updateSyncUi(localText(`Could not save the template label: ${error.message}`, `Не удалось сохранить метку шаблона: ${error.message}`));
+        showToast(localText(`Could not save the template label: ${error.message}`, `Не удалось сохранить метку шаблона: ${error.message}`), "error");
       }
       return false;
     } finally {
@@ -6080,7 +6144,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
   saveLayoutMutation(layout.id);
   if (closeDialog) refs.layoutEditDialog.close();
   render();
-  if (notify) showToast("Укладка обновлена.", "success");
+  if (notify) showToast(localText("Layout updated.", "Укладка обновлена."), "success");
   return true;
 }
 
@@ -6235,7 +6299,7 @@ async function confirmDeleteEditedLayout() {
     return;
   }
   if (!layout || !canDeleteManagedLayout(layout.id)) {
-    showToast("Эту укладку нельзя удалить.", "error");
+    showToast(localText("This layout cannot be deleted.", "Эту укладку нельзя удалить."), "error");
     return;
   }
   if (isAdminEditablePublishedLayout(layout.id)) {
@@ -6563,7 +6627,7 @@ async function handleItemPhotoInputChange(event) {
   const files = [...(event.target.files || [])];
   if (!files.length) return;
   try {
-    setItemDialogPhotoStatus("Готовлю фото...");
+    setItemDialogPhotoStatus(localText("Preparing photos...", "Готовлю фото..."));
     const photos = [];
     for (const file of files) {
       photos.push(await createItemPhotoFromFile(file));
@@ -6582,8 +6646,8 @@ async function handleItemPhotoInputChange(event) {
     updateItemDialogSaveState();
     uploadItemDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
-    setItemDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
-    showToast(error.message || "Не удалось подготовить фото.", "error");
+    setItemDialogPhotoStatus(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."));
+    showToast(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."), "error");
   } finally {
     if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
     if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
@@ -6927,7 +6991,7 @@ async function handleRootContainerPhotoInputChange(event) {
   const files = [...(event.target.files || [])];
   if (!files.length) return;
   try {
-    setRootContainerDialogPhotoStatus("Готовлю фото...");
+    setRootContainerDialogPhotoStatus(localText("Preparing photos...", "Готовлю фото..."));
     const photos = [];
     for (const file of files) {
       photos.push(await createItemPhotoFromFile(file));
@@ -6946,8 +7010,8 @@ async function handleRootContainerPhotoInputChange(event) {
     updateRootContainerDialogSaveState();
     uploadRootContainerDialogDraftPhotos(result.accepted).catch(() => null);
   } catch (error) {
-    setRootContainerDialogPhotoStatus(error.message || "Не удалось подготовить фото.");
-    showToast(error.message || "Не удалось подготовить фото.", "error");
+    setRootContainerDialogPhotoStatus(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."));
+    showToast(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."), "error");
   } finally {
     if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
     if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
@@ -6976,12 +7040,14 @@ async function removeRootContainerDialogPhoto() {
 }
 
 function confirmDialogPhotoDelete(kind = "item") {
-  const targetText = kind === "container" ? "этой сумки или места" : "этой вещи";
+  const targetText = kind === "container"
+    ? localText("this bag or place", "этой сумки или места")
+    : localText("this item", "этой вещи");
   return askConfirmDialog({
-    title: "Удалить фото?",
-    text: `Фото будет удалено из ${targetText} после сохранения изменений.`,
-    okText: "Удалить фото",
-    cancelText: "Оставить",
+    title: localText("Delete photo?", "Удалить фото?"),
+    text: localText(`The photo will be removed from ${targetText} after you save the changes.`, `Фото будет удалено из ${targetText} после сохранения изменений.`),
+    okText: localText("Delete photo", "Удалить фото"),
+    cancelText: localText("Keep", "Оставить"),
     tone: "danger"
   });
 }
@@ -7539,6 +7605,7 @@ function saveDialogItem(event) {
     normalizeItemAvailabilityStatus,
     parseWeightInput,
     placeExistingItemInLayout,
+    placementFailedText: localText("Could not add the item to this layout.", "Не удалось добавить вещь в эту укладку."),
     readItemDialogDimensions,
     readItemDialogQuantity,
     refs,
@@ -7874,7 +7941,7 @@ async function fetchBackupPhotoBlob(photo, variant = "file") {
   const src = variant === "thumb" ? (photo.thumbUrl || photo.url) : (photo.url || photo.thumbUrl);
   if (!src) return null;
   const response = await fetch(src, { credentials: "include", cache: "no-store" });
-  if (!response.ok) throw new Error(`Фото ${photo.id || ""}: HTTP ${response.status}`);
+  if (!response.ok) throw new Error(localText(`Photo ${photo.id || ""}: HTTP ${response.status}`, `Фото ${photo.id || ""}: HTTP ${response.status}`));
   return await response.blob();
 }
 

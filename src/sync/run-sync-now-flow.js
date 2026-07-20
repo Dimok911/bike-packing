@@ -41,8 +41,8 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
     runtime.syncTimer = null;
   }
   if (isForcedOffline()) {
-    updateSyncUi("Принудительно офлайн · синхронизация отключена");
-    if (force) showToast("Офлайн-режим включён. Чтобы синхронизироваться, выключите его в меню.", "error");
+    updateSyncUi(localText(runtime.uiLanguage, "Forced offline · synchronization is disabled", "Принудительно офлайн · синхронизация отключена"));
+    if (force) showToast(localText(runtime.uiLanguage, "Offline mode is on. Turn it off in the menu to synchronize.", "Офлайн-режим включён. Чтобы синхронизироваться, выключите его в меню."), "error");
     return;
   }
   if (isReadOnlyStateScope()) {
@@ -51,7 +51,7 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
   }
   if (!runtime.currentUser && isAdminUser() && isReadOnlyStateScope()) {
     if (force) {
-      showToast("Для публикации demo/shared нужно войти админом.", "error");
+      showToast(localText(runtime.uiLanguage, "Sign in as an administrator to publish demo/shared templates.", "Для публикации demo/shared нужно войти админом."), "error");
       handleAuthButton();
     }
     return;
@@ -63,8 +63,10 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
       if (force) {
         showToast(
           isOfflineRememberedSession()
-            ? "Сервер недоступен. Локальная копия сохранена на устройстве."
-            : (runtime.appUnlocked ? "Офлайн: войдите, когда появится интернет." : "Нужно войти для синхронизации."),
+            ? localText(runtime.uiLanguage, "The server is unavailable. The local copy is saved on this device.", "Сервер недоступен. Локальная копия сохранена на устройстве.")
+            : (runtime.appUnlocked
+              ? localText(runtime.uiLanguage, "Offline: sign in when an internet connection is available.", "Офлайн: войдите, когда появится интернет.")
+              : localText(runtime.uiLanguage, "Sign in to synchronize.", "Нужно войти для синхронизации.")),
           isOfflineRememberedSession() ? "warning" : "error"
         );
       }
@@ -78,7 +80,7 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
   if (canOpenAdminPublishedEdit() && isReadOnlyStateScope()) {
     if (!runtime.currentUser) {
       if (force) {
-        showToast("Для публикации demo/shared нужно войти админом.", "error");
+        showToast(localText(runtime.uiLanguage, "Sign in as an administrator to publish demo/shared templates.", "Для публикации demo/shared нужно войти админом."), "error");
         handleAuthButton();
       }
       return;
@@ -86,18 +88,18 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
     const readonlyId = activeReadOnlyLayoutId();
     if (readonlyId === DEMO_SHARED_LAYOUT_ID) {
       await openAdminDemoLayout({ templateId: runtime.activeDemoTemplateListId });
-      if (force) showToast("Открыт admin-edit demo. Изменения теперь будут публиковаться автоматически.", "success");
+      if (force) showToast(localText(runtime.uiLanguage, "The demo is open for administrator editing. Changes will now be published automatically.", "Открыт admin-edit demo. Изменения теперь будут публиковаться автоматически."), "success");
       return;
     }
     if (readonlyId) {
       await openSharedLayoutForAdmin(readonlyId);
-      if (force) showToast("Открыт шаблон для админ-редактирования. Изменения теперь будут публиковаться автоматически.", "success");
+      if (force) showToast(localText(runtime.uiLanguage, "The template is open for administrator editing. Changes will now be published automatically.", "Открыт шаблон для админ-редактирования. Изменения теперь будут публиковаться автоматически."), "success");
       return;
     }
   }
   if (runtime.publishedLayoutSaveTimer && isAdminEditablePublishedLayout(runtime.publishedLayoutSaveLayoutId || getPublishedEditLayoutId())) {
     await flushActivePublishedEditSave();
-    if (force) showToast("Public-укладка опубликована.", "success");
+    if (force) showToast(localText(runtime.uiLanguage, "The public layout was published.", "Public-укладка опубликована."), "success");
     return;
   }
   if (runtime.publishedLayoutSaveTimer) {
@@ -118,8 +120,9 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
     try {
       await savePublishedLayoutRecord(runtime.state.activeLayoutId, { notify: force });
     } catch (error) {
-      updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
-      if (force) showToast(`Не удалось сохранить public-укладку: ${error.message}`, "error");
+      const message = localText(runtime.uiLanguage, `Could not save the public layout: ${error.message}`, `Не удалось сохранить public-укладку: ${error.message}`);
+      updateSyncUi(message);
+      if (force) showToast(message, "error");
     }
     return;
   }
@@ -147,7 +150,7 @@ export async function runSyncNowFlow({ runtime, dependencies }, { force = false 
   if (force && runtime.syncMeta.dirty) {
     const preferredLayout = preferredCurrentLayoutRef();
     if (await offerLoadServerForTruncatedLocalState({ notify: true, preferredLayout })) return;
-    updateSyncUi("Есть локальные изменения · проверяю даты...");
+    updateSyncUi(localText(runtime.uiLanguage, "Local changes found · checking timestamps...", "Есть локальные изменения · проверяю даты..."));
     await loadRemoteState({ notifyDirtySave: true, preferredLayout });
     return;
   }

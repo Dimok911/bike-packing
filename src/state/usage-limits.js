@@ -27,14 +27,21 @@ export function canAddUsageEntries({ current = 0, add = 1, limit = Infinity } = 
   return Number(current || 0) + Number(add || 0) <= limit;
 }
 
-export function usageLimitExceededMessage(name, limit) {
-  const labels = {
+export function usageLimitExceededMessage(name, limit, language = currentDocumentLanguage()) {
+  const english = language === "en";
+  const labels = english ? {
+    photosPerRecord: "Photos: the standard-user limit is 3 per item or bag.",
+    items: "Items: the standard-user limit is 500.",
+    containers: "Bags and storage places: the standard-user limit is 50.",
+    categories: "Categories: the standard-user limit is 50.",
+    locations: "Storage places: the standard-user limit is 10."
+  } : {
     photosPerRecord: "Фото: лимит для обычного пользователя - 3 на одну вещь или сумку.",
     items: "Вещи: лимит для обычного пользователя - 500 шт.",
     containers: "Сумки и места хранения: лимит для обычного пользователя - 50 шт.",
     categories: "Категории: лимит для обычного пользователя - 50 шт.",
     locations: "Места хранения: лимит для обычного пользователя - 10 шт."
   };
-  return labels[name] || `Достигнут лимит: ${limit}`;
+  return labels[name] || (english ? `Limit reached: ${limit}` : `Достигнут лимит: ${limit}`);
 }
-
+import { currentDocumentLanguage } from "../utils/language.js";

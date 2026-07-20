@@ -1149,6 +1149,7 @@ const conflictFormatter = createConflictValueFormatter({
   itemCategories,
   comparableValueForMerge,
   isMetaField: isConflictMetaField,
+  localText,
   settingLabel,
   valuesEqual: sameJson
 });
@@ -2228,7 +2229,7 @@ function adminSharedTemplateOptions({
     compareLayouts: compareSharedLayoutAdminOrder,
     labels: {
       templatePrefix: t("template.prefix"),
-      defaultName: "Шаблон",
+      defaultName: localText("Template", "Шаблон"),
       draftMarker: t("template.draftMarker"),
       languageOptionLabel,
       publicTemplateOptionLabel
@@ -2303,7 +2304,7 @@ function demoTemplateChoiceForLayout(layout) {
 }
 
 function copyPickerLayoutLabel(layout) {
-  if (!layout) return "Укладка";
+  if (!layout) return localText("Layout", "Укладка");
   if (layout.adminDemo) {
     const language = layout.adminDemoLanguage || uiLanguage;
     return `${normalizeDemoLayoutName(layout.name || currentDemoTemplate(language, layout.adminDemoListId)?.name || t("demo.layoutName"), language)} (${languageOptionLabel(language)})`;
@@ -2313,7 +2314,7 @@ function copyPickerLayoutLabel(layout) {
     const language = layout.adminTemplateCopy ? layout.language || uiLanguage : sharedLayout?.language || layout.language || uiLanguage;
     return `${layout.name || sharedLayout?.name || t("template.prefix")} (${languageOptionLabel(language)})`;
   }
-  return layout.name || "Укладка";
+  return layout.name || localText("Layout", "Укладка");
 }
 
 function orderAdminPublicDraftsLikeMainSelect(layouts) {
@@ -2623,7 +2624,7 @@ async function setUiLanguage(language) {
   if (wasAdminDemoEdit) {
     try {
       if (!currentUser) {
-        updateSyncUi("Demo/admin: войдите админом, чтобы редактировать версию выбранного языка");
+        updateSyncUi(localText("Demo/admin: sign in as an administrator to edit the selected language version", "Demo/admin: войдите админом, чтобы редактировать версию выбранного языка"));
         return;
       }
       await openAdminDemoLayout({
@@ -3378,7 +3379,9 @@ function togglePackingViewMode() {
   updatePackingViewModeControl();
   updateFilterNavigationUi();
   syncFixedScrollbarVisibility();
-  showToast(isBike3dPackingView(packingViewMode) ? "3D-укладка включена." : "Обычная укладка включена.", "success");
+  showToast(isBike3dPackingView(packingViewMode)
+    ? localText("3D packing view enabled.", "3D-укладка включена.")
+    : localText("Standard packing view enabled.", "Обычная укладка включена."), "success");
 }
 
 function updatePackingViewModeControl(view = getCurrentView()) {
@@ -3901,7 +3904,10 @@ function blockRemoteIntegrityFailureIfNeeded(remoteState, meta, rawPayload = nul
   appUnlocked = true;
   initialRemoteLoadPending = false;
   renderInitialLocalFallbackIfNeeded();
-  const message = `Серверная версия не прошла проверку целостности: ${error.message}. Локальная версия оставлена.`;
+  const message = localText(
+    `The server version failed the integrity check: ${error.message}. The local version was kept.`,
+    `Серверная версия не прошла проверку целостности: ${error.message}. Локальная версия оставлена.`
+  );
   updateSyncUi(message);
   showToast(message, "error");
   return true;
@@ -3910,7 +3916,10 @@ function blockRemoteIntegrityFailureIfNeeded(remoteState, meta, rawPayload = nul
 function assertRemoteStateIntegrity(remoteState, meta, rawPayload = null) {
   const error = remoteStateIntegrityError(remoteState, meta, rawPayload);
   if (!error) return;
-  throw new Error(`Серверная версия не прошла проверку целостности: ${error.message}`);
+  throw new Error(localText(
+    `The server version failed the integrity check: ${error.message}`,
+    `Серверная версия не прошла проверку целостности: ${error.message}`
+  ));
 }
 
 function isDestructiveStateRegression(nextState, previousState) {
@@ -3980,7 +3989,7 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
       return;
     }
     scheduleActivePublishedEditSave();
-    updateSyncUi("Public-укладка изменена · публикую...");
+    updateSyncUi(localText("Public layout changed · publishing...", "Public-укладка изменена · публикую..."));
     return;
   }
   if (sync && !applyingRemoteState && isReadOnlyBikePackingContext()) {
@@ -4390,7 +4399,7 @@ function schedulePublishedLayoutSave(layoutId, delay = 900) {
     publishedLayoutSaveTimer = null;
     publishedLayoutSaveLayoutId = "";
     savePublishedLayoutRecord(previousLayoutId).catch((error) => {
-      updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
+      updateSyncUi(localText(`Could not save the public layout: ${error.message}`, `Не удалось сохранить public-укладку: ${error.message}`));
     });
   }
   if (publishedLayoutSaveTimer) window.clearTimeout(publishedLayoutSaveTimer);
@@ -4400,7 +4409,7 @@ function schedulePublishedLayoutSave(layoutId, delay = 900) {
     publishedLayoutSaveTimer = null;
     publishedLayoutSaveLayoutId = "";
     savePublishedLayoutRecord(targetLayoutId).catch((error) => {
-      updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
+      updateSyncUi(localText(`Could not save the public layout: ${error.message}`, `Не удалось сохранить public-укладку: ${error.message}`));
     });
   }, delay);
 }
@@ -4446,7 +4455,7 @@ async function flushActivePublishedEditSave() {
   try {
     await savePublishedLayoutRecord(layoutId);
   } catch (error) {
-    updateSyncUi(`Не удалось сохранить public-укладку: ${error.message}`);
+    updateSyncUi(localText(`Could not save the public layout: ${error.message}`, `Не удалось сохранить public-укладку: ${error.message}`));
   }
 }
 
@@ -4889,7 +4898,10 @@ function blockDestructiveRemoteState(remoteState, label = "server") {
   appUnlocked = true;
   const localStats = stateStats(state);
   const remoteStats = stateStats(remoteState);
-  const message = `Серверная версия выглядит усечённой: было items ${localStats.items}, containers ${localStats.containers}; стало items ${remoteStats.items}, containers ${remoteStats.containers}. Локальная версия оставлена.`;
+  const message = localText(
+    `The server version looks incomplete: items changed from ${localStats.items} to ${remoteStats.items}, containers from ${localStats.containers} to ${remoteStats.containers}. The local version was kept.`,
+    `Серверная версия выглядит усечённой: было items ${localStats.items}, containers ${localStats.containers}; стало items ${remoteStats.items}, containers ${remoteStats.containers}. Локальная версия оставлена.`
+  );
   updateSyncUi(message);
   showToast(message, "error");
   return true;
@@ -4913,7 +4925,10 @@ function blockDestructiveLocalSave() {
   const baseStats = stateStatsForDestructiveComparison(baseState);
   const basePlaced = Math.max(baseStats.placedItems, baseStats.linkedItems, baseStats.arrangedItems);
   const localPlaced = Math.max(localStats.placedItems, localStats.linkedItems, localStats.arrangedItems);
-  updateSyncUi(`Локальная версия выглядит усечённой: база items ${baseStats.items}, containers ${baseStats.containers}, связей ${basePlaced}, вложенных контейнеров ${baseStats.nestedContainers}; сейчас items ${localStats.items}, containers ${localStats.containers}, связей ${localPlaced}, вложенных контейнеров ${localStats.nestedContainers}. На сервер не отправлено.`);
+  updateSyncUi(localText(
+    `The local version looks incomplete: base items ${baseStats.items}, containers ${baseStats.containers}, placements ${basePlaced}, nested containers ${baseStats.nestedContainers}; current items ${localStats.items}, containers ${localStats.containers}, placements ${localPlaced}, nested containers ${localStats.nestedContainers}. Nothing was sent to the server.`,
+    `Локальная версия выглядит усечённой: база items ${baseStats.items}, containers ${baseStats.containers}, связей ${basePlaced}, вложенных контейнеров ${baseStats.nestedContainers}; сейчас items ${localStats.items}, containers ${localStats.containers}, связей ${localPlaced}, вложенных контейнеров ${localStats.nestedContainers}. На сервер не отправлено.`
+  ));
   return true;
 }
 
@@ -4935,7 +4950,7 @@ function repairCollapsedActiveLayoutBeforeSave() {
   syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
   saveSyncMeta();
   renderPreservingPackingScroll();
-  updateSyncUi("Активная укладка была пустой · переключил на непустую укладку перед сохранением.");
+  updateSyncUi(localText("The active layout was empty · switched to a non-empty layout before saving.", "Активная укладка была пустой · переключил на непустую укладку перед сохранением."));
   return true;
 }
 
@@ -4944,7 +4959,7 @@ function isCurrentLocalStateDestructiveRegression() {
 }
 
 async function loadCurrentServerStateDirectly({ notify = false, preferredLayout = null } = {}) {
-  updateSyncUi("Загружаю текущую серверную версию...");
+  updateSyncUi(localText("Loading the current server version...", "Загружаю текущую серверную версию..."));
   const data = await fetchRemoteStateRecord();
   const record = data?.record || data?.list || data || null;
   const remoteState = normalizeRemoteState(record?.payload || data?.payload || data?.state);
@@ -4957,7 +4972,7 @@ async function loadCurrentServerStateDirectly({ notify = false, preferredLayout 
     allowDestructive: true,
     preferredLayout
   });
-  if (applied && notify) showToast("Загружена текущая серверная версия.", "success");
+  if (applied && notify) showToast(localText("Current server version loaded.", "Загружена текущая серверная версия."), "success");
   return applied;
 }
 
@@ -4965,10 +4980,10 @@ async function offerLoadServerForTruncatedLocalState({ notify = false, preferred
   if (!isCurrentLocalStateDestructiveRegression()) return false;
   blockDestructiveLocalSave();
   const confirmed = await askConfirmDialog({
-    title: "Локальная раскладка выглядит повреждённой",
-    text: "На этом устройстве потеряны связи вещей с сумками или вложенность контейнеров. Эту версию нельзя отправлять на сервер. Загрузить текущую серверную версию без обращения к истории?",
-    okText: "Взять с сервера",
-    cancelText: "Оставить локальную",
+    title: localText("The local layout appears damaged", "Локальная раскладка выглядит повреждённой"),
+    text: localText("Item-to-bag placements or nested containers are missing on this device. This version cannot be sent to the server. Load the current server version without using History?", "На этом устройстве потеряны связи вещей с сумками или вложенность контейнеров. Эту версию нельзя отправлять на сервер. Загрузить текущую серверную версию без обращения к истории?"),
+    okText: localText("Use server version", "Взять с сервера"),
+    cancelText: localText("Keep local version", "Оставить локальную"),
     tone: "danger"
   });
   if (!confirmed) return true;
@@ -5011,7 +5026,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   renderPreservingPackingScroll();
   setPersonalLayoutsLoadedStatus();
   if (catalogRepairBase && syncMeta.dirty) {
-    updateSyncUi("Каталог очищен от технических дублей · синхронизирую...");
+    updateSyncUi(localText("Technical catalog duplicates removed · syncing...", "Каталог очищен от технических дублей · синхронизирую..."));
     scheduleRemoteSave();
   }
   updateSyncUi();
@@ -5047,20 +5062,20 @@ function isOwnLayoutEchoConflict(conflicts) {
 
 function conflictLabel(type, id, localValue, remoteValue, baseValue) {
   const value = localValue || remoteValue || baseValue || {};
-  if (type === "item") return value.name || `Вещь ${id}`;
-  if (type === "container") return value.name || `Контейнер ${id}`;
-  if (type === "layout") return value.name || `Укладка ${id}`;
-  if (type === "packed") return `Собранность: ${state.items[id]?.name || id}`;
-  if (type === "collapsed") return `Сворачивание: ${state.containers[id]?.name || id}`;
+  if (type === "item") return value.name || localText(`Item ${id}`, `Вещь ${id}`);
+  if (type === "container") return value.name || localText(`Container ${id}`, `Контейнер ${id}`);
+  if (type === "layout") return value.name || localText(`Layout ${id}`, `Укладка ${id}`);
+  if (type === "packed") return localText(`Packing status: ${state.items[id]?.name || id}`, `Собранность: ${state.items[id]?.name || id}`);
+  if (type === "collapsed") return localText(`Collapse state: ${state.containers[id]?.name || id}`, `Сворачивание: ${state.containers[id]?.name || id}`);
   return id;
 }
 
 function settingLabel(key) {
   const labels = {
-    activeLayoutId: "Какая укладка открыта",
-    showItemMeta: "Показ меток",
-    itemDisplayMode: "Режим меток и фото",
-    collapseDefaultsVersion: "Состояние сворачивания"
+    activeLayoutId: localText("Active layout", "Какая укладка открыта"),
+    showItemMeta: localText("Show labels", "Показ меток"),
+    itemDisplayMode: localText("Labels and photos mode", "Режим меток и фото"),
+    collapseDefaultsVersion: localText("Collapse state", "Состояние сворачивания")
   };
   return labels[key] || key;
 }
@@ -5087,13 +5102,13 @@ function askConflictResolution(conflicts) {
       <div class="conflict-choice">
         <label>
           <input type="radio" name="conflict-${index}" value="local"${defaultChoice === "local" ? " checked" : ""} />
-          <span>Моё</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, "нет локально"))}</small>
+          <span>${escapeHtml(localText("Mine", "Моё"))}</span>
+          <small>${escapeHtml(conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, localText("not available locally", "нет локально")))}</small>
         </label>
         <label>
           <input type="radio" name="conflict-${index}" value="remote"${defaultChoice === "remote" ? " checked" : ""} />
-          <span>С сервера</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "сервер", "нет в серверной укладке"))}</small>
+          <span>${escapeHtml(localText("Server", "С сервера"))}</span>
+          <small>${escapeHtml(conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке")))}</small>
         </label>
       </div>
     </section>
@@ -5131,16 +5146,17 @@ function askConflictResolution(conflicts) {
 
 function renderConflictSyncContext() {
   const rows = [
-    ["Время браузера сейчас", formatFullDateTime(new Date())],
-    ["Локальная версия", formatFullDateTime(syncMeta.localUpdatedAt) || "нет"],
-    ["Известная серверная версия", formatFullDateTime(syncMeta.serverUpdatedAt) || "нет"],
-    ["Последняя успешная синхронизация", formatFullDateTime(syncMeta.lastSyncedLocalUpdatedAt) || "нет"],
-    ["Устройство", syncDevice?.name || "это устройство"]
+    [localText("Current browser time", "Время браузера сейчас"), formatFullDateTime(new Date())],
+    [localText("Local version", "Локальная версия"), formatFullDateTime(syncMeta.localUpdatedAt) || localText("none", "нет")],
+    [localText("Known server version", "Известная серверная версия"), formatFullDateTime(syncMeta.serverUpdatedAt) || localText("none", "нет")],
+    [localText("Last successful sync", "Последняя успешная синхронизация"), formatFullDateTime(syncMeta.lastSyncedLocalUpdatedAt) || localText("none", "нет")],
+    [localText("Device", "Устройство"), syncDevice?.name || localText("this device", "это устройство")]
   ];
+  const contextLabel = localText("Sync context", "Контекст синхронизации");
   return `
     <section class="conflict-card conflict-context">
-      <h3>Контекст синхронизации</h3>
-      <div class="conflict-diff" aria-label="Контекст синхронизации">
+      <h3>${escapeHtml(contextLabel)}</h3>
+      <div class="conflict-diff" aria-label="${escapeHtml(contextLabel)}">
         ${rows.map(([label, value]) => `
           <div class="conflict-diff-row">
             <span>${escapeHtml(label)}</span>
@@ -5164,16 +5180,16 @@ function conflictDefaultChoice(conflict) {
 
 function conflictKindLabel(conflict) {
   if (conflict.type === "item") {
-    return "Вещь";
+    return localText("Item", "Вещь");
   }
   if (conflict.type === "container") {
-    return "Сумка/контейнер";
+    return localText("Bag/container", "Сумка/контейнер");
   }
-  if (conflict.type === "layout") return "Укладка";
-  if (conflict.type === "packed") return "Собранность вещи";
-  if (conflict.type === "setting" && conflict.id === "activeLayoutId") return "Выбор открытой укладки";
-  if (conflict.type === "setting") return "Настройка";
-  return "Конфликт";
+  if (conflict.type === "layout") return localText("Layout", "Укладка");
+  if (conflict.type === "packed") return localText("Item packed state", "Собранность вещи");
+  if (conflict.type === "setting" && conflict.id === "activeLayoutId") return localText("Open layout choice", "Выбор открытой укладки");
+  if (conflict.type === "setting") return localText("Setting", "Настройка");
+  return localText("Conflict", "Конфликт");
 }
 
 function conflictTimestamp(value) {
@@ -5183,12 +5199,13 @@ function conflictTimestamp(value) {
 function renderConflictDetails(conflict) {
   const rows = conflictFormatter.conflictDetailRows(conflict);
   if (!rows.length) return "";
+  const changesLabel = localText("What changed", "Что изменилось");
   return `
-    <div class="conflict-diff" aria-label="Что изменилось">
+    <div class="conflict-diff" aria-label="${escapeHtml(changesLabel)}">
       <div class="conflict-diff-head">
-        <span>Поле</span>
-        <span>Моё</span>
-        <span>С сервера</span>
+        <span>${escapeHtml(localText("Field", "Поле"))}</span>
+        <span>${escapeHtml(localText("Mine", "Моё"))}</span>
+        <span>${escapeHtml(localText("Server", "С сервера"))}</span>
       </div>
       ${rows.map((row) => `
         <div class="conflict-diff-row">
@@ -5203,19 +5220,25 @@ function renderConflictDetails(conflict) {
 
 function conflictSummary(conflict) {
   if (conflict.type === "setting" && conflict.id === "activeLayoutId") {
-    const localText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, "нет локально");
-    const remoteText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, "нет в серверной укладке");
-    return `Это не содержимое укладки: отличается только то, какую укладку приложение откроет активной. Моё: ${localText}. Сервер: ${remoteText}.`;
+    const localValueText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, localText("not available locally", "нет локально"));
+    const remoteValueText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, localText("not in the server layout", "нет в серверной укладке"));
+    return localText(
+      `The layout contents are the same; only the layout that opens as active differs. Mine: ${localValueText}. Server: ${remoteValueText}.`,
+      `Это не содержимое укладки: отличается только то, какую укладку приложение откроет активной. Моё: ${localValueText}. Сервер: ${remoteValueText}.`
+    );
   }
-  const localText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, "нет локально");
-  const remoteText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, "нет в серверной укладке");
-  const localStamp = conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, "нет локально");
-  const remoteStamp = conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, "сервер", "нет в серверной укладке");
+  const localValueText = conflictFormatter.conflictValueSummary(conflict, conflict.localValue, conflict.localHas, localText("not available locally", "нет локально"));
+  const remoteValueText = conflictFormatter.conflictValueSummary(conflict, conflict.remoteValue, conflict.remoteHas, localText("not in the server layout", "нет в серверной укладке"));
+  const localStamp = conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, localText("not available locally", "нет локально"));
+  const remoteStamp = conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке"));
   const difference = conflictFormatter.conflictDifferenceSummary(conflict);
-  return `Моё: ${localText} (${localStamp}). Сервер: ${remoteText} (${remoteStamp}).${difference ? ` Разница: ${difference}.` : ""}`;
+  return localText(
+    `Mine: ${localValueText} (${localStamp}). Server: ${remoteValueText} (${remoteStamp}).${difference ? ` Difference: ${difference}.` : ""}`,
+    `Моё: ${localValueText} (${localStamp}). Сервер: ${remoteValueText} (${remoteStamp}).${difference ? ` Разница: ${difference}.` : ""}`
+  );
 }
 
-function unlockOfflineState(message = "Локально · можно работать, войдите для сохранения в аккаунт") {
+function unlockOfflineState(message = localText("Local · you can work here; sign in to save to your account", "Локально · можно работать, войдите для сохранения в аккаунт")) {
   currentUser = null;
   appUnlocked = true;
   if (activateOfflineRememberedSession(message)) return;
@@ -5381,7 +5404,8 @@ function adminApiWarningFromCapabilities(data) {
   return adminApiWarningFromCapabilitiesValue(data, {
     appVersion: APP_VERSION,
     requiredVersion: REQUIRED_ADMIN_API_VERSION,
-    requiredCapabilities: REQUIRED_ADMIN_API_CAPABILITIES
+    requiredCapabilities: REQUIRED_ADMIN_API_CAPABILITIES,
+    localText
   });
 }
 
@@ -5414,7 +5438,7 @@ async function assertEntitySyncListFreshnessApi() {
   if (apiCapabilitySet(adminApiCompatibility.capabilities).has("entitySyncListUpdatedAt")) return true;
   const capabilities = await fetchBikePackingApiCapabilities({ timeoutMs: 7000, silentErrors: true });
   if (apiCapabilitySet(capabilities.capabilities).has("entitySyncListUpdatedAt")) return true;
-  throw new Error("API не обновлен: нет entitySyncListUpdatedAt");
+  throw new Error(localText("The API is outdated: entitySyncListUpdatedAt is missing", "API не обновлен: нет entitySyncListUpdatedAt"));
 }
 
 async function checkAdminApiCompatibility({ force = false } = {}) {
@@ -5435,7 +5459,10 @@ async function checkAdminApiCompatibility({ force = false } = {}) {
       checkedAt: Date.now(),
       checking: false,
       ok: false,
-      warning: `Админка: не удалось проверить версию API (${apiErrorMessage(error)}). Перед публикацией шаблонов проверьте backend.`,
+      warning: localText(
+        `Admin: could not check the API version (${apiErrorMessage(error)}). Check the backend before publishing templates.`,
+        `Админка: не удалось проверить версию API (${apiErrorMessage(error)}). Перед публикацией шаблонов проверьте backend.`
+      ),
       version: "",
       capabilities: []
     };
@@ -5848,7 +5875,7 @@ function handleWindowReturn() {
 
 async function handleAuthButton() {
   if (isForcedOffline()) {
-    showToast("Сначала выключите офлайн-режим в меню.", "error");
+    showToast(localText("Turn off offline mode in the menu first.", "Сначала выключите офлайн-режим в меню."), "error");
     return;
   }
   openAuthDialog();
@@ -5856,7 +5883,7 @@ async function handleAuthButton() {
 
 async function handleSignOutButton() {
   if (isForcedOffline()) {
-    showToast("Сначала выключите офлайн-режим в меню.", "error");
+    showToast(localText("Turn off offline mode in the menu first.", "Сначала выключите офлайн-режим в меню."), "error");
     return;
   }
   if (!currentUser && !isOfflineRememberedSession()) {
@@ -5864,15 +5891,15 @@ async function handleSignOutButton() {
     return;
   }
   const confirmed = await askConfirmDialog({
-    title: "Выйти из аккаунта?",
-    text: "После выхода список будет скрыт на этом устройстве до нового входа. Локальная копия не удалится, но офлайн-доступ после явного выхода будет отключён.",
-    okText: "Выйти",
-    cancelText: "Остаться"
+    title: localText("Sign out?", "Выйти из аккаунта?"),
+    text: localText("After signing out, the list will stay hidden on this device until you sign in again. The local copy will not be deleted, but offline access will be disabled after an explicit sign-out.", "После выхода список будет скрыт на этом устройстве до нового входа. Локальная копия не удалится, но офлайн-доступ после явного выхода будет отключён."),
+    okText: localText("Sign out", "Выйти"),
+    cancelText: localText("Stay signed in", "Остаться")
   });
   if (!confirmed) return;
   if (currentUser) {
     try {
-      updateSyncUi("Выходим...");
+      updateSyncUi(localText("Signing out...", "Выходим..."));
       await apiFetch("/auth/logout", { method: "POST" });
     } catch {
       // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
@@ -5885,7 +5912,7 @@ async function handleSignOutButton() {
   activateLocalStorageScope(GUEST_STORAGE_SCOPE);
   resetGuestDemoScopeToCanonical();
   await enterSignedOutPublicMode("Signed out · personal lists are hidden, local demo copy is open");
-  showToast("Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их.", "success");
+  showToast(localText("You signed out. Personal lists are hidden; sign in again to open them.", "Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их."), "success");
 }
 
 function getSavedAuthEmail() {
@@ -6180,8 +6207,8 @@ async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
   if (!readonlyId) return;
   try {
     updateSyncUi(readonlyId === DEMO_SHARED_LAYOUT_ID
-      ? "Обновляю demo с сервера..."
-      : "Обновляю shared с сервера...");
+      ? localText("Refreshing the demo from the server...", "Обновляю demo с сервера...")
+      : localText("Refreshing the shared template from the server...", "Обновляю shared с сервера..."));
     if (readonlyId === DEMO_SHARED_LAYOUT_ID) {
       const demoState = await defaultDemoState(uiLanguage, activeDemoTemplateListId);
       setDemoStatePayloadForLanguage(uiLanguage, demoState, { listId: activeDemoTemplateListId });
@@ -6203,12 +6230,12 @@ async function refreshActiveReadOnlyPublicTemplate({ notify = false } = {}) {
     saveSyncMeta();
     const layout = findSharedLayout(readonlyId);
     const message = loaded
-      ? `Шаблон обновлен с сервера${layout?.name ? ` · ${layout.name}` : ""}`
-      : `Шаблон открыт из локальной заготовки${layout?.name ? ` · ${layout.name}` : ""}`;
+      ? localText(`Template refreshed from the server${layout?.name ? ` · ${layout.name}` : ""}`, `Шаблон обновлен с сервера${layout?.name ? ` · ${layout.name}` : ""}`)
+      : localText(`Template opened from the local fallback${layout?.name ? ` · ${layout.name}` : ""}`, `Шаблон открыт из локальной заготовки${layout?.name ? ` · ${layout.name}` : ""}`);
     updateSyncUi(message);
     if (notify) showToast(message, loaded ? "success" : "warning");
   } catch (error) {
-    const message = `Не удалось обновить public-укладку: ${error.message}`;
+    const message = localText(`Could not refresh the public layout: ${error.message}`, `Не удалось обновить public-укладку: ${error.message}`);
     updateSyncUi(message);
     if (notify) showToast(message, "error");
   }
@@ -6251,7 +6278,7 @@ async function ensurePrivateStateForSharedCopy() {
       saveSyncMeta();
     }
   } catch (error) {
-    updateSyncUi(`Не удалось загрузить личное состояние перед копированием: ${error.message}`);
+    updateSyncUi(localText(`Could not load personal data before copying: ${error.message}`, `Не удалось загрузить личное состояние перед копированием: ${error.message}`));
   }
   return true;
 }
@@ -6396,7 +6423,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
   const normalizedListId = String(listId || "").trim();
   if (!normalizedListId) return false;
   appUnlocked = true;
-  updateSyncUi("Открываю shared-список по ссылке...");
+  updateSyncUi(localText("Opening the shared list from the link...", "Открываю shared-список по ссылке..."));
   try {
     const record = await fetchSharedListLinkRecord(normalizedListId);
     const entityTarget = sharedEntityTargetFromUrl(location.href);
@@ -6420,7 +6447,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
       listId: recordId,
       requestedLayoutId: activeLayoutId,
       name: record.title || "Общий список",
-      subtitle: "Доступ по ссылке",
+      subtitle: localText("Link access", "Доступ по ссылке"),
       roots: [],
       statePayload: payload,
       listRecord: record,
@@ -6455,26 +6482,26 @@ async function openSharedListFromLink(listId, layoutId = "") {
         if (entityTarget) focusSharedEntityTarget(refs.packingView, entityTarget);
       }
     });
-    updateSyncUi(`Общий список · ${linkedSharedListLayout.name}`);
+    updateSyncUi(localText(`Shared list · ${linkedSharedListLayout.name}`, `Общий список · ${linkedSharedListLayout.name}`));
     return true;
   } catch (error) {
     await hydrateAuthForSharedLink();
     setActivePrivateScope();
     applyStaticTranslations();
     renderBeforeFinishingAppStartup({ documentRef: document, render });
-    updateSyncUi(`Не удалось открыть shared-список: ${error.message}`);
+    updateSyncUi(localText(`Could not open the shared list: ${error.message}`, `Не удалось открыть shared-список: ${error.message}`));
     return false;
   }
 }
 
 async function shareCurrentPackingListByLink() {
   if (!currentUser) {
-    showToast("Войдите, чтобы создать ссылку на список.", "error");
+    showToast(localText("Sign in to create a list link.", "Войдите, чтобы создать ссылку на список."), "error");
     handleAuthButton();
     return;
   }
   if (isPublicLayoutContext()) {
-    showToast("Для demo/shared просмотра сначала создайте личную копию.", "error");
+    showToast(localText("Create a personal copy before sharing a demo/template view.", "Для demo/shared просмотра сначала создайте личную копию."), "error");
     return;
   }
   try {
@@ -6490,7 +6517,7 @@ async function shareCurrentPackingListByLink() {
       onOk: () => { publishOptions = readSharedListPublishOptions(refs.confirmDialog); }
     });
     if (!confirmed) return;
-    updateSyncUi("Готовлю список к публикации по ссылке...");
+    updateSyncUi(localText("Preparing the list for link sharing...", "Готовлю список к публикации по ссылке..."));
     await flushActivePublishedEditSave();
     const uploadedPhotos = await uploadPendingPhotos({ markDirty: true });
     if (uploadedPhotos) {
@@ -6541,8 +6568,8 @@ async function shareCurrentPackingListByLink() {
     updateSyncUi(uiLanguage === "en" ? "List link created" : "Ссылка на список создана");
   } catch (error) {
     if (refs.confirmDialog.open) refs.confirmDialog.close("close");
-    updateSyncUi(`Не удалось создать shared-ссылку: ${error.message}`);
-    showToast(`Не удалось создать ссылку: ${error.message}`, "error");
+    updateSyncUi(localText(`Could not create the shared link: ${error.message}`, `Не удалось создать shared-ссылку: ${error.message}`));
+    showToast(localText(`Could not create the link: ${error.message}`, `Не удалось создать ссылку: ${error.message}`), "error");
   }
 }
 
@@ -7422,7 +7449,7 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
       syncMeta.serverUpdatedAt &&
       previousServerUpdatedAt !== syncMeta.serverUpdatedAt;
     if (notify && serverChanged && !syncMeta.dirty) {
-      showToast("Подтянуты свежие изменения с сервера.", "success");
+      showToast(localText("Latest server changes loaded.", "Подтянуты свежие изменения с сервера."), "success");
     }
   } finally {
     remoteRefreshInFlight = false;
@@ -7435,7 +7462,7 @@ async function openAdminDemoLayout({ remember = true, language = uiLanguage, tem
     return;
   }
   if (!canOpenAdminPublishedEdit()) {
-    showToast("Демо может редактировать только админ.", "error");
+    showToast(localText("Only an administrator can edit the demo.", "Демо может редактировать только админ."), "error");
     return;
   }
   const normalizedLanguage = normalizeUiLanguage(language);
@@ -7467,25 +7494,25 @@ async function openAdminDemoLayout({ remember = true, language = uiLanguage, tem
       activateAdminPublishedLayout(state.activeLayoutId, { remember: false });
       if (remember) rememberActiveLayoutChoice(layoutChoice);
       updateSyncUi();
-      showToast("Пустая локальная демо-укладка пересобрана.", "success");
+      showToast(localText("The empty local demo layout was rebuilt.", "Пустая локальная демо-укладка пересобрана."), "success");
       return;
     }
     activateAdminPublishedLayout(existing.id, { remember: false });
     if (remember) rememberActiveLayoutChoice(layoutChoice);
-    showToast("Открыта локальная демо-укладка для правки.", "success");
+    showToast(localText("Local demo layout opened for editing.", "Открыта локальная демо-укладка для правки."), "success");
     return;
   }
   try {
-    updateSyncUi("Загружаю демо-укладку для правки...");
+    updateSyncUi(localText("Loading the demo layout for editing...", "Загружаю демо-укладку для правки..."));
     const demoState = await defaultDemoState(normalizedLanguage, demoListId);
     importDemoStateAsEditableLayout(demoState, { language: normalizedLanguage, listId: demoListId });
     activateAdminPublishedLayout(state.activeLayoutId, { remember: false });
     if (remember) rememberActiveLayoutChoice(layoutChoice);
     updateSyncUi();
-    showToast("Демо-укладка добавлена как обычная укладка. Правьте её и опубликуйте из меню.", "success");
+    showToast(localText("The demo layout was added as a regular layout. Edit it and publish it from the menu.", "Демо-укладка добавлена как обычная укладка. Правьте её и опубликуйте из меню."), "success");
   } catch (error) {
     updateSyncUi();
-    showToast(`Не удалось открыть демо: ${error.message}`, "error");
+    showToast(localText(`Could not open the demo: ${error.message}`, `Не удалось открыть демо: ${error.message}`), "error");
   }
 }
 
@@ -7837,6 +7864,7 @@ async function loadSharedLayoutPayload(layoutId) {
 function renderSharedLayouts() {
   const copyTargetLayouts = sharedCopyTargetLayouts(state.layouts, {
     excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
+    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   });
   fillSelect(
@@ -7846,9 +7874,13 @@ function renderSharedLayouts() {
   );
   refs.sharedLayoutsList.innerHTML = renderSharedLayoutsHtml(currentSharedLayouts(), {
     bagLabel: t("summary.bags"),
+    copyBagLabel: t("shared.copyBag"),
+    copyItemLabel: t("shared.copyItem"),
+    emptyBagText: t("shared.emptyBag"),
     itemLabel: t("tabs.items").toLowerCase(),
     rootsForLayout: sharedLayoutRoots,
-    showPhotos: shouldShowItemPhotos()
+    showPhotos: shouldShowItemPhotos(),
+    weightLabel: t("shared.weightLabel")
   });
   refs.sharedLayoutsList.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
     button.addEventListener("click", () => openSharedContainerCopyPicker(button.dataset.copySharedRoot));
@@ -8008,24 +8040,24 @@ function sharedItemFromPublishedItem(item) {
 
 function selectedSharedTargetLayoutId() {
   const selected = refs.sharedCopyLayoutSelect?.value;
-  const layout = state.layouts[selected];
-  return isSharedCopyTargetLayout(layout, {
+  const layouts = sharedCopyTargetLayouts(state.layouts, {
     excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
+    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
-  })
-    ? selected
-    : "";
+  });
+  return layouts.some((layout) => layout.id === selected) ? selected : "";
 }
 
 function chooseSharedCopyTargetLayoutId() {
   const layouts = sharedCopyTargetLayouts(state.layouts, {
     excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
+    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
     readonlySourceLayoutId: isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
   });
   if (!layouts.length) return "";
   if (layouts.length === 1) return layouts[0].id;
   const list = layouts.map((layout, index) => `${index + 1}. ${layout.name}`).join("\n");
-  const answer = window.prompt(`В какую вашу укладку скопировать?\n${list}`, "1");
+  const answer = window.prompt(localText(`Which of your layouts should receive the copy?\n${list}`, `В какую вашу укладку скопировать?\n${list}`), "1");
   const index = Number.parseInt(answer || "", 10) - 1;
   return layouts[index]?.id || layouts[0].id;
 }
@@ -8078,7 +8110,7 @@ async function copySharedRoot(rootId) {
     switchActiveLayout(targetLayoutId);
     render();
     renderSharedLayouts();
-    showToast(`«${rootName}» скопировано в выбранную укладку.`, "success");
+    showToast(localText(`“${rootName}” was copied to the selected layout.`, `«${rootName}» скопировано в выбранную укладку.`), "success");
     return;
   }
   const root = findSharedRoot(rootId);
@@ -8095,7 +8127,7 @@ async function copySharedRoot(rootId) {
   switchActiveLayout(targetLayoutId);
   render();
   renderSharedLayouts();
-  showToast(`«${root.name}» скопировано в выбранную укладку.`, "success");
+  showToast(localText(`“${root.name}” was copied to the selected layout.`, `«${root.name}» скопировано в выбранную укладку.`), "success");
 }
 
 async function copySharedItem(itemId) {
@@ -8116,7 +8148,7 @@ async function copySharedItem(itemId) {
     render();
     renderSharedLayouts();
     openItemDialog(copiedItemId);
-    showToast(`«${published.item.name}» скопировано в вещи.`, "success");
+    showToast(localText(`“${published.item.name}” was copied to Items.`, `«${published.item.name}» скопировано в вещи.`), "success");
     return;
   }
   const match = findSharedItem(itemId);
@@ -8136,7 +8168,7 @@ async function copySharedItem(itemId) {
   render();
   renderSharedLayouts();
   openItemDialog(copiedItemId);
-  showToast(`«${match.item.name}» скопировано в вещи.`, "success");
+  showToast(localText(`“${match.item.name}” was copied to Items.`, `«${match.item.name}» скопировано в вещи.`), "success");
 }
 
 async function copySharedItemToLayoutContainer(itemId, targetContainerId, targetLayoutId) {
@@ -8335,15 +8367,18 @@ async function confirmPublicCopyDuplicates(targetLayoutId, sourceSnapshot, sourc
   const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, sourceSnapshot);
   if (!duplicates.containerIds.length && !duplicates.itemIds.length) return true;
   const duplicate = await askConfirmDialog({
-    title: "Уже скопировано в эту укладку",
-    text: `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`,
-    okText: "Дублировать",
-    cancelText: "Не копировать",
-    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID`,
+    title: localText("Already copied to this layout", "Уже скопировано в эту укладку"),
+    text: localText(`“${sourceName || "Element"}” is already in “${targetLayout.name || "Layout"}” as a demo/template copy. Create another separate copy?`, `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`),
+    okText: localText("Duplicate", "Дублировать"),
+    cancelText: localText("Do not copy", "Не копировать"),
+    highlightText: localText(
+      `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items were found by source ID`,
+      `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID`
+    ),
     tone: "safe"
   });
   if (duplicate) return true;
-  showToast("Копирование пропущено: такая demo/shared копия уже есть в целевой укладке.", "success");
+  showToast(localText("Copy skipped: this demo/template copy is already in the target layout.", "Копирование пропущено: такая demo/shared копия уже есть в целевой укладке."), "success");
   return false;
 }
 
@@ -8538,10 +8573,10 @@ function findCopiedSharedLayout(layout, sourceLayout = null) {
 async function confirmRepeatedSharedLayoutCopy(existingLayout, sourceName = "") {
   if (!existingLayout) return true;
   const openExisting = await askConfirmDialog({
-    title: "Укладка уже скопирована",
-    text: `«${sourceName || existingLayout.name || "Укладка"}» уже есть в ваших укладках как «${existingLayout.name || "Укладка"}». Открыть существующую вместо создания ещё одной копии?`,
-    okText: "Открыть существующую",
-    cancelText: "Создать копию",
+    title: localText("Layout already copied", "Укладка уже скопирована"),
+    text: localText(`“${sourceName || existingLayout.name || "Layout"}” is already in your layouts as “${existingLayout.name || "Layout"}”. Open the existing layout instead of creating another copy?`, `«${sourceName || existingLayout.name || "Укладка"}» уже есть в ваших укладках как «${existingLayout.name || "Укладка"}». Открыть существующую вместо создания ещё одной копии?`),
+    okText: localText("Open existing", "Открыть существующую"),
+    cancelText: localText("Create a copy", "Создать копию"),
     tone: "safe"
   });
   if (!openExisting) return true;
@@ -8549,7 +8584,7 @@ async function confirmRepeatedSharedLayoutCopy(existingLayout, sourceName = "") 
   if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
   switchView("packing");
   render();
-  showToast("Открыта уже скопированная укладка.", "success");
+  showToast(localText("Opened the existing copied layout.", "Открыта уже скопированная укладка."), "success");
   return false;
 }
 
@@ -8568,16 +8603,19 @@ async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, 
   const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
   if (!duplicates.containerIds.length && !duplicates.itemIds.length) return true;
   const duplicate = await askConfirmDialog({
-    title: "Такие элементы уже есть в укладке",
-    text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
-    okText: "Дублировать",
-    cancelText: "Не копировать",
-    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`,
+    title: localText("Some elements are already in the layout", "Такие элементы уже есть в укладке"),
+    text: localText(`“${targetLayout.name || "Layout"}” already contains part of this bag/branch. Create separate copies instead of adding them again?`, `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`),
+    okText: localText("Duplicate", "Дублировать"),
+    cancelText: localText("Do not copy", "Не копировать"),
+    highlightText: localText(
+      `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items are already in the target layout`,
+      `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке`
+    ),
     tone: "safe"
   });
   if (duplicate) return true;
   refs.containerPickerDialog.close();
-  showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
+  showToast(localText("Copy skipped: the elements are already in the target layout.", "Копирование пропущено: элементы уже есть в целевой укладке."), "success");
   return false;
 }
 
@@ -8595,35 +8633,41 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
     if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
     const missingPlan = layoutMissingItemPlanForContainerTree(targetLayoutId, sourceSnapshot);
     const duplicate = await askConfirmDialog({
-      title: "Такие элементы уже есть в укладке",
-      text: `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`,
-      okText: "Дублировать",
-      alternateText: missingPlan.canCopyMissingItems ? "Только недостающие" : "",
-      cancelText: "Не копировать",
-      highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} контейнеров/пакетов и ${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
+      title: localText("Some elements are already in the layout", "Такие элементы уже есть в укладке"),
+      text: localText(`“${targetLayout.name || "Layout"}” already contains part of this bag/branch. Create separate copies instead of adding them again?`, `В укладке «${targetLayout.name || "Укладка"}» уже есть часть этой сумки/ветки. Создать отдельные копии вместо повторного добавления?`),
+      okText: localText("Duplicate", "Дублировать"),
+      alternateText: missingPlan.canCopyMissingItems ? localText("Missing only", "Только недостающие") : "",
+      cancelText: localText("Do not copy", "Не копировать"),
+      highlightText: localText(
+        `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items are already in the target layout${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} containers/pouches and ${missingPlan.missingItems.length} items can be added without duplicates` : ""}`,
+        `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже есть в целевой укладке${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingContainers.length} контейнеров/пакетов и ${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`
+      ),
       tone: "safe"
     });
     if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing-local";
     if (duplicate) return "copy-all";
     refs.containerPickerDialog.close();
-    showToast("Копирование пропущено: элементы уже есть в целевой укладке.", "success");
+    showToast(localText("Copy skipped: the elements are already in the target layout.", "Копирование пропущено: элементы уже есть в целевой укладке."), "success");
     return "cancel";
   }
   const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, publicSourceSnapshot);
   if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
   const missingPlan = publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
   const duplicate = await askConfirmDialog({
-    title: "Уже скопировано в эту укладку",
-    text: `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`,
-    okText: "Дублировать всё",
-    alternateText: missingPlan.canCopyMissingItems ? "Только недостающие" : "",
-    cancelText: "Не копировать",
-    highlightText: `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`,
+    title: localText("Already copied to this layout", "Уже скопировано в эту укладку"),
+    text: localText(`“${sourceName || "Element"}” is already in “${targetLayout.name || "Layout"}” as a demo/template copy. Create another separate copy?`, `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`),
+    okText: localText("Duplicate all", "Дублировать всё"),
+    alternateText: missingPlan.canCopyMissingItems ? localText("Missing only", "Только недостающие") : "",
+    cancelText: localText("Do not copy", "Не копировать"),
+    highlightText: localText(
+      `${duplicates.containerIds.length} bags/containers and ${duplicates.itemIds.length} items were found by source ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} items can be added without duplicates` : ""}`,
+      `${duplicates.containerIds.length} сумок/контейнеров, ${duplicates.itemIds.length} вещей уже найдены по исходным ID${missingPlan.canCopyMissingItems ? `\n${missingPlan.missingItems.length} вещей можно добавить без дублей` : ""}`
+    ),
     tone: "safe"
   });
   if (duplicate === "alternate" && missingPlan.canCopyMissingItems) return "copy-missing";
   if (duplicate) return "copy-all";
-  showToast("Копирование пропущено: такая demo/shared копия уже есть в целевой укладке.", "success");
+  showToast(localText("Copy skipped: this demo/template copy is already in the target layout.", "Копирование пропущено: такая demo/shared копия уже есть в целевой укладке."), "success");
   return "cancel";
 }
 
@@ -8682,7 +8726,7 @@ async function copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayo
   render();
   renderSharedLayouts();
   if (firstCopiedItemId) requestAnimationFrame(() => focusRecentlyAddedItem(firstCopiedItemId));
-  showToast(`${copiedCount} вещей добавлено без дублей.`, "success");
+  showToast(localText(`${copiedCount} items added without duplicates.`, `${copiedCount} вещей добавлено без дублей.`), "success");
   return copiedCount;
 }
 
@@ -8736,7 +8780,7 @@ async function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayo
   } else if (firstAddedItemId) {
     requestAnimationFrame(() => focusRecentlyAddedItem(firstAddedItemId));
   }
-  showToast(`${changedCount} элементов добавлено без дублей.`, "success");
+  showToast(localText(`${changedCount} elements added without duplicates.`, `${changedCount} элементов добавлено без дублей.`), "success");
   return changedCount;
 }
 
@@ -10101,7 +10145,10 @@ function toggleFilterContext() {
 
 function updateMetaToggle() {
   const mode = itemDisplayMode();
-  const label = `Режим карточек: ${itemDisplayModeLabel(mode)}`;
+  const label = localText(
+    `Card mode: ${itemDisplayModeLabel(mode, localText)}`,
+    `Режим карточек: ${itemDisplayModeLabel(mode, localText)}`
+  );
   refs.metaToggleBtn.classList.toggle("active", mode !== ITEM_DISPLAY_MODE_DEFAULT);
   refs.metaToggleBtn.dataset.displayMode = mode;
   refs.metaToggleBtn.setAttribute("aria-label", label);
@@ -10269,11 +10316,11 @@ function applyCategoryFilterDialog(event) {
 }
 
 function resetData() {
-  const message = "Сбросить демо-укладку к начальному примеру?";
+  const message = localText("Reset the demo layout to the original example?", "Сбросить демо-укладку к начальному примеру?");
   openConfirmDialog({
-    title: "Сбросить данные?",
+    title: localText("Reset data?", "Сбросить данные?"),
     text: message,
-    okText: "Сбросить",
+    okText: localText("Reset", "Сбросить"),
     onConfirm: () => {
       saveRecoverySnapshot("before-reset", state);
       localStorage.removeItem(scopedLocalStorageKey(STORAGE_KEY));

@@ -45,15 +45,15 @@ export function nextItemDisplayMode(currentMode) {
   return ITEM_DISPLAY_MODES[(index + 1) % ITEM_DISPLAY_MODES.length] || ITEM_DISPLAY_MODE_DEFAULT;
 }
 
-export function itemDisplayModeLabel(mode) {
+export function itemDisplayModeLabel(mode, localText = (_en, ru) => ru) {
   switch (normalizeItemDisplayMode(mode)) {
     case "photos":
-      return "Без меток, с фото";
+      return localText("Without labels, with photos", "Без меток, с фото");
     case "meta":
-      return "С метками, без фото";
+      return localText("With labels, without photos", "С метками, без фото");
     case "meta-photos":
-      return "С метками и фото";
+      return localText("With labels and photos", "С метками и фото");
     default:
-      return "Без меток и фото";
+      return localText("Without labels or photos", "Без меток и фото");
   }
 }

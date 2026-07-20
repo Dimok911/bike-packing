@@ -6,9 +6,14 @@ import {
 } from "../sync/photos.js";
 import { normalizeItemPhotos } from "../state/item-photos.js";
 import { escapeHtml } from "../utils/html.js";
+import { currentDocumentLanguage } from "../utils/language.js";
 
 let lightboxObjectUrl = "";
 let lightboxKeydownHandler = null;
+
+function localText(en, ru) {
+  return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
+}
 
 export function renderPhotoSlide(photo, { photoObjectUrls = new Map() } = {}) {
   const localId = photo.localId || photo.id;
@@ -107,11 +112,13 @@ async function renderPhotoPreviewSlide(photo, objectUrls = []) {
 export function photoStatusText(photos) {
   const list = Array.isArray(photos) ? photos : [];
   if (!list.length) return "";
-  if (list.some((photo) => photo.status === "error")) return "Ошибка загрузки фото";
-  if (list.some((photo) => photo.status === "missing-local-file")) return "Нет локального файла фото";
-  if (list.some((photo) => photo.status === "uploading")) return "Фото загружается";
-  if (list.some((photo) => photo.status === "pending" && !photoRemoteSrc(photo))) return "Ждём загрузки";
-  return list.length > 1 ? `${list.length} фото загружено` : "Фото загружено";
+  if (list.some((photo) => photo.status === "error")) return localText("Photo upload failed", "Ошибка загрузки фото");
+  if (list.some((photo) => photo.status === "missing-local-file")) return localText("Local photo file is missing", "Нет локального файла фото");
+  if (list.some((photo) => photo.status === "uploading")) return localText("Uploading photo", "Фото загружается");
+  if (list.some((photo) => photo.status === "pending" && !photoRemoteSrc(photo))) return localText("Waiting to upload", "Ждём загрузки");
+  return list.length > 1
+    ? localText(`${list.length} photos uploaded`, `${list.length} фото загружено`)
+    : localText("Photo uploaded", "Фото загружено");
 }
 
 export function photoDialogStatusText(photos) {
@@ -327,11 +334,14 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const overlay = document.createElement("dialog");
   overlay.className = "photo-lightbox";
   const hasNavigation = entries.length > 1;
+  const closeLabel = escapeHtml(localText("Close", "Закрыть"));
+  const previousLabel = escapeHtml(localText("Previous photo", "Предыдущее фото"));
+  const nextLabel = escapeHtml(localText("Next photo", "Следующее фото"));
   overlay.innerHTML = `
-    <button class="photo-lightbox-close" type="button" aria-label="Закрыть">×</button>
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="Предыдущее фото"><span aria-hidden="true">‹</span></button>` : ""}
+    <button class="photo-lightbox-close" type="button" aria-label="${closeLabel}">×</button>
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="${previousLabel}"><span aria-hidden="true">‹</span></button>` : ""}
     <img class="photo-lightbox-image" src="${escapeHtml(initial.src)}" alt="" />
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="Следующее фото"><span aria-hidden="true">›</span></button>` : ""}
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
   if (typeof overlay.showModal === "function") {

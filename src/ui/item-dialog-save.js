@@ -128,6 +128,7 @@ export function saveItemDialogAction({
   normalizeItemAvailabilityStatus = () => "available",
   parseWeightInput = () => 0,
   placeExistingItemInLayout = () => false,
+  placementFailedText = "Could not add the item to this layout.",
   readItemDialogDimensions = () => ({}),
   readItemDialogQuantity = () => 1,
   refs,
@@ -179,7 +180,7 @@ export function saveItemDialogAction({
           return;
         }
         if (!placeExistingItemInLayout(editingItemId, containerId, layoutId, { changedAt })) {
-          showToast("Не удалось добавить вещь в эту укладку.", "error");
+          showToast(placementFailedText, "error");
           return;
         }
         restoreAdminPublishedLayoutContext(layoutId);
@@ -226,7 +227,7 @@ export function saveItemDialogAction({
       }
       if (!placeExistingItemInLayout(id, containerId, layoutId, { changedAt })) {
         delete state.items[id];
-        showToast("Не удалось добавить вещь в эту укладку.", "error");
+        showToast(placementFailedText, "error");
         return;
       }
     }

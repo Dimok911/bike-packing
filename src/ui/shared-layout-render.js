@@ -3,9 +3,13 @@ import { formatVolume, formatWeight } from "../utils/weight.js";
 
 export function renderSharedLayoutsHtml(layouts, {
   bagLabel = "сумки",
+  copyBagLabel = "Скопировать сумку",
+  copyItemLabel = "Скопировать вещь",
+  emptyBagText = "Внутри пока нет вещей",
   itemLabel = "вещи",
   rootsForLayout = (layout) => layout?.roots || [],
-  showPhotos = true
+  showPhotos = true,
+  weightLabel = "Вес"
 } = {}) {
   return layouts.map((layout) => {
     const roots = rootsForLayout(layout);
@@ -21,14 +25,26 @@ export function renderSharedLayoutsHtml(layouts, {
           <strong>${roots.length} ${escapeHtml(bagLabel)} · ${itemCount} ${escapeHtml(itemLabel)} · ${formatWeight(totalWeight)}</strong>
         </div>
         <div class="shared-board">
-          ${roots.map((root) => renderSharedRootColumnHtml(layout, root, { showPhotos })).join("")}
+          ${roots.map((root) => renderSharedRootColumnHtml(layout, root, {
+            copyBagLabel,
+            copyItemLabel,
+            emptyBagText,
+            showPhotos,
+            weightLabel
+          })).join("")}
         </div>
       </section>
     `;
   }).join("");
 }
 
-export function renderSharedRootColumnHtml(layout, root, { showPhotos = true } = {}) {
+export function renderSharedRootColumnHtml(layout, root, {
+  copyBagLabel = "Скопировать сумку",
+  copyItemLabel = "Скопировать вещь",
+  emptyBagText = "Внутри пока нет вещей",
+  showPhotos = true,
+  weightLabel = "Вес"
+} = {}) {
   const itemCount = (root.items || []).length;
   return `
     <article class="container-card shared-root-column">
@@ -40,19 +56,27 @@ export function renderSharedRootColumnHtml(layout, root, { showPhotos = true } =
             <span class="container-location">${formatWeight(sharedRootWeight(root))}${root.volumeLiters ? ` · ${formatVolume(root.volumeLiters)}` : ""}</span>
           </div>
         </div>
-        <button class="copy-item-button" type="button" data-copy-shared-root="${escapeHtml(root.id)}" aria-label="Скопировать сумку" title="Скопировать сумку">
+        <button class="copy-item-button" type="button" data-copy-shared-root="${escapeHtml(root.id)}" aria-label="${escapeHtml(copyBagLabel)}" title="${escapeHtml(copyBagLabel)}">
           <span aria-hidden="true">⧉</span>
         </button>
       </div>
       ${root.description ? `<p class="shared-root-note">${escapeHtml(root.description)}</p>` : ""}
       <div class="dropzone">
-        ${(root.items || []).map((item) => renderSharedItemCardHtml(layout, root, item, { showPhotos })).join("") || `<div class="empty">${itemCount ? "" : "Внутри пока нет вещей"}</div>`}
+        ${(root.items || []).map((item) => renderSharedItemCardHtml(layout, root, item, {
+          copyItemLabel,
+          showPhotos,
+          weightLabel
+        })).join("") || `<div class="empty">${itemCount ? "" : escapeHtml(emptyBagText)}</div>`}
       </div>
     </article>
   `;
 }
 
-export function renderSharedItemCardHtml(layout, root, item, { showPhotos = true } = {}) {
+export function renderSharedItemCardHtml(layout, root, item, {
+  copyItemLabel = "Скопировать вещь",
+  showPhotos = true,
+  weightLabel = "Вес"
+} = {}) {
   return `
     <article class="shared-gear-card">
       ${renderSharedGearPhotoHtml(item, { showPhotos })}
@@ -61,11 +85,11 @@ export function renderSharedItemCardHtml(layout, root, item, { showPhotos = true
         <p>${escapeHtml(item.description || "")}</p>
         <div class="shared-gear-meta">
           ${root?.name ? `<span class="shared-weight">${escapeHtml(root.name)}</span>` : ""}
-          <span class="shared-weight">Вес: ${formatWeight(item.weightGrams)}${item.weightAlt ? ` · ${escapeHtml(item.weightAlt)}` : ""}</span>
+          <span class="shared-weight">${escapeHtml(weightLabel)}: ${formatWeight(item.weightGrams)}${item.weightAlt ? ` · ${escapeHtml(item.weightAlt)}` : ""}</span>
           ${item.volumeLiters ? `<span class="shared-weight">${formatVolume(item.volumeLiters)}</span>` : ""}
         </div>
         <button class="ghost shared-copy-button" type="button" data-copy-shared-item="${escapeHtml(item.id)}">
-          Скопировать вещь
+          ${escapeHtml(copyItemLabel)}
         </button>
       </div>
     </article>

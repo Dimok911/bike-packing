@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { I18N } from "../../src/data/i18n.js";
 import { shouldShowContainerPickerLayoutSelect } from "../../src/ui/container-picker-layout-select.js";
 import {
   applyGuestLocalDisplayPreferences,
@@ -211,6 +213,16 @@ const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u0
 test("container copy picker excludes the source layout for nested bag copy targets", () => {
   const excluded = containerCopyExcludedLayoutIds({
     mode: "container-copy",
+    sourceLayoutId: "layout-source"
+  });
+
+  assert.equal(excluded.has("layout-source"), true);
+  assert.equal(excluded.has("layout-target"), false);
+});
+
+test("item copy picker excludes the current source layout", () => {
+  const excluded = containerCopyExcludedLayoutIds({
+    mode: "item-copy",
     sourceLayoutId: "layout-source"
   });
 
@@ -557,6 +569,55 @@ test("readonly template copy targets hide only the empty system current layout f
     excludeEmptySystemDefault: true,
     readonlySourceLayoutId: "shared-template"
   }).map((layout) => layout.id), ["layout-main", "layout-trip"]);
+});
+
+test("guest copy targets hide the empty system current layout when a real layout exists", () => {
+  const emptySystemLayout = {
+    id: "layout-main",
+    name: "Current layout",
+    rootContainerIds: [],
+    arrangement: { rootContainerIds: [], containers: {}, items: {} }
+  };
+  const guestDemoLayout = {
+    id: "guest-demo-en",
+    name: "Demo-packing",
+    rootContainerIds: ["bag-a"]
+  };
+
+  assert.deepEqual(sharedCopyTargetLayouts({
+    "layout-main": emptySystemLayout,
+    "guest-demo-en": guestDemoLayout
+  }, {
+    excludeRedundantEmptySystemDefault: true
+  }).map((layout) => layout.id), ["guest-demo-en"]);
+
+  assert.deepEqual(sharedCopyTargetLayouts({
+    "layout-main": emptySystemLayout
+  }, {
+    excludeRedundantEmptySystemDefault: true
+  }).map((layout) => layout.id), ["layout-main"]);
+});
+
+test("copy picker offers layout creation when the source is the only real layout", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.equal(I18N.ru["copy.noOtherLayoutsTitle"], "Других укладок нет");
+  assert.equal(I18N.en["copy.noOtherLayoutsTitle"], "No other layouts");
+  assert.match(controllers, /async function offerCreateLayoutWhenNoCopyTargets\(\)/);
+  assert.match(controllers, /okText: t\("copy\.createLayout"\)/);
+  assert.match(controllers, /openLayoutDialog\(\{ copyTargetFlow: true \}\)/);
+  assert.equal((controllers.match(/if \(await offerCreateLayoutWhenNoCopyTargets\(\)\) return;/g) || []).length, 4);
+});
+
+test("copy picker resumes in the newly created layout without changing the source layout", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.match(controllers, /pendingCopyTargetLayoutCreation = \{[\s\S]*?containerPickerSourceLayoutId: runtime\.containerPickerSourceLayoutId/);
+  assert.match(controllers, /activate: !pendingCopyTargetLayoutCreation/);
+  assert.match(controllers, /runtime\.containerPickerLayoutId = layoutId;[\s\S]*?renderContainerPicker\(\);[\s\S]*?openModalDialog\(refs\.containerPickerDialog\)/);
+  assert.match(controllers, /if \(!resumeCopyPickerAfterLayoutCreation\(createdId\)\) switchView\("packing"\)/);
 });
 
 test("admin public copy targets follow visible public choices without legacy demo duplicates", () => {
