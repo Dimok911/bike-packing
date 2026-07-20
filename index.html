@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1300" />
+    <link rel="stylesheet" href="./styles.css?v=1301" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -207,6 +207,10 @@
         </label>
         <div class="field-label">
           Categories
+          <label class="category-search-field">
+            <span class="visually-hidden">Search categories</span>
+            <input id="itemCategorySearch" type="search" autocomplete="off" placeholder="Find a category" aria-label="Search categories" />
+          </label>
           <div id="itemCategoryList" class="category-picker"></div>
         </div>
         <label>
@@ -310,6 +314,10 @@
         </label>
         <div class="field-label">
           Categories
+          <label class="category-search-field">
+            <span class="visually-hidden">Search categories</span>
+            <input id="rootContainerCategorySearch" type="search" autocomplete="off" placeholder="Find a category" aria-label="Search categories" />
+          </label>
           <div id="rootContainerCategoryList" class="category-picker"></div>
         </div>
         <label class="checkbox-row root-container-nestable-field">
@@ -389,6 +397,10 @@
           <h2>Категории</h2>
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
+        <label class="category-search-field category-filter-search-field">
+          <span class="visually-hidden">Search categories</span>
+          <input id="categoryFilterSearch" type="search" autocomplete="off" placeholder="Find a category" aria-label="Search categories" />
+        </label>
         <div id="categoryFilterList" class="category-filter-list"></div>
         <footer>
           <button id="resetCategoryFilterBtn" class="ghost" type="button">Сбросить</button>
@@ -720,6 +732,6 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1300" type="module"></script>
+    <script src="./app.js?v=1301" type="module"></script>
   </body>
 </html>

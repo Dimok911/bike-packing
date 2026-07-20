@@ -46,6 +46,11 @@ import {
   bindEmptyCategoryPicker,
   renderEmptyCategoryPicker
 } from "../ui/category-picker-empty.js";
+import {
+  categorySearchEmptyHtml,
+  renderCategorySearchOption,
+  syncCategorySearchAvailability
+} from "../ui/category-search.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -1179,6 +1184,9 @@ function renderCategoryPicker(target, selected = null, {
   allowCreate = false
 } = {}) {
   if (!target) return;
+  const searchInput = target === refs.itemCategoryList
+    ? refs.itemCategorySearch
+    : (target === refs.rootContainerCategoryList ? refs.rootContainerCategorySearch : null);
   const selectedSet = new Set(selected || getCheckedCategoriesFromList(target));
   const categoryOptions = dictionaryOptionsForUi("category", { selected: [...selectedSet] });
   if (!categoryOptions.length && allowCreate) {
@@ -1190,18 +1198,28 @@ function renderCategoryPicker(target, selected = null, {
     bindEmptyCategoryPicker(target, {
       onCreate: (value) => createCategoryFromDialogPicker(target, value)
     });
+    syncCategorySearchAvailability(searchInput, target, {
+      available: false,
+      emptyText: t("categories.searchEmpty"),
+      reset: true
+    });
     return;
   }
   if (fallbackDefault && !selectedSet.size && categoryOptions[0]) selectedSet.add(categoryOptions[0]);
   target.innerHTML = categoryOptions.map((category) => {
     const id = `${idPrefix}-${cssSafeId(category)}`;
-    return `
-      <label class="category-option" for="${id}">
-        <input id="${id}" type="checkbox" value="${escapeHtml(category)}" ${selectedSet.has(category) ? "checked" : ""} />
-        <span>${escapeHtml(dictionaryValueLabel(category))}</span>
-      </label>
-    `;
-  }).join("");
+    return renderCategorySearchOption({
+      category,
+      label: dictionaryValueLabel(category),
+      id,
+      checked: selectedSet.has(category)
+    });
+  }).join("") + categorySearchEmptyHtml(t("categories.searchEmpty"));
+  syncCategorySearchAvailability(searchInput, target, {
+    available: Boolean(categoryOptions.length),
+    emptyText: t("categories.searchEmpty"),
+    reset: true
+  });
 }
 
 function renderItemCategoryPicker(selected = null, { fallbackDefault = false } = {}) {

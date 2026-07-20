@@ -51,6 +51,12 @@ import { I18N } from "./src/data/i18n.js";
 import { demoSharedLayout } from "./src/data/demo-data.js";
 import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
 import {
+  bindCategorySearch,
+  categorySearchEmptyHtml,
+  renderCategorySearchOption,
+  resetCategorySearch
+} from "./src/ui/category-search.js";
+import {
   appendCopiedFromTemplateNote,
   cloneIsolatedPublicEntity,
   hasPrivateSyncBlockedPublicOrigin,
@@ -2775,6 +2781,15 @@ async function init() {
   refs.clearLocationFilterBtn.addEventListener("click", () => clearSelectFilter(refs.locationFilter));
   refs.categoryFilter.addEventListener("click", openCategoryFilterDialog);
   refs.clearCategoryFilterBtn.addEventListener("click", clearCategoryFilter);
+  bindCategorySearch(refs.categoryFilterSearch, refs.categoryFilterList, {
+    emptyText: () => t("categories.searchEmpty")
+  });
+  bindCategorySearch(refs.itemCategorySearch, refs.itemCategoryList, {
+    emptyText: () => t("categories.searchEmpty")
+  });
+  bindCategorySearch(refs.rootContainerCategorySearch, refs.rootContainerCategoryList, {
+    emptyText: () => t("categories.searchEmpty")
+  });
   refs.resetCategoryFilterBtn.addEventListener("click", () => {
     refs.categoryFilterList.querySelectorAll("input").forEach((input) => {
       input.checked = false;
@@ -10292,15 +10307,22 @@ function openCategoryFilterDialog() {
   const categoriesToShow = dictionaryOptionsForUi("category", {
     selected: [...selectedSet]
   });
-  refs.categoryFilterList.innerHTML = categoriesToShow.map((category) => {
+  const categoryOptionsHtml = categoriesToShow.map((category) => {
     const id = `filter-category-${cssSafeId(category)}`;
-    return `
-      <label class="category-option category-filter-option" for="${id}">
-        <input id="${id}" type="checkbox" value="${escapeHtml(category)}" ${selectedSet.has(category) ? "checked" : ""} />
-        <span>${escapeHtml(dictionaryValueLabel(category))}</span>
-      </label>
-    `;
-  }).join("") || `<div class="empty">${escapeHtml(t("empty.noCategoriesForSearch"))}</div>`;
+    return renderCategorySearchOption({
+      category,
+      label: dictionaryValueLabel(category),
+      id,
+      checked: selectedSet.has(category),
+      className: "category-option category-filter-option"
+    });
+  }).join("");
+  refs.categoryFilterList.innerHTML = categoryOptionsHtml
+    ? categoryOptionsHtml + categorySearchEmptyHtml(t("categories.searchEmpty"))
+    : `<div class="empty">${escapeHtml(t("empty.noCategoriesForSearch"))}</div>`;
+  resetCategorySearch(refs.categoryFilterSearch, refs.categoryFilterList, {
+    emptyText: t("categories.searchEmpty")
+  });
   openModalDialog(refs.categoryFilterDialog);
 }
 

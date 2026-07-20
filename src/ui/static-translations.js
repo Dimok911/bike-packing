@@ -124,6 +124,11 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.dialog?.querySelector("label:has(#itemDepth)"), t("forms.depthShort"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemLocation)"), t("forms.storage"));
   setFirstText(refs.dialog?.querySelector(".field-label:has(#itemCategoryList)"), t("forms.categories"));
+  if (refs.itemCategorySearch) {
+    refs.itemCategorySearch.placeholder = t("categories.searchPlaceholder");
+    setAttr(refs.itemCategorySearch, "aria-label", t("categories.searchLabel"));
+    setText(refs.itemCategorySearch.closest(".category-search-field")?.querySelector(".visually-hidden"), t("categories.searchLabel"));
+  }
   setFirstText(refs.dialog?.querySelector("label:has(#itemAvailabilityStatus)"), t("forms.availability"));
   if (refs.itemAvailabilityStatus) {
     const availabilityLabels = {
@@ -166,6 +171,11 @@ export function applyStaticTranslationsUi({
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerDepth)"), t("forms.depthShort"));
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerLocation)"), t("forms.storage"));
   setFirstText(refs.rootContainerDialog?.querySelector(".field-label:has(#rootContainerCategoryList)"), t("forms.categories"));
+  if (refs.rootContainerCategorySearch) {
+    refs.rootContainerCategorySearch.placeholder = t("categories.searchPlaceholder");
+    setAttr(refs.rootContainerCategorySearch, "aria-label", t("categories.searchLabel"));
+    setText(refs.rootContainerCategorySearch.closest(".category-search-field")?.querySelector(".visually-hidden"), t("categories.searchLabel"));
+  }
   setText(refs.rootContainerNestableLabel, t("rootContainers.nestable"));
   setText(refs.rootContainerPlacementLabel, t("forms.locatedIn"));
   setText(refs.rootContainerPlacementBtn, t("forms.moveInsideLayout"));
@@ -194,6 +204,11 @@ export function applyStaticTranslationsUi({
   setAttr(refs.layoutCollapseAllBtn, "aria-label", t("tooltips.collapseAllInLayout"));
   setAttr(refs.layoutCollapseAllBtn, "title", t("tooltips.collapseAllInLayout"));
   setText(refs.categoryFilterDialog?.querySelector("h2"), t("categoryFilter.title"));
+  if (refs.categoryFilterSearch) {
+    refs.categoryFilterSearch.placeholder = t("categories.searchPlaceholder");
+    setAttr(refs.categoryFilterSearch, "aria-label", t("categories.searchLabel"));
+    setText(refs.categoryFilterSearch.closest(".category-search-field")?.querySelector(".visually-hidden"), t("categories.searchLabel"));
+  }
   setText(refs.resetCategoryFilterBtn, t("buttons.reset"));
   setText(refs.applyCategoryFilterBtn, t("buttons.done"));
   setText(refs.addToContainerTitle, t("items.addItem"));

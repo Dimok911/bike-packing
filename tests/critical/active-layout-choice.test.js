@@ -48,6 +48,12 @@ import {
   normalizeInlineCategoryName,
   renderEmptyCategoryPicker
 } from "../../src/ui/category-picker-empty.js";
+import {
+  categoryMatchesSearch,
+  highlightCategorySearchMatch,
+  normalizeCategorySearchQuery,
+  renderCategorySearchOption
+} from "../../src/ui/category-search.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const privateIds = new Set(["layout-a", "layout-b", "layout-c"]);
@@ -58,6 +64,25 @@ const isPrivateUserLayoutId = (choice) => privateIds.has(choice);
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
 }
+
+test("category search filters case-insensitively and highlights safe matches", () => {
+  assert.equal(normalizeCategorySearchQuery("  ВЕЛО  "), "вело");
+  assert.equal(categoryMatchesSearch("Велозапчасти", "ЗАП"), true);
+  assert.equal(categoryMatchesSearch("Документы", "вело"), false);
+  assert.equal(
+    highlightCategorySearchMatch("Velo <Velo>", "velo"),
+    "<mark>Velo</mark> &lt;<mark>Velo</mark>&gt;"
+  );
+  const option = renderCategorySearchOption({
+    category: "camping",
+    label: "Camping & sleep",
+    id: "category-camping",
+    checked: true
+  });
+  assert.match(option, /data-category-search-option/);
+  assert.match(option, /Camping &amp; sleep/);
+  assert.match(option, /checked/);
+});
 
 test("CRITICAL layout-ui: system layout and load progress follow the interface language", () => {
   const systemLayout = { id: "layout-main", name: "Текущая укладка" };
