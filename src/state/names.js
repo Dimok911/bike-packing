@@ -18,6 +18,16 @@ export function makeContainerCopyName(name, containers = {}) {
   );
 }
 
+export function makeContainerCopyNameForLayout(name, layout, containers = {}, suffix = "копия") {
+  const rootIds = new Set([
+    ...(Array.isArray(layout?.rootContainerIds) ? layout.rootContainerIds : []),
+    ...(Array.isArray(layout?.arrangement?.rootContainerIds) ? layout.arrangement.rootContainerIds : [])
+  ]);
+  const existingNames = [...rootIds].map((id) => containers?.[id]?.name).filter(Boolean);
+  if (!new Set(existingNames.map((value) => String(value || ""))).has(String(name || ""))) return name;
+  return makeCopyName(name, existingNames, suffix);
+}
+
 export function makeItemCopyName(name, items = {}) {
   return makeCopyName(name, Object.values(items || {}).map((item) => item?.name));
 }

@@ -43,7 +43,20 @@ export function applyPublishedPayloadPhotosToLayoutState(targetState, layoutId, 
   const publishedEntityId = deps.publishedEntityId || ((type, record, recordKey) => record?.id || recordKey);
   const sourceContainers = recordMapFromCollection(publishedPayload.containers);
   const sourceItems = recordMapFromCollection(publishedPayload.items);
+  const containerIds = new Set(getLayoutContainerIdSet(targetState, layout));
+  const itemIds = new Set(getLayoutItemIdSet(targetState, layout));
   let changed = false;
+
+  Object.entries(targetState.containers || {}).forEach(([containerId, container]) => {
+    if (container?.publicCatalogLayoutId === layoutId) containerIds.add(containerId);
+  });
+  containerIds.forEach((containerId) => {
+    (targetState.containers?.[containerId]?.itemIds || []).forEach((itemId) => itemIds.add(itemId));
+  });
+  Object.entries(targetState.items || {}).forEach(([itemId, item]) => {
+    if (item?.publicCatalogLayoutId === layoutId) itemIds.add(itemId);
+    if (item?.containerId && containerIds.has(item.containerId)) itemIds.add(itemId);
+  });
 
   const applyPhotos = (targetRecord, sourceRecord) => {
     if (!targetRecord || !Array.isArray(sourceRecord?.photos)) return;
@@ -51,12 +64,12 @@ export function applyPublishedPayloadPhotosToLayoutState(targetState, layoutId, 
     changed = true;
   };
 
-  getLayoutContainerIdSet(targetState, layout).forEach((containerId) => {
+  containerIds.forEach((containerId) => {
     const targetRecord = targetState.containers?.[containerId];
     const sourceRecord = sourceRecordForLocalRecord(sourceContainers, "container", targetRecord, containerId, publishedEntityId);
     applyPhotos(targetRecord, sourceRecord);
   });
-  getLayoutItemIdSet(targetState, layout).forEach((itemId) => {
+  itemIds.forEach((itemId) => {
     const targetRecord = targetState.items?.[itemId];
     const sourceRecord = sourceRecordForLocalRecord(sourceItems, "item", targetRecord, itemId, publishedEntityId);
     applyPhotos(targetRecord, sourceRecord);

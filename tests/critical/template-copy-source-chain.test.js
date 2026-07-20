@@ -73,7 +73,10 @@ import {
   cleanPublishedEntityId,
   exportLayoutAsPublishedState
 } from "../../src/public/published-state-export.js";
-import { savePublishedLayoutRecordFlow } from "../../src/public/published-layout-save-flow.js";
+import {
+  canonicalPublishedTargetIdentity,
+  savePublishedLayoutRecordFlow
+} from "../../src/public/published-layout-save-flow.js";
 import {
   isManagedTemplateUnpublished,
   isManagedTemplateUnpublishPending,
@@ -177,7 +180,10 @@ import {
   purgeUnconfirmedSharedTemplatesFromFrontendState,
   unpublishPublishedSharedTemplate
 } from "../../src/public/shared-layout-admin.js";
-import { repairEmptyTemplateCopyDraftFromPublishedLayout } from "../../src/public/template-copy-admin-repair.js";
+import {
+  reconcilePublishedTemplateCopyDraft,
+  repairEmptyTemplateCopyDraftFromPublishedLayout
+} from "../../src/public/template-copy-admin-repair.js";
 import { materializeSharedLayoutForAdminState } from "../../src/public/shared-admin-materialize.js";
 import { mergePublishedSharedStateIntoAdminLayout } from "../../src/public/shared-admin-merge.js";
 import { cleanupGeneratedCatalogArtifacts } from "../../src/state/cleanup.js";
@@ -201,10 +207,11 @@ import {
   isTemplateCopySharedId,
   publicLayoutChoiceValue,
   shouldCopyPublicTemplatePhotoReferencesOnServer,
-  shouldCreatePublishedTemplateBeforePhotos
+  shouldCreatePublishedTemplateBeforePhotos,
+  templateCopySharedSourceId
 } from "../../src/state/layout-manage.js";
 import { solidifyTemplateDraftLayout } from "../../src/state/layout-draft-solidify.js";
-import { repairMojibakeLayoutNames } from "../../src/state/names.js";
+import { makeContainerCopyNameForLayout, repairMojibakeLayoutNames } from "../../src/state/names.js";
 import { assertEntitySyncConfirmed } from "../../src/sync/entity-sync-confirmation.js";
 
 const RU_DEMO_NAME = "\u0414\u0435\u043c\u043e-\u0443\u043a\u043b\u0430\u0434\u043a\u0430";
@@ -364,6 +371,63 @@ test("published payload photo copy updates local public-origin records", () => {
   assert.match(state.items["item-local"].photos[0].thumbUrl, /photo-item-copy\/thumb/);
 });
 
+test("published payload photo copy updates detached template catalog records after bag deletion", () => {
+  const staleUrl = "https://api.example.test/bike-packing/lists/public-old/photos/photo-copy/file";
+  const targetUrl = "https://api.example.test/bike-packing/lists/public-target/photos/photo-copy/file";
+  const state = {
+    layouts: {
+      "layout-template": {
+        id: "layout-template",
+        rootContainerIds: [],
+        arrangement: {
+          rootContainerIds: [],
+          containers: {},
+          items: {},
+          packedItems: {}
+        }
+      }
+    },
+    containers: {},
+    items: {
+      "item-detached": {
+        id: "item-detached",
+        publicCatalogLayoutId: "layout-template",
+        photos: [{
+          id: "photo-copy",
+          status: "pending",
+          url: staleUrl,
+          thumbUrl: `${staleUrl}/thumb`,
+          _copyToCurrentList: true
+        }]
+      }
+    }
+  };
+
+  const changed = applyPublishedPayloadPhotosToLayoutState(state, "layout-template", {
+    containers: {},
+    items: {
+      "item-detached": {
+        id: "item-detached",
+        photos: [{
+          id: "photo-copy",
+          status: "synced",
+          url: targetUrl,
+          thumbUrl: `${targetUrl}/thumb`
+        }]
+      }
+    }
+  }, {
+    getLayoutContainerIdSet: () => new Set(),
+    getLayoutItemIdSet: () => new Set(),
+    publishedEntityId: cleanPublishedEntityId
+  });
+
+  assert.equal(changed, true);
+  assert.equal(state.items["item-detached"].photos[0].status, "synced");
+  assert.equal(state.items["item-detached"].photos[0]._copyToCurrentList, undefined);
+  assert.equal(state.items["item-detached"].photos[0].url, targetUrl);
+});
+
 test("admin shared template save uploads photos left pending after server copy", async () => {
   const publishPayload = {
     layouts: {
@@ -469,6 +533,106 @@ test("admin shared template save uploads photos left pending after server copy",
   assert.equal(apiCalls[1].body.copyPhotoReferences, undefined);
   assert.equal(runtime.state.layouts["layout-admin-shared"].templatePublished, true);
   assert.equal(persisted, 1);
+});
+
+test("new shared template fallback stays private until photos and final payload are saved", async () => {
+  const publishPayload = {
+    layouts: {
+      "layout-admin-shared": {
+        id: "layout-admin-shared",
+        name: "Shared draft",
+        adminTemplateCopy: true,
+        adminSharedSourceId: "shared-draft",
+        rootContainerIds: []
+      }
+    },
+    containers: {},
+    items: {
+      "item-detached": {
+        id: "item-detached",
+        photos: [{
+          id: "photo-local",
+          status: "pending",
+          url: "https://api.example.test/bike-packing/lists/source/photos/photo-source/file"
+        }]
+      }
+    }
+  };
+  const apiCalls = [];
+  let uploaded = false;
+  const runtime = {
+    state: {
+      activeLayoutId: "layout-admin-shared",
+      layouts: {
+        "layout-admin-shared": {
+          id: "layout-admin-shared",
+          name: "Shared draft",
+          language: "ru",
+          adminTemplateCopy: true,
+          adminSharedSourceId: "shared-draft"
+        }
+      }
+    },
+    currentUser: { email: "admin@example.test" },
+    syncMeta: {},
+    sharedLayoutsByLanguage: {},
+    uiLanguage: "ru"
+  };
+
+  await savePublishedLayoutRecordFlow({
+    runtime,
+    dependencies: {
+      LIST_SAVE_API_TIMEOUT_MS: 1000,
+      apiFetch: async (path, options = {}) => {
+        const body = JSON.parse(options.body || "{}");
+        apiCalls.push({ path, body });
+        if (body.copyPhotoReferences) throw new Error("server photo copy unavailable");
+        return { payload: body.payload };
+      },
+      applyPublishedPayloadPhotosToLayoutState: () => false,
+      canOpenAdminPublishedEdit: () => true,
+      checkAdminApiCompatibility: async () => {},
+      cleanPublishedEntityId,
+      clone: (value) => JSON.parse(JSON.stringify(value)),
+      exportLayoutAsDemoState: () => JSON.parse(JSON.stringify(publishPayload)),
+      findSharedLayout: () => null,
+      getLayoutContainerIdSetForState: () => new Set(),
+      getLayoutItemIdSetForState: () => new Set(),
+      getUnsyncedPhotoEntries: () => uploaded
+        ? []
+        : [{ entityType: "item", entityId: "item-detached", photo: { id: "photo-local", status: "pending" } }],
+      getUploadablePhotoEntries: () => [
+        { entityType: "item", entityId: "item-detached", photo: { id: "photo-local", status: "pending" } }
+      ],
+      nowIso: () => "2026-07-20T00:00:00.000Z",
+      persistStateSnapshot: () => {},
+      publicListIdForPublishedTarget: () => "public-shared-layout-shared-draft",
+      publishedLayoutTarget: () => ({ type: "shared", sharedId: "shared-draft", language: "ru" }),
+      publishedPayloadWithTemplateMetadata: (payload) => payload,
+      refreshPublishedLayoutView: () => {},
+      refreshPublicSharedLayoutCatalog: async () => {},
+      saveSyncMeta: () => {},
+      shouldCopyPublicTemplatePhotoReferencesOnServer: () => true,
+      shouldCreatePublishedTemplateBeforePhotos: () => true,
+      showToast: () => {},
+      updateSyncUi: () => {},
+      uploadPublishedLayoutPhotos: async () => { uploaded = true; },
+      upsertRuntimeSharedLayout: () => ({ id: "shared-draft" }),
+      withLayoutArrangementAppliedAsync: async (_layoutId, callback) => callback(),
+      withoutPhotoReferences: (payload) => {
+        const copy = JSON.parse(JSON.stringify(payload));
+        Object.values(copy.items || {}).forEach((item) => { item.photos = []; });
+        return copy;
+      }
+    }
+  }, "layout-admin-shared");
+
+  assert.equal(apiCalls.length, 3);
+  assert.equal(apiCalls[0].body.copyPhotoReferences, true);
+  assert.equal(apiCalls[1].body.published, false);
+  assert.deepEqual(apiCalls[1].body.payload.items["item-detached"].photos, []);
+  assert.equal(apiCalls[2].body.published, undefined);
+  assert.equal(apiCalls[2].body.payload.items["item-detached"].photos.length, 1);
 });
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
@@ -1447,6 +1611,139 @@ test("empty public template draft records can be created for demo and shared lan
   assert.equal(shared.adminTemplateCopy, true);
   assert.equal(shared.language, "ru");
   assert.equal(isTemplateCopySharedId(shared.adminSharedSourceId), true);
+  assert.equal(shared.adminSharedSourceId, "template-copy-ru-shared-new");
+});
+
+test("shared template draft identity is derived once from its local layout id", () => {
+  const id = "layout-admin-shared-1784578463195-13a4497aa827";
+  const shared = createEmptyPublicTemplateDraftRecord({
+    id,
+    name: "Shared RU",
+    kind: "shared",
+    language: "ru"
+  });
+
+  assert.equal(shared.adminSharedSourceId, "template-copy-ru-1784578463195-13a4497aa827");
+  assert.equal(templateCopySharedSourceId({ language: "ru", seed: id }), shared.adminSharedSourceId);
+});
+
+test("shared template ids stay below the API public-list hashing boundary", () => {
+  const sharedId = templateCopySharedSourceId({
+    language: "ru",
+    seed: "layout-admin-shared-1784579823731-7c8e75ab9f46f8"
+  });
+
+  assert.equal(sharedId, "template-copy-ru-1784579823731-7c8e75ab9f46");
+  assert.equal(`public-shared-layout-${sharedId}`.length <= 64, true);
+});
+
+test("template save adopts a canonical list id returned by the API", () => {
+  assert.deepEqual(canonicalPublishedTargetIdentity({
+    type: "shared",
+    sharedId: "template-copy-ru-1784579823731-7c8e75ab9f46f8"
+  }, {
+    record: { listId: "public-shared-layout-template-copy-ru-1784579823731-f4c5e2b9d989" }
+  }), {
+    type: "shared",
+    sharedId: "template-copy-ru-1784579823731-f4c5e2b9d989",
+    listId: "public-shared-layout-template-copy-ru-1784579823731-f4c5e2b9d989"
+  });
+  assert.deepEqual(canonicalPublishedTargetIdentity({ type: "demo" }, {
+    record: { listId: "public-demo-state-copy-ru-2" }
+  }), {
+    type: "demo",
+    demoListId: "public-demo-state-copy-ru-2",
+    listId: "public-demo-state-copy-ru-2"
+  });
+});
+
+test("template save continues photo checks with the canonical API list id", async () => {
+  const originalSharedId = "template-copy-ru-1784579823731-7c8e75ab9f46f8";
+  const canonicalSharedId = "template-copy-ru-1784579823731-f4c5e2b9d989";
+  const canonicalListId = `public-shared-layout-${canonicalSharedId}`;
+  const checkedListIds = [];
+  const runtime = {
+    state: {
+      activeLayoutId: "layout-template",
+      layouts: {
+        "layout-template": {
+          id: "layout-template",
+          name: "New template",
+          language: "ru",
+          adminTemplateCopy: true,
+          adminSharedSourceId: originalSharedId
+        }
+      }
+    },
+    currentUser: { email: "admin@example.test" },
+    syncMeta: {},
+    sharedLayoutsByLanguage: {},
+    uiLanguage: "ru"
+  };
+  const payload = { layouts: {}, containers: {}, items: {} };
+
+  await savePublishedLayoutRecordFlow({
+    runtime,
+    dependencies: {
+      LIST_SAVE_API_TIMEOUT_MS: 1000,
+      apiFetch: async (_path, options = {}) => ({
+        record: {
+          listId: canonicalListId,
+          payload: JSON.parse(options.body || "{}").payload
+        }
+      }),
+      applyPublishedPayloadPhotosToLayoutState: () => false,
+      canOpenAdminPublishedEdit: () => true,
+      checkAdminApiCompatibility: async () => {},
+      cleanPublishedEntityId,
+      clone: (value) => JSON.parse(JSON.stringify(value)),
+      exportLayoutAsDemoState: () => JSON.parse(JSON.stringify(payload)),
+      findSharedLayout: () => null,
+      getLayoutContainerIdSetForState: () => new Set(),
+      getLayoutItemIdSetForState: () => new Set(),
+      getUnsyncedPhotoEntries: ({ listId }) => {
+        checkedListIds.push(listId);
+        return [];
+      },
+      getUploadablePhotoEntries: () => {
+        assert.fail("canonical server copy must not enter the legacy upload path");
+      },
+      nowIso: () => "2026-07-20T00:00:00.000Z",
+      persistStateSnapshot: () => {},
+      publicListIdForPublishedTarget: (target) => `public-shared-layout-${target.sharedId}`,
+      publishedLayoutTarget: () => ({ type: "shared", sharedId: originalSharedId, language: "ru" }),
+      publishedPayloadWithTemplateMetadata: (value) => value,
+      refreshPublishedLayoutView: () => {},
+      refreshPublicSharedLayoutCatalog: async () => {},
+      saveSyncMeta: () => {},
+      shouldCopyPublicTemplatePhotoReferencesOnServer: () => true,
+      shouldCreatePublishedTemplateBeforePhotos: () => false,
+      showToast: () => {},
+      updateSyncUi: () => {},
+      uploadPublishedLayoutPhotos: async () => {
+        assert.fail("canonical server copy must not upload photos again");
+      },
+      upsertRuntimeSharedLayout: () => null,
+      withLayoutArrangementAppliedAsync: async (_layoutId, callback) => callback(),
+      withoutPhotoReferences: (value) => value
+    }
+  }, "layout-template");
+
+  assert.deepEqual(checkedListIds, [canonicalListId]);
+  assert.equal(runtime.state.layouts["layout-template"].adminSharedSourceId, canonicalSharedId);
+});
+
+test("bag copy naming checks only the target layout in RU and EN", () => {
+  const containers = {
+    source: { id: "source", name: "Back-Roller", parentId: "" },
+    existing: { id: "existing", name: "Back-Roller", parentId: "" }
+  };
+  const emptyTarget = { rootContainerIds: [], arrangement: { rootContainerIds: [] } };
+  const occupiedTarget = { rootContainerIds: ["existing"], arrangement: { rootContainerIds: ["existing"] } };
+
+  assert.equal(makeContainerCopyNameForLayout("Back-Roller", emptyTarget, containers, "копия"), "Back-Roller");
+  assert.equal(makeContainerCopyNameForLayout("Back-Roller", occupiedTarget, containers, "копия"), "Back-Roller копия");
+  assert.equal(makeContainerCopyNameForLayout("Back-Roller", occupiedTarget, containers, "copy"), "Back-Roller copy");
 });
 
 test("demo and shared templates share the persistent draft contract", () => {
@@ -4082,6 +4379,43 @@ test("published template-copy row adopts a same-name local draft with an old sou
   });
   assert.equal(state.layouts["layout-local-draft"].adminSharedSourceId, "template-copy-ru-123");
   assert.equal(findAdoptableTemplateCopyDraft(state.layouts, published), null);
+});
+
+test("catalog reconciliation refreshes published photos in an adopted admin draft", () => {
+  const draft = {
+    id: "layout-local-draft",
+    name: "New template",
+    adminTemplateCopy: true,
+    adminSharedSourceId: "template-copy-ru-original-long-id",
+    language: "ru",
+    rootContainerIds: ["bag-local"]
+  };
+  const state = { layouts: { [draft.id]: draft } };
+  const published = {
+    id: "template-copy-ru-canonical-id",
+    name: "New template",
+    language: "ru",
+    runtimeSharedTemplate: true
+  };
+  let synced = 0;
+
+  const changed = reconcilePublishedTemplateCopyDraft({
+    state,
+    sharedLayout: published,
+    fallbackLanguage: "ru",
+    canRepair: true,
+    repairDraft: () => null,
+    syncDraftWithPublished: (source, target) => {
+      assert.equal(source, published);
+      assert.equal(target, draft);
+      synced += 1;
+      return true;
+    }
+  });
+
+  assert.equal(changed, true);
+  assert.equal(synced, 1);
+  assert.equal(draft.adminSharedSourceId, published.id);
 });
 
 test("private copies from public templates are marked in entity notes", () => {

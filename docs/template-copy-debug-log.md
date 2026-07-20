@@ -269,6 +269,22 @@
 - Локальные `adminTemplateCopy` с уже tombstoned shared id больше не попадают в админский список шаблонов.
 - Серверный контракт удаления не менялся: `DELETE /bike-packing/admin/shared-layouts/:id` по-прежнему отвечает за удаление public list, legacy row и entry из demo indexes.
 
+## v1302: private photo prime и detached catalog после удаления сумки
+
+- Новая priming-запись demo/shared-шаблона перед fallback-загрузкой фото сохраняется с `published: false`. API создаёт или обновляет list с `visibility = private`, поэтому гость не видит промежуточный payload без фотографий. Финальный save без этого флага публикует шаблон только после успешной загрузки и проверки всех фото.
+- API compatibility поднята до `2026-07-20.public-template-photo-prime-v1`, добавлена capability `publicTemplatePrivatePhotoPrime`; frontend требует обе точки контракта.
+- После server-side photo reference copy локальные URL теперь обновляются не только у элементов arrangement, но и у всех записей каталога с `publicCatalogLayoutId` текущего шаблона. Поэтому удаление сумки не оставляет отвязанные вещи со старыми source URL и не запускает ложный fallback `/photos/copy` с `404`.
+- Регрессионные тесты фиксируют оба сценария: удаление сумки при сохранённых catalog items и трёхфазную публикацию `server copy -> private prime/upload -> final public save`.
+
+## v1303: canonical identity и canonical photo URL
+
+- В воспроизведённом шаблоне public list `...13a4497aa827` содержал photo URL приватного priming-list `...0924020bff3248`. Для нового shared draft локальный layout id и `adminSharedSourceId` генерировались двумя независимыми случайными значениями.
+- Новый shared draft теперь выводит `adminSharedSourceId` детерминированно из локального layout id. Данные шаблона, endpoint загрузки фото и итоговый public list используют одну identity.
+- API после проверки photo rows канонизирует каждую ссылку payload на реально сохраняемый list: переписывает `listId`, `url` и `thumbUrl`. Payload с приватным или чужим URL больше нельзя сохранить как публичный, даже при гонке на фронте.
+- Публичное чтение payload применяет ту же канонизацию в ответе, поэтому уже повреждённый шаблон `...13a4497aa827` начинает отдавать гостю собственные публичные photo URL после обновления API без ручной пересборки.
+- При копировании верхнеуровневой сумки имя сравнивается только с корневыми сумками целевой укладки. В пустом шаблоне исходное имя сохраняется; `копия`/`copy` добавляется только при реальном конфликте в RU/EN.
+- API compatibility: `2026-07-20.public-template-photo-canonical-v2`, capability `publicTemplateCanonicalPhotoReferences`.
+
 ## v702: пересборка границ shared-каталога
 
 - Runtime-каталог shared-шаблонов теперь пополняется не только из `sharedLayoutsIndex` в demo payload, но и из реальных `public-shared-layout-*` rows, которые отдает `/bike-packing/public-lists`. Для каждой такой строки фронт подтягивает полный `shared-layout:<id>` payload и только после этого добавляет шаблон в селект.
@@ -404,3 +420,10 @@
 - Public rows without `language` are ignored by the template catalog instead of being guessed as RU/EN.
 - Added migration: `bikepacking-api/docs/bike-packing-public-template-language-migration.sql`.
 - Compatibility API is `2026-05-26.public-template-language-column-v1`, capability `publicTemplateLanguageColumn`.
+
+## v1304: canonical public-list identity is adopted before photo reconciliation
+
+- Root cause of the remaining admin-only 404 loop: the API bounds public list ids to 64 characters and hashes an overlong `public-shared-layout-${sharedId}`, while the frontend kept checking photos against the original unbounded id.
+- Newly generated `template-copy-*` shared ids are now bounded so the complete public list id is at most 64 characters.
+- Every shared/demo publish response is treated as authoritative for `record.listId`; the local draft and all subsequent photo checks continue with that canonical identity.
+- Catalog reconciliation also refreshes published photo references in an adopted admin draft, repairing templates created before this change.

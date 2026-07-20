@@ -350,7 +350,7 @@ export function createTemplateCopyRecord({
     language,
     publicTemplate: false
   });
-  record.adminSharedSourceId = sharedSourceId || templateCopySharedSourceId({ language });
+  record.adminSharedSourceId = sharedSourceId || templateCopySharedSourceId({ language, seed: id });
   record.adminTemplateCopy = true;
   if (language || sourceLayout?.language) record.language = language || sourceLayout.language;
   return record;
@@ -492,12 +492,37 @@ export function applyLayoutEditFields(layout, {
   return changed;
 }
 
-export function templateCopySharedSourceId({ language = "", takenIds = [] } = {}) {
+function templateCopySharedSourceSeed(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^layout-admin-(?:shared|demo)-/, "")
+    .replace(/^layout-/, "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+const TEMPLATE_COPY_SHARED_ID_MAX_LENGTH = 64 - "public-shared-layout-".length;
+
+function boundedTemplateCopySharedId(value, suffix = "") {
+  const addition = String(suffix || "");
+  const available = Math.max(1, TEMPLATE_COPY_SHARED_ID_MAX_LENGTH - addition.length);
+  return `${String(value || "").slice(0, available).replace(/-+$/g, "")}${addition}`;
+}
+
+export function templateCopySharedSourceId({ language = "", takenIds = [], seed = "" } = {}) {
   const normalizedLanguage = String(language || "template").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "template";
   const taken = new Set(takenIds.map((id) => String(id || "")));
+  const seededSuffix = templateCopySharedSourceSeed(seed);
+  if (seededSuffix) {
+    const baseId = boundedTemplateCopySharedId(`template-copy-${normalizedLanguage}-${seededSuffix}`);
+    if (!taken.has(baseId)) return baseId;
+    let index = 2;
+    while (taken.has(boundedTemplateCopySharedId(baseId, `-${index}`))) index += 1;
+    return boundedTemplateCopySharedId(baseId, `-${index}`);
+  }
   let id = "";
   do {
-    id = `template-copy-${normalizedLanguage}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    id = boundedTemplateCopySharedId(`template-copy-${normalizedLanguage}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   } while (taken.has(id));
   return id;
 }

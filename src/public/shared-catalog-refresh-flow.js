@@ -39,6 +39,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     sharedLayoutItemKey,
     sharedLayoutStatePayload,
     sharedPayloadActiveLayout,
+    syncPublishedTemplateCopyDraft,
     templateCopySourceScore,
     upsertRuntimeSharedLayout
   } = dependencies;
@@ -164,6 +165,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
           createLayoutArrangementFromCurrentState,
           normalizeLayoutArrangement,
           ensureLayoutDictionaries,
+          syncDraftWithPublished: syncPublishedTemplateCopyDraft,
           currentMeta: currentEditMeta(),
           nowIso
         })) {

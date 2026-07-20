@@ -113,6 +113,7 @@ export function reconcilePublishedTemplateCopyDraft({
   fallbackLanguage = "ru",
   canRepair = false,
   repairDraft = repairEmptyTemplateCopyDraftFromPublishedLayout,
+  syncDraftWithPublished = () => false,
   ...repairDeps
 } = {}) {
   if (!canRepair || !state || !sharedLayout || !isTemplateCopySharedId(sharedLayout.id)) return false;
@@ -128,5 +129,8 @@ export function reconcilePublishedTemplateCopyDraft({
     canRepair,
     ...repairDeps
   }) : null;
-  return Boolean(adopted || repaired);
+  const synced = draft && !repaired
+    ? syncDraftWithPublished(sharedLayout, draft)
+    : false;
+  return Boolean(adopted || repaired || synced);
 }

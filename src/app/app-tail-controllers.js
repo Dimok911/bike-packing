@@ -213,7 +213,7 @@ export function createAppTailControllers(ctx) {
     loadState, loadStateForScope, loadStoredActiveLayoutChoice, loadStoredActivePackingListId, loadStoredActivePrivateLayoutChoice,
     loadStoredSyncMeta, loadStoredUiSettings, loadSyncDevice, loadSyncMeta, loadUiLanguage,
     loadUiSettings, localAdminTemplateCopyLayouts, localDemoCopyInFlight, localDemoTemplateEntriesFromLayouts, localSharedLayoutCatalogEntriesFromLayouts,
-    localStorageScopeKey, locations, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage,
+    localStorageScopeKey, locations, makeContainerCopyNameForLayout, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage,
     markCopiedItemForPublicLayout, markEdited, markEntitySyncTypeUnavailable, markLayoutPhotosForCurrentListCopy, markLayoutPhotosForCurrentListCopyForSync,
     markLocalPublicCopyOrigin, markPhotoUploadStarted, markPrivateCopyOriginFromSource, markPublicTemplateOptionsState, markRecordPhotosForCurrentListCopy, matchesCollectionFilterValue,
     matchesItemFieldsFilterValue, matchesRootContainerFieldsFilterValue, materializeDemoLayoutForAdminCopy, materializeSharedLayoutForAdmin, materializeSharedLayoutForAdminState,
@@ -2189,7 +2189,12 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
     } = await duplicateContainerSnapshotRecords(sourceSnapshot, {
       changedAt,
       cloneEntity: cloneIsolatedPublicEntity,
-      copyContainerName: makeContainerCopyName,
+      copyContainerName: (name) => makeContainerCopyNameForLayout(
+        name,
+        activeTargetLayout,
+        state.containers,
+        uiLanguage === "en" ? "copy" : "копия"
+      ),
       copyPhotos: (record, options) => copyRecordPhotosForLocalDuplicate(record, { ...options, ...photoDuplicateOptions }),
       currentEditMeta,
       mapPublicOrigin,

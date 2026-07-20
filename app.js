@@ -590,6 +590,7 @@ import {
 } from "./src/state/item-ops.js";
 import {
   makeContainerCopyName as makeContainerCopyNameForState,
+  makeContainerCopyNameForLayout,
   makeItemCopyName as makeItemCopyNameForState,
   repairMojibakeLayoutNames,
   uniqueName
@@ -1023,6 +1024,8 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityChangesFeedRevisionBump",
   "publicTemplatePhotoReferenceCopy",
   "sharedTemplatePhotoReferenceCopy",
+  "publicTemplatePrivatePhotoPrime",
+  "publicTemplateCanonicalPhotoReferences",
   "sharedTemplateDeleteLegacyCleanup",
   "sharedTemplatePhotoFileValidation",
   "sharedTemplateMetadataPatch",
@@ -1068,7 +1071,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-20.layout-copy-history-v2";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-20.public-template-photo-canonical-v2";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1557,7 +1560,7 @@ const appTailControllerDeps = {
   loadStateForScope, loadStoredActiveLayoutChoice, loadStoredActivePackingListId, loadStoredActivePrivateLayoutChoice, loadStoredSyncMeta,
   loadStoredUiSettings, loadSyncDevice, loadSyncMeta, loadUiLanguage, loadUiSettings,
   localAdminTemplateCopyLayouts, localDemoCopyInFlight, localDemoTemplateEntriesFromLayouts, localSharedLayoutCatalogEntriesFromLayouts, localStorageScopeKey,
-  locations, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage, markCopiedItemForPublicLayout,
+  locations, makeContainerCopyNameForLayout, makeContainerCopyNameForState, makeItemCopyNameForState, managedSharedDraftLanguage, markCopiedItemForPublicLayout,
   markEdited, markEntitySyncTypeUnavailable, markLayoutPhotosForCurrentListCopy, markLayoutPhotosForCurrentListCopyForSync, markLocalPublicCopyOrigin,
   markPhotoUploadStarted,
   markPrivateCopyOriginFromSource, markPublicTemplateOptionsState, markRecordPhotosForCurrentListCopy, matchesCollectionFilterValue, matchesItemFieldsFilterValue,
@@ -6887,6 +6890,7 @@ async function refreshPublicSharedLayoutCatalog(options = {}) {
       sharedLayoutItemKey,
       sharedLayoutStatePayload,
       sharedPayloadActiveLayout,
+      syncPublishedTemplateCopyDraft: (layout, draft) => mergePublishedSharedStateIntoAdminLayout(layout, draft),
       templateCopySourceScore,
       upsertRuntimeSharedLayout
     }

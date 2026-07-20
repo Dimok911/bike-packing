@@ -1,5 +1,20 @@
 import { markManagedTemplatePublished } from "./template-publication.js";
 
+const PUBLIC_SHARED_LAYOUT_LIST_PREFIX = "public-shared-layout-";
+
+export function canonicalPublishedTargetIdentity(target, data) {
+  const listId = String(data?.record?.listId || data?.record?.id || data?.listId || data?.id || "").trim();
+  if (!target || !listId) return null;
+  if (target.type === "shared" && listId.startsWith(PUBLIC_SHARED_LAYOUT_LIST_PREFIX)) {
+    const sharedId = listId.slice(PUBLIC_SHARED_LAYOUT_LIST_PREFIX.length);
+    return sharedId ? { type: "shared", sharedId, listId } : null;
+  }
+  if (target.type === "demo" && (listId === "public-demo-state" || listId.startsWith("public-demo-state-"))) {
+    return { type: "demo", demoListId: listId, listId };
+  }
+  return null;
+}
+
 export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, layoutId = runtime.state.activeLayoutId, { notify = false } = {}) {
   const {
     apiFetch,
@@ -56,7 +71,7 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
   const target = publishedLayoutTarget(layout, { defaultToDemo: true });
   if (!target) return;
   updateSyncUi(target.type === "demo" ? "Сохраняю демо-укладку..." : "Сохраняю шаблон...");
-  const publicListId = publicListIdForPublishedTarget(target);
+  let publicListId = publicListIdForPublishedTarget(target);
   const publishTitle = target.type === "demo"
     ? normalizeDemoLayoutName(layout.name || "", target.language || runtime.uiLanguage)
     : layout.name || "";
@@ -65,7 +80,7 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
       ? demoAdminStatePathForPublicListId(target.demoListId || "", target.language || runtime.uiLanguage)
       : `/bike-packing/admin/shared-layouts/${encodeURIComponent(target.sharedId)}/state`;
     try {
-      return await apiFetch(path, {
+      const result = await apiFetch(path, {
         method: "POST",
         timeoutMs: LIST_SAVE_API_TIMEOUT_MS,
         body: JSON.stringify({
@@ -78,6 +93,17 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
           payload
         })
       });
+      const canonicalIdentity = canonicalPublishedTargetIdentity(target, result);
+      if (canonicalIdentity?.type === "shared") {
+        target.sharedId = canonicalIdentity.sharedId;
+        layout.adminSharedSourceId = canonicalIdentity.sharedId;
+        publicListId = canonicalIdentity.listId;
+      } else if (canonicalIdentity?.type === "demo") {
+        target.demoListId = canonicalIdentity.demoListId;
+        layout.adminDemoListId = canonicalIdentity.demoListId;
+        publicListId = canonicalIdentity.listId;
+      }
+      return result;
     } catch (error) {
       const targetLabel = target.type === "demo"
         ? `demo:${target.language || runtime.uiLanguage}`
@@ -126,7 +152,7 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
       const shouldPrimeTemplate = shouldCreatePublishedTemplateBeforePhotos(layout, existingPublishedLayout);
       if (shouldPrimeTemplate) {
         updateSyncUi("Создаю шаблон перед копированием фото...");
-        await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)));
+        await publishPayload(withoutPhotoReferences(exportLayoutAsDemoState(layoutId)), { published: false });
       }
       const uploadablePhotos = getUploadablePhotoEntries({
         layoutId,
