@@ -129,6 +129,13 @@ import {
 } from "./src/public/admin-demo-layout.js";
 import { replaceActivePublishedHistoryDraft } from "./src/public/history-restore-view.js";
 import {
+  captureHistoryNavigationContext,
+  preferredHistoryLayout,
+  retargetMissingHistoryLayout,
+  restoreHistoryActiveLayout,
+  restoreHistoryNavigationContext
+} from "./src/ui/history-navigation.js";
+import {
   canImportGuestLayoutsForAuthenticatedUser,
   guestLayoutHasUserContentEdits,
   guestLocalLayoutCandidateFromState,
@@ -1197,6 +1204,7 @@ let historyLoadMoreInFlight = false;
 const historyDetailCache = new Map();
 let activeHistorySource = "private";
 let selectedHistoryDetailRecordKey = "";
+let historyNavigationContext = null;
 let adminReportsDialogController = null;
 let filterViewCollapseSignature = "";
 let filterViewCollapsedContainers = {};
@@ -5029,7 +5037,11 @@ async function offerLoadServerForTruncatedLocalState({ notify = false, preferred
   return true;
 }
 
-function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, { allowDestructive = false, preferredLayout = null } = {}) {
+function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, {
+  allowDestructive = false,
+  preferredLayout = null,
+  preservePublicDraftId = ""
+} = {}) {
   repairRemoteStateFromLocalReferences(remoteState);
   const preferredLayoutId = resolvePreferredLayoutId(remoteState, preferredLayout?.id, preferredLayout?.name, {
     allowEmptyPreferred: Boolean(preferredLayout?.allowEmpty)
@@ -5042,7 +5054,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   }
   const catalogRepairBase = layoutEntityRepairBaseState(remoteState);
   replaceState(remoteState);
-  removePublicLayoutDrafts();
+  removePublicLayoutDrafts({ exceptLayoutId: preservePublicDraftId });
   setActivePrivateScope();
   rememberPrivateServerLayoutChoice({ preferStored: !preferredLayoutId });
   saveBaseState(catalogRepairBase || serializeState({ forSync: true }));
@@ -9135,6 +9147,12 @@ async function openHistoryDialog() {
     return;
   }
   if (!canOpenAdminPublishedEdit()) activeHistorySource = "private";
+  historyNavigationContext = captureHistoryNavigationContext({
+    scope: snapshotModeState(),
+    state,
+    view: getCurrentView(),
+    viewport: captureViewportSnapshot()
+  });
   historyComparisonState = null;
   historyPageState = null;
   historyDetailCache.clear();
@@ -9654,7 +9672,11 @@ async function restoreHistoryRecord(recordKey) {
       const detail = await loadHistoryRecordDetail(record, index);
       const restoredState = historyRecordState(detail.record);
       if (!restoredState) throw new Error(localText("Version data is empty.", "Данные версии пусты."));
-      await publishPublicHistoryRecord(detail.record, restoredState, { index, records });
+      await publishPublicHistoryRecord(detail.record, restoredState, {
+        index,
+        records,
+        navigationContext: historyNavigationContext
+      });
     } catch (error) {
       showToast(localText(
         `Could not load the selected version: ${error.message}`,
@@ -9681,7 +9703,24 @@ async function restoreHistoryRecord(recordKey) {
   refs.historyDetailDialog?.close();
   updateSyncUi(localText("Undoing the action on the server...", "Отменяю действие на сервере..."));
   try {
-    await restorePrivateHistoryRecordOnServer(record, { layoutScoped: !impact.isDeepRollback });
+    const navigationContext = historyNavigationContext || captureHistoryNavigationContext({
+      state,
+      view: getCurrentView(),
+      viewport: captureViewportSnapshot()
+    });
+    await restorePrivateHistoryRecordOnServer(record, {
+      layoutScoped: !impact.isDeepRollback,
+      preferredLayout: preferredHistoryLayout(navigationContext),
+      preservePublicDraftId: navigationContext?.scope?.adminPublishedEditLayoutId || ""
+    });
+    restoreHistoryNavigationContext(navigationContext, {
+      currentView: getCurrentView,
+      restoreLayout: (layout) => restoreHistoryActiveLayout(state, layout, { applyLayoutArrangement }),
+      restoreScope: restoreModeState,
+      restoreViewport: restoreViewportSnapshot,
+      switchView
+    });
+    renderPreservingPackingScroll();
     showToast(localText("Action undone.", "Действие отменено."), "success");
   } catch (error) {
     updateSyncUi(localText(`Could not undo the action: ${error.message}`, `Не удалось отменить действие: ${error.message}`));
@@ -9689,7 +9728,11 @@ async function restoreHistoryRecord(recordKey) {
   }
 }
 
-async function restorePrivateHistoryRecordOnServer(record, { layoutScoped = true } = {}) {
+async function restorePrivateHistoryRecordOnServer(record, {
+  layoutScoped = true,
+  preferredLayout = null,
+  preservePublicDraftId = ""
+} = {}) {
   const historyId = Number(record?.id || 0);
   if (!Number.isFinite(historyId) || historyId <= 0) {
     throw new Error("Не удалось определить ID версии из истории.");
@@ -9725,7 +9768,11 @@ async function restorePrivateHistoryRecordOnServer(record, { layoutScoped = true
   if (!restoredState) throw new Error("Сервер вернул пустую или повреждённую версию.");
   const integrityMeta = stateIntegrityMetaFromResponse(recordData, data);
   const updatedAt = remoteUpdatedAt(recordData) || data?.serverUpdatedAt || integrityMeta.updatedAt || nowIso();
-  if (!applyRemoteState(restoredState, updatedAt, integrityMeta, recordData.payload, { allowDestructive: true })) {
+  if (!applyRemoteState(restoredState, updatedAt, integrityMeta, recordData.payload, {
+    allowDestructive: true,
+    preferredLayout,
+    preservePublicDraftId
+  })) {
     throw new Error("Не удалось применить версию с сервера.");
   }
 }
@@ -9751,7 +9798,11 @@ function selectedHistoryPublishedTarget() {
   } : null;
 }
 
-async function publishPublicHistoryRecord(record, payload, { index = 0, records = historyRecords } = {}) {
+async function publishPublicHistoryRecord(record, payload, {
+  index = 0,
+  records = historyRecords,
+  navigationContext = null
+} = {}) {
   if (!canOpenAdminPublishedEdit()) {
     showToast(localText(
       "Only an admin can undo demo/template actions.",
@@ -9835,8 +9886,8 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
       updatedAt: publishedUpdatedAt
     });
   }
-  replaceActivePublishedHistoryDraft({
-    activateLayout: activateAdminPublishedLayout,
+  const replacement = replaceActivePublishedHistoryDraft({
+    activateLayout: (layoutId, options) => activateAdminPublishedLayout(layoutId, options),
     createWhenMissing: true,
     demoPublicListIdForLanguage,
     importDemoState: importDemoStateAsEditableLayout,
@@ -9848,6 +9899,18 @@ async function publishPublicHistoryRecord(record, payload, { index = 0, records 
     target
   });
   refreshPublishedLayoutView(target);
+  const restoredNavigationContext = retargetMissingHistoryLayout(navigationContext, {
+    layouts: state.layouts,
+    replacement
+  });
+  restoreHistoryNavigationContext(restoredNavigationContext, {
+    currentView: getCurrentView,
+    restoreLayout: (layout) => restoreHistoryActiveLayout(state, layout, { applyLayoutArrangement }),
+    restoreScope: restoreModeState,
+    restoreViewport: restoreViewportSnapshot,
+    switchView
+  });
+  renderPreservingPackingScroll();
   updateSyncUi();
   const droppedPhotoCount = Number(data?.droppedMissingPhotoCount || 0);
   showToast(

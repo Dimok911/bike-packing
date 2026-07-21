@@ -28,6 +28,7 @@ export function replaceActivePublishedHistoryDraft({
   target
 } = {}) {
   const activeLayout = state?.layouts?.[state?.activeLayoutId] || null;
+  const activeLayoutIdBeforeRestore = String(state?.activeLayoutId || "");
   const matchingLayout = publishedHistoryTargetMatchesLayout(activeLayout, target, {
     demoPublicListIdForLanguage,
     normalizeLanguage
@@ -49,6 +50,12 @@ export function replaceActivePublishedHistoryDraft({
     })
     : materializeSharedLayout(target.sharedId);
   if (!replacement?.id) return null;
-  activateLayout(replacement.id, { remember: false });
+  const replacedActiveLayout = Boolean(
+    matchingLayout?.id && matchingLayout.id === activeLayoutIdBeforeRestore
+  );
+  const activeLayoutStillExists = Boolean(state?.layouts?.[activeLayoutIdBeforeRestore]);
+  if (replacedActiveLayout || !activeLayoutStillExists) {
+    activateLayout(replacement.id, { remember: false });
+  }
   return replacement;
 }

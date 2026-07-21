@@ -17,6 +17,13 @@ import {
 } from "../../src/sync/history.js";
 import { replaceActivePublishedHistoryDraft } from "../../src/public/history-restore-view.js";
 import {
+  captureHistoryNavigationContext,
+  preferredHistoryLayout,
+  retargetMissingHistoryLayout,
+  restoreHistoryActiveLayout,
+  restoreHistoryNavigationContext
+} from "../../src/ui/history-navigation.js";
+import {
   adminDemoHistoryEntries,
   adminSharedHistoryEntries,
   isAdminTemplateHistoryListId,
@@ -871,7 +878,7 @@ test("CRITICAL history: restoring a published template replaces the active admin
   assert.deepEqual(calls, ["remove:draft-old", "materialize:shared-one", "activate:draft-new"]);
 });
 
-test("CRITICAL history: a missing demo template can be recreated from its retained history", () => {
+test("CRITICAL history: a missing demo template can be recreated without stealing the current layout", () => {
   const state = {
     activeLayoutId: "layout-private",
     layouts: {
@@ -907,6 +914,117 @@ test("CRITICAL history: a missing demo template can be recreated from its retain
 
   assert.equal(replacement?.id, "layout-restored-demo");
   assert.equal(state.layouts["layout-private"].id, "layout-private");
-  assert.equal(state.activeLayoutId, "layout-restored-demo");
-  assert.deepEqual(calls, ["import:public-demo-state-copy-ru-restored", "activate:layout-restored-demo"]);
+  assert.equal(state.activeLayoutId, "layout-private");
+  assert.deepEqual(calls, ["import:public-demo-state-copy-ru-restored"]);
+});
+
+test("CRITICAL history: restoring another template preserves the unrelated active layout", () => {
+  const state = {
+    activeLayoutId: "layout-private",
+    layouts: {
+      "layout-private": { id: "layout-private", name: "Current" },
+      "draft-old": { id: "draft-old", adminSharedSourceId: "shared-one" }
+    }
+  };
+  const activated = [];
+  replaceActivePublishedHistoryDraft({
+    activateLayout: (layoutId) => activated.push(layoutId),
+    materializeSharedLayout: () => {
+      state.layouts["draft-new"] = { id: "draft-new", adminSharedSourceId: "shared-one" };
+      return state.layouts["draft-new"];
+    },
+    removeLayoutTree: (layoutId) => {
+      delete state.layouts[layoutId];
+      return true;
+    },
+    state,
+    target: { type: "shared", sharedId: "shared-one" }
+  });
+
+  assert.equal(state.activeLayoutId, "layout-private");
+  assert.deepEqual(activated, []);
+  assert.ok(state.layouts["draft-new"]);
+});
+
+test("CRITICAL history: undo restores the previous tab, viewport, and preferred layout", () => {
+  const context = captureHistoryNavigationContext({
+    scope: {
+      viewScope: "admin-public-edit",
+      adminPublishedEditLayoutId: "layout-current"
+    },
+    state: {
+      activeLayoutId: "layout-current",
+      layouts: { "layout-current": { id: "layout-current", name: "Current layout" } }
+    },
+    view: "items",
+    viewport: { boardLeft: 240, windowX: 0, windowY: 780 }
+  });
+  assert.deepEqual(preferredHistoryLayout(context), {
+    id: "layout-current",
+    name: "Current layout",
+    allowEmpty: true
+  });
+
+  let view = "packing";
+  let viewport = null;
+  let restoredLayout = null;
+  let restoredScope = null;
+  assert.equal(restoreHistoryNavigationContext(context, {
+    currentView: () => view,
+    switchView: (nextView) => { view = nextView; },
+    restoreLayout: (layout) => { restoredLayout = layout; },
+    restoreScope: (scope) => { restoredScope = scope; },
+    restoreViewport: (nextViewport) => { viewport = nextViewport; }
+  }), true);
+  assert.equal(view, "items");
+  assert.equal(restoredLayout.id, "layout-current");
+  assert.equal(restoredScope.adminPublishedEditLayoutId, "layout-current");
+  assert.deepEqual(viewport, { boardLeft: 240, windowX: 0, windowY: 780 });
+});
+
+test("CRITICAL history: replacing the viewed template retargets navigation to its new draft id", () => {
+  const context = captureHistoryNavigationContext({
+    state: {
+      activeLayoutId: "draft-old",
+      layouts: { "draft-old": { id: "draft-old", name: "Template" } }
+    },
+    scope: {
+      viewScope: "admin-public-edit",
+      adminPublishedEditLayoutId: "draft-old"
+    },
+    view: "bags"
+  });
+  const retargeted = retargetMissingHistoryLayout(context, {
+    layouts: { "draft-new": { id: "draft-new", name: "Template" } },
+    replacement: { id: "draft-new", name: "Template" }
+  });
+
+  assert.equal(retargeted.activeLayout.id, "draft-new");
+  assert.equal(retargeted.scope.adminPublishedEditLayoutId, "draft-new");
+  assert.equal(retargeted.view, "bags");
+});
+
+test("CRITICAL history: active layout restoration applies the retained layout arrangement", () => {
+  const state = {
+    activeLayoutId: "snapshot-layout",
+    layouts: {
+      "snapshot-layout": { id: "snapshot-layout" },
+      "layout-current": { id: "layout-current" }
+    }
+  };
+  const applied = [];
+  assert.equal(restoreHistoryActiveLayout(state, { id: "layout-current" }, {
+    applyLayoutArrangement: (layoutId) => applied.push(layoutId)
+  }), true);
+  assert.equal(state.activeLayoutId, "layout-current");
+  assert.deepEqual(applied, ["layout-current"]);
+});
+
+test("CRITICAL history: private and public undo flows restore captured navigation context", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /historyNavigationContext = captureHistoryNavigationContext\(\{[\s\S]*?scope: snapshotModeState\(\)/);
+  assert.match(appSource, /restorePrivateHistoryRecordOnServer\(record, \{[\s\S]*?preferredLayout: preferredHistoryLayout\(navigationContext\)[\s\S]*?preservePublicDraftId/);
+  assert.match(appSource, /applyRemoteState\(restoredState,[\s\S]*?preferredLayout,[\s\S]*?preservePublicDraftId/);
+  assert.ok((appSource.match(/restoreHistoryNavigationContext\(/g) || []).length >= 2);
 });
