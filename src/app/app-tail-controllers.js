@@ -59,6 +59,7 @@ import {
 } from "../ui/category-search.js";
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
+import { resetContentFilterControls } from "../ui/filter-controls.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -3322,13 +3323,7 @@ function clearContentFiltersForPackingDrag() {
     window.clearTimeout(runtime.searchContextCommitTimer);
     runtime.searchContextCommitTimer = null;
   }
-  refs.searchInput.value = "";
-  refs.locationFilter.value = "";
-  runtime.selectedCategoryFilters = [];
-  runtime.filterMatchIndex = 0;
-  runtime.filterMatchSignature = "";
-  runtime.pendingFilterJump = false;
-  runtime.suppressNextFilterJump = false;
+  resetContentFilterControls({ refs, runtime });
   showToast(localText(
     "Search filters were cleared so the full layout is available for dragging.",
     "Фильтр сброшен, чтобы была доступна вся укладка для перетаскивания."
@@ -4058,6 +4053,7 @@ function renderBags() {
   `;
   bindLayoutEditor();
   bindRootContainersEditor();
+  bindEmptyContentFilterReset(refs.bagsView);
   bindSettingsPointerDrag();
 }
 
@@ -4080,7 +4076,23 @@ function renderSharedBagsView() {
     saveUiSettings();
     render();
   });
+  bindEmptyContentFilterReset(refs.bagsView);
   bindSharedVirtualEvents(refs.bagsView);
+}
+
+function bindEmptyContentFilterReset(root) {
+  root?.querySelector?.("[data-reset-content-filters]")?.addEventListener("click", () => {
+    if (runtime.searchRenderTimer) {
+      window.clearTimeout(runtime.searchRenderTimer);
+      runtime.searchRenderTimer = null;
+    }
+    if (runtime.searchContextCommitTimer) {
+      window.clearTimeout(runtime.searchContextCommitTimer);
+      runtime.searchContextCommitTimer = null;
+    }
+    resetContentFilterControls({ refs, runtime });
+    render();
+  });
 }
 
 function renderSettings() {
@@ -4258,6 +4270,7 @@ function renderRootContainersEditor() {
     counts,
     emptyFiltered: hasActiveContentFilter(),
     emptyText: t(hasActiveContentFilter() ? "empty.notFoundByFilter" : "empty.notFound"),
+    resetFiltersText: hasActiveContentFilter() ? t("filters.resetAll") : "",
     renderRootContainerCard,
     rootContainerSortMode: runtime.rootContainerSortMode,
     rootContainerUsageFilter: runtime.rootContainerUsageFilter,

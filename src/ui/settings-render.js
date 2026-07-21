@@ -36,6 +36,7 @@ export function renderRootContainersEditorHtml({
   counts,
   emptyFiltered = false,
   emptyText = "Ничего не найдено",
+  resetFiltersText = "",
   renderRootContainerCard,
   rootContainerSortMode,
   rootContainerUsageFilter,
@@ -64,7 +65,10 @@ export function renderRootContainersEditorHtml({
         </div>
       </div>
       <div class="root-container-list ${showPhotos ? "with-photo-slots" : ""} ${showLabels ? "with-meta-slots" : ""}">
-        ${roots.map(renderRootContainerCard).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}
+        ${roots.map(renderRootContainerCard).join("") || renderEmptyState(emptyText, {
+          filtered: emptyFiltered,
+          resetFiltersText
+        })}
       </div>
     </section>
   `;

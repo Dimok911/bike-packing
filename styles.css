@@ -7542,6 +7542,21 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-weight: 750;
 }
 
+.empty-filtered-with-action {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.empty-reset-filters {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-color: rgba(101, 70, 0, 0.38);
+  background: rgba(255, 255, 255, 0.72);
+  color: #654600;
+  font-weight: 750;
+}
+
 .packing-empty-state {
   box-sizing: border-box;
   width: min(520px, calc(100vw - 36px));

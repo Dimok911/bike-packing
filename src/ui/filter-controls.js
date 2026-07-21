@@ -55,6 +55,23 @@ export function updateViewScopedControlsUi({
   requestAnimationFrame(updateCompactStickyControls);
 }
 
+export function resetContentFilterControls({ refs, runtime } = {}) {
+  if (!refs || !runtime) return false;
+  const hadActiveFilters = Boolean(
+    refs.searchInput?.value?.trim() ||
+    refs.locationFilter?.value ||
+    runtime.selectedCategoryFilters?.length
+  );
+  if (refs.searchInput) refs.searchInput.value = "";
+  if (refs.locationFilter) refs.locationFilter.value = "";
+  runtime.selectedCategoryFilters = [];
+  runtime.filterMatchIndex = 0;
+  runtime.filterMatchSignature = "";
+  runtime.pendingFilterJump = false;
+  runtime.suppressNextFilterJump = false;
+  return hadActiveFilters;
+}
+
 export function renderFilterControls({
   activeAdminDraftOptionLabel = () => "",
   activeDemoTemplateListId = "",

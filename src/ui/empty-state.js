@@ -3,15 +3,24 @@ import { currentDocumentLanguage } from "../utils/language.js";
 
 export function renderEmptyState(text, {
   extraClass = "",
-  filtered = false
+  filtered = false,
+  resetFiltersText = ""
 } = {}) {
   const classes = [
     "empty",
     extraClass,
-    filtered ? "empty-filtered" : ""
+    filtered ? "empty-filtered" : "",
+    filtered && resetFiltersText ? "empty-filtered-with-action" : ""
   ].filter(Boolean).join(" ");
   const fallbackText = currentDocumentLanguage() === "en" ? "Nothing found" : "Ничего не найдено";
-  return `<div class="${classes}">${escapeHtml(text || fallbackText)}</div>`;
+  return `
+    <div class="${classes}">
+      <span>${escapeHtml(text || fallbackText)}</span>
+      ${filtered && resetFiltersText
+        ? `<button class="ghost empty-reset-filters" type="button" data-reset-content-filters>${escapeHtml(resetFiltersText)}</button>`
+        : ""}
+    </div>
+  `;
 }
 
 export function renderPackingEmptyState({

@@ -20,9 +20,11 @@ import {
 } from "../../src/state/container-ops.js";
 import {
   bindPackingEmptyStateActions,
+  renderEmptyState,
   renderPackingAddRootCard,
   renderPackingEmptyState
 } from "../../src/ui/empty-state.js";
+import { resetContentFilterControls } from "../../src/ui/filter-controls.js";
 import { I18N } from "../../src/data/i18n.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
 import { createConflictValueFormatter } from "../../src/ui/conflict-format.js";
@@ -54,6 +56,33 @@ test("CRITICAL empty packing: guidance is actionable and the add button opens th
   });
   clickHandler();
   assert.equal(opened, 1);
+});
+
+test("CRITICAL filtered bag catalog: empty state can reset every content filter in place", () => {
+  const html = renderEmptyState("Nothing found for the current filter", {
+    filtered: true,
+    resetFiltersText: "Reset filters"
+  });
+  assert.match(html, /data-reset-content-filters/);
+  assert.match(html, />Reset filters<\/button>/);
+
+  const refs = {
+    searchInput: { value: "sleep" },
+    locationFilter: { value: "home" }
+  };
+  const runtime = {
+    selectedCategoryFilters: ["Camping"],
+    filterMatchIndex: 3,
+    filterMatchSignature: "old",
+    pendingFilterJump: true,
+    suppressNextFilterJump: true
+  };
+  assert.equal(resetContentFilterControls({ refs, runtime }), true);
+  assert.equal(refs.searchInput.value, "");
+  assert.equal(refs.locationFilter.value, "");
+  assert.deepEqual(runtime.selectedCategoryFilters, []);
+  assert.equal(runtime.filterMatchIndex, 0);
+  assert.equal(runtime.pendingFilterJump, false);
 });
 
 test("CRITICAL filled packing: trailing card opens the bag picker", () => {
