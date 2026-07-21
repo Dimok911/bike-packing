@@ -23,9 +23,11 @@ const ERROR_MESSAGE_PARTS = [
   "не удалось",
   "нет соединения",
   "сервер недоступен",
+  "сервер не отвечает",
   "could not",
   "no connection",
-  "server unavailable"
+  "server unavailable",
+  "server is not responding"
 ];
 
 const SYNCING_MESSAGE_PARTS = [

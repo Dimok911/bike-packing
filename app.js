@@ -774,6 +774,7 @@ import {
   fullBackupRestoreConfirm
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
+import { createConnectionStatusController } from "./src/ui/connection-status.js";
 import {
   bindDictionaryControls,
   renameDictionaryEntry as renameDictionaryEntryValue
@@ -1261,6 +1262,11 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const connectionStatusController = createConnectionStatusController({
+  getElement: () => refs.connectionStatus,
+  getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),
+  onChange: () => updateSyncUi()
+});
 const layoutLoadStatus = createLayoutLoadStatusController({
   getElement: () => refs.layoutLoadStatus
 });
@@ -3085,6 +3091,7 @@ async function init() {
     }
   });
   window.addEventListener("offline", () => {
+    connectionStatusController.reportFailure("offline");
     const rememberedUser = rememberedOfflineUser(currentUser);
     currentUser = null;
     offlineRememberedUser = rememberedUser;
@@ -5554,6 +5561,8 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 }
 
 function updateSyncUi(message = "") {
+  connectionStatusController.refresh();
+  const effectiveMessage = connectionStatusController.currentMessage() || message;
   updateSyncUiControls({
     adminReportsDialogController,
     appUnlocked,
@@ -5574,7 +5583,7 @@ function updateSyncUi(message = "") {
     isOfflineRememberedSession,
     isReadOnlyStateScope,
     isReadonlyTemplateView,
-    message,
+    message: effectiveMessage,
     refs,
     state,
     syncMeta,
@@ -5584,11 +5593,29 @@ function updateSyncUi(message = "") {
 }
 
 async function apiFetch(path, options = {}) {
-  return apiFetchRequest(path, options, { isForcedOffline });
+  try {
+    const response = await apiFetchRequest(path, options, { isForcedOffline });
+    connectionStatusController.reportSuccess();
+    return response;
+  } catch (error) {
+    if (!isForcedOffline() && isNetworkError(error)) {
+      connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
+    }
+    throw error;
+  }
 }
 
 async function apiUploadFormData(path, options = {}) {
-  return apiUploadFormDataRequest(path, options, { isForcedOffline });
+  try {
+    const response = await apiUploadFormDataRequest(path, options, { isForcedOffline });
+    connectionStatusController.reportSuccess();
+    return response;
+  } catch (error) {
+    if (!isForcedOffline() && isNetworkError(error)) {
+      connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
+    }
+    throw error;
+  }
 }
 
 function getUploadablePhotoEntries({ layoutId = null, listId = "", allowRemoteOnlyReferences = true } = {}) {
@@ -6039,6 +6066,7 @@ async function toggleForcedOfflineMode() {
   const next = !isForcedOffline();
   setForcedOffline(next);
   if (next) {
+    connectionStatusController.clear();
     if (syncTimer) {
       window.clearTimeout(syncTimer);
       syncTimer = null;
