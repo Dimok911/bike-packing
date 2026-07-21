@@ -708,6 +708,7 @@ import {
   markPhotoUploadStarted,
   uploadPhotoToPath
 } from "./src/sync/photo-upload-flow.js";
+import { createOfflinePhotoCacheController } from "./src/sync/offline-photo-cache.js";
 import { acquirePhotoUploadSlot } from "./src/sync/photo-upload-lock.js";
 import {
   cacheLayoutRemotePhotosForUploadFallback,
@@ -1266,6 +1267,22 @@ const connectionStatusController = createConnectionStatusController({
   getElement: () => refs.connectionStatus,
   getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),
   onChange: () => updateSyncUi()
+});
+const offlinePhotoCacheController = createOfflinePhotoCacheController({
+  getState: () => state,
+  isEnabled: () => (
+    !isForcedOffline() &&
+    !initialRemoteLoadPending &&
+    (!("onLine" in navigator) || navigator.onLine)
+  ),
+  getProgressMessage: () => t("sync.cachingPhotosOffline"),
+  getFailureMessage: () => t("sync.photoOfflineCacheIncomplete"),
+  onChange: () => updateSyncUi(),
+  cacheOptions: {
+    fetchImpl: window.fetch.bind(window),
+    getCachedPhoto,
+    putCachedPhoto
+  }
 });
 const layoutLoadStatus = createLayoutLoadStatusController({
   getElement: () => refs.layoutLoadStatus
@@ -3078,6 +3095,7 @@ async function init() {
       updateSyncUi();
       return;
     }
+    offlinePhotoCacheController.schedule({ force: true }).catch(() => null);
     if (currentUser) {
       uploadPendingPhotos({ markDirty: true }).catch(() => null);
       syncNow();
@@ -5562,7 +5580,7 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 
 function updateSyncUi(message = "") {
   connectionStatusController.refresh();
-  const effectiveMessage = connectionStatusController.currentMessage() || message;
+  const effectiveMessage = connectionStatusController.currentMessage() || offlinePhotoCacheController.currentMessage() || message;
   updateSyncUiControls({
     adminReportsDialogController,
     appUnlocked,
@@ -10025,6 +10043,7 @@ function render() {
   updateFilterNavigationUi();
   scheduleFixedScrollbarRefresh();
   hydrateItemPhotos(document, { photoObjectUrls }).finally(() => bindPhotoGalleries(document, photoGalleryBindingOptions()));
+  offlinePhotoCacheController.schedule().catch(() => null);
 }
 
 function getCurrentView() {

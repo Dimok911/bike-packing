@@ -425,6 +425,8 @@ export const I18N = {
     "sync.localUnlocked": "Локально · можно работать, войдите для сохранения в аккаунт",
     "sync.dirty": "Вход выполнен · есть несинхронизированные изменения",
     "sync.synced": "Вход выполнен · синхронизировано",
+    "sync.cachingPhotosOffline": "Сохраняем фотографии для работы офлайн…",
+    "sync.photoOfflineCacheIncomplete": "Не удалось сохранить все фотографии для работы офлайн",
     "sync.serverTimeoutLocal": "Сервер не отвечает · работа продолжается локально",
     "sync.noConnectionLocal": "Нет связи с сервером · работа продолжается локально"
   },
@@ -854,6 +856,8 @@ export const I18N = {
     "sync.localUnlocked": "Local · you can work here, sign in to save to your account",
     "sync.dirty": "Signed in · unsynced changes",
     "sync.synced": "Signed in · synced",
+    "sync.cachingPhotosOffline": "Saving photos for offline use…",
+    "sync.photoOfflineCacheIncomplete": "Could not save all photos for offline use",
     "sync.serverTimeoutLocal": "Server is not responding · work continues locally",
     "sync.noConnectionLocal": "No connection to the server · work continues locally"
   }

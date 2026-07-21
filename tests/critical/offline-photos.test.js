@@ -27,6 +27,11 @@ import {
 } from "../../src/sync/photos.js";
 import { apiUploadFormDataRequest, isTimeoutError } from "../../src/sync/api-client.js";
 import {
+  cacheRemotePhotosForOffline,
+  collectOfflinePhotoCacheTasks,
+  createOfflinePhotoCacheController
+} from "../../src/sync/offline-photo-cache.js";
+import {
   markPhotoUploadStarted,
   uploadPhotoToPath,
   verifyRemotePhotoAssets
@@ -61,6 +66,133 @@ function setNavigatorOnline(value) {
     configurable: true
   });
 }
+
+test("CRITICAL offline-photos: remote personal photos are persisted without changing synced state", async () => {
+  const state = {
+    items: {
+      item1: {
+        id: "item1",
+        photos: [{
+          id: "photo-server-1",
+          status: "synced",
+          url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server-1/file",
+          thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server-1/thumb",
+          updatedAt: "2026-07-21T10:00:00.000Z"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const before = JSON.stringify(state);
+  const fetched = [];
+  const stored = [];
+  const result = await cacheRemotePhotosForOffline(state, {
+    fetchImpl: async (url) => {
+      fetched.push(url);
+      return {
+        ok: true,
+        blob: async () => new Blob([url.includes("/thumb") ? "thumb" : "full"], { type: "image/jpeg" })
+      };
+    },
+    getCachedPhoto: async () => null,
+    putCachedPhoto: async (record) => stored.push(record)
+  });
+
+  assert.equal(JSON.stringify(state), before);
+  assert.equal(result.downloaded, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(fetched.length, 2);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].id, "photo-server-1");
+  assert.equal(await stored[0].blob.text(), "full");
+  assert.equal(await stored[0].thumbBlob.text(), "thumb");
+});
+
+test("CRITICAL offline-photos: existing local photo blobs prevent duplicate server downloads", async () => {
+  const state = {
+    items: {},
+    containers: {
+      bag1: {
+        id: "bag1",
+        photos: [{
+          id: "photo-server-2",
+          url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server-2/file",
+          thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server-2/thumb"
+        }]
+      }
+    }
+  };
+  let fetchCount = 0;
+  const result = await cacheRemotePhotosForOffline(state, {
+    fetchImpl: async () => {
+      fetchCount += 1;
+      throw new Error("must not fetch");
+    },
+    getCachedPhoto: async () => ({ id: "photo-server-2", blob: new Blob(["local"]) }),
+    putCachedPhoto: async () => {
+      throw new Error("must not overwrite local upload cache");
+    }
+  });
+
+  assert.equal(fetchCount, 0);
+  assert.equal(result.cached, 1);
+  assert.equal(result.downloaded, 0);
+});
+
+test("CRITICAL offline-photos: cache controller exposes readiness work once per photo state", async () => {
+  const state = {
+    items: {
+      item1: {
+        photos: [{ id: "photo-3", url: "https://api.example.test/photo-3.jpg" }]
+      }
+    },
+    containers: {}
+  };
+  assert.equal(collectOfflinePhotoCacheTasks(state).length, 1);
+  let finishCache;
+  let calls = 0;
+  const changes = [];
+  const controller = createOfflinePhotoCacheController({
+    getState: () => state,
+    getProgressMessage: () => "Saving photos for offline use…",
+    getFailureMessage: () => "Could not save all photos for offline use",
+    onChange: (active) => changes.push(active),
+    cachePhotos: async (_targetState, options) => {
+      calls += 1;
+      options.onPending();
+      await new Promise((resolve) => { finishCache = resolve; });
+      return { total: 1, cached: 0, downloaded: 1, failed: 0 };
+    }
+  });
+
+  const first = controller.schedule();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(controller.currentMessage(), "Saving photos for offline use…");
+  finishCache();
+  await first;
+  assert.equal(controller.currentMessage(), "");
+  await controller.schedule();
+  assert.equal(calls, 1);
+  assert.deepEqual(changes, [true, false]);
+});
+
+test("CRITICAL offline-photos: incomplete offline cache remains visible after background work", async () => {
+  const controller = createOfflinePhotoCacheController({
+    getState: () => ({
+      items: { item1: { photos: [{ id: "photo-4", url: "https://api.example.test/photo-4.jpg" }] } },
+      containers: {}
+    }),
+    getProgressMessage: () => "Saving photos for offline use…",
+    getFailureMessage: () => "Could not save all photos for offline use",
+    cachePhotos: async (_targetState, options) => {
+      options.onPending();
+      return { total: 1, cached: 0, downloaded: 0, failed: 1 };
+    }
+  });
+
+  await controller.schedule();
+  assert.equal(controller.currentMessage(), "Could not save all photos for offline use");
+});
 
 test("CRITICAL offline-photos: JPEG conversion replaces transparent pixels with a white background", () => {
   const calls = [];
