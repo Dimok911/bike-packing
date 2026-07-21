@@ -41,6 +41,23 @@ export function bikePackingEntitySyncConfirmationFailures(entitySync = {}) {
   ];
 }
 
+export function expectedEntitySyncConfirmationFailures(entitySync = {}, expectedEntityIds = {}) {
+  return [
+    ...expectedUpsertFailures(entitySync.item, "items", expectedEntityIds.items),
+    ...expectedUpsertFailures(entitySync.container, "containers", expectedEntityIds.containers),
+    ...expectedUpsertFailures(entitySync.layout, "layouts", expectedEntityIds.layouts)
+  ];
+}
+
+function expectedUpsertFailures(result, type, expectedIds = []) {
+  const expected = normalizeIdList(expectedIds);
+  if (!expected.length) return [];
+  if (result?.skipped || !result?.attempted) return [`${type} sync did not run`];
+  const upserted = new Set(normalizeIdList(result?.upserted));
+  const missing = expected.filter((id) => !upserted.has(id));
+  return missing.length ? [`${type} sync did not confirm: ${missing.slice(0, 3).join(", ")}`] : [];
+}
+
 function normalizeIdList(values = []) {
   return (Array.isArray(values) ? values : [])
     .map((id) => String(id || "").trim())

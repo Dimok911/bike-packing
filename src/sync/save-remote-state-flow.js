@@ -1,7 +1,17 @@
-import { bikePackingEntitySyncConfirmationFailures } from "./entity-sync-confirmation.js";
+import {
+  bikePackingEntitySyncConfirmationFailures,
+  expectedEntitySyncConfirmationFailures
+} from "./entity-sync-confirmation.js";
 import { isLegacyPersonalSyncWriteBlockedError } from "./legacy-personal-sync.js";
 
-export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = false, forceOverwrite = false, preferredLayout = null, preferServerOnConflict = false, retryForceConflict = true } = {}) {
+export async function saveRemoteStateFlow({ runtime, dependencies }, {
+  notify = false,
+  forceOverwrite = false,
+  preferredLayout = null,
+  preferServerOnConflict = false,
+  retryForceConflict = true,
+  expectedEntityIds = null
+} = {}) {
   const {
     blockDestructiveLocalSave,
     canLocalStateOverrideRemote,
@@ -85,7 +95,10 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, { notify = 
       : await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
     const confirmationFailures = forceOverwrite
       ? []
-      : bikePackingEntitySyncConfirmationFailures(entitySync);
+      : [
+          ...bikePackingEntitySyncConfirmationFailures(entitySync),
+          ...expectedEntitySyncConfirmationFailures(entitySync, expectedEntityIds || {})
+        ];
     const legacyDiffKeys = typeof legacyComparableTopLevelDiffKeys === "function"
       ? legacyComparableTopLevelDiffKeys(baseBeforeSave, runtime.state, entitySync)
       : [];

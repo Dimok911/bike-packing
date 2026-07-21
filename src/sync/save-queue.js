@@ -7,8 +7,21 @@ export function mergeRemoteSaveOptions(previous = null, next = {}) {
     forceOverwrite: Boolean(previous.forceOverwrite || next.forceOverwrite),
     preferServerOnConflict: Boolean(previous.preferServerOnConflict || next.preferServerOnConflict),
     retryForceConflict: previous.retryForceConflict === false || next.retryForceConflict === false ? false : true,
-    preferredLayout: next.preferredLayout || previous.preferredLayout || null
+    preferredLayout: next.preferredLayout || previous.preferredLayout || null,
+    expectedEntityIds: mergeExpectedEntityIds(previous.expectedEntityIds, next.expectedEntityIds)
   };
+}
+
+function mergeExpectedEntityIds(previous = null, next = null) {
+  if (!previous && !next) return null;
+  const merged = {};
+  ["items", "containers", "layouts"].forEach((type) => {
+    merged[type] = [...new Set([
+      ...(Array.isArray(previous?.[type]) ? previous[type] : []),
+      ...(Array.isArray(next?.[type]) ? next[type] : [])
+    ].map((id) => String(id || "").trim()).filter(Boolean))];
+  });
+  return merged;
 }
 
 export function createQueuedRemoteSave(runSave) {

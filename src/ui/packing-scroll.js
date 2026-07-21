@@ -122,7 +122,9 @@ export function bindStickyRootHeaderRow(board) {
   board.addEventListener("pointerleave", stopPositionLoopSoon, { passive: true });
   window.addEventListener("scroll", requestGeometrySync, { passive: true });
   window.addEventListener("resize", requestGeometrySync, { passive: true });
-  requestGeometrySync();
+  // Initialize before the browser can paint the freshly rendered header row.
+  // Deferring the first visibility update by one frame makes sticky headers flash off.
+  syncGeometry();
   requestAnimationFrame(syncGeometry);
   return {
     syncGeometry: requestGeometrySync,

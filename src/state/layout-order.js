@@ -167,6 +167,7 @@ export function layoutOrderSectionsFromSources({
   demoTemplates = [],
   sharedTemplates = [],
   includeLayout = () => true,
+  serverCatalogVisible = false,
   guestDemoCopyFlag = "",
   locale = "ru"
 } = {}) {
@@ -181,6 +182,15 @@ export function layoutOrderSectionsFromSources({
   });
   Object.values(layouts || {}).forEach((layout) => {
     if (!layout?.id || !includeLayout(layout)) return;
+    // Published templates are represented by the authoritative catalog rows.
+    // Legacy editable copies can remain in localStorage for a long time and
+    // must not turn the order dialog into a history of previously opened rows.
+    // Current managed drafts stay visible because they are real selector options.
+    if (
+      serverCatalogVisible &&
+      (layout.adminDemo || layout.adminSharedSourceId) &&
+      !layout.adminTemplateCopy
+    ) return;
     if (layout.adminDemo) {
       const demoId = layoutOrderPublicDemoId(layout.adminDemoListId || layout.demoListId || layout.id);
       if (demoId) delete orderLayouts[demoId];
@@ -291,6 +301,16 @@ export function applyLayoutOrderToState(targetState, orderedIds = [], {
   if (previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index])) changed = true;
   if (changed) targetState.layouts = nextLayouts;
   return changed;
+}
+
+export function changedPersonalLayoutOrderIds(beforeLayouts = {}, afterLayouts = {}, {
+  includeLayout = (layout) => Boolean(layout && !layout.adminDemo && !layout.adminSharedSourceId && !layout.publicCatalogLayoutId)
+} = {}) {
+  return Object.keys(afterLayouts || {}).filter((id) => {
+    const after = afterLayouts?.[id];
+    if (!includeLayout(after)) return false;
+    return layoutOrderValue(beforeLayouts?.[id]) !== layoutOrderValue(after);
+  });
 }
 
 function applyOrderToCatalog(catalog = [], orderBySourceId = new Map()) {

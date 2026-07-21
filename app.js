@@ -91,6 +91,7 @@ import {
 } from "./src/public/copy-public-layout-target.js";
 import { ensureAdminPublicCopyTargets } from "./src/public/admin-public-copy-targets.js";
 import {
+  containerCopySnapshotForContext,
   copyPublishedContainerToState as copyPublishedContainerToStateValue
 } from "./src/public/copy-published-container.js";
 import {
@@ -137,6 +138,8 @@ import {
   validateGuestImportSyncState
 } from "./src/public/guest-login-import.js";
 import {
+  canEditLocalUnpublishedTemplate as canEditLocalUnpublishedTemplateValue,
+  canEditManagedTemplate as canEditManagedTemplateValue,
   publishedTemplateBlockReason,
   readonlyPublicTemplateOptionLabel,
   shouldUseReadonlyTemplateCache
@@ -442,6 +445,7 @@ import {
 } from "./src/state/layout-manage.js";
 import {
   applyLayoutOrderToSources,
+  changedPersonalLayoutOrderIds,
   layoutOrderIdsFromSections,
   layoutOrderSectionsFromSources,
   moveLayoutBeforeInSections,
@@ -526,6 +530,7 @@ import {
 } from "./src/state/layout-ops.js";
 import {
   copyCrossesPublicNamespaceBoundary,
+  itemCopyNamespacePolicy,
   photoDuplicateOptionsForLayoutCopy,
   privateContainerTreeCopyRoute,
   shouldCopyPhotosToCurrentListForLayoutCopy
@@ -696,6 +701,7 @@ import {
   markPhotoUploadStarted,
   uploadPhotoToPath
 } from "./src/sync/photo-upload-flow.js";
+import { acquirePhotoUploadSlot } from "./src/sync/photo-upload-lock.js";
 import {
   cacheLayoutRemotePhotosForUploadFallback,
   getUnsyncedPhotoEntries as getUnsyncedPhotoEntriesForSync,
@@ -1040,6 +1046,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   PUBLIC_TEMPLATE_PAYLOAD_ENDPOINT_CAPABILITY,
   "publicTemplateLanguageColumn",
   "publicTemplateMetadataPatch",
+  "publicTemplateLayoutOrderPatch",
   "publicTemplateDelete",
   "publicDemoTemplateExactDelete",
   "publicTemplateSoftUnpublish",
@@ -1071,7 +1078,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-20.public-template-photo-canonical-v2";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-21.public-template-layout-order-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1457,7 +1464,7 @@ const appTailControllerDeps = {
   backupAdminTemplateRows, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync, buildCurrentBackupManifestValue,
   buildEntitySyncBody, buildEntitySyncBodyForSync, buildListSaveBody, buildListSaveBodyForSync, buildPrintableDocument,
   buildRememberedOfflineUser, buildSharedListUrl, buildSharedListUrlFromHref, canAddUsageEntries, canDeleteActiveLayoutForState,
-  canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue, canRequestEntityChanges,
+  canEditManagedAdminTemplateNow, canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue, canRequestEntityChanges,
   canSeedEmptyRemoteFromLocal, canUseCachedStartupState, canUseLocalEditableState, canUsePrivateState, canViewAdminPublishedCatalog,
   cancelPublishedLayoutSave, capitalize, captureActiveLayoutArrangement, captureBike3dDetailViewport, captureSearchBlurViewportLock,
   catalogActionTargetIds, categories, checkAdminApiCompatibility, checkAuthAndLoad, checkAuthAndLoadFlow,
@@ -1551,7 +1558,7 @@ const appTailControllerDeps = {
   itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel, languageOptionLabelValue,
   lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap, lastToastAt,
   lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState, layoutCreateModeState,
-    layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources,
+    layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, changedPersonalLayoutOrderIds,
   layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys, legacyComparableTopLevelDiffKeysForSync,
   legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged, listRecordVisibility,
   loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState, loadCurrentHistoryComparisonState,
@@ -1588,7 +1595,7 @@ const appTailControllerDeps = {
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
-  printHtmlDocument, copyCrossesPublicNamespaceBoundary, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
+  printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   containerPlacementSnapshotChanged, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
   isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts,
@@ -2136,12 +2143,18 @@ function requirePublishedTemplatesAvailable() {
 
 function markPublicTemplateOptionsState(options, { disabled = false, readonly = false } = {}) {
   if (!disabled && !readonly) return options;
-  return options.map(([value, label, kind = ""]) => [
-    value,
-    readonlyPublicTemplateOptionLabel(label, { readonly }),
-    kind,
-    disabled
-  ]);
+  return options.map(([value, label, kind = ""]) => {
+    const draftLayoutId = templateDraftLayoutId(value);
+    const editableDraft = Boolean(
+      draftLayoutId && canEditLocalUnpublishedAdminTemplate(state.layouts?.[draftLayoutId])
+    );
+    return [
+      value,
+      readonlyPublicTemplateOptionLabel(label, { readonly: readonly && !editableDraft }),
+      kind,
+      disabled && !editableDraft
+    ];
+  });
 }
 
 function serverConfirmedSharedLayoutsByAdminOrder() {
@@ -2170,11 +2183,12 @@ function nextDemoTemplateAfter(listId, language = uiLanguage) {
 
 function adminDemoTemplateOptionsForLanguage(language, { disabled = false } = {}) {
   const normalized = normalizeUiLanguage(language);
-  const localLayouts = canEditPublishedTemplatesNow()
+  const localLayouts = canViewAdminPublishedCatalog()
     ? Object.values(state.layouts || {}).filter((layout) =>
       layout?.adminDemo &&
       layout.adminTemplateCopy &&
       layout.id &&
+      (canEditPublishedTemplatesNow() || canEditLocalUnpublishedAdminTemplate(layout)) &&
       normalizeUiLanguage(layout.adminDemoLanguage || layout.language || uiLanguage) === normalized
     )
     : [];
@@ -2212,7 +2226,7 @@ function adminPublicLayoutOptions({ disabled = false, readonly = false, canView 
     ...demoOptions,
     ...markPublicTemplateOptionsState(adminSharedTemplateOptions({
       canView,
-      includeDrafts: canEditPublishedTemplatesNow()
+      includeDrafts: canViewAdminPublishedCatalog()
     }), { disabled, readonly })
   ];
 }
@@ -2269,9 +2283,12 @@ function compareSharedLayoutAdminOrder(a, b) {
 }
 
 function localAdminTemplateCopyLayouts() {
+  const eligibleLayouts = Object.fromEntries(Object.entries(state.layouts || {}).filter(([, layout]) =>
+    canEditPublishedTemplatesNow() || canEditLocalUnpublishedAdminTemplate(layout)
+  ));
   return selectLocalAdminTemplateCopyLayouts({
-    layouts: state.layouts,
-    canOpen: canOpenAdminPublishedEdit(),
+    layouts: eligibleLayouts,
+    canOpen: canViewAdminPublishedCatalog(),
     isDeletedSharedLayoutId,
     fallbackLanguage: uiLanguage,
     isLayoutMeaningful,
@@ -2280,7 +2297,7 @@ function localAdminTemplateCopyLayouts() {
   });
 }
 function activeAdminDraftOptionLabel(layout) {
-  if (!canOpenAdminPublishedEdit() || !isPublishedLayoutEditable(layout)) return "";
+  if (!canViewAdminPublishedCatalog() || !isPublishedLayoutEditable(layout)) return "";
   const sharedSource = layout?.adminSharedSourceId ? findSharedLayout(layout.adminSharedSourceId) : null;
   return publicTemplateOptionLabel({
     prefix: t("template.prefix"),
@@ -2751,7 +2768,10 @@ async function init() {
         renderFilters();
         return;
       }
-      if (canOpenAdminPublishedEdit() && isManagedPublicTemplateDraft(layout)) {
+      if (
+        isManagedPublicTemplateDraft(layout) &&
+        (canEditPublishedTemplatesNow() || canEditLocalUnpublishedAdminTemplate(layout))
+      ) {
         if (shouldConfirmManagedTemplateTransition(layout)) {
           const transitionKind = layout.adminDemo ? "demo" : "shared";
           const transitionTarget = layout.adminDemo
@@ -2904,13 +2924,13 @@ async function init() {
     resetItemDialogPhotoDraft();
   });
   bindDialogBackdropClickGuard(refs.dialog, () => Boolean(
-    runtime.itemDialogPhotoDraft &&
-    photoDraftChanged(runtime.itemDialogPhotoDraft, runtime.editingItemId ? state.items?.[runtime.editingItemId] : { photos: [] })
+    itemDialogPhotoDraft &&
+    photoDraftChanged(itemDialogPhotoDraft, editingItemId ? state.items?.[editingItemId] : { photos: [] })
   ));
   bindFilePickerDialogDismissGuard(refs.dialog, [refs.itemPhotoInput, refs.itemPhotoCameraInput]);
   bindDialogBackdropClickGuard(refs.rootContainerDialog, () => Boolean(
-    runtime.rootContainerDialogPhotoDraft &&
-    photoDraftChanged(runtime.rootContainerDialogPhotoDraft, runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : { photos: [] })
+    rootContainerDialogPhotoDraft &&
+    photoDraftChanged(rootContainerDialogPhotoDraft, editingRootContainerId ? state.containers?.[editingRootContainerId] : { photos: [] })
   ));
   bindFilePickerDialogDismissGuard(refs.rootContainerDialog, [refs.rootContainerPhotoInput, refs.rootContainerPhotoCameraInput]);
   refs.newLayoutBtn.addEventListener("click", () => {
@@ -5389,6 +5409,23 @@ function canEditPublishedTemplatesNow() {
   return canOpenAdminPublishedEdit() && !arePublishedTemplatesBlocked();
 }
 
+function canEditLocalUnpublishedAdminTemplate(layout) {
+  return canEditLocalUnpublishedTemplateValue({
+    layout,
+    liveAdminSession: canOpenAdminPublishedEdit(),
+    rememberedAdminSession: isOfflineRememberedAdminSession()
+  });
+}
+
+function canEditManagedAdminTemplateNow(layout) {
+  return canEditManagedTemplateValue({
+    layout,
+    liveAdminSession: canOpenAdminPublishedEdit(),
+    rememberedAdminSession: isOfflineRememberedAdminSession(),
+    templatesBlocked: arePublishedTemplatesBlocked()
+  });
+}
+
 function currentUsageLimit(name) {
   return usageLimitForRole(name, canOpenAdminPublishedEdit());
 }
@@ -5655,13 +5692,18 @@ async function savePublishedTemplateMetadata(layout, previousLayout = null) {
 }
 
 async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId = "" } = {}) {
-  if (photoUploadInFlight || !currentUser || isForcedOffline()) return false;
+  if (!currentUser || isForcedOffline()) return false;
   if (isReadOnlyBikePackingContext()) return false;
-  const entries = getUploadablePhotoEntries({ layoutId, listId });
-  if (!entries.length) return false;
+  const slotAvailable = await acquirePhotoUploadSlot({
+    isBusy: () => photoUploadInFlight,
+    setBusy: (value) => { photoUploadInFlight = value; },
+    shouldContinue: () => Boolean(currentUser) && !isForcedOffline() && !isReadOnlyBikePackingContext()
+  });
+  if (!slotAvailable) return false;
   let changed = false;
-  photoUploadInFlight = true;
   try {
+    const entries = getUploadablePhotoEntries({ layoutId, listId });
+    if (!entries.length) return false;
     const targetListId = listId || await ensureCurrentPackingListId();
     if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
     if (isReadOnlyBikePackingContext()) return false;
@@ -8220,10 +8262,16 @@ async function copySharedItemToLayoutContainer(itemId, targetContainerId, target
   render();
   renderSharedLayouts();
   requestAnimationFrame(() => focusRecentlyAddedItem(copiedItemId));
-  showToast(`"${sourceName}" \u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u0443\u044e \u0441\u0443\u043c\u043a\u0443.`, "success");
+  showToast(localText(
+    `“${sourceName}” was copied to the selected bag.`,
+    `«${sourceName}» скопировано в выбранную сумку.`
+  ), "success");
 }
 
-async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId, { targetIndex = null } = {}) {
+async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLayoutId, {
+  includeContents = true,
+  targetIndex = null
+} = {}) {
   if (!rootId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
@@ -8231,9 +8279,10 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
   const published = findSharedPublishedContainer(rootId);
   const root = published ? null : findSharedRoot(rootId);
   const sourceName = published?.container?.name || root?.name || "";
-  const sourceSnapshot = published
+  const fullSourceSnapshot = published
     ? snapshotContainerTree(rootId, { targetState: published.sourceState })
     : root ? legacySharedRootSnapshot(root) : null;
+  const sourceSnapshot = containerCopySnapshotForContext(fullSourceSnapshot, { includeContents });
   if (!sourceName) return;
   const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName, { publicSource: true });
   if (copyAction === "cancel") return;
@@ -8982,7 +9031,7 @@ function findMaterializedSharedContainerId(sourceId) {
   return Object.values(state.containers || {}).find((container) => container.sharedSourceId === sourceId)?.id || "";
 }
 
-function editSharedSourceAsAdmin(type, sourceId, action = "edit") {
+function editSharedSourceAsAdmin(type, sourceId, action = "edit", { copyIncludesContents = true } = {}) {
   if (!canOpenAdminPublishedEdit()) return false;
   const layout = materializeSharedLayoutForAdmin();
   if (!layout) return false;
@@ -8999,7 +9048,7 @@ function editSharedSourceAsAdmin(type, sourceId, action = "edit") {
   if (containerId) {
     if (action === "add") openAddToContainerDialog(containerId);
     else if (action === "delete") confirmDeleteRootContainer(containerId);
-    else openRootContainerDialog(containerId);
+    else openRootContainerDialog(containerId, { copyIncludesContents });
   }
   return true;
 }
@@ -10036,6 +10085,7 @@ function renderFilters() {
     adminPublicLayoutOptions,
     arePublishedTemplatesBlocked,
     canEditPublishedTemplatesNow,
+    canEditLocalUnpublishedAdminTemplate,
     canManageActiveLayout,
     canOpenAdminPublishedEdit,
     canUsePrivateState,

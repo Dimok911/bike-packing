@@ -19,12 +19,20 @@ export function collectLayoutRecordIds(targetState, layout, {
 export function collectPublicLayoutRecordIds(targetState, helpers = {}) {
   const containerIds = new Set();
   const itemIds = new Set();
+  const privateContainerIds = new Set();
+  const privateItemIds = new Set();
   Object.values(targetState?.layouts || {}).forEach((layout) => {
-    if (!isPublicLayoutRecord(layout)) return;
     const ids = collectLayoutRecordIds(targetState, layout, helpers);
-    ids.containerIds.forEach((id) => containerIds.add(id));
-    ids.itemIds.forEach((id) => itemIds.add(id));
+    if (isPublicLayoutRecord(layout)) {
+      ids.containerIds.forEach((id) => containerIds.add(id));
+      ids.itemIds.forEach((id) => itemIds.add(id));
+      return;
+    }
+    ids.containerIds.forEach((id) => privateContainerIds.add(id));
+    ids.itemIds.forEach((id) => privateItemIds.add(id));
   });
+  privateContainerIds.forEach((id) => containerIds.delete(id));
+  privateItemIds.forEach((id) => itemIds.delete(id));
   return { containerIds, itemIds };
 }
 

@@ -68,9 +68,10 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
       fallbackName: demoTemplateFallbackName(record?.language || runtime.uiLanguage)
     }))
     .filter(Boolean);
-  if (demoEntries.length) {
+  const authoritativeUnifiedCatalog = Boolean(data?.canonical && data?.unified);
+  if (demoEntries.length || authoritativeUnifiedCatalog) {
     runtime.serverConfirmedDemoTemplates = mergeServerDemoTemplateCatalog(
-      runtime.serverConfirmedDemoTemplates,
+      authoritativeUnifiedCatalog ? [] : runtime.serverConfirmedDemoTemplates,
       demoEntries
     );
     demoMetadataMerged = demoEntries.length;
@@ -89,7 +90,8 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
   const demoPayloadMerged = demoPayloadResults.filter(Boolean).length;
   const sharedRecords = records.filter(isPublicSharedLayoutListRecord);
   const concreteRecords = sharedRecords.filter(isConcretePublicSharedLayoutListRecord);
-  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
+  const authoritativeSharedCatalog = Boolean(data?.canonical);
+  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(authoritativeSharedCatalog ? [] : runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: runtime.sharedLayoutsByLanguage,
     fallbackLanguage: runtime.uiLanguage
   }));
@@ -173,7 +175,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
         }
       }
     }));
-  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
+  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(authoritativeSharedCatalog ? [] : runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: runtime.sharedLayoutsByLanguage,
     fallbackLanguage: runtime.uiLanguage
   }));

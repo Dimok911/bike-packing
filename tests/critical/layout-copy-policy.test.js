@@ -7,6 +7,8 @@ import {
 } from "../../src/public/copy-public-layout-target.js";
 import {
   copyCrossesPublicNamespaceBoundary,
+  itemCopyNamespacePolicy,
+  itemRecordIsPublicNamespaceSource,
   photoDuplicateOptionsForLayoutCopy,
   privateContainerTreeCopyRoute,
   shouldCopyPhotosToCurrentListForLayoutCopy
@@ -17,6 +19,57 @@ test("CRITICAL namespace copy: linking by id is allowed only inside the private 
   assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: true, targetIsPublic: false }), true);
   assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: false, targetIsPublic: true }), true);
   assert.equal(copyCrossesPublicNamespaceBoundary({ sourceIsPublic: true, targetIsPublic: true }), true);
+});
+
+test("CRITICAL admin item editor copy: a shared source layout requires an independent personal record", () => {
+  assert.deepEqual(itemCopyNamespacePolicy({
+    sourceLayoutIsPublic: true,
+    sourceRecordHasPublicOrigin: false,
+    targetIsPublic: false
+  }), {
+    sourceIsPublicCopy: true,
+    crossesPublicNamespace: true
+  });
+
+  assert.deepEqual(itemCopyNamespacePolicy({
+    sourceLayoutIsPublic: false,
+    sourceRecordHasPublicOrigin: false,
+    targetIsPublic: false
+  }), {
+    sourceIsPublicCopy: false,
+    crossesPublicNamespace: false
+  });
+});
+
+test("CRITICAL private item copy: template provenance does not duplicate an already independent personal item", () => {
+  const copiedPersonalItem = {
+    id: "item-private-copy",
+    name: "Jacket",
+    _publicCopySourceKind: "item",
+    _publicCopySourceId: "item-shared-jacket",
+    _publicCopySourceLayoutId: "shared-layout"
+  };
+
+  assert.equal(itemRecordIsPublicNamespaceSource(copiedPersonalItem, {
+    hasPrivateSyncBlockedPublicOrigin: () => false
+  }), false);
+  assert.deepEqual(itemCopyNamespacePolicy({
+    sourceLayoutIsPublic: false,
+    sourceRecordHasPublicOrigin: itemRecordIsPublicNamespaceSource(copiedPersonalItem, {
+      hasPrivateSyncBlockedPublicOrigin: () => false
+    }),
+    targetIsPublic: false
+  }), {
+    sourceIsPublicCopy: false,
+    crossesPublicNamespace: false
+  });
+});
+
+test("CRITICAL private item copy: a live public catalog record still requires an independent copy", () => {
+  assert.equal(itemRecordIsPublicNamespaceSource({
+    id: "item-public",
+    publicCatalogLayoutId: "layout-public"
+  }), true);
 });
 
 test("CRITICAL private copy: top-level bag links existing catalog records when target has no duplicates", () => {

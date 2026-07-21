@@ -89,6 +89,7 @@ export function publicDemoTemplateEntryFromRecord(record, {
     publicTemplateKind: PUBLIC_TEMPLATE_KIND_DEMO,
     role: PUBLIC_TEMPLATE_KIND_DEMO,
     serverConfirmed: true,
+    layoutOrder: Number.isFinite(Number(record?.layoutOrder)) ? Number(record.layoutOrder) : undefined,
     createdAt: normalizeText(record?.createdAt || record?.created_at),
     updatedAt: normalizeText(record?.updatedAt || record?.updated_at)
   };

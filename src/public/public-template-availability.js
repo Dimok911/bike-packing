@@ -40,6 +40,38 @@ export function publicTemplateOptionAccess({
   };
 }
 
+function isLocalUnpublishedTemplate(layout) {
+  return Boolean(
+    layout &&
+    (layout.adminDemo || layout.adminSharedSourceId || layout.adminTemplateCopy) &&
+    layout.templatePublished === false
+  );
+}
+
+export function canEditLocalUnpublishedTemplate({
+  layout = null,
+  liveAdminSession = false,
+  rememberedAdminSession = false
+} = {}) {
+  return Boolean(
+    isLocalUnpublishedTemplate(layout) &&
+    (liveAdminSession || rememberedAdminSession)
+  );
+}
+
+export function canEditManagedTemplate({
+  layout = null,
+  liveAdminSession = false,
+  rememberedAdminSession = false,
+  templatesBlocked = false
+} = {}) {
+  if (!layout || !(layout.adminDemo || layout.adminSharedSourceId || layout.adminTemplateCopy)) return false;
+  if (isLocalUnpublishedTemplate(layout)) {
+    return canEditLocalUnpublishedTemplate({ layout, liveAdminSession, rememberedAdminSession });
+  }
+  return Boolean(liveAdminSession && !templatesBlocked);
+}
+
 export function readonlyPublicTemplateOptionLabel(label, {
   readonly = false,
   marker = "🔒"

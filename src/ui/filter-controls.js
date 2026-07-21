@@ -62,6 +62,7 @@ export function renderFilterControls({
   adminPublicLayoutOptions = () => [],
   arePublishedTemplatesBlocked = () => false,
   canEditPublishedTemplatesNow = () => false,
+  canEditLocalUnpublishedAdminTemplate = () => false,
   canManageActiveLayout = () => false,
   canOpenAdminPublishedEdit = () => false,
   canUsePrivateState = () => false,
@@ -149,8 +150,13 @@ export function renderFilterControls({
       ])
     ];
   const activeAdminLabel = activeAdminDraftOptionLabel(activeLayout);
+  const selectedDraftEditable = Boolean(
+    activeLayout && canEditLocalUnpublishedAdminTemplate(activeLayout)
+  );
   if (activeAdminLabel) {
-    const label = readonlyPublicTemplateOptionLabel(activeAdminLabel, { readonly: adminCatalogReadOnly });
+    const label = readonlyPublicTemplateOptionLabel(activeAdminLabel, {
+      readonly: adminCatalogReadOnly && !selectedDraftEditable
+    });
     if (publicOptions.some((option) => option[0] === selectedLayoutValue)) {
       publicOptions = publicOptions.map((option) =>
         option[0] === selectedLayoutValue ? [option[0], label, option[2], option[3]] : option
@@ -173,8 +179,9 @@ export function renderFilterControls({
   const selectedTemplateDraft = selectedTemplateDraftId ? state.layouts?.[selectedTemplateDraftId] : null;
   refs.layoutSelect.classList.toggle("layout-select-demo", isDemoLayoutChoice(selectedLayoutValue) || Boolean(selectedTemplateDraft?.adminDemo));
   refs.layoutSelect.classList.toggle("layout-select-shared", String(selectedLayoutValue).startsWith("shared:") || Boolean(selectedTemplateDraftId && !selectedTemplateDraft?.adminDemo));
-  refs.layoutSelect.classList.toggle("layout-select-readonly-public", publicOptionAccess.readonly);
-  refs.layoutSelect.title = publicOptionAccess.readonly
+  const selectedPublicReadonly = publicOptionAccess.readonly && !selectedDraftEditable;
+  refs.layoutSelect.classList.toggle("layout-select-readonly-public", selectedPublicReadonly);
+  refs.layoutSelect.title = selectedPublicReadonly
     ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
   refs.newLayoutBtn.textContent = isSharedLayoutView()

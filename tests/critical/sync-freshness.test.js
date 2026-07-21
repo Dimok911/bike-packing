@@ -31,7 +31,11 @@ import {
   shouldBlockLegacyPersonalSyncWriteFallback
 } from "../../src/sync/legacy-personal-sync.js";
 import { rememberConflictRemoteMeta } from "../../src/sync/save-body.js";
-import { createQueuedRemoteSave } from "../../src/sync/save-queue.js";
+import {
+  createQueuedRemoteSave,
+  mergeRemoteSaveOptions
+} from "../../src/sync/save-queue.js";
+import { expectedEntitySyncConfirmationFailures } from "../../src/sync/entity-sync-confirmation.js";
 import { preflightRemoteSaveConflictFlow } from "../../src/sync/save-preflight.js";
 import { ensurePersonalListId } from "../../src/sync/personal-list-bootstrap.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
@@ -560,6 +564,42 @@ test("CRITICAL sync-save: unconfirmed entity sync falls back to full payload sav
   assert.equal(fullSaveCalled, true);
   assert.equal(runtime.syncMeta.dirty, false);
   assert.equal(runtime.syncMeta.serverUpdatedAt, "2026-06-05T10:04:00.000Z");
+});
+
+test("CRITICAL sync-save: copied bag confirmation cannot succeed when container or layout was not upserted", () => {
+  const failures = expectedEntitySyncConfirmationFailures({
+    item: { attempted: false, skipped: false, upserted: [] },
+    container: { attempted: true, skipped: false, upserted: [] },
+    layout: { attempted: true, skipped: false, upserted: ["layout-private"] }
+  }, {
+    items: [],
+    containers: ["container-copy"],
+    layouts: ["layout-private"]
+  });
+
+  assert.deepEqual(failures, ["containers sync did not confirm: container-copy"]);
+});
+
+test("CRITICAL sync-save: queued copy confirmations retain every expected entity id", () => {
+  const merged = mergeRemoteSaveOptions({
+    expectedEntityIds: {
+      items: ["item-a"],
+      containers: ["container-a"],
+      layouts: ["layout-a"]
+    }
+  }, {
+    expectedEntityIds: {
+      items: ["item-b"],
+      containers: ["container-a", "container-b"],
+      layouts: ["layout-a"]
+    }
+  });
+
+  assert.deepEqual(merged.expectedEntityIds, {
+    items: ["item-a", "item-b"],
+    containers: ["container-a", "container-b"],
+    layouts: ["layout-a"]
+  });
 });
 
 test("CRITICAL sync-save: changed server freshness stops before entity sync", async () => {

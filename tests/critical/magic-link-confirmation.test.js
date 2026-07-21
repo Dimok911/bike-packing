@@ -38,6 +38,6 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /apiFetch\("\/auth\/verify-magic-link",\s*\{\s*method:\s*"POST"/);
   assert.match(appSource, /"inAppMagicLinkConfirmation"/);
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
-  assert.match(appSource, /2026-07-20\.public-template-photo-canonical-v2/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1304"/);
+  assert.match(appSource, /2026-07-21\.public-template-layout-order-v1/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1317"/);
 });

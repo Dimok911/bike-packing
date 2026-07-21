@@ -20,11 +20,17 @@ import {
   shouldHandlePhotoPasteTarget
 } from "../ui/photo-clipboard.js";
 import {
-  isNestedContainerInLayoutState,
+  isContainerReplacementCandidateInLayoutState,
   isTemporaryContainerInLayoutState,
   replaceContainerInLayoutState,
   replaceItemInLayoutState
 } from "../state/layout-replace.js";
+import { orderedLayouts } from "../state/layout-order.js";
+import { itemRecordIsPublicNamespaceSource } from "../state/layout-copy-policy.js";
+import {
+  persistPublicTemplateOrderUpdates,
+  publicTemplateOrderUpdates
+} from "../public/public-template-order-sync.js";
 import {
   capturePackingPhotoRenderState,
   restorePackingPhotoRenderState
@@ -51,6 +57,8 @@ import {
   renderCategorySearchOption,
   syncCategorySearchAvailability
 } from "../ui/category-search.js";
+import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
+import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -59,6 +67,9 @@ export function createAppTailControllers(ctx) {
   let itemDialogPhotoPreviewPhotoCount = 0;
   let rootContainerDialogPhotoPreviewPhotoCount = 0;
   let containerPickerSourceIsNestedContainer = false;
+  let containerPickerCopyIncludesContents = true;
+  let rootContainerDialogCopyIncludesContents = true;
+  let sharedPickerCopyIncludesContents = true;
   let layoutOrderDragId = "";
   let layoutEditInitialSnapshot = null;
   let layoutOrderDraftSections = null;
@@ -107,7 +118,7 @@ export function createAppTailControllers(ctx) {
     backupAdminTemplateRows, buildAdminSharedTemplateOptions, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync,
     buildCurrentBackupManifestValue, buildEntitySyncBody, buildEntitySyncBodyForSync, buildListSaveBody, buildListSaveBodyForSync,
     buildPrintableDocument, buildRememberedOfflineUser, buildSharedListUrl, buildSharedListUrlFromHref, canAddUsageEntries,
-    canDeleteActiveLayoutForState, canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue,
+    canDeleteActiveLayoutForState, canEditManagedAdminTemplateNow, canEditPublishedTemplatesNow, canLocalStateOverrideRemote, canOpenAdminPublishedEdit, canReplaceLayoutCreateNameSuggestionValue,
     canRequestEntityChanges, canSeedEmptyRemoteFromLocal, canUseCachedStartupState, canUseLocalEditableState, canUsePrivateState,
     canViewAdminPublishedCatalog, cancelPublishedLayoutSave, capitalize, captureActiveLayoutArrangement, captureBike3dDetailViewport,
     captureSearchBlurViewportLock, catalogActionTargetIds, categories, checkAdminApiCompatibility, checkAuthAndLoad,
@@ -205,7 +216,7 @@ export function createAppTailControllers(ctx) {
     languageOptionLabelValue, lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap,
     lastToastAt, lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState,
     layoutCreateModeState, layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus,
-    layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
+    layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, changedPersonalLayoutOrderIds, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
     legacyComparableTopLevelDiffKeysForSync, legacySharedRootSnapshot, linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState, linkedSharedListLayout, listFreshnessChanged,
     listRecordVisibility, loadActiveLayoutChoice, loadActivePackingListId, loadActivePrivateLayoutChoice, loadBaseState,
     loadCurrentHistoryComparisonState, loadCurrentServerStateDirectly, loadGuestPublishedDemoOnStartup, loadPublishedDemoState, loadPublishedTemplateCopySourceValue,
@@ -240,7 +251,7 @@ export function createAppTailControllers(ctx) {
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
     pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
-    primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
+    primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     containerPlacementSnapshotChanged, publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
     publicCopySourceIdFromRecord, isSharedCopyTargetLayout, publicCopyTargetLayouts, sharedCopyTargetLayouts, publicDemoTemplateEntryFromRecord, publicDemoTemplatePayloadTarget, publicLayoutChoiceForLayout, publicLayoutChoiceValue,
@@ -604,14 +615,16 @@ function renderLayoutRootResults() {
   const query = refs.layoutRootSearch.value.trim().toLowerCase();
   refs.clearLayoutRootSearchBtn.hidden = !query;
   const activeIds = getLayoutContainerIdSet(state.layouts?.[getLayoutRootTargetLayoutId()]);
-  const replacementSource = replacingPackingContainerId ? state.containers?.[replacingPackingContainerId] : null;
   const replacementLayout = state.layouts?.[getPublishedEditLayoutId()];
-  const replacementRequiresNesting = Boolean(replacementSource &&
-    isNestedContainerInLayoutState(state, replacementLayout, replacingPackingContainerId));
   const catalogRoots = getRootContainers().filter(isRootContainerInActiveCatalog);
   const availableRoots = catalogRoots
     .filter((container) => !activeIds.has(container.id))
-    .filter((container) => !replacementRequiresNesting || container.nestable === true)
+    .filter((container) => !replacingPackingContainerId || isContainerReplacementCandidateInLayoutState(
+      state,
+      replacementLayout,
+      replacingPackingContainerId,
+      container.id
+    ))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const roots = availableRoots.filter((container) => matchesLayoutRootSearch(container, query));
   refs.layoutRootResults.innerHTML = roots.map((container) => `
@@ -1373,6 +1386,7 @@ async function openRootContainerCopyPickerDialog(event) {
   event?.preventDefault();
   if (!runtime.editingRootContainerId || !state.containers[runtime.editingRootContainerId]) return;
   containerPickerSourceIsNestedContainer = isContainerNestedInLayout(runtime.editingRootContainerId, getPublishedEditLayoutId());
+  containerPickerCopyIncludesContents = rootContainerDialogCopyIncludesContents;
   runtime.containerPickerMode = "container-copy";
   runtime.containerPickerTargetContainerId = runtime.editingRootContainerId;
   runtime.containerPickerLayoutId = getPublishedEditLayoutId();
@@ -1383,12 +1397,22 @@ async function openRootContainerCopyPickerDialog(event) {
   openModalDialog(refs.containerPickerDialog);
 }
 
-function firstPrivateLayoutId() {
-  return sharedCopyTargetLayouts(state.layouts, {
+function orderedPersonalCopyTargetLayouts() {
+  const targets = sharedCopyTargetLayouts(state.layouts, {
     excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
     excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
     readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
-  })[0]?.id || "";
+  });
+  const targetIds = new Set(targets.map((layout) => layout.id));
+  return orderedLayouts(state.layouts, {
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    includeLayout: (layout) => targetIds.has(layout?.id),
+    locale: uiLanguage || "ru"
+  });
+}
+
+function firstPrivateLayoutId() {
+  return orderedPersonalCopyTargetLayouts()[0]?.id || "";
 }
 
 async function openSharedItemCopyPicker(sourceId) {
@@ -1410,7 +1434,10 @@ async function openSharedItemCopyPicker(sourceId) {
   openModalDialog(refs.containerPickerDialog);
 }
 
-async function openSharedContainerCopyPicker(sourceId, { sourceIsNestedContainer = false } = {}) {
+async function openSharedContainerCopyPicker(sourceId, {
+  sourceIsNestedContainer = false,
+  includeContents = true
+} = {}) {
   if (!sourceId) return;
   const sourceLayoutId = canOpenAdminPublishedEdit()
     ? getPublishedEditLayoutId()
@@ -1418,6 +1445,7 @@ async function openSharedContainerCopyPicker(sourceId, { sourceIsNestedContainer
   await ensurePrivateStateForSharedCopy();
   containerPickerSourceIsNestedContainer = sourceIsNestedContainer ||
     isContainerNestedInLayout(sourceId, sourceLayoutId);
+  sharedPickerCopyIncludesContents = includeContents !== false;
   runtime.sharedPickerSourceItemId = "";
   runtime.sharedPickerSourceContainerId = sourceId;
   runtime.containerPickerMode = SHARED_CONTAINER_COPY_PICKER_MODE;
@@ -1524,11 +1552,8 @@ function getContainerPickerLayoutOptions() {
   }
   const excludedLayoutIds = getContainerCopyExcludedLayoutIds();
   const allLayouts = Object.values(state.layouts || {});
-  const personalLayouts = sharedCopyTargetLayouts(state.layouts, {
-    excludeEmptySystemDefault: !canOpenAdminPublishedEdit() && isReadonlyTemplateView(),
-    excludeRedundantEmptySystemDefault: !canOpenAdminPublishedEdit(),
-    readonlySourceLayoutId: !canOpenAdminPublishedEdit() && isReadonlyTemplateView() ? activeReadOnlyLayoutId() : ""
-  }).filter((layout) => !excludedLayoutIds.has(layout.id));
+  const personalLayouts = orderedPersonalCopyTargetLayouts()
+    .filter((layout) => !excludedLayoutIds.has(layout.id));
   if (!canOpenAdminPublishedEdit()) return personalLayouts;
   const publicDrafts = orderAdminPublicDraftsLikeMainSelect(publicCopyTargetLayouts(allLayouts, {
     choiceForLayout: publicLayoutChoiceForLayout,
@@ -1570,7 +1595,9 @@ function captureContainerPickerContinuation() {
     containerPickerTargetContainerId: runtime.containerPickerTargetContainerId,
     sharedPickerSourceContainerId: runtime.sharedPickerSourceContainerId,
     sharedPickerSourceItemId: runtime.sharedPickerSourceItemId,
-    sourceIsNestedContainer: containerPickerSourceIsNestedContainer
+    sourceIsNestedContainer: containerPickerSourceIsNestedContainer,
+    containerPickerCopyIncludesContents,
+    sharedPickerCopyIncludesContents
   };
 }
 
@@ -1585,6 +1612,8 @@ function restoreContainerPickerContinuation(pending, layoutId = pending?.contain
   runtime.sharedPickerSourceContainerId = pending.sharedPickerSourceContainerId;
   runtime.sharedPickerSourceItemId = pending.sharedPickerSourceItemId;
   containerPickerSourceIsNestedContainer = pending.sourceIsNestedContainer;
+  containerPickerCopyIncludesContents = pending.containerPickerCopyIncludesContents !== false;
+  sharedPickerCopyIncludesContents = pending.sharedPickerCopyIncludesContents !== false;
   runtime.containerPickerLayoutId = layoutId;
   renderContainerPicker();
   openModalDialog(refs.containerPickerDialog);
@@ -1797,6 +1826,7 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
   }
   if (runtime.containerPickerMode === "container-copy") {
     await copyContainerTreeToLayout(runtime.editingRootContainerId, runtime.containerPickerLayoutId, containerId, {
+      includeContents: containerPickerCopyIncludesContents,
       sourceLayoutId: runtime.containerPickerSourceLayoutId,
       targetIndex
     });
@@ -1807,7 +1837,10 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
     return;
   }
   if (runtime.containerPickerMode === SHARED_CONTAINER_COPY_PICKER_MODE) {
-    await copySharedRootToLayoutContainer(runtime.sharedPickerSourceContainerId, containerId, runtime.containerPickerLayoutId, { targetIndex });
+    await copySharedRootToLayoutContainer(runtime.sharedPickerSourceContainerId, containerId, runtime.containerPickerLayoutId, {
+      includeContents: sharedPickerCopyIncludesContents,
+      targetIndex
+    });
     return;
   }
   selectItemContainer(containerId);
@@ -1816,13 +1849,17 @@ async function selectContainerPickerTarget(containerId, targetIndex = null) {
 async function selectContainerPickerRootTarget(targetIndex = null) {
   if (runtime.containerPickerMode === "container-copy") {
     await copyContainerTreeToLayout(runtime.editingRootContainerId, runtime.containerPickerLayoutId, "", {
+      includeContents: containerPickerCopyIncludesContents,
       sourceLayoutId: runtime.containerPickerSourceLayoutId,
       targetIndex
     });
     return;
   }
   if (runtime.containerPickerMode === SHARED_CONTAINER_COPY_PICKER_MODE) {
-    await copySharedRootToLayoutContainer(runtime.sharedPickerSourceContainerId, "", runtime.containerPickerLayoutId, { targetIndex });
+    await copySharedRootToLayoutContainer(runtime.sharedPickerSourceContainerId, "", runtime.containerPickerLayoutId, {
+      includeContents: sharedPickerCopyIncludesContents,
+      targetIndex
+    });
   }
 }
 
@@ -1875,8 +1912,14 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (!source || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  const sourceIsPublic = Boolean(source.publicCatalogLayoutId);
-  const crossesPublicNamespace = copyCrossesPublicNamespaceBoundary({ sourceIsPublic, targetIsPublic });
+  const sourceRecordHasPublicOrigin = itemRecordIsPublicNamespaceSource(source, {
+    hasPrivateSyncBlockedPublicOrigin
+  });
+  const { sourceIsPublicCopy, crossesPublicNamespace } = itemCopyNamespacePolicy({
+    sourceLayoutIsPublic: isAdminEditablePublishedLayout(runtime.containerPickerSourceLayoutId),
+    sourceRecordHasPublicOrigin,
+    targetIsPublic
+  });
   if (!crossesPublicNamespace) {
     if (layoutContainsItem(targetLayoutId, itemId)) {
       const duplicate = await askConfirmDialog({
@@ -1901,11 +1944,10 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
     return;
   }
   const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot({ rootId: "", containers: {}, items: { [itemId]: source } });
-  const sourceIsPublicCopy = sourceIsPublic || hasPrivateSyncBlockedPublicOrigin(source, itemId) || Boolean(publicCopySourceIdFromRecord(source, "item", itemId));
   if ((targetIsPublic || sourceIsPublicCopy) && publicSourceSnapshot) {
     if (!(await confirmPublicCopyDuplicates(targetLayoutId, publicSourceSnapshot, source.name))) return;
   }
-  await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
+  await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId, { sourceIsPublicCopy });
 }
 
 function layoutContainsItem(layoutId, itemId) {
@@ -1953,7 +1995,9 @@ function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLa
   return true;
 }
 
-async function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
+async function duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId, {
+  sourceIsPublicCopy: sourceIsPublicCopyContext = false
+} = {}) {
   const source = state.items[itemId];
   const targetLayout = state.layouts[targetLayoutId];
   if (!source || !targetLayout) return;
@@ -1963,7 +2007,7 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   const changedAt = nowIso();
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
   if (!targetIsPublic) ensureWritableTargetLayoutContext(targetLayoutId);
-  const sourceIsPublicCopy = Boolean(sourceSnapshot.publicCatalogLayoutId) ||
+  const sourceIsPublicCopy = sourceIsPublicCopyContext || Boolean(sourceSnapshot.publicCatalogLayoutId) ||
     hasPrivateSyncBlockedPublicOrigin(sourceSnapshot, itemId) ||
     Boolean(publicCopySourceIdFromRecord(sourceSnapshot, "item", itemId));
   const shouldCopyPhotosToCurrentList = shouldCopyPhotosToCurrentListForLayoutCopy({
@@ -2002,6 +2046,15 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   }
   markRecentlyAddedItem(copyId, targetLayoutId);
   await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
+  if (!targetIsPublic && runtime.currentUser) {
+    void saveRemoteState({
+      expectedEntityIds: {
+        items: [copyId],
+        containers: [],
+        layouts: [targetLayoutId]
+      }
+    });
+  }
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
@@ -2025,9 +2078,14 @@ function snapshotContainerTreeFromLiveState(containerId, targetState = state) {
   return snapshotContainerTreeFromLiveStateValue(containerId, targetState);
 }
 
-async function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", { sourceLayoutId = "", targetIndex = null } = {}) {
+async function copyContainerTreeToLayout(containerId, targetLayoutId = state.activeLayoutId, targetParentId = "", {
+  includeContents = true,
+  sourceLayoutId = "",
+  targetIndex = null
+} = {}) {
   const targetLayout = state.layouts[targetLayoutId];
-  const sourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, excludeLayoutId: targetLayoutId });
+  const fullSourceSnapshot = snapshotContainerTree(containerId, { sourceLayoutId, excludeLayoutId: targetLayoutId });
+  const sourceSnapshot = containerCopySnapshotForContext(fullSourceSnapshot, { includeContents });
   if (!sourceSnapshot || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId)) return;
   if (warnUnavailableSnapshotCopy(sourceSnapshot)) return;
@@ -2220,6 +2278,15 @@ async function duplicateContainerSnapshotToLayout(sourceSnapshot, targetLayoutId
     if (targetLayoutId === state.activeLayoutId) applyLayoutArrangement(targetLayoutId);
     markRecentlyAddedContainer(nextRootId, targetLayoutId);
     await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
+    if (!targetIsPublic && runtime.currentUser) {
+      void saveRemoteState({
+        expectedEntityIds: {
+          items: Object.keys(copiedItemContainers),
+          containers: Object.keys(copiedPlacements),
+          layouts: [targetLayoutId]
+        }
+      });
+    }
     return nextRootId;
   };
 
@@ -4886,7 +4953,11 @@ function moveRootColumn(containerId, targetIndex) {
   render();
 }
 
-function openRootContainerDialog(containerId = null, { placeInCurrentLayout = false, targetLayoutId = "" } = {}) {
+function openRootContainerDialog(containerId = null, {
+  copyIncludesContents = true,
+  placeInCurrentLayout = false,
+  targetLayoutId = ""
+} = {}) {
   resetSharedReadonlyRootContainerDialog();
   const container = containerId ? state.containers[containerId] : null;
   if (containerId && !container) return;
@@ -4895,6 +4966,7 @@ function openRootContainerDialog(containerId = null, { placeInCurrentLayout = fa
     ? targetLayoutId
     : "";
   runtime.editingRootContainerId = containerId || null;
+  rootContainerDialogCopyIncludesContents = copyIncludesContents !== false;
   runtime.rootContainerDialogPendingRootIds = null;
   runtime.rootContainerDialogPendingParentId = undefined;
   runtime.rootContainerDialogPendingParentIndex = null;
@@ -5235,7 +5307,8 @@ function uniquePublishedTemplateName(baseName = defaultTemplateName(), { exceptL
 function canManageLayout(layoutId = state.activeLayoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || isReadOnlyStateScope() || isSharedLayoutView()) return false;
-  return isAdminEditablePublishedLayout(layout.id) || canUseLocalEditableState(layout.id);
+  if (isAdminEditablePublishedLayout(layout.id)) return canEditManagedAdminTemplateNow(layout);
+  return canUseLocalEditableState(layout.id);
 }
 
 function canManageActiveLayout() {
@@ -5774,17 +5847,23 @@ function updateLayoutEditPublishButton(layout) {
       : "template.publish";
   refs.publishEditedTemplateBtn.textContent = t(labelKey);
   refs.publishEditedTemplateBtn.hidden = !visible;
-  refs.publishEditedTemplateBtn.disabled = !visible;
+  refs.publishEditedTemplateBtn.disabled = !visible || !canEditPublishedTemplatesNow();
   refs.publishEditedTemplateBtn.classList.toggle("template-unpublish-action", action === "unpublish" || action === "retry-unpublish");
   refs.publishEditedTemplateBtn.closest(".layout-edit-actions")?.classList.toggle("template-publish-visible", visible);
 }
 
 function editableLayoutOrderSections() {
   const showPublicTemplates = canViewAdminPublishedCatalog();
+  const editPublishedCatalog = canEditPublishedTemplatesNow();
   return layoutOrderSectionsFromSources({
     layouts: state.layouts,
-    demoTemplates: showPublicTemplates ? runtime.serverConfirmedDemoTemplates : demoTemplatesForUiLanguage(uiLanguage),
-    sharedTemplates: showPublicTemplates ? serverConfirmedSharedLayoutsByAdminOrder() : currentSharedLayouts(uiLanguage),
+    demoTemplates: editPublishedCatalog
+      ? runtime.serverConfirmedDemoTemplates
+      : showPublicTemplates ? [] : demoTemplatesForUiLanguage(uiLanguage),
+    sharedTemplates: editPublishedCatalog
+      ? serverConfirmedSharedLayoutsByAdminOrder()
+      : showPublicTemplates ? [] : currentSharedLayouts(uiLanguage),
+    serverCatalogVisible: showPublicTemplates,
     guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
     includeLayout: (layout) => Boolean(layout?.id && canManageLayout(layout.id)),
     locale: uiLanguage || "ru"
@@ -5950,20 +6029,69 @@ function renderLayoutOrderRow(layout, section, index) {
   return row;
 }
 
-function applyLayoutOrderSections(sections) {
+async function applyLayoutOrderSections(sections) {
   const orderedIds = layoutOrderIdsFromSections(sections);
+  const previousLayouts = clone(state.layouts);
+  const previousDemoTemplates = runtime.serverConfirmedDemoTemplates;
+  const previousSharedTemplates = runtime.serverConfirmedSharedLayouts;
   const result = applyLayoutOrderToSources(state, orderedIds, {
-    demoTemplates: runtime.serverConfirmedDemoTemplates,
-    sharedTemplates: runtime.serverConfirmedSharedLayouts,
+    demoTemplates: previousDemoTemplates,
+    sharedTemplates: previousSharedTemplates,
     changedAt: nowIso(),
     markEdited
   });
   if (!result.changed) return false;
+  const publicOrderUpdates = publicTemplateOrderUpdates({
+    beforeDemoTemplates: previousDemoTemplates,
+    afterDemoTemplates: result.demoTemplates,
+    beforeSharedTemplates: previousSharedTemplates,
+    afterSharedTemplates: result.sharedTemplates
+  });
+  const personalOrderLayoutIds = changedPersonalLayoutOrderIds(previousLayouts, state.layouts, {
+    includeLayout: (layout) => Boolean(
+      layout?.id &&
+      !layout.adminDemo &&
+      !layout.adminSharedSourceId &&
+      !layout.publicCatalogLayoutId &&
+      !layout?.[GUEST_DEMO_COPY_FLAG]
+    )
+  });
+  try {
+    if (publicOrderUpdates.length) {
+      await assertAdminApiCompatibility({ force: true });
+      updateSyncUi(localText("Saving template order...", "Сохраняю порядок шаблонов..."));
+      await persistPublicTemplateOrderUpdates(publicOrderUpdates, {
+        apiFetch,
+        demoAdminPathForPublicListId
+      });
+    }
+  } catch (error) {
+    state.layouts = previousLayouts;
+    runtime.serverConfirmedDemoTemplates = previousDemoTemplates;
+    runtime.serverConfirmedSharedLayouts = previousSharedTemplates;
+    renderFilters();
+    renderLayoutOrderPanel();
+    updateSyncUi();
+    throw error;
+  }
   if (result.demoTemplatesChanged) runtime.serverConfirmedDemoTemplates = result.demoTemplates;
   if (result.sharedTemplatesChanged) runtime.serverConfirmedSharedLayouts = result.sharedTemplates;
-  if (result.stateChanged) saveState();
+  if (result.stateChanged) {
+    saveState();
+    if (personalOrderLayoutIds.length && runtime.currentUser && canUsePrivateState()) {
+      updateSyncUi(localText("Saving personal layout order...", "Сохраняю порядок личных укладок..."));
+      await saveRemoteState({
+        expectedEntityIds: {
+          items: [],
+          containers: [],
+          layouts: personalOrderLayoutIds
+        }
+      });
+    }
+  }
   renderFilters();
   renderLayoutOrderPanel();
+  updateSyncUi();
   return true;
 }
 
@@ -6002,11 +6130,20 @@ async function requestCloseLayoutOrderDialog() {
   if (action === "discard") refs.layoutOrderDialog.close("cancel");
 }
 
-function saveLayoutOrder(event) {
+async function saveLayoutOrder(event) {
   event?.preventDefault();
   if (!hasSavableLayoutOrderChanges()) return;
-  applyLayoutOrderSections(currentLayoutOrderSections());
-  refs.layoutOrderDialog.close("default");
+  if (refs.saveLayoutOrderBtn) refs.saveLayoutOrderBtn.disabled = true;
+  try {
+    await applyLayoutOrderSections(currentLayoutOrderSections());
+    refs.layoutOrderDialog.close("default");
+  } catch (error) {
+    showToast(localText(
+      `Could not save layout order: ${apiErrorMessage(error)}`,
+      `Не удалось сохранить порядок укладок: ${apiErrorMessage(error)}`
+    ), "error");
+    updateLayoutOrderSaveState();
+  }
 }
 
 function handleLayoutOrderListClick(event) {
@@ -6154,7 +6291,7 @@ function canDeleteManagedLayout(layoutId = runtime.layoutEditTargetId || state.a
   const layout = state.layouts?.[layoutId];
   if (!layout) return false;
   if (publicTemplateDeleteBlockReasonForLayout(layout)) return false;
-  if (isAdminEditablePublishedLayout(layoutId)) return canOpenAdminPublishedEdit();
+  if (isAdminEditablePublishedLayout(layoutId)) return canEditManagedAdminTemplateNow(layout);
   return canDeleteActiveLayout() && layoutId === state.activeLayoutId;
 }
 
@@ -6246,6 +6383,7 @@ async function publishEditedTemplate(event) {
   event?.preventDefault();
   const layout = state.layouts?.[runtime.layoutEditTargetId];
   if (!layout || !isAdminEditablePublishedLayout(layout.id) || !isManagedTemplateUnpublished(layout)) return;
+  if (!canEditPublishedTemplatesNow()) return;
   if (hasSavableLayoutEditChanges()) {
     const saved = await saveEditedLayout(null, { closeDialog: false, notify: false });
     if (!saved) return;
@@ -6275,6 +6413,7 @@ async function unpublishEditedTemplate(event) {
   const action = managedTemplatePublicationAction(layout);
   const retryPending = action === "retry-unpublish";
   if (!layout || !isAdminEditablePublishedLayout(layout.id) || (action !== "unpublish" && !retryPending)) return;
+  if (!canEditPublishedTemplatesNow()) return;
   if (hasSavableLayoutEditChanges()) {
     const saved = await saveEditedLayout(null, { closeDialog: false, notify: false });
     if (!saved) return;
@@ -7214,7 +7353,6 @@ async function uploadDialogDraftPhotos({
     shouldContinue: () => uploadPhotos.some((photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo))
   });
   if (!slotAvailable) return false;
-  runtime.photoUploadInFlight = true;
   let uploaded = false;
   try {
     if (usePublishedTemplateUpload) {
@@ -7251,16 +7389,17 @@ async function uploadDialogDraftPhotos({
 
 async function waitForDialogPhotoUploadSlot({
   shouldContinue = () => true,
-  maxWaitMs = 60000,
+  maxWaitMs = 120000,
   delayMs = 250
 } = {}) {
-  const startedAt = Date.now();
-  while (runtime.photoUploadInFlight) {
-    if (!runtime.currentUser || isForcedOffline() || !shouldContinue()) return false;
-    if (Date.now() - startedAt >= maxWaitMs) return false;
-    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-  }
-  return shouldContinue();
+  return acquirePhotoUploadSlot({
+    isBusy: () => runtime.photoUploadInFlight,
+    setBusy: (value) => { runtime.photoUploadInFlight = value; },
+    shouldContinue: () => Boolean(runtime.currentUser) && !isForcedOffline() && shouldContinue(),
+    maxWaitMs,
+    delayMs,
+    setTimeoutImpl: window.setTimeout.bind(window)
+  });
 }
 
 function dialogDraftPhotoStillOwnedBy({ draft = null, entity = null, photo = null } = {}) {

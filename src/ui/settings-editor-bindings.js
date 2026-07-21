@@ -146,7 +146,7 @@ export function bindRootContainersEditorControls({
 
   document.querySelectorAll("[data-edit-root]").forEach((button) => {
     button.addEventListener("click", () => {
-      openRootContainerDialog(button.dataset.editRoot);
+      openRootContainerDialog(button.dataset.editRoot, { copyIncludesContents: false });
     });
   });
 
@@ -161,7 +161,7 @@ export function bindRootContainersEditorControls({
       const card = title.closest(".root-container-card");
       if (card?.dataset.justDragged === "true") return;
       event.preventDefault();
-      openRootContainerDialog(title.dataset.rootTitle);
+      openRootContainerDialog(title.dataset.rootTitle, { copyIncludesContents: false });
     };
     title.addEventListener("click", (event) => {
       const containerId = title.dataset.rootTitle;

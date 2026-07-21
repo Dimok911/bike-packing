@@ -93,6 +93,10 @@ import {
 } from "../../src/public/public-demo-template-admin.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "../../src/public/published-payload-photos.js";
 import { createSharedVirtualStateFromPublishedState } from "../../src/public/shared-virtual-state.js";
+import { containerCopySnapshotForContext } from "../../src/public/copy-published-container.js";
+import { collectPublicLayoutRecordIds } from "../../src/state/public-layout-scope.js";
+import { sharedContainerCopyIncludesContents } from "../../src/ui/shared-virtual-events.js";
+import { pruneAdminPublishedDraftsForSync } from "../../src/sync/save-body.js";
 import {
   planLayoutTreeMissingItems,
   planPublicCopyMissingItems,
@@ -126,6 +130,8 @@ import {
 } from "../../src/public/shared-layouts.js";
 import { buildAdminSharedTemplateOptions } from "../../src/public/admin-shared-template-options.js";
 import {
+  canEditLocalUnpublishedTemplate,
+  canEditManagedTemplate,
   isNetworkUnavailable,
   publicTemplateOptionAccess,
   publishedTemplateBlockReason,
@@ -2905,6 +2911,102 @@ test("template copy uses the original public source id when copying a copy", () 
   assert.equal(nextContainerId.includes("container-shared-container-shared"), false);
 });
 
+test("private layout references keep a copied shared item in the personal catalog and sync payload", () => {
+  const state = {
+    containers: {
+      "bag-shared": { id: "bag-shared" }
+    },
+    items: {
+      "item-copied": { id: "item-copied", containerId: "bag-shared" },
+      "item-public-only": { id: "item-public-only", containerId: "bag-shared" }
+    },
+    layouts: {
+      "layout-shared": {
+        id: "layout-shared",
+        adminSharedSourceId: "shared-template",
+        arrangement: {
+          rootContainerIds: ["bag-shared"],
+          containers: { "bag-shared": {} },
+          items: {
+            "item-copied": "bag-shared",
+            "item-public-only": "bag-shared"
+          }
+        }
+      },
+      "layout-private": {
+        id: "layout-private",
+        arrangement: {
+          rootContainerIds: ["bag-shared"],
+          containers: { "bag-shared": {} },
+          items: { "item-copied": "bag-shared" }
+        }
+      }
+    }
+  };
+  const layoutHelpers = {
+    getLayoutContainerIdSet: (_state, layout) => new Set(Object.keys(layout.arrangement?.containers || {})),
+    getLayoutItemIdSet: (_state, layout) => new Set(Object.keys(layout.arrangement?.items || {}))
+  };
+  const ids = collectPublicLayoutRecordIds(state, layoutHelpers);
+
+  assert.equal(ids.containerIds.has("bag-shared"), false);
+  assert.equal(ids.itemIds.has("item-copied"), false);
+  assert.equal(ids.itemIds.has("item-public-only"), true);
+
+  const syncState = structuredClone(state);
+  pruneAdminPublishedDraftsForSync(syncState, {
+    getPublicLayoutRecordIds: (targetState) => collectPublicLayoutRecordIds(targetState, layoutHelpers),
+    guestDemoCopyFlag: "guestDemoCopy"
+  });
+  assert.ok(syncState.items["item-copied"]);
+  assert.equal(syncState.items["item-public-only"], undefined);
+  assert.ok(syncState.containers["bag-shared"]);
+  assert.equal(syncState.layouts["layout-shared"], undefined);
+  assert.ok(syncState.layouts["layout-private"]);
+});
+
+test("copying a shared bag from Bags copies an empty bag while Packing keeps its contents", () => {
+  const sourceSnapshot = {
+    rootId: "bag-root",
+    containers: {
+      "bag-root": {
+        id: "bag-root",
+        childIds: ["bag-child"],
+        itemIds: ["item-a"],
+        order: [
+          { type: "item", id: "item-a" },
+          { type: "container", id: "bag-child" }
+        ]
+      },
+      "bag-child": { id: "bag-child", childIds: [], itemIds: [], order: [] }
+    },
+    items: { "item-a": { id: "item-a" } }
+  };
+
+  assert.equal(sharedContainerCopyIncludesContents({ id: "bagsView" }), false);
+  assert.equal(sharedContainerCopyIncludesContents({ id: "packingView" }), true);
+  const emptyCopy = containerCopySnapshotForContext(sourceSnapshot, { includeContents: false });
+  assert.deepEqual(emptyCopy.containers["bag-root"].childIds, []);
+  assert.deepEqual(emptyCopy.containers["bag-root"].itemIds, []);
+  assert.deepEqual(emptyCopy.containers["bag-root"].order, []);
+  assert.deepEqual(emptyCopy.items, {});
+  assert.equal(emptyCopy.containers["bag-child"], undefined);
+  assert.equal(containerCopySnapshotForContext(sourceSnapshot, { includeContents: true }), sourceSnapshot);
+});
+
+test("admin bag editor preserves whether it was opened from Bags or Packing", () => {
+  const settingsSource = readFileSync(new URL("../../src/ui/settings-editor-bindings.js", import.meta.url), "utf8");
+  const sharedEventsSource = readFileSync(new URL("../../src/ui/shared-virtual-events.js", import.meta.url), "utf8");
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+
+  assert.match(settingsSource, /openRootContainerDialog\(button\.dataset\.editRoot, \{ copyIncludesContents: false \}\)/);
+  assert.match(sharedEventsSource, /copyIncludesContents: sharedContainerCopyIncludesContents\(root\)/);
+  assert.match(appSource, /openRootContainerDialog\(containerId, \{ copyIncludesContents \}\)/);
+  assert.match(controllerSource, /containerCopySnapshotForContext\(fullSourceSnapshot, \{ includeContents \}\)/);
+  assert.match(controllerSource, /expectedEntityIds:\s*\{\s*items: Object\.keys\(copiedItemContainers\),\s*containers: Object\.keys\(copiedPlacements\),\s*layouts: \[targetLayoutId\]/);
+});
+
 test("public copy content hash separates edited descendants from exact source copies", () => {
   const sourceItem = {
     id: "item-tent",
@@ -4007,8 +4109,20 @@ test("public shared template payload cache avoids repeated full payload fetches 
     items: {}
   };
   const runtime = {
-    serverConfirmedDemoTemplates: [],
-    serverConfirmedSharedLayouts: [],
+    serverConfirmedDemoTemplates: [{
+      id: "stale-demo",
+      listId: "stale-demo",
+      name: "Old demo history",
+      language: "ru",
+      publicTemplateKind: "demo",
+      serverConfirmed: true
+    }],
+    serverConfirmedSharedLayouts: [{
+      id: "stale-shared",
+      name: "Old shared history",
+      language: "ru",
+      serverConfirmed: true
+    }],
     sharedLayoutCatalogDiagnostics: null,
     sharedLayoutsByLanguage: { ru: [], en: [] },
     state: { layouts: {}, containers: {}, items: {} },
@@ -4024,7 +4138,7 @@ test("public shared template payload cache avoids repeated full payload fetches 
     currentEditMeta: () => ({}),
     demoTemplateFallbackName: () => "Demo",
     ensureLayoutDictionaries: () => null,
-    fetchPublicSharedLayoutCatalog: async () => ({ lists: [record], unified: true }),
+    fetchPublicSharedLayoutCatalog: async () => ({ lists: [record], unified: true, canonical: true }),
     fetchPublishedDemoTemplateState: async () => null,
     fetchStateRecordByItemKey: async () => {
       payloadFetches += 1;
@@ -4073,6 +4187,8 @@ test("public shared template payload cache avoids repeated full payload fetches 
 
   assert.equal(payloadFetches, 1);
   assert.equal(runtime.sharedLayoutsByLanguage.ru[0].id, "bikepacking-reference-bags");
+  assert.deepEqual(runtime.serverConfirmedDemoTemplates, []);
+  assert.deepEqual(runtime.serverConfirmedSharedLayouts.map((entry) => entry.id), ["bikepacking-reference-bags"]);
 });
 
 test("public template payload cache invalidates entries when updatedAt changes", () => {
@@ -4655,6 +4771,63 @@ test("published template network access is blocked when offline or forced offlin
     navigatorOnline: false,
     language: "ru"
   }), /нет интернета/);
+});
+
+test("CRITICAL offline admin: local unpublished drafts stay editable while published templates stay read-only", () => {
+  const draft = {
+    id: "draft-layout",
+    adminTemplateCopy: true,
+    adminSharedSourceId: "draft-source",
+    templatePublished: false
+  };
+  const published = {
+    id: "published-layout",
+    adminTemplateCopy: true,
+    adminSharedSourceId: "published-source",
+    templatePublished: true
+  };
+
+  assert.equal(canEditLocalUnpublishedTemplate({
+    layout: draft,
+    rememberedAdminSession: true
+  }), true);
+  assert.equal(canEditLocalUnpublishedTemplate({
+    layout: draft,
+    rememberedAdminSession: false,
+    liveAdminSession: false
+  }), false);
+  assert.equal(canEditManagedTemplate({
+    layout: draft,
+    rememberedAdminSession: true,
+    templatesBlocked: true
+  }), true);
+  assert.equal(canEditManagedTemplate({
+    layout: published,
+    rememberedAdminSession: true,
+    templatesBlocked: true
+  }), false);
+  assert.equal(canEditManagedTemplate({
+    layout: published,
+    liveAdminSession: true,
+    templatesBlocked: true
+  }), false);
+  assert.equal(canEditManagedTemplate({
+    layout: published,
+    liveAdminSession: true,
+    templatesBlocked: false
+  }), true);
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const filterSource = readFileSync(new URL("../../src/ui/filter-controls.js", import.meta.url), "utf8");
+  assert.match(appSource, /includeDrafts: canViewAdminPublishedCatalog\(\)/);
+  assert.match(appSource, /canEditPublishedTemplatesNow\(\) \|\| canEditLocalUnpublishedAdminTemplate\(layout\)/);
+  assert.match(controllerSource, /return canEditManagedAdminTemplateNow\(layout\)/);
+  assert.match(controllerSource, /disabled = !visible \|\| !canEditPublishedTemplatesNow\(\)/);
+  assert.match(controllerSource, /const editPublishedCatalog = canEditPublishedTemplatesNow\(\)/);
+  assert.match(controllerSource, /demoTemplates: editPublishedCatalog/);
+  assert.match(controllerSource, /sharedTemplates: editPublishedCatalog/);
+  assert.match(filterSource, /selectedPublicReadonly = publicOptionAccess\.readonly && !selectedDraftEditable/);
 });
 
 test("readonly template cache can open offline for every role", () => {

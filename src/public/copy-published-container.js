@@ -1,3 +1,21 @@
+export function containerCopySnapshotForContext(sourceSnapshot, { includeContents = true } = {}) {
+  if (!sourceSnapshot?.rootId || !sourceSnapshot.containers?.[sourceSnapshot.rootId]) return null;
+  if (includeContents) return sourceSnapshot;
+  const root = sourceSnapshot.containers[sourceSnapshot.rootId];
+  return {
+    rootId: sourceSnapshot.rootId,
+    containers: {
+      [sourceSnapshot.rootId]: {
+        ...root,
+        childIds: [],
+        itemIds: [],
+        order: []
+      }
+    },
+    items: {}
+  };
+}
+
 export function copyPublishedContainerToState(targetState, sourceState, containerId, {
   changedAt,
   copiedFromTemplateName = "",

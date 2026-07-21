@@ -31,6 +31,7 @@ import {
   uploadPhotoToPath,
   verifyRemotePhotoAssets
 } from "../../src/sync/photo-upload-flow.js";
+import { acquirePhotoUploadSlot } from "../../src/sync/photo-upload-lock.js";
 import {
   getUnsyncedPhotoEntries,
   getUploadablePhotoEntries
@@ -853,7 +854,9 @@ test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued p
   assert.doesNotMatch(controllers, /markDialogDraftPhotosUploadStarted|resetDialogDraftPhotosUploadStart|canStartDialogDraftPhotoUpload/);
   assert.doesNotMatch(controllers, /const uploadStartedInPreview/);
   assert.match(controllers, /await waitForDialogPhotoUploadSlot/);
-  assert.match(controllers, /while \(runtime\.photoUploadInFlight\)/);
+  assert.match(controllers, /return acquirePhotoUploadSlot\(\{/);
+  assert.match(app, /const slotAvailable = await acquirePhotoUploadSlot\(\{/);
+  assert.match(app, /const entries = getUploadablePhotoEntries\(\{ layoutId, listId \}\);/);
   assert.match(controllers, /shouldUploadPhoto:\s*\(photo\) => dialogDraftPhotoStillOwnedBy/);
   assert.match(controllers, /if \(!shouldUploadPhoto\(photo\) \|\| photoRemoteSrc\(photo\)\) continue;/);
   assert.match(controllers, /updatePhotoGalleryUploadProgress\(refs\.itemPhotoPreview,\s*list\)/);
@@ -868,6 +871,30 @@ test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued p
   assert.doesNotMatch(app.slice(app.indexOf("async function uploadEntityPhotoToPath")), /const retryPhoto = resolvePhoto\(\)/);
   assert.doesNotMatch(app.slice(app.indexOf("async function uploadEntityPhotoToPath")), /apiFetch\(path,\s*\{[\s\S]*PHOTO_UPLOAD_TIMEOUT_MS/);
   assert.doesNotMatch(controllers, /button\.textContent\s*=\s*"Фото загружается"/);
+});
+
+test("CRITICAL offline-photos: a pending upload waits for the active upload and acquires the shared slot", async () => {
+  let busy = true;
+  let clock = 0;
+  let waits = 0;
+  const acquired = await acquirePhotoUploadSlot({
+    isBusy: () => busy,
+    setBusy: (value) => { busy = value; },
+    shouldContinue: () => true,
+    maxWaitMs: 1000,
+    delayMs: 25,
+    now: () => clock,
+    setTimeoutImpl: (resolve, delay) => {
+      waits += 1;
+      clock += delay;
+      busy = false;
+      resolve();
+    }
+  });
+
+  assert.equal(acquired, true);
+  assert.equal(waits, 1);
+  assert.equal(busy, true);
 });
 
 test("CRITICAL offline-photos: photo upload flow syncs only after server response and clears progress", async () => {
@@ -1261,6 +1288,19 @@ test("CRITICAL offline-photos: changed photo draft blocks backdrop click without
   changed = true;
   assert.equal(dialog.dispatchEvent(new Event("click", { bubbles: true, cancelable: true })), true);
   assert.equal(downstreamClicks, 2);
+});
+
+test("CRITICAL offline-photos: root app backdrop guards use root dialog state without an undefined runtime", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const guardStart = appSource.indexOf("bindDialogBackdropClickGuard(refs.dialog");
+  const guardEnd = appSource.indexOf("refs.newLayoutBtn.addEventListener", guardStart);
+  const guards = appSource.slice(guardStart, guardEnd);
+
+  assert.notEqual(guardStart, -1);
+  assert.notEqual(guardEnd, -1);
+  assert.doesNotMatch(guards, /\bruntime\./);
+  assert.match(guards, /photoDraftChanged\(itemDialogPhotoDraft, editingItemId/);
+  assert.match(guards, /photoDraftChanged\(rootContainerDialogPhotoDraft, editingRootContainerId/);
 });
 
 test("CRITICAL offline-photos: iOS file picker dismiss cannot close the edit dialog backdrop", () => {

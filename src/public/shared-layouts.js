@@ -103,6 +103,7 @@ export function sharedLayoutCatalogEntryFromPublicRecord(record, {
     language,
     runtimeSharedTemplate: true,
     serverConfirmed: true,
+    layoutOrder: Number.isFinite(Number(record?.layoutOrder)) ? Number(record.layoutOrder) : runtimeLayout?.layoutOrder,
     updatedAt: runtimeLayout?.updatedAt || record?.updatedAt || record?.updated_at || ""
   };
 }

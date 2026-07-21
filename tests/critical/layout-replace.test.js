@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  isContainerReplacementCandidateInLayoutState,
   isNestedContainerInLayoutState,
   isTemporaryContainerInLayoutState,
   replaceContainerInLayoutState,
@@ -46,6 +47,30 @@ test("CRITICAL layout replacement: temporary pouch status is visible only for no
   assert.match(indexSource, /id="rootContainerTemporaryStatus"/);
   assert.match(appTailSource, /replacement\.temporaryContainerLabel/);
   assert.match(appTailSource, /replacement\.temporaryContainerHint/);
+});
+
+test("CRITICAL layout replacement: nested sources only offer nestable replacement bags", () => {
+  const state = createState();
+  const layout = state.layouts["layout-a"];
+  state.containers["bag-parent"] = {
+    id: "bag-parent", name: "Parent", parentId: null,
+    itemIds: [], childIds: ["bag-old"], order: [{ type: "container", id: "bag-old" }]
+  };
+  state.containers["bag-old"].parentId = "bag-parent";
+  layout.rootContainerIds = ["bag-parent"];
+  layout.arrangement.rootContainerIds = ["bag-parent"];
+  layout.arrangement.containers["bag-parent"] = {
+    parentId: "", itemIds: [], childIds: ["bag-old"], order: [{ type: "container", id: "bag-old" }]
+  };
+  layout.arrangement.containers["bag-old"].parentId = "bag-parent";
+
+  state.containers["bag-new"].nestable = false;
+  assert.equal(isContainerReplacementCandidateInLayoutState(state, layout, "bag-old", "bag-new"), false);
+  assert.equal(replaceContainerInLayoutState(state, "layout-a", "bag-old", "bag-new"), false);
+
+  state.containers["bag-new"].nestable = true;
+  assert.equal(isContainerReplacementCandidateInLayoutState(state, layout, "bag-old", "bag-new"), true);
+  assert.match(appTailSource, /isContainerReplacementCandidateInLayoutState\([\s\S]*replacingPackingContainerId,[\s\S]*container\.id/);
 });
 
 function createState() {
@@ -139,6 +164,7 @@ test("CRITICAL layout replacement: a reusable nested bag keeps its parent slot",
   };
   state.containers["bag-old"].parentId = "bag-parent";
   state.containers["bag-old"].nestable = true;
+  state.containers["bag-new"].nestable = true;
   layout.rootContainerIds = ["bag-parent"];
   layout.arrangement.rootContainerIds = ["bag-parent"];
   layout.arrangement.containers["bag-parent"] = {
@@ -182,6 +208,36 @@ test("CRITICAL layout replacement: a temporary nested pouch is removed after bec
   assert.deepEqual(layout.arrangement.containers["bag-parent"].childIds, ["bag-new"]);
   assert.deepEqual(layout.arrangement.containers["bag-new"].itemIds, ["item-old"]);
   assert.deepEqual(layout.arrangement.containers["bag-new"].childIds, ["bag-child"]);
+});
+
+test("CRITICAL layout replacement: a temporary pouch shared with another layout does not block replacement", () => {
+  const state = createState();
+  const layout = state.layouts["layout-a"];
+  const removed = [];
+  state.containers["bag-parent"] = {
+    id: "bag-parent", name: "Parent", parentId: null,
+    itemIds: [], childIds: ["bag-old"], order: [{ type: "container", id: "bag-old" }]
+  };
+  state.containers["bag-old"].parentId = "bag-parent";
+  state.containers["bag-old"].nestable = false;
+  state.containers["bag-new"].nestable = true;
+  layout.rootContainerIds = ["bag-parent"];
+  layout.arrangement.rootContainerIds = ["bag-parent"];
+  layout.arrangement.containers["bag-parent"] = {
+    parentId: "", itemIds: [], childIds: ["bag-old"], order: [{ type: "container", id: "bag-old" }]
+  };
+  layout.arrangement.containers["bag-old"].parentId = "bag-parent";
+  state.layouts["layout-b"] = structuredClone(layout);
+  state.layouts["layout-b"].id = "layout-b";
+
+  assert.equal(replaceContainerInLayoutState(state, "layout-a", "bag-old", "bag-new", {
+    beforeRemoveSource: (_container, id) => removed.push(id),
+    removeSourceRecord: true
+  }), true);
+  assert.ok(state.containers["bag-old"]);
+  assert.deepEqual(removed, []);
+  assert.deepEqual(state.layouts["layout-a"].arrangement.containers["bag-parent"].childIds, ["bag-new"]);
+  assert.deepEqual(state.layouts["layout-b"].arrangement.containers["bag-parent"].childIds, ["bag-old"]);
 });
 
 test("CRITICAL layout replacement: replacement records already used by the layout are rejected", () => {

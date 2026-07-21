@@ -9,6 +9,10 @@ function tr(t, key, fallback) {
   return typeof t === "function" ? t(key) : fallback;
 }
 
+export function sharedContainerCopyIncludesContents(root) {
+  return root?.id !== "bagsView";
+}
+
 export function sharedCardSourceTarget(card) {
   const virtualItemId = card?.dataset?.itemId || card?.dataset?.listItemId || "";
   const itemId = originalSharedId(virtualItemId, "shared-virtual-item-");
@@ -139,12 +143,16 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
       const sourceId = originalSharedId(virtualId, "shared-virtual-container-");
       if (!sourceId) return;
       if (readonlyTemplate || (canOpenAdminPublishedEdit() && button.dataset.copyRoot)) {
-        openSharedContainerCopyPicker(sourceId);
+        openSharedContainerCopyPicker(sourceId, {
+          includeContents: sharedContainerCopyIncludesContents(root)
+        });
         return;
       }
       if (canOpenAdminPublishedEdit() && (button.dataset.editRoot || button.dataset.editContainer || button.dataset.addToContainer || button.dataset.deleteRoot)) {
         const action = button.dataset.addToContainer ? "add" : button.dataset.deleteRoot ? "delete" : "edit";
-        editSharedSourceAsAdmin("container", sourceId, action);
+        editSharedSourceAsAdmin("container", sourceId, action, {
+          copyIncludesContents: sharedContainerCopyIncludesContents(root)
+        });
       } else {
         copySharedRoot(sourceId);
       }
