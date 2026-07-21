@@ -1,7 +1,45 @@
+export function createPackingEdgeScrollBinding({
+  createScroller,
+  getBoard = () => null,
+  getDragMetrics = () => ({}),
+  onScroll = () => {}
+} = {}) {
+  let board = null;
+  let scroller = null;
+
+  const stop = () => {
+    scroller?.stop?.();
+    scroller = null;
+    board = null;
+  };
+
+  const update = (clientX, clientY, { enabled = true } = {}) => {
+    if (!enabled) {
+      scroller?.pause?.();
+      return false;
+    }
+    const nextBoard = getBoard?.();
+    if (!nextBoard || typeof createScroller !== "function") {
+      stop();
+      return false;
+    }
+    if (!scroller || board !== nextBoard) {
+      stop();
+      board = nextBoard;
+      scroller = createScroller(board, onScroll, getDragMetrics);
+    }
+    scroller?.update?.(clientX, clientY);
+    return Boolean(scroller);
+  };
+
+  return { stop, update };
+}
+
 export function bindSettingsPointerDrag({
   addRootContainerToActiveLayout,
   canNestContainer = () => false,
   cleanupLayoutDropState,
+  createPackingEdgeScroller = null,
   dropList,
   getCurrentView = () => "",
   getLayoutPlaceholderIndex,
@@ -63,6 +101,19 @@ export function bindSettingsPointerDrag({
     let holdTimer = null;
     let packingDrop = null;
     let packingDropBoard = null;
+    const dragOffsetY = startY - sourceBox.top;
+    const packingEdgeScroll = createPackingEdgeScrollBinding({
+      createScroller: createPackingEdgeScroller,
+      getBoard: () => getPackingRoot?.()?.querySelector?.(".board") || null,
+      getDragMetrics: (clientY) => {
+        const height = Math.min(sourceBox.height, 180);
+        const top = clientY - dragOffsetY;
+        return { height, top, bottom: top + height };
+      },
+      onScroll: () => {
+        if (started && !finished) place(latestX, latestY);
+      }
+    });
 
     if (needsHold) {
       markDragPending(sourceRow);
@@ -85,6 +136,7 @@ export function bindSettingsPointerDrag({
       sourceRow.classList.remove("drag-origin");
       sourceRow.classList.remove("drag-source-collapsed");
       ghost.remove();
+      packingEdgeScroll.stop();
       cleanupLayoutDropState(dropList, placeholder);
       cleanupPackingDropState();
       clearPackingPortalTabTarget();
@@ -128,6 +180,9 @@ export function bindSettingsPointerDrag({
       vibrateDragStart(dragInput);
       moveGhost(latestX, latestY);
       place(latestX, latestY);
+      packingEdgeScroll.update(latestX, latestY, {
+        enabled: sourceIsRootCatalog && getCurrentView?.() === "packing"
+      });
     };
 
     const moveGhost = (clientX, clientY) => {
@@ -365,6 +420,9 @@ export function bindSettingsPointerDrag({
       start();
       moveGhost(latestX, latestY);
       place(latestX, latestY);
+      packingEdgeScroll.update(latestX, latestY, {
+        enabled: sourceIsRootCatalog && getCurrentView?.() === "packing"
+      });
     };
 
     const onEnd = (endEvent) => {

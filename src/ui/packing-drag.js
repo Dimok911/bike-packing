@@ -327,6 +327,7 @@ export function createPackingDragController({
         board.scrollTo({ left: lockedLeft, behavior: "auto" });
         board.classList.remove("edge-scrolling");
       }, 180);
+      deferBoardHeightUnlockUntilScroll(board);
     };
 
     const pause = () => {
@@ -1667,6 +1668,7 @@ export function createPackingDragController({
     bindCatalogItemPackingDrag,
     bindPointerPackingDrag,
     bindRootColumnDrag,
+    createBoardEdgeScroller,
     cleanupDropState,
     clearDragPending,
     getEntryAfterPointer,

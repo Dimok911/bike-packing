@@ -4225,6 +4225,7 @@ function bindSettingsPointerDrag() {
     addRootContainerToActiveLayout,
     canNestContainer: (containerId) => state.containers?.[containerId]?.nestable === true,
     cleanupLayoutDropState,
+    createPackingEdgeScroller: (...args) => getPackingDragController().createBoardEdgeScroller(...args),
     dropList: document.querySelector("#layoutDropList"),
     getCurrentView,
     getLayoutPlaceholderIndex,

@@ -12,6 +12,7 @@ import {
 } from "../../src/ui/packing-drag-cancel.js";
 import { I18N } from "../../src/data/i18n.js";
 import { getPackingEntryAfterPointer } from "../../src/ui/packing-drop-target.js";
+import { createPackingEdgeScrollBinding } from "../../src/ui/settings-pointer-drag.js";
 
 function createOverlay({ top, bottom, left = 0, right = 400, position = "sticky", display = "block" }) {
   return {
@@ -186,4 +187,43 @@ test("a tall photo placeholder is removed before resolving its intended drop slo
 
   assert.equal(placeholderRemoved, true);
   assert.equal(target, second);
+});
+
+test("catalog bag drag reconnects edge scroll after switching to a freshly rendered packing board", () => {
+  const firstBoard = { id: "first" };
+  const secondBoard = { id: "second" };
+  let currentBoard = firstBoard;
+  const calls = [];
+  const created = [];
+  const binding = createPackingEdgeScrollBinding({
+    getBoard: () => currentBoard,
+    getDragMetrics: () => ({ height: 80 }),
+    onScroll: () => calls.push("scroll"),
+    createScroller: (board, onScroll, getDragMetrics) => {
+      const record = { board, paused: 0, stopped: 0, updates: [] };
+      created.push(record);
+      assert.deepEqual(getDragMetrics(), { height: 80 });
+      onScroll();
+      return {
+        pause: () => record.paused += 1,
+        stop: () => record.stopped += 1,
+        update: (x, y) => record.updates.push([x, y])
+      };
+    }
+  });
+
+  assert.equal(binding.update(10, 20, { enabled: false }), false);
+  assert.equal(binding.update(30, 40), true);
+  assert.deepEqual(created[0].updates, [[30, 40]]);
+
+  currentBoard = secondBoard;
+  assert.equal(binding.update(50, 60), true);
+  assert.equal(created[0].stopped, 1);
+  assert.deepEqual(created[1].updates, [[50, 60]]);
+
+  binding.update(70, 80, { enabled: false });
+  assert.equal(created[1].paused, 1);
+  binding.stop();
+  assert.equal(created[1].stopped, 1);
+  assert.deepEqual(calls, ["scroll", "scroll"]);
 });
