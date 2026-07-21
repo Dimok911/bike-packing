@@ -838,7 +838,7 @@ label,
 }
 
 .filter-label-active::after {
-  content: "ФИЛЬТР";
+  content: attr(data-filter-status);
   position: absolute;
   right: 7px;
   top: 0;
@@ -850,6 +850,20 @@ label,
   font-size: 9px;
   font-weight: 850;
   letter-spacing: 0;
+}
+
+.filter-label-no-results {
+  color: #7d211b;
+}
+
+.filter-label-no-results::before {
+  background: #cf3f32;
+  box-shadow: 0 0 0 2px rgba(207, 63, 50, 0.2);
+}
+
+.filter-label-no-results::after {
+  background: #cf3f32;
+  color: #fff;
 }
 
 #layoutCopyLabel[hidden],
@@ -923,6 +937,15 @@ button.filter-active {
   background: linear-gradient(90deg, rgba(255, 180, 44, 0.96), rgba(255, 229, 124, 0.9) 38%, #fff8de);
   color: #1d2522;
   box-shadow: inset 0 0 0 1px rgba(211, 94, 0, 0.25), 0 0 0 3px rgba(255, 138, 0, 0.18);
+}
+
+input.filter-active.filter-no-results,
+select.filter-active.filter-no-results,
+button.filter-active.filter-no-results {
+  border-color: rgba(170, 39, 31, 0.88);
+  background: linear-gradient(90deg, rgba(255, 169, 155, 0.96), rgba(255, 218, 208, 0.92) 42%, #fff4f0);
+  color: #431713;
+  box-shadow: inset 0 0 0 1px rgba(170, 39, 31, 0.28), 0 0 0 3px rgba(207, 63, 50, 0.2);
 }
 
 #layoutSelect.layout-select-demo {

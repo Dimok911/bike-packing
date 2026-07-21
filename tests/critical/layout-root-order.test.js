@@ -24,7 +24,11 @@ import {
   renderPackingAddRootCard,
   renderPackingEmptyState
 } from "../../src/ui/empty-state.js";
-import { resetContentFilterControls } from "../../src/ui/filter-controls.js";
+import {
+  applyContentFilterHighlight,
+  contentFilterHasNoResults,
+  resetContentFilterControls
+} from "../../src/ui/filter-controls.js";
 import { I18N } from "../../src/data/i18n.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
 import { createConflictValueFormatter } from "../../src/ui/conflict-format.js";
@@ -97,6 +101,62 @@ test("CRITICAL filtered views: packing, items, and bags expose the same inline r
   assert.match(itemsRenderer, /renderEmptyState\(emptyText, \{[\s\S]*?resetFiltersText/);
   assert.match(bagsRenderer, /renderEmptyState\(emptyText, \{[\s\S]*?resetFiltersText/);
   assert.ok((controllers.match(/bindEmptyContentFilterReset\(refs\.(?:packingView|itemsView|bagsView)\)/g) || []).length >= 6);
+});
+
+test("CRITICAL filtered views: the active filter row immediately shows when there are no matches", () => {
+  const createClassList = () => {
+    const values = new Set();
+    return {
+      contains: (value) => values.has(value),
+      toggle(value, enabled) {
+        if (enabled) values.add(value);
+        else values.delete(value);
+      }
+    };
+  };
+  const control = { classList: createClassList() };
+  const label = { classList: createClassList(), dataset: {} };
+  const refs = { searchInput: control, searchFilterLabel: label };
+
+  assert.equal(contentFilterHasNoResults({
+    active: true,
+    context: true,
+    root: { querySelector: () => null }
+  }), true);
+  assert.equal(contentFilterHasNoResults({
+    active: true,
+    context: true,
+    contextHasMatches: true,
+    root: { querySelector: () => null }
+  }), false);
+  assert.equal(contentFilterHasNoResults({
+    active: true,
+    context: false,
+    root: { querySelector: (selector) => selector === ".empty-filtered" ? {} : null }
+  }), true);
+
+  applyContentFilterHighlight({
+    refs,
+    searchActive: true,
+    noResults: true,
+    activeBadgeText: "FILTER",
+    noResultsBadgeText: "NO RESULTS"
+  });
+  assert.equal(control.classList.contains("filter-no-results"), true);
+  assert.equal(label.classList.contains("filter-label-no-results"), true);
+  assert.equal(label.dataset.filterStatus, "NO RESULTS");
+
+  applyContentFilterHighlight({
+    refs,
+    searchActive: true,
+    noResults: false,
+    activeBadgeText: "FILTER",
+    noResultsBadgeText: "NO RESULTS"
+  });
+  assert.equal(control.classList.contains("filter-no-results"), false);
+  assert.equal(label.dataset.filterStatus, "FILTER");
+  assert.equal(I18N.ru["filters.noResultsBadge"], "НЕ НАЙДЕНО");
+  assert.equal(I18N.en["filters.noResultsBadge"], "NO RESULTS");
 });
 
 test("CRITICAL filled packing: trailing card opens the bag picker", () => {

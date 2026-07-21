@@ -790,6 +790,8 @@ import {
   renderPackingEmptyState
 } from "./src/ui/empty-state.js";
 import {
+  applyContentFilterHighlight,
+  contentFilterHasNoResults,
   renderFilterControls,
   updateViewScopedControlsUi
 } from "./src/ui/filter-controls.js";
@@ -9971,6 +9973,24 @@ function render() {
   renderItems();
   renderBags();
   renderSettings();
+  const currentView = getCurrentView();
+  const currentFilterRoot = currentView === "packing"
+    ? refs.packingView
+    : currentView === "items"
+      ? refs.itemsView
+      : currentView === "bags"
+        ? refs.bagsView
+        : null;
+  updateFilterHighlights({
+    noResults: contentFilterHasNoResults({
+      active: hasActiveContentFilter(),
+      context: isFilterContextActive(),
+      contextHasMatches: currentView === "packing"
+        ? getVisibleLayoutRootIds().some(containerHasVisibleFilterResult)
+        : null,
+      root: currentFilterRoot
+    })
+  });
   updateViewScopedControls();
   updateFilterNavigationUi();
   scheduleFixedScrollbarRefresh();
@@ -10330,16 +10350,19 @@ function updateFilterContextToggle() {
   refs.filterContextBtn.title = label;
 }
 
-function updateFilterHighlights() {
+function updateFilterHighlights({ noResults = false } = {}) {
   const searchActive = Boolean(refs.searchInput.value.trim());
   const locationActive = Boolean(refs.locationFilter.value);
   const categoryActive = selectedCategoryFilters.length > 0;
-  refs.searchInput.classList.toggle("filter-active", searchActive);
-  refs.locationFilter.classList.toggle("filter-active", locationActive);
-  refs.categoryFilter.classList.toggle("filter-active", categoryActive);
-  refs.searchFilterLabel.classList.toggle("filter-label-active", searchActive);
-  refs.locationFilterLabel.classList.toggle("filter-label-active", locationActive);
-  refs.categoryFilterLabel.classList.toggle("filter-label-active", categoryActive);
+  applyContentFilterHighlight({
+    refs,
+    searchActive,
+    locationActive,
+    categoryActive,
+    noResults,
+    activeBadgeText: t("filters.activeBadge"),
+    noResultsBadgeText: t("filters.noResultsBadge")
+  });
 }
 
 function clearSearch() {

@@ -72,6 +72,46 @@ export function resetContentFilterControls({ refs, runtime } = {}) {
   return hadActiveFilters;
 }
 
+export function contentFilterHasNoResults({
+  active = false,
+  context = false,
+  contextHasMatches = null,
+  root = null
+} = {}) {
+  if (!active || !root?.querySelector) return false;
+  if (context) {
+    if (typeof contextHasMatches === "boolean") return !contextHasMatches;
+    return !root.querySelector(".filter-match[data-filter-match-id]");
+  }
+  return Boolean(root.querySelector(".empty-filtered"));
+}
+
+export function applyContentFilterHighlight({
+  refs = {},
+  searchActive = false,
+  locationActive = false,
+  categoryActive = false,
+  noResults = false,
+  activeBadgeText = "FILTER",
+  noResultsBadgeText = "NO RESULTS"
+} = {}) {
+  const entries = [
+    [refs.searchInput, refs.searchFilterLabel, searchActive],
+    [refs.locationFilter, refs.locationFilterLabel, locationActive],
+    [refs.categoryFilter, refs.categoryFilterLabel, categoryActive]
+  ];
+  entries.forEach(([control, label, active]) => {
+    const empty = Boolean(active && noResults);
+    control?.classList?.toggle("filter-active", Boolean(active));
+    control?.classList?.toggle("filter-no-results", empty);
+    label?.classList?.toggle("filter-label-active", Boolean(active));
+    label?.classList?.toggle("filter-label-no-results", empty);
+    if (label?.dataset) {
+      label.dataset.filterStatus = active ? (empty ? noResultsBadgeText : activeBadgeText) : "";
+    }
+  });
+}
+
 export function renderFilterControls({
   activeAdminDraftOptionLabel = () => "",
   activeDemoTemplateListId = "",
