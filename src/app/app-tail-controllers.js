@@ -2726,7 +2726,11 @@ function renderPacking() {
   const filteredEmpty = hasActiveContentFilter();
   const emptyText = t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound");
   const emptyHtml = filteredEmpty
-    ? renderEmptyState(emptyText, { extraClass: "board-empty", filtered: true })
+    ? renderEmptyState(emptyText, {
+        extraClass: "board-empty",
+        filtered: true,
+        resetFiltersText: t("filters.resetAll")
+      })
     : rootIds.length === 0
       ? renderPackingEmptyState({
           title: t("packing.emptyTitle"),
@@ -2747,6 +2751,7 @@ function renderPacking() {
     <div class="board">${boardHtml}</div>
   `;
   restorePackingPhotoRenderState(refs.packingView, photoRenderState);
+  bindEmptyContentFilterReset(refs.packingView);
   bindPackingEvents(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
@@ -2919,9 +2924,14 @@ function renderSharedPacking() {
     refs.packingView.innerHTML = `
       ${renderSharedModeBanner(currentSharedLayout())}
       ${renderPackingRootHeaderRow(visibleRootIds, { filtered: hasActiveContentFilter() && !isFilterContextActive() })}
-      <div class="board">${columns.join("") || renderEmptyState(emptyText, { extraClass: "board-empty", filtered: filteredEmpty })}</div>
+      <div class="board">${columns.join("") || renderEmptyState(emptyText, {
+        extraClass: "board-empty",
+        filtered: filteredEmpty,
+        resetFiltersText: filteredEmpty ? t("filters.resetAll") : ""
+      })}</div>
     `;
   });
+  bindEmptyContentFilterReset(refs.packingView);
   bindSharedVirtualEvents(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
@@ -3765,6 +3775,7 @@ function renderItems() {
     counts,
     emptyFiltered: filteredEmpty,
     emptyText: t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound"),
+    resetFiltersText: filteredEmpty ? t("filters.resetAll") : "",
     itemSortMode: runtime.itemSortMode,
     itemUsageFilter: runtime.itemUsageFilter,
     items,
@@ -3773,6 +3784,7 @@ function renderItems() {
     showPhotos: shouldShowItemPhotos(),
     t
   });
+  bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
   refs.itemsView.querySelector("#itemUsageFilter").addEventListener("change", (event) => {
     runtime.itemUsageFilter = event.target.value;
@@ -3807,6 +3819,7 @@ function renderSharedItemsView() {
       counts,
       emptyFiltered: filteredEmpty,
       emptyText: t(filteredEmpty ? "empty.notFoundByFilter" : "empty.notFound"),
+      resetFiltersText: filteredEmpty ? t("filters.resetAll") : "",
       itemSortMode: runtime.itemSortMode,
       itemUsageFilter: runtime.itemUsageFilter,
       items,
@@ -3816,6 +3829,7 @@ function renderSharedItemsView() {
       t
     });
   });
+  bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#itemUsageFilter")?.addEventListener("change", (event) => {
     runtime.itemUsageFilter = event.target.value;
     renderItems();

@@ -85,6 +85,20 @@ test("CRITICAL filtered bag catalog: empty state can reset every content filter 
   assert.equal(runtime.pendingFilterJump, false);
 });
 
+test("CRITICAL filtered views: packing, items, and bags expose the same inline reset action", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+  const itemsRenderer = readFileSync(resolve(projectRoot, "src/ui/items-view-render.js"), "utf8");
+  const bagsRenderer = readFileSync(resolve(projectRoot, "src/ui/settings-render.js"), "utf8");
+
+  assert.match(controllers, /renderEmptyState\(emptyText,[\s\S]*?resetFiltersText: t\("filters\.resetAll"\)/);
+  assert.match(controllers, /renderItemsViewHtml\(\{[\s\S]*?resetFiltersText: filteredEmpty \? t\("filters\.resetAll"\) : ""/);
+  assert.match(controllers, /renderRootContainersEditorHtml\(\{[\s\S]*?resetFiltersText: hasActiveContentFilter\(\) \? t\("filters\.resetAll"\) : ""/);
+  assert.match(itemsRenderer, /renderEmptyState\(emptyText, \{[\s\S]*?resetFiltersText/);
+  assert.match(bagsRenderer, /renderEmptyState\(emptyText, \{[\s\S]*?resetFiltersText/);
+  assert.ok((controllers.match(/bindEmptyContentFilterReset\(refs\.(?:packingView|itemsView|bagsView)\)/g) || []).length >= 6);
+});
+
 test("CRITICAL filled packing: trailing card opens the bag picker", () => {
   const html = renderPackingAddRootCard({
     title: "Add bag or place",

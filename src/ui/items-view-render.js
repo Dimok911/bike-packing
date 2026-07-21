@@ -16,6 +16,7 @@ export function renderItemsViewHtml({
   counts,
   emptyFiltered = false,
   emptyText = "Ничего не найдено",
+  resetFiltersText = "",
   itemSortMode,
   itemUsageFilter,
   items,
@@ -45,7 +46,10 @@ export function renderItemsViewHtml({
           </button>
         </div>
       </div>
-      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}</div>
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, {
+        filtered: emptyFiltered,
+        resetFiltersText
+      })}</div>
     </section>
   `;
 }
@@ -56,6 +60,7 @@ export function renderSharedItemsViewHtml({
   counts,
   emptyFiltered = false,
   emptyText = "Ничего не найдено",
+  resetFiltersText = "",
   itemSortMode,
   itemUsageFilter,
   items,
@@ -86,7 +91,10 @@ export function renderSharedItemsViewHtml({
           <button id="itemSortBtn" class="ghost item-sort-button ${itemSortMode !== "none" ? "active" : ""}" type="button" title="${title}" aria-label="${title}">${label}</button>
         </div>
       </div>
-      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, { filtered: emptyFiltered })}</div>
+      <div class="${itemsListClassName({ showLabels, showPhotos })}">${items.map(renderListItem).join("") || renderEmptyState(emptyText, {
+        filtered: emptyFiltered,
+        resetFiltersText
+      })}</div>
     </section>
   `;
 }
