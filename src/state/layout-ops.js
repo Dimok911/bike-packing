@@ -579,7 +579,13 @@ export function createGroupFromItemsInState(targetState, layoutId, itemId, targe
   return { groupId, sourceContainerId, targetContainerId };
 }
 
-export function cleanupEmptyContainersInLayoutArrangement(layout, containerId, targetState = null) {
+export function cleanupEmptyContainersInLayoutArrangement(
+  layout,
+  containerId,
+  targetState = null,
+  { removeTemporary = false } = {}
+) {
+  if (!removeTemporary) return false;
   const arrangement = layout?.arrangement;
   if (!arrangement || typeof arrangement !== "object") return false;
   let currentId = containerId;

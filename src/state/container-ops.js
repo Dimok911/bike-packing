@@ -518,21 +518,26 @@ export function deleteRootContainerFromState(targetState, containerId, {
 }
 
 export function cleanupEmptyContainersInState(targetState, containerId, {
-  markEdited = () => {}
+  markEdited = () => {},
+  removeTemporary = false
 } = {}) {
+  if (!removeTemporary) return false;
   let currentId = containerId;
+  let changed = false;
   while (currentId) {
     const container = targetState?.containers?.[currentId];
-    if (!container || !container.parentId) return;
-    if (container.nestable === true) return;
-    if ((container.itemIds || []).length || (container.childIds || []).length) return;
+    if (!container || !container.parentId) break;
+    if (container.nestable === true) break;
+    if ((container.itemIds || []).length || (container.childIds || []).length) break;
     const parent = targetState.containers?.[container.parentId];
-    if (!parent) return;
+    if (!parent) break;
     parent.childIds = (parent.childIds || []).filter((id) => id !== currentId);
     parent.order = (parent.order || []).filter((entry) => !(entry.type === "container" && entry.id === currentId));
     markEdited(parent);
     delete targetState.collapsedContainers?.[currentId];
     delete targetState.containers[currentId];
+    changed = true;
     currentId = parent.id;
   }
+  return changed;
 }

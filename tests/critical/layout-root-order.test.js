@@ -452,6 +452,58 @@ test("CRITICAL reusable nested bag: removing its last item keeps the empty bag i
   assert.deepEqual(state.containers["bag-b"].childIds, ["bag-a"]);
 });
 
+test("CRITICAL temporary pouch: moving out its last item keeps the empty pouch in the layout", () => {
+  const state = createState();
+  const layout = state.layouts["layout-a"];
+  state.containers["temporary-pouch"] = {
+    id: "temporary-pouch",
+    name: "Temporary pouch",
+    parentId: "bag-b",
+    childIds: [],
+    itemIds: ["item-a"],
+    order: [{ type: "item", id: "item-a" }]
+  };
+  state.containers["bag-a"].itemIds = [];
+  state.containers["bag-a"].order = [];
+  state.items["item-a"].containerId = "temporary-pouch";
+  layout.arrangement.containers["temporary-pouch"] = {
+    parentId: "bag-b",
+    childIds: [],
+    itemIds: ["item-a"],
+    order: [{ type: "item", id: "item-a" }]
+  };
+  layout.arrangement.containers["bag-b"].childIds = ["temporary-pouch"];
+  layout.arrangement.containers["bag-b"].order = [{ type: "container", id: "temporary-pouch" }];
+  layout.arrangement.items["item-a"] = "temporary-pouch";
+
+  assert.equal(moveItemInLayoutArrangement(state, layout, "item-a", "bag-c"), true);
+
+  assert.ok(layout.arrangement.containers["temporary-pouch"]);
+  assert.deepEqual(layout.arrangement.containers["temporary-pouch"].itemIds, []);
+  assert.deepEqual(layout.arrangement.containers["bag-b"].childIds, ["temporary-pouch"]);
+  assert.deepEqual(layout.arrangement.containers["bag-b"].order, [
+    { type: "container", id: "temporary-pouch" }
+  ]);
+});
+
+test("CRITICAL temporary pouch: catalog cleanup does not delete it after its last item", () => {
+  const state = createState();
+  state.containers["temporary-pouch"] = {
+    id: "temporary-pouch",
+    name: "Temporary pouch",
+    parentId: "bag-b",
+    childIds: [],
+    itemIds: [],
+    order: []
+  };
+  state.containers["bag-b"].childIds = ["temporary-pouch"];
+  state.containers["bag-b"].order = [{ type: "container", id: "temporary-pouch" }];
+
+  assert.equal(cleanupEmptyContainersInState(state, "temporary-pouch"), false);
+  assert.ok(state.containers["temporary-pouch"]);
+  assert.deepEqual(state.containers["bag-b"].childIds, ["temporary-pouch"]);
+});
+
 test("CRITICAL reusable nested bag: delete forever removes its nested placement and keeps its items", () => {
   const state = createState();
   state.collapsedContainers = { "bag-a": false };
