@@ -7701,7 +7701,8 @@ async function confirmPublicLayoutTransition(kind, layout = null) {
           "Это демо-укладка. Её нельзя редактировать напрямую, но можно копировать вещи и сумки в свои укладки."
         ),
       okText: admin ? localText("Open demo", "Открыть демо") : localText("View demo", "Смотреть демо"),
-      cancelText: localText("Stay here", "Остаться здесь"),
+      cancelText: localText("Cancel", "Отмена"),
+      hideClose: true,
       tone: "warning"
     });
   }
@@ -7719,7 +7720,8 @@ async function confirmPublicLayoutTransition(kind, layout = null) {
         `Вы открываете шаблон${layout?.name ? ` «${layout.name}»` : ""}. Редактирование заблокировано, доступно только копирование в свои укладки.`
       ),
     okText: admin ? localText("Open for editing", "Открыть для редактирования") : localText("View template", "Смотреть шаблон"),
-    cancelText: localText("Stay here", "Остаться здесь"),
+    cancelText: localText("Cancel", "Отмена"),
+    hideClose: true,
     tone: "warning"
   });
 }
