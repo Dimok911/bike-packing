@@ -1,5 +1,6 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
 import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
+import { suppressNextClickAfterDrag } from "./drag-click-suppression.js";
 import { getPackingEntryAfterPointer } from "./packing-drop-target.js";
 import {
   calculatePackingEdgeScroll,
@@ -84,7 +85,7 @@ export function createPackingDragController({
   }
 
   function isCatalogDragActionTarget(target) {
-    return Boolean(target?.closest?.("button, input, select, textarea, label, a, [data-photo-open]"));
+    return Boolean(target?.closest?.("button, input, select, textarea, label, a, [data-photo-controls], [data-photo-open]"));
   }
 
   function getPackingBoard() {
@@ -571,6 +572,7 @@ export function createPackingDragController({
           clearDragPending(source);
           source.classList.remove("dragging");
           source.classList.remove("drag-source-collapsed");
+          if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
           deferBoardHeightUnlockUntilScroll(board);
           document.body.classList.remove("dragging-ui");
           if (inputType === "touch") {
@@ -1032,12 +1034,7 @@ export function createPackingDragController({
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
         source.classList.remove("dragging");
-        if (started) {
-          source.dataset.justDragged = "true";
-          window.setTimeout(() => {
-            delete source.dataset.justDragged;
-          }, 250);
-        }
+        if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
         placeholder.removeAttribute("style");
         placeholder.className = "drop-placeholder";
         setDraggingItemId(null);
@@ -1440,12 +1437,7 @@ export function createPackingDragController({
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
         source.classList.remove("dragging");
-        if (started) {
-          source.dataset.justDragged = "true";
-          window.setTimeout(() => {
-            delete source.dataset.justDragged;
-          }, 250);
-        }
+        if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
         placeholder.removeAttribute("style");
         setDraggingItemId(null);
         setDraggingContainerId(null);

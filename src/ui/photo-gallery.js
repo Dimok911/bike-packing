@@ -101,7 +101,7 @@ export function renderPhotoSlide(photo, {
 export function renderPhotoDots(count, activeIndex = 0) {
   if (count <= 1) return "";
   return `
-    <div class="photo-gallery-dots" aria-hidden="true">
+    <div class="photo-gallery-dots" data-photo-controls aria-hidden="true">
       ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot ${index === activeIndex ? "active" : ""}" type="button" data-photo-index="${index}" tabindex="-1"></button>`).join("")}
     </div>
   `;
@@ -422,6 +422,27 @@ function getPhotoObjectUrl(id, blob, photoObjectUrls) {
   return url;
 }
 
+export function resolvePhotoGalleryActiveIndex({
+  pendingIndex = null,
+  scrollLeft = 0,
+  trackWidth = 1,
+  settleTolerance = 1
+} = {}) {
+  const width = Math.max(1, Number(trackWidth) || 1);
+  if (Number.isFinite(pendingIndex)) {
+    const targetIndex = Math.max(0, Math.round(pendingIndex));
+    const settled = Math.abs((Number(scrollLeft) || 0) - width * targetIndex) <= settleTolerance;
+    return {
+      activeIndex: targetIndex,
+      pendingIndex: settled ? null : targetIndex
+    };
+  }
+  return {
+    activeIndex: Math.max(0, Math.round((Number(scrollLeft) || 0) / width)),
+    pendingIndex: null
+  };
+}
+
 export function bindPhotoGalleries(root = document, {
   onItemPreviewActive = () => {},
   onRootContainerPreviewActive = () => {},
@@ -436,6 +457,7 @@ export function bindPhotoGalleries(root = document, {
     const slideButtons = [...gallery.querySelectorAll("[data-photo-open]")];
     const slideCount = Math.max(slideButtons.length, dots.length, 1);
     let suppressSlideClickUntil = 0;
+    let pendingScrollIndex = null;
     const clampIndex = (index) => Math.max(0, Math.min(slideCount - 1, Number(index) || 0));
     const setActive = (index) => {
       const safeIndex = clampIndex(index);
@@ -445,12 +467,21 @@ export function bindPhotoGalleries(root = document, {
     };
     const scrollToIndex = (index, behavior = "smooth") => {
       const safeIndex = clampIndex(index);
-      track.scrollTo({ left: track.clientWidth * safeIndex, behavior });
+      pendingScrollIndex = behavior === "smooth" ? safeIndex : null;
       setActive(safeIndex);
+      track.scrollTo({ left: track.clientWidth * safeIndex, behavior });
     };
     const syncActive = () => {
-      const width = track.clientWidth || 1;
-      setActive(Math.round(track.scrollLeft / width));
+      const resolved = resolvePhotoGalleryActiveIndex({
+        pendingIndex: pendingScrollIndex,
+        scrollLeft: track.scrollLeft,
+        trackWidth: track.clientWidth
+      });
+      pendingScrollIndex = resolved.pendingIndex;
+      setActive(resolved.activeIndex);
+    };
+    const cancelPendingScroll = () => {
+      pendingScrollIndex = null;
     };
     dots.forEach((dot, index) => {
       dot.addEventListener("click", (event) => {
@@ -460,12 +491,15 @@ export function bindPhotoGalleries(root = document, {
       });
     });
     track.addEventListener("scroll", () => requestAnimationFrame(syncActive), { passive: true });
+    track.addEventListener("pointerdown", cancelPendingScroll, { passive: true });
+    track.addEventListener("wheel", cancelPendingScroll, { passive: true });
     let touchStartX = 0;
     let touchStartY = 0;
     let touchStartScrollLeft = 0;
     let touchStartTime = 0;
     let touchTracking = false;
     track.addEventListener("touchstart", (event) => {
+      cancelPendingScroll();
       if (event.touches.length !== 1 || slideCount <= 1) {
         touchTracking = false;
         return;

@@ -7,6 +7,7 @@ import {
   itemAvailabilityLabel
 } from "./item-availability.js";
 import { renderCatalogBackToTopButton } from "./catalog-back-to-top.js";
+import { renderSearchNoteMatchBadge } from "./search-note-match.js";
 
 function tr(t, key, fallback, values = {}) {
   const value = t(key, values);
@@ -139,6 +140,7 @@ export function renderListItemHtml({
   photoHtml,
   placementText,
   quantityText = "",
+  searchQuery = "",
   selected = false,
   showLabels,
   t = (key) => key
@@ -176,6 +178,7 @@ export function renderListItemHtml({
       highlightText(item.location)
     ], { hidden: !showLabels }),
     statusHtml: highlightText(placementText),
+    badgeHtml: renderSearchNoteMatchBadge(item, searchQuery, t),
     photoHtml,
     actionsHtml: `
       <button class="copy-item-button" data-copy-item="${item.id}" aria-label="${copyLabel}" title="${copyLabel}">

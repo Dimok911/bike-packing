@@ -3,6 +3,7 @@ import { renderEmptyState } from "./empty-state.js";
 import { escapeHtml } from "../utils/html.js";
 import { formatWeight } from "../utils/weight.js";
 import { renderCatalogBackToTopButton } from "./catalog-back-to-top.js";
+import { renderSearchNoteMatchBadge } from "./search-note-match.js";
 
 function tr(t, key, fallback, values = {}) {
   const value = t(key, values);
@@ -106,6 +107,7 @@ export function renderRootContainerCardHtml({
   nestedInCurrentLayout = false,
   location,
   photoHtml,
+  searchQuery = "",
   selected = false,
   showLabels,
   t = (key) => key
@@ -152,6 +154,7 @@ export function renderRootContainerCardHtml({
     },
     metaHtml: renderCatalogPills(metaTags, { hidden: !showLabels }),
     statusHtml: placementText,
+    badgeHtml: renderSearchNoteMatchBadge(container, searchQuery, t),
     photoHtml,
     actionsHtml: `
       <button class="copy-item-button" data-copy-root="${container.id}" aria-label="${tr(t, "buttons.copy", "Скопировать")}" title="${tr(t, "buttons.copy", "Скопировать")}">

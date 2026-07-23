@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   resolveSyncVisualState,
@@ -67,4 +68,16 @@ test("network failures stay visible until a successful server response", () => {
   assert.equal(controller.currentMessage(), "");
   assert.deepEqual(changes, ["timeout", ""]);
   assert.equal(I18N.en["sync.noConnectionLocal"], "No connection to the server · work continues locally");
+});
+
+test("sync button keeps its status palette independent from interface themes", async () => {
+  const stylesSource = await readFile(new URL("../../styles.css", import.meta.url), "utf8");
+  const syncedBlock = stylesSource.match(/body\.sync-synced #syncBtn\s*\{([\s\S]*?)\}/)?.[1] || "";
+  const syncingBlock = stylesSource.match(/body\.sync-syncing #syncBtn\s*\{([\s\S]*?)\}/)?.[1] || "";
+  const syncedDotBlock = stylesSource.match(/body\.sync-synced #syncBtn::before\s*\{([\s\S]*?)\}/)?.[1] || "";
+
+  assert.doesNotMatch(`${syncedBlock}${syncingBlock}${syncedDotBlock}`, /--interface-hue|--accent/);
+  assert.match(syncedBlock, /color:\s*hsl\(165deg 56% 28%\)/);
+  assert.match(syncingBlock, /background:\s*hsl\(153deg 33% 95%\)/);
+  assert.match(syncedDotBlock, /background:\s*hsl\(165deg 56% 28%\)/);
 });

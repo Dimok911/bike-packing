@@ -7,8 +7,12 @@ export function loadStoredUiSettings({
   normalizePackingViewMode,
   normalizeBike3dTransforms,
   normalizeBike3dViewState,
+  normalizeInterfaceColorBrightness = (value) => Number.isFinite(Number(value)) ? Number(value) : 100,
+  normalizeInterfaceColorTheme = (value) => value,
   packingVisualStyleVersion,
   defaultPackingVisualStyle,
+  defaultInterfaceColorBrightness = 100,
+  defaultInterfaceColorTheme = "jade",
   defaultPackingViewMode = "columns"
 } = {}) {
   try {
@@ -19,14 +23,20 @@ export function loadStoredUiSettings({
       normalizePackingViewMode,
       normalizeBike3dTransforms,
       normalizeBike3dViewState,
+      normalizeInterfaceColorBrightness,
+      normalizeInterfaceColorTheme,
       packingVisualStyleVersion,
       defaultPackingVisualStyle,
+      defaultInterfaceColorBrightness,
+      defaultInterfaceColorTheme,
       defaultPackingViewMode
     });
   } catch {
     return defaultUiSettings({
       normalizeBike3dViewState,
       defaultPackingVisualStyle,
+      defaultInterfaceColorBrightness,
+      defaultInterfaceColorTheme,
       defaultPackingViewMode
     });
   }
@@ -39,6 +49,8 @@ export function saveStoredUiSettings(settings, {
   normalizePackingViewMode,
   normalizeBike3dTransforms,
   normalizeBike3dViewState,
+  normalizeInterfaceColorBrightness = (value) => Number.isFinite(Number(value)) ? Number(value) : 100,
+  normalizeInterfaceColorTheme = (value) => value,
   packingVisualStyleVersion
 } = {}) {
   try {
@@ -47,6 +59,8 @@ export function saveStoredUiSettings(settings, {
       rootContainerSortMode: normalizeSortMode(settings.rootContainerSortMode),
       dictionaryLocationSortMode: normalizeSortMode(settings.dictionaryLocationSortMode),
       dictionaryCategorySortMode: normalizeSortMode(settings.dictionaryCategorySortMode),
+      interfaceColorBrightness: normalizeInterfaceColorBrightness(settings.interfaceColorBrightness),
+      interfaceColorTheme: normalizeInterfaceColorTheme(settings.interfaceColorTheme),
       packingVisualStyleVersion,
       packingVisualStyle: normalizePackingVisualStyle(settings.packingVisualStyle),
       packingViewMode: normalizePackingViewMode(settings.packingViewMode),
@@ -65,8 +79,12 @@ function normalizeUiSettings(parsed, options) {
     normalizePackingViewMode,
     normalizeBike3dTransforms,
     normalizeBike3dViewState,
+    normalizeInterfaceColorBrightness,
+    normalizeInterfaceColorTheme,
     packingVisualStyleVersion,
     defaultPackingVisualStyle,
+    defaultInterfaceColorBrightness,
+    defaultInterfaceColorTheme,
     defaultPackingViewMode
   } = options;
   return {
@@ -74,6 +92,12 @@ function normalizeUiSettings(parsed, options) {
     rootContainerSortMode: normalizeSortMode(parsed.rootContainerSortMode),
     dictionaryLocationSortMode: normalizeSortMode(parsed.dictionaryLocationSortMode),
     dictionaryCategorySortMode: normalizeSortMode(parsed.dictionaryCategorySortMode),
+    interfaceColorBrightness: normalizeInterfaceColorBrightness(
+      parsed.interfaceColorBrightness ?? defaultInterfaceColorBrightness
+    ),
+    interfaceColorTheme: normalizeInterfaceColorTheme(
+      parsed.interfaceColorTheme || defaultInterfaceColorTheme
+    ),
     packingVisualStyle: parsed.packingVisualStyleVersion === packingVisualStyleVersion && parsed.packingVisualStyle
       ? normalizePackingVisualStyle(parsed.packingVisualStyle)
       : defaultPackingVisualStyle,
@@ -86,6 +110,8 @@ function normalizeUiSettings(parsed, options) {
 function defaultUiSettings({
   normalizeBike3dViewState,
   defaultPackingVisualStyle,
+  defaultInterfaceColorBrightness = 100,
+  defaultInterfaceColorTheme = "jade",
   defaultPackingViewMode
 } = {}) {
   return {
@@ -93,6 +119,8 @@ function defaultUiSettings({
     rootContainerSortMode: "asc",
     dictionaryLocationSortMode: "asc",
     dictionaryCategorySortMode: "asc",
+    interfaceColorBrightness: defaultInterfaceColorBrightness,
+    interfaceColorTheme: defaultInterfaceColorTheme,
     packingVisualStyle: defaultPackingVisualStyle,
     packingViewMode: defaultPackingViewMode,
     bike3dTransforms: {},

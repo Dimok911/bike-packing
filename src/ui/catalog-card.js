@@ -21,6 +21,7 @@ export function renderCatalogCard({
   titleAttributes = {},
   metaHtml = "",
   statusHtml = "",
+  badgeHtml = "",
   photoHtml = "",
   actionsHtml = ""
 } = {}) {
@@ -33,6 +34,7 @@ export function renderCatalogCard({
           <strong class="item-title ${titleClass}"${renderAttributes(titleAttributes)}>${titleMarkup}</strong>
           ${metaHtml}
           ${statusHtml ? `<small class="catalog-card-status">${statusHtml}</small>` : ""}
+          ${badgeHtml}
         </div>
         ${actionsHtml}
       </div>

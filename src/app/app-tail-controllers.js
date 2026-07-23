@@ -3208,11 +3208,13 @@ function renderContainer(containerId) {
   const allNestedCollapsed = hasNestedContainers && descendantIds.every((id) => state.collapsedContainers[id]);
   const rootCollapsed = isReadOnlyStateScope() && Boolean(state.collapsedContainers[containerId]);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const filterMatch = isFilterContextActive() && matchesContainerFieldsFilter(container);
   const justAdded = runtime.recentlyAddedContainerId === container.id && (!runtime.recentlyAddedLayoutId || runtime.recentlyAddedLayoutId === state.activeLayoutId);
   return renderRootContainerColumnHtml({
     allNestedCollapsed,
     container,
     contentsHtml: rootCollapsed ? "" : renderContainerContents(container.id),
+    filterMatch,
     hasNestedContainers,
     justAdded,
     packed,
@@ -3220,6 +3222,7 @@ function renderContainer(containerId) {
     readonly: isReadOnlyStateScope(),
     readonlyTemplate: isReadonlyTemplateView(),
     rootCollapsed,
+    searchQuery: refs.searchInput.value,
     t,
     titleHtml: `${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${isFilterContextActive() ? highlight(container.name) : escapeHtml(container.name)}`,
     totalWeightHtml: renderContainerWeightText(total)
@@ -3231,16 +3234,19 @@ function renderFilteredContainer(containerId) {
   const total = containerWeight(containerId);
   const rootCollapsed = isReadOnlyStateScope() && Boolean(state.collapsedContainers[containerId]);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const filterMatch = isFilterContextActive() && getContainerFilterResult(containerId).titleMatch;
   const justAdded = runtime.recentlyAddedContainerId === container.id && (!runtime.recentlyAddedLayoutId || runtime.recentlyAddedLayoutId === state.activeLayoutId);
   return renderFilteredRootContainerColumnHtml({
     container,
     contentsHtml: rootCollapsed ? "" : renderFilteredContainerContents(container.id),
+    filterMatch,
     justAdded,
     packed,
     photoHtml: rootCollapsed ? "" : renderItemPhoto(container),
     readonly: isReadOnlyStateScope(),
     readonlyTemplate: isReadonlyTemplateView(),
     rootCollapsed,
+    searchQuery: refs.searchInput.value,
     t,
     titleHtml: `${packed ? `<span class="packed-mark" aria-hidden="true">✓</span>` : ""}${highlight(container.name)}`,
     totalWeightHtml: renderContainerWeightText(total)
@@ -3256,14 +3262,17 @@ function renderSubcontainer(containerId) {
       )
     : Boolean(state.collapsedContainers[containerId]);
   const packed = state.collectionMode && isContainerPacked(containerId);
+  const filterMatch = isFilterContextActive() && matchesContainerFieldsFilter(container);
   const justAdded = runtime.recentlyAddedContainerId === container.id && (!runtime.recentlyAddedLayoutId || runtime.recentlyAddedLayoutId === state.activeLayoutId);
   return renderSubcontainerSectionHtml({
     collapsed,
     container,
     contentsHtml: renderContainerContents(container.id),
+    filterMatch,
     justAdded,
     packed,
     photoHtml: renderItemPhoto(container),
+    searchQuery: refs.searchInput.value,
     t,
     titleHtml: subcontainerTitleHtml({
       container,
@@ -3286,9 +3295,11 @@ function renderFilteredSubcontainer(containerId) {
     collapsed,
     container,
     contentsHtml: collapsed ? "" : renderFilteredContainerContents(container.id),
+    filterMatch: isFilterContextActive() && result.titleMatch,
     justAdded,
     packed,
     photoHtml: renderItemPhoto(container),
+    searchQuery: refs.searchInput.value,
     t,
     titleHtml: subcontainerTitleHtml({
       container,
@@ -3514,6 +3525,7 @@ function renderItemCard(item) {
     packed,
     packedVisible,
     photoHtml: renderItemPhoto(item),
+    searchQuery: refs.searchInput.value,
     t,
     titleDragAttr,
     titleHtml: title,
@@ -3876,6 +3888,7 @@ function renderListItem(item) {
     photoHtml: photoSlot,
     placementText,
     quantityText: itemQuantity(item) > 1 ? t("items.quantitySuffix", { count: itemQuantity(item) }) : "",
+    searchQuery: refs.searchInput.value,
     showLabels: shouldShowItemLabels(),
     t
   });
@@ -3886,7 +3899,7 @@ function isCatalogSelectionClick(event) {
 }
 
 function isCatalogActionTarget(target) {
-  return Boolean(target?.closest?.("button, input, select, textarea, label, a, [data-photo-open]"));
+  return Boolean(target?.closest?.("button, input, select, textarea, label, a, [data-photo-controls], [data-photo-open]"));
 }
 
 function hasCatalogSelection() {
@@ -4333,6 +4346,7 @@ function renderRootContainerCard(container) {
     location,
     selected: runtime.selectedCatalogRootIds.has(container.id),
     photoHtml: photoSlot,
+    searchQuery: refs.searchInput.value,
     showLabels: shouldShowItemLabels(),
     t
   });

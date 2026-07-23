@@ -93,6 +93,35 @@ export function bindCategorySearch(input, list, options = {}) {
   return apply;
 }
 
+export function categoryFilterHasSelection(list) {
+  return Boolean(list?.querySelector?.("input:checked"));
+}
+
+export function syncCategoryFilterResetVisibility(list, resetButton) {
+  if (!resetButton) return false;
+  const hasSelection = categoryFilterHasSelection(list);
+  resetButton.hidden = !hasSelection;
+  return hasSelection;
+}
+
+export function bindCategoryFilterResetVisibility(list, resetButton) {
+  if (!list || !resetButton) return () => {};
+  const sync = () => syncCategoryFilterResetVisibility(list, resetButton);
+  const reset = () => {
+    list.querySelectorAll("input").forEach((input) => {
+      input.checked = false;
+    });
+    sync();
+  };
+  list.addEventListener("change", sync);
+  resetButton.addEventListener("click", reset);
+  sync();
+  return () => {
+    list.removeEventListener("change", sync);
+    resetButton.removeEventListener("click", reset);
+  };
+}
+
 export function syncCategorySearchAvailability(input, list, {
   available = true,
   emptyText = "",

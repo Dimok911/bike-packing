@@ -6,6 +6,7 @@ export const CARD_EDIT_INTERACTIVE_SELECTOR = [
   "label",
   "a",
   "[contenteditable]",
+  "[data-photo-controls]",
   "[data-photo-open]"
 ].join(", ");
 

@@ -11,13 +11,10 @@ export function matchesItemFieldsFilter(item, {
   const itemCategoryValues = itemCategories(item);
   if (!ignoreCategories && categories.length && !categories.some((category) => itemCategoryValues.includes(category))) return false;
   if (!normalizedQuery) return true;
-  return [
+  return searchTextMatchesQuery([
     item?.name,
     item?.note || ""
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(normalizedQuery);
+  ].join(" "), normalizedQuery);
 }
 
 export function matchesRootContainerFieldsFilter(container, {
@@ -34,10 +31,19 @@ export function matchesRootContainerFieldsFilter(container, {
   const containerCategoryValues = containerCategories(container);
   if (!ignoreCategories && categories.length && !categories.some((category) => containerCategoryValues.includes(category))) return false;
   if (!normalizedQuery) return true;
-  return [
+  return searchTextMatchesQuery([
     container?.name,
     container?.note || ""
-  ].join(" ").toLowerCase().includes(normalizedQuery);
+  ].join(" "), normalizedQuery);
+}
+
+export function searchTextMatchesQuery(value, query) {
+  const normalizedQuery = normalizeSearchQuery(query);
+  return Boolean(normalizedQuery && String(value || "").toLowerCase().includes(normalizedQuery));
+}
+
+export function recordNoteMatchesQuery(record, query) {
+  return searchTextMatchesQuery(record?.note, query);
 }
 
 function normalizeSearchQuery(query) {

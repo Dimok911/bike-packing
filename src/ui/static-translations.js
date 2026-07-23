@@ -41,6 +41,7 @@ export function applyStaticTranslationsUi({
   documentRef.documentElement.lang = uiLanguage;
   documentRef.title = t("app.title");
   const appTitle = documentRef.querySelector(".topbar h1");
+  const experimentBanner = documentRef.querySelector("#experimentBanner");
   const appStartup = documentRef.querySelector(".app-startup");
   const appStartupTitle = documentRef.querySelector("#appStartupTitle");
   const appStartupText = documentRef.querySelector("#appStartupText");
@@ -52,6 +53,7 @@ export function applyStaticTranslationsUi({
   const locationLabel = documentRef.querySelector("#locationFilterLabel");
   const categoryLabel = documentRef.querySelector("#categoryFilterLabel");
   setText(appTitle, t("app.title"));
+  setText(experimentBanner, t("app.experimentalBanner"));
   setAttr(appStartup, "lang", startupLanguage || uiLanguage);
   setText(appStartupTitle, startupTitle || t("startup.title"));
   setText(appStartupText, startupText || t("startup.loading"));
@@ -84,6 +86,13 @@ export function applyStaticTranslationsUi({
   documentRef.querySelector("#visualStyleMenuBtn")?.replaceChildren(documentRef.createTextNode(t("menu.viewOptions")));
   documentRef.querySelector("#exportBtn")?.replaceChildren(documentRef.createTextNode(t("menu.print")));
   setText(languageLabel, t("menu.language"));
+  setText(refs.interfaceColorMenuBtn, t("menu.interfaceColor"));
+  setText(refs.interfaceColorTitle, t("interfaceColor.title"));
+  setText(refs.interfaceColorDescription, t("interfaceColor.description"));
+  setText(refs.interfaceColorBrightnessLabel, t("interfaceColor.brightness"));
+  setText(refs.interfaceColorDefaultBtn, t("interfaceColor.default"));
+  setAttr(refs.interfaceColorOptions, "aria-label", t("interfaceColor.groupLabel"));
+  setText(refs.interfaceColorDoneBtn, t("buttons.done"));
   setFirstText(layoutLabel, t("labels.layout"));
   if (refs.newLayoutBtn) {
     refs.newLayoutBtn.textContent = isSharedLayoutView()

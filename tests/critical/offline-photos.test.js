@@ -50,6 +50,7 @@ import {
   photoUploadProgressState,
   photoUploadState,
   replacePhotoLightboxImageSource,
+  resolvePhotoGalleryActiveIndex,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
@@ -1723,6 +1724,40 @@ test("CRITICAL offline-photos: dialog photo gallery keeps vertical scroll withou
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*overscroll-behavior-x:\s*contain;[\s\S]*overscroll-behavior-y:\s*auto;/);
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /button\.photo-gallery-slide:not\(:disabled\):active,\s*button\.photo-gallery-slide\.touch-feedback-active\s*\{[\s\S]*translate:\s*0;[\s\S]*filter:\s*none;/);
+});
+
+test("CRITICAL offline-photos: dot navigation keeps its target active throughout smooth scrolling", () => {
+  assert.deepEqual(resolvePhotoGalleryActiveIndex({
+    pendingIndex: 3,
+    scrollLeft: 0,
+    trackWidth: 300
+  }), {
+    activeIndex: 3,
+    pendingIndex: 3
+  });
+  assert.deepEqual(resolvePhotoGalleryActiveIndex({
+    pendingIndex: 3,
+    scrollLeft: 602,
+    trackWidth: 300
+  }), {
+    activeIndex: 3,
+    pendingIndex: 3
+  });
+  assert.deepEqual(resolvePhotoGalleryActiveIndex({
+    pendingIndex: 3,
+    scrollLeft: 900,
+    trackWidth: 300
+  }), {
+    activeIndex: 3,
+    pendingIndex: null
+  });
+  assert.deepEqual(resolvePhotoGalleryActiveIndex({
+    scrollLeft: 602,
+    trackWidth: 300
+  }), {
+    activeIndex: 2,
+    pendingIndex: null
+  });
 });
 
 test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zones", () => {

@@ -3,6 +3,7 @@ import {
   itemAvailabilityBadgeHtml,
   itemAvailabilityCardClass
 } from "./item-availability.js";
+import { renderSearchNoteMatchBadge } from "./search-note-match.js";
 
 function tr(t, key, fallback, values) {
   return typeof t === "function" ? t(key, values) : fallback;
@@ -61,6 +62,7 @@ export function renderRootContainerColumnHtml({
   allNestedCollapsed,
   container,
   contentsHtml,
+  filterMatch = false,
   hasNestedContainers,
   justAdded,
   packed,
@@ -68,12 +70,13 @@ export function renderRootContainerColumnHtml({
   readonly,
   readonlyTemplate,
   rootCollapsed,
+  searchQuery = "",
   t,
   titleHtml,
   totalWeightHtml
 }) {
   return `
-    <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
+    <article class="container-card ${packed ? "packed-container" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}" ${filterMatch ? `data-filter-match-id="root-${container.id}"` : ""}>
       <header class="container-header">
         <div class="container-title">
           ${rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t })}
@@ -81,6 +84,7 @@ export function renderRootContainerColumnHtml({
         </div>
         ${rootContainerToolsHtml({ allNestedCollapsed, container, hasNestedContainers, readonlyTemplate, t, totalWeightHtml })}
       </header>
+      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
       ${rootCollapsed ? "" : photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
@@ -92,18 +96,20 @@ export function renderRootContainerColumnHtml({
 export function renderFilteredRootContainerColumnHtml({
   container,
   contentsHtml,
+  filterMatch = false,
   justAdded,
   packed,
   photoHtml,
   readonly,
   readonlyTemplate,
   rootCollapsed,
+  searchQuery = "",
   t,
   titleHtml,
   totalWeightHtml
 }) {
   return `
-    <article class="container-card ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}">
+    <article class="container-card ${packed ? "packed-container" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-root-container-id="${container.id}" ${filterMatch ? `data-filter-match-id="root-${container.id}"` : ""}>
       <header class="container-header">
         <div class="container-title">
           ${rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t })}
@@ -111,6 +117,7 @@ export function renderFilteredRootContainerColumnHtml({
         </div>
         ${rootContainerToolsHtml({ container, readonlyTemplate, t, totalWeightHtml })}
       </header>
+      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
       ${rootCollapsed ? "" : photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
@@ -148,9 +155,11 @@ export function renderSubcontainerSectionHtml({
   collapsed,
   container,
   contentsHtml,
+  filterMatch = false,
   justAdded,
   packed,
   photoHtml,
+  searchQuery = "",
   t,
   titleHtml,
   weightHtml
@@ -159,7 +168,7 @@ export function renderSubcontainerSectionHtml({
   const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
   return `
-    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}">
+    <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}" ${filterMatch ? `data-filter-match-id="bag-${container.id}"` : ""}>
       <div class="subcontainer-title">
         <div class="subcontainer-title-main">
           <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(collapseLabel)}" title="${escapeHtml(collapseLabel)}">
@@ -172,6 +181,7 @@ export function renderSubcontainerSectionHtml({
           ${weightHtml}
         </div>
       </div>
+      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
       ${collapsed ? "" : photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${contentsHtml}
@@ -191,6 +201,7 @@ export function renderPackingItemCardHtml({
   packed,
   packedVisible,
   photoHtml,
+  searchQuery = "",
   t,
   titleDragAttr,
   titleHtml,
@@ -222,6 +233,7 @@ export function renderPackingItemCardHtml({
         </button>
         ${availabilityBadge}
       </div>
+      ${renderSearchNoteMatchBadge(item, searchQuery, t)}
       <div class="meta ${labelsVisible ? "" : "meta-hidden"}">
         <span class="pill">${weightHtml}</span>
         ${categoriesHtml}

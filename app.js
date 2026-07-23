@@ -51,10 +51,12 @@ import { I18N } from "./src/data/i18n.js";
 import { demoSharedLayout } from "./src/data/demo-data.js";
 import { createAppTailControllers } from "./src/app/app-tail-controllers.js";
 import {
+  bindCategoryFilterResetVisibility,
   bindCategorySearch,
   categorySearchEmptyHtml,
   renderCategorySearchOption,
-  resetCategorySearch
+  resetCategorySearch,
+  syncCategoryFilterResetVisibility
 } from "./src/ui/category-search.js";
 import {
   appendCopiedFromTemplateNote,
@@ -1016,6 +1018,15 @@ import {
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
 import { hasExplicitViewportScrollIntent } from "./src/ui/viewport-scroll-intent.js";
+import { createDesktopInputLayoutController } from "./src/ui/desktop-input-layout.js";
+import {
+  DEFAULT_INTERFACE_COLOR_BRIGHTNESS,
+  DEFAULT_INTERFACE_COLOR_THEME,
+  applyInterfaceColorTheme,
+  createInterfaceColorThemeController,
+  normalizeInterfaceColorBrightness,
+  normalizeInterfaceColorTheme
+} from "./src/ui/interface-color-theme.js";
 import {
   scrollViewportTo,
   viewportScrollLeft,
@@ -1135,6 +1146,13 @@ serverConfirmedSharedLayouts = hydratedPublicTemplateCache.sharedTemplates;
 let startupLocalStateWasFallback = hadLocalStateAtStartup && !hadRemoteBaselineAtStartup && isGeneratedStartupFallbackState(state);
 let hadAuthoritativeLocalStateAtStartup = hadLocalStateAtStartup && !startupLocalStateWasFallback;
 const uiSettings = loadUiSettings();
+let interfaceColorBrightness = normalizeInterfaceColorBrightness(uiSettings.interfaceColorBrightness);
+let interfaceColorTheme = normalizeInterfaceColorTheme(uiSettings.interfaceColorTheme);
+applyInterfaceColorTheme({
+  brightness: interfaceColorBrightness,
+  documentRef: document,
+  value: interfaceColorTheme
+});
 let editingItemId = null;
 let editingItemTitleId = null;
 let editingRootContainerId = null;
@@ -1275,6 +1293,12 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const desktopInputLayoutController = createDesktopInputLayoutController({
+  documentRef: document,
+  getLanguage: () => uiLanguage,
+  translate: t,
+  windowRef: window
+});
 const connectionStatusController = createConnectionStatusController({
   getElement: () => refs.connectionStatus,
   getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),
@@ -1303,6 +1327,28 @@ const {
   openModalDialog,
   setupModalScrollLock
 } = createModalScrollLockController();
+const interfaceColorThemeController = createInterfaceColorThemeController({
+  brightnessInput: refs.interfaceColorBrightness,
+  brightnessOutput: refs.interfaceColorBrightnessValue,
+  defaultButton: refs.interfaceColorDefaultBtn,
+  documentRef: document,
+  dialog: refs.interfaceColorDialog,
+  getLanguage: () => uiLanguage,
+  initialBrightness: interfaceColorBrightness,
+  initialValue: interfaceColorTheme,
+  menuButton: refs.interfaceColorMenuBtn,
+  onBrightnessChange: (value) => {
+    interfaceColorBrightness = value;
+    saveUiSettings();
+  },
+  onChange: (value) => {
+    interfaceColorTheme = value;
+    saveUiSettings();
+  },
+  openDialog: openModalDialog,
+  optionsRoot: refs.interfaceColorOptions,
+  translate: t
+});
 const {
   askConfirmDialog,
   askUnsavedChangesDialog,
@@ -2750,6 +2796,8 @@ function applyStaticTranslations() {
     t,
     uiLanguage
   });
+  desktopInputLayoutController.refresh();
+  interfaceColorThemeController.refresh();
 }
 
 async function init() {
@@ -2858,11 +2906,7 @@ async function init() {
   bindCategorySearch(refs.rootContainerCategorySearch, refs.rootContainerCategoryList, {
     emptyText: () => t("categories.searchEmpty")
   });
-  refs.resetCategoryFilterBtn.addEventListener("click", () => {
-    refs.categoryFilterList.querySelectorAll("input").forEach((input) => {
-      input.checked = false;
-    });
-  });
+  bindCategoryFilterResetVisibility(refs.categoryFilterList, refs.resetCategoryFilterBtn);
   refs.applyCategoryFilterBtn.addEventListener("click", applyCategoryFilterDialog);
   refs.addToContainerSearch.addEventListener("input", renderAddToContainerResults);
   refs.clearAddToContainerSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -3376,8 +3420,12 @@ function loadUiSettings() {
     normalizePackingViewMode,
     normalizeBike3dTransforms,
     normalizeBike3dViewState,
+    normalizeInterfaceColorBrightness,
+    normalizeInterfaceColorTheme,
     packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION,
-    defaultPackingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY
+    defaultPackingVisualStyle: PACKING_VISUAL_STYLE_PRIMARY,
+    defaultInterfaceColorBrightness: DEFAULT_INTERFACE_COLOR_BRIGHTNESS,
+    defaultInterfaceColorTheme: DEFAULT_INTERFACE_COLOR_THEME
   });
 }
 
@@ -3387,6 +3435,8 @@ function saveUiSettings() {
     rootContainerSortMode,
     dictionaryLocationSortMode,
     dictionaryCategorySortMode,
+    interfaceColorBrightness,
+    interfaceColorTheme,
     packingVisualStyle,
     packingViewMode,
     bike3dTransforms,
@@ -3398,6 +3448,8 @@ function saveUiSettings() {
     normalizePackingViewMode,
     normalizeBike3dTransforms,
     normalizeBike3dViewState,
+    normalizeInterfaceColorBrightness,
+    normalizeInterfaceColorTheme,
     packingVisualStyleVersion: PACKING_VISUAL_STYLE_SETTINGS_VERSION
   });
 }
@@ -10553,6 +10605,7 @@ function openCategoryFilterDialog() {
   resetCategorySearch(refs.categoryFilterSearch, refs.categoryFilterList, {
     emptyText: t("categories.searchEmpty")
   });
+  syncCategoryFilterResetVisibility(refs.categoryFilterList, refs.resetCategoryFilterBtn);
   openModalDialog(refs.categoryFilterDialog);
 }
 

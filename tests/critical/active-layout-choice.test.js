@@ -49,6 +49,7 @@ import {
   renderEmptyCategoryPicker
 } from "../../src/ui/category-picker-empty.js";
 import {
+  bindCategoryFilterResetVisibility,
   categoryMatchesSearch,
   highlightCategorySearchMatch,
   normalizeCategorySearchQuery,
@@ -82,6 +83,54 @@ test("category search filters case-insensitively and highlights safe matches", (
   assert.match(option, /data-category-search-option/);
   assert.match(option, /Camping &amp; sleep/);
   assert.match(option, /checked/);
+});
+
+test("category filter reset stays hidden without a selection and follows checkbox changes", () => {
+  const inputs = [{ checked: false }, { checked: false }];
+  const listListeners = new Map();
+  const buttonListeners = new Map();
+  const list = {
+    querySelector: (selector) => selector === "input:checked"
+      ? inputs.find((input) => input.checked) || null
+      : null,
+    querySelectorAll: () => inputs,
+    addEventListener: (type, listener) => listListeners.set(type, listener),
+    removeEventListener: (type) => listListeners.delete(type)
+  };
+  const resetButton = {
+    hidden: false,
+    addEventListener: (type, listener) => buttonListeners.set(type, listener),
+    removeEventListener: (type) => buttonListeners.delete(type)
+  };
+
+  const destroy = bindCategoryFilterResetVisibility(list, resetButton);
+  assert.equal(resetButton.hidden, true);
+
+  inputs[0].checked = true;
+  listListeners.get("change")();
+  assert.equal(resetButton.hidden, false);
+
+  buttonListeners.get("click")();
+  assert.deepEqual(inputs.map((input) => input.checked), [false, false]);
+  assert.equal(resetButton.hidden, true);
+
+  destroy();
+  assert.equal(listListeners.size, 0);
+  assert.equal(buttonListeners.size, 0);
+});
+
+test("category filter keeps Done anchored and has no duplicate close cross", () => {
+  const html = readProjectFile("index.html");
+  const styles = readProjectFile("styles.css");
+  const dialog = html.match(/<dialog id="categoryFilterDialog">([\s\S]*?)<\/dialog>/)?.[1] || "";
+
+  assert.doesNotMatch(dialog, /class="icon-button"/);
+  assert.match(dialog, /id="resetCategoryFilterBtn"[^>]*hidden/);
+  assert.match(dialog, /id="applyCategoryFilterBtn"/);
+  assert.match(
+    styles,
+    /\.category-filter-dialog-card #applyCategoryFilterBtn\s*\{\s*margin-left:\s*auto;/
+  );
 });
 
 test("CRITICAL layout-ui: system layout and load progress follow the interface language", () => {

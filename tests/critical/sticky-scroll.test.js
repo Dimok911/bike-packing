@@ -8,7 +8,7 @@ import {
   stickyHeaderOffsetForTarget
 } from "../../src/ui/sticky-scroll.js";
 
-function fixture({ bannerHeight = 60, packing = false } = {}) {
+function fixture({ bannerHeight = 60, packing = false, packingHeaderVisible = true } = {}) {
   const toolbar = {
     hidden: false,
     offsetParent: {},
@@ -18,7 +18,7 @@ function fixture({ bannerHeight = 60, packing = false } = {}) {
   let boardScrollOptions = null;
   const packingHeader = {
     classList: {
-      contains: (name) => name === "packing-root-header-row" || name === "is-visible"
+      contains: (name) => name === "packing-root-header-row" || (name === "is-visible" && packingHeaderVisible)
     },
     getBoundingClientRect: () => ({ height: 86 })
   };
@@ -53,7 +53,15 @@ function fixture({ bannerHeight = 60, packing = false } = {}) {
           }
         };
       }
-      if (element === packingHeader) return { display: "block", visibility: "visible" };
+      if (element === packingHeader) {
+        return {
+          display: packingHeaderVisible ? "block" : "none",
+          visibility: "visible",
+          getPropertyValue(name) {
+            return name === "--packing-root-header-cell-height" ? "78px" : "";
+          }
+        };
+      }
       return { display: "grid" };
     },
     scrollTo(options) { scrollOptions = options; }
@@ -85,6 +93,29 @@ test("search result is aligned immediately below the complete sticky stack", () 
   assert.deepEqual(getScrollOptions(), { top: 824, left: 3, behavior: "smooth" });
 });
 
+test("desktop search uses the live sticky bottom while cached height variables are stale", () => {
+  const { documentRef, target, windowRef } = fixture({ bannerHeight: 0 });
+  const toolbar = target.closest(".view").querySelector(".catalog-toolbar-sticky");
+  toolbar.getBoundingClientRect = () => ({ top: 240, bottom: 336, height: 96 });
+  const originalGetComputedStyle = windowRef.getComputedStyle;
+  windowRef.getComputedStyle = (element) => {
+    if (element === documentRef.documentElement) {
+      return { getPropertyValue: () => "0px" };
+    }
+    if (element === toolbar) {
+      return {
+        display: "grid",
+        position: "sticky",
+        top: "240px",
+        visibility: "visible"
+      };
+    }
+    return originalGetComputedStyle(element);
+  };
+
+  assert.equal(stickyHeaderOffsetForTarget(target, { documentRef, windowRef }), 348);
+});
+
 test("packing search includes the visible fixed root header and centers the match horizontally", () => {
   const {
     documentRef,
@@ -98,6 +129,19 @@ test("packing search includes the visible fixed root header and centers the matc
   assert.deepEqual(result, { top: 834, offset: 386 });
   assert.deepEqual(getScrollOptions(), { top: 834, left: 3, behavior: "smooth" });
   assert.deepEqual(getBoardScrollOptions(), { left: 770, behavior: "smooth" });
+});
+
+test("packing search reserves the root header before scrolling makes it fixed", () => {
+  const {
+    documentRef,
+    target,
+    windowRef,
+    getScrollOptions
+  } = fixture({ packing: true, packingHeaderVisible: false });
+  const result = scrollElementBelowStickyHeader(target, { documentRef, windowRef });
+
+  assert.deepEqual(result, { top: 842, offset: 378 });
+  assert.deepEqual(getScrollOptions(), { top: 842, left: 3, behavior: "smooth" });
 });
 
 test("horizontal packing search is clamped to the board scroll range", () => {

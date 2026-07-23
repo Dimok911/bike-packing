@@ -6,10 +6,13 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1340" />
+    <link rel="stylesheet" href="./styles.css?v=1383" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
+      <aside id="experimentBanner" class="experiment-banner" role="status">
+        Экспериментальная версия
+      </aside>
       <header class="topbar">
         <div>
           <h1>Сборы в велопоход</h1>
@@ -38,6 +41,7 @@
                   <option value="en">English</option>
                 </select>
               </label>
+              <button id="interfaceColorMenuBtn" class="ghost menu-item" type="button">Цвет интерфейса</button>
               <button id="collectionMenuBtn" class="ghost menu-item auth-required" type="button">Режим сбора</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
@@ -395,7 +399,6 @@
       <form method="dialog" class="dialog-card category-filter-dialog-card">
         <header>
           <h2>Категории</h2>
-          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <label class="category-search-field category-filter-search-field">
           <span class="visually-hidden">Search categories</span>
@@ -403,8 +406,42 @@
         </label>
         <div id="categoryFilterList" class="category-filter-list"></div>
         <footer>
-          <button id="resetCategoryFilterBtn" class="ghost" type="button">Сбросить</button>
+          <button id="resetCategoryFilterBtn" class="ghost" type="button" hidden>Сбросить</button>
           <button id="applyCategoryFilterBtn" value="default">Готово</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="interfaceColorDialog">
+      <form method="dialog" class="dialog-card interface-color-dialog-card">
+        <header>
+          <h2 id="interfaceColorTitle">Цвет интерфейса</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="interfaceColorDescription" class="dialog-subtitle">
+          Выберите основной цвет и его яркость. Фотографии и нейтральный фон не изменяются.
+        </p>
+        <label class="interface-color-brightness">
+          <span id="interfaceColorBrightnessLabel">Яркость цвета</span>
+          <output id="interfaceColorBrightnessValue" for="interfaceColorBrightness">100%</output>
+          <input
+            id="interfaceColorBrightness"
+            type="range"
+            min="70"
+            max="130"
+            step="1"
+            value="100"
+          />
+        </label>
+        <div
+          id="interfaceColorOptions"
+          class="interface-color-options"
+          role="radiogroup"
+          aria-label="Цвет интерфейса"
+        ></div>
+        <footer>
+          <button id="interfaceColorDefaultBtn" class="ghost" type="button">По умолчанию</button>
+          <button id="interfaceColorDoneBtn" value="default">Готово</button>
         </footer>
       </form>
     </dialog>
@@ -733,6 +770,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1340" type="module"></script>
+    <script src="./app.js?v=1383" type="module"></script>
   </body>
 </html>

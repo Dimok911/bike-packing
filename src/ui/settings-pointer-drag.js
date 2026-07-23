@@ -1,3 +1,5 @@
+import { suppressNextClickAfterDrag } from "./drag-click-suppression.js";
+
 export function createPackingEdgeScrollBinding({
   createScroller,
   getBoard = () => null,
@@ -443,12 +445,7 @@ export function bindSettingsPointerDrag({
           placeContainerInActiveLayout(containerId, packingDrop.parentId, packingDrop.index, { renderAfter: false });
         }
       }
-      if (started) {
-        sourceRow.dataset.justDragged = "true";
-        window.setTimeout(() => {
-          delete sourceRow.dataset.justDragged;
-        }, 250);
-      }
+      if (started) suppressNextClickAfterDrag(sourceRow, { clientX: latestX, clientY: latestY });
       cleanup();
       if (dropped) render();
     };

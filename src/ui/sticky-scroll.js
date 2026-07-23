@@ -14,10 +14,31 @@ function packingStickyHeaderHeight(target, windowRef) {
   const header = board?.previousElementSibling?.classList?.contains?.("packing-root-header-row")
     ? board.previousElementSibling
     : null;
-  if (!header?.classList?.contains?.("is-visible")) return 0;
+  if (!header) return 0;
   const style = windowRef.getComputedStyle?.(header);
+  const plannedHeight = cssPixels(style?.getPropertyValue?.("--packing-root-header-cell-height"));
+  if (
+    !header.classList?.contains?.("is-visible")
+    || style?.display === "none"
+    || style?.visibility === "hidden"
+  ) {
+    return plannedHeight;
+  }
+  return Math.max(plannedHeight, header.getBoundingClientRect?.().height || 0);
+}
+
+function engagedStickyBottom(element, windowRef) {
+  if (!element || element.hidden || element.offsetParent === null) return 0;
+  const style = windowRef.getComputedStyle?.(element);
   if (style?.display === "none" || style?.visibility === "hidden") return 0;
-  return Math.max(0, header.getBoundingClientRect?.().height || 0);
+  if (style?.position !== "sticky" && style?.position !== "fixed") return 0;
+  const rect = element.getBoundingClientRect?.();
+  if (!rect) return 0;
+  const top = cssPixels(style?.top);
+  if (style.position === "sticky" && rect.top > top + 1) return 0;
+  const viewportHeight = Math.max(0, windowRef.innerHeight || 0);
+  if (rect.bottom <= 0 || (viewportHeight && rect.top >= viewportHeight)) return 0;
+  return Math.max(0, rect.bottom || (rect.top + (rect.height || 0)));
 }
 
 export function centerElementInHorizontalScrollHost(target, {
@@ -61,11 +82,22 @@ export function stickyHeaderOffsetForTarget(target, {
     && windowRef.getComputedStyle?.(toolbar)?.display !== "none";
   const toolbarHeight = toolbarVisible ? Math.max(0, toolbar.getBoundingClientRect().height || 0) : 0;
   const packingHeaderHeight = packingStickyHeaderHeight(target, windowRef);
-  return bannerHeight
+  const configuredOffset = bannerHeight
     + controlsHeight
     + tabsHeight
     + toolbarHeight
-    + packingHeaderHeight
+    + packingHeaderHeight;
+  const liveOffset = Math.max(
+    engagedStickyBottom(documentRef.querySelector?.(".experiment-banner"), windowRef),
+    engagedStickyBottom(documentRef.querySelector?.(".controls"), windowRef),
+    engagedStickyBottom(documentRef.querySelector?.(".tabs-row"), windowRef),
+    engagedStickyBottom(toolbar, windowRef),
+    engagedStickyBottom(
+      target?.closest?.(".board")?.previousElementSibling,
+      windowRef
+    )
+  );
+  return Math.max(configuredOffset, liveOffset)
     + Math.max(0, Number(gap) || 0);
 }
 
