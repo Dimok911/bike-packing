@@ -1,3 +1,8 @@
+import {
+  currentViewportScrollPosition,
+  scrollViewportTo
+} from "./viewport-scroll-host.js";
+
 export function createModalScrollLockController() {
   let modalScrollLock = null;
   let modalTouchStartY = 0;
@@ -32,10 +37,11 @@ export function createModalScrollLockController() {
   function lockPageScrollForModal() {
     if (modalScrollLock) return;
     const softLock = shouldUseSoftModalScrollLock();
+    const position = currentViewportScrollPosition();
     modalScrollLock = {
       softLock,
-      x: window.scrollX,
-      y: window.scrollY,
+      x: position.x,
+      y: position.y,
       position: document.body.style.position,
       top: document.body.style.top,
       left: document.body.style.left,
@@ -65,7 +71,7 @@ export function createModalScrollLockController() {
       document.body.style.right = right;
       document.body.style.width = width;
       document.body.style.overflow = overflow;
-      window.scrollTo(x, y);
+      scrollViewportTo({ left: x, top: y, behavior: "auto" });
     }
   }
 

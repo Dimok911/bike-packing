@@ -1,17 +1,21 @@
+import {
+  currentViewportScrollPosition,
+  scrollViewportTo,
+  viewportScrollLeft,
+  viewportScrollTop
+} from "./viewport-scroll-host.js";
+
 export function currentPageScrollPosition() {
   const body = document.body;
   const locked = body?.classList.contains("modal-scroll-locked") && body.style.position === "fixed";
   if (!locked) {
-    return {
-      x: window.scrollX || 0,
-      y: window.scrollY || 0
-    };
+    return currentViewportScrollPosition();
   }
   const lockedX = Number.parseFloat(body.style.left || "");
   const lockedY = Number.parseFloat(body.style.top || "");
   return {
-    x: Number.isFinite(lockedX) ? Math.max(0, -lockedX) : (window.scrollX || 0),
-    y: Number.isFinite(lockedY) ? Math.max(0, -lockedY) : (window.scrollY || 0)
+    x: Number.isFinite(lockedX) ? Math.max(0, -lockedX) : viewportScrollLeft(),
+    y: Number.isFinite(lockedY) ? Math.max(0, -lockedY) : viewportScrollTop()
   };
 }
 
@@ -22,7 +26,7 @@ export function closeDialogWithoutRestoringFocus(dialog, returnValue = "") {
   const restore = () => {
     const active = document.activeElement;
     if (active && active !== document.body && !dialog.contains(active)) active.blur();
-    window.scrollTo({ left: scroll.x, top: scroll.y, behavior: "auto" });
+    scrollViewportTo({ left: scroll.x, top: scroll.y, behavior: "auto" });
   };
   return Promise.all([
     new Promise((resolve) => requestAnimationFrame(() => { restore(); resolve(); })),
@@ -71,7 +75,7 @@ export function setupDialogKeyboardScrollGuard(dialogs = []) {
   const restoreFocusedDialogPosition = () => {
     if (!focusLock?.dialog?.open || document.activeElement !== focusLock.field) return;
     const { x, y } = focusLock.pageScroll;
-    window.scrollTo({ left: x, top: y, behavior: "auto" });
+    scrollViewportTo({ left: x, top: y, behavior: "auto" });
     scrollFieldIntoDialogViewport(focusLock);
   };
 

@@ -1,3 +1,5 @@
+import { markExplicitViewportScrollIntent } from "./viewport-scroll-intent.js";
+
 export function preventDoubleTapZoom() {
   let lastTouchEnd = 0;
   document.addEventListener("touchend", (event) => {
@@ -17,6 +19,7 @@ export function preventDoubleTapZoom() {
 export function blurActiveEditableBeforeButtonAction(event, { ignoredButton = null } = {}) {
   const button = event.target.closest?.("button");
   if (!button || button.disabled) return;
+  if (button.matches?.("[data-viewport-scroll-action]")) markExplicitViewportScrollIntent();
   if (button.closest?.("dialog")?.open) return;
   if (button.closest?.(".search-control-row, .filter-field")) return;
   if (ignoredButton && button === ignoredButton) return;

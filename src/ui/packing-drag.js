@@ -7,6 +7,12 @@ import {
   getPackingDragBottomBoundary,
   getPackingDragTopBoundary
 } from "./packing-edge-scroll.js";
+import {
+  scrollViewportBy,
+  viewportScrollHost,
+  viewportScrollLeft,
+  viewportScrollTop
+} from "./viewport-scroll-host.js";
 
 export function createPackingDragController({
   edgeScrollMaxSpeed,
@@ -153,7 +159,7 @@ export function createPackingDragController({
       if (axis === "x" && board) {
         board.scrollLeft -= pendingX;
       } else if (axis === "y") {
-        window.scrollBy({ left: 0, top: -pendingY, behavior: "auto" });
+        scrollViewportBy({ left: 0, top: -pendingY, behavior: "auto" });
       }
       pendingX = 0;
       pendingY = 0;
@@ -200,9 +206,9 @@ export function createPackingDragController({
 
     const ensureBottomScrollRoom = (reserve = 0) => {
       if (!board) return;
-      const page = document.scrollingElement || document.documentElement;
+      const page = viewportScrollHost();
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
-      const pageScrollTop = window.scrollY || page.scrollTop;
+      const pageScrollTop = viewportScrollTop();
       const maxScroll = Math.max(0, page.scrollHeight - page.clientHeight);
       const remaining = Math.max(0, maxScroll - pageScrollTop);
       const dragHeight = Math.ceil(Number(getDragMetrics?.()?.height) || 0);
@@ -229,24 +235,24 @@ export function createPackingDragController({
     };
 
     const scrollPageX = (delta) => {
-      const page = document.scrollingElement || document.documentElement;
+      const page = viewportScrollHost();
       const maxScroll = Math.max(0, page.scrollWidth - page.clientWidth);
       if (!maxScroll) return false;
-      const before = window.scrollX || page.scrollLeft;
-      window.scrollBy({ left: delta, top: 0, behavior: "auto" });
-      return (window.scrollX || page.scrollLeft) !== before;
+      const before = viewportScrollLeft();
+      scrollViewportBy({ left: delta, top: 0, behavior: "auto" });
+      return viewportScrollLeft() !== before;
     };
 
     const scrollPageY = (delta) => {
       if (delta > 0) ensureBottomScrollRoom();
-      const page = document.scrollingElement || document.documentElement;
+      const page = viewportScrollHost();
       const maxScroll = Math.max(0, page.scrollHeight - page.clientHeight);
       if (!maxScroll) return false;
-      const before = window.scrollY || page.scrollTop;
-      window.scrollBy({ left: 0, top: delta, behavior: "auto" });
-      if ((window.scrollY || page.scrollTop) !== before) return true;
+      const before = viewportScrollTop();
+      scrollViewportBy({ left: 0, top: delta, behavior: "auto" });
+      if (viewportScrollTop() !== before) return true;
       page.scrollTop = before + delta;
-      return (window.scrollY || page.scrollTop) !== before;
+      return viewportScrollTop() !== before;
     };
 
     const tick = () => {
@@ -297,12 +303,12 @@ export function createPackingDragController({
         dragBottom: dragMetrics.bottom,
         verticalDirection
       }));
-      const page = document.scrollingElement || document.documentElement;
+      const page = viewportScrollHost();
       if (speedY > 0) ensureBottomScrollRoom(verticalZone + 80);
       const pageMaxScroll = Math.max(0, page.scrollWidth - page.clientWidth);
       const pageMaxScrollY = Math.max(0, page.scrollHeight - page.clientHeight);
-      const pageScrollLeft = window.scrollX || page.scrollLeft;
-      const pageScrollTop = window.scrollY || page.scrollTop;
+      const pageScrollLeft = viewportScrollLeft();
+      const pageScrollTop = viewportScrollTop();
       const canScrollLeft = board.scrollLeft > 0 || pageScrollLeft > 0;
       const canScrollRight = board.scrollLeft < maxScroll || pageScrollLeft < pageMaxScroll;
       const canScrollUp = pageScrollTop > 0;

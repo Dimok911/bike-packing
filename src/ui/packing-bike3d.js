@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { normalizeContainerDimensions } from "../state/container-fields.js";
 import { BIKE_GEOMETRY_M, bikeGeometryFrame } from "./bike-geometry.js";
+import { scrollViewportBy, viewportScrollHost } from "./viewport-scroll-host.js";
 
 const PACKING_VIEW_BIKE3D = "bike3d";
 const PACKING_VIEW_COLUMNS = "columns";
@@ -327,7 +328,7 @@ function bindBike3dDetailScrollChain(target) {
     const pageDelta = -dy;
     if (!shouldChainBike3dDetailScroll(detail, pageDelta) || !canScrollPageBy(pageDelta)) return;
     if (event.cancelable) event.preventDefault();
-    window.scrollBy({ top: pageDelta, left: 0, behavior: "auto" });
+    scrollViewportBy({ top: pageDelta, left: 0, behavior: "auto" });
   }, { passive: false });
 }
 
@@ -340,7 +341,7 @@ function shouldChainBike3dDetailScroll(detail, deltaY) {
 }
 
 function canScrollPageBy(deltaY) {
-  const scroller = document.scrollingElement || document.documentElement;
+  const scroller = viewportScrollHost();
   if (!scroller) return false;
   const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
   if (deltaY > 0) return scroller.scrollTop < maxScrollTop - 1;

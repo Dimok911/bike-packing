@@ -60,6 +60,9 @@ import {
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
+import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
+import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
+import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -2451,7 +2454,7 @@ function scrollToFilterMatch(index, { highlight = false } = {}) {
   }
   matches.forEach((element) => element.classList.remove("filter-focus"));
   if (highlight) target.classList.add("filter-focus");
-  target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  scrollElementBelowStickyHeader(target);
   window.setTimeout(() => target.classList.remove("filter-focus"), 1200);
 }
 
@@ -2978,10 +2981,10 @@ function restoreViewportSnapshot(snapshot, focusTarget = null, anchor = null) {
     const anchorElement = anchor ? findAnchorElement(anchor) : null;
     if (anchorElement) {
       const rect = anchorElement.getBoundingClientRect();
-      const nextY = window.scrollY + rect.top - anchor.top;
-      window.scrollTo({ left: snapshot.windowX, top: Math.max(0, nextY), behavior: "auto" });
+      const nextY = viewportScrollTop() + rect.top - anchor.top;
+      scrollViewportTo({ left: snapshot.windowX, top: Math.max(0, nextY), behavior: "auto" });
     } else {
-      window.scrollTo({ left: snapshot.windowX, top: snapshot.windowY, behavior: "auto" });
+      scrollViewportTo({ left: snapshot.windowX, top: snapshot.windowY, behavior: "auto" });
     }
     syncFixedScrollbarVisibility();
   };
@@ -2999,9 +3002,10 @@ function restoreViewportSnapshot(snapshot, focusTarget = null, anchor = null) {
   }
 }
 
-function stickyViewportBottom() {
-  return [
-    refs.controls,
+  function stickyViewportBottom() {
+    return [
+      document.querySelector(".experiment-banner"),
+      refs.controls,
     document.querySelector(".tabs-row"),
     ...document.querySelectorAll(".catalog-toolbar-sticky")
   ]
@@ -3148,11 +3152,11 @@ function restorePendingPackingScroll(board) {
   runtime.pendingPackingScroll = null;
   runtime.lastPackingScrollSnapshot = { boardLeft, windowX, windowY, bike3dDetail };
   board.scrollLeft = boardLeft;
-  window.scrollTo({ left: windowX, top: windowY, behavior: "auto" });
+  scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
   restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
   requestAnimationFrame(() => {
     board.scrollLeft = boardLeft;
-    window.scrollTo({ left: windowX, top: windowY, behavior: "auto" });
+    scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
     restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
     syncFixedScrollbarVisibility();
   });
@@ -3785,6 +3789,7 @@ function renderItems() {
     showPhotos: shouldShowItemPhotos(),
     t
   });
+  bindCatalogBackToTop(refs.itemsView);
   bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
   refs.itemsView.querySelector("#itemUsageFilter").addEventListener("change", (event) => {
@@ -4323,6 +4328,7 @@ function renderRootContainerCard(container) {
 }
 
 function bindRootContainersEditor() {
+  bindCatalogBackToTop(refs.bagsView);
   bindRootContainersEditorControls({
     bindRootCatalogSelection,
     catalogRootActionIds,
