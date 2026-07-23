@@ -42,3 +42,14 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /2026-07-23\.magic-link-manual-code-v1/);
   assert.match(constantsSource, /APP_VERSION\s*=\s*"v1383"/);
 });
+
+test("production shell has no experimental banner and uses the production API", async () => {
+  const [indexSource, constantsSource] = await Promise.all([
+    readFile(new URL("../../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8")
+  ]);
+
+  assert.doesNotMatch(indexSource, /id="experimentBanner"/);
+  assert.match(constantsSource, /API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api"/);
+  assert.doesNotMatch(constantsSource, /experiment\.vniipo-help\.ru/);
+});
