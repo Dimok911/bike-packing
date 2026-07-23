@@ -296,7 +296,11 @@ import {
   sharedEntityTargetFromUrl
 } from "./src/public/shared-entity-link.js";
 import { focusSharedEntityTarget } from "./src/ui/shared-entity-focus.js";
-import { finishAppStartup, renderBeforeFinishingAppStartup, resolveAppStartupLanguage } from "./src/ui/app-startup.js";
+import {
+  renderBeforeFinishingAppStartup,
+  resolveAppStartupLanguage,
+  waitForStartupTask
+} from "./src/ui/app-startup.js";
 import {
   reconcilePublishedTemplateCopyDraft,
   repairEmptyTemplateCopyDraftFromPublishedLayout
@@ -3178,11 +3182,15 @@ async function init() {
     } else {
       await checkAuthAndLoad();
     }
-    await publicIndexRefresh;
+    const publicIndexStartupStatus = await waitForStartupTask(publicIndexRefresh);
+    if (publicIndexStartupStatus === "timeout") {
+      publicIndexRefresh.then(() => {
+        if (!document.body.classList.contains("app-starting")) render();
+      }).catch(() => null);
+    }
   } finally {
     applyStaticTranslations();
-    render();
-    finishAppStartup(document);
+    renderBeforeFinishingAppStartup({ documentRef: document, render });
   }
 }
 

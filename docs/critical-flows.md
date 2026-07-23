@@ -15,6 +15,16 @@ test:critical` дополнительно к `npm.cmd run check`.
   - `src/config/constants.js` -> `APP_VERSION`
   - `index.html` -> `styles.css?v=...` и `app.js?v=...`
   - `sw.js` -> `CACHE_NAME` и `ASSETS`
+- Production-сборка не должна снимать cache-busting query string: итоговый
+  `www/vniipo-help.ru/bike-packing/index.html` обязан ссылаться на
+  `styles.css?v=<version>` и `app.js?v=<version>`, а сгенерированный `sw.js`
+  обязан кэшировать те же версионированные URL. Это обеспечивает
+  `scripts/build-dist-assets.mjs` и защищает контрактный тест
+  `tests/critical/service-worker-version.test.js`.
+- Перед выгрузкой нужно проверять не только исходные файлы, но и результат
+  `npm.cmd run build`: поиск версии в собранных `index.html` и `sw.js` должен
+  находить текущий номер. Иначе браузер может продолжить использовать старые
+  `app.js` и `styles.css`, даже если экран показывает новый `APP_VERSION`.
 
 ## CRITICAL: offline-auth-scope
 

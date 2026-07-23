@@ -44,3 +44,11 @@ test("CRITICAL offline-start: app registration activates waiting service workers
   assert.match(registration, /SKIP_WAITING/);
   assert.match(registration, /controllerchange/);
 });
+
+test("CRITICAL offline-start: production build preserves runtime cache-busting URLs", () => {
+  const buildScript = read("scripts/build-dist-assets.mjs");
+  assert.match(buildScript, /async function versionDistEntryAssets\(appVersion\)/);
+  assert.match(buildScript, /app\\\.js\|styles\\\.css/);
+  assert.match(buildScript, /versionRuntimeAsset\(asset, appVersion\)/);
+  assert.match(buildScript, /await versionDistEntryAssets\(appVersion\)/);
+});
