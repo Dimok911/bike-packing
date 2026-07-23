@@ -353,10 +353,11 @@ test("CRITICAL sync-save: runtime active layout id is readable but not serialize
   assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(state)), "activeLayoutId"), false);
 });
 
-test("CRITICAL sync-save: auth load keeps visible private layout as remote preferred choice", async () => {
+test("CRITICAL offline-auth-scope: confirmed startup auth leaves the temporary public preview before loading personal layouts", async () => {
   let activeLayoutId = "layout-last";
   const remoteLoads = [];
   let automaticRecoveryCalls = 0;
+  let privateScopeActivated = false;
   const runtime = {
     appUnlocked: false,
     currentUser: null,
@@ -390,6 +391,7 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
     isSharedListLinkRoute: () => false,
     loadGuestPublishedDemoOnStartup: async () => {},
     loadRemoteState: async (options) => {
+      assert.equal(privateScopeActivated, true);
       remoteLoads.push(options);
     },
     rememberAuthenticatedUser: () => {},
@@ -397,6 +399,9 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
     renderInitialLocalFallbackIfNeeded: () => {},
     restoreSavedLayoutChoice: async () => {},
     restoreTemplateCopyDraftsFromRecovery: () => { automaticRecoveryCalls += 1; },
+    setActivePrivateScope: () => {
+      privateScopeActivated = true;
+    },
     setExplicitlySignedOut: () => {},
     setLayoutLoadStatus: () => {},
     setPersonalLayoutsLoadedStatus: () => {},
@@ -409,6 +414,7 @@ test("CRITICAL sync-save: auth load keeps visible private layout as remote prefe
 
   await checkAuthAndLoadFlow({ runtime, dependencies });
 
+  assert.equal(privateScopeActivated, true);
   assert.equal(activeLayoutId, "layout-last");
   assert.equal(automaticRecoveryCalls, 0);
   assert.equal(remoteLoads.length, 1);

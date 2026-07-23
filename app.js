@@ -1076,6 +1076,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "authUserCapabilities",
   "inAppMagicLinkConfirmation",
+  "magicLinkManualCodeDelivery",
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",
   "listSaveNoopHistoryGuard",
@@ -1093,7 +1094,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-21.public-template-layout-order-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-23.magic-link-manual-code-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -5973,6 +5974,7 @@ async function checkAuthAndLoad(options = {}) {
       renderCachedPrivateStateDuringRemoteLoad,
       renderInitialLocalFallbackIfNeeded,
       restoreSavedLayoutChoice,
+      setActivePrivateScope,
       setExplicitlySignedOut,
       setLayoutLoadStatus,
       setPersonalLayoutsLoadedStatus,

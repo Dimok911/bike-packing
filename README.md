@@ -2,7 +2,9 @@
 
 Web app for planning bikepacking gear: packing lists, bags, storage locations, weights, categories, photos, and trip-ready checklists.
 
-Site: https://dimok911.github.io/bike-packing
+Production site: https://vniipo-help.ru/bike-packing/
+
+GitHub Pages mirror: https://dimok911.github.io/bike-packing/
 
 ## Features
 
@@ -30,3 +32,6 @@ Checks and production build:
 npm run check
 npm run build
 ```
+
+Production publishing uses both FTP and GitHub Pages. See
+[`docs/production-deployment.md`](docs/production-deployment.md).
