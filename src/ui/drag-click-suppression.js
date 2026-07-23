@@ -3,6 +3,13 @@ export const POST_DRAG_CLICK_MAX_DISTANCE = 24;
 
 const activeSuppressions = new WeakMap();
 
+export function shouldSuppressClickAfterDragAttempt({
+  started = false,
+  blocked = false
+} = {}) {
+  return started || blocked;
+}
+
 export function suppressNextClickAfterDrag(source, {
   clientX = null,
   clientY = null,

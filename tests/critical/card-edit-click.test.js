@@ -7,6 +7,7 @@ import {
 } from "../../src/ui/card-edit-click.js";
 import {
   POST_DRAG_CLICK_SUPPRESSION_MS,
+  shouldSuppressClickAfterDragAttempt,
   suppressNextClickAfterDrag
 } from "../../src/ui/drag-click-suppression.js";
 
@@ -167,6 +168,19 @@ test("CRITICAL card editing: drag click suppression expires so later ordinary cl
   assert.equal(source.dataset.justDragged, undefined);
   assert.equal(listeners.has("click:true"), false);
   assert.equal(shouldOpenCardEditor(clickEvent({ card: source }), { card: source }), true);
+});
+
+test("CRITICAL card editing: a recognized drag attempt on a locked layout suppresses its release click", () => {
+  assert.equal(shouldSuppressClickAfterDragAttempt(), false);
+  assert.equal(shouldSuppressClickAfterDragAttempt({ started: false, blocked: false }), false);
+  assert.equal(shouldSuppressClickAfterDragAttempt({ started: true, blocked: false }), true);
+  assert.equal(shouldSuppressClickAfterDragAttempt({ started: false, blocked: true }), true);
+
+  const dragSource = readFileSync(new URL("../../src/ui/packing-drag.js", import.meta.url), "utf8");
+  const guardedSuppressions = dragSource.match(
+    /shouldSuppressClickAfterDragAttempt\(\{\s*started,\s*blocked:\s*dragStartBlocked\s*\}\)/g
+  ) || [];
+  assert.equal(guardedSuppressions.length, 3);
 });
 
 test("CRITICAL card editing: packing and catalog cards use the shared single-click contract", () => {

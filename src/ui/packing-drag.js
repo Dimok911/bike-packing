@@ -1,6 +1,9 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
 import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
-import { suppressNextClickAfterDrag } from "./drag-click-suppression.js";
+import {
+  shouldSuppressClickAfterDragAttempt,
+  suppressNextClickAfterDrag
+} from "./drag-click-suppression.js";
 import { getPackingEntryAfterPointer } from "./packing-drop-target.js";
 import {
   calculatePackingEdgeScroll,
@@ -572,7 +575,9 @@ export function createPackingDragController({
           clearDragPending(source);
           source.classList.remove("dragging");
           source.classList.remove("drag-source-collapsed");
-          if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+          if (shouldSuppressClickAfterDragAttempt({ started, blocked: dragStartBlocked })) {
+            suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+          }
           deferBoardHeightUnlockUntilScroll(board);
           document.body.classList.remove("dragging-ui");
           if (inputType === "touch") {
@@ -1034,7 +1039,9 @@ export function createPackingDragController({
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
         source.classList.remove("dragging");
-        if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+        if (shouldSuppressClickAfterDragAttempt({ started, blocked: dragStartBlocked })) {
+          suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+        }
         placeholder.removeAttribute("style");
         placeholder.className = "drop-placeholder";
         setDraggingItemId(null);
@@ -1437,7 +1444,9 @@ export function createPackingDragController({
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
         source.classList.remove("dragging");
-        if (started) suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+        if (shouldSuppressClickAfterDragAttempt({ started, blocked: dragStartBlocked })) {
+          suppressNextClickAfterDrag(source, { clientX: latestX, clientY: latestY });
+        }
         placeholder.removeAttribute("style");
         setDraggingItemId(null);
         setDraggingContainerId(null);
