@@ -6,8 +6,13 @@ import {
 } from "../../src/ui/photo-primary-button.js";
 import { moveOrderedPhoto } from "../../src/ui/photo-order-dialog.js";
 import {
+  clipboardImageSourcesFromHtml,
+  clipboardImageSourcesFromUriList,
   clipboardImageFiles,
+  normalizeClipboardImageBlob,
+  photoPasteEventImageFiles,
   readClipboardImageFiles,
+  readPhotoPasteEventImageFiles,
   shouldHandlePhotoPasteTarget
 } from "../../src/ui/photo-clipboard.js";
 
@@ -43,6 +48,79 @@ test("CRITICAL photos: one-click clipboard read returns one image representation
     ]
   });
   assert.deepEqual(files, [image]);
+});
+
+test("CRITICAL photos: clipboard read falls back to another image representation", async () => {
+  const image = { type: "image/jpeg", size: 12 };
+  const files = await readClipboardImageFiles({
+    read: async () => [{
+      types: ["image/heic", "image/jpeg"],
+      getType: async (type) => {
+        if (type === "image/heic") throw new Error("unsupported representation");
+        return image;
+      }
+    }]
+  });
+  assert.deepEqual(files, [image]);
+});
+
+test("CRITICAL photos: copied web images can be recovered from the clipboard HTML representation", async () => {
+  const dataUrl = "data:image/png;base64,aW1hZ2UgYnl0ZXM=";
+  const files = await readClipboardImageFiles({
+    read: async () => [{
+      types: ["text/html", "text/uri-list"],
+      getType: async (type) => new Blob([
+        type === "text/html" ? `<a href=\"https://example.com\"><img src=\"${dataUrl}\"></a>` : "https://example.com/image"
+      ], { type })
+    }]
+  });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].type, "image/png");
+  assert.equal(await files[0].text(), "image bytes");
+});
+
+test("CRITICAL photos: clipboard HTML and URI parsing keeps only supported image sources", () => {
+  assert.deepEqual(clipboardImageSourcesFromHtml(
+    '<img src="blob:https://example.com/one"><img src="javascript:alert(1)"><img src="https://example.com/a.jpg?x=1&amp;y=2">'
+  ), ["blob:https://example.com/one", "https://example.com/a.jpg?x=1&y=2"]);
+  assert.deepEqual(clipboardImageSourcesFromUriList(
+    "# copied image\nhttps://example.com/a.png\njavascript:alert(1)"
+  ), ["https://example.com/a.png"]);
+});
+
+test("CRITICAL photos: a clipboard blob with a missing MIME type inherits its declared image type", async () => {
+  const source = new Blob(["image bytes"]);
+  const normalized = normalizeClipboardImageBlob(source, "image/png");
+  assert.equal(normalized.type, "image/png");
+  assert.equal(await normalized.text(), "image bytes");
+});
+
+test("CRITICAL photos: iOS direct-read paste accepts an image even when focus remains in a text field", () => {
+  const image = { name: "paste.png", type: "image/png", size: 12, lastModified: 1 };
+  const event = {
+    target: { closest: () => ({}) },
+    clipboardData: { files: [image] }
+  };
+  assert.deepEqual(photoPasteEventImageFiles(event), []);
+  assert.deepEqual(photoPasteEventImageFiles(event, { directReadPending: true }), [image]);
+});
+
+test("CRITICAL photos: iOS paste event recovers a copied web image from HTML", async () => {
+  const dataUrl = "data:image/png;base64,aW1hZ2UgYnl0ZXM=";
+  const event = {
+    target: { closest: () => ({}) },
+    clipboardData: {
+      items: [{
+        kind: "string",
+        type: "text/html",
+        getAsString: (callback) => callback(`<img src=\"${dataUrl}\">`)
+      }]
+    }
+  };
+  const files = await readPhotoPasteEventImageFiles(event, { directReadPending: true });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].type, "image/png");
+  assert.equal(await files[0].text(), "image bytes");
 });
 
 test("CRITICAL photos: unsupported direct clipboard read keeps Ctrl+V fallback available", async () => {

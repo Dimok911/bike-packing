@@ -15,9 +15,9 @@ import {
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
 import { moveOrderedPhoto, photoOrderIdentity, renderPhotoOrderRows } from "../ui/photo-order-dialog.js";
 import {
-  clipboardImageFiles,
+  photoPasteEventImageFiles,
   readClipboardImageFiles,
-  shouldHandlePhotoPasteTarget
+  readPhotoPasteEventImageFiles
 } from "../ui/photo-clipboard.js";
 import {
   isContainerReplacementCandidateInLayoutState,
@@ -77,6 +77,7 @@ export function createAppTailControllers(ctx) {
   let layoutOrderInitialSignature = "";
   let photoOrderContext = null;
   let photoOrderInitialSignature = "";
+  let activePhotoClipboardRequest = null;
   let replacingPackingItemId = "";
   let replacingPackingContainerId = "";
   let placeNewRootInCurrentLayout = false;
@@ -6991,36 +6992,86 @@ function bindPhotoClipboardControls() {
       handlePhotoPasteButtonClick(event, kind)
     );
   });
+  document.addEventListener("paste", handleActivePhotoClipboardPaste, true);
 }
 
-function handleDialogPhotoPaste(event, kind = "item") {
-  if (!shouldHandlePhotoPasteTarget(event.target)) return;
-  const files = clipboardImageFiles(event.clipboardData);
+async function handleDialogPhotoPaste(event, kind = "item") {
+  if (event.__bikePackingActivePhotoPaste) return;
+  const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
+  const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
+  if (directFiles.length) event.preventDefault();
+  const files = directFiles.length
+    ? directFiles
+    : await readPhotoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (!files.length) return;
   event.preventDefault();
-  if (kind === "container") handleRootContainerPhotoInputChange({ target: { files } });
-  else handleItemPhotoInputChange({ target: { files } });
+  processDialogPhotoPasteFiles(files, kind, request);
+}
+
+function handleActivePhotoClipboardPaste(event) {
+  const request = activePhotoClipboardRequest;
+  if (!request) return;
+  event.__bikePackingActivePhotoPaste = true;
+  event.preventDefault();
+  request.pasteEventProcessing = readPhotoPasteEventImageFiles(event, { directReadPending: true })
+    .then((files) => {
+      if (!files.length) return null;
+      return processDialogPhotoPasteFiles(files, request.kind, request);
+    })
+    .catch(() => null);
+}
+
+function processDialogPhotoPasteFiles(files, kind, request = null) {
+  if (request?.handled) return request.processing;
+  if (request) request.handled = true;
+  const processing = kind === "container"
+    ? handleRootContainerPhotoInputChange({ target: { files } })
+    : handleItemPhotoInputChange({ target: { files } });
+  if (request) request.processing = Promise.resolve(processing);
+  return processing;
+}
+
+async function waitForPhotoPasteEventFallback(request, timeoutMs = 180) {
+  if (request.handled) return;
+  await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+  if (request.pasteEventProcessing) await request.pasteEventProcessing;
 }
 
 async function handlePhotoPasteButtonClick(event, kind = "item") {
   const button = event.currentTarget;
   if (!button || button.disabled || button.getAttribute("aria-busy") === "true") return;
+  const request = { kind, handled: false, processing: null, pasteEventProcessing: null };
+  activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
   try {
     const files = await readClipboardImageFiles(navigator.clipboard);
+    if (request.handled) {
+      await request.processing;
+      return;
+    }
     if (files === null) {
       showToast(t("photo.clipboardUnavailable"), "warning");
       return;
     }
     if (!files.length) {
+      await waitForPhotoPasteEventFallback(request);
+      if (request.handled) {
+        await request.processing;
+        return;
+      }
       showToast(t("photo.clipboardEmpty"), "warning");
       return;
     }
-    if (kind === "container") await handleRootContainerPhotoInputChange({ target: { files } });
-    else await handleItemPhotoInputChange({ target: { files } });
+    await processDialogPhotoPasteFiles(files, kind, request);
   } catch {
+    await waitForPhotoPasteEventFallback(request);
+    if (request.handled) {
+      await request.processing;
+      return;
+    }
     showToast(t("photo.clipboardUnavailable"), "warning");
   } finally {
+    if (activePhotoClipboardRequest === request) activePhotoClipboardRequest = null;
     button.removeAttribute("aria-busy");
   }
 }
