@@ -127,6 +127,15 @@ test("mobile sticky tabs stay below an optional experimental banner", () => {
   assert.doesNotMatch(mobileStyles, /\.tabs-row \{\s*position: sticky;\s*top: 0;/);
 });
 
+test("tab row keeps horizontal scrolling without a native vertical scrollbar", () => {
+  const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+
+  assert.match(
+    styles,
+    /\.tabs\s*\{[\s\S]*?overflow-x:\s*auto;[\s\S]*?overflow-y:\s*hidden;/
+  );
+});
+
 test("context search navigation keeps the compact experimental dimensions", () => {
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 

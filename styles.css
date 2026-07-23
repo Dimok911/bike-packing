@@ -1439,6 +1439,7 @@ button.filter-active.filter-no-results {
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .tabs .layout-collapse-all-button {
@@ -5824,8 +5825,8 @@ dialog.photo-lightbox::backdrop {
   z-index: 1;
   max-width: none;
   max-height: none;
-  width: auto;
-  height: auto;
+  width: calc(100vw - 18px);
+  height: calc(100dvh - 18px);
   min-width: 0;
   min-height: 0;
   max-width: calc(100vw - 18px);
@@ -5841,6 +5842,47 @@ dialog.photo-lightbox::backdrop {
 
 .photo-lightbox-image:active {
   cursor: grabbing;
+}
+
+.photo-lightbox-load-status {
+  position: fixed;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100vw - 32px);
+  padding: 9px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(10, 15, 14, 0.76);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.photo-lightbox-load-status[hidden] {
+  display: none;
+}
+
+.photo-lightbox-loading-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.34);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.photo-lightbox-load-error .photo-lightbox-loading-spinner {
+  display: none;
 }
 
 .photo-lightbox-close {

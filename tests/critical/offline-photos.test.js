@@ -44,10 +44,12 @@ import {
 } from "../../src/sync/photo-upload-scope.js";
 import { compactPhotoForSync, prunePhotoPayloadForSync } from "../../src/sync/serialize.js";
 import {
+  createPhotoLightboxLoadingNotice,
   photoDialogStatusText,
   photoStatusText,
   photoUploadProgressState,
   photoUploadState,
+  replacePhotoLightboxImageSource,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
 import {
@@ -1412,6 +1414,151 @@ test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zon
   assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*clamp\(72px,\s*22vw,\s*148px\);/);
   assert.match(styles, /\.photo-lightbox-nav span\s*\{[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
   assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
+});
+
+test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(source, /const previewSrc = image\.currentSrc \|\| image\.src \|\| "";/);
+  assert.match(source, /const fullSrc = image\.dataset\.photoFullSrc \|\| previewSrc;/);
+  assert.match(source, /Loading full-size photo…/);
+  assert.match(source, /Загружается полная версия фото…/);
+  assert.match(source, /PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450/);
+  assert.match(source, /loadingNotice\.pending\(\)/);
+  assert.doesNotMatch(source, /updateLoadStatus\("loading"\)/);
+  assert.match(source, /const displaySrc = readyFullSrc \|\| previewSrc;[\s\S]*image\.src = displaySrc;[\s\S]*await replacePhotoLightboxImageSource\(currentImage, next\.src/);
+  assert.match(source, /await loadAndDecode\(replacement, src\);[\s\S]*currentImage\.replaceWith\(replacement\);/);
+  assert.match(source, /await decodePhotoLightboxImage\(replacement\);/);
+  assert.match(source, /photoLightboxImageUsesSource\(replacement, src\)/);
+  assert.match(source, /Preview · full-size photo is unavailable/);
+  assert.match(source, /Предпросмотр · полная версия фото недоступна/);
+  assert.match(source, /Preview · only the preview is stored/);
+  assert.match(source, /Предпросмотр · сохранён только предпросмотр/);
+  assert.match(styles, /\.photo-lightbox-load-status\s*\{/);
+  assert.match(styles, /\.photo-lightbox-loading-spinner\s*\{[\s\S]*animation:\s*spin/);
+});
+
+test("CRITICAL offline-photos: lightbox keeps stable geometry and never downgrades an already decoded photo", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(source, /const decodedPhotoLightboxSources = new Set\(\);/);
+  assert.match(source, /resolvedFullSrc: decodedPhotoLightboxSources\.has\(fullSrc\) \? fullSrc : ""/);
+  assert.match(source, /const readyFullSrc = entry\?\.resolvedFullSrc \|\| "";/);
+  assert.match(source, /image\.dataset\.photoLightboxQuality = readyFullSrc \? "full" : "preview";[\s\S]*if \(readyFullSrc\) return true;/);
+  assert.match(source, /entry\.resolvedFullSrc = next\.src;/);
+  assert.match(source, /decodedPhotoLightboxSources\.add\(next\.src\);/);
+  assert.doesNotMatch(source, /image\.src = previewSrc;/);
+  assert.match(styles, /\.photo-lightbox-image\s*\{[\s\S]*width:\s*calc\(100vw - 18px\);[\s\S]*height:\s*calc\(100dvh - 18px\);[\s\S]*object-fit:\s*contain;/);
+});
+
+test("CRITICAL offline-photos: fast full-size resolution cancels the loading notice before it flashes", () => {
+  const changes = [];
+  const timers = [];
+  const notice = createPhotoLightboxLoadingNotice({
+    delayMs: 450,
+    setTimer: (callback, delay) => {
+      const timer = { callback, delay, cleared: false };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: (timer) => {
+      timer.cleared = true;
+    },
+    onChange: (state) => changes.push(state)
+  });
+
+  notice.pending();
+  assert.deepEqual(changes, ["idle"]);
+  assert.equal(timers[0].delay, 450);
+
+  notice.settle("idle");
+  assert.equal(timers[0].cleared, true);
+  if (!timers[0].cleared) timers[0].callback();
+  assert.deepEqual(changes, ["idle", "idle"]);
+
+  notice.pending();
+  timers[1].callback();
+  assert.deepEqual(changes, ["idle", "idle", "idle", "loading"]);
+  notice.cancel();
+  assert.equal(changes.at(-1), "idle");
+});
+
+test("CRITICAL offline-photos: decoded full-size source replaces the visible preview before success", async () => {
+  const steps = [];
+  const currentImage = {
+    isConnected: true,
+    replaceWith(replacement) {
+      steps.push("replace");
+      this.isConnected = false;
+      replacement.isConnected = true;
+    }
+  };
+  const replacement = {
+    src: "",
+    currentSrc: "",
+    complete: true,
+    naturalWidth: 2400,
+    isConnected: false,
+    decoding: "",
+    removeAttribute: () => {},
+    decode: async () => {
+      steps.push("visible-decode");
+    }
+  };
+
+  const result = await replacePhotoLightboxImageSource(currentImage, "blob:full-photo", {
+    createReplacement: () => replacement,
+    loadAndDecode: async (image, src) => {
+      image.src = src;
+      image.currentSrc = src;
+      steps.push("candidate-decode");
+    },
+    afterPaint: async () => {
+      steps.push("paint");
+    },
+    onReplaced: () => {
+      steps.push("committed");
+    }
+  });
+
+  assert.equal(result, replacement);
+  assert.deepEqual(steps, [
+    "candidate-decode",
+    "replace",
+    "committed",
+    "paint",
+    "visible-decode"
+  ]);
+  assert.equal(currentImage.isConnected, false);
+  assert.equal(replacement.isConnected, true);
+  assert.equal(replacement.currentSrc, "blob:full-photo");
+});
+
+test("CRITICAL offline-photos: a full-size decode failure leaves the visible preview in place", async () => {
+  let replaced = false;
+  const currentImage = {
+    isConnected: true,
+    replaceWith() {
+      replaced = true;
+    }
+  };
+
+  await assert.rejects(
+    replacePhotoLightboxImageSource(currentImage, "blob:broken-full", {
+      createReplacement: () => ({
+        src: "",
+        currentSrc: "",
+        removeAttribute: () => {}
+      }),
+      loadAndDecode: async () => {
+        throw new Error("decode failed");
+      }
+    }),
+    /decode failed/
+  );
+
+  assert.equal(replaced, false);
+  assert.equal(currentImage.isConnected, true);
 });
 
 test("CRITICAL offline-photos: changed photo draft blocks backdrop click without blocking normal dialog clicks", () => {

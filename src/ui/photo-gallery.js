@@ -12,11 +12,44 @@ import {
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 
-let lightboxObjectUrl = "";
+let lightboxObjectUrls = new Set();
 let lightboxKeydownHandler = null;
+let lightboxLoadingNotice = null;
+const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
+const decodedPhotoLightboxSources = new Set();
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
+}
+
+export function createPhotoLightboxLoadingNotice({
+  delayMs = PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS,
+  setTimer = (callback, delay) => globalThis.setTimeout(callback, delay),
+  clearTimer = (timer) => globalThis.clearTimeout(timer),
+  onChange = () => {}
+} = {}) {
+  let timer = null;
+  const clearPending = () => {
+    if (timer === null) return;
+    clearTimer(timer);
+    timer = null;
+  };
+  const settle = (state = "idle") => {
+    clearPending();
+    onChange(state);
+  };
+  const pending = () => {
+    settle("idle");
+    timer = setTimer(() => {
+      timer = null;
+      onChange("loading");
+    }, Math.max(0, Number(delayMs) || 0));
+  };
+  return {
+    pending,
+    settle,
+    cancel: () => settle("idle")
+  };
 }
 
 export function renderPhotoSlide(photo, {
@@ -444,19 +477,24 @@ export function bindPhotoGalleries(root = document, {
 export async function openPhotoLightbox(sourceImage, { gallery = null, index = -1 } = {}) {
   const { entries, activeIndex: initialIndex } = photoLightboxEntries(sourceImage, { gallery, index });
   closePhotoLightbox();
-  const initial = await resolvePhotoLightboxSource(entries[initialIndex]);
-  if (!initial.src) return;
-  lightboxObjectUrl = initial.objectUrl;
+  const initialEntry = entries[initialIndex];
+  const initialPreviewSrc = initialEntry?.previewSrc || initialEntry?.fullSrc || "";
+  if (!initialPreviewSrc) return;
   const overlay = document.createElement("dialog");
   overlay.className = "photo-lightbox";
   const hasNavigation = entries.length > 1;
   const closeLabel = escapeHtml(localText("Close", "Закрыть"));
   const previousLabel = escapeHtml(localText("Previous photo", "Предыдущее фото"));
   const nextLabel = escapeHtml(localText("Next photo", "Следующее фото"));
+  const loadingFullLabel = escapeHtml(localText("Loading full-size photo…", "Загружается полная версия фото…"));
   overlay.innerHTML = `
     <button class="photo-lightbox-close" type="button" aria-label="${closeLabel}">×</button>
     ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="${previousLabel}"><span aria-hidden="true">‹</span></button>` : ""}
-    <img class="photo-lightbox-image" src="${escapeHtml(initial.src)}" alt="" />
+    <img class="photo-lightbox-image" src="${escapeHtml(initialPreviewSrc)}" alt="" />
+    <div class="photo-lightbox-load-status" role="status" aria-live="polite" hidden>
+      <span class="photo-lightbox-loading-spinner" aria-hidden="true"></span>
+      <span data-photo-lightbox-status-text>${loadingFullLabel}</span>
+    </div>
     ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
@@ -464,9 +502,12 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     overlay.showModal();
   }
   document.body.classList.add("photo-lightbox-open");
-  const image = overlay.querySelector(".photo-lightbox-image");
+  let image = overlay.querySelector(".photo-lightbox-image");
+  const loadStatus = overlay.querySelector(".photo-lightbox-load-status");
+  const loadStatusText = overlay.querySelector("[data-photo-lightbox-status-text]");
   const prevButton = overlay.querySelector(".photo-lightbox-prev");
   const nextButton = overlay.querySelector(".photo-lightbox-next");
+  let loadingNotice = null;
   const close = () => closePhotoLightbox();
   overlay.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -511,6 +552,29 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     if (prevButton) prevButton.setAttribute("aria-disabled", activeIndex <= 0 ? "true" : "false");
     if (nextButton) nextButton.setAttribute("aria-disabled", activeIndex >= entries.length - 1 ? "true" : "false");
   };
+  const updateLoadStatus = (state = "idle") => {
+    if (!loadStatus || !loadStatusText) return;
+    loadStatus.hidden = state === "idle";
+    loadStatus.classList.toggle("photo-lightbox-load-error", ["error", "preview"].includes(state));
+    loadStatusText.textContent = state === "preview"
+      ? localText(
+        "Preview · only the preview is stored",
+        "Предпросмотр · сохранён только предпросмотр"
+      )
+      : state === "error"
+        ? localText(
+          "Preview · full-size photo is unavailable",
+          "Предпросмотр · полная версия фото недоступна"
+        )
+        : localText(
+          "Loading full-size photo…",
+          "Загружается полная версия фото…"
+        );
+  };
+  loadingNotice = createPhotoLightboxLoadingNotice({
+    onChange: updateLoadStatus
+  });
+  lightboxLoadingNotice = loadingNotice;
   const activateNavigation = (event, direction) => {
     event.preventDefault();
     event.stopPropagation();
@@ -521,71 +585,122 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   };
   bindPhotoLightboxNavButton(prevButton, (event) => activateNavigation(event, -1));
   bindPhotoLightboxNavButton(nextButton, (event) => activateNavigation(event, 1));
-  const showPhoto = async (nextIndex) => {
-    if (nextIndex < 0 || nextIndex >= entries.length || nextIndex === activeIndex) return false;
+  let bindImageInteractions = () => {};
+  const showPhoto = async (nextIndex, { force = false } = {}) => {
+    if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
     const token = ++renderToken;
-    const next = await resolvePhotoLightboxSource(entries[nextIndex]);
-    if (token !== renderToken) {
+    loadingNotice.settle("idle");
+    const entry = entries[nextIndex];
+    const previewSrc = entry?.previewSrc || entry?.fullSrc || "";
+    const readyFullSrc = entry?.resolvedFullSrc || "";
+    const displaySrc = readyFullSrc || previewSrc;
+    if (!previewSrc) return false;
+    activeIndex = nextIndex;
+    image.src = displaySrc;
+    image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
+    updateNavigation();
+    resetTransform();
+    if (readyFullSrc) return true;
+    const expectsFullSize = Boolean(
+      entry.localId
+      || (entry.fullSrc && entry.fullSrc !== previewSrc)
+    );
+    if (!expectsFullSize) {
+      image.dataset.photoLightboxQuality = entry.fullSrc ? "full" : "preview";
+      return true;
+    }
+    loadingNotice.pending();
+    const next = await resolvePhotoLightboxSource(entry);
+    if (token !== renderToken || !overlay.isConnected) {
       if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
       return false;
     }
-    if (!next.src) return false;
-    if (lightboxObjectUrl) URL.revokeObjectURL(lightboxObjectUrl);
-    lightboxObjectUrl = next.objectUrl;
-    activeIndex = nextIndex;
-    image.src = next.src;
-    updateNavigation();
+    if (!next.src || !next.isFull) {
+      if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
+      loadingNotice.settle(next.reason === "preview-only" ? "preview" : "error");
+      return true;
+    }
+    try {
+      const currentImage = image;
+      await replacePhotoLightboxImageSource(currentImage, next.src, {
+        shouldCommit: () => token === renderToken && overlay.isConnected,
+        onReplaced: (replacement) => {
+          image = replacement;
+          image.dataset.photoLightboxQuality = "full";
+          bindImageInteractions(image);
+        },
+        onRollback: (restoredImage) => {
+          image = restoredImage;
+        }
+      });
+    } catch {
+      if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
+      if (token === renderToken && overlay.isConnected) loadingNotice.settle("error");
+      return true;
+    }
+    entry.resolvedFullSrc = next.src;
+    if (next.objectUrl) lightboxObjectUrls.add(next.objectUrl);
+    else decodedPhotoLightboxSources.add(next.src);
+    if (token !== renderToken || !overlay.isConnected) {
+      if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
+      return false;
+    }
+    loadingNotice.settle("idle");
     resetTransform();
     return true;
   };
   updateNavigation();
-  image.addEventListener("click", (event) => {
-    if (Date.now() < suppressImageCloseUntil) {
+  bindImageInteractions = (targetImage) => {
+    targetImage.addEventListener("click", (event) => {
+      if (Date.now() < suppressImageCloseUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (moved) {
+        moved = false;
+        return;
+      }
       event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (moved) {
+      close();
+    });
+    targetImage.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
+      if (pinching) return;
+      targetImage.setPointerCapture(event.pointerId);
+      startX = event.clientX;
+      startY = event.clientY;
+      startPanX = panX;
+      startPanY = panY;
       moved = false;
-      return;
-    }
-    event.preventDefault();
-    close();
-  });
-  image.addEventListener("pointerdown", (event) => {
-    if (event.pointerType === "touch") return;
-    if (pinching) return;
-    image.setPointerCapture(event.pointerId);
-    startX = event.clientX;
-    startY = event.clientY;
-    startPanX = panX;
-    startPanY = panY;
-    moved = false;
-  });
-  image.addEventListener("pointermove", (event) => {
-    if (event.pointerType === "touch") return;
-    if (!image.hasPointerCapture(event.pointerId)) return;
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-    if (scale <= 1) return;
-    panX = startPanX + dx;
-    panY = startPanY + dy;
-    apply();
-  });
-  image.addEventListener("pointerup", (event) => {
-    if (event.pointerType === "touch") return;
-    if (image.hasPointerCapture(event.pointerId)) image.releasePointerCapture(event.pointerId);
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-    if (scale <= 1 && Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-      showPhoto(activeIndex + (dx < 0 ? 1 : -1));
-    }
-  });
-  image.addEventListener("pointercancel", (event) => {
-    if (event.pointerType === "touch") return;
-    if (image.hasPointerCapture(event.pointerId)) image.releasePointerCapture(event.pointerId);
-  });
+    });
+    targetImage.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      if (!targetImage.hasPointerCapture(event.pointerId)) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (scale <= 1) return;
+      panX = startPanX + dx;
+      panY = startPanY + dy;
+      apply();
+    });
+    targetImage.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") return;
+      if (targetImage.hasPointerCapture(event.pointerId)) targetImage.releasePointerCapture(event.pointerId);
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (scale <= 1 && Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        showPhoto(activeIndex + (dx < 0 ? 1 : -1));
+      }
+    });
+    targetImage.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") return;
+      if (targetImage.hasPointerCapture(event.pointerId)) targetImage.releasePointerCapture(event.pointerId);
+    });
+  };
+  bindImageInteractions(image);
+  showPhoto(initialIndex, { force: true });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.18 : -0.18;
@@ -685,7 +800,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
     if (event.key === "Escape") {
-      closePhotoLightbox();
+      close();
       return;
     }
     if (event.key === "ArrowLeft") {
@@ -701,40 +816,162 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   document.addEventListener("keydown", lightboxKeydownHandler);
 }
 
+function photoLightboxEntry(image) {
+  const previewSrc = image.currentSrc || image.src || "";
+  const fullSrc = image.dataset.photoFullSrc || previewSrc;
+  return {
+    image,
+    localId: image.dataset.photoLocalSourceId || image.dataset.photoLocalId || "",
+    previewSrc,
+    fullSrc,
+    hasExplicitFullSrc: Boolean(image.dataset.photoFullSrc),
+    resolvedFullSrc: decodedPhotoLightboxSources.has(fullSrc) ? fullSrc : ""
+  };
+}
+
 function photoLightboxEntries(sourceImage, { gallery = null, index = -1 } = {}) {
   const sourceGallery = gallery || sourceImage.closest("[data-photo-gallery]");
   const images = sourceGallery
     ? [...sourceGallery.querySelectorAll("[data-photo-open] img")]
     : [sourceImage];
-  const entries = images.map((image) => ({
-    image,
-    localId: image.dataset.photoLocalSourceId || image.dataset.photoLocalId || "",
-    src: image.dataset.photoFullSrc || image.currentSrc || image.src || ""
-  })).filter((entry) => entry.localId || entry.src);
+  const entries = images.map(photoLightboxEntry)
+    .filter((entry) => entry.localId || entry.previewSrc || entry.fullSrc);
   const sourceEntryIndex = entries.findIndex((entry) => entry.image === sourceImage);
   const sourceIndex = sourceEntryIndex >= 0
     ? sourceEntryIndex
     : index;
   return {
-    entries: entries.length ? entries : [{
-      image: sourceImage,
-      localId: sourceImage.dataset.photoLocalSourceId || sourceImage.dataset.photoLocalId || "",
-      src: sourceImage.dataset.photoFullSrc || sourceImage.currentSrc || sourceImage.src || ""
-    }],
+    entries: entries.length ? entries : [photoLightboxEntry(sourceImage)],
     activeIndex: Math.max(0, Math.min(Math.max(0, entries.length - 1), sourceIndex))
   };
 }
 
 async function resolvePhotoLightboxSource(entry) {
-  if (!entry) return { src: "", objectUrl: "" };
+  if (!entry) return { src: "", objectUrl: "", isFull: false, reason: "unavailable" };
+  const previewSrc = entry.previewSrc || "";
+  const fullSrc = entry.fullSrc || "";
+  if (fullSrc && fullSrc !== previewSrc) {
+    return { src: fullSrc, objectUrl: "", isFull: true };
+  }
   if (entry.localId) {
-    const cached = await getCachedPhoto(entry.localId);
+    const cached = await getCachedPhoto(entry.localId).catch(() => null);
     if (cached?.blob) {
       const objectUrl = URL.createObjectURL(cached.blob);
-      return { src: objectUrl, objectUrl };
+      return { src: objectUrl, objectUrl, isFull: true };
     }
   }
-  return { src: entry.src || "", objectUrl: "" };
+  return {
+    src: fullSrc || previewSrc,
+    objectUrl: "",
+    isFull: Boolean(entry.hasExplicitFullSrc && fullSrc),
+    reason: entry.hasExplicitFullSrc && fullSrc ? "" : "preview-only"
+  };
+}
+
+async function decodePhotoLightboxImage(image) {
+  if (typeof image?.decode === "function") await image.decode();
+  if ("complete" in image && image.complete !== true) {
+    throw new Error("full-photo-not-complete");
+  }
+  if ("naturalWidth" in image && Number(image.naturalWidth) <= 0) {
+    throw new Error("full-photo-decode-empty");
+  }
+  return image;
+}
+
+function loadAndDecodePhotoLightboxImage(image, src) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      image.removeEventListener?.("load", onLoad);
+      image.removeEventListener?.("error", onError);
+    };
+    const finish = async () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        await decodePhotoLightboxImage(image);
+        resolve(image);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    const onLoad = () => finish();
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("full-photo-load-failed"));
+    };
+    image.addEventListener?.("load", onLoad, { once: true });
+    image.addEventListener?.("error", onError, { once: true });
+    image.src = src;
+    if (image.complete) {
+      if (!("naturalWidth" in image) || Number(image.naturalWidth) > 0) finish();
+      else onError();
+    }
+  });
+}
+
+function afterPhotoLightboxPaint() {
+  if (typeof requestAnimationFrame !== "function") return Promise.resolve();
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function normalizedPhotoLightboxSource(src) {
+  const value = String(src || "");
+  if (!value) return "";
+  try {
+    return new URL(value, globalThis.document?.baseURI || "https://local.invalid/").href;
+  } catch {
+    return value;
+  }
+}
+
+function photoLightboxImageUsesSource(image, src) {
+  const expected = normalizedPhotoLightboxSource(src);
+  const actual = normalizedPhotoLightboxSource(image?.currentSrc || image?.src || "");
+  return Boolean(expected && actual === expected);
+}
+
+export async function replacePhotoLightboxImageSource(currentImage, src, {
+  createReplacement = (image) => image.cloneNode(false),
+  loadAndDecode = loadAndDecodePhotoLightboxImage,
+  afterPaint = afterPhotoLightboxPaint,
+  shouldCommit = () => true,
+  onReplaced = () => {},
+  onRollback = () => {}
+} = {}) {
+  if (!currentImage || !src) throw new Error("full-photo-replacement-missing");
+  const replacement = createReplacement(currentImage);
+  replacement.removeAttribute?.("src");
+  replacement.removeAttribute?.("srcset");
+  replacement.removeAttribute?.("sizes");
+  replacement.removeAttribute?.("loading");
+  replacement.decoding = "async";
+  await loadAndDecode(replacement, src);
+  if (!photoLightboxImageUsesSource(replacement, src)) {
+    throw new Error("full-photo-source-not-selected");
+  }
+  if (!shouldCommit()) throw new Error("full-photo-replacement-superseded");
+  currentImage.replaceWith(replacement);
+  onReplaced(replacement);
+  try {
+    await afterPaint();
+    if (!shouldCommit()) throw new Error("full-photo-replacement-superseded");
+    await decodePhotoLightboxImage(replacement);
+    if (!photoLightboxImageUsesSource(replacement, src)) {
+      throw new Error("full-photo-source-not-visible");
+    }
+  } catch (error) {
+    if (shouldCommit() && replacement.isConnected && !currentImage.isConnected) {
+      replacement.replaceWith(currentImage);
+      onRollback(currentImage);
+    }
+    throw error;
+  }
+  return replacement;
 }
 
 function touchDistance(first, second) {
@@ -771,8 +1008,10 @@ export function closePhotoLightbox() {
   if (overlay?.open && typeof overlay.close === "function") overlay.close();
   overlay?.remove();
   document.body.classList.remove("photo-lightbox-open");
-  if (lightboxObjectUrl) URL.revokeObjectURL(lightboxObjectUrl);
-  lightboxObjectUrl = "";
+  lightboxObjectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+  lightboxObjectUrls = new Set();
+  lightboxLoadingNotice?.cancel();
+  lightboxLoadingNotice = null;
   if (lightboxKeydownHandler) document.removeEventListener("keydown", lightboxKeydownHandler);
   lightboxKeydownHandler = null;
   document.removeEventListener("keydown", closePhotoLightboxOnEscape);
