@@ -28,7 +28,6 @@ function rootContainerToolsHtml({
   totalWeightHtml
 }) {
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
-  const editLabel = readonlyTemplate ? tr(t, "tooltips.copyFromTemplate", "Скопировать из шаблона") : tr(t, "tooltips.edit", "Редактировать");
   const toggleAllLabel = allNestedCollapsed ? tr(t, "tooltips.expandAll", "Развернуть все") : tr(t, "tooltips.collapseAll", "Свернуть все");
   return `
     <div class="container-tools">
@@ -40,12 +39,6 @@ function rootContainerToolsHtml({
         title="${escapeHtml(addItemLabel)}"
       >+</button>
       `}
-      <button
-        class="header-icon-button ${readonlyTemplate ? "copy-item-button" : ""}"
-        data-edit-container="${container.id}"
-        aria-label="${escapeHtml(editLabel)}"
-        title="${escapeHtml(editLabel)}"
-      >&#9998;</button>
       ${hasNestedContainers ? `
         <button
           class="header-icon-button"
@@ -165,7 +158,6 @@ export function renderSubcontainerSectionHtml({
   const iconClass = collapsed ? "chevron-down" : "chevron-up";
   const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
-  const editLabel = tr(t, "tooltips.edit", "Редактировать");
   return `
     <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}">
       <div class="subcontainer-title">
@@ -177,7 +169,6 @@ export function renderSubcontainerSectionHtml({
         </div>
         <div class="subcontainer-tools">
           <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="${escapeHtml(addItemLabel)}" title="${escapeHtml(addItemLabel)}">+</button>
-          <button class="header-icon-button" data-edit-container="${container.id}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}">&#9998;</button>
           ${weightHtml}
         </div>
       </div>
@@ -210,7 +201,6 @@ export function renderPackingItemCardHtml({
   const packAriaLabel = packed ? tr(t, "tooltips.markUnpacked", "Отметить как не собранное") : tr(t, "tooltips.markPacked", "Отметить как собранное");
   const packTitle = packed ? tr(t, "tooltips.packed", "Собрано") : tr(t, "tooltips.unpacked", "Не собрано");
   const copyLabel = tr(t, "replacement.itemAction", "Заменить вещь");
-  const editLabel = tr(t, "tooltips.edit", "Редактировать");
   const removeLabel = tr(t, "forms.removeFromLayout", "Убрать из укладки");
   return `
     <article class="item-card ${availabilityClass} ${packedVisible ? "packed-item" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-item-id="${item.id}" ${filterMatch ? `data-filter-match-id="${item.id}"` : ""}>
@@ -226,9 +216,6 @@ export function renderPackingItemCardHtml({
         <div class="item-title-hitarea"${titleDragAttr}>${titleHtml}</div>
         <button class="copy-item-button replace-item-button" data-replace-layout-item="${item.id}" aria-label="${escapeHtml(copyLabel)}" title="${escapeHtml(copyLabel)}">
           <span aria-hidden="true">&#8644;</span>
-        </button>
-        <button class="edit-button" data-edit-item="${item.id}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}">
-          <span aria-hidden="true">&#9998;</span>
         </button>
         <button class="remove-layout-button" data-remove-from-layout="${item.id}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}">
           <span aria-hidden="true">&times;</span>

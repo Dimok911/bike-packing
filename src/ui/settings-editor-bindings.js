@@ -1,4 +1,5 @@
 import { currentDocumentLanguage } from "../utils/language.js";
+import { bindCardEditorClicks } from "./card-edit-click.js";
 
 function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
@@ -97,7 +98,6 @@ export function bindRootContainersEditorControls({
   catalogRootActionIds,
   confirmDeleteCatalogRootContainers,
   copyCatalogRootContainers,
-  getLastRootContainerTitleTap,
   getRootContainerSortMode,
   openRootContainerDialog,
   parseWeightInput,
@@ -105,7 +105,6 @@ export function bindRootContainersEditorControls({
   saveState,
   saveUiSettings,
   setEditingRootContainerId,
-  setLastRootContainerTitleTap,
   setRootContainerSortMode,
   setRootContainerUsageFilter,
   state,
@@ -154,29 +153,11 @@ export function bindRootContainersEditorControls({
     button.addEventListener("click", () => confirmDeleteCatalogRootContainers(catalogRootActionIds(button.dataset.deleteRoot)));
   });
 
-  document.querySelectorAll("[data-root-title]").forEach((title) => {
-    const edit = (event) => {
-      if (event.target.closest("button, input")) return;
-      if (document.body.classList.contains("dragging-ui")) return;
-      const card = title.closest(".root-container-card");
-      if (card?.dataset.justDragged === "true") return;
-      event.preventDefault();
-      openRootContainerDialog(title.dataset.rootTitle, { copyIncludesContents: false });
-    };
-    title.addEventListener("click", (event) => {
-      const containerId = title.dataset.rootTitle;
-      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const now = Date.now();
-      const lastRootContainerTitleTap = getLastRootContainerTitleTap();
-      const isDoubleTap = event.detail === 2 || (lastRootContainerTitleTap.id === containerId && now - lastRootContainerTitleTap.time < 360);
-      if (isDoubleTap) {
-        setLastRootContainerTitleTap({ id: "", time: 0 });
-        edit(event);
-        return;
-      }
-      setLastRootContainerTitleTap({ id: containerId, time: now });
-    });
-    title.addEventListener("dblclick", edit);
+  bindCardEditorClicks(document, {
+    cardSelector: ".root-container-card[data-root-card]",
+    getCardId: (card) => card.dataset.rootCard,
+    isBlocked: () => document.body.classList.contains("dragging-ui"),
+    openEditor: (containerId) => openRootContainerDialog(containerId, { copyIncludesContents: false })
   });
   bindRootCatalogSelection();
 

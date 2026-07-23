@@ -146,7 +146,6 @@ export function renderListItemHtml({
   const availabilityLabel = itemAvailabilityLabel(item, t);
   const availabilityBadge = itemAvailabilityBadgeHtml(item, t);
   const copyLabel = tr(t, "buttons.copy", "Скопировать");
-  const editLabel = tr(t, "buttons.edit", "Редактировать");
   const deleteLabel = tr(t, "buttons.deleteForever", "Удалить навсегда");
   const cardTitle = [
     item.name,
@@ -181,9 +180,6 @@ export function renderListItemHtml({
     actionsHtml: `
       <button class="copy-item-button" data-copy-item="${item.id}" aria-label="${copyLabel}" title="${copyLabel}">
         <span aria-hidden="true">⧉</span>
-      </button>
-      <button class="edit-button" data-edit-item="${item.id}" aria-label="${editLabel}" title="${editLabel}">
-        <span aria-hidden="true">&#9998;</span>
       </button>
       <button class="delete-item-button" data-delete-item="${item.id}" aria-label="${deleteLabel}" title="${deleteLabel}">
         <span aria-hidden="true">&times;</span>

@@ -157,9 +157,6 @@ export function renderRootContainerCardHtml({
       <button class="copy-item-button" data-copy-root="${container.id}" aria-label="${tr(t, "buttons.copy", "Скопировать")}" title="${tr(t, "buttons.copy", "Скопировать")}">
         <span aria-hidden="true">⧉</span>
       </button>
-      <button class="edit-button" data-edit-root="${container.id}" aria-label="${tr(t, "buttons.edit", "Редактировать")}" title="${tr(t, "buttons.edit", "Редактировать")}">
-        <span aria-hidden="true">&#9998;</span>
-      </button>
       <button class="delete-item-button" data-delete-root="${container.id}" aria-label="${tr(t, "buttons.deleteLayout", "Удалить")}" title="${tr(t, "buttons.deleteLayout", "Удалить")}">
         <span aria-hidden="true">&times;</span>
       </button>
