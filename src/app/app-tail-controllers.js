@@ -60,6 +60,7 @@ import {
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
+import { bindCardEditorClicks } from "../ui/card-edit-click.js";
 import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
@@ -3541,13 +3542,10 @@ function bindPackingEvents(root) {
     cleanupDropState,
     confirmRemoveItemFromActiveLayout,
     getDescendantContainerIds,
-    getEditingContainerId: () => runtime.editingContainerId,
-    getLastItemTitleTap: () => runtime.lastItemTitleTap,
     getState: () => state,
     getDraggingContainerId: () => runtime.draggingContainerId,
     hasActiveContentFilter,
     isBlockedDropzone,
-    isCoarsePointerInteraction,
     isOriginalContainerPosition,
     isOriginalItemPosition,
     getEntryAfterPointer,
@@ -3564,7 +3562,6 @@ function bindPackingEvents(root) {
     placePlaceholder,
     removeDropzoneDragOver,
     render,
-    renderPreservingPackingScroll,
     saveLocalUiState,
     saveState,
     setDraggingContainerId: (value) => {
@@ -3579,10 +3576,6 @@ function bindPackingEvents(root) {
     setEditingItemTitleId: (value) => {
       runtime.editingItemTitleId = value;
     },
-    setLastItemTitleTap: (value) => {
-      runtime.lastItemTitleTap = value;
-    },
-    startInlineItemTitleEdit,
     toggleFilterViewCollapsed,
     togglePacked,
     touchContainer,
@@ -3809,6 +3802,12 @@ function renderItems() {
   });
   refs.itemsView.querySelectorAll("[data-delete-item]").forEach((button) => {
     button.addEventListener("click", () => confirmDeleteCatalogItems(catalogItemActionIds(button.dataset.deleteItem)));
+  });
+  bindCardEditorClicks(refs.itemsView, {
+    cardSelector: ".item-card[data-list-item-id]",
+    getCardId: (card) => card.dataset.listItemId,
+    isBlocked: () => document.body.classList.contains("dragging-ui"),
+    openEditor: openItemDialog
   });
   bindItemCatalogSelection();
   bindCatalogItemPackingDrag(refs.itemsView);
@@ -4334,7 +4333,6 @@ function bindRootContainersEditor() {
     catalogRootActionIds,
     confirmDeleteCatalogRootContainers,
     copyCatalogRootContainers,
-    getLastRootContainerTitleTap: () => runtime.lastRootContainerTitleTap,
     getRootContainerSortMode: () => runtime.rootContainerSortMode,
     openRootContainerDialog,
     parseWeightInput,
@@ -4343,9 +4341,6 @@ function bindRootContainersEditor() {
     saveUiSettings,
     setEditingRootContainerId: (value) => {
       runtime.editingRootContainerId = value;
-    },
-    setLastRootContainerTitleTap: (value) => {
-      runtime.lastRootContainerTitleTap = value;
     },
     setRootContainerSortMode: (value) => {
       runtime.rootContainerSortMode = value;

@@ -3109,6 +3109,14 @@ button.ghost.context-toggle.active:focus-visible {
   -webkit-touch-callout: none;
 }
 
+.item-card[data-item-id],
+.item-card[data-list-item-id],
+.container-card[data-root-container-id],
+.subcontainer[data-subcontainer-id],
+[data-sticky-root-container-id] {
+  cursor: pointer;
+}
+
 .item-card-top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
@@ -3548,6 +3556,15 @@ button.photo-gallery-slide.touch-feedback-active {
   box-shadow: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  position: relative;
+  z-index: 1;
+}
+
+.collapse-button::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
 }
 
 .collapse-button:focus-visible,

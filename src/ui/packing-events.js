@@ -1,4 +1,5 @@
 import { bindPackingEmptyStateActions } from "./empty-state.js";
+import { bindCardEditorClicks } from "./card-edit-click.js";
 
 export function bindPackingEvents(root, {
   bindPointerPackingDrag,
@@ -7,13 +8,10 @@ export function bindPackingEvents(root, {
   cleanupDropState,
   confirmRemoveItemFromActiveLayout,
   getDescendantContainerIds,
-  getEditingContainerId,
-  getLastItemTitleTap,
   getState,
   getDraggingContainerId,
   hasActiveContentFilter,
   isBlockedDropzone,
-  isCoarsePointerInteraction,
   isOriginalContainerPosition,
   isOriginalItemPosition,
   getEntryAfterPointer,
@@ -30,15 +28,12 @@ export function bindPackingEvents(root, {
   placePlaceholder,
   removeDropzoneDragOver,
   render,
-  renderPreservingPackingScroll,
   saveLocalUiState,
   saveState,
   setDraggingContainerId,
   setDraggingItemId,
   setEditingContainerId,
   setEditingItemTitleId,
-  setLastItemTitleTap,
-  startInlineItemTitleEdit,
   toggleFilterViewCollapsed,
   togglePacked,
   touchContainer,
@@ -52,27 +47,6 @@ export function bindPackingEvents(root, {
   bindRootColumnDrag(root);
 
   root.querySelectorAll("[data-item-drag]").forEach((handle) => {
-    const editTitle = (event) => {
-      if (event.target.closest("button, input")) return;
-      if (document.body.classList.contains("dragging-ui")) return;
-      const card = handle.closest(".item-card");
-      if (card?.dataset.justDragged === "true") return;
-      event.preventDefault();
-      startInlineItemTitleEdit(handle.dataset.itemDrag);
-    };
-    handle.addEventListener("click", (event) => {
-      const itemId = handle.dataset.itemDrag;
-      const now = Date.now();
-      const lastItemTitleTap = getLastItemTitleTap();
-      const isDoubleTap = event.detail === 2 || (lastItemTitleTap.id === itemId && now - lastItemTitleTap.time < 360);
-      if (isDoubleTap) {
-        setLastItemTitleTap({ id: "", time: 0 });
-        editTitle(event);
-        return;
-      }
-      setLastItemTitleTap({ id: itemId, time: now });
-    });
-    handle.addEventListener("dblclick", editTitle);
     handle.addEventListener("dragstart", (event) => {
       const card = handle.closest(".item-card");
       const draggingItemId = handle.dataset.itemDrag;
@@ -149,40 +123,6 @@ export function bindPackingEvents(root, {
 
   root.querySelectorAll(".subcontainer-title").forEach((title) => {
     title.draggable = false;
-    let clickTimer = null;
-    title.addEventListener("click", (event) => {
-      if (event.target.closest("button, input")) return;
-      if (document.body.classList.contains("dragging-ui")) return;
-      const subcontainer = title.closest(".subcontainer");
-      if (subcontainer?.dataset.justDragged === "true") return;
-      const containerId = subcontainer?.dataset.subcontainerId;
-      if (!containerId || getEditingContainerId() === containerId) return;
-      if (event.detail !== 1) return;
-      if (isCoarsePointerInteraction(event)) {
-        event.preventDefault();
-        capturePackingScroll();
-        state.collapsedContainers[containerId] = !state.collapsedContainers[containerId];
-        saveLocalUiState();
-        render();
-        return;
-      }
-      clickTimer = window.setTimeout(() => {
-        capturePackingScroll();
-        state.collapsedContainers[containerId] = !state.collapsedContainers[containerId];
-        saveLocalUiState();
-        render();
-      }, 180);
-    });
-    title.addEventListener("dblclick", (event) => {
-      if (event.target.closest("button, input")) return;
-      event.preventDefault();
-      if (clickTimer) window.clearTimeout(clickTimer);
-      const containerId = title.closest(".subcontainer")?.dataset.subcontainerId;
-      if (!containerId) return;
-      setEditingContainerId(containerId);
-      setEditingItemTitleId(null);
-      renderPreservingPackingScroll();
-    });
     title.addEventListener("dragstart", (event) => {
       if (event.target.closest("button")) {
         event.preventDefault();
@@ -317,6 +257,28 @@ export function bindPackingEvents(root, {
 
   root.querySelectorAll("[data-move-item]").forEach((select) => {
     select.addEventListener("change", () => moveItem(select.dataset.moveItem, select.value));
+  });
+
+  const packingCardSelector = [
+    ".item-card[data-item-id]",
+    ".subcontainer[data-subcontainer-id]",
+    ".container-card[data-root-container-id]",
+    "[data-sticky-root-container-id]"
+  ].join(", ");
+  const cardEditBlocked = () => document.body.classList.contains("dragging-ui");
+  bindCardEditorClicks(root, {
+    cardSelector: ".item-card[data-item-id]",
+    closestCardSelector: packingCardSelector,
+    getCardId: (card) => card.dataset.itemId,
+    isBlocked: cardEditBlocked,
+    openEditor: openItemDialog
+  });
+  bindCardEditorClicks(root, {
+    cardSelector: ".subcontainer[data-subcontainer-id], .container-card[data-root-container-id], [data-sticky-root-container-id]",
+    closestCardSelector: packingCardSelector,
+    getCardId: (card) => card.dataset.subcontainerId || card.dataset.rootContainerId || card.dataset.stickyRootContainerId,
+    isBlocked: cardEditBlocked,
+    openEditor: openRootContainerDialog
   });
 
   root.querySelectorAll("[data-edit-item]").forEach((button) => {

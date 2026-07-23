@@ -107,13 +107,13 @@ test:critical` дополнительно к `npm.cmd run check`.
   - `TOUCH_DRAG_CANCEL_DISTANCE`
   - `TOUCH_SCROLL_CANCEL_DISTANCE`
   - `NESTED_GROUP_HOVER_DELAY_MS`
-  - `180ms` single-click delay для desktop double-click редактирования
-    заголовка вложенной сумки
-- Если мобильный tap ощущается поздним, сначала делать ветвление по input type
-  (`touch/coarse pointer`), а не менять общий desktop timing.
-- После правок в этой зоне проверить минимум: tap по заголовку вложенной сумки,
-  tap по стрелке вложенной сумки, double-click/desktop rename, hold-to-drag,
-  scroll cancel на iPhone.
+- Карточки вещей и сумок открывают полный редактор по одиночному click/tap; прежние
+  double-click/double-tap и `180ms`-ожидание для вложенной сумки не используются.
+- Внутренние кнопки карточки, фото-превью, модификаторы мультивыбора и click после
+  завершившегося drag не должны открывать редактор карточки.
+- После правок в этой зоне проверить минимум: tap по карточкам вещи, корневой и
+  вложенной сумки, tap по стрелке вложенной сумки, кнопки удаления/копирования/замены,
+  hold-to-drag и scroll cancel на iPhone.
 
 ## CRITICAL: catalog-back-to-top-and-sticky-search
 
