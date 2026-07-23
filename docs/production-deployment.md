@@ -15,12 +15,22 @@ Do not rebuild separately for each destination.
 
 1. Push `main` to GitHub and wait for the `Deploy GitHub Pages` workflow.
    Verify `https://dimok911.github.io/bike-packing/`.
-2. Upload the same build artifact through FTP to the `/bike-packing/` directory
-   of the hosting that serves `https://vniipo-help.ru/bike-packing/`.
+2. Upload the same build artifact through FTP to
+   `/www/vniipo-help.ru/bike-packing/` on the hosting that serves
+   `https://vniipo-help.ru/bike-packing/`.
 
 The main `vniipo-help.ru` hosting is separate from the VPS used by
 `experiment.vniipo-help.ru` and `exp-to-prod.vniipo-help.ru`. Production static
 files are uploaded by FTP, not by SSH.
+
+The local FTP connection is configured in the Git-ignored
+`.vscode/sftp.json`. Treat the whole file as a secret even though only the
+password field is confidential.
+
+For a recoverable update, upload into a new sibling staging directory first
+and verify it through HTTPS. Then rename the current `bike-packing` directory
+to a versioned backup and rename the verified staging directory to
+`bike-packing`. If activation fails, restore the backup immediately.
 
 ## Verification
 
