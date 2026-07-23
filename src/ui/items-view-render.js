@@ -6,6 +6,7 @@ import {
   itemAvailabilityCardClass,
   itemAvailabilityLabel
 } from "./item-availability.js";
+import { renderCatalogBackToTopButton } from "./catalog-back-to-top.js";
 
 function tr(t, key, fallback, values = {}) {
   const value = t(key, values);
@@ -29,7 +30,10 @@ export function renderItemsViewHtml({
   return `
     <section class="items-panel">
       <div class="items-toolbar catalog-toolbar-sticky">
-        <button id="addItemBtn">${tr(t, "items.addItem", "Добавить вещь")}</button>
+        <div class="catalog-primary-actions">
+          <button id="addItemBtn">${tr(t, "items.addItem", "Добавить вещь")}</button>
+          ${renderCatalogBackToTopButton(tr(t, "navigation.backToTop", "Наверх"))}
+        </div>
         <div class="items-filter-row">
           <label>
             ${tr(t, "items.usageLabel", "Участие в укладке")}

@@ -2,6 +2,7 @@ import { renderCatalogCard, renderCatalogPills } from "./catalog-card.js";
 import { renderEmptyState } from "./empty-state.js";
 import { escapeHtml } from "../utils/html.js";
 import { formatWeight } from "../utils/weight.js";
+import { renderCatalogBackToTopButton } from "./catalog-back-to-top.js";
 
 function tr(t, key, fallback, values = {}) {
   const value = t(key, values);
@@ -49,7 +50,10 @@ export function renderRootContainersEditorHtml({
   return `
     <section class="settings-panel layout-editor">
       <div class="items-toolbar root-containers-toolbar catalog-toolbar-sticky">
-        <button id="addRootContainerBtn">${tr(t, "rootContainers.add", "Добавить сумку или место")}</button>
+        <div class="catalog-primary-actions">
+          <button id="addRootContainerBtn">${tr(t, "rootContainers.add", "Добавить сумку или место")}</button>
+          ${renderCatalogBackToTopButton(tr(t, "navigation.backToTop", "Наверх"))}
+        </div>
         <div class="items-filter-row">
           <label>
             ${tr(t, "items.usageLabel", "Участие в укладке")}

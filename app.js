@@ -1014,6 +1014,12 @@ import {
   preventDoubleTapZoom,
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
+import { hasExplicitViewportScrollIntent } from "./src/ui/viewport-scroll-intent.js";
+import {
+  scrollViewportTo,
+  viewportScrollLeft,
+  viewportScrollTop
+} from "./src/ui/viewport-scroll-host.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
 const locations = [];
@@ -10080,6 +10086,15 @@ function shouldKeepScopedControlsStable() {
 }
 
 function updateStickyControlsHeight() {
+  const experimentBanner = document.querySelector(".experiment-banner");
+  const bannerHeight = experimentBanner
+    && experimentBanner.offsetParent !== null
+    && window.getComputedStyle(experimentBanner).position === "sticky"
+    ? Math.ceil(experimentBanner.getBoundingClientRect().height)
+    : 0;
+  const bannerOffset = bannerHeight
+    ? Math.max(bannerHeight, Math.ceil(experimentBanner.getBoundingClientRect().bottom))
+    : 0;
   const controlsHeight = shouldUseStickyFilterControls() && refs.controls && !refs.controls.hidden
     ? Math.ceil(refs.controls.getBoundingClientRect().height)
     : 0;
@@ -10087,6 +10102,8 @@ function updateStickyControlsHeight() {
   const tabsHeight = tabsRow && tabsRow.offsetParent !== null
     ? Math.ceil(tabsRow.getBoundingClientRect().height)
     : 0;
+  document.documentElement.style.setProperty("--sticky-banner-height", `${bannerHeight}px`);
+  document.documentElement.style.setProperty("--sticky-banner-offset", `${bannerOffset}px`);
   document.documentElement.style.setProperty("--sticky-controls-height", `${controlsHeight}px`);
   document.documentElement.style.setProperty("--sticky-tabs-height", `${tabsHeight}px`);
 }
@@ -10094,13 +10111,19 @@ function updateStickyControlsHeight() {
 function updateCompactStickyControls() {
   const searchEditing = shouldKeepScopedControlsStable() && isSearchInputEditing();
   const sticky = shouldUseStickyFilterControls();
+  const experimentBanner = document.querySelector(".experiment-banner");
+  const stickyTop = experimentBanner
+    && experimentBanner.offsetParent !== null
+    && window.getComputedStyle(experimentBanner).position === "sticky"
+    ? experimentBanner.getBoundingClientRect().bottom
+    : 0;
   const compact = sticky
     && refs.controls
     && !refs.controls.hidden
     && !searchEditing
     && shouldKeepScopedControlsStable()
-    && window.scrollY > 0
-    && refs.controls.getBoundingClientRect().top <= 0;
+    && viewportScrollTop() > 0
+    && refs.controls.getBoundingClientRect().top <= stickyTop + 1;
   document.body.classList.toggle("filter-sticky-controls", Boolean(sticky));
   document.body.classList.toggle("compact-sticky-controls", Boolean(compact));
   document.body.classList.toggle("search-input-focused", Boolean(searchEditing));
@@ -10121,6 +10144,10 @@ function updateSearchFocusState() {
 }
 
 function preserveSearchBlurViewport() {
+  if (hasExplicitViewportScrollIntent()) {
+    updateSearchFocusState();
+    return;
+  }
   const lock = captureSearchBlurViewportLock();
   if (!lock) {
     updateSearchFocusState();
@@ -10147,7 +10174,7 @@ function captureSearchBlurViewportLock() {
     element: target,
     top: rect.top,
     boardLeft: board?.scrollLeft || 0,
-    windowX: window.scrollX || 0
+    windowX: viewportScrollLeft()
   };
 }
 
@@ -10157,9 +10184,9 @@ function restoreSearchBlurViewportLock(lock) {
   const board = lock.view === "packing" ? getPackingScrollHost() : null;
   if (board) board.scrollLeft = lock.boardLeft;
   const rect = lock.element.getBoundingClientRect();
-  window.scrollTo({
+  scrollViewportTo({
     left: lock.windowX,
-    top: Math.max(0, window.scrollY + rect.top - lock.top),
+    top: Math.max(0, viewportScrollTop() + rect.top - lock.top),
     behavior: "auto"
   });
   syncFixedScrollbarVisibility();
@@ -10481,7 +10508,7 @@ function renderAndScrollToTop(focusTarget = null) {
     const board = refs.packingView.querySelector(".board");
     if (board) board.scrollLeft = 0;
     if (focusTarget) focusTarget.focus({ preventScroll: true });
-    window.scrollTo({ left: 0, top: 0, behavior: "auto" });
+    scrollViewportTo({ left: 0, top: 0, behavior: "auto" });
     syncFixedScrollbarVisibility();
   };
   requestAnimationFrame(() => {
