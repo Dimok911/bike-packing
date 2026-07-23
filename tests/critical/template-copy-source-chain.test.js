@@ -4899,14 +4899,14 @@ test("CRITICAL template publication: UI publishes explicitly and skips the publi
   assert.match(appSource, /if \(shouldConfirmManagedTemplateTransition\(layout\)\)/);
   assert.match(appSource, /shouldAutoPublishManagedTemplate\(state\.layouts\?\.\[layoutId\]\)/);
   assert.match(controllerSource, /async function publishEditedTemplate\(event\)[\s\S]*?await savePublishedLayoutRecord\(layout\.id\)/);
-  const draftCreationSource = controllerSource.match(/async function createTemplateCopyDraft[\s\S]*?\n}\n\nfunction openLayoutDialog/)?.[0] || "";
+  const draftCreationSource = controllerSource.match(/async function createTemplateCopyDraft[\s\S]*?\r?\n}\r?\n\r?\nfunction openLayoutDialog/)?.[0] || "";
   assert.ok(draftCreationSource);
   assert.doesNotMatch(draftCreationSource, /savePublishedLayoutRecord/);
 });
 
 test("CRITICAL template deletion: removing a published template keeps its server history", () => {
   const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
-  const deleteFlow = controllerSource.match(/async function deleteManagedPublicLayout[\s\S]*?\n}\n\nfunction userEditableLayouts/)?.[0] || "";
+  const deleteFlow = controllerSource.match(/async function deleteManagedPublicLayout[\s\S]*?\r?\n}\r?\n\r?\nfunction userEditableLayouts/)?.[0] || "";
   assert.ok(deleteFlow);
   assert.match(deleteFlow, /await unpublishPublishedTemplate\(target, layout, \{ historyAction: "delete" \}\)/);
   assert.doesNotMatch(deleteFlow, /await deletePublishedTemplate\(target, layout\)/);

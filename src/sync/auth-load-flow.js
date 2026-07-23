@@ -31,6 +31,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     applyPreferredPrivateLayoutChoice,
     storedPrivateLayoutChoiceRef,
     setExplicitlySignedOut,
+    setActivePrivateScope,
     setLayoutLoadStatus,
     setPersonalLayoutsLoadedStatus,
     shouldKeepCurrentReadonlyDemoAfterAuthCheck,
@@ -122,6 +123,7 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
   runtime.appUnlocked = true;
   const startupPreferredLayout = preferredLayout || currentPrivateLayoutRef?.() || null;
   activateLocalStorageScopeForCurrentUser();
+  setActivePrivateScope?.();
   const storedPreferredLayout = storedPrivateLayoutChoiceRef?.() || null;
   if (startupPreferredLayout && !storedPreferredLayout) {
     applyPreferredPrivateLayoutChoice?.(startupPreferredLayout, { remember: true });

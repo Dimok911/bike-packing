@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   finishAppStartup,
   renderBeforeFinishingAppStartup,
-  resolveAppStartupLanguage
+  resolveAppStartupLanguage,
+  waitForStartupTask
 } from "../../src/ui/app-startup.js";
 
 test("CRITICAL offline-start: the static shell shows a neutral startup state instead of the auth gate", () => {
@@ -41,7 +42,8 @@ test("CRITICAL offline-start: normal startup stays covered until auth, catalogs,
 
   assert.doesNotMatch(startupFlow, /if \(!sharedListId\) finishAppStartup/);
   assert.match(startupFlow, /await checkAuthAndLoad\(\)/);
-  assert.match(startupFlow, /await publicIndexRefresh;[\s\S]*render\(\);[\s\S]*finishAppStartup\(document\);/);
+  assert.match(startupFlow, /await waitForStartupTask\(publicIndexRefresh\)/);
+  assert.match(startupFlow, /renderBeforeFinishingAppStartup\(\{ documentRef: document, render \}\)/);
 });
 
 test("shared-link startup stays covered until the resolved content has rendered", () => {
@@ -83,4 +85,46 @@ test("finishing startup is safe when the loading section is absent", () => {
   });
   assert.deepEqual(added, ["app-ready"]);
   assert.deepEqual(removed, ["app-starting"]);
+});
+
+test("CRITICAL offline-start: final render failures cannot leave the startup screen visible", () => {
+  const classes = new Set(["app-starting"]);
+  const documentRef = {
+    body: {
+      classList: {
+        add: (name) => classes.add(name),
+        remove: (name) => classes.delete(name)
+      }
+    },
+    querySelector: () => null
+  };
+
+  assert.throws(() => renderBeforeFinishingAppStartup({
+    documentRef,
+    render: () => {
+      throw new Error("render failed");
+    }
+  }), /render failed/);
+  assert.equal(classes.has("app-starting"), false);
+  assert.equal(classes.has("app-ready"), true);
+});
+
+test("CRITICAL offline-start: optional catalog refresh cannot block startup forever", async () => {
+  let scheduled = null;
+  let cleared = false;
+  const pending = new Promise(() => {});
+  const resultPromise = waitForStartupTask(pending, {
+    timeoutMs: 25,
+    setTimeoutFn: (callback) => {
+      scheduled = callback;
+      return 7;
+    },
+    clearTimeoutFn: (id) => {
+      assert.equal(id, 7);
+      cleared = true;
+    }
+  });
+  scheduled();
+  assert.equal(await resultPromise, "timeout");
+  assert.equal(cleared, true);
 });

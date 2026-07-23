@@ -14,6 +14,29 @@ export function finishAppStartup(documentRef = document) {
 }
 
 export function renderBeforeFinishingAppStartup({ documentRef = document, render = () => {} } = {}) {
-  render();
-  finishAppStartup(documentRef);
+  try {
+    render();
+  } finally {
+    finishAppStartup(documentRef);
+  }
+}
+
+export async function waitForStartupTask(task, {
+  timeoutMs = 8000,
+  setTimeoutFn = globalThis.setTimeout,
+  clearTimeoutFn = globalThis.clearTimeout
+} = {}) {
+  if (!task) return "settled";
+  let timeoutId = null;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeoutFn(() => resolve("timeout"), Math.max(0, Number(timeoutMs) || 0));
+  });
+  try {
+    return await Promise.race([
+      Promise.resolve(task).then(() => "settled"),
+      timeout
+    ]);
+  } finally {
+    if (timeoutId !== null) clearTimeoutFn(timeoutId);
+  }
 }
