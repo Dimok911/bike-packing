@@ -7,6 +7,7 @@ import {
   addPhotosToDraft,
   createPhotoDraftFromRecord,
   draftPhotosToCleanup,
+  markPhotoUploadBatch,
   normalizeItemPhotos,
   photoDraftChanged,
   removePhotoFromDraft
@@ -45,6 +46,7 @@ import { compactPhotoForSync, prunePhotoPayloadForSync } from "../../src/sync/se
 import {
   photoDialogStatusText,
   photoStatusText,
+  photoUploadProgressState,
   photoUploadState,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
@@ -960,7 +962,7 @@ test("CRITICAL offline-photos: item copy audits online server loss but keeps off
   assert.match(copyBlock, /cachedFallbackSourceIds,/);
 });
 
-test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued pending state", () => {
+test("CRITICAL offline-photos: dialog photo uploads render a queued batch before starting the network", () => {
   const app = readProjectFile("app.js");
   const controllers = readProjectFile("src/app/app-tail-controllers.js");
   const uploadFlow = readProjectFile("src/sync/photo-upload-flow.js");
@@ -977,7 +979,8 @@ test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued p
   assert.match(uploadFlow, /export async function uploadPhotoToPath/);
   assert.match(packageJson, /node scripts\/check-source\.mjs/);
   assert.match(checkSource, /listJsFiles\("src"\)/);
-  assert.equal((controllers.match(/retryTemporaryUploadFailure:\s*false/g) || []).length, 2);
+  assert.equal((controllers.match(/uploadPhotoWithOneRetry\(photo/g) || []).length, 2);
+  assert.equal((controllers.match(/retryTemporaryUploadFailure,\s*\n\s*scheduleProgressRender:/g) || []).length, 2);
   assert.doesNotMatch(controllers, /dialogPhotoUploadInProgress|markDialogPhotosUploading|markUnresolvedDialogUploadsFailed|updateDialogPhotoUploadProgress/);
   assert.doesNotMatch(controllers, /scheduleDialogPhotoUploadPreviewRender|dialogPhotoUploadPreviewFrame|onPhotoProgress:\s*onProgress/);
   assert.match(controllers, /photoUploadProgressRenderFrame,\s*updatePhotoGalleryUploadProgress,/);
@@ -989,13 +992,14 @@ test("CRITICAL offline-photos: dialog photo uploads do not fall back to queued p
   assert.match(controllers, /return acquirePhotoUploadSlot\(\{/);
   assert.match(app, /const slotAvailable = await acquirePhotoUploadSlot\(\{/);
   assert.match(app, /const entries = getUploadablePhotoEntries\(\{ layoutId, listId \}\);/);
-  assert.match(controllers, /shouldUploadPhoto:\s*\(photo\) => dialogDraftPhotoStillOwnedBy/);
-  assert.match(controllers, /if \(!shouldUploadPhoto\(photo\) \|\| photoRemoteSrc\(photo\)\) continue;/);
+  assert.match(controllers, /shouldUploadPhoto:\s*\(photo\) => !draft\?\.uploadDiscarded && dialogDraftPhotoStillOwnedBy/);
+  assert.equal((controllers.match(/uploadPhotoBatchQueue\(eligiblePhotos/g) || []).length, 2);
+  assert.equal((controllers.match(/shouldUploadPhoto:\s*\(photo\) => shouldUploadPhoto\(photo\) && !photoRemoteSrc\(photo\)/g) || []).length, 2);
   assert.match(controllers, /updatePhotoGalleryUploadProgress\(refs\.itemPhotoPreview,\s*list\)/);
   assert.match(controllers, /updatePhotoGalleryUploadProgress\(refs\.rootContainerPhotoPreview,\s*list\)/);
   assert.doesNotMatch(itemDialogUploadBlock, /updateItemDialogPhotoPreview/);
   assert.doesNotMatch(rootContainerDialogUploadBlock, /updateRootContainerDialogPhotoPreview/);
-  assert.equal((controllers.match(/markPhotoUploadStarted\(photo\);/g) || []).length, 2);
+  assert.equal((controllers.match(/markPhotoUploadStarted\(candidate\);/g) || []).length, 2);
   assert.match(controllers, /setItemDialogPhotoStatus\(photoDialogStatusText\(list\)\)/);
   assert.match(controllers, /setRootContainerDialogPhotoStatus\(photoDialogStatusText\(list\)\)/);
   assert.doesNotMatch(app, /async function getPhotoUploadSource|async function copyRemotePhotoToList|async function fetchRemotePhotoBlobForUpload/);
@@ -1297,7 +1301,7 @@ test("CRITICAL offline-photos: upload status and lightbox controls follow Englis
   }
 });
 
-test("CRITICAL offline-photos: local dialog drafts do not show upload progress before real upload", () => {
+test("CRITICAL offline-photos: a selected dialog batch shows zero progress before the network starts", () => {
   const photos = [{
     id: "photo-local",
     localId: "photo-local",
@@ -1305,10 +1309,19 @@ test("CRITICAL offline-photos: local dialog drafts do not show upload progress b
     url: "",
     thumbUrl: ""
   }];
+  markPhotoUploadBatch(photos, { batchId: "batch-queued" });
   const uploadState = photoUploadState(photos);
 
-  assert.deepEqual(uploadState, { active: false, progress: 0 });
+  assert.deepEqual(uploadState, {
+    active: true,
+    indeterminate: false,
+    progress: 0,
+    batchIndex: 1,
+    batchTotal: 1,
+    uploaded: 0
+  });
   assert.equal(photoDialogStatusText(photos), "");
+  assert.deepEqual(photoUploadProgressState(photos[0]), { active: true, progress: 0 });
 });
 
 test("CRITICAL offline-photos: dialog upload start exposes zero percent progress immediately", () => {
@@ -1320,6 +1333,7 @@ test("CRITICAL offline-photos: dialog upload start exposes zero percent progress
     thumbUrl: ""
   };
 
+  markPhotoUploadBatch([photo], { batchId: "batch-started" });
   markPhotoUploadStarted(photo, { nowIsoValue: "2026-06-06T00:00:00.000Z" });
 
   assert.equal(photo.status, "uploading");

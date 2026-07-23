@@ -484,6 +484,12 @@ export function applyPendingPhotoUploadRetry(targetPhoto, {
   targetPhoto.status = "pending";
   targetPhoto.error = "";
   targetPhoto.updatedAt = nowIsoValue;
+  Object.defineProperty(targetPhoto, "uploadRetryPending", {
+    value: true,
+    writable: true,
+    configurable: true,
+    enumerable: false
+  });
   return targetPhoto;
 }
 
@@ -549,7 +555,7 @@ export async function resolveUploadedPhotoByContentHash({
 }
 
 export async function createItemPhotoFromFile(file) {
-  if (!file || !file.type?.startsWith("image/")) {
+  if (!file || (!file.type?.startsWith("image/") && !isSvgImageFile(file))) {
     throw new Error("Выберите файл изображения.");
   }
   const photoId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -602,7 +608,7 @@ export async function materializeSelectedPhotoFile(file, {
   if (!byteLength) {
     throw new Error("Фото ещё загружается из iCloud. Дождитесь окончания загрузки и выберите его ещё раз.");
   }
-  const type = file.type || "image/jpeg";
+  const type = selectedPhotoMimeType(file);
   const name = file.name || "item-photo.jpg";
   if (typeof File === "function") {
     return new File([buffer], name, {
@@ -676,7 +682,27 @@ async function canvasToJpegBlob(canvas, quality) {
 }
 
 export function loadImageBitmap(file) {
+  // SVG decoding through createImageBitmap is inconsistent in Safari/iOS.
+  // Loading it as an image first keeps the input compatible, while the
+  // existing canvas pipeline still turns it into a non-executable JPEG.
+  if (isSvgImageFile(file)) return loadImageElement(file);
   if ("createImageBitmap" in window) return createImageBitmap(file, { imageOrientation: "from-image" });
+  return loadImageElement(file);
+}
+
+export function isSvgImageFile(file) {
+  const type = String(file?.type || "").trim().toLowerCase();
+  const name = String(file?.name || "").trim().toLowerCase();
+  return type === "image/svg+xml" || name.endsWith(".svg");
+}
+
+export function selectedPhotoMimeType(file) {
+  const type = String(file?.type || "").trim();
+  if (type) return type;
+  return isSvgImageFile(file) ? "image/svg+xml" : "image/jpeg";
+}
+
+function loadImageElement(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();

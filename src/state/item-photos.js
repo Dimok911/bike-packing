@@ -48,9 +48,116 @@ export function normalizeItemPhotos(item) {
           enumerable: false
         });
       }
+      copyPhotoUploadBatchMeta(photo, normalized);
       return normalized;
     });
   return item.photos;
+}
+
+function defineTransientPhotoField(photo, name, value) {
+  Object.defineProperty(photo, name, {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: false
+  });
+}
+
+function copyPhotoUploadBatchMeta(source, target) {
+  const total = Math.max(0, Math.trunc(Number(source?.uploadBatchTotal) || 0));
+  const index = Math.max(0, Math.trunc(Number(source?.uploadBatchIndex) || 0));
+  if (!total || !index) return target;
+  defineTransientPhotoField(target, "uploadBatchId", String(source?.uploadBatchId || ""));
+  defineTransientPhotoField(target, "uploadBatchIndex", Math.min(index, total));
+  defineTransientPhotoField(target, "uploadBatchTotal", total);
+  return target;
+}
+
+export function markPhotoUploadBatch(photos, {
+  batchId = `photo-upload-${Date.now()}-${Math.random().toString(16).slice(2)}`
+} = {}) {
+  const list = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
+  list.forEach((photo, index) => {
+    defineTransientPhotoField(photo, "uploadBatchId", batchId);
+    defineTransientPhotoField(photo, "uploadBatchIndex", index + 1);
+    defineTransientPhotoField(photo, "uploadBatchTotal", list.length);
+  });
+  return list;
+}
+
+export function photoUploadBatchSummary(photos) {
+  const groups = new Map();
+  (Array.isArray(photos) ? photos : []).forEach((photo) => {
+    const id = String(photo?.uploadBatchId || "");
+    const index = Math.max(0, Math.trunc(Number(photo?.uploadBatchIndex) || 0));
+    if (!id || !index) return;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(photo);
+  });
+  const batches = [...groups.entries()].map(([id, batchPhotos]) => ({ id, photos: batchPhotos }));
+  const selected = batches.find((batch) => batch.photos.some((photo) => photo?.status === "uploading")) ||
+    batches.find((batch) => batch.photos.some((photo) => photo?.status === "pending" && !photoHasRemoteAsset(photo))) ||
+    batches.at(-1);
+  if (!selected?.photos.length) return null;
+  const total = selected.photos.length;
+  const uploaded = selected.photos.filter(photoHasRemoteAsset).length;
+  const failed = selected.photos.filter((photo) => ["error", "missing-local-file"].includes(photo?.status)).length;
+  const activePhoto = selected.photos.find((photo) => photo?.status === "uploading") ||
+    selected.photos.find((photo) => photo?.status === "pending" && !photoHasRemoteAsset(photo)) ||
+    null;
+  const active = Boolean(activePhoto);
+  return {
+    id: selected.id,
+    index: activePhoto ? selected.photos.indexOf(activePhoto) + 1 : total,
+    total,
+    uploaded,
+    failed,
+    active,
+    complete: uploaded === total
+  };
+}
+
+export function photoUploadBatchInfo(photos) {
+  const summary = photoUploadBatchSummary(photos);
+  if (!summary?.active || summary.total < 2 || !summary.index) return null;
+  return {
+    id: summary.id,
+    index: Math.min(summary.index, summary.total),
+    total: summary.total
+  };
+}
+
+export function syncPhotoRecordFromUpload(record, sourcePhoto) {
+  if (!record || !sourcePhoto) return null;
+  const photos = Array.isArray(record.photos) ? record.photos : [];
+  const sourceId = String(sourcePhoto.id || "");
+  const sourceLocalId = String(sourcePhoto.localId || "");
+  const target = photos.find((photo) =>
+    (sourceLocalId && String(photo?.localId || "") === sourceLocalId) ||
+    (sourceId && String(photo?.id || "") === sourceId)
+  );
+  if (!target || target === sourcePhoto) return target || null;
+  Object.assign(target, sourcePhoto);
+  if (Object.prototype.hasOwnProperty.call(sourcePhoto, "uploadProgress")) {
+    defineTransientPhotoField(target, "uploadProgress", sourcePhoto.uploadProgress);
+  } else if (Object.prototype.hasOwnProperty.call(target, "uploadProgress")) {
+    delete target.uploadProgress;
+  }
+  if (Object.prototype.hasOwnProperty.call(sourcePhoto, "uploadRetryPending")) {
+    defineTransientPhotoField(target, "uploadRetryPending", sourcePhoto.uploadRetryPending);
+  } else if (Object.prototype.hasOwnProperty.call(target, "uploadRetryPending")) {
+    delete target.uploadRetryPending;
+  }
+  copyPhotoUploadBatchMeta(sourcePhoto, target);
+  return target;
+}
+
+function photoHasRemoteAsset(photo) {
+  return Boolean(
+    photo &&
+    !["error", "missing-local-file"].includes(photo.status) &&
+    (photo.url || photo.thumbUrl)
+  );
 }
 
 export function primaryItemPhoto(item) {
@@ -68,7 +175,10 @@ export function itemPhotoSignature(item) {
 }
 
 export function itemPhotosSignature(item) {
-  return normalizeItemPhotos(item).map((photo) => [
+  const snapshot = {
+    photos: (Array.isArray(item?.photos) ? item.photos : []).map((photo) => ({ ...photo }))
+  };
+  return normalizeItemPhotos(snapshot).map((photo) => [
     photo.id,
     photo.localId,
     photo.status,
@@ -84,6 +194,29 @@ export function createPhotoDraftFromRecord(record) {
     photos: normalizeItemPhotos(record).map((photo) => ({ ...photo })),
     deletedPhotos: []
   };
+}
+
+export function photoDraftEntityId(draft) {
+  return String(draft?.uploadEntityId || "");
+}
+
+export function ensurePhotoDraftEntityId(draft, entityType = "item", {
+  now = Date.now,
+  random = Math.random
+} = {}) {
+  if (!draft || typeof draft !== "object") return "";
+  const existingId = photoDraftEntityId(draft);
+  if (existingId) return existingId;
+  const prefix = entityType === "container" ? "container" : "item";
+  const suffix = Math.max(0, Math.trunc(Number(random()) * 0x100000000)).toString(16);
+  draft.uploadEntityId = `${prefix}-${Number(now()) || Date.now()}-${suffix}`;
+  return draft.uploadEntityId;
+}
+
+export function photoDraftUploadEntity(draft, entity = null, entityType = "item", options = {}) {
+  if (entity?.id) return entity;
+  const id = ensurePhotoDraftEntityId(draft, entityType, options);
+  return id ? { id, photos: draft.photos } : null;
 }
 
 export function addPhotosToDraft(draft, photos, limit = Infinity) {

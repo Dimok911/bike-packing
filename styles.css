@@ -3200,6 +3200,7 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 .photo-gallery-slide {
+  position: relative;
   flex: 0 0 100%;
   width: 100%;
   min-height: 0;
@@ -3224,7 +3225,7 @@ button.photo-gallery-slide.touch-feedback-active {
   position: absolute;
   left: 50%;
   bottom: 7px;
-  z-index: 2;
+  z-index: 5;
   display: flex;
   gap: 5px;
   transform: translateX(-50%);
@@ -3262,6 +3263,13 @@ button.photo-gallery-slide.touch-feedback-active {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.item-photo [data-photo-upload-status] {
+  top: 6px;
+  bottom: auto;
+  max-width: calc(100% - 58px);
+  pointer-events: none;
 }
 
 .photo-upload-progress {
@@ -3313,6 +3321,23 @@ button.photo-gallery-slide.touch-feedback-active {
   color: var(--accent);
   font-size: 10px;
   line-height: 1;
+}
+
+.photo-upload-complete {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  z-index: 3;
+  padding: 7px 10px;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 999px;
+  background: #1f6f5b;
+  box-shadow: 0 5px 16px rgba(29, 37, 34, 0.28);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 @keyframes photo-upload-spin {
