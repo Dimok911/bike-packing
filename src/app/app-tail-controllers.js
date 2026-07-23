@@ -3819,6 +3819,7 @@ function renderItems() {
   });
   bindItemCatalogSelection();
   bindCatalogItemPackingDrag(refs.itemsView);
+  bindPhotoGalleries(refs.itemsView, photoGalleryBindingOptions());
 }
 
 function renderSharedItemsView() {
@@ -3843,6 +3844,7 @@ function renderSharedItemsView() {
     });
   });
   bindEmptyContentFilterReset(refs.itemsView);
+  bindPhotoGalleries(refs.itemsView, photoGalleryBindingOptions());
   refs.itemsView.querySelector("#itemUsageFilter")?.addEventListener("change", (event) => {
     runtime.itemUsageFilter = event.target.value;
     renderItems();
@@ -4082,6 +4084,7 @@ function renderBags() {
   bindRootContainersEditor();
   bindEmptyContentFilterReset(refs.bagsView);
   bindSettingsPointerDrag();
+  bindPhotoGalleries(refs.bagsView, photoGalleryBindingOptions());
 }
 
 function renderSharedBagsView() {
@@ -4105,6 +4108,7 @@ function renderSharedBagsView() {
   });
   bindEmptyContentFilterReset(refs.bagsView);
   bindSharedVirtualEvents(refs.bagsView);
+  bindPhotoGalleries(refs.bagsView, photoGalleryBindingOptions());
 }
 
 function bindEmptyContentFilterReset(root) {

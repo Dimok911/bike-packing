@@ -50,8 +50,14 @@ import {
   photoUploadProgressState,
   photoUploadState,
   replacePhotoLightboxImageSource,
+  resolvePhotoLightboxSource,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
+import {
+  PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS,
+  photoLightboxAutoSize,
+  updatePhotoLightboxAutoSize
+} from "../../src/ui/photo-lightbox-sizing.js";
 import {
   bindDialogBackdropClickGuard,
   bindFilePickerDialogDismissGuard
@@ -106,10 +112,15 @@ test("CRITICAL offline-photos: remote personal photos are persisted without chan
   assert.equal(result.downloaded, 1);
   assert.equal(result.failed, 0);
   assert.equal(fetched.length, 2);
-  assert.equal(stored.length, 1);
+  assert.equal(stored.length, 2);
   assert.equal(stored[0].id, "photo-server-1");
-  assert.equal(await stored[0].blob.text(), "full");
+  assert.equal(stored[0].blob, null);
   assert.equal(await stored[0].thumbBlob.text(), "thumb");
+  assert.equal(stored[0].fullBlobVerified, false);
+  assert.equal(await stored[1].blob.text(), "full");
+  assert.equal(await stored[1].thumbBlob.text(), "thumb");
+  assert.equal(stored[1].fullBlobVerified, true);
+  assert.equal(stored[1].fullBlobDistinct, true);
 });
 
 test("CRITICAL offline-photos: existing local photo blobs prevent duplicate server downloads", async () => {
@@ -126,13 +137,19 @@ test("CRITICAL offline-photos: existing local photo blobs prevent duplicate serv
       }
     }
   };
+  const [task] = collectOfflinePhotoCacheTasks(state);
   let fetchCount = 0;
   const result = await cacheRemotePhotosForOffline(state, {
     fetchImpl: async () => {
       fetchCount += 1;
       throw new Error("must not fetch");
     },
-    getCachedPhoto: async () => ({ id: "photo-server-2", blob: new Blob(["local"]) }),
+    getCachedPhoto: async () => ({
+      id: "photo-server-2",
+      blob: new Blob(["local"]),
+      fullBlobVerified: true,
+      sourceSignature: task.signature
+    }),
     putCachedPhoto: async () => {
       throw new Error("must not overwrite local upload cache");
     }
@@ -196,6 +213,146 @@ test("CRITICAL offline-photos: incomplete offline cache remains visible after ba
 
   await controller.schedule();
   assert.equal(controller.currentMessage(), "Could not save all photos for offline use");
+});
+
+test("CRITICAL offline-photos: thumbnail is persisted before a slow full-size download finishes", async () => {
+  let finishFull;
+  const stored = [];
+  const state = {
+    items: {
+      item1: {
+        photos: [{
+          id: "photo-slow",
+          url: "https://api.example.test/photo-slow/file",
+          thumbUrl: "https://api.example.test/photo-slow/thumb"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const caching = cacheRemotePhotosForOffline(state, {
+    fetchImpl: async (url) => ({
+      ok: true,
+      blob: async () => url.endsWith("/thumb")
+        ? new Blob(["thumb"])
+        : new Promise((resolve) => { finishFull = () => resolve(new Blob(["full-size"])); })
+    }),
+    getCachedPhoto: async () => null,
+    putCachedPhoto: async (record) => stored.push(record)
+  });
+
+  while (!finishFull || stored.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].fullBlobVerified, false);
+  assert.equal(await stored[0].thumbBlob.text(), "thumb");
+
+  finishFull();
+  const result = await caching;
+  assert.equal(result.downloaded, 1);
+  assert.equal(stored.length, 2);
+  assert.equal(stored[1].fullBlobVerified, true);
+  assert.equal(await stored[1].blob.text(), "full-size");
+});
+
+test("CRITICAL offline-photos: a failed refresh preserves an older verified full-size blob", async () => {
+  const oldFull = new Blob(["old-full"]);
+  const stored = [];
+  const state = {
+    items: {
+      item1: {
+        photos: [{
+          id: "photo-preserve",
+          url: "https://api.example.test/photo-preserve/file",
+          thumbUrl: "https://api.example.test/photo-preserve/thumb",
+          updatedAt: "new"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const result = await cacheRemotePhotosForOffline(state, {
+    fetchImpl: async (url) => url.endsWith("/thumb")
+      ? { ok: true, blob: async () => new Blob(["new-thumb"]) }
+      : { ok: false, blob: async () => null },
+    getCachedPhoto: async () => ({
+      id: "photo-preserve",
+      blob: oldFull,
+      thumbBlob: new Blob(["old-thumb"]),
+      fullBlobVerified: true,
+      sourceSignature: "old|old|old"
+    }),
+    putCachedPhoto: async (record) => stored.push(record)
+  });
+
+  assert.equal(result.failed, 1);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].blob, oldFull);
+  assert.equal(stored[0].fullBlobVerified, true);
+  assert.equal(stored[0].sourceSignature, "old|old|old");
+  assert.equal(await stored[0].thumbBlob.text(), "new-thumb");
+});
+
+test("CRITICAL offline-photos: an unverified legacy cache is repaired instead of accepted as full-size", async () => {
+  const state = {
+    items: {
+      item1: {
+        photos: [{
+          id: "photo-legacy",
+          url: "https://api.example.test/photo-legacy/file",
+          thumbUrl: "https://api.example.test/photo-legacy/thumb"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const stored = [];
+  const result = await cacheRemotePhotosForOffline(state, {
+    fetchImpl: async (url) => ({
+      ok: true,
+      blob: async () => new Blob([url.endsWith("/thumb") ? "new-thumb" : "full"])
+    }),
+    getCachedPhoto: async () => ({ id: "photo-legacy", blob: new Blob(["old-thumb"]) }),
+    putCachedPhoto: async (record) => stored.push(record)
+  });
+
+  assert.equal(result.cached, 0);
+  assert.equal(result.downloaded, 1);
+  assert.equal(stored.at(-1).fullBlobVerified, true);
+  assert.equal(await stored.at(-1).blob.text(), "full");
+});
+
+test("CRITICAL offline-photos: cache controller retries a failed unchanged photo state", async () => {
+  const timers = [];
+  let calls = 0;
+  const controller = createOfflinePhotoCacheController({
+    getState: () => ({
+      items: { item1: { photos: [{ id: "photo-retry", url: "https://api.example.test/photo-retry/file" }] } },
+      containers: {}
+    }),
+    retryDelaysMs: [25],
+    setTimer: (callback, delay) => {
+      const timer = { callback, delay };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: () => {},
+    cachePhotos: async () => {
+      calls += 1;
+      return calls === 1
+        ? { total: 1, cached: 0, downloaded: 0, failed: 1 }
+        : { total: 1, cached: 0, downloaded: 1, failed: 0 };
+    }
+  });
+
+  await controller.schedule();
+  assert.equal(calls, 1);
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delay, 25);
+  timers[0].callback();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls, 2);
 });
 
 test("CRITICAL offline-photos: JPEG conversion replaces transparent pixels with a white background", () => {
@@ -1398,6 +1555,169 @@ test("CRITICAL offline-photos: saved item cards render active upload progress on
   }, { force: true }), /photo-upload-progress|Фото загружается|Ждём загрузки/);
 });
 
+test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reuses the verified result", async () => {
+  const sourceSignature = "https://api.example.test/photo-lightbox/file|https://api.example.test/photo-lightbox/thumb|v2";
+  const entry = {
+    localId: "photo-lightbox",
+    previewSrc: "https://api.example.test/photo-lightbox/thumb",
+    fullSrc: "https://api.example.test/photo-lightbox/file",
+    remoteFullSrc: "https://api.example.test/photo-lightbox/file",
+    remoteThumbSrc: "https://api.example.test/photo-lightbox/thumb",
+    sourceSignature
+  };
+  let cached = {
+    id: "photo-lightbox",
+    blob: new Blob(["thumb"]),
+    thumbBlob: new Blob(["thumb"])
+  };
+  let fetchCount = 0;
+  const options = {
+    getCachedPhotoForLightbox: async () => cached,
+    putCachedPhotoForLightbox: async (record) => { cached = record; },
+    fetchImpl: async (url) => {
+      fetchCount += 1;
+      return {
+        ok: true,
+        blob: async () => new Blob([url.endsWith("/thumb") ? "thumb" : "full-size"])
+      };
+    },
+    createObjectUrl: (blob) => `blob:photo-${blob.size}-${fetchCount}`
+  };
+
+  const first = await resolvePhotoLightboxSource(entry, options);
+  const afterFirstFetches = fetchCount;
+  const reopenedAfterRerender = await resolvePhotoLightboxSource({ ...entry }, options);
+
+  assert.equal(first.isFull, true);
+  assert.equal(cached.fullBlobVerified, true);
+  assert.equal(cached.sourceSignature, sourceSignature);
+  assert.equal(await cached.blob.text(), "full-size");
+  assert.equal(reopenedAfterRerender.isFull, true);
+  assert.equal(fetchCount, afterFirstFetches);
+});
+
+test("CRITICAL offline-photos: stale verified cache falls back to its saved preview when offline", async () => {
+  const cachedThumb = new Blob(["saved-preview"]);
+  const result = await resolvePhotoLightboxSource({
+    localId: "photo-stale",
+    previewSrc: "https://api.example.test/photo-stale/thumb",
+    fullSrc: "https://api.example.test/photo-stale/file",
+    remoteFullSrc: "https://api.example.test/photo-stale/file",
+    remoteThumbSrc: "https://api.example.test/photo-stale/thumb",
+    sourceSignature: "current|current|current"
+  }, {
+    getCachedPhotoForLightbox: async () => ({
+      id: "photo-stale",
+      blob: new Blob(["old-full"]),
+      thumbBlob: cachedThumb,
+      fullBlobVerified: true,
+      sourceSignature: "old|old|old"
+    }),
+    putCachedPhotoForLightbox: async () => {
+      throw new Error("must not overwrite on failure");
+    },
+    fetchImpl: async () => ({ ok: false }),
+    createObjectUrl: (blob) => `blob:fallback-${blob.size}`
+  });
+
+  assert.equal(result.src, `blob:fallback-${cachedThumb.size}`);
+  assert.equal(result.isFull, false);
+  assert.equal(result.reason, "cached-preview");
+});
+
+test("CRITICAL offline-photos: authoritative full endpoint remains full when bytes match the thumbnail", async () => {
+  const sameImage = new Blob(["same-image"], { type: "image/jpeg" });
+  let stored = null;
+  const result = await resolvePhotoLightboxSource({
+    localId: "photo-same",
+    previewSrc: "https://api.example.test/photo-same/thumb",
+    fullSrc: "https://api.example.test/photo-same/file",
+    remoteFullSrc: "https://api.example.test/photo-same/file",
+    remoteThumbSrc: "https://api.example.test/photo-same/thumb",
+    sourceSignature: "same|same|same"
+  }, {
+    getCachedPhotoForLightbox: async () => null,
+    putCachedPhotoForLightbox: async (record) => { stored = record; },
+    fetchImpl: async () => ({ ok: true, blob: async () => sameImage }),
+    createObjectUrl: () => "blob:authoritative-full"
+  });
+
+  assert.equal(result.isFull, true);
+  assert.equal(stored.fullBlobVerified, true);
+  assert.equal(stored.fullBlobDistinct, false);
+});
+
+test("CRITICAL offline-photos: catalogs rebind photo galleries after every items and bags render", () => {
+  const source = readProjectFile("src/app/app-tail-controllers.js");
+  const bindings = source.match(/bindPhotoGalleries\(refs\.(?:itemsView|bagsView), photoGalleryBindingOptions\(\)\);/g) || [];
+  assert.equal(bindings.length, 4);
+});
+
+test("CRITICAL offline-photos: low-resolution lightbox photos stay at their natural size", () => {
+  assert.equal(PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS, 1_000_000);
+  assert.deepEqual(photoLightboxAutoSize({
+    naturalWidth: 800,
+    naturalHeight: 600,
+    availableWidth: 1900,
+    availableHeight: 1000
+  }), {
+    limitAutoUpscale: true,
+    width: 800,
+    height: 600
+  });
+});
+
+test("CRITICAL offline-photos: high-resolution or already-downscaled photos keep screen fitting", () => {
+  assert.deepEqual(photoLightboxAutoSize({
+    naturalWidth: 1600,
+    naturalHeight: 1200,
+    availableWidth: 1900,
+    availableHeight: 1000
+  }), {
+    limitAutoUpscale: false,
+    width: 0,
+    height: 0
+  });
+  assert.deepEqual(photoLightboxAutoSize({
+    naturalWidth: 800,
+    naturalHeight: 1200,
+    availableWidth: 390,
+    availableHeight: 800
+  }), {
+    limitAutoUpscale: false,
+    width: 0,
+    height: 0
+  });
+});
+
+test("CRITICAL offline-photos: lightbox auto-size class follows each decoded photo", () => {
+  const classes = new Set();
+  const properties = new Map();
+  const image = {
+    naturalWidth: 640,
+    naturalHeight: 480,
+    classList: {
+      toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name)
+    },
+    style: {
+      setProperty: (name, value) => properties.set(name, value),
+      removeProperty: (name) => properties.delete(name)
+    }
+  };
+  const viewport = { clientWidth: 1200, clientHeight: 900 };
+
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(classes.has("photo-lightbox-image-no-upscale"), true);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+  assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
+
+  image.naturalWidth = 2000;
+  image.naturalHeight = 1500;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(classes.has("photo-lightbox-image-no-upscale"), false);
+  assert.equal(properties.size, 0);
+});
+
 test("CRITICAL offline-photos: dialog photo gallery keeps vertical scroll without button press feedback", () => {
   const styles = readProjectFile("styles.css");
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*overscroll-behavior-x:\s*contain;[\s\S]*overscroll-behavior-y:\s*auto;/);
@@ -1434,6 +1754,8 @@ test("CRITICAL offline-photos: lightbox keeps the preview visible until the full
   assert.match(source, /Предпросмотр · полная версия фото недоступна/);
   assert.match(source, /Preview · only the preview is stored/);
   assert.match(source, /Предпросмотр · сохранён только предпросмотр/);
+  assert.match(source, /Showing the saved preview/);
+  assert.match(source, /Показан сохранённый предпросмотр/);
   assert.match(styles, /\.photo-lightbox-load-status\s*\{/);
   assert.match(styles, /\.photo-lightbox-loading-spinner\s*\{[\s\S]*animation:\s*spin/);
 });
@@ -1449,6 +1771,7 @@ test("CRITICAL offline-photos: lightbox keeps stable geometry and never downgrad
   assert.match(source, /decodedPhotoLightboxSources\.add\(next\.src\);/);
   assert.doesNotMatch(source, /image\.src = previewSrc;/);
   assert.match(styles, /\.photo-lightbox-image\s*\{[\s\S]*width:\s*calc\(100vw - 18px\);[\s\S]*height:\s*calc\(100dvh - 18px\);[\s\S]*object-fit:\s*contain;/);
+  assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-no-upscale\s*\{[\s\S]*--photo-lightbox-natural-width[\s\S]*--photo-lightbox-natural-height/);
 });
 
 test("CRITICAL offline-photos: fast full-size resolution cancels the loading notice before it flashes", () => {

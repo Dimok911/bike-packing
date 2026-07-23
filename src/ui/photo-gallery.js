@@ -2,8 +2,10 @@ import {
   getCachedPhoto,
   normalizeRemotePhotoUrl,
   photoRemoteSrc,
+  putCachedPhoto,
   versionedPhotoUrl
 } from "../sync/photos.js";
+import { photoBlobsAreDistinct, photoCacheSourceSignature } from "../sync/photo-cache-quality.js";
 import {
   normalizeItemPhotos,
   photoUploadBatchInfo,
@@ -11,10 +13,12 @@ import {
 } from "../state/item-photos.js";
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
+import { updatePhotoLightboxAutoSize } from "./photo-lightbox-sizing.js";
 
 let lightboxObjectUrls = new Set();
 let lightboxKeydownHandler = null;
 let lightboxLoadingNotice = null;
+let lightboxResizeHandler = null;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
 const decodedPhotoLightboxSources = new Set();
 
@@ -59,16 +63,33 @@ export function renderPhotoSlide(photo, {
   const localId = photo.localId || photo.id;
   const localSrc = localId ? photoObjectUrls.get(localId) : "";
   const remoteSrc = photoRemoteSrc(photo);
+  const remoteFullUrl = photo.url ? normalizeRemotePhotoUrl(photo.url) : "";
+  const remoteThumbUrl = photo.thumbUrl ? normalizeRemotePhotoUrl(photo.thumbUrl) : remoteFullUrl;
+  const remoteFullSrc = remoteFullUrl
+    ? versionedPhotoUrl(remoteFullUrl, photo.updatedAt || photo.id || "")
+    : remoteSrc;
+  const remoteThumbSrc = remoteThumbUrl
+    ? versionedPhotoUrl(remoteThumbUrl, photo.updatedAt || photo.id || "")
+    : remoteSrc;
+  const sourceSignature = remoteFullUrl
+    ? photoCacheSourceSignature(remoteFullUrl, remoteThumbUrl, photo.updatedAt || "")
+    : "";
   const src = localSrc || remoteSrc || "";
-  const fullSrc = photo.url ? versionedPhotoUrl(normalizeRemotePhotoUrl(photo.url), photo.updatedAt || photo.id || "") : remoteSrc;
+  const fullSrc = remoteFullSrc;
   const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : "";
   const fullAttr = fullSrc ? ` data-photo-full-src="${escapeHtml(fullSrc)}"` : "";
+  const remoteFullAttr = remoteFullSrc ? ` data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : "";
+  const remoteThumbAttr = remoteThumbSrc ? ` data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : "";
+  const sourceSignatureAttr = sourceSignature ? ` data-photo-source-signature="${escapeHtml(sourceSignature)}"` : "";
   return `
     <button class="photo-gallery-slide" type="button" data-photo-open>
       <img
         ${src ? `src="${escapeHtml(src)}"` : ""}
         ${localHydrateAttr}
         ${fullAttr}
+        ${remoteFullAttr}
+        ${remoteThumbAttr}
+        ${sourceSignatureAttr}
         alt=""
         loading="lazy"
       />
@@ -140,13 +161,30 @@ export async function renderPhotoGalleryHtml(photos, {
 async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = null } = {}) {
   const cached = await getCachedPhoto(photo.localId || photo.id);
   const blob = cached?.thumbBlob || cached?.blob;
-  const fullBlob = cached?.blob || cached?.thumbBlob;
+  const remoteFullUrl = photo.url ? normalizeRemotePhotoUrl(photo.url) : "";
+  const remoteThumbUrl = photo.thumbUrl ? normalizeRemotePhotoUrl(photo.thumbUrl) : remoteFullUrl;
+  const sourceSignature = remoteFullUrl
+    ? photoCacheSourceSignature(remoteFullUrl, remoteThumbUrl, photo.updatedAt || "")
+    : "";
+  const cachedSourceMatches = !remoteFullUrl || Boolean(
+    sourceSignature && cached?.sourceSignature === sourceSignature
+  );
+  const fullBlob = cached?.blob && (
+    (cached.fullBlobVerified === true && cachedSourceMatches)
+    || (cached.fullBlobVerified !== false && !remoteFullUrl)
+  ) ? cached.blob : null;
   const localSrc = blob ? URL.createObjectURL(blob) : "";
   const fullLocalSrc = fullBlob && fullBlob !== blob ? URL.createObjectURL(fullBlob) : localSrc;
   if (localSrc) objectUrls.push(localSrc);
   if (fullLocalSrc && fullLocalSrc !== localSrc) objectUrls.push(fullLocalSrc);
   const remoteSrc = photoRemoteSrc(photo);
-  const fullSrc = fullLocalSrc || (photo.url ? versionedPhotoUrl(normalizeRemotePhotoUrl(photo.url), photo.updatedAt || photo.id || "") : remoteSrc);
+  const remoteFullSrc = remoteFullUrl
+    ? versionedPhotoUrl(remoteFullUrl, photo.updatedAt || photo.id || "")
+    : remoteSrc;
+  const remoteThumbSrc = remoteThumbUrl
+    ? versionedPhotoUrl(remoteThumbUrl, photo.updatedAt || photo.id || "")
+    : remoteSrc;
+  const fullSrc = fullLocalSrc || remoteFullSrc;
   const src = localSrc || remoteSrc || "";
   const localId = photo.localId || photo.id || "";
   return `
@@ -154,6 +192,9 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
       <img
         ${src ? `src="${escapeHtml(src)}"` : ""}
         ${fullSrc ? `data-photo-full-src="${escapeHtml(fullSrc)}"` : ""}
+        ${remoteFullSrc ? `data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : ""}
+        ${remoteThumbSrc ? `data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : ""}
+        ${sourceSignature ? `data-photo-source-signature="${escapeHtml(sourceSignature)}"` : ""}
         ${localId ? `data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
         alt=""
       />
@@ -555,8 +596,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
     loadStatus.hidden = state === "idle";
-    loadStatus.classList.toggle("photo-lightbox-load-error", ["error", "preview"].includes(state));
-    loadStatusText.textContent = state === "preview"
+    loadStatus.classList.toggle("photo-lightbox-load-error", ["error", "preview", "saved-preview"].includes(state));
+    loadStatusText.textContent = state === "saved-preview"
+      ? localText(
+        "Showing the saved preview",
+        "Показан сохранённый предпросмотр"
+      )
+      : state === "preview"
       ? localText(
         "Preview · only the preview is stored",
         "Предпросмотр · сохранён только предпросмотр"
@@ -616,8 +662,30 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       return false;
     }
     if (!next.src || !next.isFull) {
-      if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
-      loadingNotice.settle(next.reason === "preview-only" ? "preview" : "error");
+      if (next.objectUrl && next.src) {
+        try {
+          const currentImage = image;
+          await replacePhotoLightboxImageSource(currentImage, next.src, {
+            shouldCommit: () => token === renderToken && overlay.isConnected,
+            onReplaced: (replacement) => {
+              image = replacement;
+              image.dataset.photoLightboxQuality = "preview";
+              bindImageInteractions(image);
+            },
+            onRollback: (restoredImage) => {
+              image = restoredImage;
+            }
+          });
+          lightboxObjectUrls.add(next.objectUrl);
+        } catch {
+          URL.revokeObjectURL(next.objectUrl);
+        }
+      }
+      loadingNotice.settle(next.reason === "preview-only"
+        ? "preview"
+        : next.reason === "cached-preview"
+          ? "saved-preview"
+          : "error");
       return true;
     }
     try {
@@ -651,6 +719,11 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   };
   updateNavigation();
   bindImageInteractions = (targetImage) => {
+    const refreshAutoSize = () => {
+      updatePhotoLightboxAutoSize(targetImage, overlay);
+    };
+    targetImage.addEventListener("load", refreshAutoSize);
+    if (targetImage.complete) refreshAutoSize();
     targetImage.addEventListener("click", (event) => {
       if (Date.now() < suppressImageCloseUntil) {
         event.preventDefault();
@@ -700,6 +773,12 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     });
   };
   bindImageInteractions(image);
+  lightboxResizeHandler = () => {
+    updatePhotoLightboxAutoSize(image, overlay);
+    resetTransform();
+  };
+  window.addEventListener("resize", lightboxResizeHandler);
+  window.visualViewport?.addEventListener?.("resize", lightboxResizeHandler);
   showPhoto(initialIndex, { force: true });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -824,6 +903,9 @@ function photoLightboxEntry(image) {
     localId: image.dataset.photoLocalSourceId || image.dataset.photoLocalId || "",
     previewSrc,
     fullSrc,
+    remoteFullSrc: image.dataset.photoRemoteFullSrc || "",
+    remoteThumbSrc: image.dataset.photoRemoteThumbSrc || "",
+    sourceSignature: image.dataset.photoSourceSignature || "",
     hasExplicitFullSrc: Boolean(image.dataset.photoFullSrc),
     resolvedFullSrc: decodedPhotoLightboxSources.has(fullSrc) ? fullSrc : ""
   };
@@ -846,26 +928,114 @@ function photoLightboxEntries(sourceImage, { gallery = null, index = -1 } = {}) 
   };
 }
 
-async function resolvePhotoLightboxSource(entry) {
+export async function resolvePhotoLightboxSource(entry, {
+  getCachedPhotoForLightbox = getCachedPhoto,
+  putCachedPhotoForLightbox = putCachedPhoto,
+  fetchImpl = globalThis.fetch,
+  createObjectUrl = (blob) => URL.createObjectURL(blob)
+} = {}) {
   if (!entry) return { src: "", objectUrl: "", isFull: false, reason: "unavailable" };
   const previewSrc = entry.previewSrc || "";
   const fullSrc = entry.fullSrc || "";
-  if (fullSrc && fullSrc !== previewSrc) {
-    return { src: fullSrc, objectUrl: "", isFull: true };
-  }
+  const remoteFullSrc = entry.remoteFullSrc || (isRemotePhotoLightboxSource(fullSrc) ? fullSrc : "");
+  const remoteThumbSrc = entry.remoteThumbSrc || (isRemotePhotoLightboxSource(previewSrc) ? previewSrc : "");
+  const sourceSignature = entry.sourceSignature || "";
+  const hasRemoteFullSource = Boolean(remoteFullSrc);
+  const hasSeparateFullSource = Boolean(fullSrc && fullSrc !== previewSrc);
+  let cached = null;
+  let cachedSourceMatches = false;
   if (entry.localId) {
-    const cached = await getCachedPhoto(entry.localId).catch(() => null);
-    if (cached?.blob) {
-      const objectUrl = URL.createObjectURL(cached.blob);
+    cached = await getCachedPhotoForLightbox(entry.localId).catch(() => null);
+    cachedSourceMatches = !hasRemoteFullSource || Boolean(
+      sourceSignature && cached?.sourceSignature === sourceSignature
+    );
+    const cachedFullIsUsable = cached?.blob && (
+      (cached.fullBlobVerified === true && cachedSourceMatches)
+      || (cached.fullBlobVerified !== false && !hasSeparateFullSource && !hasRemoteFullSource)
+    );
+    if (cachedFullIsUsable) {
+      const objectUrl = createObjectUrl(cached.blob);
       return { src: objectUrl, objectUrl, isFull: true };
     }
   }
+  const fullFetchSrc = remoteFullSrc || fullSrc;
+  if (fullFetchSrc && (hasRemoteFullSource || hasSeparateFullSource) && typeof fetchImpl === "function") {
+    const previewFetchSrc = remoteThumbSrc
+      || (isRemotePhotoLightboxSource(previewSrc) ? previewSrc : "");
+    const previewBlobPromise = cachedSourceMatches && cached?.thumbBlob
+      ? Promise.resolve(cached.thumbBlob)
+      : previewFetchSrc && previewFetchSrc !== fullFetchSrc
+        ? fetchPhotoLightboxBlob(previewFetchSrc, fetchImpl)
+        : Promise.resolve(cached?.thumbBlob || null);
+    try {
+      const fullBlob = await fetchPhotoLightboxBlob(fullFetchSrc, fetchImpl);
+      if (!fullBlob?.size) throw new Error("full-photo-empty");
+      const comparisonThumbBlob = await previewBlobPromise;
+      const fullBlobDistinct = await photoBlobsAreDistinct(fullBlob, comparisonThumbBlob);
+      if (entry.localId) {
+        const savedAt = new Date().toISOString();
+        try {
+          await putCachedPhotoForLightbox({
+            ...(cached || {}),
+            id: entry.localId,
+            blob: fullBlob,
+            thumbBlob: comparisonThumbBlob
+              || cached?.thumbBlob
+              || (cached?.fullBlobVerified !== true ? cached?.blob : null),
+            fullBlobVerified: true,
+            fullBlobDistinct,
+            sourceSignature,
+            type: fullBlob.type || cached?.type || "image/jpeg",
+            size: fullBlob.size,
+            createdAt: cached?.createdAt || savedAt,
+            updatedAt: savedAt
+          });
+        } catch {
+          // The downloaded full-size blob can still be displayed for this lightbox session.
+        }
+      }
+      const objectUrl = createObjectUrl(fullBlob);
+      return { src: objectUrl, objectUrl, isFull: true };
+    } catch {
+      const fallbackBlob = cached?.thumbBlob
+        || (cached?.fullBlobVerified !== true ? cached?.blob : null);
+      if (fallbackBlob) {
+        const objectUrl = createObjectUrl(fallbackBlob);
+        return { src: objectUrl, objectUrl, isFull: false, reason: "cached-preview" };
+      }
+      return {
+        src: previewSrc || fullSrc,
+        objectUrl: "",
+        isFull: false,
+        reason: "cached-preview"
+      };
+    }
+  }
   return {
-    src: fullSrc || previewSrc,
+    src: fullSrc || previewSrc || "",
     objectUrl: "",
-    isFull: Boolean(entry.hasExplicitFullSrc && fullSrc),
-    reason: entry.hasExplicitFullSrc && fullSrc ? "" : "preview-only"
+    isFull: false,
+    reason: entry.hasExplicitFullSrc && fullSrc ? "unavailable" : "preview-only"
   };
+}
+
+function isRemotePhotoLightboxSource(src) {
+  return /^https?:\/\//i.test(String(src || ""));
+}
+
+async function fetchPhotoLightboxBlob(src, fetchImpl) {
+  if (!src || typeof fetchImpl !== "function") return null;
+  try {
+    const response = await fetchImpl(src, {
+      credentials: "include",
+      cache: "no-store"
+    });
+    if (!response?.ok) return null;
+    const blob = await response.blob();
+    return blob?.size ? blob : null;
+  } catch {
+    return null;
+  }
 }
 
 async function decodePhotoLightboxImage(image) {
@@ -1012,6 +1182,11 @@ export function closePhotoLightbox() {
   lightboxObjectUrls = new Set();
   lightboxLoadingNotice?.cancel();
   lightboxLoadingNotice = null;
+  if (lightboxResizeHandler) {
+    window.removeEventListener("resize", lightboxResizeHandler);
+    window.visualViewport?.removeEventListener?.("resize", lightboxResizeHandler);
+  }
+  lightboxResizeHandler = null;
   if (lightboxKeydownHandler) document.removeEventListener("keydown", lightboxKeydownHandler);
   lightboxKeydownHandler = null;
   document.removeEventListener("keydown", closePhotoLightboxOnEscape);

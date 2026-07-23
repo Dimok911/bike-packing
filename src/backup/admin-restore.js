@@ -106,6 +106,7 @@ async function cacheArchivedPhoto(photoId, file, putCachedPhoto) {
     id: photoId,
     blob: file.blob,
     thumbBlob: file.thumbBlob || file.blob,
+    fullBlobVerified: true,
     fileName: file.meta?.fileName || `${photoId}.jpg`,
     type: file.blob.type || file.meta?.type || "image/jpeg",
     size: file.blob.size,

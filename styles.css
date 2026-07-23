@@ -5840,6 +5840,11 @@ dialog.photo-lightbox::backdrop {
   will-change: transform;
 }
 
+.photo-lightbox-image.photo-lightbox-image-no-upscale {
+  width: min(var(--photo-lightbox-natural-width), calc(100vw - 18px));
+  height: min(var(--photo-lightbox-natural-height), calc(100dvh - 18px));
+}
+
 .photo-lightbox-image:active {
   cursor: grabbing;
 }

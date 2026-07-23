@@ -1,4 +1,5 @@
 import { normalizeRemotePhotoUrl, remotePhotoSourceFromRecord } from "./photos.js";
+import { photoBlobsAreDistinct, photoCacheSourceSignature } from "./photo-cache-quality.js";
 
 function photoUrl(photo, variant) {
   if (!photo || typeof photo !== "object") return "";
@@ -17,7 +18,7 @@ function photoCacheKey(photo) {
 }
 
 function photoSourceSignature(photo, fullUrl, thumbUrl) {
-  return [fullUrl, thumbUrl, String(photo?.updatedAt || photo?.updated_at || "")].join("|");
+  return photoCacheSourceSignature(fullUrl, thumbUrl, photo?.updatedAt || photo?.updated_at || "");
 }
 
 export function collectOfflinePhotoCacheTasks(targetState) {
@@ -36,6 +37,8 @@ export function collectOfflinePhotoCacheTasks(targetState) {
         key,
         fullUrl: fullUrl || thumbUrl,
         thumbUrl,
+        hasFullSource: Boolean(fullUrl),
+        hasDistinctThumbSource: Boolean(fullUrl && thumbUrl && fullUrl !== thumbUrl),
         signature,
         fileName: String(photo.fileName || `${key}.jpg`),
         type: String(photo.type || "image/jpeg"),
@@ -86,26 +89,61 @@ async function cacheTask(task, {
   timeoutMs
 }) {
   const cached = await getCachedPhoto(task.key).catch(() => null);
-  if (cached?.blob && (!cached.sourceSignature || cached.sourceSignature === task.signature)) {
+  if (
+    cached?.blob
+    && cached.fullBlobVerified === true
+    && cached.sourceSignature === task.signature
+  ) {
     return "cached";
   }
   onPending();
-  const [fullBlob, thumbBlob] = await Promise.all([
-    fetchPhotoBlob(task.fullUrl, { fetchImpl, timeoutMs }),
-    task.thumbUrl === task.fullUrl
-      ? Promise.resolve(null)
-      : fetchPhotoBlob(task.thumbUrl, { fetchImpl, timeoutMs })
-  ]);
-  const fallbackBlob = fullBlob || thumbBlob;
-  if (!fallbackBlob) return "failed";
+  const fullBlobPromise = task.hasFullSource
+    ? fetchPhotoBlob(task.fullUrl, { fetchImpl, timeoutMs })
+    : Promise.resolve(null);
+  const thumbBlobPromise = task.hasFullSource && task.thumbUrl === task.fullUrl
+    ? Promise.resolve(null)
+    : fetchPhotoBlob(task.thumbUrl, { fetchImpl, timeoutMs });
+  const thumbBlob = await thumbBlobPromise;
+  const cachedThumbBlob = cached?.thumbBlob
+    || (cached?.fullBlobVerified !== true ? cached?.blob : null);
+  const previewBlob = thumbBlob || cachedThumbBlob || null;
   const savedAt = new Date().toISOString();
+  if (thumbBlob) {
+    const hasVerifiedCachedFull = Boolean(cached?.blob && cached.fullBlobVerified === true);
+    await putCachedPhoto({
+      ...(cached || {}),
+      id: task.key,
+      blob: cached?.blob || null,
+      thumbBlob: previewBlob,
+      fullBlobVerified: hasVerifiedCachedFull,
+      fullBlobDistinct: hasVerifiedCachedFull ? cached?.fullBlobDistinct : false,
+      fileName: task.fileName,
+      type: cached?.type || previewBlob.type || task.type,
+      size: cached?.size || 0,
+      width: task.width,
+      height: task.height,
+      sourceSignature: hasVerifiedCachedFull
+        ? cached?.sourceSignature || ""
+        : task.signature,
+      createdAt: cached?.createdAt || savedAt,
+      updatedAt: savedAt
+    });
+  }
+  const fullBlob = await fullBlobPromise;
+  if (!fullBlob) return "failed";
+  const finalPreviewBlob = previewBlob || fullBlob;
+  const fullBlobDistinct = !task.hasDistinctThumbSource
+    || await photoBlobsAreDistinct(fullBlob, finalPreviewBlob);
   await putCachedPhoto({
+    ...(cached || {}),
     id: task.key,
-    blob: fallbackBlob,
-    thumbBlob: thumbBlob || fullBlob,
+    blob: fullBlob,
+    thumbBlob: finalPreviewBlob,
+    fullBlobVerified: true,
+    fullBlobDistinct,
     fileName: task.fileName,
-    type: fallbackBlob.type || task.type,
-    size: fallbackBlob.size || 0,
+    type: fullBlob.type || finalPreviewBlob.type || task.type,
+    size: fullBlob.size || 0,
     width: task.width,
     height: task.height,
     sourceSignature: task.signature,
@@ -160,13 +198,39 @@ export function createOfflinePhotoCacheController({
   getFailureMessage = () => "",
   onChange = () => {},
   cachePhotos = cacheRemotePhotosForOffline,
-  cacheOptions = {}
+  cacheOptions = {},
+  retryDelaysMs = [5000, 15000, 45000],
+  setTimer = (callback, delay) => globalThis.setTimeout(callback, delay),
+  clearTimer = (timer) => globalThis.clearTimeout(timer)
 } = {}) {
   let running = false;
   let active = false;
   let failed = false;
   let lastAttemptFingerprint = "";
   let rerunRequested = false;
+  let retryTimer = null;
+  let retryAttempt = 0;
+  let retryFingerprint = "";
+
+  const clearRetry = () => {
+    if (retryTimer !== null) clearTimer(retryTimer);
+    retryTimer = null;
+    retryAttempt = 0;
+    retryFingerprint = "";
+  };
+  const scheduleRetry = (fingerprint) => {
+    const delays = Array.isArray(retryDelaysMs) ? retryDelaysMs : [];
+    if (!fingerprint || retryTimer !== null || retryAttempt >= delays.length) return;
+    if (retryFingerprint && retryFingerprint !== fingerprint) clearRetry();
+    retryFingerprint = fingerprint;
+    const delay = Math.max(0, Number(delays[retryAttempt]) || 0);
+    retryAttempt += 1;
+    retryTimer = setTimer(() => {
+      retryTimer = null;
+      Promise.resolve().then(() => run(true));
+    }, delay);
+    retryTimer?.unref?.();
+  };
 
   const setActive = (next) => {
     if (active === next) return;
@@ -195,10 +259,14 @@ export function createOfflinePhotoCacheController({
         ...cacheOptions,
         onPending: () => setActive(true)
       });
-      setFailed(Number(result?.failed) > 0);
+      const hasFailures = Number(result?.failed) > 0;
+      setFailed(hasFailures);
+      if (hasFailures) scheduleRetry(fingerprint);
+      else clearRetry();
       return result;
     } catch {
       setFailed(true);
+      scheduleRetry(fingerprint);
       return { total: 0, cached: 0, downloaded: 0, failed: 1 };
     } finally {
       running = false;
@@ -213,6 +281,9 @@ export function createOfflinePhotoCacheController({
   return {
     currentMessage: () => active ? getProgressMessage() : failed ? getFailureMessage() : "",
     isRunning: () => running,
-    schedule: ({ force = false } = {}) => Promise.resolve().then(() => run(force))
+    schedule: ({ force = false } = {}) => {
+      if (force) clearRetry();
+      return Promise.resolve().then(() => run(force));
+    }
   };
 }
