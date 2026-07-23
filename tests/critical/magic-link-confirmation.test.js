@@ -40,5 +40,5 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /"magicLinkManualCodeDelivery"/);
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
   assert.match(appSource, /2026-07-23\.magic-link-manual-code-v1/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1338"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1339"/);
 });
