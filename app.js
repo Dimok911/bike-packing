@@ -403,6 +403,7 @@ import {
   addPhotosToDraft,
   createPhotoDraftFromRecord,
   draftPhotosToCleanup,
+  markPhotoUploadBatch,
   normalizeItemPhotos,
   normalizePhotoUrlFields,
   photoDraftChanged,
@@ -5778,6 +5779,7 @@ async function uploadPendingPhotos({ markDirty = false, layoutId = null, listId 
   try {
     const entries = getUploadablePhotoEntries({ layoutId, listId });
     if (!entries.length) return false;
+    markPhotoUploadBatch(entries.map((entry) => entry.photo));
     const targetListId = listId || await ensureCurrentPackingListId();
     if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
     if (isReadOnlyBikePackingContext()) return false;
@@ -5830,6 +5832,7 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
   const listId = publicListIdForPublishedTarget(target);
   let changed = false;
   photoUploadInFlight = true;
+  markPhotoUploadBatch(uploadEntries.map((entry) => entry.photo));
   try {
     for (const entry of uploadEntries) {
       const uploaded = await uploadEntityPhotoToPath(path, listId, entry.entity, entry.photo, entry.entityType, {
@@ -5850,7 +5853,8 @@ async function uploadPublishedLayoutPhotos(layoutId, target, entries = null) {
 async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType = "item", {
   dropMissingRemotePhoto = false,
   onPhotoProgress = null,
-  retryTemporaryUploadFailure = true
+  retryTemporaryUploadFailure = true,
+  scheduleProgressRender = schedulePhotoUploadProgressRender
 } = {}) {
   return uploadPhotoToPath({
     path,
@@ -5869,15 +5873,15 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
       else touchItem(targetEntity.id, updatedAt);
     },
     persistStateSnapshot: () => persistStateSnapshot(state),
-    scheduleProgressRender: schedulePhotoUploadProgressRender
+    scheduleProgressRender
   });
 }
 
-function schedulePhotoUploadProgressRender() {
+function schedulePhotoUploadProgressRender({ refreshPhotoDialogs = true } = {}) {
   if (photoUploadProgressRenderFrame) return;
   photoUploadProgressRenderFrame = requestAnimationFrame(() => {
     photoUploadProgressRenderFrame = null;
-    renderPreservingPackingScroll();
+    renderPreservingPackingScroll({ refreshPhotoDialogs });
   });
 }
 
@@ -10196,13 +10200,13 @@ function renderContainerWeightText(weight) {
   return shouldShowItemLabels() ? `<span class="container-weight">${formatWeight(weight)}</span>` : "";
 }
 
-function renderPreservingPackingScroll() {
+function renderPreservingPackingScroll({ refreshPhotoDialogs = true } = {}) {
   const board = getPackingScrollHost();
   if (board && !refs.packingView.classList.contains("hidden")) {
     capturePackingScroll();
   }
   render();
-  refreshOpenPhotoDialogPreviews();
+  if (refreshPhotoDialogs) refreshOpenPhotoDialogPreviews();
 }
 
 function refreshOpenPhotoDialogPreviews() {

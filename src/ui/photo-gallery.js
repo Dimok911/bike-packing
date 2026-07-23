@@ -4,7 +4,11 @@ import {
   photoRemoteSrc,
   versionedPhotoUrl
 } from "../sync/photos.js";
-import { normalizeItemPhotos } from "../state/item-photos.js";
+import {
+  normalizeItemPhotos,
+  photoUploadBatchInfo,
+  photoUploadBatchSummary
+} from "../state/item-photos.js";
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 
@@ -15,7 +19,10 @@ function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
 }
 
-export function renderPhotoSlide(photo, { photoObjectUrls = new Map() } = {}) {
+export function renderPhotoSlide(photo, {
+  photoObjectUrls = new Map(),
+  uploadState = null
+} = {}) {
   const localId = photo.localId || photo.id;
   const localSrc = localId ? photoObjectUrls.get(localId) : "";
   const remoteSrc = photoRemoteSrc(photo);
@@ -32,6 +39,7 @@ export function renderPhotoSlide(photo, { photoObjectUrls = new Map() } = {}) {
         alt=""
         loading="lazy"
       />
+      ${renderPhotoUploadProgress(uploadState || {})}
     </button>
   `;
 }
@@ -49,7 +57,11 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   if (!force && !showPhotos) return "";
   const photos = normalizeItemPhotos(item);
   if (!photos.length) return "";
-  const slides = photos.map((photo) => renderPhotoSlide(photo, { photoObjectUrls })).join("");
+  const batch = photoUploadBatchSummary(photos);
+  const slides = photos.map((photo) => renderPhotoSlide(photo, {
+    photoObjectUrls,
+    uploadState: photoUploadProgressState(photo, { batch })
+  })).join("");
   const dots = renderPhotoDots(photos.length);
   const uploadState = photoUploadState(photos);
   const pending = uploadState.active || photos.some((photo) => !photoRemoteSrc(photo) && ["pending", "error", "missing-local-file"].includes(photo.status));
@@ -60,32 +72,39 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
         ${slides}
       </div>
       ${dots}
-      ${renderPhotoUploadProgress(uploadState)}
       ${statusText ? `<span data-photo-upload-status>${escapeHtml(statusText)}</span>` : ""}
     </div>
   `;
 }
 
-export async function renderPhotoGalleryHtml(photos, { objectUrls = [], activeIndex = 0, className = "" } = {}) {
+export async function renderPhotoGalleryHtml(photos, {
+  objectUrls = [],
+  activeIndex = 0,
+  className = "",
+  showCompletedBatchProgress = true,
+  showStatus = false
+} = {}) {
+  const batch = photoUploadBatchSummary(photos);
   const slides = [];
   for (const photo of photos) {
-    slides.push(await renderPhotoPreviewSlide(photo, objectUrls));
+    slides.push(await renderPhotoPreviewSlide(photo, objectUrls, {
+      uploadState: photoUploadProgressState(photo, { batch, showCompletedBatchProgress })
+    }));
   }
   const uploadState = photoUploadState(photos);
-  const statusText = uploadState.active ? photoStatusText(photos) : "";
+  const statusText = showStatus && uploadState.active ? photoStatusText(photos) : "";
   return `
     <div class="item-photo ${className} ${uploadState.active ? "item-photo-pending" : ""}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
       <div class="photo-gallery-track">
         ${slides.join("")}
       </div>
       ${renderPhotoDots(photos.length, activeIndex)}
-      ${renderPhotoUploadProgress(uploadState)}
       ${statusText ? `<span data-photo-upload-status>${escapeHtml(statusText)}</span>` : ""}
     </div>
   `;
 }
 
-async function renderPhotoPreviewSlide(photo, objectUrls = []) {
+async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = null } = {}) {
   const cached = await getCachedPhoto(photo.localId || photo.id);
   const blob = cached?.thumbBlob || cached?.blob;
   const fullBlob = cached?.blob || cached?.thumbBlob;
@@ -105,8 +124,29 @@ async function renderPhotoPreviewSlide(photo, objectUrls = []) {
         ${localId ? `data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
         alt=""
       />
+      ${renderPhotoUploadProgress(uploadState || {})}
     </button>
   `;
+}
+
+export function photoBatchStatusText(photos) {
+  const batch = photoUploadBatchSummary(photos);
+  if (!batch) return "";
+  if (batch.complete) {
+    return localText(
+      `All photos uploaded · ${batch.uploaded} of ${batch.total}`,
+      `Все фото загружены · ${batch.uploaded} из ${batch.total}`
+    );
+  }
+  const base = localText(
+    `Uploaded ${batch.uploaded} of ${batch.total} photos`,
+    `Загружено ${batch.uploaded} из ${batch.total} фото`
+  );
+  if (!batch.failed) return base;
+  return localText(
+    `${base} · failed: ${batch.failed}`,
+    `${base} · ошибок: ${batch.failed}`
+  );
 }
 
 export function photoStatusText(photos) {
@@ -114,8 +154,17 @@ export function photoStatusText(photos) {
   if (!list.length) return "";
   if (list.some((photo) => photo.status === "error")) return localText("Photo upload failed", "Ошибка загрузки фото");
   if (list.some((photo) => photo.status === "missing-local-file")) return localText("Local photo file is missing", "Нет локального файла фото");
+  const batch = photoUploadBatchInfo(list);
+  if (batch) {
+    return localText(
+      `Uploading photo ${batch.index} of ${batch.total}`,
+      `Загрузка фото ${batch.index} из ${batch.total}`
+    );
+  }
   if (list.some((photo) => photo.status === "uploading")) return localText("Uploading photo", "Фото загружается");
   if (list.some((photo) => photo.status === "pending" && !photoRemoteSrc(photo))) return localText("Waiting to upload", "Ждём загрузки");
+  const batchText = photoBatchStatusText(list);
+  if (batchText) return batchText;
   return list.length > 1
     ? localText(`${list.length} photos uploaded`, `${list.length} фото загружено`)
     : localText("Photo uploaded", "Фото загружено");
@@ -124,16 +173,41 @@ export function photoStatusText(photos) {
 export function photoDialogStatusText(photos) {
   const list = Array.isArray(photos) ? photos : [];
   if (!list.length) return "";
+  const batch = photoUploadBatchSummary(list);
+  if (batch?.total === 1 && !batch.failed) return "";
+  if (batch?.active) return photoStatusText(list);
+  const batchText = photoBatchStatusText(list);
+  if (batchText) return batchText;
   if (list.some((photo) => ["error", "missing-local-file"].includes(photo.status))) {
     return photoStatusText(list);
   }
-  if (list.some((photo) => photo.status === "uploading")) return "";
-  if (list.some((photo) => photo.status === "pending" && !photoRemoteSrc(photo))) return "";
-  return photoStatusText(list);
+  if (list.some((photo) => photo.status === "uploading" || (photo.status === "pending" && !photoRemoteSrc(photo)))) {
+    return photoStatusText(list);
+  }
+  return "";
 }
 
 export function photoUploadState(photos) {
   const list = Array.isArray(photos) ? photos : [];
+  const batch = photoUploadBatchSummary(list);
+  if (batch?.active) {
+    const activePhoto = list.find((photo) =>
+      photo?.uploadBatchId === batch.id && photo?.status === "uploading"
+    ) || list.find((photo) =>
+      photo?.uploadBatchId === batch.id && photo?.status === "pending" && !photoRemoteSrc(photo)
+    );
+    const progress = activePhoto?.status === "uploading" && Number.isFinite(Number(activePhoto.uploadProgress))
+      ? Number(activePhoto.uploadProgress)
+      : 0;
+    return {
+      active: true,
+      indeterminate: false,
+      progress: Math.max(0, Math.min(100, progress)),
+      batchIndex: batch.index,
+      batchTotal: batch.total,
+      uploaded: batch.uploaded
+    };
+  }
   const active = list.some((photo) => photo.status === "uploading");
   if (!active) return { active: false, progress: 0 };
   const uploading = list.filter((photo) => photo.status === "uploading");
@@ -145,15 +219,47 @@ export function photoUploadState(photos) {
     .filter((progress) => Number.isFinite(progress));
   const hasProgress = progressValues.length > 0 || fallbackProgressValues.length > 0;
   const progress = hasProgress ? Math.max(...(progressValues.length ? progressValues : fallbackProgressValues)) : (uploading.length ? 8 : 0);
+  const legacyBatch = photoUploadBatchInfo(list);
   return {
     active: true,
     indeterminate: !hasProgress && !uploading.length,
-    progress: Math.max(0, Math.min(100, progress))
+    progress: Math.max(0, Math.min(100, progress)),
+    ...(legacyBatch ? { batchIndex: legacyBatch.index, batchTotal: legacyBatch.total } : {})
   };
 }
 
-function renderPhotoUploadProgress({ active = false, indeterminate = false, progress = 0 } = {}) {
+export function photoUploadProgressState(photo, {
+  batch = null,
+  showCompletedBatchProgress = false
+} = {}) {
+  if (!photo || ["error", "missing-local-file"].includes(photo.status)) {
+    return { active: false, progress: 0 };
+  }
+  if (photo.status === "uploading") {
+    return {
+      active: true,
+      progress: Math.max(0, Math.min(100, Number(photo.uploadProgress) || 0))
+    };
+  }
+  if (photo.status === "pending" && !photoRemoteSrc(photo)) {
+    return { active: true, progress: 0 };
+  }
+  const belongsToVisibleBatch = Boolean(
+    photo.uploadBatchId &&
+    (showCompletedBatchProgress || (batch?.active && photo.uploadBatchId === batch.id))
+  );
+  if (belongsToVisibleBatch && photoRemoteSrc(photo)) {
+    return { active: true, progress: 100, complete: true };
+  }
+  return { active: false, progress: 0 };
+}
+
+export function renderPhotoUploadProgress({ active = false, complete = false, indeterminate = false, progress = 0 } = {}) {
   if (!active) return "";
+  if (complete) {
+    const completedText = localText("Uploaded", "Загружено");
+    return `<div class="photo-upload-complete">✓ ${escapeHtml(completedText)}</div>`;
+  }
   const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
   const angle = Math.round(safeProgress * 3.6);
   const className = [
@@ -167,29 +273,39 @@ function renderPhotoUploadProgress({ active = false, indeterminate = false, prog
   `;
 }
 
-export function updatePhotoGalleryUploadProgress(root, photos) {
+export function updatePhotoGalleryUploadProgress(root, photos, {
+  showCompletedBatchProgress = true,
+  showStatus = false
+} = {}) {
   const gallery = root?.matches?.("[data-photo-gallery]")
     ? root
     : root?.querySelector?.("[data-photo-gallery]");
   if (!gallery) return false;
   const uploadState = photoUploadState(photos);
-  const statusText = uploadState.active ? photoStatusText(photos) : "";
+  const batch = photoUploadBatchSummary(photos);
+  const statusText = showStatus && uploadState.active ? photoStatusText(photos) : "";
   gallery.classList.toggle("item-photo-pending", uploadState.active);
 
-  const existingProgress = gallery.querySelector(".photo-upload-progress");
+  const slides = [...gallery.querySelectorAll(".photo-gallery-slide")];
+  slides.forEach((slide, index) => {
+    const existingProgress = slide.querySelector(".photo-upload-progress, .photo-upload-complete");
+    const nextState = photoUploadProgressState(photos[index], { batch, showCompletedBatchProgress });
+    if (!nextState.active) {
+      existingProgress?.remove();
+      return;
+    }
+    const progressTemplate = document.createElement("template");
+    progressTemplate.innerHTML = renderPhotoUploadProgress(nextState).trim();
+    const nextProgress = progressTemplate.content.firstElementChild;
+    if (!nextProgress) return;
+    if (existingProgress) existingProgress.replaceWith(nextProgress);
+    else slide.append(nextProgress);
+  });
+
   const existingStatus = gallery.querySelector("[data-photo-upload-status]");
-  if (!uploadState.active) {
-    existingProgress?.remove();
+  if (!showStatus || !uploadState.active) {
     existingStatus?.remove();
     return true;
-  }
-
-  const progressTemplate = document.createElement("template");
-  progressTemplate.innerHTML = renderPhotoUploadProgress(uploadState).trim();
-  const nextProgress = progressTemplate.content.firstElementChild;
-  if (nextProgress) {
-    if (existingProgress) existingProgress.replaceWith(nextProgress);
-    else gallery.insertBefore(nextProgress, existingStatus || null);
   }
 
   if (statusText) {

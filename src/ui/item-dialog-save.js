@@ -26,6 +26,7 @@ export function saveRootContainerDialogAction({
   changedAt = "",
   closeDialogWithoutRestoringFocus = () => {},
   currentCreateMeta = () => ({}),
+  createRootContainerId = () => `container-${Date.now()}`,
   defaultRootContainerLocation = () => "",
   editingRootContainerId = "",
   getRootContainerSelectedCategories = () => [],
@@ -55,7 +56,7 @@ export function saveRootContainerDialogAction({
   const dimensions = readRootContainerDialogDimensions();
   const selectedCategories = getRootContainerSelectedCategories();
   if (!container) {
-    const id = `container-${Date.now()}`;
+    const id = createRootContainerId();
     state.containers[id] = {
       id,
       name,
@@ -116,6 +117,7 @@ export function saveItemDialogAction({
   cleanupEmptyContainersInLayoutArrangement = () => {},
   closeDialogWithoutRestoringFocus = () => {},
   currentEditMeta = () => ({}),
+  createItemId = () => `item-${Date.now()}`,
   editingItemId = "",
   getDialogSelectedCategories = () => [],
   getItemContainerIdInLayout = () => "",
@@ -199,7 +201,7 @@ export function saveItemDialogAction({
     }
   } else {
     if (!requireUsageCapacity("items")) return;
-    const id = `item-${Date.now()}`;
+    const id = createItemId();
     savedItemId = id;
     created = true;
     state.items[id] = {

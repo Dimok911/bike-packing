@@ -8,6 +8,14 @@ import {
   normalizeLayoutNotes
 } from "../state/layout-notes.js";
 import {
+  ensurePhotoDraftEntityId,
+  markPhotoUploadBatch,
+  photoDraftEntityId,
+  photoDraftUploadEntity,
+  syncPhotoRecordFromUpload
+} from "../state/item-photos.js";
+import { uploadPhotoBatchQueue, uploadPhotoWithOneRetry } from "../sync/photo-upload-queue.js";
+import {
   isLayoutNotesCollapsed,
   LAYOUT_NOTES_COLLAPSE_STORAGE_KEY,
   setLayoutNotesCollapsed
@@ -6888,7 +6896,10 @@ function getItemDialogPhotoSnapshot() {
 
 async function handleItemPhotoInputChange(event) {
   const files = [...(event.target.files || [])];
-  if (!files.length) return;
+  if (!files.length) {
+    event.target?.blur?.();
+    return;
+  }
   try {
     setItemDialogPhotoStatus(localText("Preparing photos...", "Готовлю фото..."));
     const photos = [];
@@ -6905,15 +6916,17 @@ async function handleItemPhotoInputChange(event) {
       showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
     }
     runtime.itemDialogPhotoActiveIndex = Math.max(0, runtime.itemDialogPhotoDraft.photos.length - result.accepted.length);
+    if (result.accepted.length) markPhotoUploadBatch(result.accepted);
     await updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft.photos);
-    updateItemDialogSaveState();
     uploadItemDialogDraftPhotos(result.accepted).catch(() => null);
+    updateItemDialogSaveState();
   } catch (error) {
     setItemDialogPhotoStatus(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."));
     showToast(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."), "error");
   } finally {
     if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
     if (refs.itemPhotoCameraInput) refs.itemPhotoCameraInput.value = "";
+    event.target?.blur?.();
   }
 }
 
@@ -6929,7 +6942,10 @@ async function removeItemDialogPhoto() {
   if (result.discardedPhoto) {
     deleteCachedDraftPhotos(result.discardedPhoto);
     if (result.discardedPhoto.url || result.discardedPhoto.thumbUrl) {
-      deleteRemotePhotoIfPossible(runtime.editingItemId, result.discardedPhoto);
+      deleteRemotePhotoIfPossible(
+        runtime.editingItemId || photoDraftEntityId(runtime.itemDialogPhotoDraft),
+        result.discardedPhoto
+      );
     }
   }
   if (refs.itemPhotoInput) refs.itemPhotoInput.value = "";
@@ -7223,10 +7239,12 @@ function resetItemDialogPhotoDraft() {
 function cleanupUnsavedItemDialogPhotoDraft() {
   if (!runtime.itemDialogPhotoDraft) return;
   const isDiscardedNewRecord = !runtime.editingItemId && refs.dialog?.returnValue === "cancel";
+  if (refs.dialog?.returnValue === "cancel") runtime.itemDialogPhotoDraft.uploadDiscarded = true;
   if (!runtime.editingItemId && !isDiscardedNewRecord) return;
   const source = runtime.editingItemId ? state.items?.[runtime.editingItemId] || { photos: [] } : { photos: [] };
+  const entityId = runtime.editingItemId || photoDraftEntityId(runtime.itemDialogPhotoDraft);
   draftPhotosToCleanup(runtime.itemDialogPhotoDraft, source).forEach((photo) => {
-    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(runtime.editingItemId, photo);
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(entityId, photo);
     deleteCachedDraftPhotos(photo);
   });
 }
@@ -7302,7 +7320,10 @@ function getRootContainerDialogPhotoSnapshot() {
 
 async function handleRootContainerPhotoInputChange(event) {
   const files = [...(event.target.files || [])];
-  if (!files.length) return;
+  if (!files.length) {
+    event.target?.blur?.();
+    return;
+  }
   try {
     setRootContainerDialogPhotoStatus(localText("Preparing photos...", "Готовлю фото..."));
     const photos = [];
@@ -7319,15 +7340,17 @@ async function handleRootContainerPhotoInputChange(event) {
       showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
     }
     runtime.rootContainerDialogPhotoActiveIndex = Math.max(0, runtime.rootContainerDialogPhotoDraft.photos.length - result.accepted.length);
+    if (result.accepted.length) markPhotoUploadBatch(result.accepted);
     await updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft.photos);
-    updateRootContainerDialogSaveState();
     uploadRootContainerDialogDraftPhotos(result.accepted).catch(() => null);
+    updateRootContainerDialogSaveState();
   } catch (error) {
     setRootContainerDialogPhotoStatus(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."));
     showToast(error.message || localText("Could not prepare the photo.", "Не удалось подготовить фото."), "error");
   } finally {
     if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
     if (refs.rootContainerPhotoCameraInput) refs.rootContainerPhotoCameraInput.value = "";
+    event.target?.blur?.();
   }
 }
 
@@ -7343,7 +7366,11 @@ async function removeRootContainerDialogPhoto() {
   if (result.discardedPhoto) {
     deleteCachedDraftPhotos(result.discardedPhoto);
     if (result.discardedPhoto.url || result.discardedPhoto.thumbUrl) {
-      deleteRemotePhotoIfPossible(runtime.editingRootContainerId, result.discardedPhoto, "container");
+      deleteRemotePhotoIfPossible(
+        runtime.editingRootContainerId || photoDraftEntityId(runtime.rootContainerDialogPhotoDraft),
+        result.discardedPhoto,
+        "container"
+      );
     }
   }
   if (refs.rootContainerPhotoInput) refs.rootContainerPhotoInput.value = "";
@@ -7366,17 +7393,23 @@ function confirmDialogPhotoDelete(kind = "item") {
 }
 
 async function uploadItemDialogDraftPhotos(photos = []) {
-  const item = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
+  const draft = runtime.itemDialogPhotoDraft;
+  const existingItem = runtime.editingItemId ? state.items?.[runtime.editingItemId] : null;
+  const item = existingItem || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
+    ? photoDraftUploadEntity(draft, null, "item")
+    : null);
   await uploadDialogDraftPhotos({
     entity: item,
     entityType: "item",
     photos,
-    shouldUploadPhoto: (photo) => dialogDraftPhotoStillOwnedBy({
-      draft: runtime.itemDialogPhotoDraft,
+    shouldUploadPhoto: (photo) => !draft?.uploadDiscarded && dialogDraftPhotoStillOwnedBy({
+      draft,
       entity: item,
       photo
     }),
-    onPhotoProgress: () => {
+    onPhotoProgress: (photo) => {
+      if (runtime.itemDialogPhotoDraft) syncPhotoRecordFromUpload(runtime.itemDialogPhotoDraft, photo);
+      if (item?.id && state.items?.[item.id]) syncPhotoRecordFromUpload(state.items[item.id], photo);
       const list = runtime.itemDialogPhotoDraft?.photos || normalizeItemPhotos(item);
       updatePhotoGalleryUploadProgress(refs.itemPhotoPreview, list);
       setItemDialogPhotoStatus(photoDialogStatusText(list));
@@ -7391,17 +7424,23 @@ async function uploadItemDialogDraftPhotos(photos = []) {
 }
 
 async function uploadRootContainerDialogDraftPhotos(photos = []) {
-  const container = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
+  const draft = runtime.rootContainerDialogPhotoDraft;
+  const existingContainer = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] : null;
+  const container = existingContainer || (currentViewScope() !== VIEW_SCOPE_ADMIN_PUBLIC_EDIT
+    ? photoDraftUploadEntity(draft, null, "container")
+    : null);
   await uploadDialogDraftPhotos({
     entity: container,
     entityType: "container",
     photos,
-    shouldUploadPhoto: (photo) => dialogDraftPhotoStillOwnedBy({
-      draft: runtime.rootContainerDialogPhotoDraft,
+    shouldUploadPhoto: (photo) => !draft?.uploadDiscarded && dialogDraftPhotoStillOwnedBy({
+      draft,
       entity: container,
       photo
     }),
-    onPhotoProgress: () => {
+    onPhotoProgress: (photo) => {
+      if (runtime.rootContainerDialogPhotoDraft) syncPhotoRecordFromUpload(runtime.rootContainerDialogPhotoDraft, photo);
+      if (container?.id && state.containers?.[container.id]) syncPhotoRecordFromUpload(state.containers[container.id], photo);
       const list = runtime.rootContainerDialogPhotoDraft?.photos || normalizeItemPhotos(container);
       updatePhotoGalleryUploadProgress(refs.rootContainerPhotoPreview, list);
       setRootContainerDialogPhotoStatus(photoDialogStatusText(list));
@@ -7428,36 +7467,81 @@ async function uploadDialogDraftPhotos({
   const publishedLayoutId = getPublishedEditLayoutId();
   const usePublishedTemplateUpload = currentViewScope() === VIEW_SCOPE_ADMIN_PUBLIC_EDIT &&
     isAdminEditablePublishedLayout(publishedLayoutId);
+  if (!usePublishedTemplateUpload && currentViewScope() === VIEW_SCOPE_PRIVATE) {
+    clearReadOnlyPackingListContextForPrivateMutation();
+  }
   if (!usePublishedTemplateUpload && isReadOnlyBikePackingContext()) return false;
   const slotAvailable = await waitForDialogPhotoUploadSlot({
     shouldContinue: () => uploadPhotos.some((photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo))
   });
   if (!slotAvailable) return false;
+  const eligiblePhotos = uploadPhotos.filter((photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo));
+  if (!eligiblePhotos.length) {
+    runtime.photoUploadInFlight = false;
+    return false;
+  }
+  if (!eligiblePhotos.every((photo) => photo.uploadBatchId)) markPhotoUploadBatch(eligiblePhotos);
   let uploaded = false;
   try {
     if (usePublishedTemplateUpload) {
-      for (const photo of uploadPhotos) {
-        if (!shouldUploadPhoto(photo) || photoRemoteSrc(photo)) continue;
-        markPhotoUploadStarted(photo);
-        onPhotoProgress(photo, photo.uploadProgress || 0);
-        uploaded = await uploadPublishedEntityPhoto(publishedLayoutId, entity, photo, entityType, {
-          onPhotoProgress,
-          retryTemporaryUploadFailure: false
-        }) || uploaded;
-      }
+      const result = await uploadPhotoBatchQueue(eligiblePhotos, {
+        shouldUploadPhoto: (photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo),
+        uploadPhoto: (photo) => uploadPhotoWithOneRetry(photo, {
+          shouldRetryPhoto: (candidate) => Boolean(candidate?.uploadRetryPending) && shouldUploadPhoto(candidate) && !photoRemoteSrc(candidate),
+          uploadPhotoAttempt: async (candidate, { retryTemporaryUploadFailure }) => {
+            markPhotoUploadStarted(candidate);
+            onPhotoProgress(candidate, candidate.uploadProgress || 0);
+            const photoUploaded = await uploadPublishedEntityPhoto(publishedLayoutId, entity, candidate, entityType, {
+              onPhotoProgress,
+              retryTemporaryUploadFailure,
+              scheduleProgressRender: () => {
+                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                  schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
+                }
+              }
+            });
+            if (!shouldUploadPhoto(candidate) && photoRemoteSrc(candidate)) {
+              await deleteRemotePhotoIfPossible(entity.id, candidate, entityType);
+            }
+            return photoUploaded;
+          }
+        }),
+        fallbackErrorMessage: localText("Could not upload the photo.", "Не удалось загрузить фото."),
+        onUnexpectedError: (photo) => onPhotoProgress(photo, 0)
+      });
+      uploaded = result.uploaded;
     } else {
       const targetListId = await ensureCurrentPackingListId();
       if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
       if (isReadOnlyBikePackingContext()) return false;
-      for (const photo of uploadPhotos) {
-        if (!shouldUploadPhoto(photo) || photoRemoteSrc(photo)) continue;
-        markPhotoUploadStarted(photo);
-        onPhotoProgress(photo, photo.uploadProgress || 0);
-        uploaded = await uploadEntityPhoto(targetListId, entity, photo, entityType, {
-          onPhotoProgress,
-          retryTemporaryUploadFailure: false
-        }) || uploaded;
-      }
+      const result = await uploadPhotoBatchQueue(eligiblePhotos, {
+        shouldUploadPhoto: (photo) => shouldUploadPhoto(photo) && !photoRemoteSrc(photo),
+        uploadPhoto: (photo) => uploadPhotoWithOneRetry(photo, {
+          shouldRetryPhoto: (candidate) => Boolean(candidate?.uploadRetryPending) && shouldUploadPhoto(candidate) && !photoRemoteSrc(candidate),
+          uploadPhotoAttempt: async (candidate, { retryTemporaryUploadFailure }) => {
+            markPhotoUploadStarted(candidate);
+            onPhotoProgress(candidate, candidate.uploadProgress || 0);
+            const photoUploaded = await uploadEntityPhoto(targetListId, entity, candidate, entityType, {
+              onPhotoProgress,
+              retryTemporaryUploadFailure,
+              scheduleProgressRender: () => {
+                const savedRecord = entityType === "container" ? state.containers?.[entity.id] : state.items?.[entity.id];
+                if (syncPhotoRecordFromUpload(savedRecord, candidate)) {
+                  schedulePhotoUploadProgressRender({ refreshPhotoDialogs: false });
+                }
+              }
+            });
+            if (!shouldUploadPhoto(candidate) && photoRemoteSrc(candidate)) {
+              await deleteRemotePhotoIfPossible(entity.id, candidate, entityType);
+            }
+            return photoUploaded;
+          }
+        }),
+        fallbackErrorMessage: localText("Could not upload the photo.", "Не удалось загрузить фото."),
+        onUnexpectedError: (photo) => onPhotoProgress(photo, 0)
+      });
+      uploaded = result.uploaded;
     }
   } finally {
     runtime.photoUploadInFlight = false;
@@ -7534,10 +7618,12 @@ function resetRootContainerDialogPhotoDraft() {
 function cleanupUnsavedRootContainerDialogPhotoDraft() {
   if (!runtime.rootContainerDialogPhotoDraft) return;
   const isDiscardedNewRecord = !runtime.editingRootContainerId && refs.rootContainerDialog?.returnValue === "cancel";
+  if (refs.rootContainerDialog?.returnValue === "cancel") runtime.rootContainerDialogPhotoDraft.uploadDiscarded = true;
   if (!runtime.editingRootContainerId && !isDiscardedNewRecord) return;
   const source = runtime.editingRootContainerId ? state.containers?.[runtime.editingRootContainerId] || { photos: [] } : { photos: [] };
+  const entityId = runtime.editingRootContainerId || photoDraftEntityId(runtime.rootContainerDialogPhotoDraft);
   draftPhotosToCleanup(runtime.rootContainerDialogPhotoDraft, source).forEach((photo) => {
-    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(runtime.editingRootContainerId, photo, "container");
+    if (photo?.url || photo?.thumbUrl) deleteRemotePhotoIfPossible(entityId, photo, "container");
     deleteCachedDraftPhotos(photo);
   });
 }
@@ -7850,6 +7936,9 @@ function saveRootContainerDialog(event) {
     changedAt: nowIso(),
     closeDialogWithoutRestoringFocus,
     currentCreateMeta,
+    createRootContainerId: runtime.rootContainerDialogPhotoDraft
+      ? () => ensurePhotoDraftEntityId(runtime.rootContainerDialogPhotoDraft, "container")
+      : undefined,
     defaultRootContainerLocation,
     editingRootContainerId: runtime.editingRootContainerId,
     getRootContainerSelectedCategories: getRootContainerDialogSelectedCategories,
@@ -7916,6 +8005,9 @@ function saveDialogItem(event) {
       cleanupEmptyContainersInLayoutArrangement(layout, containerId, state),
     closeDialogWithoutRestoringFocus,
     currentEditMeta,
+    createItemId: runtime.itemDialogPhotoDraft
+      ? () => ensurePhotoDraftEntityId(runtime.itemDialogPhotoDraft, "item")
+      : undefined,
     editingItemId: runtime.editingItemId,
     getDialogSelectedCategories,
     getItemContainerIdInLayout,

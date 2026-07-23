@@ -191,6 +191,10 @@ export async function uploadPhotoToPath({
     });
     clearPhotoPairProgress(targetPhoto);
     markChanged(targetPhoto.updatedAt);
+    if (typeof onPhotoProgress === "function") {
+      onPhotoProgress(targetPhoto, 100);
+    }
+    scheduleProgressRender();
     return true;
   };
 
@@ -256,6 +260,7 @@ export function setPhotoUploadProgress(photo, progress) {
 
 export function markPhotoUploadStarted(photo, { nowIsoValue = nowIso() } = {}) {
   if (!photo) return;
+  if (Object.prototype.hasOwnProperty.call(photo, "uploadRetryPending")) delete photo.uploadRetryPending;
   photo.status = "uploading";
   photo.error = "";
   photo.updatedAt = nowIsoValue;
