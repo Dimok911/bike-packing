@@ -22,10 +22,35 @@ let lightboxResizeHandler = null;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
+const PHOTO_LIGHTBOX_SWIPE_DISTANCE_PX = 44;
+const PHOTO_LIGHTBOX_FLICK_DISTANCE_PX = 24;
+const PHOTO_LIGHTBOX_FLICK_DURATION_MS = 420;
+const PHOTO_LIGHTBOX_FLICK_VELOCITY_PX_PER_MS = 0.12;
+const PHOTO_LIGHTBOX_SWIPE_HORIZONTAL_RATIO = 1.15;
 const decodedPhotoLightboxSources = new Set();
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
+}
+
+export function resolvePhotoLightboxSwipe({
+  deltaX = 0,
+  deltaY = 0,
+  durationMs = Number.POSITIVE_INFINITY,
+  scale = 1,
+  startedWithPinch = false
+} = {}) {
+  if (startedWithPinch || scale > 1) return 0;
+  const horizontalDistance = Math.abs(Number(deltaX) || 0);
+  const verticalDistance = Math.abs(Number(deltaY) || 0);
+  if (horizontalDistance <= verticalDistance * PHOTO_LIGHTBOX_SWIPE_HORIZONTAL_RATIO) return 0;
+  const safeDuration = Math.max(1, Number(durationMs) || 0);
+  const isLongSwipe = horizontalDistance >= PHOTO_LIGHTBOX_SWIPE_DISTANCE_PX;
+  const isFastFlick = horizontalDistance >= PHOTO_LIGHTBOX_FLICK_DISTANCE_PX
+    && safeDuration <= PHOTO_LIGHTBOX_FLICK_DURATION_MS
+    && horizontalDistance / safeDuration >= PHOTO_LIGHTBOX_FLICK_VELOCITY_PX_PER_MS;
+  if (!isLongSwipe && !isFastFlick) return 0;
+  return deltaX < 0 ? 1 : -1;
 }
 
 export function createPhotoLightboxLoadingNotice({
@@ -612,6 +637,9 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     close();
   });
   overlay.querySelector(".photo-lightbox-close")?.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
   let activeIndex = initialIndex;
   let renderToken = 0;
   let suppressImageCloseUntil = 0;
@@ -625,6 +653,8 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   let moved = false;
   let pinching = false;
   let touchStartedWithPinch = false;
+  let touchStartedAt = 0;
+  let touchIdentifier = null;
   const resetTransform = () => {
     scale = 1;
     panX = 0;
@@ -785,6 +815,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       if (Date.now() < suppressImageCloseUntil) {
         event.preventDefault();
         event.stopPropagation();
+        moved = false;
         return;
       }
       if (moved) {
@@ -856,6 +887,8 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       pinching = false;
       touchStartedWithPinch = false;
       pinchDistance = 0;
+      touchStartedAt = Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now();
+      touchIdentifier = touch.identifier ?? null;
       startX = touch.clientX;
       startY = touch.clientY;
       startPanX = panX;
@@ -868,6 +901,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     const center = touchCenter(event.touches[0], event.touches[1]);
     pinching = true;
     touchStartedWithPinch = true;
+    touchIdentifier = null;
     pinchDistance = touchDistance(event.touches[0], event.touches[1]);
     pinchScale = scale;
     startX = center.x;
@@ -918,21 +952,37 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       return;
     }
     if (!touchStartedWithPinch && event.changedTouches.length) {
-      const touch = event.changedTouches[0];
+      const touch = Array.from(event.changedTouches).find((candidate) => (
+        touchIdentifier === null || candidate.identifier === touchIdentifier
+      )) || event.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
-      if (scale <= 1 && Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-        showPhoto(activeIndex + (dx < 0 ? 1 : -1));
+      const endedAt = Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now();
+      const direction = resolvePhotoLightboxSwipe({
+        deltaX: dx,
+        deltaY: dy,
+        durationMs: Math.max(0, endedAt - touchStartedAt),
+        scale,
+        startedWithPinch: touchStartedWithPinch
+      });
+      if (direction) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressImageCloseUntil = Date.now() + 450;
+        moved = true;
+        showPhoto(activeIndex + direction);
       }
     }
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
-  }, { passive: true });
+    touchIdentifier = null;
+  }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    touchIdentifier = null;
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
     if (event.key === "Escape") {

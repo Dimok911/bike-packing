@@ -52,6 +52,7 @@ import {
   photoUploadState,
   replacePhotoLightboxImageSource,
   resolvePhotoGalleryActiveIndex,
+  resolvePhotoLightboxSwipe,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
@@ -1817,6 +1818,44 @@ test("CRITICAL offline-photos: a vertical swipe starting on a packing photo does
   assert.equal(harness.opened.length, 0);
 });
 
+test("CRITICAL offline-photos: lightbox accepts both deliberate swipes and quick short flicks", () => {
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: -48,
+    deltaY: 14,
+    durationMs: 700
+  }), 1);
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: 29,
+    deltaY: 9,
+    durationMs: 180
+  }), -1);
+});
+
+test("CRITICAL offline-photos: lightbox rejects hesitant, vertical, pinched, and zoomed gestures", () => {
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: -29,
+    deltaY: 8,
+    durationMs: 800
+  }), 0);
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: -60,
+    deltaY: 58,
+    durationMs: 200
+  }), 0);
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: -70,
+    deltaY: 5,
+    durationMs: 180,
+    startedWithPinch: true
+  }), 0);
+  assert.equal(resolvePhotoLightboxSwipe({
+    deltaX: -70,
+    deltaY: 5,
+    durationMs: 180,
+    scale: 1.2
+  }), 0);
+});
+
 test("CRITICAL offline-photos: dot navigation keeps its target active throughout smooth scrolling", () => {
   assert.deepEqual(resolvePhotoGalleryActiveIndex({
     pendingIndex: 3,
@@ -1860,6 +1899,13 @@ test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zon
   assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*clamp\(72px,\s*22vw,\s*148px\);/);
   assert.match(styles, /\.photo-lightbox-nav span\s*\{[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
   assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
+});
+
+test("CRITICAL offline-photos: lightbox backdrop closes without stealing side navigation clicks", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /overlay\.addEventListener\("click", \(event\) => \{\s*if \(event\.target === overlay\) close\(\);/);
+  assert.match(source, /function bindPhotoLightboxNavButton\(button, onClick\)[\s\S]*event\.stopPropagation\(\);/);
+  assert.match(source, /targetImage\.addEventListener\("click", \(event\) => \{[\s\S]*event\.preventDefault\(\);\s*close\(\);/);
 });
 
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {

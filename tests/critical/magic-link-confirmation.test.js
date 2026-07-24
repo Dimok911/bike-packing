@@ -41,7 +41,7 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
   assert.match(appSource, /2026-07-24\.history-restore-provenance-v1/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1390"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1391"/);
 });
 
 test("production shell has no experimental banner and uses the production API", async () => {
