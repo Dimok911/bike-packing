@@ -52,7 +52,7 @@ import {
   photoUploadState,
   replacePhotoLightboxImageSource,
   resolvePhotoGalleryActiveIndex,
-  resolvePhotoLightboxSwipe,
+  resolvePhotoGallerySnapIndex,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml
 } from "../../src/ui/photo-gallery.js";
@@ -1818,42 +1818,26 @@ test("CRITICAL offline-photos: a vertical swipe starting on a packing photo does
   assert.equal(harness.opened.length, 0);
 });
 
-test("CRITICAL offline-photos: lightbox accepts both deliberate swipes and quick short flicks", () => {
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: -48,
-    deltaY: 14,
-    durationMs: 700
-  }), 1);
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: 29,
-    deltaY: 9,
-    durationMs: 180
-  }), -1);
-});
-
-test("CRITICAL offline-photos: lightbox rejects hesitant, vertical, pinched, and zoomed gestures", () => {
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: -29,
-    deltaY: 8,
-    durationMs: 800
+test("CRITICAL offline-photos: gallery settling clamps partial and overscrolled edge positions", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.equal(resolvePhotoGallerySnapIndex({
+    scrollLeft: -18,
+    trackWidth: 300,
+    slideCount: 3
   }), 0);
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: -60,
-    deltaY: 58,
-    durationMs: 200
-  }), 0);
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: -70,
-    deltaY: 5,
-    durationMs: 180,
-    startedWithPinch: true
-  }), 0);
-  assert.equal(resolvePhotoLightboxSwipe({
-    deltaX: -70,
-    deltaY: 5,
-    durationMs: 180,
-    scale: 1.2
-  }), 0);
+  assert.equal(resolvePhotoGallerySnapIndex({
+    scrollLeft: 466,
+    trackWidth: 300,
+    slideCount: 3
+  }), 2);
+  assert.equal(resolvePhotoGallerySnapIndex({
+    scrollLeft: 638,
+    trackWidth: 300,
+    slideCount: 3
+  }), 2);
+  assert.match(source, /const pullsPastFirst = baseIndex === 0 && dx > 3;/);
+  assert.match(source, /const pullsPastLast = baseIndex === slideCount - 1 && dx < -3;/);
+  assert.match(source, /scheduleSettledPosition\(\);/);
 });
 
 test("CRITICAL offline-photos: dot navigation keeps its target active throughout smooth scrolling", () => {
@@ -1898,14 +1882,43 @@ test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zon
   assert.match(source, /if \(direction < 0 && activeIndex <= 0\) return;/);
   assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*clamp\(72px,\s*22vw,\s*148px\);/);
   assert.match(styles, /\.photo-lightbox-nav span\s*\{[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
+  assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(baseIndex \+ \(dx < 0 \? 1 : -1\)\);/);
   assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
+});
+
+test("CRITICAL offline-photos: lightbox is a smooth scroll-snap carousel with synchronized dots", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(source, /class="photo-lightbox-track"/);
+  assert.match(source, /class="photo-lightbox-slide"/);
+  assert.match(source, /class="photo-lightbox-dots"[\s\S]*data-photo-lightbox-dot=/);
+  assert.match(source, /track\.scrollTo\(\{\s*left: targetLeft,\s*behavior/);
+  assert.match(source, /lightboxDots\.forEach\(\(dot, dotIndex\) => \{[\s\S]*aria-current/);
+  assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*scroll-snap-type:\s*x mandatory;/);
+  assert.match(styles, /\.photo-lightbox-slide\s*\{[\s\S]*flex:\s*0 0 100%;[\s\S]*scroll-snap-align:\s*center;/);
+  assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
 test("CRITICAL offline-photos: lightbox backdrop closes without stealing side navigation clicks", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
-  assert.match(source, /overlay\.addEventListener\("click", \(event\) => \{\s*if \(event\.target === overlay\) close\(\);/);
+  assert.match(source, /event\.target === overlay \|\| event\.target\?\.classList\?\.contains\("photo-lightbox-slide"\)/);
   assert.match(source, /function bindPhotoLightboxNavButton\(button, onClick\)[\s\S]*event\.stopPropagation\(\);/);
   assert.match(source, /targetImage\.addEventListener\("click", \(event\) => \{[\s\S]*event\.preventDefault\(\);\s*close\(\);/);
+});
+
+test("CRITICAL offline-photos: packing gallery dots stay above iOS scrolling layers", () => {
+  const styles = readProjectFile("styles.css");
+  const html = renderItemPhotoHtml({
+    photos: [
+      { id: "photo-a", url: "https://example.test/a.jpg" },
+      { id: "photo-b", url: "https://example.test/b.jpg" },
+      { id: "photo-c", url: "https://example.test/c.jpg" }
+    ]
+  }, { force: true });
+  assert.equal((html.match(/class="photo-gallery-dot /g) || []).length, 3);
+  assert.match(styles, /\.item-photo\s*\{[\s\S]*isolation:\s*isolate;/);
+  assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/);
+  assert.match(styles, /\.photo-gallery-dots\s*\{[\s\S]*z-index:\s*10;[\s\S]*translate3d\(-50%,\s*0,\s*0\);[\s\S]*backface-visibility:\s*hidden;/);
 });
 
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {

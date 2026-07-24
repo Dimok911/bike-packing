@@ -3349,6 +3349,7 @@ button.ghost.context-toggle.active:focus-visible {
 
 .item-photo {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   border-radius: 7px;
   background: #fff;
@@ -3367,6 +3368,8 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 .photo-gallery-track {
+  position: relative;
+  z-index: 1;
   display: flex;
   width: 100%;
   height: 100%;
@@ -3408,10 +3411,11 @@ button.photo-gallery-slide.touch-feedback-active {
   position: absolute;
   left: 50%;
   bottom: 7px;
-  z-index: 5;
+  z-index: 10;
   display: flex;
   gap: 0;
-  transform: translateX(-50%);
+  transform: translate3d(-50%, 0, 0);
+  backface-visibility: hidden;
   padding: 4px 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.74);
@@ -6037,11 +6041,49 @@ dialog.photo-lightbox {
   background: rgba(10, 15, 14, 0.92);
   cursor: zoom-out;
   overscroll-behavior: contain;
-  touch-action: none;
+  touch-action: pan-x;
 }
 
 dialog.photo-lightbox::backdrop {
   background: transparent;
+}
+
+.photo-lightbox-track {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.photo-lightbox-track::-webkit-scrollbar {
+  display: none;
+}
+
+.photo-lightbox-track.photo-lightbox-track-zoomed {
+  overflow-x: hidden;
+  scroll-snap-type: none;
+  touch-action: none;
+}
+
+.photo-lightbox-slide {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  touch-action: pan-x;
 }
 
 .photo-lightbox-image {
@@ -6057,7 +6099,7 @@ dialog.photo-lightbox::backdrop {
   max-height: calc(100dvh - 18px);
   object-fit: contain;
   cursor: grab;
-  touch-action: none;
+  touch-action: pan-x;
   user-select: none;
   transform-origin: center;
   backface-visibility: hidden;
@@ -6076,8 +6118,8 @@ dialog.photo-lightbox::backdrop {
 .photo-lightbox-load-status {
   position: fixed;
   left: 50%;
-  bottom: max(22px, env(safe-area-inset-bottom));
-  z-index: 4;
+  bottom: max(58px, calc(env(safe-area-inset-bottom) + 50px));
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -6112,6 +6154,38 @@ dialog.photo-lightbox::backdrop {
 
 .photo-lightbox-load-error .photo-lightbox-loading-spinner {
   display: none;
+}
+
+.photo-lightbox-dots {
+  position: fixed;
+  left: 50%;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(10, 15, 14, 0.64);
+  transform: translate3d(-50%, 0, 0);
+  backdrop-filter: blur(8px);
+}
+
+.photo-lightbox-dot {
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  min-height: 9px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 50%;
+  background: transparent;
+  touch-action: manipulation;
+}
+
+.photo-lightbox-dot.active {
+  background: #fff;
+  border-color: #fff;
 }
 
 .photo-lightbox-close {

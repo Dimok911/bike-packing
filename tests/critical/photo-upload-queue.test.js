@@ -167,6 +167,6 @@ test("CRITICAL photo upload: progress stays in the gallery instead of a fixed he
   assert.match(controllerSource, /uploadPhotoBatchQueue\(eligiblePhotos/);
   assert.match(gallerySource, /slide\.append\(nextProgress\)/);
   assert.match(stylesSource, /\.photo-gallery-slide\s*\{[^}]*position:\s*relative;/s);
-  assert.match(stylesSource, /\.photo-gallery-dots\s*\{[^}]*z-index:\s*5;/s);
+  assert.match(stylesSource, /\.photo-gallery-dots\s*\{[^}]*z-index:\s*10;/s);
   assert.doesNotMatch(stylesSource, /\.photo-upload-progress\s*\{[^}]*position:\s*fixed;/s);
 });

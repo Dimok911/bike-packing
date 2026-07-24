@@ -22,35 +22,10 @@ let lightboxResizeHandler = null;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
-const PHOTO_LIGHTBOX_SWIPE_DISTANCE_PX = 44;
-const PHOTO_LIGHTBOX_FLICK_DISTANCE_PX = 24;
-const PHOTO_LIGHTBOX_FLICK_DURATION_MS = 420;
-const PHOTO_LIGHTBOX_FLICK_VELOCITY_PX_PER_MS = 0.12;
-const PHOTO_LIGHTBOX_SWIPE_HORIZONTAL_RATIO = 1.15;
 const decodedPhotoLightboxSources = new Set();
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
-}
-
-export function resolvePhotoLightboxSwipe({
-  deltaX = 0,
-  deltaY = 0,
-  durationMs = Number.POSITIVE_INFINITY,
-  scale = 1,
-  startedWithPinch = false
-} = {}) {
-  if (startedWithPinch || scale > 1) return 0;
-  const horizontalDistance = Math.abs(Number(deltaX) || 0);
-  const verticalDistance = Math.abs(Number(deltaY) || 0);
-  if (horizontalDistance <= verticalDistance * PHOTO_LIGHTBOX_SWIPE_HORIZONTAL_RATIO) return 0;
-  const safeDuration = Math.max(1, Number(durationMs) || 0);
-  const isLongSwipe = horizontalDistance >= PHOTO_LIGHTBOX_SWIPE_DISTANCE_PX;
-  const isFastFlick = horizontalDistance >= PHOTO_LIGHTBOX_FLICK_DISTANCE_PX
-    && safeDuration <= PHOTO_LIGHTBOX_FLICK_DURATION_MS
-    && horizontalDistance / safeDuration >= PHOTO_LIGHTBOX_FLICK_VELOCITY_PX_PER_MS;
-  if (!isLongSwipe && !isFastFlick) return 0;
-  return deltaX < 0 ? 1 : -1;
 }
 
 export function createPhotoLightboxLoadingNotice({
@@ -470,6 +445,16 @@ export function resolvePhotoGalleryActiveIndex({
   };
 }
 
+export function resolvePhotoGallerySnapIndex({
+  scrollLeft = 0,
+  trackWidth = 1,
+  slideCount = 1
+} = {}) {
+  const width = Math.max(1, Number(trackWidth) || 1);
+  const lastIndex = Math.max(0, Math.trunc(Number(slideCount) || 1) - 1);
+  return Math.max(0, Math.min(lastIndex, Math.round((Number(scrollLeft) || 0) / width)));
+}
+
 export function bindPhotoGalleries(root = document, {
   onItemPreviewActive = () => {},
   onRootContainerPreviewActive = () => {},
@@ -485,6 +470,7 @@ export function bindPhotoGalleries(root = document, {
     const slideCount = Math.max(slideButtons.length, dots.length, 1);
     let suppressSlideClickUntil = 0;
     let pendingScrollIndex = null;
+    let settleTimer = null;
     const clampIndex = (index) => Math.max(0, Math.min(slideCount - 1, Number(index) || 0));
     const setActive = (index) => {
       const safeIndex = clampIndex(index);
@@ -509,6 +495,23 @@ export function bindPhotoGalleries(root = document, {
     };
     const cancelPendingScroll = () => {
       pendingScrollIndex = null;
+      if (settleTimer !== null) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+      }
+    };
+    const scheduleSettledPosition = () => {
+      if (settleTimer !== null) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        settleTimer = null;
+        const snapIndex = resolvePhotoGallerySnapIndex({
+          scrollLeft: track.scrollLeft,
+          trackWidth: track.clientWidth,
+          slideCount
+        });
+        const targetLeft = track.clientWidth * snapIndex;
+        if (Math.abs(track.scrollLeft - targetLeft) > 1) scrollToIndex(snapIndex);
+      }, 160);
     };
     dots.forEach((dot, index) => {
       dot.addEventListener("click", (event) => {
@@ -517,7 +520,10 @@ export function bindPhotoGalleries(root = document, {
         scrollToIndex(index);
       });
     });
-    track.addEventListener("scroll", () => requestAnimationFrame(syncActive), { passive: true });
+    track.addEventListener("scroll", () => {
+      requestAnimationFrame(syncActive);
+      scheduleSettledPosition();
+    }, { passive: true });
     track.addEventListener("pointerdown", cancelPendingScroll, { passive: true });
     track.addEventListener("wheel", cancelPendingScroll, { passive: true });
     let touchStartX = 0;
@@ -555,6 +561,12 @@ export function bindPhotoGalleries(root = document, {
       const dy = touch.clientY - touchStartY;
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
+      const width = track.clientWidth || 1;
+      const baseIndex = resolvePhotoGallerySnapIndex({
+        scrollLeft: touchStartScrollLeft,
+        trackWidth: width,
+        slideCount
+      });
       const minDistance = Math.min(54, Math.max(28, (track.clientWidth || 1) * 0.11));
       const fastEnough = Date.now() - touchStartTime <= 1100;
       const tappedButton = !touchMoved && Math.hypot(dx, dy) <= PHOTO_GALLERY_TAP_MOVE_LIMIT_PX
@@ -569,9 +581,16 @@ export function bindPhotoGalleries(root = document, {
         openLightbox(tappedImage, { gallery, index: tappedIndex });
         return;
       }
+      const pullsPastFirst = baseIndex === 0 && dx > 3;
+      const pullsPastLast = baseIndex === slideCount - 1 && dx < -3;
+      if (pullsPastFirst || pullsPastLast) {
+        scrollToIndex(baseIndex);
+        suppressSlideClickUntil = Date.now() + 450;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (slideCount > 1 && fastEnough && absX >= minDistance && absX > absY * 0.55) {
-        const width = track.clientWidth || 1;
-        const baseIndex = Math.round(touchStartScrollLeft / width);
         const direction = dx < 0 ? 1 : -1;
         scrollToIndex(baseIndex + direction);
         suppressSlideClickUntil = Date.now() + 450;
@@ -610,14 +629,36 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const previousLabel = escapeHtml(localText("Previous photo", "Предыдущее фото"));
   const nextLabel = escapeHtml(localText("Next photo", "Следующее фото"));
   const loadingFullLabel = escapeHtml(localText("Loading full-size photo…", "Загружается полная версия фото…"));
+  const slidesHtml = entries.map((entry, entryIndex) => {
+    const previewSrc = entry?.previewSrc || entry?.fullSrc || "";
+    return `
+      <div class="photo-lightbox-slide" data-photo-lightbox-index="${entryIndex}">
+        <img class="photo-lightbox-image" src="${escapeHtml(previewSrc)}" alt="" ${entryIndex === initialIndex ? "" : 'loading="lazy"'} />
+      </div>
+    `;
+  }).join("");
+  const dotsHtml = hasNavigation
+    ? `<div class="photo-lightbox-dots" data-photo-lightbox-dots>
+        ${entries.map((_, entryIndex) => {
+          const dotLabel = escapeHtml(localText(
+            `Photo ${entryIndex + 1} of ${entries.length}`,
+            `Фото ${entryIndex + 1} из ${entries.length}`
+          ));
+          return `<button class="photo-lightbox-dot ${entryIndex === initialIndex ? "active" : ""}" type="button" data-photo-lightbox-dot="${entryIndex}" aria-label="${dotLabel}" ${entryIndex === initialIndex ? 'aria-current="true"' : ""}></button>`;
+        }).join("")}
+      </div>`
+    : "";
   overlay.innerHTML = `
     <button class="photo-lightbox-close" type="button" aria-label="${closeLabel}">×</button>
     ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="${previousLabel}"><span aria-hidden="true">‹</span></button>` : ""}
-    <img class="photo-lightbox-image" src="${escapeHtml(initialPreviewSrc)}" alt="" />
+    <div class="photo-lightbox-track">
+      ${slidesHtml}
+    </div>
     <div class="photo-lightbox-load-status" role="status" aria-live="polite" hidden>
       <span class="photo-lightbox-loading-spinner" aria-hidden="true"></span>
       <span data-photo-lightbox-status-text>${loadingFullLabel}</span>
     </div>
+    ${dotsHtml}
     ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
@@ -625,24 +666,35 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     overlay.showModal();
   }
   document.body.classList.add("photo-lightbox-open");
-  let image = overlay.querySelector(".photo-lightbox-image");
+  const track = overlay.querySelector(".photo-lightbox-track");
+  const lightboxImages = [...overlay.querySelectorAll(".photo-lightbox-image")];
+  const lightboxDots = [...overlay.querySelectorAll(".photo-lightbox-dot")];
+  let image = lightboxImages[initialIndex];
   const loadStatus = overlay.querySelector(".photo-lightbox-load-status");
   const loadStatusText = overlay.querySelector("[data-photo-lightbox-status-text]");
   const prevButton = overlay.querySelector(".photo-lightbox-prev");
   const nextButton = overlay.querySelector(".photo-lightbox-next");
   let loadingNotice = null;
-  const close = () => closePhotoLightbox();
+  const close = () => {
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
+    closePhotoLightbox();
+  };
   overlay.addEventListener("cancel", (event) => {
     event.preventDefault();
     close();
   });
   overlay.querySelector(".photo-lightbox-close")?.addEventListener("click", close);
   overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) close();
+    if (Date.now() < suppressImageCloseUntil) return;
+    if (event.target === overlay || event.target?.classList?.contains("photo-lightbox-slide")) close();
   });
   let activeIndex = initialIndex;
   let renderToken = 0;
   let suppressImageCloseUntil = 0;
+  let pendingScrollIndex = null;
+  let scrollFrame = 0;
+  let lightboxSettleTimer = null;
   let scale = 1;
   let panX = 0;
   let panY = 0;
@@ -650,12 +702,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   let startY = 0;
   let startPanX = 0;
   let startPanY = 0;
+  let touchStartScrollLeft = 0;
+  let touchStartTime = 0;
   let moved = false;
   let pinching = false;
   let touchStartedWithPinch = false;
-  let touchStartedAt = 0;
-  let touchIdentifier = null;
   const resetTransform = () => {
+    image?.style?.removeProperty("transform");
     scale = 1;
     panX = 0;
     panY = 0;
@@ -675,10 +728,17 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const apply = () => {
     clampPan();
     image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
+    track.classList.toggle("photo-lightbox-track-zoomed", scale > 1);
   };
   const updateNavigation = () => {
     if (prevButton) prevButton.setAttribute("aria-disabled", activeIndex <= 0 ? "true" : "false");
     if (nextButton) nextButton.setAttribute("aria-disabled", activeIndex >= entries.length - 1 ? "true" : "false");
+    lightboxDots.forEach((dot, dotIndex) => {
+      const active = dotIndex === activeIndex;
+      dot.classList.toggle("active", active);
+      if (active) dot.setAttribute("aria-current", "true");
+      else dot.removeAttribute("aria-current");
+    });
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
@@ -708,13 +768,16 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     onChange: updateLoadStatus
   });
   lightboxLoadingNotice = loadingNotice;
+  let suppressNavClickUntil = 0;
+  let navigatePhoto = () => false;
   const activateNavigation = (event, direction) => {
     event.preventDefault();
     event.stopPropagation();
+    if (Date.now() < suppressNavClickUntil) return;
     suppressImageCloseUntil = Date.now() + 450;
     if (direction < 0 && activeIndex <= 0) return;
     if (direction > 0 && activeIndex >= entries.length - 1) return;
-    showPhoto(activeIndex + direction);
+    navigatePhoto(activeIndex + direction);
   };
   bindPhotoLightboxNavButton(prevButton, (event) => activateNavigation(event, -1));
   bindPhotoLightboxNavButton(nextButton, (event) => activateNavigation(event, 1));
@@ -727,8 +790,11 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     const previewSrc = entry?.previewSrc || entry?.fullSrc || "";
     const readyFullSrc = entry?.resolvedFullSrc || "";
     const displaySrc = readyFullSrc || previewSrc;
-    if (!previewSrc) return false;
+    const targetImage = lightboxImages[nextIndex];
+    if (!previewSrc || !targetImage) return false;
+    if (image !== targetImage) image.style.removeProperty("transform");
     activeIndex = nextIndex;
+    image = targetImage;
     image.src = displaySrc;
     image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
     updateNavigation();
@@ -755,12 +821,14 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
           await replacePhotoLightboxImageSource(currentImage, next.src, {
             shouldCommit: () => token === renderToken && overlay.isConnected,
             onReplaced: (replacement) => {
-              image = replacement;
-              image.dataset.photoLightboxQuality = "preview";
-              bindImageInteractions(image);
+              lightboxImages[nextIndex] = replacement;
+              if (activeIndex === nextIndex) image = replacement;
+              replacement.dataset.photoLightboxQuality = "preview";
+              bindImageInteractions(replacement);
             },
             onRollback: (restoredImage) => {
-              image = restoredImage;
+              lightboxImages[nextIndex] = restoredImage;
+              if (activeIndex === nextIndex) image = restoredImage;
             }
           });
           lightboxObjectUrls.add(next.objectUrl);
@@ -780,12 +848,14 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       await replacePhotoLightboxImageSource(currentImage, next.src, {
         shouldCommit: () => token === renderToken && overlay.isConnected,
         onReplaced: (replacement) => {
-          image = replacement;
-          image.dataset.photoLightboxQuality = "full";
-          bindImageInteractions(image);
+          lightboxImages[nextIndex] = replacement;
+          if (activeIndex === nextIndex) image = replacement;
+          replacement.dataset.photoLightboxQuality = "full";
+          bindImageInteractions(replacement);
         },
         onRollback: (restoredImage) => {
-          image = restoredImage;
+          lightboxImages[nextIndex] = restoredImage;
+          if (activeIndex === nextIndex) image = restoredImage;
         }
       });
     } catch {
@@ -804,6 +874,98 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     resetTransform();
     return true;
   };
+  navigatePhoto = (nextIndex, behavior = "smooth") => {
+    const safeIndex = Math.max(0, Math.min(entries.length - 1, Number(nextIndex) || 0));
+    const targetLeft = track.clientWidth * safeIndex;
+    if (safeIndex === activeIndex && !pendingScrollIndex && Math.abs(track.scrollLeft - targetLeft) <= 1) return false;
+    pendingScrollIndex = behavior === "smooth" ? safeIndex : null;
+    if (safeIndex !== activeIndex) showPhoto(safeIndex);
+    track.scrollTo({
+      left: targetLeft,
+      behavior
+    });
+    return true;
+  };
+  const syncTrackActivePhoto = () => {
+    scrollFrame = 0;
+    const resolved = resolvePhotoGalleryActiveIndex({
+      pendingIndex: pendingScrollIndex,
+      scrollLeft: track.scrollLeft,
+      trackWidth: track.clientWidth
+    });
+    pendingScrollIndex = resolved.pendingIndex;
+    if (resolved.activeIndex !== activeIndex) showPhoto(resolved.activeIndex);
+  };
+  track.addEventListener("scroll", () => {
+    suppressImageCloseUntil = Date.now() + 300;
+    if (!scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
+    if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
+    lightboxSettleTimer = setTimeout(() => {
+      lightboxSettleTimer = null;
+      const snapIndex = resolvePhotoGallerySnapIndex({
+        scrollLeft: track.scrollLeft,
+        trackWidth: track.clientWidth,
+        slideCount: entries.length
+      });
+      navigatePhoto(snapIndex);
+    }, 160);
+  }, { passive: true });
+  track.addEventListener("pointerdown", () => {
+    if (scale <= 1) pendingScrollIndex = null;
+  }, { passive: true });
+  lightboxDots.forEach((dot, dotIndex) => {
+    dot.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressImageCloseUntil = Date.now() + 450;
+      navigatePhoto(dotIndex);
+    });
+  });
+  const bindNavSwipe = (button) => {
+    if (!button) return;
+    let navStartX = 0;
+    let navStartY = 0;
+    let navStartScrollLeft = 0;
+    let navMoved = false;
+    button.addEventListener("touchstart", (event) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      pendingScrollIndex = null;
+      navStartX = touch.clientX;
+      navStartY = touch.clientY;
+      navStartScrollLeft = track.scrollLeft;
+      navMoved = false;
+    }, { passive: true });
+    button.addEventListener("touchmove", (event) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const dx = touch.clientX - navStartX;
+      const dy = touch.clientY - navStartY;
+      if (Math.hypot(dx, dy) <= PHOTO_GALLERY_TAP_MOVE_LIMIT_PX) return;
+      if (Math.abs(dx) <= Math.abs(dy) * 0.55) return;
+      navMoved = true;
+      event.preventDefault();
+      event.stopPropagation();
+      track.scrollLeft = navStartScrollLeft - dx;
+    }, { passive: false });
+    button.addEventListener("touchend", (event) => {
+      if (!navMoved || !event.changedTouches.length) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - navStartX;
+      const baseIndex = resolvePhotoGallerySnapIndex({
+        scrollLeft: navStartScrollLeft,
+        trackWidth: track.clientWidth,
+        slideCount: entries.length
+      });
+      suppressNavClickUntil = Date.now() + 500;
+      suppressImageCloseUntil = Date.now() + 500;
+      navigatePhoto(baseIndex + (dx < 0 ? 1 : -1));
+      event.preventDefault();
+      event.stopPropagation();
+    }, { passive: false });
+  };
+  bindNavSwipe(prevButton);
+  bindNavSwipe(nextButton);
   updateNavigation();
   bindImageInteractions = (targetImage) => {
     const refreshAutoSize = () => {
@@ -852,7 +1014,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       const dx = event.clientX - startX;
       const dy = event.clientY - startY;
       if (scale <= 1 && Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-        showPhoto(activeIndex + (dx < 0 ? 1 : -1));
+        navigatePhoto(activeIndex + (dx < 0 ? 1 : -1));
       }
     });
     targetImage.addEventListener("pointercancel", (event) => {
@@ -860,14 +1022,18 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       if (targetImage.hasPointerCapture(event.pointerId)) targetImage.releasePointerCapture(event.pointerId);
     });
   };
-  bindImageInteractions(image);
+  lightboxImages.forEach(bindImageInteractions);
   lightboxResizeHandler = () => {
     updatePhotoLightboxAutoSize(image, overlay);
     resetTransform();
+    track.scrollTo({ left: track.clientWidth * activeIndex, behavior: "auto" });
   };
   window.addEventListener("resize", lightboxResizeHandler);
   window.visualViewport?.addEventListener?.("resize", lightboxResizeHandler);
   showPhoto(initialIndex, { force: true });
+  requestAnimationFrame(() => {
+    track.scrollTo({ left: track.clientWidth * initialIndex, behavior: "auto" });
+  });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.18 : -0.18;
@@ -887,12 +1053,12 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       pinching = false;
       touchStartedWithPinch = false;
       pinchDistance = 0;
-      touchStartedAt = Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now();
-      touchIdentifier = touch.identifier ?? null;
       startX = touch.clientX;
       startY = touch.clientY;
       startPanX = panX;
       startPanY = panY;
+      touchStartScrollLeft = track.scrollLeft;
+      touchStartTime = Date.now();
       moved = false;
       return;
     }
@@ -901,7 +1067,6 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     const center = touchCenter(event.touches[0], event.touches[1]);
     pinching = true;
     touchStartedWithPinch = true;
-    touchIdentifier = null;
     pinchDistance = touchDistance(event.touches[0], event.touches[1]);
     pinchScale = scale;
     startX = center.x;
@@ -913,13 +1078,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   overlay.addEventListener("touchmove", (event) => {
     if (isPhotoLightboxControlTarget(event.target)) return;
     if (event.touches.length === 1) {
-      event.preventDefault();
       if (pinching) return;
       const touch = event.touches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
-      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (Math.hypot(dx, dy) > PHOTO_GALLERY_TAP_MOVE_LIMIT_PX) moved = true;
       if (scale <= 1) return;
+      event.preventDefault();
       panX = startPanX + dx;
       panY = startPanY + dy;
       apply();
@@ -951,38 +1116,38 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       startPanY = panY;
       return;
     }
-    if (!touchStartedWithPinch && event.changedTouches.length) {
-      const touch = Array.from(event.changedTouches).find((candidate) => (
-        touchIdentifier === null || candidate.identifier === touchIdentifier
-      )) || event.changedTouches[0];
+    if (!touchStartedWithPinch && !moved && scale <= 1 && event.changedTouches.length) {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (!touchStartedWithPinch && moved && scale <= 1 && event.changedTouches.length) {
+      const touch = event.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
-      const endedAt = Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now();
-      const direction = resolvePhotoLightboxSwipe({
-        deltaX: dx,
-        deltaY: dy,
-        durationMs: Math.max(0, endedAt - touchStartedAt),
-        scale,
-        startedWithPinch: touchStartedWithPinch
-      });
-      if (direction) {
+      const minDistance = Math.min(36, Math.max(18, (track.clientWidth || 1) * 0.06));
+      const fastEnough = Date.now() - touchStartTime <= 1000;
+      if (fastEnough && Math.abs(dx) >= minDistance && Math.abs(dx) > Math.abs(dy) * 0.55) {
+        const baseIndex = resolvePhotoGallerySnapIndex({
+          scrollLeft: touchStartScrollLeft,
+          trackWidth: track.clientWidth,
+          slideCount: entries.length
+        });
+        suppressImageCloseUntil = Date.now() + 500;
+        navigatePhoto(baseIndex + (dx < 0 ? 1 : -1));
         event.preventDefault();
         event.stopPropagation();
-        suppressImageCloseUntil = Date.now() + 450;
-        moved = true;
-        showPhoto(activeIndex + direction);
       }
     }
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
-    touchIdentifier = null;
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
-    touchIdentifier = null;
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
     if (event.key === "Escape") {
@@ -991,12 +1156,12 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      showPhoto(activeIndex - 1);
+      navigatePhoto(activeIndex - 1);
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      showPhoto(activeIndex + 1);
+      navigatePhoto(activeIndex + 1);
     }
   };
   document.addEventListener("keydown", lightboxKeydownHandler);
@@ -1273,7 +1438,7 @@ function bindPhotoLightboxNavButton(button, onClick) {
 }
 
 function isPhotoLightboxControlTarget(target) {
-  return Boolean(target?.closest?.(".photo-lightbox-nav, .photo-lightbox-close"));
+  return Boolean(target?.closest?.(".photo-lightbox-nav, .photo-lightbox-close, .photo-lightbox-dots"));
 }
 
 function closePhotoLightboxOnEscape(event) {
