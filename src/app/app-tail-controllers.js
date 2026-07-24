@@ -41,7 +41,7 @@ import {
 } from "../public/public-template-order-sync.js";
 import {
   capturePackingPhotoRenderState,
-  restorePackingPhotoRenderState
+  restoreAndBindPackingPhotoGalleries
 } from "../ui/packing-photo-preservation.js";
 import {
   buildSharedEntityUrlFromHref,
@@ -2712,19 +2712,27 @@ function renderSharedSummary() {
 
 function renderPacking() {
   const photoRenderState = capturePackingPhotoRenderState(refs.packingView);
+  const activatePhotoGalleries = () => restoreAndBindPackingPhotoGalleries(
+    refs.packingView,
+    photoRenderState,
+    {
+      bindPhotoGalleries,
+      bindingOptions: photoGalleryBindingOptions()
+    }
+  );
   if (isSharedLayoutView()) {
     if (isBike3dPackingView(runtime.packingViewMode)) {
       renderSharedPackingBike3d();
-      restorePackingPhotoRenderState(refs.packingView, photoRenderState);
+      activatePhotoGalleries();
       return;
     }
     renderSharedPacking();
-    restorePackingPhotoRenderState(refs.packingView, photoRenderState);
+    activatePhotoGalleries();
     return;
   }
   if (isBike3dPackingView(runtime.packingViewMode)) {
     renderCurrentPackingBike3d();
-    restorePackingPhotoRenderState(refs.packingView, photoRenderState);
+    activatePhotoGalleries();
     return;
   }
   const layout = state.layouts[state.activeLayoutId] || Object.values(state.layouts || {})[0] || { rootContainerIds: [] };
@@ -2762,7 +2770,7 @@ function renderPacking() {
     ${renderPackingRootHeaderRow(visibleRootIds, { filtered: hasActiveContentFilter() && !isFilterContextActive() })}
     <div class="board">${boardHtml}</div>
   `;
-  restorePackingPhotoRenderState(refs.packingView, photoRenderState);
+  activatePhotoGalleries();
   bindEmptyContentFilterReset(refs.packingView);
   bindPackingEvents(refs.packingView);
   const sharedBoard = refs.packingView.querySelector(".board");

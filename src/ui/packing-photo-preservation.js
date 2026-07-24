@@ -75,3 +75,11 @@ export function restorePackingPhotoRenderState(root, snapshot) {
     replacement.replaceWith(image);
   });
 }
+
+export function restoreAndBindPackingPhotoGalleries(root, snapshot, {
+  bindPhotoGalleries = () => {},
+  bindingOptions
+} = {}) {
+  restorePackingPhotoRenderState(root, snapshot);
+  bindPhotoGalleries(root, bindingOptions);
+}

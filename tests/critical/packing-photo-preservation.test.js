@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   capturePackingPhotoRenderState,
+  restoreAndBindPackingPhotoGalleries,
   restorePackingPhotoRenderState
 } from "../../src/ui/packing-photo-preservation.js";
 
@@ -78,4 +80,42 @@ test("packing rerender does not preserve an image that has not finished loading"
   restorePackingPhotoRenderState(createRoot(createGallery([replacement]), [replacement]), snapshot);
 
   assert.equal(replaced, false);
+});
+
+test("packing rerender restores the active photo before binding gallery interactions", () => {
+  const oldImages = [createImage("photo-1"), createImage("photo-2")];
+  const snapshot = capturePackingPhotoRenderState(createRoot(createGallery(oldImages, 1), oldImages));
+  const replacements = [createImage("photo-1", { loaded: false }), createImage("photo-2", { loaded: false })];
+  const nextGallery = createGallery(replacements);
+  const nextRoot = createRoot(nextGallery, replacements);
+  const bindingOptions = { source: "packing" };
+  const calls = [];
+
+  restoreAndBindPackingPhotoGalleries(nextRoot, snapshot, {
+    bindPhotoGalleries(root, options) {
+      calls.push({
+        activeIndex: nextGallery.dataset.photoInitialIndex,
+        options,
+        root
+      });
+    },
+    bindingOptions
+  });
+
+  assert.deepEqual(calls, [{
+    activeIndex: "1",
+    options: bindingOptions,
+    root: nextRoot
+  }]);
+});
+
+test("packing render activates photo galleries immediately in every view mode", () => {
+  const source = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const renderPackingSource = source.slice(
+    source.indexOf("function renderPacking()"),
+    source.indexOf("function renderCurrentPackingBike3d")
+  );
+
+  assert.match(renderPackingSource, /restoreAndBindPackingPhotoGalleries\([\s\S]*bindPhotoGalleries,[\s\S]*bindingOptions:\s*photoGalleryBindingOptions\(\)/);
+  assert.equal((renderPackingSource.match(/activatePhotoGalleries\(\);/g) || []).length, 4);
 });
