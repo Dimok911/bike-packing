@@ -7650,6 +7650,20 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   white-space: nowrap;
 }
 
+.history-record-cause {
+  display: inline-block;
+  margin-left: 8px;
+  border: 1px solid hsl(var(--interface-hue) 35% 72% / 0.8);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: hsl(var(--interface-hue) 42% 95%);
+  color: hsl(var(--interface-hue) 48% 28%);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+
 .history-record-title {
   font-weight: 800;
 }
@@ -7673,7 +7687,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
 .history-record-actions {
   display: grid;
-  grid-template-columns: 116px 120px;
+  grid-template-columns: 116px 230px;
   justify-content: start;
   gap: 6px;
   min-width: 0;
@@ -7687,9 +7701,8 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 .history-action-button {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .history-load-more {
@@ -7713,7 +7726,8 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   }
 
   .history-record-actions {
-    grid-template-columns: 100px 120px;
+    grid-template-columns: 100px minmax(0, 1fr);
+    width: 100%;
   }
 }
 

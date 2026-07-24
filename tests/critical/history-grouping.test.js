@@ -41,6 +41,8 @@ import {
   buildHistoryStateDiff,
   historyActionDescription,
   historyRecordAction,
+  historyRestoreActionText,
+  historyRestoreCauseText,
   renderHistoryRecordArticle,
   renderHistoryRecordDetails,
   historyUndoConfirmation,
@@ -59,7 +61,7 @@ test("CRITICAL history: a single history row keeps its content height", () => {
   assert.match(historyListRule, /grid-auto-rows:\s*max-content/);
   assert.match(historyListRule, /align-content:\s*start/);
   assert.match(historyRecordRule, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
-  assert.match(historyActionsRule, /grid-template-columns:\s*116px\s+120px/);
+  assert.match(historyActionsRule, /grid-template-columns:\s*116px\s+230px/);
   assert.match(historyActionsRule, /width:\s*auto/);
 });
 
@@ -279,6 +281,7 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   assert.match(appSource, /apiFetch\("\/bike-packing\/admin\/template-records"/);
   assert.match(appSource, /historyRestore:\s*true/);
+  assert.match(appSource, /restoreHistoryId:\s*Number\(record\.id/);
   assert.match(appSource, /droppedMissingPhotoCount/);
 });
 
@@ -536,7 +539,8 @@ test("CRITICAL history: a copied layout names its source, new name, and bags", (
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   assert.match(i18nSource, /"history\.undoShort": "Отменить"/);
   assert.match(i18nSource, /"history\.undoShort": "Undo"/);
-  assert.match(appSource, /return t\("history\.undoShort"\)/);
+  assert.match(appSource, /historyRestoreActionText\(record,\s*index,\s*records/);
+  assert.match(appSource, /restoreBeforeChangeText:\s*t\("history\.restoreBeforeChange"\)/);
 });
 
 test("CRITICAL history: deleted template has dedicated details and restore semantics", () => {
@@ -782,6 +786,58 @@ test("CRITICAL history: deep rollback warns about later actions in the same hist
   assert.match(confirmation.highlightText, /расположенные выше: 2/);
   assert.equal(confirmation.highlightCount, "+2");
   assert.equal(confirmation.tone, "danger");
+  assert.equal(confirmation.okText, "Восстановить состояние");
+  assert.match(confirmation.text, /состояние до выбранного изменения/);
+});
+
+test("CRITICAL history: only the latest action says Undo; older actions say Restore state", () => {
+  const records = [
+    { id: 3, listId: "list-a", snapshotKind: "undo" },
+    { id: 2, listId: "list-a", snapshotKind: "undo" },
+    { id: 1, listId: "list-a", snapshotKind: "daily" }
+  ];
+  const labels = {
+    undoText: "Отменить",
+    restoreBeforeChangeText: "Восстановить состояние до этого изменения",
+    restoreCheckpointText: "Восстановить состояние до этой точки"
+  };
+
+  assert.equal(historyRestoreActionText(records[0], 0, records, labels), "Отменить");
+  assert.equal(
+    historyRestoreActionText(records[1], 1, records, labels),
+    "Восстановить состояние до этого изменения"
+  );
+  assert.equal(
+    historyRestoreActionText(records[2], 2, records, labels),
+    "Восстановить состояние до этой точки"
+  );
+});
+
+test("CRITICAL history: a restore-created action is visibly marked as history provenance", () => {
+  const record = {
+    id: 8,
+    actionOrigin: "history_restore",
+    restoredFromHistoryId: 4,
+    createdAt: "2026-07-24T02:00:00.000Z",
+    action: { entityType: "items", operation: "removed", count: 1, title: "Old item" }
+  };
+
+  assert.equal(
+    historyRestoreCauseText(record, { localText: (_en, ru) => ru }),
+    "Восстановление по истории"
+  );
+  assert.equal(
+    historyRestoreCauseText(record, { localText: (en) => en }),
+    "Restored from history"
+  );
+  const html = renderHistoryRecordArticle(record, 0, [record], {
+    localText: (_en, ru) => ru,
+    recordMetaText: () => "Удалена вещь «Old item»",
+    restoreTextForRecord: () => "Отменить"
+  });
+  assert.match(html, /history-record-cause/);
+  assert.match(html, /Восстановление по истории/);
+  assert.match(html, /Удалена вещь «Old item»/);
 });
 
 test("CRITICAL history: demo and template rows use undo actions instead of publish-version buttons", () => {

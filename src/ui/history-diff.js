@@ -1,7 +1,7 @@
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
 import { isConflictMetaField } from "../sync/conflict-meta.js";
-import { historyNewerRecord } from "../sync/history.js";
+import { historyNewerRecord, historyRollbackImpact } from "../sync/history.js";
 import { escapeHtml } from "../utils/html.js";
 import {
   formatCompactJson,
@@ -262,6 +262,28 @@ export function historyActionDescription(action, {
     : `${operation} ${entityName}`;
 }
 
+export function historyRestoreCauseText(record, {
+  localText = historyRuText
+} = {}) {
+  const origin = String(record?.actionOrigin || record?.action_origin || "").trim();
+  const restoredFromHistoryId = Number(record?.restoredFromHistoryId || record?.restored_from_history_id || 0);
+  return origin === "history_restore" || restoredFromHistoryId > 0
+    ? localText("Restored from history", "Восстановление по истории")
+    : "";
+}
+
+export function historyRestoreActionText(record, index, records = [], {
+  restoreBeforeChangeText = "Восстановить состояние до этого изменения",
+  restoreCheckpointText = "Восстановить состояние до этой точки",
+  undoText = "Отменить"
+} = {}) {
+  const kind = String(record?.snapshotKind || record?.snapshot_kind || "undo");
+  if (kind === "daily") return restoreCheckpointText;
+  return historyRollbackImpact(record, index, records).isDeepRollback
+    ? restoreBeforeChangeText
+    : undoText;
+}
+
 export function historyUndoConfirmation({
   actionText = "",
   crossesCheckpoint = false,
@@ -281,22 +303,29 @@ export function historyUndoConfirmation({
         `Также будут отменены более поздние действия, расположенные выше: ${newerActionCount}.`
       )
     : "";
-  const text = layoutName && !isDeepRollback
+  const text = isDeepRollback
     ? localText(
-      `This action will be undone only in the layout “${layoutName}”. Other layouts and shared item data will remain unchanged. The current state will first be saved in history.`,
-      `Действие будет отменено только в укладке «${layoutName}». Другие укладки и общие данные вещей не изменятся. Текущее состояние сначала сохранится в истории.`
+      "The state before the selected change will be restored. The current state will first be saved in history.",
+      "Будет восстановлено состояние до выбранного изменения. Текущее состояние сначала сохранится в истории."
     )
-    : localText(
-      "The selected action will be undone. The current state will first be saved in history.",
-      "Выбранное действие будет отменено. Текущее состояние сначала сохранится в истории."
-    );
+    : layoutName
+      ? localText(
+        `This action will be undone only in the layout “${layoutName}”. Other layouts and shared item data will remain unchanged. The current state will first be saved in history.`,
+        `Действие будет отменено только в укладке «${layoutName}». Другие укладки и общие данные вещей не изменятся. Текущее состояние сначала сохранится в истории.`
+      )
+      : localText(
+        "The selected action will be undone. The current state will first be saved in history.",
+        "Выбранное действие будет отменено. Текущее состояние сначала сохранится в истории."
+      );
   return {
     title: actionText || localText("Undo action?", "Отменить действие?"),
     text,
     highlightText: deepWarning,
     highlightCount: isDeepRollback && newerActionCount ? `+${newerActionCount}` : "",
     tone: isDeepRollback ? "danger" : "",
-    okText: localText("Undo action", "Отменить действие"),
+    okText: isDeepRollback
+      ? localText("Restore state", "Восстановить состояние")
+      : localText("Undo action", "Отменить действие"),
     cancelText: localText("Cancel", "Отмена")
   };
 }
@@ -698,6 +727,7 @@ export function renderHistoryRecordArticle(record, index, records, {
   const title = recordTitle(record, payload, localText("Untitled", "Без названия"));
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
+  const restoreCause = historyRestoreCauseText(record, { localText });
   const context = String(recordMetaText(record, payload, index, records) || "").trim();
   const actionRestoreText = typeof restoreTextForRecord === "function"
     ? restoreTextForRecord(record, index, records)
@@ -710,6 +740,7 @@ export function renderHistoryRecordArticle(record, index, records, {
     <article class="history-record" data-history-record="${escapeHtml(key)}" tabindex="0" role="button">
       <div class="history-record-main">
         <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
+        ${restoreCause ? `<span class="history-record-cause">${escapeHtml(restoreCause)}</span>` : ""}
         ${showTitle ? `<p class="history-record-title">${escapeHtml(title)}</p>` : ""}
         ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       </div>
@@ -751,6 +782,7 @@ export function renderHistoryRecordDetails(record, index, records, {
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
+  const restoreCause = historyRestoreCauseText(record, { localText });
   const meta = [
     device,
     sourceAt ? localText(`changed: ${sourceAt}`, `изменение: ${sourceAt}`) : ""
@@ -758,6 +790,7 @@ export function renderHistoryRecordDetails(record, index, records, {
   return `
     <div class="history-detail-meta">
       <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
+      ${restoreCause ? `<span class="history-record-cause">${escapeHtml(restoreCause)}</span>` : ""}
       ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       <p>${escapeHtml(summary)}</p>
     </div>

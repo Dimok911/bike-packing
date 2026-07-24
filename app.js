@@ -941,6 +941,7 @@ import {
   hasHistoryStateChanges,
   historyActionDescription,
   historyRecordAction,
+  historyRestoreActionText,
   historyUndoConfirmation,
   renderHistoryRecordArticle as renderHistoryRecordArticleHtml,
   renderHistoryRecordDetails as renderHistoryRecordDetailsHtml,
@@ -1117,12 +1118,13 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "historyDailyCheckpoints",
   "historyLayoutScopedRestore",
   "historyPhotoTrashRetention",
+  "historyRestoreProvenance",
   "sharedListSnapshots",
   "sharedListOptionalAuthor",
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-23.magic-link-manual-code-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-24.history-restore-provenance-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -9662,11 +9664,12 @@ function renderHistoryRecords(records) {
   refs.historyList.querySelector("[data-history-load-more]")?.addEventListener("click", loadMoreHistoryRecords);
 }
 
-function historyUndoActionText(record) {
-  if (String(record?.snapshotKind || record?.snapshot_kind || "undo") === "daily") {
-    return t("history.undoAfterCheckpoint");
-  }
-  return t("history.undoShort");
+function historyUndoActionText(record, index = historyRecords.indexOf(record), records = historyRecords) {
+  return historyRestoreActionText(record, index, records, {
+    restoreBeforeChangeText: t("history.restoreBeforeChange"),
+    restoreCheckpointText: t("history.restoreBeforeCheckpoint"),
+    undoText: t("history.undoShort")
+  });
 }
 
 function findHistoryRecordByKey(recordKey) {
@@ -9979,6 +9982,7 @@ async function publishPublicHistoryRecord(record, payload, {
       description: record.description || "",
       language: targetLanguage,
       historyRestore: true,
+      restoreHistoryId: Number(record.id || 0),
       payload
     })
   });
