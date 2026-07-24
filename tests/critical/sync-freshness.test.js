@@ -239,13 +239,12 @@ test("CRITICAL sync-save: account without a personal list creates one before ent
   assert.equal(createCalls, 1);
 });
 
-test("CRITICAL sync-save: blank server list revision is remembered before guest import", async () => {
+test("CRITICAL sync-save: blank server list revision is remembered before guest handoff import", async () => {
   let offeredRevision = null;
   const runtime = {
     appUnlocked: false,
     currentUser: { id: "user-new" },
     initialRemoteLoadPending: true,
-    pendingGuestLocalLayoutCandidate: { sourceState: {} },
     remoteRefreshInFlight: false,
     state: { items: {}, containers: {}, layouts: {} },
     syncMeta: { dirty: false },
@@ -257,9 +256,9 @@ test("CRITICAL sync-save: blank server list revision is remembered before guest 
     dependencies: {
       blockRemoteIntegrityFailureIfNeeded: () => false,
       canLocalStateOverrideRemote: () => false,
+      canSeedEmptyRemoteFromLocal: () => false,
       clearStaleDirtyFlagIfNoLocalChanges: () => false,
-      consumeGuestLocalLayoutCandidate: () => ({ sourceState: {} }),
-      createBlankBikePackingState: () => ({ items: {}, containers: {}, layouts: {} }),
+      createEmptyUserState: () => ({ items: {}, containers: {}, layouts: {} }),
       currentPackingListId: () => "list-new",
       fetchRemoteStateRecord: async () => ({
         record: {
@@ -272,21 +271,27 @@ test("CRITICAL sync-save: blank server list revision is remembered before guest 
       }),
       hasLocalSavedState: () => false,
       isMeaningfulPackingState: () => false,
+      isNetworkError: () => false,
       isPublicLayoutContext: () => false,
       isSharedListLinkRoute: () => false,
-      normalizeRemoteState: () => ({ items: {}, containers: {}, layouts: {} }),
-      offerSaveGuestLocalLayouts: async () => { offeredRevision = runtime.syncMeta.stateRevision; },
+      isTemporaryServerStorageError: () => false,
+      isTimeoutError: () => false,
+      normalizeRemoteState: () => null,
+      offerPendingGuestLoginHandoffAfterRemoteLoad: async () => {
+        offeredRevision = runtime.syncMeta.stateRevision;
+        return true;
+      },
       remoteUpdatedAt: (record) => record?.updatedAt || "",
       rememberCurrentSyncAccount: () => {},
       rememberRemoteIntegrityMeta: (_record, meta) => { runtime.syncMeta.stateRevision = meta.stateRevision; },
       renderPreservingPackingScroll: () => {},
       replaceState: (nextState) => { runtime.state = nextState; },
+      saveRemoteState: async () => {},
       saveSyncMeta: () => {},
       setLayoutLoadProgress: () => {},
       setLayoutLoadStatus: () => {},
       stateIntegrityMetaFromResponse: () => ({ stateRevision: 1 }),
       statePrivateLayoutCount: () => 0,
-      shouldImportGuestLayoutBeforeRemote: () => true,
       timeValue: (value) => Date.parse(value) || 0,
       updateSyncUi: () => {}
     }
@@ -963,7 +968,6 @@ test("CRITICAL offline-start: startup tries entity changes before full state whe
     appUnlocked: false,
     currentUser: { id: "user-1" },
     initialRemoteLoadPending: true,
-    pendingGuestLocalLayoutCandidate: null,
     remoteRefreshInFlight: false,
     state: {
       activeLayoutId: "layout-1",

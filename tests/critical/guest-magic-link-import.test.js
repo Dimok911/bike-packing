@@ -1,17 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkAuthAndLoadFlow } from "../../src/sync/auth-load-flow.js";
-import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
+import { readFileSync } from "node:fs";
 import {
   guestLocalLayoutCandidateFromState,
-  importGuestLocalLayoutsToState,
-  persistGuestImportBeforeCleanup,
-  validateGuestImportSyncState
+  persistGuestImportBeforeCleanup
 } from "../../src/public/guest-login-import.js";
+import {
+  consumeStoredGuestLoginHandoff,
+  createGuestLoginHandoff,
+  createGuestWorkspaceSessionTracker,
+  markGuestWorkspaceLayouts,
+  recordGuestWorkspaceSessionChanges,
+  resolveStoredGuestLoginHandoffCandidate,
+  storeGuestLoginHandoff,
+  validateGuestLoginHandoff
+} from "../../src/public/guest-login-handoff.js";
+import {
+  createGuestLoginHandoffCoordinator,
+  runGuestLoginHandoffImport
+} from "../../src/public/guest-login-import-flow.js";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const NOW_MS = Date.parse("2026-07-24T01:15:00.000Z");
+const GUEST_LAYOUT_ID = "layout-guest-edited";
+const GUEST_SESSION_ID = "guest-session-current";
 
-function blankState() {
+function emptyState() {
   return {
     locations: [],
     categories: [],
@@ -25,43 +39,31 @@ function blankState() {
 }
 
 function editedGuestState() {
-  const createdAt = "2026-07-16T10:00:00.000Z";
   return {
-    locations: ["Home", "Workshop"],
-    categories: ["Clothes", "Rain gear"],
-    customLocations: ["Workshop"],
-    customCategories: ["Rain gear"],
+    ...emptyState(),
     containers: {
       "bag-guest": {
         id: "bag-guest",
-        name: "Renamed handlebar bag",
+        name: "Handlebar bag",
         childIds: [],
         itemIds: ["item-guest"],
-        order: [{ type: "item", id: "item-guest" }],
-        createdAt,
-        updatedAt: "2026-07-16T10:02:00.000Z"
+        order: [{ type: "item", id: "item-guest" }]
       }
     },
     items: {
       "item-guest": {
         id: "item-guest",
-        name: "Renamed rain shell",
-        containerId: "bag-guest",
-        location: "Workshop",
-        categories: ["Rain gear"],
-        createdAt,
-        updatedAt: "2026-07-16T10:01:00.000Z"
+        name: "Rain shell",
+        containerId: "bag-guest"
       }
     },
     layouts: {
-      "layout-guest-demo-reloaded": {
-        id: "layout-guest-demo-reloaded",
+      [GUEST_LAYOUT_ID]: {
+        id: GUEST_LAYOUT_ID,
         name: "Weekend",
         guestDemoCopy: true,
-        demoSourceLanguage: "en",
-        guestDemoCopyCreatedAt: createdAt,
-        createdAt,
-        updatedAt: createdAt,
+        guestDemoCopyCreatedAt: "2026-07-23T20:00:00.000Z",
+        updatedAt: "2026-07-23T20:05:00.000Z",
         rootContainerIds: ["bag-guest"],
         arrangement: {
           rootContainerIds: ["bag-guest"],
@@ -74,333 +76,428 @@ function editedGuestState() {
             }
           },
           items: { "item-guest": "bag-guest" },
-          packedItems: { "item-guest": true }
-        },
-        locations: ["Home", "Workshop"],
-        categories: ["Clothes", "Rain gear"],
-        customLocations: ["Workshop"],
-        customCategories: ["Rain gear"]
-      }
-    },
-    activeLayoutId: "layout-guest-demo-reloaded",
-    itemDisplayMode: "photos",
-    showItemMeta: false,
-    showFilterContext: true
-  };
-}
-
-function existingServerProfile() {
-  return {
-    locations: ["Home"],
-    categories: ["Clothes"],
-    customLocations: [],
-    customCategories: [],
-    containers: {
-      "bag-server": {
-        id: "bag-server",
-        name: "Existing saddle bag",
-        childIds: [],
-        itemIds: ["item-server"],
-        order: [{ type: "item", id: "item-server" }]
-      }
-    },
-    items: {
-      "item-server": {
-        id: "item-server",
-        name: "Existing tool kit",
-        containerId: "bag-server"
-      }
-    },
-    layouts: {
-      "layout-server": {
-        id: "layout-server",
-        name: "Weekend",
-        rootContainerIds: ["bag-server"],
-        arrangement: {
-          rootContainerIds: ["bag-server"],
-          containers: {
-            "bag-server": {
-              parentId: "",
-              childIds: [],
-              itemIds: ["item-server"],
-              order: [{ type: "item", id: "item-server" }]
-            }
-          },
-          items: { "item-server": "bag-server" },
           packedItems: {}
         }
       }
     },
-    activeLayoutId: "layout-server"
+    activeLayoutId: GUEST_LAYOUT_ID
   };
 }
 
-function normalizeValues(values = [], fallback = []) {
-  return [...new Set([
-    ...(Array.isArray(values) ? values : []),
-    ...(Array.isArray(fallback) ? fallback : [])
-  ])];
+function candidateFromState(sourceState = editedGuestState()) {
+  return guestLocalLayoutCandidateFromState(sourceState, {
+    cloneStateForSync: clone,
+    cloneValue: clone,
+    createEmptyUserState: emptyState,
+    fallbackName: "Guest layout",
+    snapshotsEqual: (left, right) => JSON.stringify(left) === JSON.stringify(right)
+  });
 }
 
-function uniqueLayoutNameForState(state, requestedName) {
-  const names = new Set(Object.values(state.layouts || {}).map((layout) => layout.name));
-  if (!names.has(requestedName)) return requestedName;
-  let suffix = 2;
-  while (names.has(`${requestedName} ${suffix}`)) suffix += 1;
-  return `${requestedName} ${suffix}`;
+function preparedHandoff(email = "person@example.com") {
+  const candidate = candidateFromState();
+  const manifest = markGuestWorkspaceLayouts(null, [GUEST_LAYOUT_ID], {
+    sessionId: GUEST_SESSION_ID,
+    now: () => "2026-07-24T01:14:00.000Z"
+  });
+  const handoff = createGuestLoginHandoff({
+    candidate,
+    eligibleLayoutIds: manifest.layoutIds,
+    email,
+    guestSessionId: GUEST_SESSION_ID,
+    nowMs: NOW_MS
+  });
+  return { candidate, handoff, manifest };
 }
 
-async function runMagicLinkReloadImport(user) {
-  const guestStorageKey = "guest:state";
-  const storage = new Map([[guestStorageKey, clone(editedGuestState())]]);
-  let currentScope = "guest";
-  let authConfirmed = false;
-  let pendingGuestLocalLayoutCandidate = null;
-  let serverState = existingServerProfile();
-  let importedLayoutIds = [];
-  let guestPresentDuringServerSave = false;
-  let guestOfferCount = 0;
-  const syncMessages = [];
-  const scopeEvents = [];
-  const runtime = {
-    appUnlocked: false,
-    currentUser: null,
-    initialRemoteLoadPending: true,
-    pendingGuestLocalLayoutCandidate,
-    remoteRefreshInFlight: false,
-    // A full reload has discarded the volatile candidate. The auth-check preview
-    // is intentionally non-authoritative, so recovery must read guest storage.
-    state: blankState(),
-    syncMeta: { dirty: false },
-    uiLanguage: "en"
+function storageAdapter(entries = []) {
+  const values = new Map(entries);
+  return {
+    getItem: (key) => values.has(key) ? values.get(key) : null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, String(value)),
+    values
   };
+}
 
-  const offerStoredGuestLayout = async () => {
-    guestOfferCount += 1;
-    assert.equal(pendingGuestLocalLayoutCandidate, null);
-    assert.equal(currentScope, `id:${user.id}`);
-    const storedGuestState = storage.get(guestStorageKey);
-    if (!storedGuestState) return false;
-    const candidate = guestLocalLayoutCandidateFromState(storedGuestState, {
-      cloneStateForSync: clone,
-      cloneValue: clone,
-      createEmptyUserState: blankState,
-      fallbackName: "Guest layout",
-      fallbackNameForLayout: () => "Guest layout",
-      snapshotsEqual: (left, right) => JSON.stringify(left) === JSON.stringify(right)
-    });
-    assert.ok(candidate, "the edited candidate must be reconstructed from guest storage after reload");
-
-    const copiedContainers = new Map();
-    importedLayoutIds = importGuestLocalLayoutsToState(runtime.state, candidate, {
-      addBackupDictionaryValues: () => {},
-      applyGuestLocalDisplayPreferences: (target, preferences) => Object.assign(target, preferences),
-      applyLayoutArrangement: () => {},
-      cloneValue: clone,
-      copyPublishedContainerToState: (source, sourceContainerId) => {
-        const sourceContainer = source.containers[sourceContainerId];
-        const containerId = `imported-${sourceContainerId}`;
-        const itemIds = (sourceContainer.itemIds || []).map((sourceItemId) => {
-          const itemId = `imported-${sourceItemId}`;
-          runtime.state.items[itemId] = {
-            ...clone(source.items[sourceItemId]),
-            id: itemId,
-            containerId
-          };
-          return itemId;
-        });
-        runtime.state.containers[containerId] = {
-          ...clone(sourceContainer),
-          id: containerId,
-          itemIds,
-          order: itemIds.map((itemId) => ({ type: "item", id: itemId }))
-        };
-        copiedContainers.set(containerId, itemIds);
-        return containerId;
-      },
-      createLayoutArrangementFromCurrentState: (_target, rootContainerIds) => ({
-        rootContainerIds,
-        containers: Object.fromEntries(rootContainerIds.map((containerId) => [containerId, {
-          parentId: "",
-          childIds: [],
-          itemIds: copiedContainers.get(containerId) || [],
-          order: (copiedContainers.get(containerId) || []).map((itemId) => ({ type: "item", id: itemId }))
-        }])),
-        items: Object.fromEntries([...copiedContainers].flatMap(([containerId, itemIds]) =>
-          itemIds.map((itemId) => [itemId, containerId])
-        )),
-        packedItems: {}
-      }),
-      currentCreateMeta: (changedAt) => ({ createdAt: changedAt, updatedAt: changedAt }),
-      guestCandidateLayouts: (value) => value.layouts,
-      guestDemoCopyFlag: "guestDemoCopy",
-      guestLayoutFallbackName: "Guest layout",
-      guestLocalDisplayPreferences: () => ({}),
-      layoutDictionaryValues: (layout, type) => type === "location" ? layout.locations : layout.categories,
-      normalizeContainerFields: () => {},
-      normalizeDictionaryValues: normalizeValues,
-      normalizeItemCategories: () => {},
-      normalizeItemFields: () => {},
-      normalizeLayoutFields: () => {},
-      migrateContainerOrder: () => {},
-      nowIso: () => "2026-07-16T12:00:00.000Z",
-      readableGuestDemoLayoutName: (name, fallback) => name || fallback,
-      rememberActiveLayoutChoice: () => {},
-      repairContainerMembershipFromItemLinks: () => {},
-      saveRecoverySnapshot: () => {},
-      saveState: () => {},
-      setActivePrivateScope: () => {},
-      uniqueLayoutName: (name) => uniqueLayoutNameForState(runtime.state, name)
-    });
-
-    assert.equal(validateGuestImportSyncState(runtime.state, importedLayoutIds).ok, true);
-    return persistGuestImportBeforeCleanup(importedLayoutIds, {
-      persistImport: async (layoutIds) => {
-        guestPresentDuringServerSave = storage.has(guestStorageKey);
-        serverState = clone(runtime.state);
-        return validateGuestImportSyncState(serverState, layoutIds).ok;
-      },
-      clearGuestStorage: () => storage.delete(guestStorageKey)
-    });
+test("CRITICAL guest magic-link import: legacy guest storage alone cannot mutate an account", async () => {
+  let guestSnapshotReads = 0;
+  const storage = storageAdapter([["guest-state", JSON.stringify(editedGuestState())]]);
+  const originalGetItem = storage.getItem;
+  storage.getItem = (key) => {
+    if (key === "guest-state") guestSnapshotReads += 1;
+    return originalGetItem(key);
   };
-
-  const loadRemoteState = async () => loadRemoteStateFlow({
-    runtime,
-    dependencies: {
-      applyRemoteState: (nextState) => {
-        runtime.state = clone(nextState);
-        return true;
-      },
-      blockRemoteIntegrityFailureIfNeeded: () => false,
-      canLocalStateOverrideRemote: () => false,
-      clearStaleDirtyFlagIfNoLocalChanges: () => false,
-      cloneStateForSync: clone,
-      consumeGuestLocalLayoutCandidate: () => {
-        const candidate = pendingGuestLocalLayoutCandidate;
-        pendingGuestLocalLayoutCandidate = null;
-        return candidate;
-      },
-      createBlankBikePackingState: blankState,
-      createEmptyUserState: blankState,
-      fetchRemoteStateRecord: async () => ({
-        record: {
-          id: "list-existing",
-          payload: clone(serverState),
-          updatedAt: "2026-07-16T11:00:00.000Z",
-          stateRevision: 7
-        },
-        source: "catalog"
-      }),
-      hasLocalSavedState: () => false,
-      isMeaningfulPackingState: (value) => Boolean(Object.keys(value?.layouts || {}).length),
-      isNetworkError: () => false,
-      isPublicLayoutContext: () => false,
-      isSharedListLinkRoute: () => false,
-      isSuspiciousEmptyPackingState: (value) => !Object.keys(value?.items || {}).length && !Object.keys(value?.containers || {}).length,
-      isTemporaryServerStorageError: () => false,
-      isTimeoutError: () => false,
-      normalizeRemoteState: (value) => value ? clone(value) : null,
-      offerPendingGuestLocalLayoutsAfterRemoteLoad: offerStoredGuestLayout,
-      remoteUpdatedAt: (record) => record?.updatedAt || "",
-      rememberCurrentSyncAccount: () => {},
-      rememberRemoteIntegrityMeta: () => {},
-      renderInitialLocalFallbackIfNeeded: () => {},
-      renderPreservingPackingScroll: () => {},
-      repairPrivateMojibakeLayoutNames: () => {},
-      saveBaseState: () => {},
-      saveSyncMeta: () => {},
-      serializeState: () => clone(runtime.state),
-      setLayoutLoadProgress: () => {},
-      setLayoutLoadStatus: () => {},
-      setPersonalLayoutsLoadedStatus: () => {},
-      shouldImportGuestLayoutBeforeRemote: () => false,
-      showToast: () => {},
-      stateIntegrityMetaFromResponse: () => ({ stateRevision: 7 }),
-      statePrivateLayoutCount: (value) => Object.keys(value?.layouts || {}).length,
-      timeValue: (value) => Date.parse(value) || 0,
-      updateSyncUi: (message) => { if (message) syncMessages.push(message); }
+  const storedCandidate = resolveStoredGuestLoginHandoffCandidate({
+    candidateFromState,
+    guestStateKey: "guest-state",
+    handoffKey: "guest-handoff",
+    storage,
+    user: { email: "person@example.com" },
+    nowMs: NOW_MS
+  });
+  let generatedIds = 0;
+  let dirtyWrites = 0;
+  let serverSaves = 0;
+  let guestClears = 0;
+  const coordinator = createGuestLoginHandoffCoordinator({
+    getCandidate: () => storedCandidate,
+    runImport: async () => {
+      generatedIds += 1;
+      dirtyWrites += 1;
+      serverSaves += 1;
+      guestClears += 1;
+      return { handled: true, status: "imported", importedLayoutIds: ["new-id"] };
     }
   });
 
-  await checkAuthAndLoadFlow({
-    runtime,
-    dependencies: {
-      activateLocalStorageScope: () => {},
-      activateLocalStorageScopeForCurrentUser: () => {
-        assert.equal(authConfirmed, true, "private scope cannot activate before /auth/me confirms the account");
-        currentScope = `id:${runtime.currentUser.id}`;
-        scopeEvents.push(currentScope);
-        runtime.state = blankState();
-      },
-      activateOfflineRememberedSession: () => false,
-      apiFetch: async (path) => {
-        assert.equal(path, "/auth/me");
-        authConfirmed = true;
-        return { user };
-      },
-      applyPreferredPrivateLayoutChoice: () => {},
-      checkAdminApiCompatibility: async () => {},
-      clearOfflineRememberedSession: () => {},
-      currentPrivateLayoutRef: () => null,
-      currentPublicTemplateStatusMessage: () => "",
-      enterSignedOutPublicMode: async () => {},
-      hasLocalSavedState: () => false,
-      isAdminUser: () => Boolean(runtime.currentUser?.admin),
-      isExplicitlySignedOut: () => false,
-      isForcedOffline: () => false,
-      isNetworkError: () => false,
-      isSharedListLinkRoute: () => false,
-      loadGuestPublishedDemoOnStartup: async () => {},
-      loadRemoteState,
-      rememberAuthenticatedUser: () => {},
-      renderCachedPrivateStateDuringRemoteLoad: async () => false,
-      renderInitialLocalFallbackIfNeeded: () => {},
-      restoreSavedLayoutChoice: async () => {},
-      setExplicitlySignedOut: () => {},
-      setLayoutLoadStatus: () => {},
-      setPersonalLayoutsLoadedStatus: () => {},
-      shouldKeepCurrentReadonlyDemoAfterAuthCheck: () => false,
-      storedPrivateLayoutChoiceRef: () => null,
-      unlockOfflineState: () => {},
-      updateSyncUi: () => {},
-      GUEST_STORAGE_SCOPE: "guest"
-    }
-  });
+  const result = await coordinator.offer();
 
-  assert.equal(importedLayoutIds.length, 1, `one edited guest layout must reach the server profile; messages: ${syncMessages.join(" | ")}`);
-  const importedLayout = serverState.layouts[importedLayoutIds[0]];
-  const importedRootId = importedLayout.rootContainerIds[0];
-  const importedItemId = serverState.containers[importedRootId].itemIds[0];
-  assert.deepEqual(scopeEvents, [`id:${user.id}`]);
-  assert.equal(guestOfferCount, 1);
-  assert.equal(guestPresentDuringServerSave, true, "guest storage must survive until the server save is confirmed");
-  assert.equal(storage.has(guestStorageKey), false, "confirmed server persistence may clear guest storage");
-  assert.deepEqual(Object.values(serverState.layouts).map((layout) => layout.name).sort(), ["Weekend", "Weekend 2"]);
-  assert.equal(importedLayout.name, "Weekend 2");
-  assert.equal(serverState.containers[importedRootId].name, "Renamed handlebar bag");
-  assert.equal(serverState.items[importedItemId].name, "Renamed rain shell");
-  assert.equal(importedLayout.arrangement.items[importedItemId], importedRootId);
-  assert.ok(serverState.locations.includes("Workshop"));
-  assert.ok(serverState.categories.includes("Rain gear"));
-  assert.ok(serverState.customLocations.includes("Workshop"));
-  assert.ok(serverState.customCategories.includes("Rain gear"));
+  assert.deepEqual(result, {
+    handled: false,
+    status: "missing-candidate",
+    importedLayoutIds: []
+  });
+  assert.equal(generatedIds, 0);
+  assert.equal(dirtyWrites, 0);
+  assert.equal(serverSaves, 0);
+  assert.equal(guestClears, 0);
+  assert.equal(guestSnapshotReads, 0, "raw guest state is not even read when no receipt exists");
+  assert.equal(storage.values.has("guest-state"), true);
+});
+
+for (const user of [
+  { id: "regular-user", email: "person@example.com" },
+  { id: "admin-user", email: "person@example.com", admin: true }
+]) {
+  test(`CRITICAL guest magic-link import: prepared handoff is valid for ${user.admin ? "admin" : "regular"} accounts`, () => {
+    const { candidate, handoff } = preparedHandoff();
+    const validation = validateGuestLoginHandoff(handoff, {
+      candidate,
+      user,
+      nowMs: NOW_MS + 1000
+    });
+
+    assert.equal(validation.ok, true);
+    assert.deepEqual(validation.candidate.layouts.map((layout) => layout.layoutId), [GUEST_LAYOUT_ID]);
+  });
 }
 
-test("CRITICAL guest magic-link import: reload restores edited guest layout beside a same-name server layout", async () => {
-  await runMagicLinkReloadImport({ id: "user-regular", email: "regular@example.com" });
+test("CRITICAL guest magic-link import: account mismatch, expiry, or changed source rejects the handoff", () => {
+  const { candidate, handoff } = preparedHandoff();
+
+  assert.equal(validateGuestLoginHandoff(handoff, {
+    candidate,
+    user: { email: "other@example.com" },
+    nowMs: NOW_MS
+  }).reason, "account-mismatch");
+
+  assert.equal(validateGuestLoginHandoff(handoff, {
+    candidate,
+    user: { email: "person@example.com" },
+    nowMs: Date.parse(handoff.expiresAt) + 1
+  }).reason, "expired");
+
+  const changedCandidate = clone(candidate);
+  changedCandidate.sourceState.items["item-guest"].name = "Changed after link request";
+  assert.equal(validateGuestLoginHandoff(handoff, {
+    candidate: changedCandidate,
+    user: { email: "person@example.com" },
+    nowMs: NOW_MS
+  }).reason, "source-changed");
 });
 
-test("CRITICAL guest magic-link import: the same reload lifecycle imports for admin accounts", async () => {
-  await runMagicLinkReloadImport({ id: "user-admin", email: "admin@example.com", admin: true });
+test("CRITICAL guest magic-link import: invalid receipt is removed without touching guest data", () => {
+  const { handoff } = preparedHandoff();
+  const storage = storageAdapter([
+    ["guest-state", JSON.stringify(editedGuestState())],
+    ["guest-manifest", JSON.stringify({ version: 1, layoutIds: [GUEST_LAYOUT_ID] })],
+    ["guest-handoff", JSON.stringify({ ...handoff, requestedEmail: "other@example.com" })]
+  ]);
+
+  assert.equal(resolveStoredGuestLoginHandoffCandidate({
+    candidateFromState,
+    guestStateKey: "guest-state",
+    handoffKey: "guest-handoff",
+    nowMs: NOW_MS,
+    storage,
+    user: { email: "person@example.com" }
+  }), null);
+  assert.equal(storage.values.has("guest-handoff"), false);
+  assert.equal(storage.values.has("guest-state"), true);
+  assert.equal(storage.values.has("guest-manifest"), true);
 });
 
-test("CRITICAL guest magic-link import: failed server confirmation keeps guest storage", async () => {
+test("CRITICAL guest magic-link import: only layouts recorded as fresh guest work enter the receipt", () => {
+  const sourceState = editedGuestState();
+  sourceState.layouts["layout-old"] = {
+    ...clone(sourceState.layouts[GUEST_LAYOUT_ID]),
+    id: "layout-old",
+    name: "Old deleted work"
+  };
+  const candidate = candidateFromState(sourceState);
+  const handoff = createGuestLoginHandoff({
+    candidate,
+    eligibleLayoutIds: [GUEST_LAYOUT_ID],
+    email: "person@example.com",
+    guestSessionId: GUEST_SESSION_ID,
+    nowMs: NOW_MS
+  });
+
+  assert.deepEqual(candidate.layouts.map((layout) => layout.layoutId).sort(), [GUEST_LAYOUT_ID, "layout-old"]);
+  assert.deepEqual(handoff.layoutIds, [GUEST_LAYOUT_ID]);
+  assert.equal(validateGuestLoginHandoff(handoff, {
+    candidate,
+    user: { email: "person@example.com" },
+    nowMs: NOW_MS
+  }).ok, true);
+});
+
+test("CRITICAL guest magic-link import: storage-backed receipt survives the magic-link reload", () => {
+  const initialState = editedGuestState();
+  const changedState = clone(initialState);
+  changedState.items["item-guest"].name = "Rain shell changed this session";
+  const tracker = createGuestWorkspaceSessionTracker(initialState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const storage = storageAdapter([["guest-state", JSON.stringify(changedState)]]);
+  assert.equal(recordGuestWorkspaceSessionChanges({
+    enabled: true,
+    layoutIds: tracker.changedLayoutIds(changedState),
+    manifestKey: "guest-manifest",
+    sessionId: tracker.sessionId,
+    storage,
+    now: () => "2026-07-24T01:14:00.000Z"
+  }), true);
+  assert.equal(storeGuestLoginHandoff({
+    candidate: candidateFromState(changedState),
+    email: "person@example.com",
+    enabled: true,
+    guestSessionId: tracker.sessionId,
+    handoffKey: "guest-handoff",
+    manifestKey: "guest-manifest",
+    nowMs: NOW_MS,
+    storage
+  }), true);
+
+  const afterReload = resolveStoredGuestLoginHandoffCandidate({
+    candidateFromState,
+    guestStateKey: "guest-state",
+    handoffKey: "guest-handoff",
+    nowMs: NOW_MS + 1000,
+    storage,
+    user: { id: "regular-user", email: "person@example.com" }
+  });
+
+  assert.deepEqual(afterReload.layouts.map((layout) => layout.layoutId), [GUEST_LAYOUT_ID]);
+  assert.equal(consumeStoredGuestLoginHandoff(storage, "guest-handoff"), true);
+  assert.equal(storage.values.has("guest-state"), true);
+});
+
+test("CRITICAL guest magic-link import: unchanged stale snapshot cannot receive a current-session receipt", () => {
+  const staleState = editedGuestState();
+  const tracker = createGuestWorkspaceSessionTracker(staleState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const storage = storageAdapter([["guest-state", JSON.stringify(staleState)]]);
+
+  assert.equal(recordGuestWorkspaceSessionChanges({
+    enabled: true,
+    layoutIds: tracker.changedLayoutIds(staleState),
+    manifestKey: "guest-manifest",
+    sessionId: tracker.sessionId,
+    storage
+  }), true);
+  assert.deepEqual(JSON.parse(storage.values.get("guest-manifest")).layoutIds, []);
+  assert.equal(storeGuestLoginHandoff({
+    candidate: candidateFromState(staleState),
+    email: "person@example.com",
+    enabled: true,
+    guestSessionId: tracker.sessionId,
+    handoffKey: "guest-handoff",
+    manifestKey: "guest-manifest",
+    nowMs: NOW_MS,
+    storage
+  }), false);
+  assert.equal(storage.values.has("guest-handoff"), false);
+  assert.equal(storage.values.has("guest-state"), true);
+});
+
+test("CRITICAL guest magic-link import: service timestamps do not turn a stale layout into current work", () => {
+  const staleState = editedGuestState();
+  const tracker = createGuestWorkspaceSessionTracker(staleState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const metadataOnlyState = clone(staleState);
+  metadataOnlyState.layouts[GUEST_LAYOUT_ID].updatedAt = "2026-07-24T01:14:30.000Z";
+  metadataOnlyState.items["item-guest"].updatedAt = "2026-07-24T01:14:30.000Z";
+  metadataOnlyState.containers["bag-guest"].editedByDeviceId = "device-current";
+
+  assert.equal(tracker.layoutChanged(metadataOnlyState, GUEST_LAYOUT_ID), false);
+});
+
+test("CRITICAL guest magic-link import: display preferences alone do not authorize a stale layout", () => {
+  const staleState = editedGuestState();
+  const tracker = createGuestWorkspaceSessionTracker(staleState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const preferencesOnlyState = clone(staleState);
+  preferencesOnlyState.itemDisplayMode = "photos";
+  preferencesOnlyState.showItemMeta = false;
+  preferencesOnlyState.showFilterContext = true;
+
+  assert.equal(tracker.layoutChanged(preferencesOnlyState, GUEST_LAYOUT_ID), false);
+});
+
+test("CRITICAL guest magic-link import: manifest from an older guest session cannot arm a new receipt", () => {
+  const staleState = editedGuestState();
+  const storage = storageAdapter([
+    ["guest-state", JSON.stringify(staleState)],
+    ["guest-manifest", JSON.stringify({
+      version: 2,
+      sessionId: "guest-session-old",
+      layoutIds: [GUEST_LAYOUT_ID],
+      updatedAt: "2026-07-20T12:00:00.000Z"
+    })]
+  ]);
+
+  assert.equal(storeGuestLoginHandoff({
+    candidate: candidateFromState(staleState),
+    email: "person@example.com",
+    enabled: true,
+    guestSessionId: GUEST_SESSION_ID,
+    handoffKey: "guest-handoff",
+    manifestKey: "guest-manifest",
+    nowMs: NOW_MS,
+    storage
+  }), false);
+  assert.equal(storage.values.has("guest-handoff"), false);
+});
+
+test("CRITICAL guest magic-link import: reverting the current-session change removes layout eligibility", () => {
+  const initialState = editedGuestState();
+  const tracker = createGuestWorkspaceSessionTracker(initialState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const changedState = clone(initialState);
+  changedState.items["item-guest"].name = "Temporary edit";
+  const storage = storageAdapter();
+
+  recordGuestWorkspaceSessionChanges({
+    enabled: true,
+    layoutIds: tracker.changedLayoutIds(changedState),
+    manifestKey: "guest-manifest",
+    sessionId: tracker.sessionId,
+    storage
+  });
+  assert.deepEqual(JSON.parse(storage.values.get("guest-manifest")).layoutIds, [GUEST_LAYOUT_ID]);
+
+  recordGuestWorkspaceSessionChanges({
+    enabled: true,
+    layoutIds: tracker.changedLayoutIds(initialState),
+    manifestKey: "guest-manifest",
+    sessionId: tracker.sessionId,
+    storage
+  });
+  assert.deepEqual(JSON.parse(storage.values.get("guest-manifest")).layoutIds, []);
+});
+
+test("CRITICAL guest magic-link import: a changed non-active target layout is recorded", () => {
+  const initialState = editedGuestState();
+  initialState.layouts["layout-target"] = {
+    id: "layout-target",
+    name: "Target",
+    rootContainerIds: [],
+    arrangement: { rootContainerIds: [], containers: {}, items: {}, packedItems: {} }
+  };
+  const tracker = createGuestWorkspaceSessionTracker(initialState, {
+    sessionId: GUEST_SESSION_ID
+  });
+  const changedState = clone(initialState);
+  changedState.layouts["layout-target"].name = "Target changed";
+
+  assert.equal(changedState.activeLayoutId, GUEST_LAYOUT_ID);
+  assert.deepEqual(tracker.changedLayoutIds(changedState), ["layout-target"]);
+});
+
+test("CRITICAL guest magic-link import: failed remote confirmation preserves guest storage and prevents duplicate import", async () => {
+  const { candidate } = preparedHandoff();
+  let receiptPresent = true;
   let guestStoragePresent = true;
-  const saved = await persistGuestImportBeforeCleanup(["layout-imported"], {
-    persistImport: async () => false,
-    clearGuestStorage: () => { guestStoragePresent = false; }
+  let importCount = 0;
+  let pendingCount = 0;
+
+  const coordinator = createGuestLoginHandoffCoordinator({
+    getCandidate: () => receiptPresent ? candidate : null,
+    runImport: (confirmedCandidate) => runGuestLoginHandoffImport(confirmedCandidate, {
+      importLayouts: () => {
+        importCount += 1;
+        return ["layout-imported"];
+      },
+      consumeHandoff: () => {
+        receiptPresent = false;
+      },
+      persistImportBeforeCleanup: persistGuestImportBeforeCleanup,
+      persistImport: async () => false,
+      clearGuestStorage: () => {
+        guestStoragePresent = false;
+      },
+      onImportPending: () => {
+        pendingCount += 1;
+      }
+    })
   });
 
-  assert.equal(saved, false);
+  const first = await coordinator.offer();
+  const second = await coordinator.offer();
+
+  assert.equal(first.status, "pending-save");
+  assert.equal(second.status, "already-handled");
+  assert.equal(importCount, 1);
+  assert.equal(pendingCount, 1);
+  assert.equal(receiptPresent, false);
   assert.equal(guestStoragePresent, true);
+});
+
+test("CRITICAL guest magic-link import: confirmed remote save is the only path that clears guest storage", async () => {
+  const { candidate } = preparedHandoff();
+  const events = [];
+  const result = await runGuestLoginHandoffImport(candidate, {
+    importLayouts: () => {
+      events.push("import");
+      return ["layout-imported"];
+    },
+    consumeHandoff: () => events.push("consume-receipt"),
+    persistImportBeforeCleanup: persistGuestImportBeforeCleanup,
+    persistImport: async () => {
+      events.push("confirm-server");
+      return true;
+    },
+    clearGuestStorage: () => events.push("clear-guest")
+  });
+
+  assert.equal(result.status, "imported");
+  assert.deepEqual(events, ["import", "consume-receipt", "confirm-server", "clear-guest"]);
+});
+
+test("CRITICAL guest magic-link import: app arms handoff only after a successful explicit magic-link request", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const loadFlowSource = readFileSync(new URL("../../src/sync/load-remote-state-flow.js", import.meta.url), "utf8");
+  const saveFlowSource = readFileSync(new URL("../../src/sync/save-remote-state-flow.js", import.meta.url), "utf8");
+  const requestIndex = appSource.indexOf('await apiFetch("/auth/request-magic-link"');
+  const prepareIndex = appSource.indexOf("prepareGuestLoginHandoff(email);");
+
+  assert.ok(requestIndex >= 0);
+  assert.ok(prepareIndex > requestIndex);
+  assert.match(appSource, /createGuestWorkspaceSessionTracker\(state\)/);
+  assert.match(appSource, /layoutIds:\s*enabled\s*\?\s*guestWorkspaceSessionTracker\.changedLayoutIds\(state\)\s*:\s*\[\]/);
+  assert.match(appSource, /guestSessionId:\s*guestWorkspaceSessionTracker\.sessionId/);
+  assert.match(appSource, /function storedGuestLoginHandoffCandidate\(\)[\s\S]*?resolveStoredGuestLoginHandoffCandidate\(\{/);
+  const handoffSource = readFileSync(new URL("../../src/public/guest-login-handoff.js", import.meta.url), "utf8");
+  assert.match(handoffSource, /const handoff = readJson\(storage, handoffKey\);\s+if \(!handoff\) return null;\s+const sourceState = readJson\(storage, guestStateKey\);/);
+  for (const source of [appSource, loadFlowSource, saveFlowSource]) {
+    assert.doesNotMatch(source, /storedGuestLocalLayoutCandidate|offerSaveGuestLocalLayouts|consumeGuestLocalLayoutCandidate/);
+  }
+  assert.match(loadFlowSource, /offerPendingGuestLoginHandoffAfterRemoteLoad/);
+  assert.match(saveFlowSource, /offerPendingGuestLoginHandoffAfterRemoteLoad/);
 });

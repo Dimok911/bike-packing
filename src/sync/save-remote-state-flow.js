@@ -256,14 +256,13 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     askConflictResolution,
     blockRemoteIntegrityFailureIfNeeded,
     canLocalStateOverrideRemote,
-    consumeGuestLocalLayoutCandidate,
     filterAutoResolvedMergeConflicts,
     isOwnLayoutEchoConflict,
     loadBaseState,
     mergeStateFromBase,
     normalizeRemoteState,
     nowIso,
-    offerSaveGuestLocalLayouts,
+    offerPendingGuestLoginHandoffAfterRemoteLoad = async () => false,
     remoteUpdatedAt,
     rememberConflictRemoteMeta,
     rememberCurrentSyncAccount,
@@ -297,7 +296,6 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
     return;
   }
   if (preferServerWithoutPrompt || !canLocalStateOverrideRemote()) {
-    const guestCandidate = consumeGuestLocalLayoutCandidate();
     if (applyRemoteState(remoteState, updatedAt, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout })) {
       const message = localText(
         "The server version was loaded · the temporary local copy was not sent",
@@ -305,7 +303,7 @@ export async function handleRemoteSaveConflictFlow(error, { runtime, dependencie
       );
       updateSyncUi(message);
       if (notify) showToast(message, "warning");
-      if (guestCandidate) await offerSaveGuestLocalLayouts(guestCandidate);
+      await offerPendingGuestLoginHandoffAfterRemoteLoad();
     }
     return;
   }

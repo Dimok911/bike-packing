@@ -62,16 +62,6 @@ export function guestDemoCopyLayoutName(sourceName = "", {
   return uniqueName ? uniqueName(baseName) : baseName;
 }
 
-export function shouldImportGuestLayoutBeforeRemote({
-  candidate,
-  remoteStateMeaningful,
-  localStateCanOverrideRemote
-} = {}) {
-  return Boolean(candidate?.sourceState && candidate.layoutId) &&
-    !remoteStateMeaningful &&
-    !localStateCanOverrideRemote;
-}
-
 export function guestDemoStartupAction({
   forcePublicScope = false,
   preferLocalCopy = false,

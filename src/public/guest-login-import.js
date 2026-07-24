@@ -27,6 +27,28 @@ export function canImportGuestLayoutsForAuthenticatedUser(user = null) {
   return Boolean(user && typeof user === "object");
 }
 
+export function guestCandidateLayouts(candidate, {
+  fallbackName = ""
+} = {}) {
+  const entries = Array.isArray(candidate?.layouts) && candidate.layouts.length
+    ? candidate.layouts
+    : (candidate?.layoutId ? [{
+      layoutId: candidate.layoutId,
+      layoutName: candidate.layoutName,
+      fallbackName
+    }] : []);
+  return entries
+    .map((entry) => {
+      const entryFallbackName = String(entry?.fallbackName || fallbackName).trim() || fallbackName;
+      return {
+        layoutId: String(entry?.layoutId || "").trim(),
+        layoutName: readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName),
+        fallbackName: entryFallbackName
+      };
+    })
+    .filter((entry) => entry.layoutId);
+}
+
 export function guestLayoutHasUserContentEdits(sourceState, layout) {
   if (!layout || !isGuestDemoCopyLayoutRecord(layout)) return false;
   if (guestDemoCopyRecordWasEdited(layout, layout)) return true;

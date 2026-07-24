@@ -1,55 +1,103 @@
-# Guest login import flow
+# Guest login handoff flow
 
-This document fixes the contract for a new user who starts without an account, edits a local demo-based packing layout, and then signs in or creates an account.
+This document fixes the contract for a visitor who does real work without an
+account and later signs in, while preventing an old guest `localStorage`
+snapshot from being copied into an account accidentally.
 
-## Expected flow
+## Safety boundary
 
-1. A signed-out visitor opens the app in the selected UI language.
-2. The app loads the first server-confirmed demo template for that language.
-3. In the normal editable app mode, the app creates one local guest layout from that demo template.
-4. The guest layout is a private local copy, not a public template. Its items, containers, layout id, and layout arrangement must be private ids before sync.
-5. Automatic guest copies should prefer the server-confirmed template catalog title over the payload layout title. For EN, the first demo title is `Demo-packing`; a mojibake payload/local title must not become the private guest layout name.
-6. Reopening the app signed out must reuse the same guest demo copy instead of creating another copy.
-7. The guest can edit the layout locally. Those edits stay in the guest storage scope until auth is confirmed.
-8. When `/auth/me` confirms a real user session, the app switches to that user's private storage scope and compares the guest candidate with the account's existing layouts.
-9. If the account already has a layout with the same normalized name, the guest layout is imported automatically under a unique name.
-10. Imported guest layouts are saved as normal private user layouts and then pushed to the server.
-11. After import, the active layout should be the imported private layout, not the public demo template.
-12. If an older build loaded the account and lost the in-memory pending guest candidate, the app must still recover the candidate from the saved `guest` storage scope after the private account state is loaded. After the guest layouts are successfully saved to the account, the imported guest scope snapshot can be cleared to prevent duplicate imports.
-13. The guest storage scope may be cleared only after the app verifies the imported layout ids in the remote state returned by the list API. A local empty-save abort is not success, even if it clears the dirty flag.
+A raw guest snapshot is data, not permission to import it. Its presence alone
+must never:
 
-## UI preferences
+- modify authenticated account state;
+- create layout, item, or container ids;
+- set the account dirty flag;
+- start a save or synchronization;
+- clear guest storage.
 
-The guest's display preferences are part of this handoff. When a guest signs in, the account view must keep the guest settings for item photos, item labels, and filter context:
+Recovery snapshots and other backup/history payloads are never guest-login
+sources.
 
-- `itemDisplayMode`
-- `showItemMeta`
-- `showFilterContext`
+## Explicit handoff
 
-Changing only these display settings is enough to make the automatic guest demo copy worth importing. Otherwise a user could turn photos/labels on or off before login and lose that visible state immediately after login.
+There is no extra confirmation dialog. The explicit user action is requesting a
+magic link from the editable guest workspace.
 
-## Server contract
+1. Guest edits are saved in the unscoped `guest` storage as before.
+2. Every time a guest workspace is opened, the app creates a new in-memory
+   `sessionId` and captures a content fingerprint baseline for each existing
+   layout. The session id is deliberately not recovered from an old manifest.
+3. On a normal editable guest save, the app recomputes every layout against its
+   session baseline. A layout is eligible only when its record, referenced
+   items/bags, arrangement, or layout dictionaries differ. This also covers a
+   non-active target layout changed through a picker. Pure timestamps, device
+   metadata, and global display preferences do not authorize a stale layout.
+   Reverting to the baseline removes eligibility.
+4. Manifest v2 stores the current `sessionId` and only those changed layout ids.
+   A manifest from another session is treated as empty, even when it contains
+   ids from an old snapshot.
+5. The app requests the magic link from the API.
+6. Only after that request succeeds, the app writes a short-lived handoff
+   receipt. A failed or offline request does not arm an import.
+7. The receipt contains the current guest `sessionId`, normalized requested
+   email, eligible layout ids, creation/expiry timestamps, and a fingerprint of
+   the guest candidate.
+8. Following the link may reload the page. The receipt and guest snapshot remain
+   in `localStorage`, so the intentional handoff survives that reload.
+9. The app activates the private `id:<user>` storage scope only after
+   `/auth/me` confirms the real session and then loads the server account state.
+10. Import proceeds only if the confirmed account email matches the receipt, the
+   receipt is unexpired, all recorded layouts still exist, and the source
+   fingerprint still matches.
+11. The eligible guest layouts are copied as new private layouts. Name conflicts
+   receive unique names; items and containers receive private ids.
+12. The receipt is consumed after the local account copy is materialized, so
+    repeated load/save/conflict paths cannot duplicate the same handoff.
+13. Guest storage is cleared only after the server save succeeds and a fresh
+    server read confirms the imported layout ids and their content.
 
-The server should never persist public/demo/shared entities into a private list. A valid guest import must copy public template content into private records before save:
+An invalid, expired, account-mismatched, or source-mismatched receipt is removed,
+but the guest snapshot and guest-work manifest are retained. An old guest
+snapshot with no receipt is simply ignored. A stale manifest cannot be upgraded
+into a receipt because its session id cannot match the new in-memory session.
 
-- no private `item.id` or `container.id` may start with `demo-`, `admin-demo-`, `shared-`, or `admin-shared-`;
-- no private layout should keep public markers such as `adminDemo`, `adminSharedSourceId`, `publicCatalogLayoutId`, `sharedSourceId`, public `listId`, or public `visibility`;
-- the private layout arrangement must point only to private copied item/container ids.
+The contract is identical for regular and administrator accounts.
 
-If this contract is broken, the API can reject or filter those records during list assembly, which looks in the UI like a layout that appears after login and then disappears or becomes empty after the next server refresh.
+## Save failure and retry
 
-## Empty import guard
+If remote confirmation fails after the account copy has been created:
 
-The exact failure mode seen in v839 was: guest layouts appeared locally after login, `saveRemoteState()` detected a suspicious empty packing state (`0 items`, `0 containers`) and did not send it to the server, then `saveGuestImportToRemote()` treated the cleared dirty flag as a successful save. That allowed the app to clear the guest storage scope even though the remote account never returned the imported layouts.
+- the copied account state stays locally saved and dirty;
+- normal sync retry continues when the server is available;
+- the guest snapshot stays intact as a safety copy;
+- the consumed receipt prevents a second import and another set of ids.
 
-The frontend contract is now:
+The frontend validates imported layout ids and their item/container counts both
+before save and in the state returned by the server. Clearing a dirty flag after
+an aborted empty save is not confirmation.
 
-- before saving, validate the imported layout ids against local counts;
-- after saving, fetch the remote state and validate that the same imported layout ids are present with copied content;
-- keep the account state dirty and keep the guest storage scope if either check fails.
+## Offline behavior
 
-## Production diagnostic notes, 2026-05-26
+Authenticated offline work is unrelated to guest handoff. It remains in the
+user's `id:<user>` scope, becomes dirty, and follows the existing synchronization
+flow after connectivity returns.
 
-The production public catalog at `https://api.vniipo-help.ru/letters-vniipo/api/bike-packing/public-templates` returns UTF-8 JSON with correct Cyrillic template titles. The current deployed API capability version is `2026-05-26.public-template-photo-reference-copy-v1`.
+A signed-out guest can continue editing offline. Because the magic-link request
+cannot succeed offline, no new receipt is created and no account import begins.
+The guest data remain available. If a valid handoff was already created and the
+link reload occurs while offline, import waits until `/auth/me` and the private
+server state can be confirmed.
 
-If the UI shows mojibake such as `РЎРµ...`, first check whether the broken text is already in a private user's saved payload or localStorage. The public demo row `public-demo-state` currently returns the correct title `Демо-укладка`.
+## Private copy contract
+
+The server must never receive public/demo/shared identities as private records.
+A valid import copies template content into the private namespace:
+
+- private item/container ids do not keep public id prefixes;
+- private layouts do not keep public catalog, visibility, or admin-source
+  markers;
+- layout arrangements reference only the copied private item/container ids.
+
+Guest display preferences (`itemDisplayMode`, `showItemMeta`, and
+`showFilterContext`) follow an otherwise valid layout handoff; changing those
+preferences alone never authorizes an old guest layout.

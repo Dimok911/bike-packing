@@ -38,6 +38,8 @@ Use this as the quick orientation layer before editing. `AGENTS.md` remains the 
 - `src/public/shared-admin-merge.js`: admin-side merge of published/shared state and built-in shared entries.
 - `src/public/shared-admin-materialize.js`: materializing shared templates into editable admin layouts.
 - `src/public/guest-login-import.js`: guest local layout import planning, validation, and state mutation.
+- `src/public/guest-login-handoff.js`: per-open guest session baseline/fingerprints, session-bound guest-work manifest, and short-lived magic-link receipt validation.
+- `src/public/guest-login-import-flow.js`: one-shot post-auth guest import orchestration and persist-before-cleanup contract.
 - `src/public/template-copy.js`: public/template copy source scoring and record builders.
 - `src/public/template-copy-flow.js`: admin template-copy creation flow from local or published template sources.
 - `src/public/copy-published-container.js`: published/shared container tree copy into editable state.

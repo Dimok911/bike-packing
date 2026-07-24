@@ -2358,13 +2358,13 @@ test("CRITICAL guest login import: admin accounts keep edited guest layouts and 
   }), "Weekend 2");
 
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
-  const captureStart = appSource.indexOf("function shouldCaptureGuestLocalLayoutCandidate");
-  const candidateStart = appSource.indexOf("function guestCandidateLayouts", captureStart);
-  const offerStart = appSource.indexOf("async function offerPendingGuestLocalLayoutsAfterRemoteLoad");
+  const candidateStart = appSource.indexOf("function storedGuestLoginHandoffCandidate");
+  const candidateEnd = appSource.indexOf("function privateMojibakeLayoutFallbackName", candidateStart);
+  const offerStart = appSource.indexOf("async function offerPendingGuestLoginHandoffAfterRemoteLoad");
   const importStart = appSource.indexOf("function importGuestLocalLayouts", offerStart);
-  assert.ok(captureStart >= 0 && candidateStart > captureStart);
+  assert.ok(candidateStart >= 0 && candidateEnd > candidateStart);
   assert.ok(offerStart >= 0 && importStart > offerStart);
-  assert.doesNotMatch(appSource.slice(captureStart, candidateStart), /isAdminSession\(\)/);
+  assert.doesNotMatch(appSource.slice(candidateStart, candidateEnd), /isAdminSession\(\)/);
   assert.doesNotMatch(appSource.slice(offerStart, importStart), /isAdminSession\(\)/);
 });
 

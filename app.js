@@ -5,6 +5,8 @@ import {
   BASE_STATE_KEY,
   RECOVERY_STATE_KEY,
   RECOVERY_STATE_MAX,
+  GUEST_WORKSPACE_MANIFEST_KEY,
+  GUEST_LOGIN_HANDOFF_KEY,
   AUTH_SIGNED_OUT_KEY,
   FORCE_OFFLINE_KEY,
   UI_SETTINGS_KEY,
@@ -117,7 +119,6 @@ import {
   isStartupGuestDemoPreview as isStartupGuestDemoPreviewState,
   readableGuestDemoLayoutName,
   shouldKeepReadonlyDemoAfterAuthCheck,
-  shouldImportGuestLayoutBeforeRemote,
   shouldRenderGuestDemoPreviewDuringAuthCheck
 } from "./src/public/guest-demo-startup.js";
 import { handleGuestLanguageLayoutSwitch } from "./src/public/guest-language-layout.js";
@@ -139,6 +140,7 @@ import {
 } from "./src/ui/history-navigation.js";
 import {
   canImportGuestLayoutsForAuthenticatedUser,
+  guestCandidateLayouts as guestCandidateLayoutsValue,
   guestLayoutHasUserContentEdits,
   guestLocalLayoutCandidateFromState,
   importGuestLocalLayoutsToState,
@@ -146,6 +148,17 @@ import {
   removeLegacyGuestImportPlaceholders,
   validateGuestImportSyncState
 } from "./src/public/guest-login-import.js";
+import {
+  consumeStoredGuestLoginHandoff,
+  createGuestWorkspaceSessionTracker,
+  recordGuestWorkspaceSessionChanges,
+  resolveStoredGuestLoginHandoffCandidate,
+  storeGuestLoginHandoff
+} from "./src/public/guest-login-handoff.js";
+import {
+  createGuestLoginHandoffCoordinator,
+  runGuestLoginHandoffImport
+} from "./src/public/guest-login-import-flow.js";
 import {
   canEditLocalUnpublishedTemplate as canEditLocalUnpublishedTemplateValue,
   canEditManagedTemplate as canEditManagedTemplateValue,
@@ -226,10 +239,7 @@ import {
   guestDemoCopyCleanupPlan,
   guestDemoCopyRecordWasEdited,
   guestLocalDisplayPreferences,
-  guestLocalDisplayPreferencesWereChanged,
-  guestLocalLayoutImportPlan,
   isAutomaticGuestDemoCopyLayout,
-  isGuestLocalPersonalLayout,
   normalizeDemoTemplateName,
   normalizePublishedDemoTemplatePayload
 } from "./src/public/demo-template-state.js";
@@ -1145,6 +1155,7 @@ serverConfirmedDemoTemplates = hydratedPublicTemplateCache.demoTemplates;
 serverConfirmedSharedLayouts = hydratedPublicTemplateCache.sharedTemplates;
 let startupLocalStateWasFallback = hadLocalStateAtStartup && !hadRemoteBaselineAtStartup && isGeneratedStartupFallbackState(state);
 let hadAuthoritativeLocalStateAtStartup = hadLocalStateAtStartup && !startupLocalStateWasFallback;
+const guestWorkspaceSessionTracker = createGuestWorkspaceSessionTracker(state);
 const uiSettings = loadUiSettings();
 let interfaceColorBrightness = normalizeInterfaceColorBrightness(uiSettings.interfaceColorBrightness);
 let interfaceColorTheme = normalizeInterfaceColorTheme(uiSettings.interfaceColorTheme);
@@ -1272,8 +1283,6 @@ let rootContainerDialogPhotoObjectUrls = [];
 let rootContainerDialogPhotoActiveIndex = 0;
 let sharedDialogCopyItemId = "";
 let backupImportState = null;
-let pendingGuestLocalLayoutCandidate = null;
-let storedGuestLocalLayoutCandidateOffered = false;
 let localDemoCopyInFlight = null;
 let sharedPickerSourceItemId = "";
 let sharedPickerSourceContainerId = "";
@@ -1354,6 +1363,10 @@ const {
   askUnsavedChangesDialog,
   openConfirmDialog
 } = createConfirmDialogController({ refs, openModalDialog });
+const guestLoginHandoffCoordinator = createGuestLoginHandoffCoordinator({
+  getCandidate: storedGuestLoginHandoffCandidate,
+  runImport: runGuestLoginHandoffCandidate
+});
 adminReportsDialogController = createAdminReportsDialogController({
   refs,
   fetchReports: () => fetchAdminReports(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
@@ -1542,7 +1555,7 @@ const appTailControllerDeps = {
   allSharedLayoutsByAdminOrder, annotatePayloadError, apiCapabilitySet, apiErrorMessage, apiFetch,
   apiFetchRequest, apiUploadFormData, apiUploadFormDataRequest, appUnlocked, appendCopiedFromTemplateNote,
   applyBackupRestoreModeUi, applyCategoryFilterDialog, applyCollectionModeFromSource, applyConflictChoices, applyConflictChoicesToState, applyDefaultCollapsedContainers,
-  applyEditMeta, applyEntityChangesToState, applyGuestLocalDisplayPreferences, applyItemAvailabilityStatus, applyLayoutArrangement, applyLayoutArrangementToState,
+  applyEditMeta, applyEntityChangesToState, applyItemAvailabilityStatus, applyLayoutArrangement, applyLayoutArrangementToState,
   applyLayoutEditFields, applyLayoutLocked, applyLoadedStateToCurrentScope, applyPackingVisualStyle, applyPackingVisualStyleClass, applyPreferredPrivateLayoutChoice,
   applyPublicTemplateLanguage, applyPublicTemplateMetadataToPayload, applyPublishedPayloadPhotosToLayoutState, applyRemoteState, applySearchInputNow,
   applyStaticTranslations, applyStaticTranslationsUi, applyingLayoutArrangement, applyingRemoteState, arePublishedTemplatesBlocked,
@@ -1566,9 +1579,9 @@ const appTailControllerDeps = {
   cloneStateForSync, cloneStateForSyncPayload, closeDialogWithoutRestoringFocus, closeTopMenu, collapsedDefaultsForTemplateContainers, containerCopyExcludedLayoutIds,
   collectManagedPublicDraftRecords, collectPublicLayoutRecordIds, commitSearchInputForNavigation, comparableValueForMerge, compareDemoTemplateOrder,
   compareSharedLayoutAdminOrder, compareSharedLayoutIndexEntries, compareSharedTemplateAdminOrder, confirmContainerTreeCopyToLayout, confirmCreateLayoutFromReadonlyTemplate,
-  confirmGuestImportRemoteState, confirmLoadedDemoPublicTemplate, confirmPublicCopyDuplicates, confirmPublicLayoutTransition, confirmRepeatedSharedLayoutCopy,
+  confirmLoadedDemoPublicTemplate, confirmPublicCopyDuplicates, confirmPublicLayoutTransition, confirmRepeatedSharedLayoutCopy,
   conflictDefaultChoice, conflictFormatter, conflictKindLabel, conflictLabel, conflictSummary,
-  conflictTimestamp, conflictVersionStamp, consumeGuestLocalLayoutCandidate, containerCategories, containerCreatedTimeForState,
+  conflictTimestamp, conflictVersionStamp, containerCategories, containerCreatedTimeForState,
   containerEntitySyncUnavailable, containerPathForState, containerTreeSnapshotScore, containerWeightForState, copyItemInState,
   copyMissingLayoutSnapshotItemsToLayout, copyMissingPublicSnapshotItemsToLayout, copyPickerLayoutLabel, copyPublishedContainerToState, copyPublishedContainerToStateValue,
   copyPublishedDemoStateToLocalLayout, copyPublishedItemToState, copyRecordPhotosForLocalDuplicate, copySharedItem,
@@ -1616,7 +1629,6 @@ const appTailControllerDeps = {
   getTemplateCopyRootSnapshots, getTemplateCopySourceScore, getUnsyncedPhotoEntries, getUnsyncedPhotoEntriesForSync, getUploadablePhotoEntries,
   getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, guestCandidateLayouts,
   guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction, guestLayoutHasUserContentEdits,
-  guestLayoutImportFallbackName, guestLocalDisplayPreferences, guestLocalDisplayPreferencesWereChanged, guestLocalLayoutCandidate, guestLocalLayoutImportPlan,
   hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton, handlePackingTabTouchEnd,
   handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn, hasContainerDimensions,
   hasGeneratedPublicArtifacts, hasGuestDemoCopyLayoutRecord, hasLegacyPayloadChanges, hasLegacyPayloadChangesForSync, hasListFreshnessSignal,
@@ -1624,7 +1636,7 @@ const appTailControllerDeps = {
   hasStateIntegrityMeta, hasStoredLocalValue, highlight, highlightSearchText, historyComparisonState,
   historyPayloadTitle, historyRecordKey, historyRecordState, historyRecordStateForSync, historyRecords,
   historySourceLabel, hydrateItemPhotos, hydrateLocalSharedTemplateCatalogFromState, importDemoStateAsEditableLayout, importDemoStateAsEditableLayoutValue,
-  importGuestLocalLayouts, importGuestLocalLayoutsToState, init, initialRemoteLoadPending, installRuntimeActiveLayoutId,
+  init, initialRemoteLoadPending, installRuntimeActiveLayoutId,
   isActiveLayoutChoiceExplicit, isAdminEditablePublishedLayout, isAdminPublicEditScope, isAdminSession,
   isAdminUser, isAutomaticGuestDemoCopyLayout, isBike3dPackingView, isCollectionPackedVisible, isConcretePublicSharedLayoutListRecord,
   isConflictMetaField, isContainerPickerContainerCopyModeValue, isContainerPickerCopyModeValue, isContainerPickerItemCopyModeValue, isCurrentLocalStateDestructiveRegression,
@@ -1632,7 +1644,7 @@ const appTailControllerDeps = {
   isDestructiveStateRegression, isDisposableManagedPublicDraft, isEditableElement, isEntitySyncTypeUnavailable, isEntitySyncUnavailableError,
   isExplicitlySignedOut, isForcedOffline, isForeignLocalSyncState, isGeneratedCatalogContainerStateArtifact, isGeneratedCatalogContainerSyncArtifact,
   isGeneratedCatalogStateArtifact, isGeneratedCatalogSyncArtifact, isGeneratedStartupFallbackState, isGuestDemoCopyLayout, isGuestDemoCopyLayoutRecord,
-  isGuestLocalPersonalLayout, isGuestSession, isItemAwayFromHomeAndBikeValue, isItemInCatalogForState, isItemInLayoutForState,
+  isGuestSession, isItemAwayFromHomeAndBikeValue, isItemInCatalogForState, isItemInLayoutForState,
   itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, isItemUnavailableForPacking, isItemWithoutWeightValue, isLayoutCreateTemplateLayoutModeValue, isLayoutLocked, isLayoutMeaningful, isLocalDevOrigin, isManagedDemoTemplateLayout,
   isManagedPublicTemplateDraft, isManagedTemplateUnpublished, managedTemplatePublicationAction, isMeaningfulPackingState, isNetworkError, isOfflineRememberedAdminSession, isOfflineRememberedSession,
   isOwnLayoutEchoConflict, isOwnLayoutEchoConflictValue, isPackingStateShape, isPhotoStoredForList, isPhotoUsableFromServer,
@@ -1676,12 +1688,12 @@ const appTailControllerDeps = {
   normalizePackingVisualStyle, normalizePhotoUrlFields, normalizePrivateDictionariesForSyncState, normalizePrivateLayoutChoiceForStateRestore, normalizePublicTemplateMetadataResponse,
   normalizePublishedDemoTemplatePayload, normalizePublishedStatePayload, normalizeRemoteListRecord, normalizeRemoteState,
   normalizeRestoredBackupState, normalizeSharedGearName, normalizeSortMode, normalizeStateRevision, normalizeUiLanguage,
-  nowIso, offerLoadServerForTruncatedLocalState, offerPendingGuestLocalLayoutsAfterRemoteLoad, offerSaveGuestLocalLayouts,
+  nowIso, offerLoadServerForTruncatedLocalState,
   offlineRememberedUser, openAdminDemoLayout, openAuthDialog, openCategoryFilterDialog, openConfirmDialog,
   openDemoLayoutFromSelect, openHelpLimitsDialog, openHelpLimitsDialogUi, openHistoryDialog, openModalDialog,
   openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog, openSharedListFromLink,
   orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible, parseContainerDimensionInput,
-  parseVolumeInput, parseWeightInput, pendingGuestLocalLayoutCandidate, persistActiveLayoutSelection, persistStateSnapshot,
+  parseVolumeInput, parseWeightInput, persistActiveLayoutSelection, persistStateSnapshot,
   personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
@@ -1727,7 +1739,7 @@ const appTailControllerDeps = {
   reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm, rootContainerSortMode,
   rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow, runSyncNowFlow,
   safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice, saveActivePackingListId,
-  saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner, saveGuestImportToRemote,
+  saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
@@ -1745,16 +1757,16 @@ const appTailControllerDeps = {
   sharedGearPhotos, sharedItemFromPublishedItem, sharedLayoutCatalogDiagnostics, sharedLayoutIdFromLocation, sharedLayoutIdFromPublicListRecord,
   sharedLayoutIdFromUrl, sharedLayoutItemKey, sharedLayoutItemKeyFromScope, sharedLayoutLanguageFromPayload, sharedLayoutPublicSourceId,
   sharedLayoutRoots, sharedLayoutsByLanguage, sharedListIdFromLocation, sharedListIdFromUrl, sharedPayloadActiveLayout,
-  sharedRootFromPublishedContainer, shouldBlockLegacyPersonalSyncWrite, shouldBlockLegacyPersonalSyncWriteFallback, shouldCaptureGuestLocalLayoutCandidate, shouldClearPackingListContextForPrivateMutation,
+  sharedRootFromPublishedContainer, shouldBlockLegacyPersonalSyncWrite, shouldBlockLegacyPersonalSyncWriteFallback, shouldClearPackingListContextForPrivateMutation,
   shouldAutoPublishManagedTemplate, shouldConfirmManagedTemplateTransition, shouldCopyPublicTemplatePhotoReferencesOnServer,
-  shouldCreatePublishedTemplateBeforePhotos, shouldDeletePublishedTemplateForLayoutValue, shouldImportGuestLayoutBeforeRemote, shouldKeepCurrentReadonlyDemoAfterAuthCheck,
+  shouldCreatePublishedTemplateBeforePhotos, shouldDeletePublishedTemplateForLayoutValue, shouldKeepCurrentReadonlyDemoAfterAuthCheck,
   shouldKeepReadonlyDemoAfterAuthCheck, shouldKeepScopedControlsStable, shouldRecoverUnsyncedLocalChanges, shouldRenderGuestDemoPreviewDuringAuthCheck, shouldShowItemLabels,
   shouldShowItemLabelsForMode, shouldShowItemPhotos, shouldShowItemPhotosForMode, shouldUseStickyFilterControls, shouldWarnAboutSharedLayoutCatalog,
   snapshotContainerTreeFromLayoutArrangement, snapshotContainerTreeFromLiveStateValue, snapshotHasLocalPublicCopyOrigin, snapshotHasPrivateSyncBlockedPublicOrigin, snapshotModeState,
   selectUnlockedLayoutTargetId, snapshotsEqual, solidifyManagedTemplateDrafts, solidifyManagedTemplateDraftsForState, solidifyTemplateDraftLayout, solidifyTemplateDraftLayoutForState,
   sortDictionaryValues, sortHistoryRecords, sortLayoutSectionByDate, sortLayoutSectionByName, sortedDictionaryValues, splitEntitySyncEntries, splitEntitySyncEntriesForSync,
   startRemoteStateWatcher, startupLocalStateWasFallback, startupSyncMeta, state, stateIntegrityMetaFromResponse,
-  statePrivateLayoutCount, stateStats, stateStatsForDestructiveComparison, storedGuestLocalLayoutCandidate, storedGuestLocalLayoutCandidateOffered,
+  statePrivateLayoutCount, stateStats, stateStatsForDestructiveComparison,
   storedPrivateLayoutChoiceRef, stripPublicOriginForPrivateCopy, stripPublishedPublicOriginMarkers, subcontainerTitleHtml, submitAuthDialog,
   suggestedLayoutCreateName, summarizeBackupLayouts, summarizeHistoryPayload, summarizeLayoutTreeIdDuplicates, summarizePublicCopyDuplicates,
   switchActiveLayout, switchView, syncChangedBikePackingEntities, syncChangedEntityType, syncCreatedPrivateLayoutEntities,
@@ -1771,7 +1783,7 @@ const appTailControllerDeps = {
   updateStickyControlsHeight, updateSyncUi, updateSyncUiControls, updateViewScopedControls, updateViewScopedControlsUi,
   uploadEntityPhoto, uploadEntityPhotoToPath, uploadPendingPhotos, uploadPhotoToPath, uploadPublishedEntityPhoto, uploadPublishedLayoutPhotos, upsertDemoTemplateCatalogEntry,
   unavailableSnapshotItems, unpublishManagedTemplateFlow, unpublishPublishedDemoTemplateRecord, unpublishPublishedSharedTemplate, upsertRuntimeSharedLayout, usageLimitExceededMessage, usageLimitForRole, userEditableLayoutsForState, userStorageScopeKey,
-  validateGuestImportSyncState, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
+  visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied, withLayoutArrangementAppliedAsync,
   withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
 };
 const {
@@ -1916,9 +1928,6 @@ function activateLocalStorageScope(scopeKey) {
   const nextScope = scopeKey || GUEST_STORAGE_SCOPE;
   if (nextScope === localStorageScopeKey) return false;
   const previousScope = localStorageScopeKey;
-  if (shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope) && !pendingGuestLocalLayoutCandidate) {
-    pendingGuestLocalLayoutCandidate = guestLocalLayoutCandidate(state);
-  }
   localStorageScopeKey = nextScope;
   const scopedSyncMeta = loadSyncMeta();
   const scopedHadLocalState = hasLocalSavedState();
@@ -1933,6 +1942,7 @@ function activateLocalStorageScope(scopeKey) {
   currentPackingListId = loadActivePackingListId();
   currentPackingListMeta = null;
   applyLoadedStateToCurrentScope(nextState);
+  if (nextScope === GUEST_STORAGE_SCOPE) guestWorkspaceSessionTracker.reset(state);
   explicitLayoutChoice = { id: "", at: 0 };
   return true;
 }
@@ -1970,9 +1980,9 @@ function resetGuestDemoScopeToCanonical() {
   syncMeta = loadSyncMeta();
   currentPackingListId = "";
   currentPackingListMeta = null;
-  pendingGuestLocalLayoutCandidate = null;
   explicitLayoutChoice = { id: "", at: 0 };
   applyLoadedStateToCurrentScope(createEmptyUserState());
+  guestWorkspaceSessionTracker.reset(state);
   setActivePrivateScope();
 }
 
@@ -4115,6 +4125,7 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
   sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
+    if (sync && !applyingRemoteState) markCurrentGuestWorkspaceForLoginHandoff();
     persistStateSnapshot(state);
   } else if (!isAdminEditablePublishedLayout()) {
     if (sync && !applyingRemoteState) {
@@ -4262,6 +4273,65 @@ function guestLayoutImportFallbackName(layout) {
     GUEST_LAYOUT_FALLBACK_NAME;
 }
 
+function guestLocalLayoutCandidate(sourceState = state) {
+  return guestLocalLayoutCandidateFromState(sourceState, {
+    cloneStateForSync,
+    cloneValue: clone,
+    createEmptyUserState,
+    fallbackName: GUEST_LAYOUT_FALLBACK_NAME,
+    fallbackNameForLayout: guestLayoutImportFallbackName,
+    snapshotsEqual: sameJson
+  });
+}
+
+function guestCandidateLayouts(candidate) {
+  return guestCandidateLayoutsValue(candidate, {
+    fallbackName: GUEST_LAYOUT_FALLBACK_NAME
+  });
+}
+
+function markCurrentGuestWorkspaceForLoginHandoff() {
+  const enabled = !currentUser &&
+    localStorageScopeKey === GUEST_STORAGE_SCOPE &&
+    currentViewScope() === VIEW_SCOPE_GUEST_LOCAL;
+  return recordGuestWorkspaceSessionChanges({
+    enabled,
+    layoutIds: enabled ? guestWorkspaceSessionTracker.changedLayoutIds(state) : [],
+    manifestKey: GUEST_WORKSPACE_MANIFEST_KEY,
+    sessionId: guestWorkspaceSessionTracker.sessionId,
+    storage: localStorage
+  });
+}
+
+function clearGuestLoginHandoff() {
+  consumeStoredGuestLoginHandoff(localStorage, GUEST_LOGIN_HANDOFF_KEY);
+}
+
+function prepareGuestLoginHandoff(email) {
+  return storeGuestLoginHandoff({
+    candidate: guestLocalLayoutCandidate(state),
+    email,
+    enabled: !currentUser &&
+      localStorageScopeKey === GUEST_STORAGE_SCOPE &&
+      currentViewScope() === VIEW_SCOPE_GUEST_LOCAL,
+    guestSessionId: guestWorkspaceSessionTracker.sessionId,
+    handoffKey: GUEST_LOGIN_HANDOFF_KEY,
+    manifestKey: GUEST_WORKSPACE_MANIFEST_KEY,
+    storage: localStorage
+  });
+}
+
+function storedGuestLoginHandoffCandidate() {
+  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return null;
+  return resolveStoredGuestLoginHandoffCandidate({
+    candidateFromState: guestLocalLayoutCandidate,
+    guestStateKey: STORAGE_KEY,
+    handoffKey: GUEST_LOGIN_HANDOFF_KEY,
+    storage: localStorage,
+    user: currentUser
+  });
+}
+
 function privateMojibakeLayoutFallbackName(layout) {
   const language = normalizeUiLanguage(layout?.demoSourceLanguage || layout?.language || uiLanguage);
   const listId = String(layout?.demoSourceListId || "").trim();
@@ -4280,58 +4350,6 @@ function repairPrivateMojibakeLayoutNames({ sync = true } = {}) {
   }) || removedPlaceholderIds.length > 0;
   if (changed) saveState({ sync });
   return changed;
-}
-
-function guestLocalLayoutCandidate(sourceState = state) {
-  return guestLocalLayoutCandidateFromState(sourceState, {
-    cloneStateForSync,
-    cloneValue: clone,
-    createEmptyUserState,
-    fallbackName: GUEST_LAYOUT_FALLBACK_NAME,
-    fallbackNameForLayout: guestLayoutImportFallbackName,
-    snapshotsEqual: sameJson
-  });
-}
-
-function shouldCaptureGuestLocalLayoutCandidate(previousScope, nextScope, sourceState = state) {
-  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return false;
-  if (previousScope !== GUEST_STORAGE_SCOPE || nextScope === GUEST_STORAGE_SCOPE) return false;
-  if (isSharedListLinkRoute() || syncMetaAccountKey(syncMeta)) return false;
-  if (currentViewScope() !== VIEW_SCOPE_GUEST_LOCAL && !hasGuestDemoCopyLayoutRecord(sourceState.layouts)) return false;
-  return Boolean(guestLocalLayoutCandidate(sourceState));
-}
-
-function guestCandidateLayouts(candidate) {
-  const entries = Array.isArray(candidate?.layouts) && candidate.layouts.length
-    ? candidate.layouts
-    : (candidate?.layoutId ? [{ layoutId: candidate.layoutId, layoutName: candidate.layoutName }] : []);
-  return entries
-    .map((entry) => ({
-      layoutId: String(entry?.layoutId || "").trim(),
-      layoutName: readableGuestDemoLayoutName(entry?.layoutName, entry?.fallbackName || GUEST_LAYOUT_FALLBACK_NAME),
-      fallbackName: String(entry?.fallbackName || GUEST_LAYOUT_FALLBACK_NAME).trim() || GUEST_LAYOUT_FALLBACK_NAME
-    }))
-    .filter((entry) => entry.layoutId);
-}
-
-function consumeGuestLocalLayoutCandidate() {
-  const candidate = pendingGuestLocalLayoutCandidate;
-  pendingGuestLocalLayoutCandidate = null;
-  if (candidate) {
-    candidate.layouts = guestCandidateLayouts(candidate);
-    candidate.layoutId = candidate.layouts[0]?.layoutId || candidate.layoutId || "";
-    candidate.layoutName = candidate.layouts[0]?.layoutName || readableGuestDemoLayoutName(candidate.layoutName, GUEST_LAYOUT_FALLBACK_NAME);
-  }
-  return candidate;
-}
-
-function storedGuestLocalLayoutCandidate() {
-  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return null;
-  if (storedGuestLocalLayoutCandidateOffered || localStorageScopeKey === GUEST_STORAGE_SCOPE) return null;
-  if (!hasStoredLocalValue(STORAGE_KEY, GUEST_STORAGE_SCOPE)) return null;
-  const candidate = guestLocalLayoutCandidate(loadStateForScope(GUEST_STORAGE_SCOPE));
-  if (candidate) storedGuestLocalLayoutCandidateOffered = true;
-  return candidate;
 }
 
 function currentSessionMode() {
@@ -6242,6 +6260,7 @@ async function submitAuthDialog(event) {
           : location.href
       })
     });
+    prepareGuestLoginHandoff(email);
     saveAuthEmail(email);
     refs.authDialogStatus.className = "dialog-status success";
     refs.authDialogStatus.textContent = t("auth.linkSent");
@@ -7323,14 +7342,13 @@ async function handleRemoteSaveConflict(error, options = {}) {
       askConflictResolution,
       blockRemoteIntegrityFailureIfNeeded,
       canLocalStateOverrideRemote,
-      consumeGuestLocalLayoutCandidate,
       filterAutoResolvedMergeConflicts,
       isOwnLayoutEchoConflict,
       loadBaseState,
       mergeStateFromBase,
       normalizeRemoteState,
       nowIso,
-      offerSaveGuestLocalLayouts,
+      offerPendingGuestLoginHandoffAfterRemoteLoad,
       remoteUpdatedAt,
       rememberConflictRemoteMeta,
       rememberCurrentSyncAccount,
@@ -7371,16 +7389,16 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
     syncMeta.localUpdatedAt = nowIso();
     saveSyncMeta();
     updateSyncUi(localText(
-      "Guest layouts were imported locally but not uploaded: the import has no items or bags",
-      "Гостевые укладки перенесены локально, но не отправлены: импорт не содержит вещей или сумок"
+      "Guest work was imported locally but not uploaded: the import has no items or bags",
+      "Гостевая работа перенесена локально, но не отправлена: импорт не содержит вещей или сумок"
     ));
     return false;
   }
   await saveRemoteState({ notify: false, forceOverwrite: true });
   if (syncMeta.dirty) {
     updateSyncUi(localText(
-      "The server requested another sync · saving the guest layout again...",
-      "Сервер попросил повторную синхронизацию · сохраняю гостевую укладку ещё раз..."
+      "The server requested another sync · saving the imported guest work again...",
+      "Сервер попросил повторную синхронизацию · сохраняю перенесённую гостевую работу ещё раз..."
     ));
     await saveRemoteState({ notify: false, forceOverwrite: false });
   }
@@ -7390,47 +7408,21 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
   syncMeta.localUpdatedAt = nowIso();
   saveSyncMeta();
   updateSyncUi(localText(
-    "Guest layouts were imported locally, but the server has not returned them after saving yet",
-    "Гостевые укладки перенесены локально, но сервер пока не вернул их после сохранения"
+    "Guest work was imported locally, but the server has not returned it after saving yet",
+    "Гостевая работа перенесена локально, но сервер пока не вернул её после сохранения"
   ));
   return false;
 }
 
-async function offerPendingGuestLocalLayoutsAfterRemoteLoad() {
-  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) {
-    pendingGuestLocalLayoutCandidate = null;
-    return false;
-  }
-  const guestCandidate = consumeGuestLocalLayoutCandidate() || storedGuestLocalLayoutCandidate();
-  if (!guestCandidate) return false;
-  appUnlocked = true;
-  initialRemoteLoadPending = false;
-  renderPreservingPackingScroll();
+async function runGuestLoginHandoffCandidate(candidate) {
   updateSyncUi(localText(
-    "Personal layouts loaded · importing guest layouts into the account...",
-    "Личные укладки загружены · переношу гостевые укладки в аккаунт..."
+    "Personal layouts loaded · importing the guest work from this sign-in...",
+    "Личные укладки загружены · переношу гостевую работу из этого входа..."
   ));
-  await offerSaveGuestLocalLayouts(guestCandidate);
-  return true;
-}
-
-async function offerSaveGuestLocalLayouts(candidate) {
-  if (!canImportGuestLayoutsForAuthenticatedUser(currentUser)) return false;
-  const layouts = guestCandidateLayouts(candidate);
-  if (!candidate?.sourceState || !layouts.length || !currentUser) return false;
-  const importedLayoutIds = importGuestLocalLayouts({ ...candidate, layouts }, { renameConflicts: true });
-  if (!importedLayoutIds.length) {
-    updateSyncUi(localText(
-      "Guest layouts were already imported or contain no data to import",
-      "Гостевые укладки уже были перенесены или в них нет данных для импорта"
-    ));
-    return false;
-  }
-  renderPreservingPackingScroll();
-  updateSyncUi(importedLayoutIds.length > 1
-    ? localText("Guest layouts added to the account · saving to the server...", "Гостевые укладки добавлены в аккаунт · сохраняю на сервер...")
-    : localText("Guest layout added to the account · saving to the server...", "Гостевая укладка добавлена в аккаунт · сохраняю на сервер..."));
-  const saved = await persistGuestImportBeforeCleanup(importedLayoutIds, {
+  return runGuestLoginHandoffImport(candidate, {
+    importLayouts: (confirmedCandidate) => importGuestLocalLayouts(confirmedCandidate, { renameConflicts: true }),
+    consumeHandoff: clearGuestLoginHandoff,
+    persistImportBeforeCleanup: persistGuestImportBeforeCleanup,
     persistImport: saveGuestImportToRemote,
     clearGuestStorage: () => clearLocalStorageScope(GUEST_STORAGE_SCOPE, [
       STORAGE_KEY,
@@ -7440,25 +7432,41 @@ async function offerSaveGuestLocalLayouts(candidate) {
       ACTIVE_LIST_ID_KEY,
       ACTIVE_LAYOUT_CHOICE_KEY,
       ACTIVE_LAYOUT_CHOICE_SOURCE_KEY,
-      ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY
-    ])
+      ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
+      GUEST_WORKSPACE_MANIFEST_KEY
+    ]),
+    onImportEmpty: () => updateSyncUi(localText(
+      "The prepared guest work no longer contains data to import",
+      "В подготовленной гостевой работе больше нет данных для переноса"
+    )),
+    onImported: (importedLayoutIds) => {
+      renderPreservingPackingScroll();
+      updateSyncUi(importedLayoutIds.length > 1
+        ? localText("Guest layouts added to the account · saving to the server...", "Гостевые укладки добавлены в аккаунт · сохраняю на сервер...")
+        : localText("Guest layout added to the account · saving to the server...", "Гостевая укладка добавлена в аккаунт · сохраняю на сервер..."));
+    },
+    onImportPending: () => {
+      updateSyncUi(localText(
+        "Guest work was imported into the account · it will be saved automatically during the next check",
+        "Гостевая работа перенесена в аккаунт · сохраню её автоматически при следующей проверке"
+      ));
+      showToast(localText(
+        "Guest work was imported into the account. The local version is safe; sync will retry automatically.",
+        "Гостевая работа перенесена в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически."
+      ), "warning");
+      scheduleRemoteSave();
+    },
+    onImportSucceeded: (importedLayoutIds) => {
+      showToast(importedLayoutIds.length > 1
+        ? localText("Guest layouts were saved to the account.", "Гостевые укладки сохранены в аккаунт.")
+        : localText("Guest layout was saved to the account.", "Гостевая укладка сохранена в аккаунт."), "success");
+    }
   });
-  if (!saved) {
-    updateSyncUi(localText(
-      "Guest layouts were imported into the account · they will be saved to the server automatically during the next check",
-      "Гостевые укладки перенесены в аккаунт · сохраню на сервер автоматически при следующей проверке"
-    ));
-    showToast(localText(
-      "Guest layouts were imported into the account. The local version is safe; sync will retry automatically.",
-      "Гостевые укладки перенесены в аккаунт. Локальная версия не потеряна, синхронизация повторится автоматически."
-    ), "warning");
-    scheduleRemoteSave();
-    return false;
-  }
-  showToast(importedLayoutIds.length > 1
-    ? localText("Guest layouts were saved to the account.", "Гостевые укладки сохранены в аккаунт.")
-    : localText("Guest layout was saved to the account.", "Гостевая укладка сохранена в аккаунт."), "success");
-  return true;
+}
+
+async function offerPendingGuestLoginHandoffAfterRemoteLoad() {
+  const result = await guestLoginHandoffCoordinator.offer();
+  return Boolean(result.handled);
 }
 
 function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
@@ -7493,6 +7501,7 @@ function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
     uniqueLayoutName
   });
 }
+
 async function loadRemoteState(options = {}) {
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
   remoteStateLoadPromise = loadRemoteStateFlow({
@@ -7502,7 +7511,6 @@ async function loadRemoteState(options = {}) {
       get currentUser() { return currentUser; },
       get initialRemoteLoadPending() { return initialRemoteLoadPending; },
       set initialRemoteLoadPending(value) { initialRemoteLoadPending = value; },
-      get pendingGuestLocalLayoutCandidate() { return pendingGuestLocalLayoutCandidate; },
       get remoteRefreshInFlight() { return remoteRefreshInFlight; },
       get state() { return state; },
       get syncMeta() { return syncMeta; }
@@ -7517,8 +7525,6 @@ async function loadRemoteState(options = {}) {
       canSeedEmptyRemoteFromLocal,
       clearStaleDirtyFlagIfNoLocalChanges,
       cloneStateForSync,
-      consumeGuestLocalLayoutCandidate,
-      createBlankBikePackingState,
       createEmptyUserState,
       canUseCachedStartupState,
       currentPackingListId: () => currentPackingListId || remoteRecordId(currentPackingListMeta),
@@ -7540,8 +7546,7 @@ async function loadRemoteState(options = {}) {
       mergeStateFromBase,
       normalizeRemoteState,
       nowIso,
-      offerPendingGuestLocalLayoutsAfterRemoteLoad,
-      offerSaveGuestLocalLayouts,
+      offerPendingGuestLoginHandoffAfterRemoteLoad,
       remoteUpdatedAt,
       rememberCurrentSyncAccount,
       rememberRemoteIntegrityMeta,
@@ -7559,7 +7564,6 @@ async function loadRemoteState(options = {}) {
       setLayoutLoadProgress,
       setLayoutLoadStatus,
       setPersonalLayoutsLoadedStatus,
-      shouldImportGuestLayoutBeforeRemote,
       showToast,
       stateIntegrityMetaFromResponse,
       statePrivateLayoutCount,

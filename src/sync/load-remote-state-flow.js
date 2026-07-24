@@ -14,8 +14,6 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     canSeedEmptyRemoteFromLocal,
     clearStaleDirtyFlagIfNoLocalChanges,
     cloneStateForSync,
-    consumeGuestLocalLayoutCandidate,
-    createBlankBikePackingState,
     createEmptyUserState,
     fetchRemoteListFreshnessRecord,
     fetchRemoteStateRecord,
@@ -35,8 +33,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     mergeStateFromBase,
     normalizeRemoteState,
     nowIso,
-    offerPendingGuestLocalLayoutsAfterRemoteLoad,
-    offerSaveGuestLocalLayouts,
+    offerPendingGuestLoginHandoffAfterRemoteLoad = async () => false,
     remoteUpdatedAt,
     rememberCurrentSyncAccount,
     rememberRemoteIntegrityMeta,
@@ -54,7 +51,6 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     setLayoutLoadProgress,
     setLayoutLoadStatus,
     setPersonalLayoutsLoadedStatus,
-    shouldImportGuestLayoutBeforeRemote,
     showToast,
     stateIntegrityMetaFromResponse,
     statePrivateLayoutCount,
@@ -63,9 +59,9 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     updateSyncUi
   } = dependencies;
   const localText = dependencies.localText || ((en, ru) => runtime.uiLanguage === "en" ? en : ru);
-  const applyRemoteStateAndOfferGuestImport = async (...args) => {
+  const applyRemoteStateAndOfferGuestHandoff = async (...args) => {
     const applied = applyRemoteState(...args);
-    if (applied) await offerPendingGuestLocalLayoutsAfterRemoteLoad();
+    if (applied) await offerPendingGuestLoginHandoffAfterRemoteLoad();
     return applied;
   };
   if (!runtime.currentUser) return;
@@ -90,8 +86,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     if (
       runtime.initialRemoteLoadPending &&
       fetchRemoteListFreshnessRecord &&
-      startupListId &&
-      !runtime.pendingGuestLocalLayoutCandidate
+      startupListId
     ) {
       try {
         const freshness = await fetchRemoteListFreshnessRecord(startupListId);
@@ -118,7 +113,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           runtime.appUnlocked = true;
           runtime.initialRemoteLoadPending = false;
           renderPreservingPackingScroll();
-          await offerPendingGuestLocalLayoutsAfterRemoteLoad();
+          await offerPendingGuestLoginHandoffAfterRemoteLoad();
           setPersonalLayoutsLoadedStatus();
           updateSyncUi();
           return;
@@ -126,7 +121,10 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         if (accountMatches && hasLocalStateForStartup && !syncMeta.dirty && tryApplyRemoteEntityChanges) {
           try {
             const changesResult = await tryApplyRemoteEntityChanges(startupListId, freshness, { preferredLayout });
-            if (changesResult?.applied) return;
+            if (changesResult?.applied) {
+              await offerPendingGuestLoginHandoffAfterRemoteLoad();
+              return;
+            }
             console.info("[bike-packing] Startup entity changes feed fell back to full state refresh", {
               listId: startupListId,
               reason: changesResult?.reason || "not-applied"
@@ -192,24 +190,13 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     };
     if (!remoteState) rememberLoadedRemoteRecordMeta();
     if (!remoteState) {
-      if (runtime.pendingGuestLocalLayoutCandidate && !localStateCanOverrideRemote) {
-        const guestCandidate = consumeGuestLocalLayoutCandidate();
-        replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
-        syncMeta.dirty = false;
-        saveSyncMeta();
-        runtime.initialRemoteLoadPending = false;
-        runtime.appUnlocked = true;
-        renderPreservingPackingScroll();
-        updateSyncUi(localText("New account · importing the guest layout...", "Новый аккаунт · переношу гостевую укладку..."));
-        await offerSaveGuestLocalLayouts(guestCandidate);
-        return;
-      }
       if (canSeedEmptyRemoteFromLocal()) {
         if (isSuspiciousEmptyPackingState(state)) {
           runtime.appUnlocked = true;
           syncMeta.dirty = false;
           saveSyncMeta();
           renderInitialLocalFallbackIfNeeded();
+          if (await offerPendingGuestLoginHandoffAfterRemoteLoad()) return;
           updateSyncUi(localText(
             "The server is empty · the empty local layout was not sent",
             "На сервере пусто · локальная пустая укладка не отправлена"
@@ -226,50 +213,20 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         syncMeta.localUpdatedAt = syncMeta.localUpdatedAt || nowIso();
         saveSyncMeta();
         await saveRemoteState({ notify: notifyDirtySave, preferServerOnConflict: !localStateCanOverrideRemote });
-        return;
-      }
-      const guestCandidate = consumeGuestLocalLayoutCandidate();
-      if (guestCandidate) {
-        replaceState(createEmptyUserState());
-        syncMeta.dirty = false;
-        saveSyncMeta();
-        runtime.initialRemoteLoadPending = false;
-        runtime.appUnlocked = true;
-        renderPreservingPackingScroll();
-        updateSyncUi(localText(
-          "The server is empty · the guest layout can be saved to the account",
-          "На сервере пока пусто · можно сохранить гостевую укладку в аккаунт"
-        ));
-        await offerSaveGuestLocalLayouts(guestCandidate);
+        await offerPendingGuestLoginHandoffAfterRemoteLoad();
         return;
       }
       replaceState(createEmptyUserState());
-      syncMeta.dirty = true;
-      saveSyncMeta();
-      runtime.initialRemoteLoadPending = false;
-      renderPreservingPackingScroll();
-      runtime.appUnlocked = true;
-      updateSyncUi(localText("The server is empty · sending local data...", "На сервере пока пусто · отправляю локальные данные..."));
-      await saveRemoteState({ preferServerOnConflict: true });
-      return;
-    }
-
-    const remoteStateMeaningful = isMeaningfulPackingState(remoteState);
-    if (shouldImportGuestLayoutBeforeRemote({
-      candidate: runtime.pendingGuestLocalLayoutCandidate,
-      remoteStateMeaningful,
-      localStateCanOverrideRemote
-    })) {
-      rememberLoadedRemoteRecordMeta();
-      const guestCandidate = consumeGuestLocalLayoutCandidate();
-      replaceState(createBlankBikePackingState(), { preserveLocalUi: false });
       syncMeta.dirty = false;
       saveSyncMeta();
       runtime.initialRemoteLoadPending = false;
-      runtime.appUnlocked = true;
       renderPreservingPackingScroll();
-      updateSyncUi(localText("New account · importing the guest layout...", "Новый аккаунт · переношу гостевую укладку..."));
-      await offerSaveGuestLocalLayouts(guestCandidate);
+      runtime.appUnlocked = true;
+      if (await offerPendingGuestLoginHandoffAfterRemoteLoad()) return;
+      syncMeta.dirty = true;
+      saveSyncMeta();
+      updateSyncUi(localText("The server is empty · sending local data...", "На сервере пока пусто · отправляю локальные данные..."));
+      await saveRemoteState({ preferServerOnConflict: true });
       return;
     }
 
@@ -277,7 +234,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     const remoteJson = JSON.stringify(cloneStateForSync(remoteState, { forSync: true }));
     if (localJson !== remoteJson) {
       if (isSuspiciousEmptyPackingState(state) && isMeaningfulPackingState(remoteState)) {
-        await applyRemoteStateAndOfferGuestImport(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
+        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
         if (notifyDirtySave) showToast(localText(
           "The recovered version was loaded from the server.",
           "Загружена восстановленная версия с сервера."
@@ -285,11 +242,11 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
         return;
       }
       if ((isInitialRemotePull || localStateIsNonAuthoritative) && !localStateCanOverrideRemote && isMeaningfulPackingState(remoteState)) {
-        await applyRemoteStateAndOfferGuestImport(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
+        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (!syncMeta.dirty) {
-        await applyRemoteStateAndOfferGuestImport(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
+        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (shouldPreferLocalDirtyState || (!isInitialRemotePull && !serverChangedSinceLastSync(serverTime) && localTime >= serverTime)) {
@@ -336,7 +293,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           cancelText: localText("Keep local", "Оставить локальную")
         });
         if (useServer) {
-          await applyRemoteStateAndOfferGuestImport(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
+          await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { preferredLayout });
           return;
         }
         syncMeta.dirty = true;
@@ -349,7 +306,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       updateSyncUi(localText("There are conflicting changes...", "Есть конфликты изменений..."));
       const resolution = await askConflictResolution(mergeResult.conflicts);
       if (resolution === "server") {
-        await applyRemoteStateAndOfferGuestImport(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
+        await applyRemoteStateAndOfferGuestHandoff(remoteState, serverTimeText, remoteIntegrityMeta, remoteRawPayload, { allowDestructive: true, preferredLayout });
         return;
       }
       if (resolution === "cancel") {
@@ -390,7 +347,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       runtime.initialRemoteLoadPending = false;
       renderPreservingPackingScroll();
     }
-    await offerPendingGuestLocalLayoutsAfterRemoteLoad();
+    await offerPendingGuestLoginHandoffAfterRemoteLoad();
     setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {
