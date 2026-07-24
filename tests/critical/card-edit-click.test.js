@@ -208,10 +208,10 @@ test("CRITICAL card editing: gaps around photo dots belong to the gallery contro
   assert.match(gallerySource, /class="photo-gallery-dots" data-photo-controls/);
   assert.match(dragSource, /\[data-photo-controls\]/);
   assert.match(stylesSource, /\.photo-gallery-dots\s*\{[^}]*gap:\s*0;/s);
-  assert.match(stylesSource, /\.photo-gallery-dot\s*\{[^}]*width:\s*12px;[^}]*height:\s*7px;/s);
+  assert.match(stylesSource, /\.photo-gallery-dot\s*\{[^}]*width:\s*8px;[^}]*height:\s*8px;[^}]*margin:\s*0 2px;/s);
   assert.match(stylesSource, /\.photo-gallery-dot:not\(:disabled\):active,[^}]*translate:\s*0;[^}]*filter:\s*none;/s);
-  assert.match(stylesSource, /\.photo-gallery-dot::before\s*\{[^}]*width:\s*7px;[^}]*height:\s*7px;/s);
-  assert.match(stylesSource, /\.photo-gallery-dot\.active::before\s*\{/);
+  assert.match(stylesSource, /\.photo-gallery-dot\.active\s*\{/);
+  assert.doesNotMatch(stylesSource, /\.photo-gallery-dot::before/);
 });
 
 test("CRITICAL card editing: cards no longer render redundant edit buttons", () => {

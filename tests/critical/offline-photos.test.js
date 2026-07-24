@@ -1919,6 +1919,9 @@ test("CRITICAL offline-photos: packing gallery dots stay above iOS scrolling lay
   assert.match(styles, /\.item-photo\s*\{[\s\S]*isolation:\s*isolate;/);
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/);
   assert.match(styles, /\.photo-gallery-dots\s*\{[\s\S]*z-index:\s*10;[\s\S]*translate3d\(-50%,\s*0,\s*0\);[\s\S]*backface-visibility:\s*hidden;/);
+  assert.match(styles, /\.photo-gallery-dot\s*\{[\s\S]*border:\s*1px solid[\s\S]*background:\s*transparent;[\s\S]*appearance:\s*none;/);
+  assert.match(styles, /\.photo-gallery-dot\.active\s*\{[\s\S]*background:\s*var\(--accent\);/);
+  assert.doesNotMatch(styles, /\.photo-gallery-dot::before/);
 });
 
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {
