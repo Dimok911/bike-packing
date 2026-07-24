@@ -20,6 +20,8 @@ let lightboxKeydownHandler = null;
 let lightboxLoadingNotice = null;
 let lightboxResizeHandler = null;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
+const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
+const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
 const decodedPhotoLightboxSources = new Set();
 
 function localText(en, ru) {
@@ -497,10 +499,11 @@ export function bindPhotoGalleries(root = document, {
     let touchStartY = 0;
     let touchStartScrollLeft = 0;
     let touchStartTime = 0;
+    let touchMoved = false;
     let touchTracking = false;
     track.addEventListener("touchstart", (event) => {
       cancelPendingScroll();
-      if (event.touches.length !== 1 || slideCount <= 1) {
+      if (event.touches.length !== 1) {
         touchTracking = false;
         return;
       }
@@ -509,7 +512,15 @@ export function bindPhotoGalleries(root = document, {
       touchStartY = touch.clientY;
       touchStartScrollLeft = track.scrollLeft;
       touchStartTime = Date.now();
+      touchMoved = false;
       touchTracking = true;
+    }, { passive: true });
+    track.addEventListener("touchmove", (event) => {
+      if (!touchTracking || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      if (Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY) > PHOTO_GALLERY_TAP_MOVE_LIMIT_PX) {
+        touchMoved = true;
+      }
     }, { passive: true });
     track.addEventListener("touchend", (event) => {
       if (!touchTracking || !event.changedTouches.length) return;
@@ -521,7 +532,19 @@ export function bindPhotoGalleries(root = document, {
       const absY = Math.abs(dy);
       const minDistance = Math.min(54, Math.max(28, (track.clientWidth || 1) * 0.11));
       const fastEnough = Date.now() - touchStartTime <= 1100;
-      if (fastEnough && absX >= minDistance && absX > absY * 0.55) {
+      const tappedButton = !touchMoved && Math.hypot(dx, dy) <= PHOTO_GALLERY_TAP_MOVE_LIMIT_PX
+        ? event.target?.closest?.("[data-photo-open]")
+        : null;
+      const tappedIndex = tappedButton ? slideButtons.indexOf(tappedButton) : -1;
+      const tappedImage = tappedButton?.querySelector?.("img");
+      if (tappedIndex >= 0 && tappedImage) {
+        suppressSlideClickUntil = Date.now() + PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS;
+        event.preventDefault();
+        event.stopPropagation();
+        openLightbox(tappedImage, { gallery, index: tappedIndex });
+        return;
+      }
+      if (slideCount > 1 && fastEnough && absX >= minDistance && absX > absY * 0.55) {
         const width = track.clientWidth || 1;
         const baseIndex = Math.round(touchStartScrollLeft / width);
         const direction = dx < 0 ? 1 : -1;

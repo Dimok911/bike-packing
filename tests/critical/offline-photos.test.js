@@ -44,6 +44,7 @@ import {
 } from "../../src/sync/photo-upload-scope.js";
 import { compactPhotoForSync, prunePhotoPayloadForSync } from "../../src/sync/serialize.js";
 import {
+  bindPhotoGalleries,
   createPhotoLightboxLoadingNotice,
   photoDialogStatusText,
   photoStatusText,
@@ -1724,6 +1725,96 @@ test("CRITICAL offline-photos: dialog photo gallery keeps vertical scroll withou
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*overscroll-behavior-x:\s*contain;[\s\S]*overscroll-behavior-y:\s*auto;/);
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /button\.photo-gallery-slide:not\(:disabled\):active,\s*button\.photo-gallery-slide\.touch-feedback-active\s*\{[\s\S]*translate:\s*0;[\s\S]*filter:\s*none;/);
+});
+
+function photoGalleryTouchHarness() {
+  const trackListeners = new Map();
+  const buttonListeners = new Map();
+  const image = {};
+  const button = {
+    addEventListener: (type, listener) => buttonListeners.set(type, listener),
+    closest: (selector) => selector === "[data-photo-open]" ? button : null,
+    querySelector: (selector) => selector === "img" ? image : null
+  };
+  const track = {
+    clientWidth: 300,
+    scrollLeft: 0,
+    addEventListener: (type, listener) => trackListeners.set(type, listener),
+    scrollTo({ left }) {
+      this.scrollLeft = left;
+    }
+  };
+  const gallery = {
+    dataset: {},
+    closest: () => null,
+    querySelector: (selector) => selector === ".photo-gallery-track" ? track : null,
+    querySelectorAll(selector) {
+      if (selector === ".photo-gallery-dot") return [];
+      if (selector === "[data-photo-open]") return [button];
+      return [];
+    }
+  };
+  const opened = [];
+  bindPhotoGalleries({
+    querySelectorAll: (selector) => selector === "[data-photo-gallery]" ? [gallery] : []
+  }, {
+    openLightbox: (sourceImage, options) => opened.push({ options, sourceImage })
+  });
+  const touch = (x, y, { end = false } = {}) => {
+    let prevented = false;
+    let stopped = false;
+    const point = { clientX: x, clientY: y };
+    return {
+      target: button,
+      touches: end ? [] : [point],
+      changedTouches: end ? [point] : [],
+      preventDefault: () => { prevented = true; },
+      stopPropagation: () => { stopped = true; },
+      get prevented() { return prevented; },
+      get stopped() { return stopped; }
+    };
+  };
+  return {
+    button,
+    buttonListeners,
+    gallery,
+    image,
+    opened,
+    touch,
+    trackListeners
+  };
+}
+
+test("CRITICAL offline-photos: first stationary touch opens a packing photo during iOS momentum", () => {
+  const harness = photoGalleryTouchHarness();
+  const start = harness.touch(120, 180);
+  const end = harness.touch(120, 180, { end: true });
+
+  harness.trackListeners.get("touchstart")(start);
+  harness.trackListeners.get("touchend")(end);
+
+  assert.deepEqual(harness.opened, [{
+    options: { gallery: harness.gallery, index: 0 },
+    sourceImage: harness.image
+  }]);
+  assert.equal(end.prevented, true);
+  assert.equal(end.stopped, true);
+
+  harness.buttonListeners.get("click")({
+    preventDefault() {},
+    stopPropagation() {}
+  });
+  assert.equal(harness.opened.length, 1, "the synthetic click must not reopen the lightbox");
+});
+
+test("CRITICAL offline-photos: a vertical swipe starting on a packing photo does not open the lightbox", () => {
+  const harness = photoGalleryTouchHarness();
+
+  harness.trackListeners.get("touchstart")(harness.touch(120, 180));
+  harness.trackListeners.get("touchmove")(harness.touch(122, 204));
+  harness.trackListeners.get("touchend")(harness.touch(122, 204, { end: true }));
+
+  assert.equal(harness.opened.length, 0);
 });
 
 test("CRITICAL offline-photos: dot navigation keeps its target active throughout smooth scrolling", () => {
