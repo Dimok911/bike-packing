@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bindStickyRootHeaderRow } from "../../src/ui/packing-scroll.js";
+import {
+  bindBoardScroll,
+  bindStickyRootHeaderRow,
+  shouldStartBoardPointerDrag
+} from "../../src/ui/packing-scroll.js";
 
 function createStyle() {
   return {
@@ -9,6 +13,88 @@ function createStyle() {
     }
   };
 }
+
+test("CRITICAL packing scroll: touch pointers never start desktop board dragging", () => {
+  assert.equal(shouldStartBoardPointerDrag({
+    button: 0,
+    pointerType: "touch"
+  }), false);
+  assert.equal(shouldStartBoardPointerDrag({
+    button: 0,
+    pointerType: "pen"
+  }), false);
+  assert.equal(shouldStartBoardPointerDrag({
+    button: 0,
+    pointerType: "mouse"
+  }), true);
+  assert.equal(shouldStartBoardPointerDrag({
+    button: 0,
+    pointerType: "mouse"
+  }, { interactive: true }), false);
+});
+
+test("CRITICAL packing scroll: vertical touch movement cannot nudge board scrollLeft", () => {
+  const listeners = new Map();
+  const classes = new Set();
+  let capturedPointer = null;
+  const board = {
+    classList: {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name)
+    },
+    scrollLeft: 240,
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    hasPointerCapture(pointerId) {
+      return capturedPointer === pointerId;
+    },
+    releasePointerCapture() {
+      capturedPointer = null;
+    },
+    setPointerCapture(pointerId) {
+      capturedPointer = pointerId;
+    }
+  };
+  const target = { closest: () => null };
+
+  bindBoardScroll(board);
+  listeners.get("pointerdown")({
+    button: 0,
+    clientX: 100,
+    pointerId: 7,
+    pointerType: "touch",
+    target
+  });
+  listeners.get("pointermove")({
+    clientX: 96,
+    pointerId: 7,
+    pointerType: "touch",
+    target
+  });
+
+  assert.equal(board.scrollLeft, 240);
+  assert.equal(capturedPointer, null);
+  assert.equal(classes.has("drag-scroll"), false);
+
+  listeners.get("pointerdown")({
+    button: 0,
+    clientX: 100,
+    pointerId: 8,
+    pointerType: "mouse",
+    target
+  });
+  listeners.get("pointermove")({
+    clientX: 90,
+    pointerId: 8,
+    pointerType: "mouse",
+    target
+  });
+
+  assert.equal(board.scrollLeft, 250);
+  assert.equal(capturedPointer, 8);
+  assert.equal(classes.has("drag-scroll"), true);
+});
 
 test("CRITICAL packing sticky header: visibility is restored before the first animation frame", () => {
   const originalGlobals = {

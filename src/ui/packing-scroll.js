@@ -1,3 +1,9 @@
+export function shouldStartBoardPointerDrag(event, { interactive = false } = {}) {
+  const pointerType = String(event?.pointerType || "").trim().toLowerCase();
+  const mousePointer = !pointerType || pointerType === "mouse";
+  return event?.button === 0 && mousePointer && !interactive;
+}
+
 export function bindBoardScroll(board) {
   if (!board) return;
   let isDown = false;
@@ -8,7 +14,7 @@ export function bindBoardScroll(board) {
     target.closest(".item-card, .subcontainer-title, .container-header, button, input, select, textarea, label, dialog, .drag-handle, .subcontainer-drag-handle");
 
   board.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
+    if (!shouldStartBoardPointerDrag(event, { interactive: isInteractiveTarget(event.target) })) return;
     isDown = true;
     startX = event.clientX;
     scrollLeft = board.scrollLeft;
