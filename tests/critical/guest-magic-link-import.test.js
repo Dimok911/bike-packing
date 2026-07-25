@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   guestLocalLayoutCandidateFromState,
+  importGuestLocalLayoutsToState,
   persistGuestImportBeforeCleanup
 } from "../../src/public/guest-login-import.js";
 import {
@@ -119,6 +120,194 @@ function storageAdapter(entries = []) {
     values
   };
 }
+
+function templateReuseState({
+  sourceItemName = "Rain shell",
+  targetItemName = "Rain shell"
+} = {}) {
+  const targetState = {
+    ...emptyState(),
+    collapsedContainers: {},
+    containers: {
+      "bag-account": {
+        id: "bag-account",
+        name: "Handlebar bag",
+        childIds: [],
+        itemIds: ["item-account"],
+        order: [{ type: "item", id: "item-account" }],
+        _publicCopySourceKind: "container",
+        _publicCopySourceId: "template-bag"
+      }
+    },
+    items: {
+      "item-account": {
+        id: "item-account",
+        name: targetItemName,
+        containerId: "bag-account",
+        _publicCopySourceKind: "item",
+        _publicCopySourceId: "template-shell"
+      }
+    },
+    layouts: {
+      "layout-account": {
+        id: "layout-account",
+        name: "Weekend",
+        demoSourceListId: "public-demo-weekend",
+        rootContainerIds: ["bag-account"],
+        arrangement: {
+          rootContainerIds: ["bag-account"],
+          containers: {
+            "bag-account": {
+              parentId: "",
+              childIds: [],
+              itemIds: ["item-account"],
+              order: [{ type: "item", id: "item-account" }]
+            }
+          },
+          items: { "item-account": "bag-account" },
+          packedItems: {}
+        }
+      }
+    },
+    activeLayoutId: "layout-account"
+  };
+  const sourceState = {
+    ...emptyState(),
+    containers: {
+      "bag-guest": {
+        id: "bag-guest",
+        name: "Handlebar bag",
+        childIds: [],
+        itemIds: ["item-guest"],
+        order: [{ type: "item", id: "item-guest" }],
+        _publicCopySourceKind: "container",
+        _publicCopySourceId: "template-bag"
+      }
+    },
+    items: {
+      "item-guest": {
+        id: "item-guest",
+        name: sourceItemName,
+        containerId: "bag-guest",
+        _publicCopySourceKind: "item",
+        _publicCopySourceId: "template-shell"
+      }
+    },
+    layouts: {
+      [GUEST_LAYOUT_ID]: {
+        id: GUEST_LAYOUT_ID,
+        name: "Weekend",
+        demoSourceListId: "public-demo-weekend",
+        guestDemoCopy: true,
+        rootContainerIds: ["bag-guest"],
+        arrangement: {
+          rootContainerIds: ["bag-guest"],
+          containers: {
+            "bag-guest": {
+              parentId: "",
+              childIds: [],
+              itemIds: ["item-guest"],
+              order: [{ type: "item", id: "item-guest" }]
+            }
+          },
+          items: { "item-guest": "bag-guest" },
+          packedItems: { "item-guest": true }
+        }
+      }
+    },
+    activeLayoutId: GUEST_LAYOUT_ID
+  };
+  return { sourceState, targetState };
+}
+
+function importTemplateReuseCandidate(targetState, sourceState, overrides = {}) {
+  return importGuestLocalLayoutsToState(targetState, {
+    sourceState,
+    layouts: [{ layoutId: GUEST_LAYOUT_ID, layoutName: "Weekend" }]
+  }, {
+    addBackupDictionaryValues: () => {},
+    applyLayoutArrangement: () => {},
+    cloneValue: clone,
+    createLayoutArrangementFromCurrentState: () => {
+      throw new Error("stored guest arrangement should be remapped");
+    },
+    currentCreateMeta: () => ({
+      createdAt: "2026-07-26T12:00:00.000Z",
+      updatedAt: "2026-07-26T12:00:00.000Z"
+    }),
+    guestCandidateLayouts: (candidate) => candidate.layouts,
+    guestDemoCopyFlag: "guestDemoCopy",
+    layoutDictionaryValues: () => [],
+    normalizeDictionaryValues: (values = []) => [...values],
+    readableGuestDemoLayoutName: (name) => name,
+    saveState: () => {},
+    uniqueLayoutName: (name) => `${name} 2`,
+    ...overrides
+  });
+}
+
+test("CRITICAL guest login import: a new layout reuses identical template bags and items", () => {
+  const { sourceState, targetState } = templateReuseState();
+  let containerCopies = 0;
+  let itemCopies = 0;
+
+  const importedIds = importTemplateReuseCandidate(targetState, sourceState, {
+    copyPublishedContainerToState: () => {
+      containerCopies += 1;
+      return "";
+    },
+    copyPublishedItemToState: () => {
+      itemCopies += 1;
+      return "";
+    }
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(Object.keys(targetState.layouts).length, 2);
+  assert.equal(Object.keys(targetState.containers).length, 1);
+  assert.equal(Object.keys(targetState.items).length, 1);
+  assert.equal(containerCopies, 0);
+  assert.equal(itemCopies, 0);
+  const imported = targetState.layouts[importedIds[0]];
+  assert.equal(imported.name, "Weekend 2");
+  assert.deepEqual(imported.rootContainerIds, ["bag-account"]);
+  assert.deepEqual(imported.arrangement.items, { "item-account": "bag-account" });
+  assert.deepEqual(imported.arrangement.packedItems, { "item-account": true });
+});
+
+test("CRITICAL guest login import: changed template items stay separate while an identical bag is reused", () => {
+  const { sourceState, targetState } = templateReuseState({
+    sourceItemName: "Rain shell repaired"
+  });
+  let containerCopies = 0;
+
+  const importedIds = importTemplateReuseCandidate(targetState, sourceState, {
+    copyPublishedContainerToState: () => {
+      containerCopies += 1;
+      return "";
+    },
+    copyPublishedItemToState: (source, sourceItemId, { containerId, idMap }) => {
+      const copiedId = "item-guest-imported";
+      targetState.items[copiedId] = {
+        ...clone(source.items[sourceItemId]),
+        id: copiedId,
+        containerId
+      };
+      idMap.items.set(sourceItemId, copiedId);
+      return copiedId;
+    }
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(Object.keys(targetState.layouts).length, 2);
+  assert.equal(Object.keys(targetState.containers).length, 1);
+  assert.equal(Object.keys(targetState.items).length, 2);
+  assert.equal(containerCopies, 0);
+  const imported = targetState.layouts[importedIds[0]];
+  assert.deepEqual(imported.rootContainerIds, ["bag-account"]);
+  assert.deepEqual(imported.arrangement.items, { "item-guest-imported": "bag-account" });
+  assert.deepEqual(imported.arrangement.packedItems, { "item-guest-imported": true });
+});
 
 test("CRITICAL guest magic-link import: legacy guest storage alone cannot mutate an account", async () => {
   let guestSnapshotReads = 0;

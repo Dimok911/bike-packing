@@ -18,6 +18,10 @@ import {
   GUEST_SHARED_LINK_DETACHED_ITEM_IDS,
   guestSharedLinkDetachedItemIds
 } from "./guest-shared-link-target.js";
+import {
+  planGuestTemplateEntityReuse,
+  remapGuestLayoutArrangement
+} from "./guest-login-entity-reuse.js";
 
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
@@ -184,6 +188,22 @@ function layoutHasImportedContent(layout) {
   );
 }
 
+function sourceContainerParentId(sourceState, sourceLayout, containerId) {
+  return String(
+    sourceLayout?.arrangement?.containers?.[containerId]?.parentId ||
+    sourceState?.containers?.[containerId]?.parentId ||
+    ""
+  ).trim();
+}
+
+function sourceItemContainerId(sourceState, sourceLayout, itemId) {
+  return String(
+    sourceLayout?.arrangement?.items?.[itemId] ||
+    sourceState?.items?.[itemId]?.containerId ||
+    ""
+  ).trim();
+}
+
 export function removeLegacyGuestImportPlaceholders(targetState) {
   const layouts = Object.values(targetState?.layouts || {});
   const artifactIds = layouts
@@ -310,24 +330,56 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
   layouts.forEach((entry, index) => {
     const sourceLayout = source.layouts?.[entry.layoutId];
     if (!sourceLayout) return;
+    const reusePlan = planGuestTemplateEntityReuse(targetState, source, sourceLayout);
+    reusePlan.containers.forEach((targetId, sourceId) => {
+      if (!idMap.containers.has(sourceId)) idMap.containers.set(sourceId, targetId);
+    });
+    reusePlan.items.forEach((targetId, sourceId) => {
+      if (!idMap.items.has(sourceId)) idMap.items.set(sourceId, targetId);
+    });
     const sourceRootIds = uniqueLayoutIds([
       ...(sourceLayout.rootContainerIds || []),
       ...(sourceLayout.arrangement?.rootContainerIds || [])
     ]);
-    const rootContainerIds = sourceRootIds
-      .map((id) => copyPublishedContainerToState(source, id, {
+    const sourceContainerIds = [...getLayoutContainerIdSet(source, sourceLayout)];
+    const sourceItemIds = uniqueLayoutIds([
+      ...getLayoutItemIdSet(source, sourceLayout),
+      ...guestSharedLinkDetachedItemIds(sourceLayout)
+    ]).filter((id) => source.items?.[id]);
+    sourceRootIds.forEach((id) => {
+      if (idMap.containers.has(id)) return;
+      copyPublishedContainerToState(source, id, {
         targetLayoutId: "",
         changedAt,
         idMap,
         sourceLayoutId: sourceLayout.id
-      }))
-      .filter(Boolean);
-    const detachedItemIds = guestSharedLinkDetachedItemIds(sourceLayout)
-      .map((sourceItemId) => idMap.items.get(sourceItemId) || copyPublishedItemToState(source, sourceItemId, {
-        containerId: "",
+      });
+    });
+    sourceContainerIds.forEach((sourceContainerId) => {
+      if (idMap.containers.has(sourceContainerId)) return;
+      const sourceParentId = sourceContainerParentId(source, sourceLayout, sourceContainerId);
+      copyPublishedContainerToState(source, sourceContainerId, {
+        changedAt,
+        idMap,
+        parentId: idMap.containers.get(sourceParentId) || null,
+        sourceLayoutId: sourceLayout.id,
+        targetLayoutId: ""
+      });
+    });
+    sourceItemIds.forEach((sourceItemId) => {
+      if (idMap.items.has(sourceItemId)) return;
+      const sourceContainerId = sourceItemContainerId(source, sourceLayout, sourceItemId);
+      copyPublishedItemToState(source, sourceItemId, {
+        containerId: idMap.containers.get(sourceContainerId) || "",
         changedAt,
         idMap
-      }))
+      });
+    });
+    const rootContainerIds = sourceRootIds
+      .map((id) => idMap.containers.get(id))
+      .filter(Boolean);
+    const detachedItemIds = guestSharedLinkDetachedItemIds(sourceLayout)
+      .map((sourceItemId) => idMap.items.get(sourceItemId))
       .filter(Boolean);
     const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
     const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, guestLayoutFallbackName);
@@ -345,7 +397,11 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
       id: layoutId,
       name: safeName,
       rootContainerIds,
-      arrangement: createLayoutArrangementFromCurrentState(targetState, rootContainerIds),
+      arrangement: remapGuestLayoutArrangement(sourceLayout, targetState, {
+        containerIdMap: idMap.containers,
+        itemIdMap: idMap.items,
+        fallbackArrangement: () => createLayoutArrangementFromCurrentState(targetState, rootContainerIds)
+      }),
       locations: importedDictionaries.locations,
       categories: importedDictionaries.categories,
       ...(detachedItemIds.length ? { [GUEST_SHARED_LINK_DETACHED_ITEM_IDS]: detachedItemIds } : {}),
