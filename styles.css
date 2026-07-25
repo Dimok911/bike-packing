@@ -6261,6 +6261,12 @@ dialog.photo-lightbox::backdrop {
   cursor: default;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .photo-lightbox-nav {
+    display: none;
+  }
+}
+
 .help-limits-content {
   display: grid;
   gap: 12px;

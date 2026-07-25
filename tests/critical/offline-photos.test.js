@@ -1886,6 +1886,15 @@ test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zon
   assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
 });
 
+test("CRITICAL offline-photos: phone lightbox gives the full screen to swipe and tap-to-close", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(styles, /@media \(hover:\s*none\) and \(pointer:\s*coarse\)\s*\{[\s\S]*?\.photo-lightbox-nav\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*overlay\.addEventListener\("touchmove",[\s\S]*overlay\.addEventListener\("touchend",/);
+  assert.match(source, /if \(!touchStartedWithPinch && !moved && scale <= 1[\s\S]*close\(\);/);
+  assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*inset:\s*0;[\s\S]*width:\s*100%;[\s\S]*height:\s*100%;/);
+});
+
 test("CRITICAL offline-photos: lightbox is a smooth scroll-snap carousel with synchronized dots", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
   const styles = readProjectFile("styles.css");
