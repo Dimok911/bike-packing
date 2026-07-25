@@ -47,6 +47,8 @@ export function markManagedTemplatePublished(layout) {
   layout.templatePublished = true;
   delete layout.templateUnpublishPending;
   delete layout.templateDraftSyncPending;
+  delete layout.templateDraftServerHydrated;
+  delete layout.templateDraftServerUpdatedAt;
   return true;
 }
 

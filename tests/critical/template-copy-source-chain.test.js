@@ -709,6 +709,7 @@ test("CRITICAL template drafts: autosave keeps the server record private", async
   assert.equal(apiCalls[0].body.visibility, "private");
   assert.equal(runtime.state.layouts["layout-draft"].templatePublished, false);
   assert.equal(isManagedTemplateDraftSyncPending(runtime.state.layouts["layout-draft"]), false);
+  assert.equal(runtime.state.layouts["layout-draft"].templateDraftServerHydrated, true);
   assert.equal(persisted, 1);
   assert.equal(result.published, false);
 });
@@ -766,7 +767,89 @@ test("CRITICAL template drafts: active private records hydrate once across brows
   assert.equal(saves, 1);
   assert.equal(renders, 1);
   assert.equal(runtime.state.layouts["layout-restored"].templatePublished, false);
+  assert.equal(runtime.state.layouts["layout-restored"].templateDraftServerHydrated, true);
   assert.equal(findLocalAdminTemplateDraft(runtime.state.layouts, records[0])?.id, "layout-restored");
+});
+
+test("CRITICAL template drafts: a pre-sync browser draft is queued before another browser hydrates it", async () => {
+  const record = {
+    id: "legacy-shared",
+    sharedId: "legacy-shared",
+    publicTemplateKind: "shared-layout",
+    published: false,
+    visibility: "private",
+    adminPayloadEndpoint: "/bike-packing/admin/shared-layouts/legacy-shared/state"
+  };
+  const legacyDraft = {
+    id: "layout-legacy",
+    adminSharedSourceId: "legacy-shared",
+    templatePublished: false
+  };
+  const runtime = {
+    state: { layouts: { [legacyDraft.id]: legacyDraft } },
+    adminTemplateHistoryRecords: []
+  };
+  let payloadFetches = 0;
+  let saves = 0;
+  const result = await hydrateAdminTemplateDraftsFlow({
+    runtime,
+    dependencies: {
+      fetchAdminTemplateCatalog: async () => ({ lists: [record] }),
+      fetchAdminTemplatePayload: async () => { payloadFetches += 1; },
+      normalizeAdminTemplateHistoryRecords: (value) => value,
+      saveState: () => { saves += 1; }
+    }
+  });
+
+  assert.equal(result.restored, 0);
+  assert.equal(result.migrationPending, 1);
+  assert.equal(payloadFetches, 0);
+  assert.equal(saves, 1);
+  assert.equal(legacyDraft.templateDraftSyncPending, true);
+  assert.equal(legacyDraft.templateDraftServerHydrated, undefined);
+});
+
+test("CRITICAL template drafts: a server-hydrated browser refreshes after another browser saves", async () => {
+  const record = {
+    id: "shared-refresh",
+    sharedId: "shared-refresh",
+    publicTemplateKind: "shared-layout",
+    published: false,
+    visibility: "private",
+    updatedAt: "2026-07-25T10:00:00.000Z",
+    adminPayloadEndpoint: "/bike-packing/admin/shared-layouts/shared-refresh/state"
+  };
+  const localDraft = {
+    id: "layout-refresh",
+    adminSharedSourceId: "shared-refresh",
+    templatePublished: false,
+    templateDraftServerHydrated: true,
+    templateDraftServerUpdatedAt: "2026-07-25T09:00:00.000Z"
+  };
+  const runtime = {
+    state: { layouts: { [localDraft.id]: localDraft } },
+    adminTemplateHistoryRecords: []
+  };
+  let payloadFetches = 0;
+  let saves = 0;
+  const result = await hydrateAdminTemplateDraftsFlow({
+    runtime,
+    dependencies: {
+      fetchAdminTemplateCatalog: async () => ({ lists: [record] }),
+      fetchAdminTemplatePayload: async () => {
+        payloadFetches += 1;
+        return { payload: { layouts: {} } };
+      },
+      materializeSharedDraft: () => localDraft,
+      normalizeAdminTemplateHistoryRecords: (value) => value,
+      saveState: () => { saves += 1; }
+    }
+  });
+
+  assert.equal(result.refreshed, 1);
+  assert.equal(payloadFetches, 1);
+  assert.equal(saves, 1);
+  assert.equal(localDraft.templateDraftServerUpdatedAt, record.updatedAt);
 });
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {

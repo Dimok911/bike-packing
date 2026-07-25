@@ -189,6 +189,8 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
   if (!published) {
     markManagedTemplateUnpublished(layout);
     clearManagedTemplateDraftSyncPending(layout);
+    layout.templateDraftServerHydrated = true;
+    layout.templateDraftServerUpdatedAt = runtime.syncMeta.serverUpdatedAt;
     persistStateSnapshot(runtime.state);
     updateSyncUi();
     return {

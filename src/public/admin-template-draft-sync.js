@@ -64,8 +64,26 @@ export async function hydrateAdminTemplateDraftsFlow({
   const records = normalizeAdminTemplateHistoryRecords(catalog?.lists);
   runtime.adminTemplateHistoryRecords = records;
   let restored = 0;
+  let refreshed = 0;
+  let migrationPending = 0;
   for (const record of activeAdminTemplateDraftRecords(records)) {
-    if (findLocalAdminTemplateDraft(runtime.state?.layouts, record)) continue;
+    const localDraft = findLocalAdminTemplateDraft(runtime.state?.layouts, record);
+    if (localDraft) {
+      if (localDraft.templateDraftServerHydrated !== true) {
+        localDraft.templateDraftSyncPending = true;
+        migrationPending += 1;
+        continue;
+      }
+      const serverUpdatedAt = Date.parse(normalizeText(record.updatedAt));
+      const localServerUpdatedAt = Date.parse(normalizeText(localDraft.templateDraftServerUpdatedAt));
+      if (
+        localDraft.templateDraftSyncPending === true ||
+        !Number.isFinite(serverUpdatedAt) ||
+        (Number.isFinite(localServerUpdatedAt) && serverUpdatedAt <= localServerUpdatedAt)
+      ) {
+        continue;
+      }
+    }
     let response = null;
     try {
       response = await fetchAdminTemplatePayload(record.adminPayloadEndpoint, record);
@@ -81,12 +99,15 @@ export async function hydrateAdminTemplateDraftsFlow({
     layout.templatePublished = false;
     delete layout.templateUnpublishPending;
     delete layout.templateDraftSyncPending;
+    layout.templateDraftServerHydrated = true;
+    layout.templateDraftServerUpdatedAt = normalizeText(record.updatedAt);
     if (record.name) layout.name = record.name;
-    restored += 1;
+    if (localDraft) refreshed += 1;
+    else restored += 1;
   }
-  if (restored) {
+  if (restored || refreshed || migrationPending) {
     saveState({ sync: false });
     if (renderAfter) render();
   }
-  return { records, restored };
+  return { records, restored, refreshed, migrationPending };
 }
