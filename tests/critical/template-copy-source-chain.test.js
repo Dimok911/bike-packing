@@ -770,6 +770,7 @@ test("CRITICAL template drafts: active private records hydrate once across brows
   assert.equal(renders, 1);
   assert.equal(clearedDeletedMarkers, 2);
   assert.equal(runtime.state.layouts["layout-restored"].templatePublished, false);
+  assert.equal(runtime.state.layouts["layout-restored"].adminTemplateCopy, true);
   assert.equal(runtime.state.layouts["layout-restored"].templateDraftServerHydrated, true);
   assert.equal(findLocalAdminTemplateDraft(runtime.state.layouts, records[0])?.id, "layout-restored");
 });
@@ -808,6 +809,7 @@ test("CRITICAL template drafts: a pre-sync browser draft is queued before anothe
   assert.equal(result.migrationPending, 1);
   assert.equal(payloadFetches, 0);
   assert.equal(saves, 1);
+  assert.equal(legacyDraft.adminTemplateCopy, true);
   assert.equal(legacyDraft.templateDraftSyncPending, true);
   assert.equal(legacyDraft.templateDraftServerHydrated, undefined);
 });

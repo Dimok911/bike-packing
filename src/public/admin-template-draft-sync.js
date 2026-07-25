@@ -73,6 +73,8 @@ export async function hydrateAdminTemplateDraftsFlow({
     }
     const localDraft = findLocalAdminTemplateDraft(runtime.state?.layouts, record);
     if (localDraft) {
+      localDraft.adminTemplateCopy = true;
+      localDraft.templatePublished = false;
       if (localDraft.templateDraftServerHydrated !== true) {
         localDraft.templateDraftSyncPending = true;
         migrationPending += 1;
@@ -100,6 +102,7 @@ export async function hydrateAdminTemplateDraftsFlow({
       ? await materializeSharedDraft(record, payload)
       : await materializeDemoDraft(record, payload);
     if (!layout) continue;
+    layout.adminTemplateCopy = true;
     layout.templatePublished = false;
     delete layout.templateUnpublishPending;
     delete layout.templateDraftSyncPending;
