@@ -1925,8 +1925,9 @@ test("CRITICAL offline-photos: packing gallery dots stay above iOS scrolling lay
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/);
   assert.match(styles, /\.item-photo\.item-photo-has-dots \.photo-gallery-track\s*\{[\s\S]*height:\s*calc\(100% - 22px\);/);
   assert.match(styles, /\.photo-gallery-dots\s*\{[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*10;[\s\S]*min-height:\s*22px;[\s\S]*translate3d\(-50%,\s*0,\s*0\);[\s\S]*backface-visibility:\s*hidden;/);
-  assert.match(styles, /\.photo-gallery-dot\s*\{[\s\S]*border:\s*1px solid[\s\S]*background:\s*transparent;[\s\S]*appearance:\s*none;/);
-  assert.match(styles, /\.photo-gallery-dot\.active\s*\{[\s\S]*background:\s*var\(--accent\);/);
+  assert.match(styles, /\.photo-gallery-dot\s*\{[\s\S]*width:\s*12px;[\s\S]*height:\s*22px;[\s\S]*margin:\s*0;[\s\S]*appearance:\s*none;/);
+  assert.match(styles, /\.photo-gallery-dot-mark\s*\{[\s\S]*width:\s*8px;[\s\S]*height:\s*8px;[\s\S]*border:\s*1px solid[\s\S]*pointer-events:\s*none;/);
+  assert.match(styles, /\.photo-gallery-dot\.active \.photo-gallery-dot-mark\s*\{[\s\S]*background:\s*var\(--accent\);/);
   assert.doesNotMatch(styles, /\.photo-gallery-dot::before/);
 });
 

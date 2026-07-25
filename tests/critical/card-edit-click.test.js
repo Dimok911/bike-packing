@@ -206,11 +206,13 @@ test("CRITICAL card editing: gaps around photo dots belong to the gallery contro
   const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 
   assert.match(gallerySource, /class="photo-gallery-dots" data-photo-controls/);
+  assert.match(gallerySource, /class="photo-gallery-dot-mark"/);
   assert.match(dragSource, /\[data-photo-controls\]/);
   assert.match(stylesSource, /\.photo-gallery-dots\s*\{[^}]*gap:\s*0;/s);
-  assert.match(stylesSource, /\.photo-gallery-dot\s*\{[^}]*width:\s*8px;[^}]*height:\s*8px;[^}]*margin:\s*0 2px;/s);
+  assert.match(stylesSource, /\.photo-gallery-dot\s*\{[^}]*width:\s*12px;[^}]*height:\s*22px;[^}]*margin:\s*0;/s);
+  assert.match(stylesSource, /\.photo-gallery-dot-mark\s*\{[^}]*width:\s*8px;[^}]*height:\s*8px;[^}]*pointer-events:\s*none;/s);
   assert.match(stylesSource, /\.photo-gallery-dot:not\(:disabled\):active,[^}]*translate:\s*0;[^}]*filter:\s*none;/s);
-  assert.match(stylesSource, /\.photo-gallery-dot\.active\s*\{/);
+  assert.match(stylesSource, /\.photo-gallery-dot\.active \.photo-gallery-dot-mark\s*\{/);
   assert.doesNotMatch(stylesSource, /\.photo-gallery-dot::before/);
 });
 

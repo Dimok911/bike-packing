@@ -104,7 +104,7 @@ export function renderPhotoDots(count, activeIndex = 0) {
   if (count <= 1) return "";
   return `
     <div class="photo-gallery-dots" data-photo-controls aria-hidden="true">
-      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot ${index === activeIndex ? "active" : ""}" type="button" data-photo-index="${index}" tabindex="-1"></button>`).join("")}
+      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot ${index === activeIndex ? "active" : ""}" type="button" data-photo-index="${index}" tabindex="-1"><i class="photo-gallery-dot-mark"></i></button>`).join("")}
     </div>
   `;
 }
