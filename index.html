@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1396" />
+    <link rel="stylesheet" href="./styles.css?v=1397" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -276,6 +276,9 @@
           <strong id="rootContainerTemporaryStatusTitle">Временный пакет</strong>
           <span id="rootContainerTemporaryStatusText">Существует только в текущей укладке</span>
         </div>
+        <div class="bag-catalog-import-row">
+          <button id="openBagCatalogBtn" class="ghost bag-catalog-open-button" type="button" hidden>Load from catalog</button>
+        </div>
         <label>
           Name
           <input id="rootContainerName" />
@@ -362,6 +365,108 @@
         <footer>
           <button id="shareRootContainerLinkBtn" class="ghost" type="button" hidden></button>
           <button id="saveRootContainerBtn" value="default">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="bagCatalogDialog">
+      <form method="dialog" class="dialog-card manufacturer-bag-catalog-dialog-card">
+        <header>
+          <h2 id="bagCatalogTitle">Bag catalog</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="manufacturer-catalog-toolbar">
+          <button id="bagCatalogBackBtn" class="ghost manufacturer-catalog-back" type="button" hidden>Back</button>
+          <label class="manufacturer-catalog-search">
+            <span class="visually-hidden">Search bags</span>
+            <input id="bagCatalogSearch" type="search" autocomplete="off" />
+          </label>
+          <p id="bagCatalogPath" class="manufacturer-catalog-path"></p>
+          <p id="bagCatalogAdminNotice" class="manufacturer-catalog-admin-notice" hidden></p>
+        </div>
+        <div id="bagCatalogResults" class="manufacturer-catalog-results"></div>
+      </form>
+    </dialog>
+
+    <dialog id="bagCatalogEditDialog">
+      <form id="bagCatalogEditForm" method="dialog" class="dialog-card manufacturer-bag-catalog-edit-card">
+        <header>
+          <h2 id="bagCatalogEditTitle">Edit catalog model</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="bagCatalogEditLocalNotice" class="manufacturer-catalog-admin-notice"></p>
+        <div class="manufacturer-catalog-edit-fields">
+          <label>
+            <span class="bag-catalog-edit-label">Name</span>
+            <input id="bagCatalogEditName" required />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Variant</span>
+            <input id="bagCatalogEditVariant" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">SKU</span>
+            <input id="bagCatalogEditSku" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Weight</span>
+            <input id="bagCatalogEditWeight" type="number" min="0" step="1" inputmode="numeric" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Volume</span>
+            <input id="bagCatalogEditVolume" type="text" inputmode="decimal" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Load</span>
+            <input id="bagCatalogEditLoad" type="text" inputmode="decimal" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Width</span>
+            <input id="bagCatalogEditWidth" type="text" inputmode="decimal" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Height</span>
+            <input id="bagCatalogEditHeight" type="text" inputmode="decimal" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Depth</span>
+            <input id="bagCatalogEditDepth" type="text" inputmode="decimal" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Color</span>
+            <input id="bagCatalogEditColor" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Waterproof</span>
+            <input id="bagCatalogEditWaterproof" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Material</span>
+            <input id="bagCatalogEditMaterial" />
+          </label>
+          <label>
+            <span class="bag-catalog-edit-label">Mounting</span>
+            <input id="bagCatalogEditMounting" />
+          </label>
+          <label class="manufacturer-catalog-edit-wide">
+            <span class="bag-catalog-edit-label">Description in Russian</span>
+            <textarea id="bagCatalogEditDescriptionRu" rows="3"></textarea>
+          </label>
+          <label class="manufacturer-catalog-edit-wide">
+            <span class="bag-catalog-edit-label">Description in English</span>
+            <textarea id="bagCatalogEditDescriptionEn" rows="3"></textarea>
+          </label>
+          <label class="manufacturer-catalog-edit-wide">
+            <span class="bag-catalog-edit-label">Image URL</span>
+            <input id="bagCatalogEditImageUrl" type="url" />
+          </label>
+          <label class="manufacturer-catalog-edit-wide">
+            <span class="bag-catalog-edit-label">Source URL</span>
+            <input id="bagCatalogEditSourceUrl" type="url" />
+          </label>
+        </div>
+        <footer>
+          <button id="bagCatalogEditSaveBtn" value="default">Save changes</button>
         </footer>
       </form>
     </dialog>
@@ -767,6 +872,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1396" type="module"></script>
+    <script src="./app.js?v=1397" type="module"></script>
   </body>
 </html>

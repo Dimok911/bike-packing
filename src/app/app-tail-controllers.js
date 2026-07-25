@@ -72,6 +72,21 @@ import { bindCardEditorClicks } from "../ui/card-edit-click.js";
 import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
+import {
+  MANUFACTURER_BAG_CATALOG,
+  MANUFACTURER_BAG_CATALOG_CATEGORIES,
+  MANUFACTURER_BAG_CATALOG_FAMILIES
+} from "../data/manufacturer-bag-catalog.js";
+import {
+  manufacturerBagContainerDraft,
+  manufacturerBagSourceMeta,
+  mergeManufacturerBagCatalogOverrides
+} from "../state/manufacturer-bag-catalog.js";
+import {
+  readManufacturerBagCatalogOverrides,
+  writeManufacturerBagCatalogOverride
+} from "../storage/manufacturer-bag-catalog-overrides.js";
+import { createManufacturerBagCatalogDialogController } from "../ui/manufacturer-bag-catalog-dialog.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -94,6 +109,8 @@ export function createAppTailControllers(ctx) {
   let replacingPackingContainerId = "";
   let placeNewRootInCurrentLayout = false;
   let rootContainerPlacementTargetLayoutId = "";
+  let rootContainerCatalogSelection = null;
+  let manufacturerBagCatalogOverrides = readManufacturerBagCatalogOverrides();
   let layoutRootTargetLayoutId = "";
   let pendingCopyTargetLayoutCreation = null;
   let pendingCopyTargetContainerSetup = null;
@@ -348,6 +365,49 @@ export function createAppTailControllers(ctx) {
     userStorageScopeKey, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
+
+const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
+  MANUFACTURER_BAG_CATALOG,
+  manufacturerBagCatalogOverrides
+);
+
+const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialogController({
+  canEdit: () => isAdminUser(),
+  catalog: manufacturerBagCatalogRows,
+  categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
+  escapeHtml,
+  families: MANUFACTURER_BAG_CATALOG_FAMILIES,
+  language: () => isEnglishUi() ? "en" : "ru",
+  onSelect: applyManufacturerBagCatalogSelection,
+  onUpdate: (entry) => {
+    manufacturerBagCatalogOverrides = writeManufacturerBagCatalogOverride(entry);
+    showToast(t("bagCatalog.savedLocal"), "success");
+  },
+  openModalDialog,
+  refs,
+  t
+});
+
+function applyManufacturerBagCatalogSelection(entry) {
+  const draft = manufacturerBagContainerDraft(entry);
+  if (!draft || runtime.editingRootContainerId) return;
+  rootContainerCatalogSelection = entry;
+  refs.rootContainerName.value = draft.name;
+  refs.rootContainerWeight.value = draft.weight || 0;
+  refs.rootContainerVolume.value = draft.volume ? String(draft.volume).replace(".", ",") : "";
+  if (refs.rootContainerColor) refs.rootContainerColor.value = draft.color || "";
+  if (refs.rootContainerWidth) refs.rootContainerWidth.value = draft.dimensions?.width
+    ? String(draft.dimensions.width).replace(".", ",")
+    : "";
+  if (refs.rootContainerHeight) refs.rootContainerHeight.value = draft.dimensions?.height
+    ? String(draft.dimensions.height).replace(".", ",")
+    : "";
+  if (refs.rootContainerDepth) refs.rootContainerDepth.value = draft.dimensions?.depth
+    ? String(draft.dimensions.depth).replace(".", ",")
+    : "";
+  updateRootContainerDialogSaveState();
+  refs.rootContainerName.focus();
+}
 
 function isEnglishUi() {
   return normalizeUiLanguage(uiLanguage) === "en";
@@ -5024,6 +5084,8 @@ function openRootContainerDialog(containerId = null, {
   resetSharedReadonlyRootContainerDialog();
   const container = containerId ? state.containers[containerId] : null;
   if (containerId && !container) return;
+  rootContainerCatalogSelection = null;
+  manufacturerBagCatalogDialogController.setImportAvailable(!containerId);
   placeNewRootInCurrentLayout = Boolean(!containerId && placeInCurrentLayout);
   rootContainerPlacementTargetLayoutId = placeNewRootInCurrentLayout && state.layouts?.[targetLayoutId]
     ? targetLayoutId
@@ -7961,6 +8023,7 @@ function saveRootContainerDialog(event) {
     changedAt: nowIso(),
     closeDialogWithoutRestoringFocus,
     currentCreateMeta,
+    rootContainerSourceMeta: () => manufacturerBagSourceMeta(rootContainerCatalogSelection),
     createRootContainerId: runtime.rootContainerDialogPhotoDraft
       ? () => ensurePhotoDraftEntityId(runtime.rootContainerDialogPhotoDraft, "container")
       : undefined,
@@ -8001,6 +8064,7 @@ function saveRootContainerDialog(event) {
     touchContainer
   });
   if (result) {
+    rootContainerCatalogSelection = null;
     placeNewRootInCurrentLayout = false;
     rootContainerPlacementTargetLayoutId = "";
   }
