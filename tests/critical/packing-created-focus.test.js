@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { expandItemPlacementPath } from "../../src/state/layout-focus.js";
+import { closeDialogsThenFocus } from "../../src/ui/copy-focus-flow.js";
 import { focusRecentlyAddedPackingCard } from "../../src/ui/packing-created-focus.js";
 
 function createCard(dataset) {
@@ -39,10 +40,12 @@ test("CRITICAL copied item uses search-style highlight while scrolling and keeps
   const timers = [];
   const scrollCalls = [];
   let cleared = false;
+  let settled = false;
 
   assert.equal(focusRecentlyAddedPackingCard({
     getViewportHeight: () => 700,
     onClear: () => { cleared = true; },
+    onSettled: () => { settled = true; },
     recordId: "item-copy",
     requestFrame: (callback) => frames.push(callback),
     root: { querySelectorAll: () => [card] },
@@ -53,6 +56,7 @@ test("CRITICAL copied item uses search-style highlight while scrolling and keeps
   assert.equal(card.classList.contains("filter-focus"), true);
   assert.equal(card.classList.contains("copied-item-focus"), true);
   assert.deepEqual(scrollCalls, [card]);
+  assert.equal(settled, false);
 
   while (frames.length) frames.shift()();
   assert.equal(card.classList.contains("just-added"), false);
@@ -60,6 +64,7 @@ test("CRITICAL copied item uses search-style highlight while scrolling and keeps
   assert.equal(card.classList.contains("copied-item-focus"), true);
   assert.deepEqual(card.focusOptions, { preventScroll: true });
   assert.equal(card.attributes.get("tabindex"), "-1");
+  assert.equal(settled, true);
   assert.equal(timers[0].delay, 2600);
 
   timers[0].callback();
@@ -67,6 +72,58 @@ test("CRITICAL copied item uses search-style highlight while scrolling and keeps
   assert.equal(card.classList.contains("copied-item-focus"), false);
   assert.equal(card.attributes.has("tabindex"), false);
   assert.equal(cleared, true);
+});
+
+test("CRITICAL copied item waits for nested dialog restoration before focusing", async () => {
+  const pickerDialog = { id: "picker", open: true };
+  const sourceDialog = { id: "source", open: true };
+  const closeResolvers = [];
+  const frames = [];
+  const timers = [];
+  const order = [];
+  let settleFocus = null;
+
+  const flow = closeDialogsThenFocus({
+    clearTimer: (timer) => {
+      const entry = timers.find((candidate) => candidate.id === timer);
+      if (entry) entry.cleared = true;
+    },
+    closeDialog(dialog, returnValue) {
+      order.push(`close:${dialog.id}:${returnValue}`);
+      dialog.open = false;
+      return new Promise((resolve) => closeResolvers.push(resolve));
+    },
+    dialogs: [pickerDialog, sourceDialog],
+    focus(onSettled) {
+      order.push("focus");
+      settleFocus = onSettled;
+      return true;
+    },
+    requestFrame: (callback) => frames.push(callback),
+    setTimer: (callback, delay) => {
+      const id = timers.length + 1;
+      timers.push({ callback, cleared: false, delay, id });
+      return id;
+    }
+  });
+
+  assert.deepEqual(order, ["close:picker:copy", "close:source:copy"]);
+  assert.equal(frames.length, 0);
+  closeResolvers.forEach((resolve) => resolve());
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(frames.length, 1);
+  assert.deepEqual(order, ["close:picker:copy", "close:source:copy"]);
+
+  frames.shift()();
+  await Promise.resolve();
+  assert.deepEqual(order, ["close:picker:copy", "close:source:copy", "focus"]);
+  assert.equal(timers[0].delay, 1800);
+
+  const focusedCard = { id: "copied-card" };
+  settleFocus(focusedCard);
+  assert.equal(await flow, focusedCard);
+  assert.equal(timers[0].cleared, true);
 });
 
 test("CRITICAL copied item focus retries until the switched layout is rendered", () => {
@@ -157,4 +214,15 @@ test("CRITICAL copied item focus expands its target container and ancestors", ()
 test("CRITICAL copied item focus never inserts artificial room after the real page end", () => {
   const source = readFileSync(new URL("../../src/ui/packing-created-focus.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /packing-focus-scroll-spacer|createElement\(|append\(/);
+});
+
+test("CRITICAL personal copy starts sync only after dialog restoration and focus settling", () => {
+  const source = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const start = source.indexOf("async function duplicateItemToContainerInLayout(");
+  const end = source.indexOf("\nfunction snapshotContainerTree(", start);
+  const flow = source.slice(start, end);
+  assert.match(flow, /scheduleRemoteSave\(COPY_FOCUS_SYNC_FALLBACK_DELAY_MS\)/);
+  assert.match(flow, /const focusSettled = closeDialogsThenFocus\(/);
+  assert.match(flow, /render\(\);\s*await focusSettled;\s*if \(!targetIsPublic && runtime\.currentUser\) \{\s*void saveRemoteState\(/);
+  assert.doesNotMatch(flow, /refs\.containerPickerDialog\.close\(\)/);
 });

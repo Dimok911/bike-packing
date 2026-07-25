@@ -201,6 +201,10 @@ test:critical` дополнительно к `npm.cmd run check`.
   yellow search-style highlight to the replacement card, but must not start another
   scroll. A card at the real page end clamps to the real maximum scroll position;
   focus must never append artificial bottom space.
+- Nested copy dialogs must finish every delayed focus/scroll restoration before the
+  copied card starts its focus scroll. Personal sync and copied-photo upload begin
+  only after that scroll settles, with a delayed fallback so unsynced work is not
+  stranded if the target card cannot be found.
 
 - После перетаскивания вещи или вкладываемой сумки из каталога на вкладку «Укладка» удержание у верхнего или нижнего края экрана должно продолжать прокрутку страницы.
 - Скроллер должен переподключаться к актуальной доске после переключения вкладки и повторного рендера, иначе он останется привязан к старому DOM-элементу.

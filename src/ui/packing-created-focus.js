@@ -31,6 +31,7 @@ export function focusRecentlyAddedPackingCard({
   getViewportHeight = () => globalThis.innerHeight || globalThis.document?.documentElement?.clientHeight || 0,
   onClear = () => {},
   onScroll = () => {},
+  onSettled = () => {},
   recordId,
   requestFrame = (callback) => globalThis.requestAnimationFrame?.(callback),
   root,
@@ -39,6 +40,7 @@ export function focusRecentlyAddedPackingCard({
   type = "item"
 } = {}) {
   if (!root || !recordId) return false;
+  let settledNotified = false;
 
   const highlightCard = (initialCard) => {
     let card = initialCard;
@@ -69,6 +71,10 @@ export function focusRecentlyAddedPackingCard({
       applySearchFocusStyle(card);
     };
     applyHighlight(card);
+    if (!settledNotified) {
+      settledNotified = true;
+      onSettled(card);
+    }
     const observer = createMutationObserver(() => {
       const currentCard = packingCardForRecord(root, type, recordId);
       if (!currentCard || currentCard === card) return;

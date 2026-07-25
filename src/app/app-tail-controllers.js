@@ -73,6 +73,10 @@ import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
 import { focusRecentlyAddedPackingCard } from "../ui/packing-created-focus.js";
+import {
+  closeDialogsThenFocus,
+  COPY_FOCUS_SYNC_FALLBACK_DELAY_MS
+} from "../ui/copy-focus-flow.js";
 import { expandItemPlacementPath } from "../state/layout-focus.js";
 
 export function createAppTailControllers(ctx) {
@@ -1155,7 +1159,7 @@ function createSubcontainerFromAddDialog(event) {
   });
 }
 
-function focusRecentlyAddedItem(itemId) {
+function focusRecentlyAddedItem(itemId, { onSettled = () => {} } = {}) {
   if (runtime.recentlyAddedLayoutId && runtime.recentlyAddedLayoutId !== state.activeLayoutId) return;
   runtime.pendingPackingScroll = null;
   return focusRecentlyAddedPackingCard({
@@ -1166,6 +1170,7 @@ function focusRecentlyAddedItem(itemId) {
       }
     },
     onScroll: syncFixedScrollbarVisibility,
+    onSettled,
     recordId: itemId,
     root: refs.packingView
   });
@@ -2064,6 +2069,20 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
   markRecentlyAddedItem(copyId, targetLayoutId);
   await saveLayoutMutation(targetLayoutId, { publishNow: targetIsPublic, forcePublic: targetIsPublic });
   if (!targetIsPublic && runtime.currentUser) {
+    scheduleRemoteSave(COPY_FOCUS_SYNC_FALLBACK_DELAY_MS);
+  }
+  openCopiedTargetLayout(targetLayoutId);
+  const focusSettled = closeDialogsThenFocus({
+    closeDialog: closeDialogWithoutRestoringFocus,
+    dialogs: [
+      refs.containerPickerDialog,
+      runtime.editingItemId === itemId ? refs.dialog : null
+    ],
+    focus: (onSettled) => focusRecentlyAddedItem(copyId, { onSettled })
+  });
+  render();
+  await focusSettled;
+  if (!targetIsPublic && runtime.currentUser) {
     void saveRemoteState({
       expectedEntityIds: {
         items: [copyId],
@@ -2072,11 +2091,6 @@ async function duplicateItemToContainerInLayout(itemId, targetContainerId, targe
       }
     });
   }
-  openCopiedTargetLayout(targetLayoutId);
-  refs.containerPickerDialog.close();
-  closeSourceEditorAfterCopy("item", itemId);
-  render();
-  requestAnimationFrame(() => focusRecentlyAddedItem(copyId));
   showToast(localText("The item was copied to the selected layout.", "Вещь скопирована в выбранную укладку."), "success");
 }
 
