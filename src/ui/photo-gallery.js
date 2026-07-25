@@ -123,7 +123,7 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   const pending = uploadState.active || photos.some((photo) => !photoRemoteSrc(photo) && ["pending", "error", "missing-local-file"].includes(photo.status));
   const statusText = pending ? photoStatusText(photos) : "";
   return `
-    <div class="item-photo ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
+    <div class="item-photo ${photos.length > 1 ? "item-photo-has-dots" : ""} ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
       <div class="photo-gallery-track">
         ${slides}
       </div>
