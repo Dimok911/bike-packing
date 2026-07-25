@@ -6105,6 +6105,10 @@ async function checkAuthAndLoad(options = {}) {
       GUEST_STORAGE_SCOPE
     }
   }, options);
+  if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
+    await refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
+  }
+  return result;
 }
 
 function handleWindowReturn() {
@@ -7459,10 +7463,6 @@ async function handleRemoteSaveConflict(error, options = {}) {
       updateSyncUi
     }
   }, options);
-  if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
-    await refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
-  }
-  return result;
 }
 
 async function confirmGuestImportRemoteState(importedLayoutIds) {

@@ -4989,6 +4989,10 @@ test("CRITICAL template drafts: offline edits stay pending until an authenticate
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   assert.match(appSource, /markManagedTemplateDraftSyncPending\(activeManagedDraft\)/);
   assert.match(appSource, /for \(const layout of pendingAdminTemplateDraftLayouts\(state\.layouts\)\)[\s\S]*?savePublishedLayoutRecord\(layout\.id, \{ published: false \}\)/);
+  assert.match(
+    appSource,
+    /async function checkAuthAndLoad\(options = \{\}\)[\s\S]*?await refreshAdminTemplateDrafts\(\{ renderAfter: true \}\)[\s\S]*?return result;/
+  );
 });
 
 test("readonly template cache can open offline for every role", () => {
