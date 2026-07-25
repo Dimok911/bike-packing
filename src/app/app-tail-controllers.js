@@ -6407,7 +6407,7 @@ async function saveEditedLayout(event, { closeDialog = true, notify = true } = {
   touchLayout(layout.id, changedAt);
   if (adminPublished) {
     if (isManagedTemplateUnpublished(layout)) {
-      saveState({ sync: false });
+      saveState();
       layoutEditInitialSnapshot = getLayoutEditSnapshot();
       updateLayoutEditSaveState();
       if (closeDialog) refs.layoutEditDialog.close();
@@ -6458,7 +6458,7 @@ async function publishEditedTemplate(event) {
   refs.publishEditedTemplateBtn.disabled = true;
   refs.saveEditedLayoutBtn.disabled = true;
   try {
-    await savePublishedLayoutRecord(layout.id);
+    await savePublishedLayoutRecord(layout.id, { published: true });
     updateLayoutEditPublishButton(layout);
     refs.layoutEditDialog.close();
     render();
@@ -6739,13 +6739,14 @@ async function deleteManagedPublicLayout(layoutId) {
   const target = publishedLayoutTarget(layout);
   const unpublished = isManagedTemplateUnpublished(layout);
   const shouldDeletePublishedTemplate = shouldDeletePublishedTemplateForLayout(layout);
+  const shouldArchiveServerDraft = Boolean(unpublished && target);
   const nextSharedLayout = (shouldDeletePublishedTemplate || unpublished) && target?.type === "shared"
     ? nextServerConfirmedSharedLayoutAfter(target.sharedId)
     : null;
   const nextDemoTemplate = (shouldDeletePublishedTemplate || unpublished) && target?.type === "demo"
     ? nextDemoTemplateAfter(target.demoListId, target.language || layout.language || uiLanguage)
     : null;
-  if (shouldDeletePublishedTemplate) {
+  if (shouldDeletePublishedTemplate || shouldArchiveServerDraft) {
     try {
       await assertAdminApiCompatibility({ force: true });
       updateSyncUi(t("template.removingFromList"));

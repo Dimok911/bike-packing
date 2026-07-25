@@ -1,4 +1,8 @@
-import { markManagedTemplatePublished } from "./template-publication.js";
+import {
+  clearManagedTemplateDraftSyncPending,
+  markManagedTemplatePublished,
+  markManagedTemplateUnpublished
+} from "./template-publication.js";
 
 const PUBLIC_SHARED_LAYOUT_LIST_PREFIX = "public-shared-layout-";
 
@@ -15,7 +19,10 @@ export function canonicalPublishedTargetIdentity(target, data) {
   return null;
 }
 
-export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, layoutId = runtime.state.activeLayoutId, { notify = false } = {}) {
+export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, layoutId = runtime.state.activeLayoutId, {
+  notify = false,
+  published = true
+} = {}) {
   const {
     apiFetch,
     applyPublishedPayloadPhotosToLayoutState,
@@ -86,8 +93,9 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
         body: JSON.stringify({
           title: publishTitle,
           description: layout.note || "",
-          visibility: "public",
-          listVisibility: "public",
+          visibility: published ? "public" : "private",
+          listVisibility: published ? "public" : "private",
+          published,
           language: target.language || layout.language || runtime.uiLanguage,
           ...extraBody,
           payload
@@ -178,6 +186,17 @@ export async function savePublishedLayoutRecordFlow({ runtime, dependencies }, l
   runtime.syncMeta.dirty = false;
   runtime.syncMeta.serverUpdatedAt = nowIso();
   saveSyncMeta();
+  if (!published) {
+    markManagedTemplateUnpublished(layout);
+    clearManagedTemplateDraftSyncPending(layout);
+    persistStateSnapshot(runtime.state);
+    updateSyncUi();
+    return {
+      layoutId,
+      published: false,
+      target
+    };
+  }
   if (target.type === "demo") {
     const confirmedLanguage = normalizeUiLanguage(target.language || layout.adminDemoLanguage || layout.language || runtime.uiLanguage);
     const confirmedName = publishTitle || demoTemplateNameFromPayload(publishedPayload, confirmedLanguage);

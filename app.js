@@ -178,6 +178,7 @@ import {
 } from "./src/public/public-template-offline-cache.js";
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
 import {
+  markManagedTemplateDraftSyncPending,
   isManagedTemplateUnpublished,
   managedTemplatePublicationAction,
   shouldAutoPublishManagedTemplate,
@@ -231,6 +232,10 @@ import {
   normalizeAdminTemplateHistoryRecords
 } from "./src/public/admin-template-history-catalog.js";
 import {
+  hydrateAdminTemplateDraftsFlow,
+  pendingAdminTemplateDraftLayouts
+} from "./src/public/admin-template-draft-sync.js";
+import {
   demoLanguageFromLayoutChoice as demoLanguageFromLayoutChoiceValue,
   demoLayoutChoiceForLanguage as demoLayoutChoiceForLanguageValue,
   demoLayoutChoiceForTemplate as demoLayoutChoiceForTemplateValue,
@@ -274,6 +279,7 @@ import {
   mergeSharedLayoutCatalogEntries,
   normalizeSharedGearName,
   pruneRuntimeSharedLayouts,
+  removeRuntimeSharedLayout,
   serverConfirmedSharedLayoutsFromPublicRecords,
   sharedLayoutIdFromPublicListRecord,
   sharedLayoutLanguageFromPayload,
@@ -1099,6 +1105,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicDemoTemplateExactDelete",
   "publicTemplateSoftUnpublish",
   "adminTemplateHistoryCatalog",
+  "adminTemplateDraftSync",
   "publicHistoryMissingPhotoRecovery",
   "templateDeletionHistoryAction",
   "semanticLayoutPlacementHistory",
@@ -1128,7 +1135,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-24.history-restore-provenance-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-25.admin-template-draft-sync-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -4145,6 +4152,16 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
   if (captureArrangement) captureActiveLayoutArrangement();
   solidifyManagedTemplateDrafts();
   sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
+  const activeManagedDraft = state.layouts?.[getPublishedEditLayoutId()];
+  if (
+    sync &&
+    !applyingRemoteState &&
+    isAdminPublicEditScope(modeState) &&
+    isAdminEditablePublishedLayout(activeManagedDraft?.id) &&
+    isManagedTemplateUnpublished(activeManagedDraft)
+  ) {
+    markManagedTemplateDraftSyncPending(activeManagedDraft);
+  }
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     if (sync && !applyingRemoteState) markCurrentGuestWorkspaceForLoginHandoff();
@@ -4159,6 +4176,7 @@ function saveState({ captureArrangement = true, sync = true } = {}) {
   }
   if (sync && !applyingRemoteState && isAdminPublicEditScope(modeState) && isAdminEditablePublishedLayout()) {
     if (isManagedTemplateUnpublished(state.layouts?.[getPublishedEditLayoutId()])) {
+      scheduleActivePublishedEditSave();
       updateSyncUi(t("template.draftStatus"));
       return;
     }
@@ -4194,7 +4212,7 @@ function saveLayoutMutation(layoutId = state.activeLayoutId, { publishDelay = 90
   const shouldPublishTarget = targetIsPublic && shouldAutoPublishManagedTemplate(state.layouts?.[layoutId]);
   saveState({ sync: !targetIsPublic });
   if (targetIsPublic && !shouldPublishTarget) updateSyncUi(t("template.draftStatus"));
-  if (shouldPublishTarget) {
+  if (targetIsPublic) {
     if (publishNow) {
       cancelPublishedLayoutSave(layoutId);
       return savePublishedLayoutRecord(layoutId);
@@ -4573,7 +4591,7 @@ function sharedLayoutItemKey(layoutId) {
 
 function schedulePublishedLayoutSave(layoutId, delay = 900) {
   const layout = state.layouts?.[layoutId];
-  if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId) || !shouldAutoPublishManagedTemplate(layout)) return;
+  if (!canOpenAdminPublishedEdit() || !isAdminEditablePublishedLayout(layoutId) || !layout) return;
   if (publishedLayoutSaveTimer && publishedLayoutSaveLayoutId && publishedLayoutSaveLayoutId !== layoutId) {
     const previousLayoutId = publishedLayoutSaveLayoutId;
     window.clearTimeout(publishedLayoutSaveTimer);
@@ -6043,7 +6061,7 @@ async function ensureCurrentPackingListId() {
 }
 
 async function checkAuthAndLoad(options = {}) {
-  return checkAuthAndLoadFlow({
+  const result = await checkAuthAndLoadFlow({
     runtime: {
       get appUnlocked() { return appUnlocked; },
       set appUnlocked(value) { appUnlocked = value; },
@@ -7154,6 +7172,60 @@ async function refreshPublicSharedTemplates({ renderAfter = false } = {}) {
   return indexMerged + catalogMerged;
 }
 
+async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
+  if (!currentUser || !canOpenAdminPublishedEdit() || isForcedOffline()) return 0;
+  const result = await hydrateAdminTemplateDraftsFlow({
+    runtime: {
+      get adminTemplateHistoryRecords() { return adminTemplateHistoryRecords; },
+      set adminTemplateHistoryRecords(value) { adminTemplateHistoryRecords = value; },
+      get state() { return state; }
+    },
+    dependencies: {
+      fetchAdminTemplateCatalog: () => apiFetch("/bike-packing/admin/template-records", {
+        timeoutMs: LIST_API_TIMEOUT_MS,
+        silentErrors: true
+      }),
+      fetchAdminTemplatePayload: (endpoint) => apiFetch(endpoint, {
+        timeoutMs: LIST_API_TIMEOUT_MS,
+        silentErrors: true
+      }),
+      materializeDemoDraft: (record, payload) => importDemoStateAsEditableLayout(payload, {
+        activate: false,
+        language: record.language || uiLanguage,
+        listId: record.demoListId || record.listId,
+        renderAfter: false
+      }),
+      materializeSharedDraft: (record, payload) => {
+        const sharedId = String(record.sharedId || record.id || "").trim();
+        if (!sharedId) return null;
+        const normalizedPayload = publishedPayloadWithTemplateMetadata(payload, {
+          name: record.name || "",
+          language: record.language || uiLanguage
+        });
+        upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+          id: sharedId,
+          name: record.name || sharedId,
+          language: record.language || uiLanguage,
+          statePayload: normalizedPayload,
+          runtimeSharedTemplate: true,
+          updatedAt: record.updatedAt || ""
+        });
+        const layout = materializeSharedLayoutForAdmin(sharedId);
+        removeRuntimeSharedLayout(sharedLayoutsByLanguage, sharedId);
+        return layout;
+      },
+      normalizeAdminTemplateHistoryRecords,
+      render,
+      saveState
+    }
+  }, { renderAfter });
+  for (const layout of pendingAdminTemplateDraftLayouts(state.layouts)) {
+    cancelPublishedLayoutSave(layout.id);
+    await savePublishedLayoutRecord(layout.id, { published: false }).catch(() => null);
+  }
+  return result.restored;
+}
+
 async function loadPublishedDemoState(language = uiLanguage, listId = "") {
   const normalized = normalizeUiLanguage(language);
   const demoTemplate = selectDemoTemplateForLanguage(normalized, listId);
@@ -7387,6 +7459,10 @@ async function handleRemoteSaveConflict(error, options = {}) {
       updateSyncUi
     }
   }, options);
+  if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
+    await refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
+  }
+  return result;
 }
 
 async function confirmGuestImportRemoteState(importedLayoutIds) {
@@ -7919,6 +7995,10 @@ function repairAdminDemoLayout(layout) {
   });
 }
 async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, options = {}) {
+  const layout = state.layouts?.[layoutId];
+  const published = typeof options?.published === "boolean"
+    ? options.published
+    : shouldAutoPublishManagedTemplate(layout);
   return savePublishedLayoutRecordFlow({
     runtime: {
       get activeDemoTemplateListId() { return activeDemoTemplateListId; },
@@ -7971,7 +8051,10 @@ async function savePublishedLayoutRecord(layoutId = state.activeLayoutId, option
       withoutPhotoReferences,
       LIST_SAVE_API_TIMEOUT_MS
     }
-  }, layoutId, options);
+  }, layoutId, {
+    ...options,
+    published
+  });
 }
 
 function exportLayoutAsDemoState(layoutId = state.activeLayoutId) {

@@ -25,6 +25,7 @@ export function normalizeAdminTemplateHistoryRecords(records = []) {
       published: record?.published !== false,
       historyOnly: record?.historyOnly === true || normalizeText(record?.visibility).toLowerCase() === "deleted",
       visibility: normalizeText(record?.visibility),
+      adminPayloadEndpoint: normalizeText(record?.adminPayloadEndpoint),
       createdAt: normalizeText(record?.createdAt || record?.created_at),
       updatedAt: normalizeText(record?.updatedAt || record?.updated_at)
     };
@@ -48,6 +49,7 @@ export function adminSharedHistoryEntries(records = []) {
       published: entry.published,
       historyOnly: entry.historyOnly,
       visibility: entry.visibility,
+      adminPayloadEndpoint: entry.adminPayloadEndpoint,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt
     }));

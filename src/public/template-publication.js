@@ -10,10 +10,27 @@ export function isManagedTemplateUnpublishPending(layout) {
   return Boolean(isManagedTemplateUnpublished(layout) && layout?.templateUnpublishPending === true);
 }
 
+export function isManagedTemplateDraftSyncPending(layout) {
+  return Boolean(isManagedTemplateUnpublished(layout) && layout?.templateDraftSyncPending === true);
+}
+
+export function markManagedTemplateDraftSyncPending(layout) {
+  if (!isManagedTemplateUnpublished(layout)) return false;
+  layout.templateDraftSyncPending = true;
+  return true;
+}
+
+export function clearManagedTemplateDraftSyncPending(layout) {
+  if (!isManagedTemplateLayout(layout)) return false;
+  delete layout.templateDraftSyncPending;
+  return true;
+}
+
 export function markManagedTemplateUnpublishPending(layout) {
   if (!isManagedTemplateLayout(layout)) return false;
   layout.templatePublished = false;
   layout.templateUnpublishPending = true;
+  delete layout.templateDraftSyncPending;
   return true;
 }
 
@@ -21,6 +38,7 @@ export function markManagedTemplateUnpublished(layout) {
   if (!isManagedTemplateLayout(layout)) return false;
   layout.templatePublished = false;
   delete layout.templateUnpublishPending;
+  delete layout.templateDraftSyncPending;
   return true;
 }
 
@@ -28,6 +46,7 @@ export function markManagedTemplatePublished(layout) {
   if (!isManagedTemplateLayout(layout)) return false;
   layout.templatePublished = true;
   delete layout.templateUnpublishPending;
+  delete layout.templateDraftSyncPending;
   return true;
 }
 

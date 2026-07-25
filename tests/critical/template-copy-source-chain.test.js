@@ -78,10 +78,18 @@ import {
   savePublishedLayoutRecordFlow
 } from "../../src/public/published-layout-save-flow.js";
 import {
+  activeAdminTemplateDraftRecords,
+  findLocalAdminTemplateDraft,
+  hydrateAdminTemplateDraftsFlow,
+  pendingAdminTemplateDraftLayouts
+} from "../../src/public/admin-template-draft-sync.js";
+import {
+  isManagedTemplateDraftSyncPending,
   isManagedTemplateUnpublished,
   isManagedTemplateUnpublishPending,
   managedTemplatePublicationAction,
   managedTemplateOptionLabel,
+  markManagedTemplateDraftSyncPending,
   markManagedTemplatePublished,
   shouldAutoPublishManagedTemplate,
   shouldConfirmManagedTemplateTransition
@@ -637,8 +645,128 @@ test("new shared template fallback stays private until photos and final payload 
   assert.equal(apiCalls[0].body.copyPhotoReferences, true);
   assert.equal(apiCalls[1].body.published, false);
   assert.deepEqual(apiCalls[1].body.payload.items["item-detached"].photos, []);
-  assert.equal(apiCalls[2].body.published, undefined);
+  assert.equal(apiCalls[2].body.published, true);
   assert.equal(apiCalls[2].body.payload.items["item-detached"].photos.length, 1);
+});
+
+test("CRITICAL template drafts: autosave keeps the server record private", async () => {
+  const apiCalls = [];
+  let persisted = 0;
+  const runtime = {
+    state: {
+      activeLayoutId: "layout-draft",
+      layouts: {
+        "layout-draft": {
+          id: "layout-draft",
+          name: "Draft",
+          language: "ru",
+          adminSharedSourceId: "shared-draft",
+          templatePublished: false,
+          templateDraftSyncPending: true
+        }
+      }
+    },
+    currentUser: { email: "admin@example.test" },
+    syncMeta: {},
+    sharedLayoutsByLanguage: {},
+    uiLanguage: "ru"
+  };
+  const result = await savePublishedLayoutRecordFlow({
+    runtime,
+    dependencies: {
+      LIST_SAVE_API_TIMEOUT_MS: 1000,
+      apiFetch: async (path, options = {}) => {
+        apiCalls.push({ path, body: JSON.parse(options.body || "{}") });
+        return { ok: true };
+      },
+      canOpenAdminPublishedEdit: () => true,
+      checkAdminApiCompatibility: async () => {},
+      exportLayoutAsDemoState: () => ({
+        activeLayoutId: "layout-draft",
+        layouts: { "layout-draft": { id: "layout-draft", name: "Draft", rootContainerIds: [] } },
+        containers: {},
+        items: {}
+      }),
+      findSharedLayout: () => null,
+      getUnsyncedPhotoEntries: () => [],
+      getUploadablePhotoEntries: () => [],
+      nowIso: () => "2026-07-25T00:00:00.000Z",
+      persistStateSnapshot: () => { persisted += 1; },
+      publicListIdForPublishedTarget: () => "public-shared-layout-shared-draft",
+      publishedLayoutTarget: () => ({ type: "shared", sharedId: "shared-draft", language: "ru" }),
+      saveSyncMeta: () => {},
+      shouldCopyPublicTemplatePhotoReferencesOnServer: () => false,
+      shouldCreatePublishedTemplateBeforePhotos: () => false,
+      updateSyncUi: () => {},
+      withLayoutArrangementAppliedAsync: async (_layoutId, callback) => callback(),
+      withoutPhotoReferences: (payload) => payload
+    }
+  }, "layout-draft", { published: false });
+
+  assert.equal(apiCalls.length, 1);
+  assert.equal(apiCalls[0].path, "/bike-packing/admin/shared-layouts/shared-draft/state");
+  assert.equal(apiCalls[0].body.published, false);
+  assert.equal(apiCalls[0].body.visibility, "private");
+  assert.equal(runtime.state.layouts["layout-draft"].templatePublished, false);
+  assert.equal(isManagedTemplateDraftSyncPending(runtime.state.layouts["layout-draft"]), false);
+  assert.equal(persisted, 1);
+  assert.equal(result.published, false);
+});
+
+test("CRITICAL template drafts: active private records hydrate once across browsers", async () => {
+  const records = [
+    {
+      id: "active-shared",
+      sharedId: "active-shared",
+      publicTemplateKind: "shared-layout",
+      published: false,
+      visibility: "private",
+      adminPayloadEndpoint: "/bike-packing/admin/shared-layouts/active-shared/state"
+    },
+    {
+      id: "deleted-shared",
+      sharedId: "deleted-shared",
+      publicTemplateKind: "shared-layout",
+      published: false,
+      visibility: "deleted",
+      historyOnly: true,
+      adminPayloadEndpoint: ""
+    }
+  ];
+  assert.deepEqual(activeAdminTemplateDraftRecords(records).map((record) => record.id), ["active-shared"]);
+  const runtime = { state: { layouts: {} }, adminTemplateHistoryRecords: [] };
+  let payloadFetches = 0;
+  let saves = 0;
+  let renders = 0;
+  const dependencies = {
+    fetchAdminTemplateCatalog: async () => ({ lists: records }),
+    fetchAdminTemplatePayload: async () => {
+      payloadFetches += 1;
+      return { record: { payload: { layouts: { source: { id: "source" } } } } };
+    },
+    materializeSharedDraft: (record) => {
+      const layout = {
+        id: "layout-restored",
+        adminSharedSourceId: record.sharedId
+      };
+      runtime.state.layouts[layout.id] = layout;
+      return layout;
+    },
+    normalizeAdminTemplateHistoryRecords: (value) => value,
+    render: () => { renders += 1; },
+    saveState: () => { saves += 1; }
+  };
+
+  const first = await hydrateAdminTemplateDraftsFlow({ runtime, dependencies }, { renderAfter: true });
+  const second = await hydrateAdminTemplateDraftsFlow({ runtime, dependencies }, { renderAfter: true });
+
+  assert.equal(first.restored, 1);
+  assert.equal(second.restored, 0);
+  assert.equal(payloadFetches, 1);
+  assert.equal(saves, 1);
+  assert.equal(renders, 1);
+  assert.equal(runtime.state.layouts["layout-restored"].templatePublished, false);
+  assert.equal(findLocalAdminTemplateDraft(runtime.state.layouts, records[0])?.id, "layout-restored");
 });
 
 test("demo public ids keep the legacy RU slot and explicit EN slot", () => {
@@ -4827,7 +4955,40 @@ test("CRITICAL offline admin: local unpublished drafts stay editable while publi
   assert.match(controllerSource, /const editPublishedCatalog = canEditPublishedTemplatesNow\(\)/);
   assert.match(controllerSource, /demoTemplates: editPublishedCatalog/);
   assert.match(controllerSource, /sharedTemplates: editPublishedCatalog/);
+  assert.match(controllerSource, /async function publishEditedTemplate[\s\S]*?if \(!canEditPublishedTemplatesNow\(\)\) return;/);
+  assert.match(controllerSource, /async function unpublishEditedTemplate[\s\S]*?if \(!canEditPublishedTemplatesNow\(\)\) return;/);
+  assert.match(controllerSource, /publishEditedTemplateBtn\.disabled = !visible \|\| !canEditPublishedTemplatesNow\(\)/);
   assert.match(filterSource, /selectedPublicReadonly = publicOptionAccess\.readonly && !selectedDraftEditable/);
+});
+
+test("CRITICAL template drafts: offline edits stay pending until an authenticated online save", () => {
+  const draft = {
+    id: "draft-layout",
+    adminTemplateCopy: true,
+    adminSharedSourceId: "draft-source",
+    templatePublished: false
+  };
+  const published = {
+    id: "published-layout",
+    adminTemplateCopy: true,
+    adminSharedSourceId: "published-source",
+    templatePublished: true
+  };
+
+  assert.equal(markManagedTemplateDraftSyncPending(draft), true);
+  assert.equal(isManagedTemplateDraftSyncPending(draft), true);
+  assert.equal(markManagedTemplateDraftSyncPending(published), false);
+  assert.deepEqual(
+    pendingAdminTemplateDraftLayouts({
+      [draft.id]: draft,
+      [published.id]: published
+    }).map((layout) => layout.id),
+    ["draft-layout"]
+  );
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  assert.match(appSource, /markManagedTemplateDraftSyncPending\(activeManagedDraft\)/);
+  assert.match(appSource, /for \(const layout of pendingAdminTemplateDraftLayouts\(state\.layouts\)\)[\s\S]*?savePublishedLayoutRecord\(layout\.id, \{ published: false \}\)/);
 });
 
 test("readonly template cache can open offline for every role", () => {
@@ -4898,7 +5059,7 @@ test("CRITICAL template publication: UI publishes explicitly and skips the publi
   assert.match(appSource, /publishEditedTemplateBtn\?\.addEventListener\("click", handleEditedTemplatePublication\)/);
   assert.match(appSource, /if \(shouldConfirmManagedTemplateTransition\(layout\)\)/);
   assert.match(appSource, /shouldAutoPublishManagedTemplate\(state\.layouts\?\.\[layoutId\]\)/);
-  assert.match(controllerSource, /async function publishEditedTemplate\(event\)[\s\S]*?await savePublishedLayoutRecord\(layout\.id\)/);
+  assert.match(controllerSource, /async function publishEditedTemplate\(event\)[\s\S]*?await savePublishedLayoutRecord\(layout\.id, \{ published: true \}\)/);
   const draftCreationSource = controllerSource.match(/async function createTemplateCopyDraft[\s\S]*?\r?\n}\r?\n\r?\nfunction openLayoutDialog/)?.[0] || "";
   assert.ok(draftCreationSource);
   assert.doesNotMatch(draftCreationSource, /savePublishedLayoutRecord/);
