@@ -7209,7 +7209,7 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
           name: record.name || "",
           language: record.language || uiLanguage
         });
-        upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
+        const runtimeLayout = upsertRuntimeSharedLayout(sharedLayoutsByLanguage, {
           id: sharedId,
           name: record.name || sharedId,
           language: record.language || uiLanguage,
@@ -7217,7 +7217,7 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
           runtimeSharedTemplate: true,
           updatedAt: record.updatedAt || ""
         });
-        const layout = materializeSharedLayoutForAdmin(sharedId);
+        const layout = materializeSharedLayoutForAdmin(sharedId, { sourceLayout: runtimeLayout });
         removeRuntimeSharedLayout(sharedLayoutsByLanguage, sharedId);
         return layout;
       },
@@ -9151,7 +9151,7 @@ async function copySharedLayout(layoutId) {
   }
 }
 
-function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
+function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId(), { sourceLayout = null } = {}) {
   return materializeSharedLayoutForAdminState(layoutId, {
     canOpenAdminPublishedEdit,
     copyPublishedContainerToState,
@@ -9161,7 +9161,9 @@ function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId()) {
     currentCreateMeta,
     currentEditMeta,
     ensureLayoutDictionaries,
-    findSharedLayout,
+    findSharedLayout: (requestedLayoutId) => (
+      sourceLayout?.id === requestedLayoutId ? sourceLayout : findSharedLayout(requestedLayoutId)
+    ),
     isLayoutMeaningful,
     locations,
     categories,

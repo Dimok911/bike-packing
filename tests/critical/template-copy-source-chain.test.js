@@ -5081,6 +5081,14 @@ test("CRITICAL template drafts: offline edits stay pending until an authenticate
     appSource,
     /async function checkAuthAndLoad\(options = \{\}\)[\s\S]*?await refreshAdminTemplateDrafts\(\{ renderAfter: true \}\)[\s\S]*?return result;/
   );
+  assert.match(
+    appSource,
+    /const runtimeLayout = upsertRuntimeSharedLayout\(sharedLayoutsByLanguage,[\s\S]*?materializeSharedLayoutForAdmin\(sharedId,\s*\{\s*sourceLayout:\s*runtimeLayout\s*\}\)/
+  );
+  assert.match(
+    appSource,
+    /function materializeSharedLayoutForAdmin\(layoutId = activeReadOnlyLayoutId\(\),\s*\{\s*sourceLayout = null\s*\} = \{\}\)[\s\S]*?sourceLayout\?\.id === requestedLayoutId \? sourceLayout : findSharedLayout\(requestedLayoutId\)/
+  );
 });
 
 test("readonly template cache can open offline for every role", () => {
