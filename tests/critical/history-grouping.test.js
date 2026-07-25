@@ -151,7 +151,13 @@ test("CRITICAL history: private list row hides layout titles to avoid nested lay
 
 test("CRITICAL history: shared template options keep separate language targets", () => {
   const options = historySharedTemplateOptions([
-    { id: "bikepacking-reference-bags", name: "Tristan Ridley Список снаряжения", language: "ru" },
+    {
+      id: "bikepacking-reference-bags",
+      name: "Tristan Ridley Список снаряжения",
+      language: "ru",
+      published: false,
+      visibility: "private"
+    },
     { id: "bikepacking-reference-bags-en", name: "Tristan Ridley Gear List", language: "en" }
   ], {
     languageLabel: (language) => language.toUpperCase()
@@ -165,6 +171,9 @@ test("CRITICAL history: shared template options keep separate language targets",
     "Tristan Ridley Список снаряжения · RU",
     "Tristan Ridley Gear List · EN"
   ]);
+  assert.equal(options[0].published, false);
+  assert.equal(options[0].visibility, "private");
+  assert.equal(options[1].published, true);
 });
 
 test("CRITICAL history: list save body sends source device fields for history rows", () => {
@@ -294,15 +303,22 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
   assert.match(appSource, /droppedMissingPhotoCount/);
 });
 
-test("CRITICAL history: deleted templates are grouped and hidden until explicitly requested", () => {
+test("CRITICAL history: drafts are marked while deleted templates stay hidden until explicitly requested", () => {
   const t = (key, params = {}) => ({
     "history.currentTemplatesGroup": "Текущие",
     "history.deletedTemplatesGroup": "Удалённые",
     "history.deletedTemplateOption": `[Удалён · ${params.date}] ${params.name}`,
-    "history.deletedTemplateOptionNoDate": `[Удалён] ${params.name}`
+    "history.deletedTemplateOptionNoDate": `[Удалён] ${params.name}`,
+    "template.draftMarker": "\u{1F4DD} Черновик"
   })[key] || key;
   const options = [
     { id: "current", label: "Текущий · RU" },
+    {
+      id: "draft",
+      label: "Новый шаблон · RU",
+      published: false,
+      visibility: "private"
+    },
     {
       id: "deleted-a",
       label: "Старый · RU",
@@ -326,6 +342,8 @@ test("CRITICAL history: deleted templates are grouped and hidden until explicitl
   assert.equal(collapsed.selected, "current");
   assert.equal(collapsed.deletedCount, 2);
   assert.match(collapsed.html, /Текущие/);
+  assert.match(collapsed.html, /📝 Черновик · Новый шаблон · RU/u);
+  assert.match(collapsed.html, /value="draft"/);
   assert.doesNotMatch(collapsed.html, /deleted-a|deleted-b|Удалённые/);
 
   const expanded = historyTemplateSourceModel(options, {
@@ -336,6 +354,7 @@ test("CRITICAL history: deleted templates are grouped and hidden until explicitl
   });
   assert.equal(expanded.selected, "deleted-a");
   assert.match(expanded.html, /Текущие/);
+  assert.match(expanded.html, /📝 Черновик · Новый шаблон · RU/u);
   assert.match(expanded.html, /Удалённые/);
   assert.match(expanded.html, /deleted-a/);
   assert.match(expanded.html, /deleted-b/);

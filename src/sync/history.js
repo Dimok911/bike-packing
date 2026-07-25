@@ -238,6 +238,7 @@ export function historySharedTemplateOptions(layouts = [], {
         name,
         language,
         label: language ? `${name} · ${languageLabel(language)}` : name,
+        published: layout?.published !== false,
         historyOnly: layout?.historyOnly === true,
         visibility: String(layout?.visibility || "").trim(),
         createdAt: String(layout?.createdAt || layout?.created_at || "").trim(),

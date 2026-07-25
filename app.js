@@ -9335,6 +9335,7 @@ function historyDemoTemplateOptions() {
       language,
       name,
       label: `${name} · ${languageOptionLabel(language)}`,
+      published: entry?.published !== false,
       historyOnly: entry?.historyOnly === true,
       visibility: String(entry?.visibility || "").trim(),
       createdAt: String(entry?.createdAt || "").trim(),

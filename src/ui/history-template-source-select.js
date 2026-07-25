@@ -41,18 +41,25 @@ export function historyTemplateSourceModel(options = [], {
       seen.add(value);
       const label = normalizeText(option?.label || option?.name || value) || value;
       const deleted = isDeletedHistoryOption(option);
+      const unpublished = !deleted && (
+        option?.published === false ||
+        normalizeText(option?.visibility).toLowerCase() === "private"
+      );
       const date = deleted ? deletedHistoryDate(option, language) : "";
       return {
         ...option,
         value,
         label,
         deleted,
+        unpublished,
         displayLabel: deleted
           ? t(date ? "history.deletedTemplateOption" : "history.deletedTemplateOptionNoDate", {
             name: label,
             date
           })
-          : label
+          : unpublished
+            ? `${t("template.draftMarker")} · ${label}`
+            : label
       };
     })
     .filter(Boolean);
