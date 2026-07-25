@@ -72,6 +72,8 @@ import { bindCardEditorClicks } from "../ui/card-edit-click.js";
 import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
+import { focusRecentlyAddedPackingCard } from "../ui/packing-created-focus.js";
+import { expandItemPlacementPath } from "../state/layout-focus.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -1106,6 +1108,7 @@ function markRecentlyAddedItem(itemId, layoutId = state.activeLayoutId) {
   runtime.recentlyAddedItemId = itemId || null;
   runtime.recentlyAddedContainerId = "";
   runtime.recentlyAddedLayoutId = layoutId || "";
+  if (expandItemPlacementPath(state, layoutId, itemId).length) saveLocalUiState();
 }
 
 function markRecentlyAddedContainer(containerId, layoutId = state.activeLayoutId) {
@@ -1155,16 +1158,17 @@ function createSubcontainerFromAddDialog(event) {
 function focusRecentlyAddedItem(itemId) {
   if (runtime.recentlyAddedLayoutId && runtime.recentlyAddedLayoutId !== state.activeLayoutId) return;
   runtime.pendingPackingScroll = null;
-  const card = refs.packingView.querySelector(`[data-item-id="${cssEscape(itemId)}"]`);
-  if (!card) return;
-  card.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-  window.setTimeout(() => {
-    if (runtime.recentlyAddedItemId === itemId) {
-      runtime.recentlyAddedItemId = null;
-      runtime.recentlyAddedLayoutId = "";
-      card.classList.remove("just-added");
-    }
-  }, 1700);
+  return focusRecentlyAddedPackingCard({
+    onClear: () => {
+      if (runtime.recentlyAddedItemId === itemId) {
+        runtime.recentlyAddedItemId = null;
+        runtime.recentlyAddedLayoutId = "";
+      }
+    },
+    onScroll: syncFixedScrollbarVisibility,
+    recordId: itemId,
+    root: refs.packingView
+  });
 }
 
 function focusRecentlyAddedContainer(containerId) {

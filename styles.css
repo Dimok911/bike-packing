@@ -3687,13 +3687,18 @@ button.photo-gallery-slide.touch-feedback-active {
 
 .item-card.filter-focus,
 .container-card.filter-focus,
-.subcontainer.filter-focus {
+.subcontainer.filter-focus,
+.item-card.copied-item-focus {
   border-color: rgba(255, 138, 0, 0.95);
   background: linear-gradient(90deg, rgba(255, 232, 143, 0.95), rgba(255, 247, 208, 0.98));
   box-shadow:
     inset 5px 0 0 rgba(255, 138, 0, 0.95),
     0 0 0 3px rgba(255, 138, 0, 0.28),
     0 12px 24px rgba(138, 74, 0, 0.14);
+}
+
+.item-card.copied-item-focus {
+  animation: copied-item-focus-pulse 2500ms ease-out;
 }
 
 .search-note-match-badge {
@@ -3779,6 +3784,22 @@ button.photo-gallery-slide.touch-feedback-active {
   }
 }
 
+@keyframes copied-item-focus-pulse {
+  0%, 62% {
+    border-color: rgba(255, 138, 0, 0.95);
+    background: linear-gradient(90deg, rgba(255, 232, 143, 0.95), rgba(255, 247, 208, 0.98));
+    box-shadow:
+      inset 5px 0 0 rgba(255, 138, 0, 0.95),
+      0 0 0 3px rgba(255, 138, 0, 0.28),
+      0 12px 24px rgba(138, 74, 0, 0.14);
+  }
+  100% {
+    border-color: var(--line);
+    background: white;
+    box-shadow: none;
+  }
+}
+
 @keyframes removing-from-layout {
   0% {
     opacity: 1;
@@ -3801,6 +3822,10 @@ button.photo-gallery-slide.touch-feedback-active {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .item-card.copied-item-focus {
+    animation: none;
+  }
+
   .item-card.removing-from-layout,
   .subcontainer.removing-from-layout,
   .container-card.removing-from-layout {
