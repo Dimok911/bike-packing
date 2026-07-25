@@ -115,7 +115,7 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
   } = dependencies;
   const demoSource = activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit();
   const readonlyTemplate = isReadonlyTemplateView();
-  if (!canOpenAdminPublishedEdit() && !readonlyTemplate) addSharedReadOnlyCopyButtons(root, { t });
+  if (!canOpenAdminPublishedEdit()) addSharedReadOnlyCopyButtons(root, { t });
   bindSharedLayoutEvents(root);
   root.querySelectorAll("[data-replace-layout-item], [data-copy-layout-item], [data-copy-item], [data-edit-item]").forEach((button) => {
     button.addEventListener("click", (event) => {

@@ -3210,6 +3210,25 @@ test("copying a shared bag from Bags copies an empty bag while Packing keeps its
   assert.equal(containerCopySnapshotForContext(sourceSnapshot, { includeContents: true }), sourceSnapshot);
 });
 
+test("readonly templates keep copy actions for items, bags with contents, and the whole layout", () => {
+  const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+  const sharedEventsSource = readFileSync(new URL("../../src/ui/shared-virtual-events.js", import.meta.url), "utf8");
+  const packingRenderSource = readFileSync(new URL("../../src/ui/packing-board-render.js", import.meta.url), "utf8");
+  const itemsRenderSource = readFileSync(new URL("../../src/ui/items-view-render.js", import.meta.url), "utf8");
+  const controllerSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const hiddenReadonlySelectors = [...stylesSource.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selectors, body]) => selectors.includes("body.readonly-template") && /display:\s*none/.test(body))
+    .map(([, selectors]) => selectors);
+
+  assert.equal(hiddenReadonlySelectors.some((selectors) => /\[data-(?:copy-layout-item|replace-layout-item|copy-item)\]/.test(selectors)), false);
+  assert.match(sharedEventsSource, /if \(!canOpenAdminPublishedEdit\(\)\) addSharedReadOnlyCopyButtons\(root, \{ t \}\);/);
+  assert.match(sharedEventsSource, /openSharedContainerCopyPicker\(sourceId,\s*\{\s*includeContents: sharedContainerCopyIncludesContents\(root\)/);
+  assert.match(sharedEventsSource, /if \(readonlyTemplate\) \{\s*openSharedItemCopyPicker\(sourceId\);/);
+  assert.match(packingRenderSource, /data-replace-layout-item/);
+  assert.match(itemsRenderSource, /data-copy-item/);
+  assert.match(controllerSource, /data-copy-shared-layout/);
+});
+
 test("admin bag editor preserves whether it was opened from Bags or Packing", () => {
   const settingsSource = readFileSync(new URL("../../src/ui/settings-editor-bindings.js", import.meta.url), "utf8");
   const sharedEventsSource = readFileSync(new URL("../../src/ui/shared-virtual-events.js", import.meta.url), "utf8");

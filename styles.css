@@ -371,12 +371,6 @@ body.readonly-template [data-delete-root] {
   display: none !important;
 }
 
-body.readonly-template [data-copy-layout-item],
-body.readonly-template [data-replace-layout-item],
-body.readonly-template [data-copy-item] {
-  display: none !important;
-}
-
 body.readonly-template .container-header,
 body.readonly-template .container-header:active,
 body.readonly-template .subcontainer-title,
