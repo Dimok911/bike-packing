@@ -54,6 +54,7 @@ export async function hydrateAdminTemplateDraftsFlow({
   const {
     fetchAdminTemplateCatalog = async () => null,
     fetchAdminTemplatePayload = async () => null,
+    clearDeletedSharedDraftMarker = () => {},
     materializeDemoDraft = () => null,
     materializeSharedDraft = () => null,
     normalizeAdminTemplateHistoryRecords = (records) => records,
@@ -67,6 +68,9 @@ export async function hydrateAdminTemplateDraftsFlow({
   let refreshed = 0;
   let migrationPending = 0;
   for (const record of activeAdminTemplateDraftRecords(records)) {
+    if (record.publicTemplateKind === "shared-layout") {
+      clearDeletedSharedDraftMarker(record);
+    }
     const localDraft = findLocalAdminTemplateDraft(runtime.state?.layouts, record);
     if (localDraft) {
       if (localDraft.templateDraftServerHydrated !== true) {

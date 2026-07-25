@@ -739,12 +739,14 @@ test("CRITICAL template drafts: active private records hydrate once across brows
   let payloadFetches = 0;
   let saves = 0;
   let renders = 0;
+  let clearedDeletedMarkers = 0;
   const dependencies = {
     fetchAdminTemplateCatalog: async () => ({ lists: records }),
     fetchAdminTemplatePayload: async () => {
       payloadFetches += 1;
       return { record: { payload: { layouts: { source: { id: "source" } } } } };
     },
+    clearDeletedSharedDraftMarker: () => { clearedDeletedMarkers += 1; },
     materializeSharedDraft: (record) => {
       const layout = {
         id: "layout-restored",
@@ -766,6 +768,7 @@ test("CRITICAL template drafts: active private records hydrate once across brows
   assert.equal(payloadFetches, 1);
   assert.equal(saves, 1);
   assert.equal(renders, 1);
+  assert.equal(clearedDeletedMarkers, 2);
   assert.equal(runtime.state.layouts["layout-restored"].templatePublished, false);
   assert.equal(runtime.state.layouts["layout-restored"].templateDraftServerHydrated, true);
   assert.equal(findLocalAdminTemplateDraft(runtime.state.layouts, records[0])?.id, "layout-restored");

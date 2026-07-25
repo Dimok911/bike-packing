@@ -42,7 +42,7 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /2026-07-25\.admin-template-draft-sync-v1/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1403"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1404"/);
 });
 
 test("production shell has no experimental banner and uses the production API", async () => {

@@ -7193,6 +7193,9 @@ async function refreshAdminTemplateDrafts({ renderAfter = false } = {}) {
         timeoutMs: LIST_API_TIMEOUT_MS,
         silentErrors: true
       }),
+      clearDeletedSharedDraftMarker: (record) => {
+        forgetDeletedSharedLayoutId(record.sharedId || record.id);
+      },
       materializeDemoDraft: (record, payload) => importDemoStateAsEditableLayout(payload, {
         activate: false,
         language: record.language || uiLanguage,
