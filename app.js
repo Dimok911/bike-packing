@@ -1135,7 +1135,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-25.admin-template-draft-sync-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-07-26.magic-link-client-localization-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -6299,6 +6299,7 @@ async function submitAuthDialog(event) {
       method: "POST",
       body: JSON.stringify({
         email,
+        language: uiLanguage,
         redirectUrl: location.origin === "https://vniipo-help.ru"
           ? "https://vniipo-help.ru/bike-packing/"
           : location.href
