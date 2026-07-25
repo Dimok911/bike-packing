@@ -1,11 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { expandItemPlacementPath } from "../../src/state/layout-focus.js";
-import {
-  focusRecentlyAddedPackingCard,
-  reservePackingFocusScrollRoom
-} from "../../src/ui/packing-created-focus.js";
+import { focusRecentlyAddedPackingCard } from "../../src/ui/packing-created-focus.js";
 
 function createCard(dataset) {
   const classes = new Set(["just-added"]);
@@ -93,7 +91,7 @@ test("CRITICAL copied item focus retries until the switched layout is rendered",
   assert.equal(card.classList.contains("copied-item-focus"), true);
 });
 
-test("CRITICAL copied item keeps the yellow search focus when packing rerenders", () => {
+test("CRITICAL copied item keeps the yellow search focus without scrolling again when packing rerenders", () => {
   const firstCard = createCard({ itemId: "item-copy" });
   const replacementCard = createCard({ itemId: "item-copy" });
   let visibleCard = firstCard;
@@ -122,7 +120,7 @@ test("CRITICAL copied item keeps the yellow search focus when packing rerenders"
   assert.equal(firstCard.classList.contains("filter-focus"), false);
   assert.equal(replacementCard.classList.contains("just-added"), false);
   assert.equal(replacementCard.classList.contains("filter-focus"), true);
-  assert.deepEqual(scrollCalls, [firstCard, replacementCard]);
+  assert.deepEqual(scrollCalls, [firstCard]);
 
   timers[0].callback();
   assert.equal(replacementCard.classList.contains("filter-focus"), false);
@@ -156,49 +154,7 @@ test("CRITICAL copied item focus expands its target container and ancestors", ()
   assert.equal(state.collapsedContainers.root, false);
 });
 
-test("CRITICAL copied item at the page end reserves enough room to reach the sticky offset", () => {
-  const spacer = {
-    setAttribute() {},
-    style: {}
-  };
-  const view = {
-    append(target) {
-      this.spacer = target;
-    },
-    querySelector: () => null
-  };
-  const target = {
-    closest: (selector) => selector === ".view" ? view : null,
-    getBoundingClientRect: () => ({ top: 620 })
-  };
-  const host = {
-    clientHeight: 700,
-    scrollHeight: 1300,
-    scrollTop: 600
-  };
-  const documentRef = {
-    createElement: () => spacer,
-    documentElement: { clientHeight: 700 },
-    querySelector: () => null,
-    scrollingElement: host
-  };
-  const windowRef = {
-    getComputedStyle(element) {
-      if (element === documentRef.documentElement) {
-        return { getPropertyValue: () => "0px" };
-      }
-      return { display: "none", visibility: "hidden" };
-    },
-    innerHeight: 700,
-    scrollY: 600
-  };
-
-  const result = reservePackingFocusScrollRoom(target, { documentRef, windowRef });
-
-  assert.deepEqual(
-    { desiredTop: result.desiredTop, maxScrollTop: result.maxScrollTop, reservedHeight: result.reservedHeight },
-    { desiredTop: 1208, maxScrollTop: 600, reservedHeight: 632 }
-  );
-  assert.equal(spacer.style.height, "632px");
-  assert.equal(view.spacer, spacer);
+test("CRITICAL copied item focus never inserts artificial room after the real page end", () => {
+  const source = readFileSync(new URL("../../src/ui/packing-created-focus.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /packing-focus-scroll-spacer|createElement\(|append\(/);
 });

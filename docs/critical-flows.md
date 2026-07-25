@@ -197,6 +197,11 @@ test:critical` дополнительно к `npm.cmd run check`.
 
 ## CRITICAL: catalog-to-packing-edge-scroll
 
+- A copied item is scrolled into view exactly once. Packing rerenders may reapply the
+  yellow search-style highlight to the replacement card, but must not start another
+  scroll. A card at the real page end clamps to the real maximum scroll position;
+  focus must never append artificial bottom space.
+
 - После перетаскивания вещи или вкладываемой сумки из каталога на вкладку «Укладка» удержание у верхнего или нижнего края экрана должно продолжать прокрутку страницы.
 - Скроллер должен переподключаться к актуальной доске после переключения вкладки и повторного рендера, иначе он останется привязан к старому DOM-элементу.
 
