@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1398" />
+    <link rel="stylesheet" href="./styles.css?v=1399" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -661,14 +661,16 @@
             <button type="button" data-history-source="demo">Демо</button>
             <button type="button" data-history-source="shared">Шаблоны</button>
           </div>
-          <label id="historyDemoField" class="history-shared-field">
-            <span>Демо-шаблон</span>
+          <div id="historyDemoField" class="history-shared-field">
+            <label for="historyDemoSelect"><span>Демо-шаблон</span></label>
             <select id="historyDemoSelect"></select>
-          </label>
-          <label id="historySharedField" class="history-shared-field">
-            <span>Шаблон</span>
+            <button id="historyDemoDeletedToggle" class="ghost history-deleted-toggle" type="button" aria-expanded="false" hidden></button>
+          </div>
+          <div id="historySharedField" class="history-shared-field">
+            <label for="historySharedSelect"><span>Шаблон</span></label>
             <select id="historySharedSelect"></select>
-          </label>
+            <button id="historySharedDeletedToggle" class="ghost history-deleted-toggle" type="button" aria-expanded="false" hidden></button>
+          </div>
         </div>
         <p id="historyStatus" class="dialog-status" aria-live="polite"></p>
         <div id="historyList" class="history-list"></div>
@@ -767,6 +769,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1398" type="module"></script>
+    <script src="./app.js?v=1399" type="module"></script>
   </body>
 </html>

@@ -237,7 +237,11 @@ export function historySharedTemplateOptions(layouts = [], {
         id,
         name,
         language,
-        label: language ? `${name} · ${languageLabel(language)}` : name
+        label: language ? `${name} · ${languageLabel(language)}` : name,
+        historyOnly: layout?.historyOnly === true,
+        visibility: String(layout?.visibility || "").trim(),
+        createdAt: String(layout?.createdAt || layout?.created_at || "").trim(),
+        updatedAt: String(layout?.updatedAt || layout?.updated_at || "").trim()
       };
     })
     .filter(Boolean);

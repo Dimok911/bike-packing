@@ -7700,6 +7700,24 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-weight: 800;
 }
 
+.history-shared-field > label {
+  display: block;
+}
+
+.history-deleted-toggle {
+  justify-self: start;
+  min-height: 30px;
+  padding: 4px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.history-deleted-toggle:hover,
+.history-deleted-toggle:focus-visible {
+  color: var(--accent);
+}
+
 .history-list {
   display: grid;
   grid-auto-rows: max-content;

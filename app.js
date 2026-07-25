@@ -139,6 +139,10 @@ import {
   restoreHistoryNavigationContext
 } from "./src/ui/history-navigation.js";
 import {
+  renderHistoryTemplateSourceSelect,
+  toggleHistoryDeletedSources
+} from "./src/ui/history-template-source-select.js";
+import {
   canImportGuestLayoutsForAuthenticatedUser,
   guestCandidateLayouts as guestCandidateLayoutsValue,
   guestLayoutHasUserContentEdits,
@@ -3133,6 +3137,14 @@ async function init() {
     refs.historyDetailDialog?.close();
     refreshHistoryDialog();
   });
+  refs.historyDemoDeletedToggle?.addEventListener("click", () => {
+    const previousValue = refs.historyDemoSelect?.value || "";
+    toggleHistoryDeletedSources(refs.historyDemoDeletedToggle);
+    renderHistorySourceControls();
+    if (refs.historyDemoSelect?.value !== previousValue) {
+      refs.historyDemoSelect?.dispatchEvent(new Event("change"));
+    }
+  });
   refs.historySharedSelect?.addEventListener("change", () => {
     historyComparisonState = null;
     historyPageState = null;
@@ -3140,6 +3152,14 @@ async function init() {
     selectedHistoryDetailRecordKey = "";
     refs.historyDetailDialog?.close();
     refreshHistoryDialog();
+  });
+  refs.historySharedDeletedToggle?.addEventListener("click", () => {
+    const previousValue = refs.historySharedSelect?.value || "";
+    toggleHistoryDeletedSources(refs.historySharedDeletedToggle);
+    renderHistorySourceControls();
+    if (refs.historySharedSelect?.value !== previousValue) {
+      refs.historySharedSelect?.dispatchEvent(new Event("change"));
+    }
   });
   refs.historyDetailRestoreBtn?.addEventListener("click", () => {
     if (selectedHistoryDetailRecordKey) restoreHistoryRecord(selectedHistoryDetailRecordKey);
@@ -9314,7 +9334,11 @@ function historyDemoTemplateOptions() {
       listId,
       language,
       name,
-      label: `${name} · ${languageOptionLabel(language)}`
+      label: `${name} · ${languageOptionLabel(language)}`,
+      historyOnly: entry?.historyOnly === true,
+      visibility: String(entry?.visibility || "").trim(),
+      createdAt: String(entry?.createdAt || "").trim(),
+      updatedAt: String(entry?.updatedAt || "").trim()
     });
   });
   return options;
@@ -9360,7 +9384,15 @@ function renderHistorySourceControls() {
   if (refs.historyDemoSelect) {
     const demoOptions = historyDemoTemplateOptions();
     const selected = selectedHistoryDemoTarget().listId || demoOptions[0]?.listId || "";
-    fillSelect(refs.historyDemoSelect, demoOptions.map((option) => [option.listId, option.label]), selected);
+    renderHistoryTemplateSourceSelect({
+      language: normalizeUiLanguage(uiLanguage),
+      options: demoOptions,
+      select: refs.historyDemoSelect,
+      selectedValue: selected,
+      showDeleted: refs.historyDemoDeletedToggle?.dataset.showDeleted === "true",
+      t,
+      toggleButton: refs.historyDemoDeletedToggle
+    });
     if (activeHistorySource === "demo" && refs.historyDemoSelect.value) {
       activeDemoTemplateListId = refs.historyDemoSelect.value;
     }
@@ -9372,7 +9404,15 @@ function renderHistorySourceControls() {
       (activeReadOnlyLayoutId() !== DEMO_SHARED_LAYOUT_ID ? activeReadOnlyLayoutId() : "") ||
       sharedOptions[0]?.id ||
       "";
-    fillSelect(refs.historySharedSelect, sharedOptions.map((layout) => [layout.id, layout.label]), selected);
+    renderHistoryTemplateSourceSelect({
+      language: normalizeUiLanguage(uiLanguage),
+      options: sharedOptions,
+      select: refs.historySharedSelect,
+      selectedValue: selected,
+      showDeleted: refs.historySharedDeletedToggle?.dataset.showDeleted === "true",
+      t,
+      toggleButton: refs.historySharedDeletedToggle
+    });
   }
 }
 

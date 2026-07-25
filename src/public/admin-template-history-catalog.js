@@ -23,6 +23,9 @@ export function normalizeAdminTemplateHistoryRecords(records = []) {
       language,
       publicTemplateKind: isShared ? "shared-layout" : "demo",
       published: record?.published !== false,
+      historyOnly: record?.historyOnly === true || normalizeText(record?.visibility).toLowerCase() === "deleted",
+      visibility: normalizeText(record?.visibility),
+      createdAt: normalizeText(record?.createdAt || record?.created_at),
       updatedAt: normalizeText(record?.updatedAt || record?.updated_at)
     };
     byKey.set(`${entry.publicTemplateKind}:${id}`, entry);
@@ -43,6 +46,9 @@ export function adminSharedHistoryEntries(records = []) {
       name: entry.name,
       language: entry.language,
       published: entry.published,
+      historyOnly: entry.historyOnly,
+      visibility: entry.visibility,
+      createdAt: entry.createdAt,
       updatedAt: entry.updatedAt
     }));
 }

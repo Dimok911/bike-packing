@@ -23,6 +23,7 @@ import {
   restoreHistoryActiveLayout,
   restoreHistoryNavigationContext
 } from "../../src/ui/history-navigation.js";
+import { historyTemplateSourceModel } from "../../src/ui/history-template-source-select.js";
 import {
   adminDemoHistoryEntries,
   adminSharedHistoryEntries,
@@ -254,7 +255,10 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
       publicTemplateKind: "demo",
       name: "Hidden demo",
       language: "ru",
-      published: false
+      published: false,
+      historyOnly: true,
+      visibility: "deleted",
+      createdAt: "2026-07-24T10:00:00.000Z"
     },
     {
       id: "public-shared-layout-hidden-shared",
@@ -262,7 +266,10 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
       publicTemplateKind: "shared-layout",
       name: "Hidden shared",
       language: "en",
-      published: false
+      published: false,
+      historyOnly: true,
+      visibility: "deleted",
+      createdAt: "2026-07-23T10:00:00.000Z"
     }
   ]);
 
@@ -271,6 +278,8 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
   ]);
   assert.deepEqual(adminSharedHistoryEntries(records).map((entry) => entry.id), ["hidden-shared"]);
   assert.equal(records.every((entry) => entry.published === false), true);
+  assert.equal(records.every((entry) => entry.historyOnly === true), true);
+  assert.equal(adminSharedHistoryEntries(records)[0].createdAt, "2026-07-23T10:00:00.000Z");
   assert.equal(isAdminTemplateHistoryListId("public-demo-state-copy-ru-hidden", records), true);
   assert.deepEqual(privateHistoryListRecords([
     { id: "personal-list", title: "My packing" },
@@ -283,6 +292,58 @@ test("CRITICAL history: hidden templates remain selectable from the admin histor
   assert.match(appSource, /historyRestore:\s*true/);
   assert.match(appSource, /restoreHistoryId:\s*Number\(record\.id/);
   assert.match(appSource, /droppedMissingPhotoCount/);
+});
+
+test("CRITICAL history: deleted templates are grouped and hidden until explicitly requested", () => {
+  const t = (key, params = {}) => ({
+    "history.currentTemplatesGroup": "Текущие",
+    "history.deletedTemplatesGroup": "Удалённые",
+    "history.deletedTemplateOption": `[Удалён · ${params.date}] ${params.name}`,
+    "history.deletedTemplateOptionNoDate": `[Удалён] ${params.name}`
+  })[key] || key;
+  const options = [
+    { id: "current", label: "Текущий · RU" },
+    {
+      id: "deleted-a",
+      label: "Старый · RU",
+      historyOnly: true,
+      createdAt: "2026-07-24T10:00:00.000Z"
+    },
+    {
+      id: "deleted-b",
+      label: "Старый · RU",
+      visibility: "deleted",
+      createdAt: "2026-07-23T10:00:00.000Z"
+    }
+  ];
+
+  const collapsed = historyTemplateSourceModel(options, {
+    language: "ru",
+    selectedValue: "deleted-a",
+    showDeleted: false,
+    t
+  });
+  assert.equal(collapsed.selected, "current");
+  assert.equal(collapsed.deletedCount, 2);
+  assert.match(collapsed.html, /Текущие/);
+  assert.doesNotMatch(collapsed.html, /deleted-a|deleted-b|Удалённые/);
+
+  const expanded = historyTemplateSourceModel(options, {
+    language: "ru",
+    selectedValue: "deleted-a",
+    showDeleted: true,
+    t
+  });
+  assert.equal(expanded.selected, "deleted-a");
+  assert.match(expanded.html, /Текущие/);
+  assert.match(expanded.html, /Удалённые/);
+  assert.match(expanded.html, /deleted-a/);
+  assert.match(expanded.html, /deleted-b/);
+  assert.match(expanded.html, /\[Удалён · 24\.07\.2026\] Старый · RU/);
+
+  const index = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  assert.match(index, /id="historyDemoDeletedToggle"/);
+  assert.match(index, /id="historySharedDeletedToggle"/);
 });
 
 test("CRITICAL sync-save: forced list save keeps the current base revision for conflict retry", () => {
