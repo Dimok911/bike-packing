@@ -86,10 +86,37 @@ test("CRITICAL guest magic-link import: unchanged demo is seeded only into a gen
 });
 
 test("CRITICAL guest magic-link import: new-account demo seed is created and persisted once", async () => {
-  const targetState = emptyState();
+  const targetState = {
+    ...emptyState(),
+    itemDisplayMode: "none",
+    showItemMeta: false,
+    showFilterContext: false,
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Current layout",
+        rootContainerIds: [],
+        arrangement: {
+          rootContainerIds: [],
+          containers: {},
+          items: {}
+        }
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
   const events = [];
   const coordinator = createNewAccountDemoSeedCoordinator({
     getState: () => targetState,
+    getDisplayPreferences: () => ({
+      itemDisplayMode: "photos",
+      showItemMeta: true,
+      showFilterContext: true
+    }),
+    applyDisplayPreferences: (preferences) => {
+      events.push("apply-display-preferences");
+      Object.assign(targetState, preferences);
+    },
     createDefaultLayout: async () => {
       events.push("create");
       targetState.layouts["layout-demo"] = {
@@ -102,6 +129,11 @@ test("CRITICAL guest magic-link import: new-account demo seed is created and per
     },
     persistDefaultLayout: async (layoutId) => {
       events.push(`persist:${layoutId}`);
+      assert.equal(targetState.layouts["layout-main"], undefined);
+      assert.equal(targetState.activeLayoutId, "layout-demo");
+      assert.equal(targetState.itemDisplayMode, "photos");
+      assert.equal(targetState.showItemMeta, true);
+      assert.equal(targetState.showFilterContext, true);
       return true;
     }
   });
@@ -115,7 +147,7 @@ test("CRITICAL guest magic-link import: new-account demo seed is created and per
     layoutId: "layout-demo"
   });
   assert.equal(second.status, "already-handled");
-  assert.deepEqual(events, ["create", "persist:layout-demo"]);
+  assert.deepEqual(events, ["create", "apply-display-preferences", "persist:layout-demo"]);
   assert.equal(targetState.layouts["layout-demo"][NEW_ACCOUNT_DEFAULT_DEMO_FLAG], true);
   assert.equal(isNewAccountDefaultDemoAccount(targetState), true);
   targetState.layouts["layout-personal"] = {
@@ -865,4 +897,6 @@ test("CRITICAL guest magic-link import: app arms handoff only after a successful
   assert.ok(startupOffer.indexOf("newAccountDemoSeedCoordinator.offer()") >
     startupOffer.indexOf("guestLoginHandoffCoordinator.offer()"));
   assert.match(startupOffer, /if \(handoffResult\.handled\) return true;/);
+  assert.match(appSource, /getDisplayPreferences:[\s\S]*?scopedLocalStorageKey\(STORAGE_KEY,\s*GUEST_STORAGE_SCOPE\)/);
+  assert.match(appSource, /applyDisplayPreferences:[\s\S]*?applyGuestLocalDisplayPreferences\(state,\s*preferences\)/);
 });

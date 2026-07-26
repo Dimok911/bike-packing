@@ -1389,6 +1389,15 @@ const guestLoginHandoffCoordinator = createGuestLoginHandoffCoordinator({
 });
 const newAccountDemoSeedCoordinator = createNewAccountDemoSeedCoordinator({
   getState: () => state,
+  getDisplayPreferences: () => {
+    const guestStateText = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY, GUEST_STORAGE_SCOPE));
+    return guestStateText ? guestLocalDisplayPreferences(JSON.parse(guestStateText)) : null;
+  },
+  applyDisplayPreferences: (preferences) => {
+    const changed = applyGuestLocalDisplayPreferences(state, preferences);
+    if (changed) saveState({ sync: false });
+    return changed;
+  },
   createDefaultLayout: () => createLocalDemoCopy({
     forceNew: true,
     remember: true,
@@ -1396,6 +1405,7 @@ const newAccountDemoSeedCoordinator = createNewAccountDemoSeedCoordinator({
     activate: true
   }),
   persistDefaultLayout: async () => {
+    saveState({ sync: false });
     syncMeta.dirty = true;
     syncMeta.localUpdatedAt = nowIso();
     saveSyncMeta();
