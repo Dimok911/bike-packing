@@ -257,6 +257,7 @@ import {
   guestDemoCopyRecordWasEdited,
   guestLocalDisplayPreferences,
   isAutomaticGuestDemoCopyLayout,
+  isGuestLocalPersonalLayout,
   normalizeDemoTemplateName,
   normalizePublishedDemoTemplatePayload
 } from "./src/public/demo-template-state.js";
@@ -366,6 +367,7 @@ import {
   isGuestDemoCopyLayoutRecord,
   isPublishedLayoutEditable,
   isReadOnlyBikePackingError,
+  isReadOnlyBikePackingMutationContext,
   isReadOnlyBikePackingRecord,
   isReadOnlyItemKey,
   isReadOnlyScope,
@@ -2772,11 +2774,13 @@ async function setUiLanguage(language) {
           remember: false,
           exactTemplateName: true,
           activate: false,
-          templateId
+          templateId,
+          prepareCreatedLayoutForSync: (createdLayoutId) => {
+            if (wasNewAccountDefaultDemoAccount) {
+              markNewAccountDefaultDemoLayout(state, createdLayoutId);
+            }
+          }
         });
-        if (wasNewAccountDefaultDemoAccount && markNewAccountDefaultDemoLayout(state, layoutId)) {
-          saveState();
-        }
         return layoutId;
       },
       confirmOpen: ({ layout }) => askConfirmDialog({
@@ -2795,7 +2799,7 @@ async function setUiLanguage(language) {
     });
     if (result.status === "created" && result.offerOpen === false) {
       const createdLayout = state.layouts?.[result.layoutId];
-      showToast(t("guest.languageLayoutCreatedToast", {
+      showToast(t("guest.languageLayoutCreatedFromTemplateToast", {
         language: t(`language.name.${uiLanguage}`),
         name: createdLayout?.name || t("demo.layoutName")
       }), "success");
@@ -4570,10 +4574,14 @@ function activeReadOnlyLayoutId() {
   return activeReadOnlyLayoutIdFromScope(modeState);
 }
 
-function isReadOnlyBikePackingContext(record = null) {
-  return isPublicLayoutContext() ||
-    isReadOnlyBikePackingRecord(record) ||
-    isReadOnlyBikePackingRecord(currentPackingListMeta);
+function isReadOnlyBikePackingContext(record = null, { allowReadOnlyView = false } = {}) {
+  return isReadOnlyBikePackingMutationContext({
+    allowReadOnlyView,
+    readOnlyView: isPublicLayoutContext(),
+    listId: currentPackingListId,
+    records: [record, currentPackingListMeta],
+    isPublicTemplateListId
+  });
 }
 
 function canUsePrivateState() {
@@ -4850,10 +4858,17 @@ function currentHistoryActionContext() {
   });
 }
 
-async function syncChangedEntityType(type, { baseState = null, forceOverwrite = false, listId = "" } = {}) {
+async function syncChangedEntityType(type, {
+  allowReadOnlyViewForPrivateMutation = false,
+  baseState = null,
+  forceOverwrite = false,
+  listId = ""
+} = {}) {
   const config = ENTITY_SYNC_CONFIG[type];
   if (!config) return { type, attempted: false, skipped: true, safeForLegacyCompare: true };
-  if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true };
+  if (isReadOnlyBikePackingContext(null, {
+    allowReadOnlyView: allowReadOnlyViewForPrivateMutation
+  })) return { attempted: false, skipped: true, readOnly: true };
   const entries = buildChangedEntitySyncEntries(type, baseState, state, { forceOverwrite });
   const changedIds = entries.filter((entry) => !entry.deleted).map((entry) => entry.id);
   const deletedIds = entries.filter((entry) => entry.deleted).map((entry) => entry.id);
@@ -4863,7 +4878,9 @@ async function syncChangedEntityType(type, { baseState = null, forceOverwrite = 
   }
   const targetListId = listId || await ensureCurrentPackingListId();
   if (!currentPackingListMeta && targetListId) await fetchRemoteListDetailRecord(targetListId).catch(() => null);
-  if (isReadOnlyBikePackingContext()) return { attempted: false, skipped: true, readOnly: true, changedIds, deletedIds };
+  if (isReadOnlyBikePackingContext(null, {
+    allowReadOnlyView: allowReadOnlyViewForPrivateMutation
+  })) return { attempted: false, skipped: true, readOnly: true, changedIds, deletedIds };
   try {
     const results = await syncEntityBatchesSequentially(splitEntitySyncEntries(type, entries), {
       sendBatch: (batch) => syncEntityBatchWithRevisionRetry(batch, {
@@ -4976,9 +4993,11 @@ async function syncChangedBikePackingEntities({ baseState = null, forceOverwrite
 async function syncCreatedPrivateLayoutEntities(layoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout) throw new Error("Created layout was not found locally");
-  saveState({ sync: false });
+  if (!isGuestLocalPersonalLayout(layout)) throw createReadOnlyBikePackingError();
+  persistStateSnapshot(state);
   if (!currentUser || !canUsePrivateState()) return;
-  if (isReadOnlyBikePackingContext()) throw createReadOnlyBikePackingError();
+  if (isGuestDemoCopyLayoutRecord(layout)) throw createReadOnlyBikePackingError();
+  clearReadOnlyPackingListContextForPrivateMutation();
   syncMeta.dirty = true;
   syncMeta.localUpdatedAt = nowIso();
   saveSyncMeta();
@@ -5005,7 +5024,10 @@ async function syncCreatedPrivateLayoutEntities(layoutId) {
         return true;
       },
       rememberResult: (entityResult) => rememberEntitySyncResultMeta(entityResult, { rememberRemoteIntegrityMeta, syncMeta }),
-      syncEntityType: syncChangedEntityType
+      syncEntityType: (type, options) => syncChangedEntityType(type, {
+        ...options,
+        allowReadOnlyViewForPrivateMutation: true
+      })
     });
     syncMeta.dirty = false;
     syncMeta.serverUpdatedAt = result.serverUpdatedAt || syncMeta.serverUpdatedAt;
@@ -8900,7 +8922,8 @@ async function createLocalDemoCopy({
   remember = true,
   exactTemplateName = false,
   activate = true,
-  templateId = ""
+  templateId = "",
+  prepareCreatedLayoutForSync = () => {}
 } = {}) {
   if (!forceNew && localDemoCopyInFlight) return localDemoCopyInFlight;
   const task = (async () => {
@@ -8927,6 +8950,7 @@ async function createLocalDemoCopy({
       }
     }
     const layoutId = copyPublishedDemoStateToLocalLayout(demoState, { activate, remember, exactTemplateName });
+    prepareCreatedLayoutForSync(layoutId);
     await cacheGuestTemplatePhotoFallbacks(layoutId);
     await syncCreatedPrivateLayoutEntities(layoutId);
     updateSyncUi(currentUser ? "" : t("sync.localUnlocked"));

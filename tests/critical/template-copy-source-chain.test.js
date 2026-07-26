@@ -23,6 +23,7 @@ import {
   demoItemKeyForLanguage,
   demoPublicListIdForLanguage,
   isAdminPublicEditScope,
+  isReadOnlyBikePackingMutationContext,
   shouldClearPackingListContextForPrivateMutation
 } from "../../src/public/scope.js";
 import {
@@ -3168,7 +3169,8 @@ test("guest language switch wires the catalog template resolver into the app flo
   assert.match(handlerSource, /sourceTemplateId:\s*wasDemoView \? previousDemoTemplateId : ""/);
   assert.match(handlerSource, /accountDefaultDemo:\s*wasNewAccountDefaultDemoAccount/);
   assert.match(handlerSource, /accountDefaultDemoFlag:\s*NEW_ACCOUNT_DEFAULT_DEMO_FLAG/);
-  assert.match(handlerSource, /guest\.languageLayoutCreatedToast/);
+  assert.match(handlerSource, /guest\.languageLayoutCreatedFromTemplateToast/);
+  assert.match(handlerSource, /prepareCreatedLayoutForSync/);
   assert.doesNotMatch(handlerSource, /\n\s*findTemplateForLanguage,\s*\n/);
 });
 
@@ -3177,6 +3179,13 @@ test("guest language layout creation is described as similar in both languages",
   assert.match(I18N.ru["guest.languageLayoutCreatedToast"], /аналогичная/);
   assert.match(I18N.en["guest.languageLayoutCreatedText"], /similar/);
   assert.match(I18N.en["guest.languageLayoutCreatedToast"], /similar/);
+});
+
+test("language layout toast from a readonly template does not call the copy similar", () => {
+  assert.doesNotMatch(I18N.ru["guest.languageLayoutCreatedFromTemplateToast"], /аналогич/);
+  assert.doesNotMatch(I18N.en["guest.languageLayoutCreatedFromTemplateToast"], /similar/);
+  assert.match(I18N.ru["guest.languageLayoutCreatedFromTemplateToast"], /создана укладка/);
+  assert.match(I18N.en["guest.languageLayoutCreatedFromTemplateToast"], /layout/);
 });
 
 test("automatic guest demo layout keeps the template title without uniqueness suffixes", () => {
@@ -5496,6 +5505,51 @@ test("private mutations clear stale public list context before sync", () => {
     record: { id: "public-demo-state", itemKey: "demo-state", visibility: "public" },
     isPublicTemplateListId
   }), true);
+});
+
+test("a confirmed private layout may sync while a readonly template stays visible", () => {
+  const isPublicTemplateListId = (id) => String(id || "").startsWith("public-demo-state");
+  assert.equal(isReadOnlyBikePackingMutationContext({
+    allowReadOnlyView: true,
+    readOnlyView: true,
+    listId: "private-list",
+    records: [{ id: "private-list", itemKey: "bike-packing", visibility: "private" }],
+    isPublicTemplateListId
+  }), false);
+  assert.equal(isReadOnlyBikePackingMutationContext({
+    allowReadOnlyView: false,
+    readOnlyView: true,
+    listId: "private-list",
+    records: [{ id: "private-list", itemKey: "bike-packing", visibility: "private" }],
+    isPublicTemplateListId
+  }), true);
+  assert.equal(isReadOnlyBikePackingMutationContext({
+    allowReadOnlyView: true,
+    readOnlyView: true,
+    listId: "public-demo-state",
+    records: [],
+    isPublicTemplateListId
+  }), true);
+  assert.equal(isReadOnlyBikePackingMutationContext({
+    allowReadOnlyView: true,
+    readOnlyView: true,
+    listId: "private-list",
+    records: [{ itemKey: "demo-state", visibility: "public" }],
+    isPublicTemplateListId
+  }), true);
+});
+
+test("created private layout sync bypasses only the visible readonly view", () => {
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const syncStart = appSource.indexOf("async function syncCreatedPrivateLayoutEntities");
+  const syncEnd = appSource.indexOf("\nfunction pruneAdminPublishedDraftsForSync", syncStart);
+  assert.notEqual(syncStart, -1);
+  assert.ok(syncEnd > syncStart);
+  const syncSource = appSource.slice(syncStart, syncEnd);
+  assert.match(syncSource, /isGuestLocalPersonalLayout\(layout\)/);
+  assert.match(syncSource, /clearReadOnlyPackingListContextForPrivateMutation\(\)/);
+  assert.match(syncSource, /allowReadOnlyViewForPrivateMutation:\s*true/);
+  assert.doesNotMatch(syncSource, /if \(isReadOnlyBikePackingContext\(\)\) throw/);
 });
 
 test("private scope with template markers is not treated as admin public edit", () => {

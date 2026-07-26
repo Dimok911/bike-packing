@@ -61,6 +61,20 @@ export function shouldClearPackingListContextForPrivateMutation({ listId = "", r
   return Boolean(isPublicTemplateListId(listId) || isReadOnlyBikePackingRecord(record));
 }
 
+export function isReadOnlyBikePackingMutationContext({
+  allowReadOnlyView = false,
+  readOnlyView = false,
+  listId = "",
+  records = [],
+  isPublicTemplateListId = () => false
+} = {}) {
+  return Boolean(
+    (!allowReadOnlyView && readOnlyView) ||
+    isPublicTemplateListId(listId) ||
+    records.some(isReadOnlyBikePackingRecord)
+  );
+}
+
 export function createReadOnlyBikePackingError() {
   const error = new Error("Demo/public bike-packing is read-only; create a private copy before saving.");
   error.code = "bike_packing_read_only";
