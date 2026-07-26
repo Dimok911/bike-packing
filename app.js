@@ -166,6 +166,7 @@ import {
 import {
   NEW_ACCOUNT_DEFAULT_DEMO_FLAG,
   createNewAccountDemoSeedCoordinator,
+  isLayoutFreeNewAccountState,
   isNewAccountDefaultDemoAccount,
   markNewAccountDefaultDemoLayout
 } from "./src/public/new-account-demo-seed.js";
@@ -1956,7 +1957,7 @@ function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
   return scopedStorageKey(key, scope);
 }
 
-function applyLoadedStateToCurrentScope(nextState) {
+function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true } = {}) {
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
   installRuntimeActiveLayoutId(state, nextState?.activeLayoutId || state.activeLayoutId);
@@ -1964,7 +1965,7 @@ function applyLoadedStateToCurrentScope(nextState) {
   normalizeItemFields(state);
   cleanupGeneratedCatalogArtifacts(state);
   repairContainerMembershipFromItemLinks(state);
-  normalizeLayoutFields(state);
+  normalizeLayoutFields(state, { createFallbackLayout });
   isolateLinkedLayoutEntities(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);
@@ -1983,7 +1984,8 @@ function activateLocalStorageScope(scopeKey) {
   const scopedHadLocalState = hasLocalSavedState();
   const scopedHadRemoteBaseline = hasStoredLocalValue(BASE_STATE_KEY) ||
     Boolean(scopedSyncMeta.serverUpdatedAt || scopedSyncMeta.stateRevision || scopedSyncMeta.payloadHash);
-  const nextState = loadState();
+  const createFallbackLayout = nextScope === GUEST_STORAGE_SCOPE || scopedHadLocalState;
+  const nextState = loadState({ createFallbackLayout });
   hadLocalStateAtStartup = scopedHadLocalState;
   hadRemoteBaselineAtStartup = scopedHadRemoteBaseline;
   startupLocalStateWasFallback = scopedHadLocalState && !scopedHadRemoteBaseline && isGeneratedStartupFallbackState(nextState);
@@ -1991,7 +1993,7 @@ function activateLocalStorageScope(scopeKey) {
   syncMeta = scopedSyncMeta;
   currentPackingListId = loadActivePackingListId();
   currentPackingListMeta = null;
-  applyLoadedStateToCurrentScope(nextState);
+  applyLoadedStateToCurrentScope(nextState, { createFallbackLayout });
   if (nextScope === GUEST_STORAGE_SCOPE) guestWorkspaceSessionTracker.reset(state);
   explicitLayoutChoice = { id: "", at: 0 };
   return true;
@@ -3368,7 +3370,7 @@ function createEmptyPublicTemplateState(language = uiLanguage) {
   return template;
 }
 
-function loadState() {
+function loadState({ createFallbackLayout = true } = {}) {
   const saved = localStorage.getItem(scopedLocalStorageKey(STORAGE_KEY));
   if (!saved) {
     const initial = createEmptyUserState();
@@ -3376,7 +3378,7 @@ function loadState() {
     normalizeContainerFields(initial);
     normalizeItemFields(initial);
     repairContainerMembershipFromItemLinks(initial);
-    normalizeLayoutFields(initial);
+    normalizeLayoutFields(initial, { createFallbackLayout });
     isolateLinkedLayoutEntities(initial);
     normalizeItemCategories(initial);
     migrateContainerOrder(initial);
@@ -3398,7 +3400,7 @@ function loadState() {
     normalizeItemFields(parsed);
     cleanupGeneratedCatalogArtifacts(parsed);
     repairContainerMembershipFromItemLinks(parsed);
-    normalizeLayoutFields(parsed);
+    normalizeLayoutFields(parsed, { createFallbackLayout });
     isolateLinkedLayoutEntities(parsed);
     normalizeItemCategories(parsed);
     migrateContainerOrder(parsed);
@@ -3411,7 +3413,7 @@ function loadState() {
       normalizeContainerFields(fallback);
       normalizeItemFields(fallback);
       repairContainerMembershipFromItemLinks(fallback);
-      normalizeLayoutFields(fallback);
+      normalizeLayoutFields(fallback, { createFallbackLayout });
       isolateLinkedLayoutEntities(fallback);
       normalizeItemCategories(fallback);
       migrateContainerOrder(fallback);
@@ -5052,7 +5054,9 @@ function normalizeRemoteState(payload, { repairCatalog = true } = {}) {
   normalizeItemFields(normalized);
   cleanupGeneratedCatalogArtifacts(normalized);
   repairContainerMembershipFromItemLinks(normalized);
-  normalizeLayoutFields(normalized);
+  normalizeLayoutFields(normalized, {
+    createFallbackLayout: !isLayoutFreeNewAccountState(normalized)
+  });
   const baseBeforeCatalogRepair = repairCatalog ? JSON.parse(JSON.stringify(normalized)) : null;
   const catalogRepairReport = repairCatalog
     ? isolateLinkedLayoutEntities(normalized)
@@ -5108,7 +5112,9 @@ function replaceState(nextState, { preserveLocalUi = true } = {}) {
   normalizeItemFields(state);
   cleanupGeneratedCatalogArtifacts(state);
   repairContainerMembershipFromItemLinks(state);
-  normalizeLayoutFields(state);
+  normalizeLayoutFields(state, {
+    createFallbackLayout: !isLayoutFreeNewAccountState(nextState)
+  });
   isolateLinkedLayoutEntities(state);
   normalizeItemCategories(state);
   migrateContainerOrder(state);

@@ -35,6 +35,16 @@ export function shouldSeedNewAccountDemoLayout(state) {
   return privateLayouts.length === 1 && isGeneratedEmptyLayoutPlaceholder(privateLayouts[0]);
 }
 
+export function isLayoutFreeNewAccountState(state) {
+  return Boolean(
+    state &&
+    typeof state === "object" &&
+    !Object.keys(state.containers || {}).length &&
+    !Object.keys(state.items || {}).length &&
+    !Object.keys(state.layouts || {}).length
+  );
+}
+
 export function removeNewAccountEmptyLayoutPlaceholder(state, keepLayoutId = "") {
   if (!state?.layouts || typeof state.layouts !== "object") return [];
   const retainedLayoutId = String(keepLayoutId || "").trim();

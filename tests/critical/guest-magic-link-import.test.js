@@ -25,9 +25,11 @@ import {
 import {
   NEW_ACCOUNT_DEFAULT_DEMO_FLAG,
   createNewAccountDemoSeedCoordinator,
+  isLayoutFreeNewAccountState,
   isNewAccountDefaultDemoAccount,
   shouldSeedNewAccountDemoLayout
 } from "../../src/public/new-account-demo-seed.js";
+import { normalizeLayoutFields } from "../../src/state/layout-normalize.js";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const NOW_MS = Date.parse("2026-07-24T01:15:00.000Z");
@@ -85,25 +87,28 @@ test("CRITICAL guest magic-link import: unchanged demo is seeded only into a gen
   }), false);
 });
 
+test("CRITICAL guest magic-link import: a new authenticated account stays layout-free until demo seed", () => {
+  const targetState = emptyState();
+  assert.equal(isLayoutFreeNewAccountState(targetState), true);
+
+  normalizeLayoutFields(targetState, { createFallbackLayout: false });
+
+  assert.deepEqual(targetState.layouts, {});
+  assert.equal(targetState.activeLayoutId, "");
+  assert.equal(shouldSeedNewAccountDemoLayout(targetState), true);
+
+  normalizeLayoutFields(targetState);
+  assert.equal(targetState.layouts["layout-main"]?.id, "layout-main");
+  assert.equal(targetState.activeLayoutId, "layout-main");
+  assert.equal(isLayoutFreeNewAccountState(targetState), false);
+});
+
 test("CRITICAL guest magic-link import: new-account demo seed is created and persisted once", async () => {
   const targetState = {
     ...emptyState(),
     itemDisplayMode: "none",
     showItemMeta: false,
-    showFilterContext: false,
-    layouts: {
-      "layout-main": {
-        id: "layout-main",
-        name: "Current layout",
-        rootContainerIds: [],
-        arrangement: {
-          rootContainerIds: [],
-          containers: {},
-          items: {}
-        }
-      }
-    },
-    activeLayoutId: "layout-main"
+    showFilterContext: false
   };
   const events = [];
   const coordinator = createNewAccountDemoSeedCoordinator({
@@ -119,11 +124,14 @@ test("CRITICAL guest magic-link import: new-account demo seed is created and per
     },
     createDefaultLayout: async () => {
       events.push("create");
+      assert.deepEqual(targetState.layouts, {});
+      assert.equal(targetState.activeLayoutId, "");
       targetState.layouts["layout-demo"] = {
         id: "layout-demo",
         name: "Demo-packing",
         rootContainerIds: ["bag-demo"]
       };
+      targetState.activeLayoutId = "layout-demo";
       targetState.containers["bag-demo"] = { id: "bag-demo", name: "Demo bag" };
       return "layout-demo";
     },

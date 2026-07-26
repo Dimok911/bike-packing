@@ -21,7 +21,7 @@ export function layoutDisplayNameForLanguage(layout, language = "ru") {
   return storedName || (language === "en" ? "Current layout" : DEFAULT_LAYOUT_NAME);
 }
 
-export function normalizeLayoutFields(targetState) {
+export function normalizeLayoutFields(targetState, { createFallbackLayout = true } = {}) {
   const containers = targetState.containers && typeof targetState.containers === "object" ? targetState.containers : {};
   const rootContainerIds = Object.values(containers)
     .filter((container) => container && !container.parentId)
@@ -71,7 +71,7 @@ export function normalizeLayoutFields(targetState) {
   });
 
   const layoutValues = Object.values(targetState.layouts);
-  if (!layoutValues.length) {
+  if (!layoutValues.length && createFallbackLayout) {
     const id = "layout-main";
     targetState.layouts[id] = {
       id,
@@ -83,7 +83,7 @@ export function normalizeLayoutFields(targetState) {
   if (!targetState.activeLayoutId || !targetState.layouts[targetState.activeLayoutId]) {
     const firstWithContainers = Object.values(targetState.layouts).find((layout) => layout.rootContainerIds?.length);
     const fallback = firstWithContainers || Object.values(targetState.layouts)[0];
-    targetState.activeLayoutId = fallback?.id || "layout-main";
+    targetState.activeLayoutId = fallback?.id || (createFallbackLayout ? "layout-main" : "");
   }
 }
 
