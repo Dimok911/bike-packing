@@ -3106,16 +3106,68 @@ test("guest language switch creates silently while a readonly template stays ope
   assert.equal(openCalls, 0);
 });
 
+test("new account default demo uses the guest language-switch mechanism after sign-in", async () => {
+  const accountDefaultDemoFlag = "newAccountDefaultDemo";
+  const layouts = {
+    "demo-en": {
+      id: "demo-en",
+      name: "Demo-packing",
+      demoSourceLanguage: "en",
+      demoSourceListId: "demo-en-family",
+      [accountDefaultDemoFlag]: true
+    }
+  };
+  let createCalls = 0;
+  const catalog = [
+    demoTemplateEntryForLanguage("en", { listId: "demo-en-family", name: "Family", serverConfirmed: true }),
+    demoTemplateEntryForLanguage("ru", { listId: "demo-ru-family", name: "Family", serverConfirmed: true })
+  ];
+  const options = {
+    accountDefaultDemo: true,
+    accountDefaultDemoFlag,
+    layouts,
+    activeLayoutId: "demo-en",
+    previousLanguage: "en",
+    nextLanguage: "ru",
+    templateCatalog: catalog,
+    findTemplateForLanguage: findDemoTemplateForLanguage,
+    defaultTemplateListId: (language) => `fallback-${language}`,
+    createLayout: async ({ templateId }) => {
+      createCalls += 1;
+      assert.equal(templateId, "demo-ru-family");
+      layouts["demo-ru"] = {
+        id: "demo-ru",
+        name: "Demo-packing",
+        demoSourceLanguage: "ru",
+        [accountDefaultDemoFlag]: true
+      };
+      return "demo-ru";
+    },
+    confirmOpen: async () => false
+  };
+
+  const created = await handleGuestLanguageLayoutSwitch(options);
+  const repeated = await handleGuestLanguageLayoutSwitch(options);
+
+  assert.equal(created.status, "created");
+  assert.equal(created.layoutId, "demo-ru");
+  assert.equal(repeated.status, "exists");
+  assert.equal(repeated.layoutId, "demo-ru");
+  assert.equal(createCalls, 1);
+});
+
 test("guest language switch wires the catalog template resolver into the app flow", () => {
   const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
   const handlerStart = appSource.indexOf("handleGuestLanguageLayoutSwitch({");
   const sharedTemplateNavigationStart = appSource.indexOf("if (sharedLanguageTarget &&", handlerStart);
   assert.notEqual(handlerStart, -1);
   assert.ok(sharedTemplateNavigationStart > handlerStart);
-  const handlerSource = appSource.slice(handlerStart, handlerStart + 1600);
+  const handlerSource = appSource.slice(handlerStart, handlerStart + 3000);
   assert.match(handlerSource, /findTemplateForLanguage:\s*findDemoTemplateForLanguage/);
   assert.match(handlerSource, /readOnlyStateScope:\s*wasDemoView \|\| wasSharedView/);
   assert.match(handlerSource, /sourceTemplateId:\s*wasDemoView \? previousDemoTemplateId : ""/);
+  assert.match(handlerSource, /accountDefaultDemo:\s*wasNewAccountDefaultDemoAccount/);
+  assert.match(handlerSource, /accountDefaultDemoFlag:\s*NEW_ACCOUNT_DEFAULT_DEMO_FLAG/);
   assert.match(handlerSource, /guest\.languageLayoutCreatedToast/);
   assert.doesNotMatch(handlerSource, /\n\s*findTemplateForLanguage,\s*\n/);
 });

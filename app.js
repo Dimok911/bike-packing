@@ -164,6 +164,12 @@ import {
   runGuestLoginHandoffImport
 } from "./src/public/guest-login-import-flow.js";
 import {
+  NEW_ACCOUNT_DEFAULT_DEMO_FLAG,
+  createNewAccountDemoSeedCoordinator,
+  isNewAccountDefaultDemoAccount,
+  markNewAccountDefaultDemoLayout
+} from "./src/public/new-account-demo-seed.js";
+import {
   canEditLocalUnpublishedTemplate as canEditLocalUnpublishedTemplateValue,
   canEditManagedTemplate as canEditManagedTemplateValue,
   publishedTemplateBlockReason,
@@ -1380,6 +1386,26 @@ const {
 const guestLoginHandoffCoordinator = createGuestLoginHandoffCoordinator({
   getCandidate: storedGuestLoginHandoffCandidate,
   runImport: runGuestLoginHandoffCandidate
+});
+const newAccountDemoSeedCoordinator = createNewAccountDemoSeedCoordinator({
+  getState: () => state,
+  createDefaultLayout: () => createLocalDemoCopy({
+    forceNew: true,
+    remember: true,
+    exactTemplateName: true,
+    activate: true
+  }),
+  persistDefaultLayout: async () => {
+    syncMeta.dirty = true;
+    syncMeta.localUpdatedAt = nowIso();
+    saveSyncMeta();
+    await saveRemoteState({ notify: false, forceOverwrite: true });
+    if (syncMeta.dirty) scheduleRemoteSave();
+    return !syncMeta.dirty;
+  },
+  onError: (error) => {
+    console.warn("[bike-packing] Default demo layout could not be seeded for the new account", error);
+  }
 });
 adminReportsDialogController = createAdminReportsDialogController({
   refs,
@@ -2703,6 +2729,9 @@ async function setUiLanguage(language) {
       sourceLanguage: previousLanguage
     })
     : null;
+  const wasNewAccountDefaultDemoAccount = Boolean(
+    currentUser && isNewAccountDefaultDemoAccount(state)
+  );
   uiLanguage = nextLanguage;
   saveUiLanguage(uiLanguage);
   applyPublicTemplateLanguage();
@@ -2712,6 +2741,8 @@ async function setUiLanguage(language) {
   try {
     const result = await handleGuestLanguageLayoutSwitch({
       guestSession: isGuestSession(),
+      accountDefaultDemo: wasNewAccountDefaultDemoAccount,
+      accountDefaultDemoFlag: NEW_ACCOUNT_DEFAULT_DEMO_FLAG,
       readOnlyStateScope: wasDemoView || wasSharedView,
       sharedListRoute: isSharedListLinkRoute(),
       layouts: state.layouts,
@@ -2724,13 +2755,19 @@ async function setUiLanguage(language) {
       findTemplateForLanguage: findDemoTemplateForLanguage,
       defaultTemplateListId: demoPublicListIdForLanguage,
       guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
-      createLayout: ({ templateId }) => createLocalDemoCopy({
-        forceNew: true,
-        remember: false,
-        exactTemplateName: true,
-        activate: false,
-        templateId
-      }),
+      createLayout: async ({ templateId }) => {
+        const layoutId = await createLocalDemoCopy({
+          forceNew: true,
+          remember: false,
+          exactTemplateName: true,
+          activate: false,
+          templateId
+        });
+        if (wasNewAccountDefaultDemoAccount && markNewAccountDefaultDemoLayout(state, layoutId)) {
+          saveState();
+        }
+        return layoutId;
+      },
       confirmOpen: ({ layout }) => askConfirmDialog({
         title: t("guest.languageLayoutCreatedTitle", {
           language: t(`language.name.${uiLanguage}`)
@@ -7581,8 +7618,10 @@ async function runGuestLoginHandoffCandidate(candidate) {
 }
 
 async function offerPendingGuestLoginHandoffAfterRemoteLoad() {
-  const result = await guestLoginHandoffCoordinator.offer();
-  return Boolean(result.handled);
+  const handoffResult = await guestLoginHandoffCoordinator.offer();
+  if (handoffResult.handled) return true;
+  const seedResult = await newAccountDemoSeedCoordinator.offer();
+  return Boolean(seedResult.handled);
 }
 
 function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {

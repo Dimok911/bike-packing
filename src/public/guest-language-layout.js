@@ -3,19 +3,21 @@ function normalizedLanguage(value) {
 }
 
 export function guestDefaultLayoutForLanguage(layouts = {}, language = "", {
-  guestDemoCopyFlag = "guestDemoCopy"
+  guestDemoCopyFlag = "guestDemoCopy",
+  accountDefaultDemoFlag = ""
 } = {}) {
   const targetLanguage = normalizedLanguage(language);
   if (!targetLanguage) return null;
   return Object.values(layouts || {}).find((layout) =>
     layout?.id &&
-    Boolean(layout?.[guestDemoCopyFlag]) &&
+    Boolean(layout?.[guestDemoCopyFlag] || (accountDefaultDemoFlag && layout?.[accountDefaultDemoFlag])) &&
     normalizedLanguage(layout.demoSourceLanguage) === targetLanguage
   ) || null;
 }
 
 export function guestLanguageLayoutSwitchPlan({
   guestSession = false,
+  accountDefaultDemo = false,
   readOnlyStateScope = false,
   sharedListRoute = false,
   layouts = {},
@@ -29,7 +31,7 @@ export function guestLanguageLayoutSwitchPlan({
   defaultTemplateListId = () => ""
 } = {}) {
   const language = normalizedLanguage(nextLanguage);
-  const enabled = Boolean(guestSession && !sharedListRoute && language);
+  const enabled = Boolean((guestSession || accountDefaultDemo) && !sharedListRoute && language);
   const offerOpen = !readOnlyStateScope;
   if (!enabled) return { enabled: false, language, templateId: "", offerOpen };
   const activeLayout = readOnlyStateScope ? null : layouts?.[activeLayoutId] || null;
@@ -58,6 +60,7 @@ export async function createGuestDefaultLayoutForLanguageIfMissing({
   layouts = {},
   language = "",
   guestDemoCopyFlag = "guestDemoCopy",
+  accountDefaultDemoFlag = "",
   createLayout = async () => "",
   confirmOpen = async () => false,
   openLayout = () => {},
@@ -65,7 +68,10 @@ export async function createGuestDefaultLayoutForLanguageIfMissing({
 } = {}) {
   if (!enabled) return { status: "skipped", layoutId: "" };
   const targetLanguage = normalizedLanguage(language);
-  const existing = guestDefaultLayoutForLanguage(layouts, targetLanguage, { guestDemoCopyFlag });
+  const existing = guestDefaultLayoutForLanguage(layouts, targetLanguage, {
+    guestDemoCopyFlag,
+    accountDefaultDemoFlag
+  });
   if (existing) return { status: "exists", layoutId: existing.id };
 
   const createdLayoutId = String(await createLayout(targetLanguage) || "").trim();
@@ -93,6 +99,7 @@ export async function handleGuestLanguageLayoutSwitch(options = {}) {
     layouts: options.layouts,
     language: plan.language,
     guestDemoCopyFlag: options.guestDemoCopyFlag,
+    accountDefaultDemoFlag: options.accountDefaultDemoFlag,
     createLayout: () => options.createLayout?.(plan),
     confirmOpen: options.confirmOpen,
     openLayout: options.openLayout,

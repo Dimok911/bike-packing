@@ -22,6 +22,12 @@ import {
   createGuestLoginHandoffCoordinator,
   runGuestLoginHandoffImport
 } from "../../src/public/guest-login-import-flow.js";
+import {
+  NEW_ACCOUNT_DEFAULT_DEMO_FLAG,
+  createNewAccountDemoSeedCoordinator,
+  isNewAccountDefaultDemoAccount,
+  shouldSeedNewAccountDemoLayout
+} from "../../src/public/new-account-demo-seed.js";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const NOW_MS = Date.parse("2026-07-24T01:15:00.000Z");
@@ -40,6 +46,85 @@ function emptyState() {
     activeLayoutId: ""
   };
 }
+
+test("CRITICAL guest magic-link import: unchanged demo is seeded only into a genuinely empty account", () => {
+  const generatedPlaceholder = {
+    ...emptyState(),
+    layouts: {
+      "layout-main": {
+        id: "layout-main",
+        name: "Current layout",
+        rootContainerIds: [],
+        arrangement: {
+          rootContainerIds: [],
+          containers: {},
+          items: {}
+        }
+      }
+    },
+    activeLayoutId: "layout-main"
+  };
+  assert.equal(shouldSeedNewAccountDemoLayout(emptyState()), true);
+  assert.equal(shouldSeedNewAccountDemoLayout(generatedPlaceholder), true);
+  assert.equal(shouldSeedNewAccountDemoLayout({
+    ...generatedPlaceholder,
+    layouts: {
+      "layout-custom": {
+        id: "layout-custom",
+        name: "My intentionally empty layout",
+        rootContainerIds: []
+      }
+    },
+    activeLayoutId: "layout-custom"
+  }), false);
+  assert.equal(shouldSeedNewAccountDemoLayout({
+    ...generatedPlaceholder,
+    items: {
+      "item-existing": { id: "item-existing", name: "Existing item" }
+    }
+  }), false);
+});
+
+test("CRITICAL guest magic-link import: new-account demo seed is created and persisted once", async () => {
+  const targetState = emptyState();
+  const events = [];
+  const coordinator = createNewAccountDemoSeedCoordinator({
+    getState: () => targetState,
+    createDefaultLayout: async () => {
+      events.push("create");
+      targetState.layouts["layout-demo"] = {
+        id: "layout-demo",
+        name: "Demo-packing",
+        rootContainerIds: ["bag-demo"]
+      };
+      targetState.containers["bag-demo"] = { id: "bag-demo", name: "Demo bag" };
+      return "layout-demo";
+    },
+    persistDefaultLayout: async (layoutId) => {
+      events.push(`persist:${layoutId}`);
+      return true;
+    }
+  });
+
+  const first = await coordinator.offer();
+  const second = await coordinator.offer();
+
+  assert.deepEqual(first, {
+    handled: true,
+    status: "seeded",
+    layoutId: "layout-demo"
+  });
+  assert.equal(second.status, "already-handled");
+  assert.deepEqual(events, ["create", "persist:layout-demo"]);
+  assert.equal(targetState.layouts["layout-demo"][NEW_ACCOUNT_DEFAULT_DEMO_FLAG], true);
+  assert.equal(isNewAccountDefaultDemoAccount(targetState), true);
+  targetState.layouts["layout-personal"] = {
+    id: "layout-personal",
+    name: "Personal",
+    rootContainerIds: []
+  };
+  assert.equal(isNewAccountDefaultDemoAccount(targetState), false);
+});
 
 function editedGuestState() {
   return {
@@ -772,4 +857,12 @@ test("CRITICAL guest magic-link import: app arms handoff only after a successful
   }
   assert.match(loadFlowSource, /offerPendingGuestLoginHandoffAfterRemoteLoad/);
   assert.match(saveFlowSource, /offerPendingGuestLoginHandoffAfterRemoteLoad/);
+  const startupOffer = appSource.slice(
+    appSource.indexOf("async function offerPendingGuestLoginHandoffAfterRemoteLoad"),
+    appSource.indexOf("function importGuestLocalLayouts", appSource.indexOf("async function offerPendingGuestLoginHandoffAfterRemoteLoad"))
+  );
+  assert.ok(startupOffer.indexOf("guestLoginHandoffCoordinator.offer()") >= 0);
+  assert.ok(startupOffer.indexOf("newAccountDemoSeedCoordinator.offer()") >
+    startupOffer.indexOf("guestLoginHandoffCoordinator.offer()"));
+  assert.match(startupOffer, /if \(handoffResult\.handled\) return true;/);
 });
