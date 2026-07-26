@@ -54,14 +54,29 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     showToast,
     stateIntegrityMetaFromResponse,
     statePrivateLayoutCount,
+    shouldSeedNewAccountDemoLayout = () => false,
     timeValue,
     tryApplyRemoteEntityChanges,
     updateSyncUi
   } = dependencies;
   const localText = dependencies.localText || ((en, ru) => runtime.uiLanguage === "en" ? en : ru);
-  const applyRemoteStateAndOfferGuestHandoff = async (...args) => {
-    const applied = applyRemoteState(...args);
-    if (applied) await offerPendingGuestLoginHandoffAfterRemoteLoad();
+  const applyRemoteStateAndOfferGuestHandoff = async (
+    remoteState,
+    updatedAt,
+    integrityMeta,
+    rawPayload,
+    options = {}
+  ) => {
+    const deferRender = shouldSeedNewAccountDemoLayout(remoteState);
+    const applied = applyRemoteState(remoteState, updatedAt, integrityMeta, rawPayload, {
+      ...options,
+      deferRender
+    });
+    if (!applied) return false;
+    const handled = await offerPendingGuestLoginHandoffAfterRemoteLoad();
+    if (deferRender && !handled) {
+      renderPreservingPackingScroll();
+    }
     return applied;
   };
   if (!runtime.currentUser) return;
@@ -195,8 +210,9 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           runtime.appUnlocked = true;
           syncMeta.dirty = false;
           saveSyncMeta();
+          const handled = await offerPendingGuestLoginHandoffAfterRemoteLoad();
+          if (handled) return;
           renderInitialLocalFallbackIfNeeded();
-          if (await offerPendingGuestLoginHandoffAfterRemoteLoad()) return;
           updateSyncUi(localText(
             "The server is empty · the empty local layout was not sent",
             "На сервере пусто · локальная пустая укладка не отправлена"
@@ -220,9 +236,10 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       syncMeta.dirty = false;
       saveSyncMeta();
       runtime.initialRemoteLoadPending = false;
-      renderPreservingPackingScroll();
       runtime.appUnlocked = true;
-      if (await offerPendingGuestLoginHandoffAfterRemoteLoad()) return;
+      const handled = await offerPendingGuestLoginHandoffAfterRemoteLoad();
+      if (handled) return;
+      renderPreservingPackingScroll();
       syncMeta.dirty = true;
       saveSyncMeta();
       updateSyncUi(localText("The server is empty · sending local data...", "На сервере пока пусто · отправляю локальные данные..."));
@@ -343,11 +360,14 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     saveSyncMeta();
     repairPrivateMojibakeLayoutNames();
     runtime.appUnlocked = true;
+    const shouldRenderInitialState = runtime.initialRemoteLoadPending;
     if (runtime.initialRemoteLoadPending) {
       runtime.initialRemoteLoadPending = false;
+    }
+    const handled = await offerPendingGuestLoginHandoffAfterRemoteLoad();
+    if (shouldRenderInitialState && !handled) {
       renderPreservingPackingScroll();
     }
-    await offerPendingGuestLoginHandoffAfterRemoteLoad();
     setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {

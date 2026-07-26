@@ -78,6 +78,14 @@ export function createNewAccountDemoSeedCoordinator({
     if (!shouldSeedNewAccountDemoLayout(getState())) {
       return { handled: false, status: "account-not-empty", layoutId: "" };
     }
+    try {
+      const preferences = getDisplayPreferences();
+      if (preferences && typeof preferences === "object") {
+        applyDisplayPreferences(preferences);
+      }
+    } catch (error) {
+      onError(error);
+    }
     let layoutId = "";
     try {
       layoutId = String(await createDefaultLayout() || "").trim();
@@ -90,14 +98,6 @@ export function createNewAccountDemoSeedCoordinator({
     }
     removeNewAccountEmptyLayoutPlaceholder(getState(), layoutId);
     markNewAccountDefaultDemoLayout(getState(), layoutId);
-    try {
-      const preferences = getDisplayPreferences();
-      if (preferences && typeof preferences === "object") {
-        applyDisplayPreferences(preferences);
-      }
-    } catch (error) {
-      onError(error);
-    }
     completedForSession = true;
     try {
       const saved = await persistDefaultLayout(layoutId);

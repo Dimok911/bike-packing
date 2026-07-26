@@ -126,6 +126,9 @@ test("CRITICAL guest magic-link import: new-account demo seed is created and per
       events.push("create");
       assert.deepEqual(targetState.layouts, {});
       assert.equal(targetState.activeLayoutId, "");
+      assert.equal(targetState.itemDisplayMode, "photos");
+      assert.equal(targetState.showItemMeta, true);
+      assert.equal(targetState.showFilterContext, true);
       targetState.layouts["layout-demo"] = {
         id: "layout-demo",
         name: "Demo-packing",
@@ -155,7 +158,7 @@ test("CRITICAL guest magic-link import: new-account demo seed is created and per
     layoutId: "layout-demo"
   });
   assert.equal(second.status, "already-handled");
-  assert.deepEqual(events, ["create", "apply-display-preferences", "persist:layout-demo"]);
+  assert.deepEqual(events, ["apply-display-preferences", "create", "persist:layout-demo"]);
   assert.equal(targetState.layouts["layout-demo"][NEW_ACCOUNT_DEFAULT_DEMO_FLAG], true);
   assert.equal(isNewAccountDefaultDemoAccount(targetState), true);
   targetState.layouts["layout-personal"] = {
@@ -904,7 +907,8 @@ test("CRITICAL guest magic-link import: app arms handoff only after a successful
   assert.ok(startupOffer.indexOf("guestLoginHandoffCoordinator.offer()") >= 0);
   assert.ok(startupOffer.indexOf("newAccountDemoSeedCoordinator.offer()") >
     startupOffer.indexOf("guestLoginHandoffCoordinator.offer()"));
-  assert.match(startupOffer, /if \(handoffResult\.handled\) return true;/);
+  assert.match(startupOffer, /if \(handoffResult\.handled\)[\s\S]*?Boolean\(handoffResult\.importedLayoutIds\?\.length\)/);
+  assert.match(startupOffer, /Boolean\(seedResult\.layoutId\)/);
   assert.match(appSource, /getDisplayPreferences:[\s\S]*?scopedLocalStorageKey\(STORAGE_KEY,\s*GUEST_STORAGE_SCOPE\)/);
   assert.match(appSource, /applyDisplayPreferences:[\s\S]*?applyGuestLocalDisplayPreferences\(state,\s*preferences\)/);
 });

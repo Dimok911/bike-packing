@@ -241,6 +241,7 @@ test("CRITICAL sync-save: account without a personal list creates one before ent
 
 test("CRITICAL sync-save: blank server list revision is remembered before guest handoff import", async () => {
   let offeredRevision = null;
+  const transitionEvents = [];
   const runtime = {
     appUnlocked: false,
     currentUser: { id: "user-new" },
@@ -278,26 +279,36 @@ test("CRITICAL sync-save: blank server list revision is remembered before guest 
       isTimeoutError: () => false,
       normalizeRemoteState: () => null,
       offerPendingGuestLoginHandoffAfterRemoteLoad: async () => {
+        transitionEvents.push("prepare-personal-demo");
         offeredRevision = runtime.syncMeta.stateRevision;
+        runtime.state.layouts["layout-demo"] = {
+          id: "layout-demo",
+          name: "Demo-packing"
+        };
         return true;
       },
       remoteUpdatedAt: (record) => record?.updatedAt || "",
       rememberCurrentSyncAccount: () => {},
       rememberRemoteIntegrityMeta: (_record, meta) => { runtime.syncMeta.stateRevision = meta.stateRevision; },
-      renderPreservingPackingScroll: () => {},
-      replaceState: (nextState) => { runtime.state = nextState; },
+      renderPreservingPackingScroll: () => { transitionEvents.push("render-empty-private-state"); },
+      replaceState: (nextState) => {
+        Object.keys(runtime.state).forEach((key) => delete runtime.state[key]);
+        Object.assign(runtime.state, nextState);
+      },
       saveRemoteState: async () => {},
       saveSyncMeta: () => {},
       setLayoutLoadProgress: () => {},
       setLayoutLoadStatus: () => {},
       stateIntegrityMetaFromResponse: () => ({ stateRevision: 1 }),
-      statePrivateLayoutCount: () => 0,
+      statePrivateLayoutCount: (sourceState) => Object.keys(sourceState?.layouts || {}).length,
       timeValue: (value) => Date.parse(value) || 0,
       updateSyncUi: () => {}
     }
   });
 
   assert.equal(offeredRevision, 1);
+  assert.deepEqual(transitionEvents, ["prepare-personal-demo"]);
+  assert.equal(runtime.appUnlocked, true);
 });
 
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {

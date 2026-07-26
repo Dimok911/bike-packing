@@ -168,7 +168,8 @@ import {
   createNewAccountDemoSeedCoordinator,
   isLayoutFreeNewAccountState,
   isNewAccountDefaultDemoAccount,
-  markNewAccountDefaultDemoLayout
+  markNewAccountDefaultDemoLayout,
+  shouldSeedNewAccountDemoLayout
 } from "./src/public/new-account-demo-seed.js";
 import {
   canEditLocalUnpublishedTemplate as canEditLocalUnpublishedTemplateValue,
@@ -1395,9 +1396,7 @@ const newAccountDemoSeedCoordinator = createNewAccountDemoSeedCoordinator({
     return guestStateText ? guestLocalDisplayPreferences(JSON.parse(guestStateText)) : null;
   },
   applyDisplayPreferences: (preferences) => {
-    const changed = applyGuestLocalDisplayPreferences(state, preferences);
-    if (changed) saveState({ sync: false });
-    return changed;
+    return applyGuestLocalDisplayPreferences(state, preferences);
   },
   createDefaultLayout: () => createLocalDemoCopy({
     forceNew: true,
@@ -5254,6 +5253,7 @@ async function offerLoadServerForTruncatedLocalState({ notify = false, preferred
 
 function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPayload = null, {
   allowDestructive = false,
+  deferRender = false,
   preferredLayout = null,
   preservePublicDraftId = ""
 } = {}) {
@@ -5288,7 +5288,7 @@ function applyRemoteState(remoteState, updatedAt, integrityMeta = null, rawPaylo
   repairPrivateMojibakeLayoutNames();
   appUnlocked = true;
   initialRemoteLoadPending = false;
-  renderPreservingPackingScroll();
+  if (!deferRender) renderPreservingPackingScroll();
   setPersonalLayoutsLoadedStatus();
   if (catalogRepairBase && syncMeta.dirty) {
     updateSyncUi(localText("Technical catalog duplicates removed · syncing...", "Каталог очищен от технических дублей · синхронизирую..."));
@@ -7635,9 +7635,11 @@ async function runGuestLoginHandoffCandidate(candidate) {
 
 async function offerPendingGuestLoginHandoffAfterRemoteLoad() {
   const handoffResult = await guestLoginHandoffCoordinator.offer();
-  if (handoffResult.handled) return true;
+  if (handoffResult.handled) {
+    return Boolean(handoffResult.importedLayoutIds?.length);
+  }
   const seedResult = await newAccountDemoSeedCoordinator.offer();
-  return Boolean(seedResult.handled);
+  return Boolean(seedResult.layoutId);
 }
 
 function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
@@ -7738,6 +7740,7 @@ async function loadRemoteState(options = {}) {
       showToast,
       stateIntegrityMetaFromResponse,
       statePrivateLayoutCount,
+      shouldSeedNewAccountDemoLayout,
       timeValue,
       tryApplyRemoteEntityChanges,
       updateSyncUi
