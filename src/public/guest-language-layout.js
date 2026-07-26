@@ -22,26 +22,34 @@ export function guestLanguageLayoutSwitchPlan({
   activeLayoutId = "",
   previousLanguage = "",
   nextLanguage = "",
+  sourceTemplateId = "",
+  sourceLanguage = "",
   templateCatalog = [],
   findTemplateForLanguage = () => null,
   defaultTemplateListId = () => ""
 } = {}) {
   const language = normalizedLanguage(nextLanguage);
-  const enabled = Boolean(guestSession && !readOnlyStateScope && !sharedListRoute && language);
-  if (!enabled) return { enabled: false, language, templateId: "" };
-  const activeLayout = layouts?.[activeLayoutId] || null;
-  const target = activeLayout
+  const enabled = Boolean(guestSession && !sharedListRoute && language);
+  const offerOpen = !readOnlyStateScope;
+  if (!enabled) return { enabled: false, language, templateId: "", offerOpen };
+  const activeLayout = readOnlyStateScope ? null : layouts?.[activeLayoutId] || null;
+  const templateSourceId = String(sourceTemplateId || activeLayout?.demoSourceListId || "").trim();
+  const templateSourceLanguage = sourceLanguage ||
+    activeLayout?.demoSourceLanguage ||
+    previousLanguage;
+  const target = templateSourceId || activeLayout
     ? findTemplateForLanguage(
       templateCatalog,
-      activeLayout.demoSourceListId || "",
+      templateSourceId,
       language,
-      { sourceLanguage: activeLayout.demoSourceLanguage || previousLanguage }
+      { sourceLanguage: templateSourceLanguage }
     )
     : null;
   return {
     enabled: true,
     language,
-    templateId: String(target?.listId || target?.id || defaultTemplateListId(language) || "").trim()
+    templateId: String(target?.listId || target?.id || defaultTemplateListId(language) || "").trim(),
+    offerOpen
   };
 }
 
@@ -52,7 +60,8 @@ export async function createGuestDefaultLayoutForLanguageIfMissing({
   guestDemoCopyFlag = "guestDemoCopy",
   createLayout = async () => "",
   confirmOpen = async () => false,
-  openLayout = () => {}
+  openLayout = () => {},
+  offerOpen = true
 } = {}) {
   if (!enabled) return { status: "skipped", layoutId: "" };
   const targetLanguage = normalizedLanguage(language);
@@ -63,11 +72,13 @@ export async function createGuestDefaultLayoutForLanguageIfMissing({
   const createdLayout = layouts?.[createdLayoutId] || null;
   if (!createdLayoutId || !createdLayout) return { status: "failed", layoutId: "" };
 
-  const shouldOpen = Boolean(await confirmOpen({
-    language: targetLanguage,
-    layout: createdLayout,
-    layoutId: createdLayoutId
-  }));
+  const shouldOpen = offerOpen
+    ? Boolean(await confirmOpen({
+      language: targetLanguage,
+      layout: createdLayout,
+      layoutId: createdLayoutId
+    }))
+    : false;
   if (shouldOpen) await openLayout(createdLayoutId);
   return {
     status: shouldOpen ? "opened" : "created",
@@ -77,13 +88,15 @@ export async function createGuestDefaultLayoutForLanguageIfMissing({
 
 export async function handleGuestLanguageLayoutSwitch(options = {}) {
   const plan = guestLanguageLayoutSwitchPlan(options);
-  return createGuestDefaultLayoutForLanguageIfMissing({
+  const result = await createGuestDefaultLayoutForLanguageIfMissing({
     enabled: plan.enabled,
     layouts: options.layouts,
     language: plan.language,
     guestDemoCopyFlag: options.guestDemoCopyFlag,
     createLayout: () => options.createLayout?.(plan),
     confirmOpen: options.confirmOpen,
-    openLayout: options.openLayout
+    openLayout: options.openLayout,
+    offerOpen: plan.offerOpen
   });
+  return { ...result, offerOpen: plan.offerOpen };
 }

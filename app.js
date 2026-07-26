@@ -2709,28 +2709,17 @@ async function setUiLanguage(language) {
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
   applyStaticTranslations();
   updateLayoutLoadStatusUi();
-  if (sharedLanguageTarget && sharedLanguageTarget.id !== previousReadOnlyLayoutId) {
-    await openSharedLayoutViewer(sharedLanguageTarget.id, { remember: true });
-    updateSyncUi();
-    return;
-  }
-  if (wasSharedView && !preserveLinkedSharedList && !sharedLanguageTarget) {
-    await openDemoLayoutFromSelect({ language: uiLanguage, remember: true });
-    updateSyncUi();
-    return;
-  }
-  render();
-  if (isOfflineRememberedSession()) setOfflineRememberedLayoutLoadStatus();
-  updateSyncUi();
   try {
     const result = await handleGuestLanguageLayoutSwitch({
       guestSession: isGuestSession(),
-      readOnlyStateScope: isReadOnlyStateScope(),
+      readOnlyStateScope: wasDemoView || wasSharedView,
       sharedListRoute: isSharedListLinkRoute(),
       layouts: state.layouts,
       activeLayoutId: state.activeLayoutId,
       previousLanguage,
       nextLanguage: uiLanguage,
+      sourceTemplateId: wasDemoView ? previousDemoTemplateId : "",
+      sourceLanguage: previousLanguage,
       templateCatalog: serverConfirmedDemoTemplates,
       findTemplateForLanguage: findDemoTemplateForLanguage,
       defaultTemplateListId: demoPublicListIdForLanguage,
@@ -2756,12 +2745,31 @@ async function setUiLanguage(language) {
       }),
       openLayout: (layoutId) => openPrivateLayout(layoutId, { remember: true })
     });
-    if (result.status === "failed") {
+    if (result.status === "created" && result.offerOpen === false) {
+      const createdLayout = state.layouts?.[result.layoutId];
+      showToast(t("guest.languageLayoutCreatedToast", {
+        language: t(`language.name.${uiLanguage}`),
+        name: createdLayout?.name || t("demo.layoutName")
+      }), "success");
+    } else if (result.status === "failed") {
       showToast(t("guest.languageLayoutCreateFailed"), "warning");
     }
   } catch (error) {
     showToast(t("guest.languageLayoutCreateFailedWithReason", { message: error.message }), "warning");
   }
+  if (sharedLanguageTarget && sharedLanguageTarget.id !== previousReadOnlyLayoutId) {
+    await openSharedLayoutViewer(sharedLanguageTarget.id, { remember: true });
+    updateSyncUi();
+    return;
+  }
+  if (wasSharedView && !preserveLinkedSharedList && !sharedLanguageTarget) {
+    await openDemoLayoutFromSelect({ language: uiLanguage, remember: true });
+    updateSyncUi();
+    return;
+  }
+  render();
+  if (isOfflineRememberedSession()) setOfflineRememberedLayoutLoadStatus();
+  updateSyncUi();
   if (wasAdminDemoEdit) {
     try {
       if (!currentUser) {
