@@ -44,10 +44,14 @@ function entityMatchKey(record, kind, fallbackId) {
   return contentHash ? `${sourceId}\u001f${contentHash}` : "";
 }
 
-function candidateLayoutEntityIds(targetState, templateKey, kind) {
+function isReusablePrivateLayout(layout) {
+  return Boolean(layout && !layout.adminDemo && !layout.adminSharedSourceId);
+}
+
+function candidatePrivateLayoutEntityIds(targetState, kind) {
   const ids = new Set();
   Object.values(targetState?.layouts || {}).forEach((layout) => {
-    if (!layout || guestTemplateEntityReuseKey(layout) !== templateKey) return;
+    if (!isReusablePrivateLayout(layout)) return;
     const layoutIds = kind === "container"
       ? getLayoutContainerIdSet(targetState, layout)
       : getLayoutItemIdSet(targetState, layout);
@@ -85,13 +89,6 @@ function assignReusableEntityIds(sourceIds, sourceRecords, targetIds, targetReco
 
 export function planGuestTemplateEntityReuse(targetState, sourceState, sourceLayout) {
   const templateKey = guestTemplateEntityReuseKey(sourceLayout);
-  if (!templateKey) {
-    return {
-      templateKey: "",
-      containers: new Map(),
-      items: new Map()
-    };
-  }
   const sourceContainerIds = [...getLayoutContainerIdSet(sourceState, sourceLayout)];
   const sourceItemIds = uniqueLayoutIds([
     ...getLayoutItemIdSet(sourceState, sourceLayout),
@@ -102,14 +99,14 @@ export function planGuestTemplateEntityReuse(targetState, sourceState, sourceLay
     containers: assignReusableEntityIds(
       sourceContainerIds,
       sourceState?.containers || {},
-      candidateLayoutEntityIds(targetState, templateKey, "container"),
+      candidatePrivateLayoutEntityIds(targetState, "container"),
       targetState?.containers || {},
       "container"
     ),
     items: assignReusableEntityIds(
       sourceItemIds,
       sourceState?.items || {},
-      candidateLayoutEntityIds(targetState, templateKey, "item"),
+      candidatePrivateLayoutEntityIds(targetState, "item"),
       targetState?.items || {},
       "item"
     )

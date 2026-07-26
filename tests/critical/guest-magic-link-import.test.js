@@ -275,6 +275,33 @@ test("CRITICAL guest login import: a new layout reuses identical template bags a
   assert.deepEqual(imported.arrangement.packedItems, { "item-account": true });
 });
 
+test("CRITICAL guest login import: template entities in ordinary account and guest layouts are reused", () => {
+  const { sourceState, targetState } = templateReuseState();
+  delete targetState.layouts["layout-account"].demoSourceListId;
+  delete sourceState.layouts[GUEST_LAYOUT_ID].demoSourceListId;
+  let containerCopies = 0;
+  let itemCopies = 0;
+
+  const importedIds = importTemplateReuseCandidate(targetState, sourceState, {
+    copyPublishedContainerToState: () => {
+      containerCopies += 1;
+      return "";
+    },
+    copyPublishedItemToState: () => {
+      itemCopies += 1;
+      return "";
+    }
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(containerCopies, 0);
+  assert.equal(itemCopies, 0);
+  const imported = targetState.layouts[importedIds[0]];
+  assert.equal(imported.name, "Weekend 2");
+  assert.deepEqual(imported.rootContainerIds, ["bag-account"]);
+  assert.deepEqual(imported.arrangement.items, { "item-account": "bag-account" });
+});
+
 test("CRITICAL guest login import: changed template items stay separate while an identical bag is reused", () => {
   const { sourceState, targetState } = templateReuseState({
     sourceItemName: "Rain shell repaired"
