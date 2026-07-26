@@ -3,7 +3,6 @@ import {
   getLayoutItemIdSet
 } from "../state/layout-ops.js";
 import { uniqueLayoutIds } from "../state/layout-arrangement.js";
-import { I18N } from "../data/i18n.js";
 import {
   guestDemoCopyRecordWasEdited,
   guestLocalDisplayPreferences,
@@ -24,10 +23,6 @@ import {
   remapGuestLayoutArrangement
 } from "./guest-login-entity-reuse.js";
 
-const DEFAULT_GENERIC_DEMO_LAYOUT_NAMES = Object.values(I18N)
-  .map((dictionary) => dictionary?.["demo.layoutName"])
-  .filter(Boolean);
-
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
 }
@@ -37,8 +32,7 @@ export function canImportGuestLayoutsForAuthenticatedUser(user = null) {
 }
 
 export function guestCandidateLayouts(candidate, {
-  fallbackName = "",
-  genericLayoutNames = DEFAULT_GENERIC_DEMO_LAYOUT_NAMES
+  fallbackName = ""
 } = {}) {
   const entries = Array.isArray(candidate?.layouts) && candidate.layouts.length
     ? candidate.layouts
@@ -49,13 +43,10 @@ export function guestCandidateLayouts(candidate, {
     }] : []);
   return entries
     .map((entry) => {
-      const explicitFallbackName = String(entry?.fallbackName || "").trim();
-      const entryFallbackName = explicitFallbackName || fallbackName;
+      const entryFallbackName = String(entry?.fallbackName || fallbackName).trim() || fallbackName;
       return {
         layoutId: String(entry?.layoutId || "").trim(),
-        layoutName: readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName, {
-          genericNames: explicitFallbackName ? genericLayoutNames : []
-        }),
+        layoutName: readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName),
         fallbackName: entryFallbackName
       };
     })
@@ -83,7 +74,6 @@ export function guestLocalLayoutCandidateFromState(sourceState, {
   createEmptyUserState = () => ({}),
   fallbackName = "",
   fallbackNameForLayout = () => fallbackName,
-  genericLayoutNames = DEFAULT_GENERIC_DEMO_LAYOUT_NAMES,
   snapshotsEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right)
 } = {}) {
   if (!sourceState || !Object.values(sourceState.layouts || {}).some(isGuestLocalPersonalLayout)) return null;
@@ -111,9 +101,7 @@ export function guestLocalLayoutCandidateFromState(sourceState, {
       const layoutFallbackName = String(fallbackNameForLayout(layout) || fallbackName).trim() || fallbackName;
       return {
         layoutId: layout.id,
-        layoutName: readableGuestDemoLayoutName(layout.name, layoutFallbackName, {
-          genericNames: genericLayoutNames
-        }),
+        layoutName: readableGuestDemoLayoutName(layout.name, layoutFallbackName),
         fallbackName: layoutFallbackName
       };
     });
@@ -132,6 +120,13 @@ export function importedGuestLayoutName(requestedName = "", {
   uniqueLayoutName = (name) => name
 } = {}) {
   return renameConflicts ? uniqueLayoutName(requestedName) : requestedName;
+}
+
+export function guestImportSourceLayoutName(sourceLayout, entry, fallbackName = "") {
+  const sourceName = readableGuestDemoLayoutName(sourceLayout?.name, "");
+  if (sourceName) return sourceName;
+  const entryFallbackName = String(entry?.fallbackName || fallbackName).trim() || fallbackName;
+  return readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName);
 }
 
 function importedLayoutDictionaryValues(sourceState, sourceLayout, type, {
@@ -394,7 +389,7 @@ export function importGuestLocalLayoutsToState(targetState, candidate, {
       .map((sourceItemId) => idMap.items.get(sourceItemId))
       .filter(Boolean);
     const layoutId = `layout-guest-import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
-    const requestedName = readableGuestDemoLayoutName(entry.layoutName || sourceLayout.name, guestLayoutFallbackName);
+    const requestedName = guestImportSourceLayoutName(sourceLayout, entry, guestLayoutFallbackName);
     const safeName = importedGuestLayoutName(requestedName, { renameConflicts, uniqueLayoutName });
     const importedDictionaries = {
       locations: normalizeDictionaryValues(sourceLayout.locations || source.locations, layoutDictionaryValues(sourceLayout, "location", source)),

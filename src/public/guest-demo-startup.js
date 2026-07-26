@@ -42,16 +42,9 @@ export function shouldKeepReadonlyDemoAfterAuthCheck(context = {}) {
   return Boolean(context.readOnlyStateScope) && !isStartupGuestDemoPreview(context);
 }
 
-export function readableGuestDemoLayoutName(name = "", fallback = "Моя демо-укладка", {
-  genericNames = []
-} = {}) {
+export function readableGuestDemoLayoutName(name = "", fallback = "Моя демо-укладка") {
   const text = String(name || "").trim();
   if (!text || looksLikeMojibakeText(text)) return fallback;
-  const normalizedText = text.toLocaleLowerCase();
-  const isGenericName = genericNames.some((value) =>
-    String(value || "").trim().toLocaleLowerCase() === normalizedText
-  );
-  if (isGenericName && String(fallback || "").trim()) return fallback;
   return text;
 }
 

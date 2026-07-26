@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  guestCandidateLayouts,
+  guestImportSourceLayoutName,
   guestLocalLayoutCandidateFromState,
   importedGuestLayoutName,
   importGuestLocalLayoutsToState,
@@ -342,22 +342,20 @@ test("CRITICAL guest login import: missing guest photos do not duplicate matchin
   assert.equal(targetState.items["item-account"].photos[0].id, "photo-account-item");
 });
 
-test("CRITICAL guest login import: generic demo title uses the known template name before numbering", () => {
-  const layouts = guestCandidateLayouts({
-    layouts: [{
-      layoutId: GUEST_LAYOUT_ID,
-      layoutName: "Demo layout",
-      fallbackName: "Demo-packing"
-    }]
+test("CRITICAL guest login import: exact guest snapshot title is preserved before conflict numbering", () => {
+  const requestedName = guestImportSourceLayoutName({
+    id: GUEST_LAYOUT_ID,
+    name: "Demo-packing 4"
   }, {
-    fallbackName: "Guest layout"
-  });
+    layoutId: GUEST_LAYOUT_ID,
+    layoutName: "Demo layout",
+    fallbackName: "Demo-packing"
+  }, "Guest layout");
 
-  assert.equal(layouts.length, 1);
-  assert.equal(layouts[0].layoutName, "Demo-packing");
-  assert.equal(importedGuestLayoutName(layouts[0].layoutName, {
-    uniqueLayoutName: (name) => `${name} 4`
-  }), "Demo-packing 4");
+  assert.equal(requestedName, "Demo-packing 4");
+  assert.equal(importedGuestLayoutName(requestedName, {
+    uniqueLayoutName: (name) => `${name} 2`
+  }), "Demo-packing 4 2");
 });
 
 test("CRITICAL guest login import: changed template items stay separate while an identical bag is reused", () => {
