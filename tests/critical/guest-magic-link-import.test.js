@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  guestCandidateLayouts,
   guestLocalLayoutCandidateFromState,
+  importedGuestLayoutName,
   importGuestLocalLayoutsToState,
   persistGuestImportBeforeCleanup
 } from "../../src/public/guest-login-import.js";
@@ -300,6 +302,62 @@ test("CRITICAL guest login import: template entities in ordinary account and gue
   assert.equal(imported.name, "Weekend 2");
   assert.deepEqual(imported.rootContainerIds, ["bag-account"]);
   assert.deepEqual(imported.arrangement.items, { "item-account": "bag-account" });
+});
+
+test("CRITICAL guest login import: missing guest photos do not duplicate matching template entities with photos", () => {
+  const { sourceState, targetState } = templateReuseState();
+  delete targetState.layouts["layout-account"].demoSourceListId;
+  delete sourceState.layouts[GUEST_LAYOUT_ID].demoSourceListId;
+  targetState.containers["bag-account"].photos = [{
+    id: "photo-account-bag",
+    url: "/photos/account-bag.jpg"
+  }];
+  targetState.items["item-account"].photos = [{
+    id: "photo-account-item",
+    url: "/photos/account-item.jpg"
+  }];
+  sourceState.containers["bag-guest"].photos = [];
+  sourceState.items["item-guest"].photos = [];
+  let containerCopies = 0;
+  let itemCopies = 0;
+
+  const importedIds = importTemplateReuseCandidate(targetState, sourceState, {
+    copyPublishedContainerToState: () => {
+      containerCopies += 1;
+      return "";
+    },
+    copyPublishedItemToState: () => {
+      itemCopies += 1;
+      return "";
+    }
+  });
+
+  assert.equal(importedIds.length, 1);
+  assert.equal(containerCopies, 0);
+  assert.equal(itemCopies, 0);
+  const imported = targetState.layouts[importedIds[0]];
+  assert.deepEqual(imported.rootContainerIds, ["bag-account"]);
+  assert.deepEqual(imported.arrangement.items, { "item-account": "bag-account" });
+  assert.equal(targetState.containers["bag-account"].photos[0].id, "photo-account-bag");
+  assert.equal(targetState.items["item-account"].photos[0].id, "photo-account-item");
+});
+
+test("CRITICAL guest login import: generic demo title uses the known template name before numbering", () => {
+  const layouts = guestCandidateLayouts({
+    layouts: [{
+      layoutId: GUEST_LAYOUT_ID,
+      layoutName: "Demo layout",
+      fallbackName: "Demo-packing"
+    }]
+  }, {
+    fallbackName: "Guest layout"
+  });
+
+  assert.equal(layouts.length, 1);
+  assert.equal(layouts[0].layoutName, "Demo-packing");
+  assert.equal(importedGuestLayoutName(layouts[0].layoutName, {
+    uniqueLayoutName: (name) => `${name} 4`
+  }), "Demo-packing 4");
 });
 
 test("CRITICAL guest login import: changed template items stay separate while an identical bag is reused", () => {

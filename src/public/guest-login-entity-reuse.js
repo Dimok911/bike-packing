@@ -40,7 +40,10 @@ export function guestTemplateEntityReuseKey(layout) {
 function entityMatchKey(record, kind, fallbackId) {
   const sourceId = publicCopySourceIdFromRecord(record, kind, fallbackId);
   if (!sourceId) return "";
-  const contentHash = publicCopyRecordContentHash(record, kind);
+  const contentHash = publicCopyRecordContentHash({
+    ...record,
+    photos: []
+  }, kind);
   return contentHash ? `${sourceId}\u001f${contentHash}` : "";
 }
 

@@ -3,6 +3,7 @@ import {
   getLayoutItemIdSet
 } from "../state/layout-ops.js";
 import { uniqueLayoutIds } from "../state/layout-arrangement.js";
+import { I18N } from "../data/i18n.js";
 import {
   guestDemoCopyRecordWasEdited,
   guestLocalDisplayPreferences,
@@ -23,6 +24,10 @@ import {
   remapGuestLayoutArrangement
 } from "./guest-login-entity-reuse.js";
 
+const DEFAULT_GENERIC_DEMO_LAYOUT_NAMES = Object.values(I18N)
+  .map((dictionary) => dictionary?.["demo.layoutName"])
+  .filter(Boolean);
+
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
 }
@@ -32,7 +37,8 @@ export function canImportGuestLayoutsForAuthenticatedUser(user = null) {
 }
 
 export function guestCandidateLayouts(candidate, {
-  fallbackName = ""
+  fallbackName = "",
+  genericLayoutNames = DEFAULT_GENERIC_DEMO_LAYOUT_NAMES
 } = {}) {
   const entries = Array.isArray(candidate?.layouts) && candidate.layouts.length
     ? candidate.layouts
@@ -43,10 +49,13 @@ export function guestCandidateLayouts(candidate, {
     }] : []);
   return entries
     .map((entry) => {
-      const entryFallbackName = String(entry?.fallbackName || fallbackName).trim() || fallbackName;
+      const explicitFallbackName = String(entry?.fallbackName || "").trim();
+      const entryFallbackName = explicitFallbackName || fallbackName;
       return {
         layoutId: String(entry?.layoutId || "").trim(),
-        layoutName: readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName),
+        layoutName: readableGuestDemoLayoutName(entry?.layoutName, entryFallbackName, {
+          genericNames: explicitFallbackName ? genericLayoutNames : []
+        }),
         fallbackName: entryFallbackName
       };
     })
@@ -74,6 +83,7 @@ export function guestLocalLayoutCandidateFromState(sourceState, {
   createEmptyUserState = () => ({}),
   fallbackName = "",
   fallbackNameForLayout = () => fallbackName,
+  genericLayoutNames = DEFAULT_GENERIC_DEMO_LAYOUT_NAMES,
   snapshotsEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right)
 } = {}) {
   if (!sourceState || !Object.values(sourceState.layouts || {}).some(isGuestLocalPersonalLayout)) return null;
@@ -101,7 +111,9 @@ export function guestLocalLayoutCandidateFromState(sourceState, {
       const layoutFallbackName = String(fallbackNameForLayout(layout) || fallbackName).trim() || fallbackName;
       return {
         layoutId: layout.id,
-        layoutName: readableGuestDemoLayoutName(layout.name, layoutFallbackName),
+        layoutName: readableGuestDemoLayoutName(layout.name, layoutFallbackName, {
+          genericNames: genericLayoutNames
+        }),
         fallbackName: layoutFallbackName
       };
     });
