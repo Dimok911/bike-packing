@@ -822,6 +822,7 @@ import {
   applyContentFilterHighlight,
   contentFilterHasNoResults,
   renderFilterControls,
+  resetContentFilterControls,
   updateViewScopedControlsUi
 } from "./src/ui/filter-controls.js";
 import {
@@ -7349,6 +7350,11 @@ async function loadGuestPublishedDemoOnStartup({
 }
 
 async function enterSignedOutPublicMode(message = "") {
+  resetContentFilterControls({
+    refs,
+    runtime: appTailRuntime,
+    clearTimeout: (timerId) => window.clearTimeout(timerId)
+  });
   currentUser = null;
   appUnlocked = true;
   activateLocalStorageScope(GUEST_STORAGE_SCOPE);

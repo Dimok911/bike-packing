@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   AUTH_AUTHORIZATION_KEY,
   AUTH_EMAIL_KEY,
@@ -32,6 +34,14 @@ test("CRITICAL offline-auth-scope: explicit sign-out disables private offline ac
   storage.setItem(scopedLocalStorageKey(STORAGE_KEY, "id:user-1"), "{}");
 
   assert.equal(buildRememberedOfflineUser({ storage, signedOut: true }), null);
+});
+
+test("CRITICAL offline-auth-scope: entering signed-out mode clears account content filters", () => {
+  const appSource = readFileSync(resolve(import.meta.dirname, "../../app.js"), "utf8");
+  assert.match(
+    appSource,
+    /async function enterSignedOutPublicMode[\s\S]*?resetContentFilterControls\(\{\s*refs,\s*runtime: appTailRuntime,\s*clearTimeout:[\s\S]*?\}\);[\s\S]*?render\(\);/
+  );
 });
 
 test("CRITICAL offline-auth-scope: pending magic-link email cannot replace the guest scope", () => {

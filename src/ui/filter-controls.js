@@ -55,13 +55,25 @@ export function updateViewScopedControlsUi({
   requestAnimationFrame(updateCompactStickyControls);
 }
 
-export function resetContentFilterControls({ refs, runtime } = {}) {
+export function resetContentFilterControls({
+  clearTimeout = () => {},
+  refs,
+  runtime
+} = {}) {
   if (!refs || !runtime) return false;
   const hadActiveFilters = Boolean(
     refs.searchInput?.value?.trim() ||
     refs.locationFilter?.value ||
     runtime.selectedCategoryFilters?.length
   );
+  if (runtime.searchRenderTimer) {
+    clearTimeout(runtime.searchRenderTimer);
+    runtime.searchRenderTimer = null;
+  }
+  if (runtime.searchContextCommitTimer) {
+    clearTimeout(runtime.searchContextCommitTimer);
+    runtime.searchContextCommitTimer = null;
+  }
   if (refs.searchInput) refs.searchInput.value = "";
   if (refs.locationFilter) refs.locationFilter.value = "";
   runtime.selectedCategoryFilters = [];

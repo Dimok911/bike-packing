@@ -79,14 +79,24 @@ test("CRITICAL filtered bag catalog: empty state can reset every content filter 
     filterMatchIndex: 3,
     filterMatchSignature: "old",
     pendingFilterJump: true,
-    suppressNextFilterJump: true
+    suppressNextFilterJump: true,
+    searchRenderTimer: 41,
+    searchContextCommitTimer: 42
   };
-  assert.equal(resetContentFilterControls({ refs, runtime }), true);
+  const clearedTimers = [];
+  assert.equal(resetContentFilterControls({
+    refs,
+    runtime,
+    clearTimeout: (timerId) => clearedTimers.push(timerId)
+  }), true);
   assert.equal(refs.searchInput.value, "");
   assert.equal(refs.locationFilter.value, "");
   assert.deepEqual(runtime.selectedCategoryFilters, []);
   assert.equal(runtime.filterMatchIndex, 0);
   assert.equal(runtime.pendingFilterJump, false);
+  assert.deepEqual(clearedTimers, [41, 42]);
+  assert.equal(runtime.searchRenderTimer, null);
+  assert.equal(runtime.searchContextCommitTimer, null);
 });
 
 test("CRITICAL filtered views: packing, items, and bags expose the same inline reset action", () => {
