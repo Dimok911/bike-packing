@@ -1,103 +1,202 @@
-# Guest login handoff flow
+# Перенос гостевой работы при входе
 
-This document fixes the contract for a visitor who does real work without an
-account and later signs in, while preventing an old guest `localStorage`
-snapshot from being copied into an account accidentally.
+Этот документ закрепляет полный контракт для посетителя, который работает на
+сайте без логина, а затем входит в аккаунт. Правила одновременно обеспечивают
+перенос текущей гостевой работы и защищают аккаунт от случайного импорта старого
+guest snapshot из `localStorage`.
 
-## Safety boundary
+## Пользовательские сценарии
 
-A raw guest snapshot is data, not permission to import it. Its presence alone
-must never:
+### Матрица входа
 
-- modify authenticated account state;
-- create layout, item, or container ids;
-- set the account dirty flag;
-- start a save or synchronization;
-- clear guest storage.
+| Состояние аккаунта | Что было сделано без логина | Результат после входа |
+| --- | --- | --- |
+| Совершенно новый | Пользователь изменил demo, создал укладки или копировал вещи/сумки | Все созданные и изменённые в текущей guest-сессии укладки переносятся в новый аккаунт вместе с их arrangement. |
+| Совершенно новый | Пользователь ничего не менял | Неизменённая demo-укладка по умолчанию всё равно копируется как первая личная укладка. Пустая системная заглушка не остаётся. |
+| Уже существующий | Есть реальные изменения текущей guest-сессии | Изменённые и созданные гостевые укладки добавляются в аккаунт. |
+| Уже существующий | Исходная demo не менялась | Неизменённая demo не переносится и не создаёт лишнюю укладку в аккаунте. |
 
-Recovery snapshots and other backup/history payloads are never guest-login
-sources.
+Решение принимается только после загрузки серверного состояния аккаунта.
+Сначала обрабатывается подтверждённый guest-handoff с реальными изменениями.
+Только если handoff отсутствует и аккаунт действительно пуст — нет личных
+сущностей, а из укладок имеется максимум автоматически созданная пустая
+`layout-main` — создаётся стартовая копия demo. Поэтому неизменённая demo не
+может случайно попасть в существующий непустой аккаунт.
 
-## Explicit handoff
+### Укладки, имена и содержимое
 
-There is no extra confirmation dialog. The explicit user action is requesting a
-magic link from the editable guest workspace.
+- Гостевая укладка переносится как отдельная личная вкладка. Существующая
+  укладка аккаунта целиком не заменяется и не объединяется с ней.
+- Имя берётся из guest snapshot без подмены на общее `Demo layout`. Если такое
+  имя уже занято, применяется обычный порядковый суффикс: `Demo-packing 2`,
+  `Demo-packing 3` и так далее.
+- Arrangement каждой новой вкладки копируется отдельно: расположение сумок,
+  вложенность, порядок и размещение вещей сохраняются.
+- Вещи и сумки не обязаны получать новые ID при каждом переносе. Если сущность
+  уже существует в этом private namespace, имеет тот же canonical template
+  provenance и одинаковое предметное содержимое, новая укладка переиспользует
+  существующий private ID.
+- Отсутствующее гостевое фото либо различающиеся транспортные поля фотографии
+  (`photo id`, URL, локальный или удалённый статус) сами по себе не создают
+  дубль. При переиспользовании сохраняется уже имеющаяся личная сущность и её
+  фотография.
+- Если вещь или сумка действительно изменена по предметным полям, она получает
+  отдельную личную запись. Одинаковое название без template provenance не
+  является достаточным основанием для автоматического объединения.
+- Одинаковые по содержимому сущности из разных шаблонов также автоматически не
+  объединяются: происхождение из одного и того же шаблона является частью
+  canonical identity.
 
-1. Guest edits are saved in the unscoped `guest` storage as before.
-2. Every time a guest workspace is opened, the app creates a new in-memory
-   `sessionId` and captures a content fingerprint baseline for each existing
-   layout. The session id is deliberately not recovered from an old manifest.
-3. On a normal editable guest save, the app recomputes every layout against its
-   session baseline. A layout is eligible only when its record, referenced
-   items/bags, arrangement, or layout dictionaries differ. This also covers a
-   non-active target layout changed through a picker. Pure timestamps, device
-   metadata, and global display preferences do not authorize a stale layout.
-   Reverting to the baseline removes eligibility.
-4. Manifest v2 stores the current `sessionId` and only those changed layout ids.
-   A manifest from another session is treated as empty, even when it contains
-   ids from an old snapshot.
-5. The app requests the magic link from the API.
-6. Only after that request succeeds, the app writes a short-lived handoff
-   receipt. A failed or offline request does not arm an import.
-7. The receipt contains the current guest `sessionId`, normalized requested
-   email, eligible layout ids, creation/expiry timestamps, and a fingerprint of
-   the guest candidate.
-8. Following the link may reload the page. The receipt and guest snapshot remain
-   in `localStorage`, so the intentional handoff survives that reload.
-9. The app activates the private `id:<user>` storage scope only after
-   `/auth/me` confirms the real session and then loads the server account state.
-10. Import proceeds only if the confirmed account email matches the receipt, the
-   receipt is unexpired, all recorded layouts still exist, and the source
-   fingerprint still matches.
-11. The eligible guest layouts are copied as new private layouts. Name conflicts
-   receive unique names; items and containers receive private ids.
-12. The receipt is consumed after the local account copy is materialized, so
-    repeated load/save/conflict paths cannot duplicate the same handoff.
-13. Guest storage is cleared only after the server save succeeds and a fresh
-    server read confirms the imported layout ids and their content.
+### Переключение языка
 
-An invalid, expired, account-mismatched, or source-mismatched receipt is removed,
-but the guest snapshot and guest-work manifest are retained. An old guest
-snapshot with no receipt is simply ignored. A stale manifest cannot be upgraded
-into a receipt because its session id cannot match the new in-memory session.
+- В guest-сессии при первом переключении на другой язык создаётся ровно одна
+  аналогичная demo-укладка соответствующего языка.
+- Повторное переключение на уже использованный язык переиспользует найденную
+  языковую demo и не создаёт дубль.
+- Если при переключении открыта личная guest-copy, после создания можно выбрать
+  переход в новую укладку.
+- Если открыт read-only шаблон, он остаётся открыт: модальное окно не
+  показывается, появляется только информативный toast.
+- Если совершенно новый аккаунт был создан из неизменённой исходной demo, эта
+  первая личная укладка образует стартовое demo-семейство. Пока в аккаунте нет
+  других личных укладок, переключение языка после входа использует тот же
+  механизм и создаёт вторую demo соответствующего языка.
+- Если до входа исходная demo была изменена и перенесена обычным guest-handoff,
+  она считается пользовательской укладкой. Автоматическая вторая языковая demo
+  после входа для неё не создаётся.
+- В обычном существующем аккаунте само переключение языка не создаёт личные
+  demo-укладки.
 
-The contract is identical for regular and administrator accounts.
+## Граница безопасности
 
-## Save failure and retry
+Необработанный guest snapshot является данными, но не разрешением на импорт.
+Одно лишь его наличие никогда не должно:
 
-If remote confirmation fails after the account copy has been created:
+- изменять состояние авторизованного аккаунта;
+- создавать ID укладок, вещей или сумок;
+- устанавливать аккаунту признак `dirty`;
+- запускать сохранение или синхронизацию;
+- очищать guest storage.
 
-- the copied account state stays locally saved and dirty;
-- normal sync retry continues when the server is available;
-- the guest snapshot stays intact as a safety copy;
-- the consumed receipt prevents a second import and another set of ids.
+Recovery snapshot и другие данные бэкапа или истории никогда не используются
+как источник автоматического guest-login импорта.
 
-The frontend validates imported layout ids and their item/container counts both
-before save and in the state returned by the server. Clearing a dirty flag after
-an aborted empty save is not confirmation.
+## Явный handoff
 
-## Offline behavior
+Дополнительного диалога подтверждения нет. Явным действием пользователя
+считается запрос magic-link из редактируемой гостевой рабочей области.
 
-Authenticated offline work is unrelated to guest handoff. It remains in the
-user's `id:<user>` scope, becomes dirty, and follows the existing synchronization
-flow after connectivity returns.
+1. Гостевые изменения, как и раньше, сохраняются в scope `guest`.
+2. При каждом открытии guest workspace приложение создаёт новый
+   неперсистентный `sessionId` и запоминает исходный content fingerprint каждой
+   существующей укладки. Старый `sessionId` из manifest не восстанавливается.
+3. При обычном сохранении гостевой работы приложение повторно вычисляет
+   fingerprint всех укладок. Укладка допускается к handoff только тогда, когда
+   изменились её запись, связанные вещи или сумки, arrangement либо словари
+   укладки. Это также учитывает неактивную целевую укладку, изменённую через
+   picker. Служебные даты, метаданные устройства и общие настройки отображения
+   сами по себе не разрешают импорт старой укладки. Возврат к исходному
+   состоянию снова исключает укладку.
+4. Manifest v2 хранит текущий `sessionId` и только ID изменённых укладок.
+   Manifest другой guest-сессии считается пустым, даже если в нём есть ID из
+   старого snapshot.
+5. Приложение отправляет запрос magic-link в API.
+6. Только после успешного ответа приложение создаёт краткоживущую handoff-
+   квитанцию. Неуспешный или офлайн-запрос не разрешает импорт.
+7. Квитанция содержит текущий guest `sessionId`, нормализованный email запроса,
+   допустимые ID укладок, время создания и истечения, а также fingerprint
+   guest-кандидата.
+8. Переход по ссылке может перезагрузить страницу. Квитанция и guest snapshot
+   остаются в `localStorage`, поэтому намеренный handoff переживает
+   перезагрузку.
+9. Приватный scope `id:<user>` активируется только после подтверждения реальной
+   сессии через `/auth/me`, после чего загружается серверное состояние аккаунта.
+10. Импорт выполняется только при совпадении подтверждённого email с квитанцией,
+    действующем сроке квитанции, наличии всех записанных укладок и неизменившемся
+    fingerprint источника.
+11. Допустимые гостевые укладки создаются как новые личные укладки. Конфликт
+    имён разрешается порядковым суффиксом. Для вещей и сумок создаются новые
+    private ID только тогда, когда в аккаунте нет идентичной сущности из того же
+    canonical template source; иначе переиспользуется существующий private ID.
+12. Квитанция погашается после локальной материализации копии в аккаунте, чтобы
+    повторные load/save/conflict-пути не дублировали один handoff.
+13. Guest storage очищается только после успешного серверного сохранения и
+    повторного чтения с сервера, подтвердившего импортированные ID укладок и их
+    содержимое.
 
-A signed-out guest can continue editing offline. Because the magic-link request
-cannot succeed offline, no new receipt is created and no account import begins.
-The guest data remain available. If a valid handoff was already created and the
-link reload occurs while offline, import waits until `/auth/me` and the private
-server state can be confirmed.
+Недействительная, просроченная, относящаяся к другому аккаунту или не
+соответствующая источнику квитанция удаляется. Guest snapshot и manifest при
+этом сохраняются. Старый guest snapshot без квитанции просто игнорируется.
+Старый manifest нельзя превратить в новую квитанцию, потому что его `sessionId`
+не совпадёт с новым неперсистентным идентификатором сессии.
 
-## Private copy contract
+Контракт одинаков для обычных и администраторских аккаунтов.
 
-The server must never receive public/demo/shared identities as private records.
-A valid import copies template content into the private namespace:
+## Стартовая demo нового аккаунта
 
-- private item/container ids do not keep public id prefixes;
-- private layouts do not keep public catalog, visibility, or admin-source
-  markers;
-- layout arrangements reference only the copied private item/container ids.
+Неизменённая автоматическая demo намеренно не входит в обычную handoff-квитанцию:
+это защищает существующие аккаунты от лишней вкладки. После загрузки аккаунта
+работает отдельный ограниченный seed-сценарий:
 
-Guest display preferences (`itemDisplayMode`, `showItemMeta`, and
-`showFilterContext`) follow an otherwise valid layout handoff; changing those
-preferences alone never authorizes an old guest layout.
+1. Сначала предлагается подтверждённый handoff с реальными гостевыми
+   изменениями.
+2. Если он обработан, seed не запускается.
+3. Если handoff отсутствует, текущее приватное состояние проверяется функцией
+   определения совершенно нового аккаунта.
+4. Seed разрешён только при отсутствии вещей и сумок и при отсутствии личных
+   укладок либо наличии единственной автоматически созданной пустой
+   `layout-main`.
+5. Текущий demo-шаблон выбранного языка копируется как личная укладка с точным
+   именем шаблона.
+6. Пустая системная заглушка удаляется обычной нормализацией/копированием.
+7. Созданная укладка сразу помечается `dirty`, сохраняется на сервер и
+   защищается от повторного seed в этой сессии.
+
+Стартовые demo нового аккаунта имеют внутренний признак
+`newAccountDefaultDemo`. Он нужен только для применения guest-механизма при
+последующем переключении языка. Как только рядом появляется обычная личная
+укладка, аккаунт больше не считается состоящим только из стартового
+demo-семейства.
+
+## Ошибка сохранения и повторная попытка
+
+Если серверное подтверждение не прошло после создания локальной копии:
+
+- скопированное состояние аккаунта остаётся локально сохранённым и `dirty`;
+- обычная синхронизация повторяет сохранение после восстановления сервера;
+- guest snapshot остаётся страховочной копией;
+- погашенная квитанция предотвращает повторный импорт и создание новых ID.
+
+Фронтенд проверяет ID импортированных укладок и количество их вещей/сумок как
+перед сохранением, так и в состоянии, повторно полученном с сервера. Снятие
+`dirty` после прерванного пустого сохранения не является подтверждением.
+
+## Офлайн-поведение
+
+Офлайн-работа авторизованного пользователя не относится к guest-handoff. Она
+остаётся в scope `id:<user>`, получает `dirty` и следует обычному сценарию
+синхронизации после восстановления сети.
+
+Пользователь без логина может продолжать редактирование офлайн. Поскольку
+запрос magic-link офлайн не может завершиться успешно, новая квитанция не
+создаётся и импорт в аккаунт не начинается. Guest-данные остаются доступными.
+Если действующая квитанция была создана раньше, а переход по ссылке произошёл
+офлайн, импорт ждёт подтверждения `/auth/me` и загрузки приватного серверного
+состояния.
+
+## Контракт private-копии
+
+Сервер никогда не должен получать public/demo/shared identity как приватную
+запись. Корректный импорт переносит шаблонное содержимое в private namespace:
+
+- private ID вещей и сумок не сохраняют public-префиксы;
+- идентичные private-сущности с тем же canonical template provenance могут
+  использоваться несколькими личными укладками без дублирования;
+- личные укладки не сохраняют public catalog, visibility и admin-source
+  маркеры;
+- arrangement укладки ссылается только на допустимые private ID вещей и сумок.
+
+Настройки гостевого отображения (`itemDisplayMode`, `showItemMeta` и
+`showFilterContext`) переносятся только вместе с допустимым handoff укладки.
+Одного изменения этих настроек недостаточно для разрешения импорта старой
+гостевой укладки.
