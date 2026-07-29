@@ -8,6 +8,7 @@ import {
   convertLatinToRuLayout,
   convertRuToLatinLayout,
   createDesktopInputNormalizer,
+  isExternalTextInsertion,
   shouldEnableDesktopInputLayout
 } from "../../src/ui/desktop-input-layout.js";
 
@@ -91,31 +92,29 @@ test("desktop layout selector covers search, item, bag, layout and dictionary fi
   ].forEach((selector) => assert.match(DEFAULT_DESKTOP_INPUT_LAYOUT_SELECTOR, new RegExp(selector.replace(/[[\]#]/g, "\\$&"))));
 });
 
-test("desktop input fields are block-level so controls center against the field without a baseline gap", async () => {
-  const stylesSource = await readFile(new URL("../../styles.css", import.meta.url), "utf8");
+test("desktop input controls and styles come from the shared module", async () => {
+  const stylesSource = await readFile(new URL("../../src/vendor/vniipo-input-layout-fallback.js", import.meta.url), "utf8");
   assert.match(
     stylesSource,
-    /\.desktop-input-layout > input,\s*\.desktop-input-layout > textarea\s*\{\s*display:\s*block;/
+    /\.desktop-input-layout>input,\.desktop-input-layout>textarea\{display:block;/
   );
+  assert.match(stylesSource, /createController/);
+  assert.match(stylesSource, /vniipo-input-layout-v1-styles/);
 });
 
 test("desktop layout controls leave a gap for a visible search clear button", async () => {
-  const stylesSource = await readFile(new URL("../../styles.css", import.meta.url), "utf8");
+  const stylesSource = await readFile(new URL("../../src/vendor/vniipo-input-layout-fallback.js", import.meta.url), "utf8");
   assert.match(
     stylesSource,
-    /\.search-field:has\(> \.search-clear:not\(\[hidden\]\)\) \.desktop-input-layout-controls\s*\{\s*right:\s*40px;/
+    /\.desktop-input-layout\.with-search-clear \.desktop-input-layout-controls,[^{]*\{right:40px\}/
   );
-  assert.match(stylesSource, /\.search-clear\s*\{[\s\S]*?right:\s*5px;[\s\S]*?width:\s*30px;/);
+  const appStyles = await readFile(new URL("../../styles.css", import.meta.url), "utf8");
+  assert.doesNotMatch(appStyles, /\.desktop-input-layout\s*\{/);
+  assert.match(appStyles, /\.search-clear\s*\{[\s\S]*?right:\s*5px;[\s\S]*?width:\s*30px;/);
 });
 
-test("pause icon uses centered geometric bars instead of font glyph alignment", async () => {
-  const stylesSource = await readFile(new URL("../../styles.css", import.meta.url), "utf8");
-  assert.match(
-    stylesSource,
-    /\.desktop-input-layout-mute\s*\{[\s\S]*?position:\s*relative;/
-  );
-  assert.match(
-    stylesSource,
-    /\.desktop-input-layout-mute:not\(\.is-muted\)::before\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*calc\(50% \+ 1px\);[\s\S]*?left:\s*50%;[\s\S]*?width:\s*8px;[\s\S]*?height:\s*10px;[\s\S]*?transform:\s*translate\(-50%, -50%\);[\s\S]*?linear-gradient\(/
-  );
+test("pasted or dropped text bypasses layout conversion", () => {
+  assert.equal(isExternalTextInsertion({ inputType: "insertFromPaste" }), true);
+  assert.equal(isExternalTextInsertion({ inputType: "insertFromDrop" }), true);
+  assert.equal(isExternalTextInsertion({ inputType: "insertText" }), false);
 });
