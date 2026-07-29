@@ -14,7 +14,10 @@ import {
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 import { updatePhotoLightboxAutoSize } from "./photo-lightbox-sizing.js";
-import { bindSharedPhotoGalleries } from "./shared-photo-gallery.js";
+import {
+  bindSharedPhotoGalleries,
+  createSharedFullscreenSwitcher
+} from "./shared-photo-gallery.js";
 
 let lightboxObjectUrls = new Set();
 let lightboxKeydownHandler = null;
@@ -530,10 +533,19 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   const loadStatusText = overlay.querySelector("[data-photo-lightbox-status-text]");
   const prevButton = overlay.querySelector(".photo-lightbox-prev");
   const nextButton = overlay.querySelector(".photo-lightbox-next");
+  let activeIndex = initialIndex;
+  const fullscreenSwitcher = createSharedFullscreenSwitcher({
+    root: overlay,
+    track,
+    slides: overlay.querySelectorAll(".photo-lightbox-slide"),
+    initialIndex
+  });
+  const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
   let loadingNotice = null;
   const close = () => {
     if (scrollFrame) cancelAnimationFrame(scrollFrame);
     if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
+    fullscreenSwitcher?.destroy();
     closePhotoLightbox();
   };
   overlay.addEventListener("cancel", (event) => {
@@ -545,7 +557,6 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     if (Date.now() < suppressImageCloseUntil) return;
     if (event.target === overlay || event.target?.classList?.contains("photo-lightbox-slide")) close();
   });
-  let activeIndex = initialIndex;
   let renderToken = 0;
   let suppressImageCloseUntil = 0;
   let pendingScrollIndex = null;
@@ -587,6 +598,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     track.classList.toggle("photo-lightbox-track-zoomed", scale > 1);
   };
   const updateNavigation = () => {
+    fullscreenSwitcher?.render(activeIndex, false);
     if (prevButton) prevButton.setAttribute("aria-disabled", activeIndex <= 0 ? "true" : "false");
     if (nextButton) nextButton.setAttribute("aria-disabled", activeIndex >= entries.length - 1 ? "true" : "false");
     lightboxDots.forEach((dot, dotIndex) => {
@@ -733,13 +745,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   navigatePhoto = (nextIndex, behavior = "smooth") => {
     const safeIndex = Math.max(0, Math.min(entries.length - 1, Number(nextIndex) || 0));
     const targetLeft = track.clientWidth * safeIndex;
-    if (safeIndex === activeIndex && !pendingScrollIndex && Math.abs(track.scrollLeft - targetLeft) <= 1) return false;
-    pendingScrollIndex = behavior === "smooth" ? safeIndex : null;
+    if (safeIndex === activeIndex && (
+      directDesktop
+      || (!pendingScrollIndex && Math.abs(track.scrollLeft - targetLeft) <= 1)
+    )) return false;
+    pendingScrollIndex = !directDesktop && behavior === "smooth" ? safeIndex : null;
     if (safeIndex !== activeIndex) showPhoto(safeIndex);
-    track.scrollTo({
-      left: targetLeft,
-      behavior
-    });
+    fullscreenSwitcher?.goTo(safeIndex, behavior, false);
     return true;
   };
   const syncTrackActivePhoto = () => {
@@ -882,13 +894,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   lightboxResizeHandler = () => {
     updatePhotoLightboxAutoSize(image, overlay);
     resetTransform();
-    track.scrollTo({ left: track.clientWidth * activeIndex, behavior: "auto" });
+    fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
   window.addEventListener("resize", lightboxResizeHandler);
   window.visualViewport?.addEventListener?.("resize", lightboxResizeHandler);
   showPhoto(initialIndex, { force: true });
   requestAnimationFrame(() => {
-    track.scrollTo({ left: track.clientWidth * initialIndex, behavior: "auto" });
+    fullscreenSwitcher?.goTo(initialIndex, "auto", false);
   });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();

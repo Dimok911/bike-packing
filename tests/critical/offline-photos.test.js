@@ -1879,13 +1879,21 @@ test("CRITICAL offline-photos: phone lightbox gives the full screen to swipe and
   assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*inset:\s*0;[\s\S]*width:\s*100%;[\s\S]*height:\s*100%;/);
 });
 
-test("CRITICAL offline-photos: lightbox is a smooth scroll-snap carousel with synchronized dots", () => {
+test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and keeps mobile scroll-snap", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
+  const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
+  const sharedRuntime = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const styles = readProjectFile("styles.css");
   assert.match(source, /class="photo-lightbox-track"/);
   assert.match(source, /class="photo-lightbox-slide"/);
   assert.match(source, /class="photo-lightbox-dots"[\s\S]*data-photo-lightbox-dot=/);
-  assert.match(source, /track\.scrollTo\(\{\s*left: targetLeft,\s*behavior/);
+  assert.match(source, /createSharedFullscreenSwitcher\(\{[\s\S]*root:\s*overlay,[\s\S]*track,[\s\S]*slides:/);
+  assert.match(source, /fullscreenSwitcher\?\.goTo\(safeIndex,\s*behavior,\s*false\)/);
+  assert.doesNotMatch(source, /track\.scrollTo\(\{\s*left:\s*targetLeft/);
+  assert.match(sharedSource, /const CONTRACT_VERSION = 2/);
+  assert.match(sharedSource, /createSharedFullscreenSwitcher/);
+  assert.match(sharedRuntime, /createFullscreenSwitcher/);
+  assert.match(sharedRuntime, /vpg-direct-desktop/);
   assert.match(source, /lightboxDots\.forEach\(\(dot, dotIndex\) => \{[\s\S]*aria-current/);
   assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*scroll-snap-type:\s*x mandatory;/);
   assert.match(styles, /\.photo-lightbox-slide\s*\{[\s\S]*flex:\s*0 0 100%;[\s\S]*scroll-snap-align:\s*center;/);

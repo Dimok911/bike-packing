@@ -1,10 +1,10 @@
 (function installVniipoPhotoGallery(global) {
   "use strict";
 
-  const VERSION = "1.0.0";
-  const CONTRACT_VERSION = 1;
+  const VERSION = "2.0.0";
+  const CONTRACT_VERSION = 2;
   const bindings = new WeakMap();
-  const styleId = "vniipo-photo-gallery-v1-styles";
+  const styleId = "vniipo-photo-gallery-v2-styles";
 
   const defaults = Object.freeze({
     gallery: "[data-photo-gallery]",
@@ -32,6 +32,25 @@
       }
     });
     return index;
+  }
+
+  function resolveNavigationIndex(pendingIndex, measuredIndex, reachedTarget = false) {
+    const measured = Math.max(0, Number(measuredIndex) || 0);
+    if (pendingIndex === null || pendingIndex === undefined) {
+      return { activeIndex: measured, pendingIndex: null };
+    }
+    const pending = Math.max(0, Number(pendingIndex) || 0);
+    return {
+      activeIndex: pending,
+      pendingIndex: reachedTarget ? null : pending,
+    };
+  }
+
+  function isDirectDesktop(windowRef = global) {
+    return Boolean(
+      windowRef?.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches
+      && Number(windowRef?.innerWidth || 0) > 760
+    );
   }
 
   function resolveSwipe(startX, startY, endX, endY, threshold) {
@@ -67,12 +86,77 @@
 .vpg-dot{display:inline-grid;place-items:center;flex:0 0 12px;width:12px;height:22px;min-width:0;min-height:0;margin:0;padding:0;border:0;background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .vpg-dot-mark{display:block;width:8px;height:8px;border:1px solid var(--vpg-accent,#667327);border-radius:50%;background:transparent;transition:background-color .15s ease,border-color .15s ease}
 .vpg-dot.active .vpg-dot-mark,.vpg-dot[aria-current="true"] .vpg-dot-mark{border-color:var(--vpg-accent,#667327);background:var(--vpg-accent,#667327)}
+.vpg-fullscreen.vpg-direct-desktop .vpg-fullscreen-track{overflow:hidden!important;scroll-snap-type:none!important;touch-action:none!important}
+.vpg-fullscreen.vpg-direct-desktop .vpg-fullscreen-slide{display:none!important;flex-basis:100%;scroll-snap-align:none!important}
+.vpg-fullscreen.vpg-direct-desktop .vpg-fullscreen-slide.vpg-fullscreen-active{display:grid!important;place-items:center}
 `;
     doc.head.appendChild(style);
   }
 
   function mergeSelectors(custom) {
     return { ...defaults, ...(custom || {}) };
+  }
+
+  function createFullscreenSwitcher(options = {}) {
+    const root = options.root;
+    const track = options.track;
+    const slides = Array.from(options.slides || track?.children || []);
+    const directDesktop = options.directDesktop ?? isDirectDesktop(options.windowRef || global);
+    let activeIndex = clamp(options.initialIndex, 0, Math.max(0, slides.length - 1));
+    let destroyed = false;
+
+    ensureStyles(root?.ownerDocument || track?.ownerDocument || global.document);
+    root?.classList?.add("vpg-fullscreen");
+    root?.classList?.toggle("vpg-direct-desktop", directDesktop);
+    track?.classList?.add("vpg-fullscreen-track");
+    slides.forEach((slide) => slide.classList?.add("vpg-fullscreen-slide"));
+
+    function render(index, notify = true) {
+      if (destroyed) return activeIndex;
+      activeIndex = clamp(index, 0, Math.max(0, slides.length - 1));
+      slides.forEach((slide, candidate) => {
+        const active = candidate === activeIndex;
+        slide.classList?.toggle("vpg-fullscreen-active", active);
+        if (directDesktop) slide.setAttribute?.("aria-hidden", active ? "false" : "true");
+        else slide.removeAttribute?.("aria-hidden");
+      });
+      if (notify && typeof options.onActiveIndexChange === "function") {
+        options.onActiveIndexChange({ root, track, slides, index: activeIndex, directDesktop });
+      }
+      return activeIndex;
+    }
+
+    function goTo(index, behavior = "smooth", notify = true) {
+      const next = render(index, notify);
+      const slide = slides[next];
+      if (!directDesktop && track && slide) {
+        const left = Number.isFinite(Number(slide.offsetLeft))
+          ? Number(slide.offsetLeft)
+          : Number(track.clientWidth || 0) * next;
+        track.scrollTo?.({ left, behavior });
+      }
+      return next;
+    }
+
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      root?.classList?.remove("vpg-fullscreen", "vpg-direct-desktop");
+      track?.classList?.remove("vpg-fullscreen-track");
+      slides.forEach((slide) => {
+        slide.classList?.remove("vpg-fullscreen-slide", "vpg-fullscreen-active");
+        slide.removeAttribute?.("aria-hidden");
+      });
+    }
+
+    render(activeIndex, false);
+    return {
+      directDesktop,
+      get activeIndex() { return activeIndex; },
+      goTo,
+      render,
+      destroy,
+    };
   }
 
   function bindGallery(gallery, options) {
@@ -89,6 +173,7 @@
     let slides = [];
     let dots = [];
     let activeIndex = Math.max(0, Number(gallery.dataset.photoInitialIndex) || 0);
+    let pendingScrollIndex = null;
     let scrollFrame = 0;
     let scrollTimer = 0;
     let suppressClickUntil = 0;
@@ -124,6 +209,7 @@
     }
 
     function cancelPendingScroll() {
+      pendingScrollIndex = null;
       if (scrollFrame) {
         cancelAnimationFrame(scrollFrame);
         scrollFrame = 0;
@@ -135,10 +221,15 @@
     }
 
     function syncFromScroll() {
-      cancelPendingScroll();
+      if (scrollFrame) cancelAnimationFrame(scrollFrame);
       scrollFrame = requestAnimationFrame(() => {
         scrollFrame = 0;
-        updateDots(resolveActiveIndex(track, slides));
+        const measuredIndex = resolveActiveIndex(track, slides);
+        const target = pendingScrollIndex === null ? null : slides[pendingScrollIndex];
+        const reachedTarget = Boolean(target) && Math.abs(track.scrollLeft - target.offsetLeft) <= 1;
+        const resolved = resolveNavigationIndex(pendingScrollIndex, measuredIndex, reachedTarget);
+        pendingScrollIndex = resolved.pendingIndex;
+        updateDots(resolved.activeIndex);
       });
     }
 
@@ -147,12 +238,14 @@
       const slide = slides[next];
       if (!slide) return;
       cancelPendingScroll();
+      pendingScrollIndex = behavior === "smooth" ? next : null;
       updateDots(next);
       track.scrollTo({ left: slide.offsetLeft, behavior });
       scrollTimer = setTimeout(() => {
         scrollTimer = 0;
+        pendingScrollIndex = null;
         updateDots(resolveActiveIndex(track, slides));
-      }, behavior === "smooth" ? 360 : 0);
+      }, behavior === "smooth" ? 600 : 0);
     }
 
     function openAt(index, trigger, event) {
@@ -198,6 +291,7 @@
     });
 
     listen(track, "touchstart", (event) => {
+      cancelPendingScroll();
       if (event.touches.length !== 1) {
         touch = null;
         suppressClickUntil = Date.now() + 600;
@@ -326,11 +420,14 @@
     contractVersion: CONTRACT_VERSION,
     channel: "stable",
     bindInlineGalleries,
+    createFullscreenSwitcher,
     destroyInlineGalleries,
     ensureStyles,
     helpers: Object.freeze({
       clamp,
+      isDirectDesktop,
       resolveActiveIndex,
+      resolveNavigationIndex,
       resolveSwipe,
     }),
   });

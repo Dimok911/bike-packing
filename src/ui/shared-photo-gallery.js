@@ -1,6 +1,6 @@
 import "../vendor/vniipo-photo-gallery-fallback.js";
 
-const CONTRACT_VERSION = 1;
+const CONTRACT_VERSION = 2;
 const STABLE_URL = "https://vniipo-help.ru/shared-ui/photo-gallery/stable.js";
 const bindings = new Set();
 let stableLoadStarted = false;
@@ -55,6 +55,10 @@ export function bindSharedPhotoGalleries(root, options = {}) {
       bindings.delete(binding);
     }
   };
+}
+
+export function createSharedFullscreenSwitcher(options = {}) {
+  return runtime()?.createFullscreenSwitcher?.(options) || null;
 }
 
 loadSharedPhotoGallery();
