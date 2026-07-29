@@ -10,9 +10,11 @@ import {
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../../src/ui/layout-comparison-selection.js";
+import { comparisonMoveArrowGeometry } from "../../src/ui/layout-comparison-link.js";
 import { readFileSync } from "node:fs";
 
 const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+const appTailSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
 
 function placement({ parentId = "", itemIds = [], childIds = [] } = {}) {
   return {
@@ -263,6 +265,29 @@ test("CRITICAL moved items keep photos in both the pale source card and destinat
 
   assert.equal((html.match(/data-comparison-entity="item:stove"/g) || []).length, 2);
   assert.equal((html.match(/data-test-photo="photo-stove"/g) || []).length, 2);
+  assert.equal((html.match(/data-compare-show-move-link/g) || []).length, 2);
+  assert.match(html, /data-comparison-variant="source-ghost"/);
+  assert.match(html, /data-comparison-variant="target"/);
   assert.match(html, /comparison-source-ghost[\s\S]*data-test-photo="photo-stove"/);
   assert.match(html, /comparison-moved[\s\S]*data-test-photo="photo-stove"/);
+});
+
+test("CRITICAL moved-item arrow points from the source card edge to the destination card edge", () => {
+  const geometry = comparisonMoveArrowGeometry(
+    { left: 10, right: 110, top: 20, bottom: 100, width: 100, height: 80 },
+    { left: 310, right: 410, top: 180, bottom: 260, width: 100, height: 80 },
+    {
+      boardRect: { left: 10, top: 20 },
+      scrollLeft: 40,
+      scrollTop: 0
+    }
+  );
+
+  assert.deepEqual(geometry.start, { x: 140, y: 40 });
+  assert.deepEqual(geometry.end, { x: 340, y: 200 });
+  assert.match(geometry.path, /^M 140 40 C /);
+  assert.match(geometry.path, /, 340 200$/);
+  assert.match(appTailSource, /data-compare-show-move-link[\s\S]*toggleLayoutComparisonMoveLink/);
+  assert.match(stylesSource, /\.comparison-move-arrow-overlay\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
+  assert.match(stylesSource, /\.comparison-move-arrow-path\s*\{[^}]*stroke:\s*#aa7c00;[^}]*vector-effect:\s*non-scaling-stroke;/s);
 });

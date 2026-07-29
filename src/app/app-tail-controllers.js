@@ -88,6 +88,10 @@ import {
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../ui/layout-comparison-selection.js";
+import {
+  clearLayoutComparisonMoveLink,
+  toggleLayoutComparisonMoveLink
+} from "../ui/layout-comparison-link.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -2683,9 +2687,17 @@ function bindLayoutComparisonView() {
       render();
     });
   });
+  refs.packingView.querySelectorAll("[data-compare-show-move-link]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const card = button.closest("[data-comparison-entity]");
+      toggleLayoutComparisonMoveLink(refs.packingView, card?.dataset.comparisonEntity || "");
+    });
+  });
   const activatePair = (element) => {
     const key = element.dataset.comparisonEntity;
     if (!key) return;
+    clearLayoutComparisonMoveLink(refs.packingView);
     const linked = [...refs.packingView.querySelectorAll("[data-comparison-entity]")]
       .filter((candidate) => candidate.dataset.comparisonEntity === key);
     const nextActive = !linked.every((candidate) => candidate.classList.contains("comparison-linked-highlight"));

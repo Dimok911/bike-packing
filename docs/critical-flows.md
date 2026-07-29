@@ -372,6 +372,7 @@ test:critical` дополнительно к `npm.cmd run check`.
 - An entity present in both layouts is moved only when its immediate placement parent differs. Moving a container must not mark every unchanged descendant as moved.
 - A moved container is rendered fully at its destination and as a shallow source ghost. Additions and removals inside that container remain independent recursive changes.
 - A moved item's pale source card remains a complete card, including its weight, location, and photos. Fading the old placement must not look like lost item data.
+- Each moved item card exposes an explicit local link control. Activating it highlights both copies and draws one directed arrow from the pale source placement to the destination placement without changing comparison or packing state.
 - The layout chooser must remain vertically scrollable inside the visible viewport. The last pair that actually started a comparison is stored only in the scoped local browser storage and is reused only while both layouts still exist.
 - The contract is protected by `tests/critical/layout-compare.test.js`.
 

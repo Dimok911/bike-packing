@@ -63,14 +63,31 @@ function renderComparisonItem({
   if (!item) return "";
   const diff = comparison.itemDiffs[entry.id] || { status: "unchanged" };
   const classes = comparisonClass(diff.status, entry.variant);
+  const moved = diff.status === "moved";
+  const moveLinkLabel = entry.variant === "source-ghost"
+    ? t("compare.showDestinationCard")
+    : t("compare.showSourceCard");
   return `
     <article
       class="item-card comparison-item ${classes}"
       data-comparison-entity="item:${escapeHtml(entry.id)}"
+      data-comparison-variant="${escapeHtml(entry.variant)}"
       tabindex="0"
     >
       <div class="comparison-item-main">
-        <strong class="item-title">${escapeHtml(item.name || t("compare.unnamedItem"))}</strong>
+        <div class="comparison-item-heading">
+          <strong class="item-title">${escapeHtml(item.name || t("compare.unnamedItem"))}</strong>
+          ${moved ? `
+            <button
+              class="ghost comparison-move-link-button"
+              type="button"
+              data-compare-show-move-link
+              aria-label="${escapeHtml(moveLinkLabel)}"
+              title="${escapeHtml(moveLinkLabel)}"
+              aria-pressed="false"
+            ><span aria-hidden="true">⇄</span></button>
+          ` : ""}
+        </div>
         ${statusBadgeHtml({
           comparison,
           entityType: "item",
