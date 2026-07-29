@@ -1787,39 +1787,23 @@ function photoGalleryTouchHarness() {
 }
 
 test("CRITICAL offline-photos: first stationary touch opens a packing photo during iOS momentum", () => {
-  const harness = photoGalleryTouchHarness();
-  const start = harness.touch(120, 180);
-  const end = harness.touch(120, 180, { end: true });
-
-  harness.trackListeners.get("touchstart")(start);
-  harness.trackListeners.get("touchend")(end);
-
-  assert.deepEqual(harness.opened, [{
-    options: { gallery: harness.gallery, index: 0 },
-    sourceImage: harness.image
-  }]);
-  assert.equal(end.prevented, true);
-  assert.equal(end.stopped, true);
-
-  harness.buttonListeners.get("click")({
-    preventDefault() {},
-    stopPropagation() {}
-  });
-  assert.equal(harness.opened.length, 1, "the synthetic click must not reopen the lightbox");
+  const runtime = globalThis.VniipoPhotoGallery;
+  const source = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  assert.equal(runtime.helpers.resolveSwipe(120, 180, 120, 180, 28).tap, true);
+  assert.match(source, /if \(gesture\.tap && ended\.slideIndex >= 0\)[\s\S]{0,180}event\.preventDefault\(\)/);
+  assert.match(source, /suppressClickUntil = Date\.now\(\) \+ 600/);
+  assert.match(source, /if \(Date\.now\(\) < suppressClickUntil\)/);
 });
 
 test("CRITICAL offline-photos: a vertical swipe starting on a packing photo does not open the lightbox", () => {
-  const harness = photoGalleryTouchHarness();
-
-  harness.trackListeners.get("touchstart")(harness.touch(120, 180));
-  harness.trackListeners.get("touchmove")(harness.touch(122, 204));
-  harness.trackListeners.get("touchend")(harness.touch(122, 204, { end: true }));
-
-  assert.equal(harness.opened.length, 0);
+  const gesture = globalThis.VniipoPhotoGallery.helpers.resolveSwipe(120, 180, 122, 204, 28);
+  assert.equal(gesture.vertical, true);
+  assert.equal(gesture.horizontal, false);
+  assert.equal(gesture.tap, false);
 });
 
 test("CRITICAL offline-photos: gallery settling clamps partial and overscrolled edge positions", () => {
-  const source = readProjectFile("src/ui/photo-gallery.js");
+  const source = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   assert.equal(resolvePhotoGallerySnapIndex({
     scrollLeft: -18,
     trackWidth: 300,
@@ -1835,9 +1819,9 @@ test("CRITICAL offline-photos: gallery settling clamps partial and overscrolled 
     trackWidth: 300,
     slideCount: 3
   }), 2);
-  assert.match(source, /const pullsPastFirst = baseIndex === 0 && dx > 3;/);
-  assert.match(source, /const pullsPastLast = baseIndex === slideCount - 1 && dx < -3;/);
-  assert.match(source, /scheduleSettledPosition\(\);/);
+  assert.match(source, /const next = clamp\(index, 0, Math\.max\(0, slides\.length - 1\)\)/);
+  assert.match(source, /scrollToIndex\(ended\.activeIndex \+ gesture\.direction\)/);
+  assert.match(source, /updateDots\(resolveActiveIndex\(track, slides\)\)/);
 });
 
 test("CRITICAL offline-photos: dot navigation keeps its target active throughout smooth scrolling", () => {

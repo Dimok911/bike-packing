@@ -14,6 +14,7 @@ import {
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 import { updatePhotoLightboxAutoSize } from "./photo-lightbox-sizing.js";
+import { bindSharedPhotoGalleries } from "./shared-photo-gallery.js";
 
 let lightboxObjectUrls = new Set();
 let lightboxKeydownHandler = null;
@@ -84,7 +85,7 @@ export function renderPhotoSlide(photo, {
   const remoteThumbAttr = remoteThumbSrc ? ` data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : "";
   const sourceSignatureAttr = sourceSignature ? ` data-photo-source-signature="${escapeHtml(sourceSignature)}"` : "";
   return `
-    <button class="photo-gallery-slide" type="button" data-photo-open>
+    <button class="photo-gallery-slide vpg-slide" type="button" data-photo-open>
       <img
         ${src ? `src="${escapeHtml(src)}"` : ""}
         ${localHydrateAttr}
@@ -103,8 +104,8 @@ export function renderPhotoSlide(photo, {
 export function renderPhotoDots(count, activeIndex = 0) {
   if (count <= 1) return "";
   return `
-    <div class="photo-gallery-dots" data-photo-controls aria-hidden="true">
-      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot ${index === activeIndex ? "active" : ""}" type="button" data-photo-index="${index}" tabindex="-1"><i class="photo-gallery-dot-mark"></i></button>`).join("")}
+    <div class="photo-gallery-dots" data-photo-controls data-vpg-dots>
+      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot vpg-dot ${index === activeIndex ? "active" : ""}" type="button" data-vpg-dot data-photo-index="${index}" aria-label="${escapeHtml(localText("Photo", "Фото"))} ${index + 1}" aria-current="${index === activeIndex ? "true" : "false"}"><i class="photo-gallery-dot-mark" aria-hidden="true"></i></button>`).join("")}
     </div>
   `;
 }
@@ -123,8 +124,8 @@ export function renderItemPhotoHtml(item, { force = false, showPhotos = true, ph
   const pending = uploadState.active || photos.some((photo) => !photoRemoteSrc(photo) && ["pending", "error", "missing-local-file"].includes(photo.status));
   const statusText = pending ? photoStatusText(photos) : "";
   return `
-    <div class="item-photo ${photos.length > 1 ? "item-photo-has-dots" : ""} ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
-      <div class="photo-gallery-track">
+    <div class="item-photo vpg-gallery ${photos.length > 1 ? "item-photo-has-dots vpg-has-dots" : ""} ${pending ? "item-photo-pending" : ""}" data-photo-gallery>
+      <div class="photo-gallery-track vpg-track">
         ${slides}
       </div>
       ${dots}
@@ -150,8 +151,8 @@ export async function renderPhotoGalleryHtml(photos, {
   const uploadState = photoUploadState(photos);
   const statusText = showStatus && uploadState.active ? photoStatusText(photos) : "";
   return `
-    <div class="item-photo ${className} ${uploadState.active ? "item-photo-pending" : ""}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
-      <div class="photo-gallery-track">
+    <div class="item-photo vpg-gallery ${photos.length > 1 ? "vpg-has-dots" : ""} ${className} ${uploadState.active ? "item-photo-pending" : ""}" data-photo-gallery data-photo-initial-index="${Math.max(0, Number(activeIndex) || 0)}">
+      <div class="photo-gallery-track vpg-track">
         ${slides.join("")}
       </div>
       ${renderPhotoDots(photos.length, activeIndex)}
@@ -190,7 +191,7 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
   const src = localSrc || remoteSrc || "";
   const localId = photo.localId || photo.id || "";
   return `
-    <button class="photo-gallery-slide" type="button" data-photo-open>
+    <button class="photo-gallery-slide vpg-slide" type="button" data-photo-open>
       <img
         ${src ? `src="${escapeHtml(src)}"` : ""}
         ${fullSrc ? `data-photo-full-src="${escapeHtml(fullSrc)}"` : ""}
@@ -460,159 +461,14 @@ export function bindPhotoGalleries(root = document, {
   onRootContainerPreviewActive = () => {},
   openLightbox = openPhotoLightbox
 } = {}) {
-  root.querySelectorAll("[data-photo-gallery]").forEach((gallery) => {
-    if (gallery.dataset.photoGalleryBound === "true") return;
-    gallery.dataset.photoGalleryBound = "true";
-    const track = gallery.querySelector(".photo-gallery-track");
-    const dots = [...gallery.querySelectorAll(".photo-gallery-dot")];
-    if (!track) return;
-    const slideButtons = [...gallery.querySelectorAll("[data-photo-open]")];
-    const slideCount = Math.max(slideButtons.length, dots.length, 1);
-    let suppressSlideClickUntil = 0;
-    let pendingScrollIndex = null;
-    let settleTimer = null;
-    const clampIndex = (index) => Math.max(0, Math.min(slideCount - 1, Number(index) || 0));
-    const setActive = (index) => {
-      const safeIndex = clampIndex(index);
-      dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === safeIndex));
-      if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(safeIndex);
-      if (gallery.closest("#rootContainerPhotoPreview")) onRootContainerPreviewActive(safeIndex);
-    };
-    const scrollToIndex = (index, behavior = "smooth") => {
-      const safeIndex = clampIndex(index);
-      pendingScrollIndex = behavior === "smooth" ? safeIndex : null;
-      setActive(safeIndex);
-      track.scrollTo({ left: track.clientWidth * safeIndex, behavior });
-    };
-    const syncActive = () => {
-      const resolved = resolvePhotoGalleryActiveIndex({
-        pendingIndex: pendingScrollIndex,
-        scrollLeft: track.scrollLeft,
-        trackWidth: track.clientWidth
-      });
-      pendingScrollIndex = resolved.pendingIndex;
-      setActive(resolved.activeIndex);
-    };
-    const cancelPendingScroll = () => {
-      pendingScrollIndex = null;
-      if (settleTimer !== null) {
-        clearTimeout(settleTimer);
-        settleTimer = null;
-      }
-    };
-    const scheduleSettledPosition = () => {
-      if (settleTimer !== null) clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => {
-        settleTimer = null;
-        const snapIndex = resolvePhotoGallerySnapIndex({
-          scrollLeft: track.scrollLeft,
-          trackWidth: track.clientWidth,
-          slideCount
-        });
-        const targetLeft = track.clientWidth * snapIndex;
-        if (Math.abs(track.scrollLeft - targetLeft) > 1) scrollToIndex(snapIndex);
-      }, 160);
-    };
-    dots.forEach((dot, index) => {
-      dot.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        scrollToIndex(index);
-      });
-    });
-    track.addEventListener("scroll", () => {
-      requestAnimationFrame(syncActive);
-      scheduleSettledPosition();
-    }, { passive: true });
-    track.addEventListener("pointerdown", cancelPendingScroll, { passive: true });
-    track.addEventListener("wheel", cancelPendingScroll, { passive: true });
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchStartScrollLeft = 0;
-    let touchStartTime = 0;
-    let touchMoved = false;
-    let touchTracking = false;
-    track.addEventListener("touchstart", (event) => {
-      cancelPendingScroll();
-      if (event.touches.length !== 1) {
-        touchTracking = false;
-        return;
-      }
-      const touch = event.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-      touchStartScrollLeft = track.scrollLeft;
-      touchStartTime = Date.now();
-      touchMoved = false;
-      touchTracking = true;
-    }, { passive: true });
-    track.addEventListener("touchmove", (event) => {
-      if (!touchTracking || event.touches.length !== 1) return;
-      const touch = event.touches[0];
-      if (Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY) > PHOTO_GALLERY_TAP_MOVE_LIMIT_PX) {
-        touchMoved = true;
-      }
-    }, { passive: true });
-    track.addEventListener("touchend", (event) => {
-      if (!touchTracking || !event.changedTouches.length) return;
-      touchTracking = false;
-      const touch = event.changedTouches[0];
-      const dx = touch.clientX - touchStartX;
-      const dy = touch.clientY - touchStartY;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-      const width = track.clientWidth || 1;
-      const baseIndex = resolvePhotoGallerySnapIndex({
-        scrollLeft: touchStartScrollLeft,
-        trackWidth: width,
-        slideCount
-      });
-      const minDistance = Math.min(54, Math.max(28, (track.clientWidth || 1) * 0.11));
-      const fastEnough = Date.now() - touchStartTime <= 1100;
-      const tappedButton = !touchMoved && Math.hypot(dx, dy) <= PHOTO_GALLERY_TAP_MOVE_LIMIT_PX
-        ? event.target?.closest?.("[data-photo-open]")
-        : null;
-      const tappedIndex = tappedButton ? slideButtons.indexOf(tappedButton) : -1;
-      const tappedImage = tappedButton?.querySelector?.("img");
-      if (tappedIndex >= 0 && tappedImage) {
-        suppressSlideClickUntil = Date.now() + PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS;
-        event.preventDefault();
-        event.stopPropagation();
-        openLightbox(tappedImage, { gallery, index: tappedIndex });
-        return;
-      }
-      const pullsPastFirst = baseIndex === 0 && dx > 3;
-      const pullsPastLast = baseIndex === slideCount - 1 && dx < -3;
-      if (pullsPastFirst || pullsPastLast) {
-        scrollToIndex(baseIndex);
-        suppressSlideClickUntil = Date.now() + 450;
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      if (slideCount > 1 && fastEnough && absX >= minDistance && absX > absY * 0.55) {
-        const direction = dx < 0 ? 1 : -1;
-        scrollToIndex(baseIndex + direction);
-        suppressSlideClickUntil = Date.now() + 450;
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    }, { passive: false });
-    track.addEventListener("touchcancel", () => {
-      touchTracking = false;
-    }, { passive: true });
-    slideButtons.forEach((button, index) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (Date.now() < suppressSlideClickUntil) return;
-        const image = button.querySelector("img");
-        if (image) openLightbox(image, { gallery, index });
-      });
-    });
-    const initialIndex = Math.max(0, Math.min(Math.max(0, dots.length - 1), Number(gallery.dataset.photoInitialIndex || 0) || 0));
-    if (initialIndex) requestAnimationFrame(() => track.scrollLeft = track.clientWidth * initialIndex);
-    setActive(initialIndex);
+  return bindSharedPhotoGalleries(root, {
+    openLightbox: ({ image, gallery, index }) => {
+      if (image) openLightbox(image, { gallery, index });
+    },
+    onActiveIndexChange: ({ gallery, index }) => {
+      if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(index);
+      if (gallery.closest("#rootContainerPhotoPreview")) onRootContainerPreviewActive(index);
+    }
   });
 }
 
