@@ -100,6 +100,10 @@ test("desktop input controls and styles come from the shared module", async () =
   );
   assert.match(stylesSource, /createController/);
   assert.match(stylesSource, /vniipo-input-layout-v1-styles/);
+  assert.match(
+    stylesSource,
+    /\.desktop-input-layout-controls button\{[^}]*min-width:0;min-height:0;/
+  );
 });
 
 test("desktop layout controls leave a gap for a visible search clear button", async () => {

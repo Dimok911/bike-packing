@@ -1,7 +1,7 @@
 (function installVniipoInputLayout(global) {
   "use strict";
 
-  const VERSION = "1.0.0";
+  const VERSION = "1.0.1";
   const CONTRACT_VERSION = 1;
   const STYLE_ID = "vniipo-input-layout-v1-styles";
   const LATIN_LAYOUT = "`qwertyuiop[]asdfghjkl;'zxcvbnm,./";
@@ -140,7 +140,7 @@
 .desktop-input-layout-controls{position:absolute;top:50%;right:8px;z-index:3;display:flex;align-items:center;gap:4px;transform:translateY(-50%)}
 .desktop-input-layout.with-search-clear .desktop-input-layout-controls,.desktop-input-layout.with-search-icon .desktop-input-layout-controls{right:40px}
 .desktop-input-layout.for-textarea .desktop-input-layout-controls{top:8px;transform:none}
-.desktop-input-layout-controls button{display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer}
+.desktop-input-layout-controls button{display:grid;place-items:center;margin:0;min-width:0;min-height:0;padding:0;border:0;cursor:pointer}
 .desktop-input-layout-mode{width:34px;height:24px;border:1px solid var(--input-layout-border,rgba(18,63,54,.35))!important;border-radius:999px;color:var(--input-layout-accent,#123f36);background:var(--input-layout-soft,#edf4ee);font:900 11px/1 system-ui,sans-serif;letter-spacing:.03em}
 .desktop-input-layout-mute{position:relative;width:28px;height:28px;border-radius:8px;color:var(--input-layout-accent,#123f36);background:transparent;font:900 13px/1 system-ui,sans-serif}
 .desktop-input-layout-mode:hover,.desktop-input-layout-mode:focus-visible,.desktop-input-layout-mute:hover,.desktop-input-layout-mute:focus-visible{outline:0;background:var(--input-layout-hover,#dce9e1)}
