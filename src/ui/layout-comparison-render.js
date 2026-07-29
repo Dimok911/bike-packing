@@ -63,7 +63,6 @@ function renderComparisonItem({
   if (!item) return "";
   const diff = comparison.itemDiffs[entry.id] || { status: "unchanged" };
   const classes = comparisonClass(diff.status, entry.variant);
-  const ghost = entry.variant === "source-ghost";
   return `
     <article
       class="item-card comparison-item ${classes}"
@@ -82,13 +81,11 @@ function renderComparisonItem({
           escapeHtml
         })}
       </div>
-      ${ghost ? "" : `
-        <div class="meta">
-          <span class="pill">${escapeHtml(formatItemWeight(item))}</span>
-          ${item.location ? `<span class="pill">${escapeHtml(item.location)}</span>` : ""}
-        </div>
-        ${renderPhoto(item)}
-      `}
+      <div class="meta">
+        <span class="pill">${escapeHtml(formatItemWeight(item))}</span>
+        ${item.location ? `<span class="pill">${escapeHtml(item.location)}</span>` : ""}
+      </div>
+      ${renderPhoto(item)}
     </article>
   `;
 }

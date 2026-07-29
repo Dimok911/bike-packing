@@ -371,6 +371,7 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Personal layouts share item and container identities. Comparison must match entities by their global ids, regardless of whether either layout was copied from the other.
 - An entity present in both layouts is moved only when its immediate placement parent differs. Moving a container must not mark every unchanged descendant as moved.
 - A moved container is rendered fully at its destination and as a shallow source ghost. Additions and removals inside that container remain independent recursive changes.
+- A moved item's pale source card remains a complete card, including its weight, location, and photos. Fading the old placement must not look like lost item data.
 - The layout chooser must remain vertically scrollable inside the visible viewport. The last pair that actually started a comparison is stored only in the scoped local browser storage and is reused only while both layouts still exist.
 - The contract is protected by `tests/critical/layout-compare.test.js`.
 

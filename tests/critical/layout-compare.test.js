@@ -211,3 +211,58 @@ test("CRITICAL comparison remembers the last valid layout pair locally", () => {
   );
   assert.equal(loadLayoutComparisonSelection("comparison-key", ["long"], storage), null);
 });
+
+test("CRITICAL moved items keep photos in both the pale source card and destination card", () => {
+  const state = {
+    items: {
+      stove: {
+        id: "stove",
+        name: "Stove",
+        location: "Workshop",
+        photos: [{ id: "photo-stove" }]
+      }
+    },
+    containers: {
+      oldPouch: { id: "oldPouch", name: "Old pouch" },
+      saddle: { id: "saddle", name: "Saddle bag" }
+    },
+    layouts: {
+      before: layout("before", ["oldPouch", "saddle"], {
+        oldPouch: placement({ itemIds: ["stove"] }),
+        saddle: placement()
+      }, { stove: "oldPouch" }),
+      after: layout("after", ["saddle"], {
+        saddle: placement({ itemIds: ["stove"] })
+      }, { stove: "saddle" })
+    }
+  };
+  const comparison = buildLayoutComparison(state, "before", "after");
+  const t = (key, values = {}) => String({
+    "compare.statusMoveHere": "Here from {source}",
+    "compare.statusTakeFromHere": "Take from here to {destination}",
+    "compare.layoutRoot": "root",
+    "compare.unnamedItem": "Unnamed item",
+    "compare.unnamedContainer": "Unnamed container",
+    "compare.noChangesTitle": "No changes",
+    "compare.noChangesText": "Layouts match",
+    "tooltips.expand": "Expand",
+    "tooltips.collapse": "Collapse"
+  }[key] || key).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+
+  const html = renderLayoutComparisonBoardHtml({
+    comparison,
+    escapeHtml: (value) => String(value),
+    formatItemWeight: () => "100 g",
+    onlyChanges: true,
+    renderPhoto: (record) => record.photos?.length
+      ? `<img data-test-photo="${record.photos[0].id}">`
+      : "",
+    state,
+    t
+  });
+
+  assert.equal((html.match(/data-comparison-entity="item:stove"/g) || []).length, 2);
+  assert.equal((html.match(/data-test-photo="photo-stove"/g) || []).length, 2);
+  assert.match(html, /comparison-source-ghost[\s\S]*data-test-photo="photo-stove"/);
+  assert.match(html, /comparison-moved[\s\S]*data-test-photo="photo-stove"/);
+});
