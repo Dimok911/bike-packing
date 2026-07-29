@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1421" />
+    <link rel="stylesheet" href="./styles.css?v=1422" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -40,6 +40,7 @@
               </label>
               <button id="interfaceColorMenuBtn" class="ghost menu-item" type="button">Цвет интерфейса</button>
               <button id="collectionMenuBtn" class="ghost menu-item auth-required" type="button">Режим сбора</button>
+              <button id="compareLayoutsMenuBtn" class="ghost menu-item auth-required" type="button">Сравнить укладки</button>
               <button id="forceOfflineBtn" class="ghost menu-item" type="button">Работать офлайн</button>
               <button id="historyBtn" class="ghost menu-item auth-required" type="button">История</button>
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
@@ -577,6 +578,42 @@
       </form>
     </dialog>
 
+    <dialog id="layoutCompareDialog">
+      <form method="dialog" class="dialog-card layout-compare-dialog-card">
+        <header>
+          <h2 id="layoutCompareTitle">Сравнить укладки</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="layoutCompareDescription" class="dialog-note">
+          Выберите исходную и конечную укладки. Сравнение ничего не изменяет и не сохраняет.
+        </p>
+        <div id="layoutCompareFields" class="layout-compare-fields">
+          <label>
+            <span id="layoutCompareFromLabel">Исходная укладка</span>
+            <select id="layoutCompareFrom"></select>
+          </label>
+          <button
+            id="layoutCompareSwapBtn"
+            class="ghost layout-compare-swap"
+            type="button"
+            aria-label="Поменять укладки местами"
+            title="Поменять укладки местами"
+          >⇄</button>
+          <label>
+            <span id="layoutCompareToLabel">Конечная укладка</span>
+            <select id="layoutCompareTo"></select>
+          </label>
+        </div>
+        <p id="layoutCompareUnavailable" class="dialog-note warning-text" hidden>
+          Для сравнения нужны как минимум две укладки.
+        </p>
+        <footer>
+          <button id="layoutCompareCancelBtn" value="cancel" class="ghost" type="submit">Отмена</button>
+          <button id="layoutCompareStartBtn" value="default" type="button">Начать сравнение</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="photoOrderDialog">
       <form method="dialog" class="dialog-card photo-order-dialog-card">
         <header>
@@ -769,6 +806,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1421" type="module"></script>
+    <script src="./app.js?v=1422" type="module"></script>
   </body>
 </html>

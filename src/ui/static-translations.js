@@ -68,6 +68,7 @@ export function applyStaticTranslationsUi({
   setText(refs.adminReportsBtn, t("menu.adminReports"));
   setText(refs.helpLimitsBtn, t("menu.help"));
   setText(refs.collectionMenuBtn, t("menu.collectionOff"));
+  setText(refs.compareLayoutsMenuBtn, t("menu.compareLayouts"));
   setText(refs.forceOfflineBtn, t("menu.offline"));
   documentRef.querySelector("#historyBtn")?.replaceChildren(documentRef.createTextNode(t("menu.history")));
   setText(refs.historyDialog?.querySelector("header h2"), t("history.title"));
@@ -119,6 +120,15 @@ export function applyStaticTranslationsUi({
   setAttr(refs.filterContextBtn, "title", uiLanguage === "en" ? "Show filter context" : "Показывать контекст фильтра");
   setAttr(refs.collectionActions?.querySelector(".collection-panel"), "aria-label", t("collection.mode"));
   setText(refs.unpackAllBtn, t("collection.unpackAll"));
+  setText(refs.layoutCompareTitle, t("compare.dialogTitle"));
+  setText(refs.layoutCompareDescription, t("compare.dialogDescription"));
+  setText(refs.layoutCompareFromLabel, t("compare.fromLayout"));
+  setText(refs.layoutCompareToLabel, t("compare.toLayout"));
+  setText(refs.layoutCompareUnavailable, t("compare.needTwoLayouts"));
+  setText(refs.layoutCompareCancelBtn, t("buttons.cancel"));
+  setText(refs.layoutCompareStartBtn, t("compare.start"));
+  setAttr(refs.layoutCompareSwapBtn, "aria-label", t("compare.swapAria"));
+  setAttr(refs.layoutCompareSwapBtn, "title", t("compare.swapAria"));
   setDialogCloseLabels(documentRef, t("buttons.close"));
 
   setFirstText(refs.dialog?.querySelector("label:has(#itemName)"), t("forms.name"));

@@ -117,5 +117,5 @@ test("packing render activates photo galleries immediately in every view mode", 
   );
 
   assert.match(renderPackingSource, /restoreAndBindPackingPhotoGalleries\([\s\S]*bindPhotoGalleries,[\s\S]*bindingOptions:\s*photoGalleryBindingOptions\(\)/);
-  assert.equal((renderPackingSource.match(/activatePhotoGalleries\(\);/g) || []).length, 4);
+  assert.equal((renderPackingSource.match(/activatePhotoGalleries\(\);/g) || []).length, 5);
 });

@@ -78,6 +78,11 @@ import {
   COPY_FOCUS_SYNC_FALLBACK_DELAY_MS
 } from "../ui/copy-focus-flow.js";
 import { expandItemPlacementPath } from "../state/layout-focus.js";
+import { buildLayoutComparison } from "../state/layout-compare.js";
+import {
+  renderLayoutComparisonBoardHtml,
+  renderLayoutComparisonToolbarHtml
+} from "../ui/layout-comparison-render.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -103,6 +108,9 @@ export function createAppTailControllers(ctx) {
   let layoutRootTargetLayoutId = "";
   let pendingCopyTargetLayoutCreation = null;
   let pendingCopyTargetContainerSetup = null;
+  let layoutComparison = null;
+  let layoutComparisonOnlyChanges = true;
+  const layoutComparisonCollapsedIds = new Set();
   const {
     ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
     API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
@@ -2505,7 +2513,192 @@ function expandFilterMatchAncestors(target) {
   return changed;
 }
 
+function isLayoutComparisonActive() {
+  return Boolean(
+    layoutComparison?.fromLayoutId &&
+    layoutComparison?.toLayoutId &&
+    layoutComparison.fromLayoutId !== layoutComparison.toLayoutId
+  );
+}
+
+function currentLayoutComparison() {
+  if (!isLayoutComparisonActive()) return null;
+  const comparison = buildLayoutComparison(
+    state,
+    layoutComparison.fromLayoutId,
+    layoutComparison.toLayoutId
+  );
+  if (comparison) return comparison;
+  layoutComparison = null;
+  layoutComparisonCollapsedIds.clear();
+  return null;
+}
+
+function comparisonLayoutOptions() {
+  return userEditableLayouts().filter((layout) => layout?.id);
+}
+
+function updateLayoutComparisonDialogState() {
+  const options = comparisonLayoutOptions();
+  const enoughLayouts = options.length >= 2;
+  const differentLayouts = refs.layoutCompareFrom?.value &&
+    refs.layoutCompareTo?.value &&
+    refs.layoutCompareFrom.value !== refs.layoutCompareTo.value;
+  if (refs.layoutCompareFields) refs.layoutCompareFields.hidden = !enoughLayouts;
+  if (refs.layoutCompareUnavailable) {
+    refs.layoutCompareUnavailable.hidden = enoughLayouts && differentLayouts;
+    refs.layoutCompareUnavailable.textContent = enoughLayouts
+      ? t("compare.sameLayout")
+      : t("compare.needTwoLayouts");
+  }
+  if (refs.layoutCompareStartBtn) refs.layoutCompareStartBtn.disabled = !enoughLayouts || !differentLayouts;
+  if (refs.layoutCompareSwapBtn) refs.layoutCompareSwapBtn.disabled = !enoughLayouts;
+}
+
+function openLayoutComparisonDialog() {
+  captureActiveLayoutArrangement();
+  const options = comparisonLayoutOptions();
+  const activeId = state.activeLayoutId;
+  const preferredFromId = layoutComparison?.fromLayoutId || (
+    options.some((layout) => layout.id === activeId) ? activeId : options[0]?.id || ""
+  );
+  const preferredToId = layoutComparison?.toLayoutId || options.find((layout) => layout.id !== preferredFromId)?.id || "";
+  const selectOptions = options.map((layout) => [layout.id, layoutDisplayName(layout)]);
+  fillSelect(refs.layoutCompareFrom, selectOptions, preferredFromId);
+  fillSelect(refs.layoutCompareTo, selectOptions, preferredToId);
+  updateLayoutComparisonDialogState();
+  closeTopMenu();
+  openModalDialog(refs.layoutCompareDialog);
+}
+
+function swapLayoutComparisonDialogValues() {
+  if (!refs.layoutCompareFrom || !refs.layoutCompareTo) return;
+  const fromId = refs.layoutCompareFrom.value;
+  refs.layoutCompareFrom.value = refs.layoutCompareTo.value;
+  refs.layoutCompareTo.value = fromId;
+  updateLayoutComparisonDialogState();
+}
+
+function startLayoutComparison() {
+  captureActiveLayoutArrangement();
+  const fromLayoutId = refs.layoutCompareFrom?.value || "";
+  const toLayoutId = refs.layoutCompareTo?.value || "";
+  const comparison = buildLayoutComparison(state, fromLayoutId, toLayoutId);
+  if (!comparison) {
+    updateLayoutComparisonDialogState();
+    return;
+  }
+  layoutComparison = { fromLayoutId, toLayoutId };
+  layoutComparisonOnlyChanges = true;
+  layoutComparisonCollapsedIds.clear();
+  refs.layoutCompareDialog?.close("default");
+  switchView("packing");
+  render();
+}
+
+function closeLayoutComparison() {
+  if (!isLayoutComparisonActive()) return;
+  layoutComparison = null;
+  layoutComparisonCollapsedIds.clear();
+  document.body.classList.remove("layout-comparison-active");
+  render();
+}
+
+function swapActiveLayoutComparison() {
+  if (!isLayoutComparisonActive()) return;
+  capturePackingScroll();
+  layoutComparison = {
+    fromLayoutId: layoutComparison.toLayoutId,
+    toLayoutId: layoutComparison.fromLayoutId
+  };
+  layoutComparisonCollapsedIds.clear();
+  render();
+}
+
+function syncLayoutComparisonMenu() {
+  if (!refs.compareLayoutsMenuBtn) return;
+  const active = isLayoutComparisonActive();
+  refs.compareLayoutsMenuBtn.textContent = t(active ? "menu.compareLayoutsClose" : "menu.compareLayouts");
+  refs.compareLayoutsMenuBtn.classList.toggle("active", active);
+}
+
+function bindLayoutComparisonControls() {
+  refs.compareLayoutsMenuBtn?.addEventListener("click", () => {
+    if (isLayoutComparisonActive()) {
+      closeTopMenu();
+      closeLayoutComparison();
+      return;
+    }
+    openLayoutComparisonDialog();
+  });
+  refs.layoutCompareFrom?.addEventListener("change", updateLayoutComparisonDialogState);
+  refs.layoutCompareTo?.addEventListener("change", updateLayoutComparisonDialogState);
+  refs.layoutCompareSwapBtn?.addEventListener("click", swapLayoutComparisonDialogValues);
+  refs.layoutCompareStartBtn?.addEventListener("click", startLayoutComparison);
+}
+
+function renderLayoutComparisonSummary(comparison) {
+  const summary = comparison.summary;
+  const moveCount = summary.movedItems + summary.movedContainers;
+  const delta = Number(summary.weightDelta || 0);
+  const deltaText = `${delta > 0 ? "+" : delta < 0 ? "−" : ""}${formatWeight(Math.abs(delta))}`;
+  refs.summary.innerHTML = [
+    metric(`+${summary.addedItems}`, t("compare.summaryAdded")),
+    metric(`−${summary.removedItems}`, t("compare.summaryRemoved")),
+    metric(`↔${moveCount}`, t("compare.summaryMoved")),
+    metric(deltaText, t("compare.summaryWeight"))
+  ].join("");
+}
+
+function bindLayoutComparisonView() {
+  refs.packingView.querySelector("[data-compare-only-changes]")?.addEventListener("click", () => {
+    capturePackingScroll();
+    layoutComparisonOnlyChanges = !layoutComparisonOnlyChanges;
+    render();
+  });
+  refs.packingView.querySelector("[data-compare-swap]")?.addEventListener("click", swapActiveLayoutComparison);
+  refs.packingView.querySelector("[data-compare-choose]")?.addEventListener("click", openLayoutComparisonDialog);
+  refs.packingView.querySelector("[data-compare-close]")?.addEventListener("click", closeLayoutComparison);
+  refs.packingView.querySelectorAll("[data-compare-toggle-container]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      capturePackingScroll();
+      const containerId = button.dataset.compareToggleContainer;
+      if (layoutComparisonCollapsedIds.has(containerId)) layoutComparisonCollapsedIds.delete(containerId);
+      else layoutComparisonCollapsedIds.add(containerId);
+      render();
+    });
+  });
+  const activatePair = (element) => {
+    const key = element.dataset.comparisonEntity;
+    if (!key) return;
+    const linked = [...refs.packingView.querySelectorAll("[data-comparison-entity]")]
+      .filter((candidate) => candidate.dataset.comparisonEntity === key);
+    const nextActive = !linked.every((candidate) => candidate.classList.contains("comparison-linked-highlight"));
+    refs.packingView.querySelectorAll(".comparison-linked-highlight").forEach((candidate) => {
+      candidate.classList.remove("comparison-linked-highlight");
+    });
+    if (nextActive) linked.forEach((candidate) => candidate.classList.add("comparison-linked-highlight"));
+  };
+  refs.packingView.querySelectorAll("[data-comparison-entity]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      activatePair(element);
+    });
+    element.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      activatePair(element);
+    });
+  });
+}
+
 function renderSummary() {
+  const comparison = currentLayoutComparison();
+  if (comparison) {
+    renderLayoutComparisonSummary(comparison);
+    return;
+  }
   if (isSharedLayoutView()) {
     renderSharedSummary();
     return;
@@ -2738,6 +2931,36 @@ function renderPacking() {
       bindingOptions: photoGalleryBindingOptions()
     }
   );
+  const comparison = currentLayoutComparison();
+  document.body.classList.toggle("layout-comparison-active", Boolean(comparison));
+  syncLayoutComparisonMenu();
+  if (comparison) {
+    refs.packingView.innerHTML = `
+      ${renderLayoutComparisonToolbarHtml({
+        comparison,
+        escapeHtml,
+        onlyChanges: layoutComparisonOnlyChanges,
+        t
+      })}
+      ${renderLayoutComparisonBoardHtml({
+        collapsedIds: layoutComparisonCollapsedIds,
+        comparison,
+        escapeHtml,
+        formatItemWeight,
+        onlyChanges: layoutComparisonOnlyChanges,
+        renderPhoto: (record) => renderItemPhoto(record),
+        state,
+        t
+      })}
+    `;
+    activatePhotoGalleries();
+    bindLayoutComparisonView();
+    const comparisonBoard = refs.packingView.querySelector(".comparison-board");
+    restorePendingPackingScroll(comparisonBoard);
+    bindBoardScroll(comparisonBoard);
+    bindFixedScrollbar(comparisonBoard);
+    return;
+  }
   if (isSharedLayoutView()) {
     if (isBike3dPackingView(runtime.packingViewMode)) {
       renderSharedPackingBike3d();
@@ -8796,7 +9019,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     updateFilterNavigationUi, scheduleFilterNavigationRefresh, moveFilterMatch, scrollToFilterMatch,
     expandFilterMatchAncestors, renderSummary, getSummaryItems, getSummaryWeight,
     getItemsViewSummaryItems, getSummaryRootContainers, isSummaryFiltered, filteredLabel,
-    metric, isSharedLayoutView, currentSharedLayout, sharedLayoutStatePayload,
+    metric, bindLayoutComparisonControls, isSharedLayoutView, currentSharedLayout, sharedLayoutStatePayload,
     createSharedVirtualState, withSharedVirtualState, renderSharedSummary, renderPacking,
     renderCurrentPackingBike3d, renderSharedPackingBike3d, selectBike3dContainer, closeBike3dDetail,
     toggleBike3dAdjusting, getBike3dTransform, adjustBike3dTransform, setBike3dColor,

@@ -1865,7 +1865,7 @@ const {
   updateFilterNavigationUi, scheduleFilterNavigationRefresh, moveFilterMatch, scrollToFilterMatch,
   expandFilterMatchAncestors, renderSummary, getSummaryItems, getSummaryWeight,
   getItemsViewSummaryItems, getSummaryRootContainers, isSummaryFiltered, filteredLabel,
-  metric, isSharedLayoutView, currentSharedLayout, sharedLayoutStatePayload,
+  metric, bindLayoutComparisonControls, isSharedLayoutView, currentSharedLayout, sharedLayoutStatePayload,
   createSharedVirtualState, withSharedVirtualState, renderSharedSummary, renderPacking,
   renderCurrentPackingBike3d, renderSharedPackingBike3d, selectBike3dContainer, closeBike3dDetail,
   toggleBike3dAdjusting, getBike3dTransform, adjustBike3dTransform, setBike3dColor,
@@ -3042,6 +3042,7 @@ async function init() {
   refs.filterNextBtn.addEventListener("click", () => moveFilterMatch(1));
   refs.collectionModeBtn.addEventListener("click", toggleCollectionMode);
   refs.collectionMenuBtn.addEventListener("click", toggleCollectionMode);
+  bindLayoutComparisonControls();
   refs.unpackedOnlyBtn.addEventListener("click", () => {
     toggleShowOnlyUnpacked(state);
     saveState();

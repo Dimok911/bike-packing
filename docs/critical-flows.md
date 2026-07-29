@@ -364,3 +364,11 @@ test:critical` дополнительно к `npm.cmd run check`.
 - Undoing a private, demo, or shared-template history action must preserve the layout and main tab that the user was viewing when History opened, whenever that layout still exists. Replacing the currently viewed template may adopt its replacement id, but must restore the same main tab and viewport instead of forcing Packing.
 - An empty temporary nested bag/pouch remains in its layout after its last item or child container is moved out, removed from the layout, or deleted. Temporary containers are removed only by an explicit container action, replacement, or deletion of the containing layout.
 - Deleting a photo is a 30-day soft delete. Historical asset URLs remain readable during retention, and restoring a snapshot that references the photo must clear its trash marker in the same transaction.
+
+## CRITICAL: layout-comparison
+
+- Comparison is a read-only browser mode. Starting, swapping, filtering, collapsing, or closing a comparison must not call state save, entity sync, or an API write.
+- Personal layouts share item and container identities. Comparison must match entities by their global ids, regardless of whether either layout was copied from the other.
+- An entity present in both layouts is moved only when its immediate placement parent differs. Moving a container must not mark every unchanged descendant as moved.
+- A moved container is rendered fully at its destination and as a shallow source ghost. Additions and removals inside that container remain independent recursive changes.
+- The contract is protected by `tests/critical/layout-compare.test.js`.
