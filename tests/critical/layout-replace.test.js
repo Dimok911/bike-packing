@@ -155,6 +155,19 @@ test("CRITICAL layout replacement: a new bag keeps the old bag position and full
   assert.equal(layout.arrangement.packedItems["item-old"], true);
 });
 
+test("CRITICAL layout replacement: a new bag inherits the old bag collapse state", () => {
+  const expandedState = createState();
+  expandedState.collapsedContainers = { "bag-old": false, "bag-new": true };
+  assert.equal(replaceContainerInLayoutState(expandedState, "layout-a", "bag-old", "bag-new"), true);
+  assert.equal(expandedState.collapsedContainers["bag-new"], false);
+  assert.equal(expandedState.collapsedContainers["bag-old"], false);
+
+  const collapsedState = createState();
+  collapsedState.collapsedContainers = { "bag-old": true, "bag-new": false };
+  assert.equal(replaceContainerInLayoutState(collapsedState, "layout-a", "bag-old", "bag-new"), true);
+  assert.equal(collapsedState.collapsedContainers["bag-new"], true);
+});
+
 test("CRITICAL layout replacement: a reusable nested bag keeps its parent slot", () => {
   const state = createState();
   const layout = state.layouts["layout-a"];
@@ -204,6 +217,7 @@ test("CRITICAL layout replacement: a temporary nested pouch is removed after bec
   }), true);
   assert.equal(state.containers["bag-old"], undefined);
   assert.equal(state.collapsedContainers["bag-old"], undefined);
+  assert.equal(state.collapsedContainers["bag-new"], false);
   assert.deepEqual(removed, ["bag-old"]);
   assert.deepEqual(layout.arrangement.containers["bag-parent"].childIds, ["bag-new"]);
   assert.deepEqual(layout.arrangement.containers["bag-new"].itemIds, ["item-old"]);

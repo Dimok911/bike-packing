@@ -83,6 +83,11 @@ import {
   renderLayoutComparisonBoardHtml,
   renderLayoutComparisonToolbarHtml
 } from "../ui/layout-comparison-render.js";
+import {
+  LAYOUT_COMPARISON_SELECTION_STORAGE_KEY,
+  loadLayoutComparisonSelection,
+  saveLayoutComparisonSelection
+} from "../ui/layout-comparison-selection.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -2559,10 +2564,15 @@ function openLayoutComparisonDialog() {
   captureActiveLayoutArrangement();
   const options = comparisonLayoutOptions();
   const activeId = state.activeLayoutId;
-  const preferredFromId = layoutComparison?.fromLayoutId || (
+  const savedSelection = loadLayoutComparisonSelection(
+    scopedLocalStorageKey(LAYOUT_COMPARISON_SELECTION_STORAGE_KEY),
+    options.map((layout) => layout.id)
+  );
+  const preferredFromId = layoutComparison?.fromLayoutId || savedSelection?.fromLayoutId || (
     options.some((layout) => layout.id === activeId) ? activeId : options[0]?.id || ""
   );
-  const preferredToId = layoutComparison?.toLayoutId || options.find((layout) => layout.id !== preferredFromId)?.id || "";
+  const preferredToId = layoutComparison?.toLayoutId || savedSelection?.toLayoutId ||
+    options.find((layout) => layout.id !== preferredFromId)?.id || "";
   const selectOptions = options.map((layout) => [layout.id, layoutDisplayName(layout)]);
   fillSelect(refs.layoutCompareFrom, selectOptions, preferredFromId);
   fillSelect(refs.layoutCompareTo, selectOptions, preferredToId);
@@ -2589,6 +2599,10 @@ function startLayoutComparison() {
     return;
   }
   layoutComparison = { fromLayoutId, toLayoutId };
+  saveLayoutComparisonSelection(
+    scopedLocalStorageKey(LAYOUT_COMPARISON_SELECTION_STORAGE_KEY),
+    layoutComparison
+  );
   layoutComparisonOnlyChanges = true;
   layoutComparisonCollapsedIds.clear();
   refs.layoutCompareDialog?.close("default");

@@ -3287,7 +3287,20 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 .layout-compare-dialog-card {
-  width: min(620px, calc(100vw - 28px));
+  width: 100%;
+  min-width: 0;
+  max-height: inherit;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+#layoutCompareDialog {
+  width: min(620px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
 }
 
 .layout-compare-fields {

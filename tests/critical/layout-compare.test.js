@@ -6,6 +6,13 @@ import {
   comparisonEntryVisible
 } from "../../src/state/layout-compare.js";
 import { renderLayoutComparisonBoardHtml } from "../../src/ui/layout-comparison-render.js";
+import {
+  loadLayoutComparisonSelection,
+  saveLayoutComparisonSelection
+} from "../../src/ui/layout-comparison-selection.js";
+import { readFileSync } from "node:fs";
+
+const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 
 function placement({ parentId = "", itemIds = [], childIds = [] } = {}) {
   return {
@@ -180,4 +187,27 @@ test("CRITICAL comparison is read-only and does not mutate either layout", () =>
   buildLayoutComparison(state, "a", "b");
 
   assert.deepEqual(state, before);
+});
+
+test("CRITICAL comparison dialog remains scrollable inside the viewport", () => {
+  assert.match(stylesSource, /#layoutCompareDialog\s*\{[^}]*max-height:\s*calc\(100dvh - 24px\);[^}]*overflow:\s*hidden;/s);
+  assert.match(stylesSource, /\.layout-compare-dialog-card\s*\{[^}]*max-height:\s*inherit;[^}]*box-sizing:\s*border-box;[^}]*overflow-y:\s*auto;/s);
+});
+
+test("CRITICAL comparison remembers the last valid layout pair locally", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value)
+  };
+
+  assert.equal(saveLayoutComparisonSelection("comparison-key", {
+    fromLayoutId: "long",
+    toLayoutId: "weekend"
+  }, storage), true);
+  assert.deepEqual(
+    loadLayoutComparisonSelection("comparison-key", ["weekend", "long"], storage),
+    { fromLayoutId: "long", toLayoutId: "weekend" }
+  );
+  assert.equal(loadLayoutComparisonSelection("comparison-key", ["long"], storage), null);
 });

@@ -101,6 +101,15 @@ export function replaceContainerInLayoutState(targetState, layoutId, sourceConta
   const sourceUsedInOtherLayouts = Object.entries(targetState.layouts || {}).some(([otherLayoutId, otherLayout]) =>
     otherLayoutId !== layoutId && getLayoutContainerIdSet(targetState, otherLayout).has(sourceContainerId)
   );
+  const collapsedContainers = targetState.collapsedContainers;
+  const sourceHasCollapsedState = Boolean(
+    collapsedContainers &&
+    typeof collapsedContainers === "object" &&
+    Object.prototype.hasOwnProperty.call(collapsedContainers, sourceContainerId)
+  );
+  const sourceCollapsedState = sourceHasCollapsedState
+    ? Boolean(collapsedContainers[sourceContainerId])
+    : false;
 
   const snapshot = {
     arrangement: clonePlain(layout.arrangement),
@@ -143,6 +152,13 @@ export function replaceContainerInLayoutState(targetState, layoutId, sourceConta
     const source = targetState.containers[sourceContainerId];
     if (!replacement || !source || source.parentId || source.itemIds?.length || source.childIds?.length) {
       return replacementRollback(layout, snapshot, layoutId, activeLayoutId, applyLayoutArrangement);
+    }
+  }
+  if (collapsedContainers && typeof collapsedContainers === "object") {
+    if (sourceHasCollapsedState) {
+      collapsedContainers[replacementContainerId] = sourceCollapsedState;
+    } else {
+      delete collapsedContainers[replacementContainerId];
     }
   }
   if (removeSourceRecord && !sourceUsedInOtherLayouts) {
