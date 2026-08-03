@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -34,6 +34,10 @@ import {
   createOfflinePhotoRenderCoordinator
 } from "../../src/sync/offline-photo-cache.js";
 import { photoBlobsAreDistinct } from "../../src/sync/photo-cache-quality.js";
+import {
+  PHOTO_CACHE_ENGINE_CONTRACT_VERSION,
+  PHOTO_CACHE_ENGINE_VERSION
+} from "../../src/sync/photo-cache-engine.js";
 import {
   markPhotoUploadStarted,
   uploadPhotoToPath,
@@ -494,6 +498,29 @@ test("CRITICAL offline-photos: changing the data scope revokes and isolates card
   assert.deepEqual(revoked, ["blob:user-1"]);
   assert.equal(objectUrls.get("photo-1", "signature-1"), "");
   assert.equal(objectUrls.isReady(), false);
+});
+
+test("CRITICAL offline-photos: Bikepacking registry retains separate preview and verified full URLs", () => {
+  const created = [];
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => `blob:variant-${created.push(true)}`,
+    revokeObjectUrl: () => {}
+  });
+  const task = { key: "photo-variants", sourceSignature: "full|thumb|v1" };
+  const record = {
+    id: task.key,
+    sourceSignature: task.sourceSignature,
+    thumbBlob: new Blob(["preview"]),
+    blob: new Blob(["full"]),
+    fullBlobVerified: true
+  };
+  objectUrls.activateScope("id:user-1");
+  objectUrls.setRecord(task, record);
+  assert.deepEqual(objectUrls.sources(task.key, task.sourceSignature), {
+    preview: "blob:variant-1",
+    full: "blob:variant-2"
+  });
+  assert.equal(objectUrls.getRecord(task), record);
 });
 
 test("CRITICAL offline-photos: an unverified legacy cache is repaired instead of accepted as full-size", async () => {
@@ -1985,6 +2012,31 @@ function photoGalleryTouchHarness() {
     trackListeners
   };
 }
+
+test("CRITICAL offline-photos: vendored cache engine matches its versioned manifest", () => {
+  const asset = readProjectFile("src/vendor/vniipo-photo-cache-engine.js");
+  const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-cache-engine-manifest.json"));
+  const adapter = readProjectFile("src/sync/photo-cache-engine.js");
+  assert.equal(PHOTO_CACHE_ENGINE_VERSION, "1.0.0");
+  assert.equal(PHOTO_CACHE_ENGINE_CONTRACT_VERSION, 1);
+  assert.equal(manifest.version, PHOTO_CACHE_ENGINE_VERSION);
+  assert.equal(manifest.contractVersion, PHOTO_CACHE_ENGINE_CONTRACT_VERSION);
+  assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
+  assert.equal(manifest.sha256, "cc0b87f2d0cc17278a2490aa1e85bebb3228ca24c942f14910143a2aad9f2821");
+  assert.match(adapter, /from "\.\.\/vendor\/vniipo-photo-cache-engine\.js"/);
+  assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
+});
+
+test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remote namespace", () => {
+  const [task] = collectOfflinePhotoCacheTasks({
+    items: { item1: { photos: [{ id: "photo-1", url: "https://example.test/photo/file" }] } },
+    containers: {}
+  });
+  assert.equal(task.namespace, "offline-remote");
+  assert.equal(task.cachePurpose, "offline-remote");
+  assert.equal("blob" in task, false);
+  assert.equal("thumbBlob" in task, false);
+});
 
 test("CRITICAL offline-photos: first stationary touch opens a packing photo during iOS momentum", () => {
   const runtime = globalThis.VniipoPhotoGallery;

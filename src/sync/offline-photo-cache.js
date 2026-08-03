@@ -2,9 +2,18 @@ import { normalizeRemotePhotoUrl, remotePhotoSourceFromRecord } from "./photos.j
 import { photoBlobsAreDistinct, photoCacheSourceSignature } from "./photo-cache-quality.js";
 import {
   cacheNormalizedPhotoTasks,
-  hydrateNormalizedPhotoTasks
+  hydrateNormalizedPhotoTasks,
+  reconcileNormalizedPhotoTasks
 } from "./photo-cache-engine.js";
-import { photoObjectUrlKey } from "../ui/photo-object-url-registry.js";
+
+const OFFLINE_REMOTE_PHOTO_NAMESPACE = "offline-remote";
+
+function decorateBikepackingCacheRecord(task, cached, record) {
+  return {
+    ...record,
+    cachePurpose: cached?.cachePurpose || task.cachePurpose || OFFLINE_REMOTE_PHOTO_NAMESPACE
+  };
+}
 
 function photoUrl(photo, variant) {
   if (!photo || typeof photo !== "object") return "";
@@ -47,6 +56,7 @@ export function collectOfflinePhotoCacheTasks(targetState) {
         hasDistinctThumbSource: Boolean(fullUrl && thumbUrl && fullUrl !== thumbUrl),
         signature,
         sourceSignature: signature,
+        namespace: OFFLINE_REMOTE_PHOTO_NAMESPACE,
         cachePurpose: "offline-remote",
         allowUnversionedVerifiedFull: Boolean(localId && key === localId),
         fileName: String(photo.fileName || `${key}.jpg`),
@@ -80,6 +90,7 @@ export function collectPhotoHydrationTasks(targetState) {
       tasks.push({
         key,
         sourceSignature,
+        namespace: OFFLINE_REMOTE_PHOTO_NAMESPACE,
         cachePurpose: "offline-remote",
         allowUnversionedVerifiedFull: Boolean(localId && key === localId)
       });
@@ -101,6 +112,7 @@ export async function cacheRemotePhotosForOffline(targetState, {
   fetchImpl = globalThis.fetch,
   getCachedPhoto = async () => null,
   putCachedPhoto = async () => {},
+  getMemoryRecord,
   concurrency = 2,
   timeoutMs = 30000,
   onPending = () => {},
@@ -114,11 +126,13 @@ export async function cacheRemotePhotosForOffline(targetState, {
     fetchImpl,
     getCachedPhoto,
     putCachedPhoto,
+    getMemoryRecord,
     concurrency,
     timeoutMs,
     onPending,
     onRecord,
-    blobsAreDistinct: photoBlobsAreDistinct
+    blobsAreDistinct: photoBlobsAreDistinct,
+    decorateRecord: decorateBikepackingCacheRecord
   });
 }
 
@@ -163,23 +177,28 @@ export function createOfflinePhotoRenderCoordinator({
     pendingFingerprint = nextFingerprint;
     const runGeneration = generation;
     pendingRun = (async () => {
-      const activeObjectUrlKeys = new Set(tasks.map((task) =>
-        photoObjectUrlKey(task.key, task.sourceSignature)));
       await hydrateNormalizedPhotoTasks(tasks, {
         getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
         putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
-        onRecord: (task, _record, blobs) => {
+        getMemoryRecord: (task) => objectUrls?.getRecord?.(task),
+        decorateRecord: decorateBikepackingCacheRecord,
+        isCurrent: () => runGeneration === generation,
+        onRecord: (task, record) => {
           if (runGeneration !== generation) return;
-          objectUrls?.ensure?.(task.key, task.sourceSignature, blobs.previewBlob || blobs.fullBlob);
+          objectUrls?.setRecord?.(task, record);
         }
       });
       if (runGeneration !== generation) return null;
-      objectUrls?.reconcile?.(activeObjectUrlKeys);
-      const activePhotoIds = new Set(tasks.map((task) => task.key));
-      const cachedRecords = await listCachedPhotos(scopeKey).catch(() => []);
-      await Promise.all(cachedRecords
-        .filter((record) => record?.cachePurpose === "offline-remote" && !activePhotoIds.has(record.id))
-        .map((record) => deleteCachedPhoto(record.id, scopeKey).catch(() => null)));
+      objectUrls?.reconcile?.(tasks);
+      await reconcileNormalizedPhotoTasks(tasks, {
+        namespaces: [OFFLINE_REMOTE_PHOTO_NAMESPACE],
+        listCachedPhotos: async () => (await listCachedPhotos(scopeKey).catch(() => []))
+          .map((record) => ({
+            ...record,
+            namespace: record?.namespace || record?.cachePurpose || ""
+          })),
+        deleteCachedPhoto: (id) => deleteCachedPhoto(id, scopeKey)
+      });
       preparedFingerprint = nextFingerprint;
       objectUrls?.setReady?.(true);
       return { total: tasks.length };

@@ -1,59 +1,57 @@
+import { createScopedPhotoBlobUrlRegistry } from "../sync/photo-cache-engine.js";
+
 export function photoObjectUrlKey(id, sourceSignature = "") {
   return `${String(id || "").trim()}\u0000${String(sourceSignature || "").trim()}`;
 }
 
-export function createPhotoObjectUrlRegistry({
-  createObjectUrl = (blob) => URL.createObjectURL(blob),
-  revokeObjectUrl = (url) => URL.revokeObjectURL(url)
-} = {}) {
-  const entries = new Map();
-  let scopeKey = "";
-  let ready = false;
+export function createPhotoObjectUrlRegistry(options = {}) {
+  const registry = createScopedPhotoBlobUrlRegistry(options);
 
-  const remove = (key) => {
-    const entry = entries.get(key);
-    if (!entry) return;
-    revokeObjectUrl(entry.url);
-    entries.delete(key);
+  const ensure = (id, sourceSignature, blob, variant = "preview") => {
+    if (!id || !blob) return "";
+    const task = { key: id, sourceSignature };
+    const current = registry.getRecord(task) || {
+      id,
+      sourceSignature,
+      fullBlobVerified: false
+    };
+    const record = variant === "full"
+      ? { ...current, blob, fullBlobVerified: true }
+      : { ...current, thumbBlob: blob };
+    registry.setRecord(task, record);
+    return registry.get(id, sourceSignature, variant);
   };
 
   return {
-    activateScope(nextScopeKey) {
-      const next = String(nextScopeKey || "guest");
-      if (next !== scopeKey) {
-        for (const key of [...entries.keys()]) remove(key);
-        scopeKey = next;
-      }
-      ready = false;
+    activateScope: registry.activateScope,
+    currentScope: registry.currentScope,
+    currentGeneration: registry.currentGeneration,
+    isCurrent: registry.isCurrent,
+    get(id, sourceSignature = "", variant = "preview") {
+      return registry.get(id, sourceSignature, variant);
     },
-    currentScope: () => scopeKey,
-    get(id, sourceSignature = "") {
-      return entries.get(photoObjectUrlKey(id, sourceSignature))?.url || "";
+    sources(id, sourceSignature = "") {
+      return registry.sources(id, sourceSignature);
     },
-    ensure(id, sourceSignature, blob) {
-      if (!id || !blob) return "";
-      const key = photoObjectUrlKey(id, sourceSignature);
-      const existing = entries.get(key);
-      if (existing?.blob === blob) return existing.url;
-      if (existing) remove(key);
-      const url = createObjectUrl(blob);
-      entries.set(key, { blob, url, managed: true });
-      return url;
+    getRecord(task, sourceSignature = "") {
+      return typeof task === "object"
+        ? registry.getRecord(task)
+        : registry.getRecord(task, sourceSignature);
     },
-    reconcile(activeKeys) {
-      const keep = activeKeys instanceof Set ? activeKeys : new Set(activeKeys || []);
-      for (const [key, entry] of entries) {
-        if (entry.managed && !keep.has(key)) remove(key);
-      }
+    setRecord(task, record) {
+      return registry.setRecord(task, record);
     },
-    setReady(value = true) {
-      ready = Boolean(value);
+    ensure,
+    reconcile(tasks) {
+      registry.reconcile(tasks);
     },
-    isReady: () => ready,
-    clear() {
-      for (const key of [...entries.keys()]) remove(key);
-      ready = false;
+    remove(id, sourceSignature = "") {
+      registry.remove(id, sourceSignature);
     },
-    size: () => entries.size
+    setReady: registry.setReady,
+    isReady: registry.isReady,
+    clear: registry.clear,
+    size: registry.size,
+    urlCount: registry.urlCount
   };
 }

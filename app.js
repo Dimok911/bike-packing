@@ -1375,9 +1375,10 @@ const offlinePhotoCacheController = createOfflinePhotoCacheController({
       fetchImpl: window.fetch.bind(window),
       getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
       putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
-      onRecord: (task, _record, blobs) => {
+      getMemoryRecord: (task) => photoObjectUrls.getRecord(task),
+      onRecord: (task, record) => {
         if (scopeKey !== localStorageScopeKey) return;
-        photoObjectUrls.ensure(task.key, task.sourceSignature, blobs.previewBlob || blobs.fullBlob);
+        photoObjectUrls.setRecord(task, record);
       }
     };
   }
