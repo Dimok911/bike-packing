@@ -61,6 +61,7 @@ import {
   photoLightboxAutoSize,
   updatePhotoLightboxAutoSize
 } from "../../src/ui/photo-lightbox-sizing.js";
+import { stepSharedPhotoInertia } from "../../src/ui/shared-photo-gallery.js";
 import {
   bindDialogBackdropClickGuard,
   bindFilePickerDialogDismissGuard
@@ -1898,6 +1899,50 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*scroll-snap-type:\s*x mandatory;/);
   assert.match(styles, /\.photo-lightbox-slide\s*\{[\s\S]*flex:\s*0 0 100%;[\s\S]*scroll-snap-align:\s*center;/);
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
+});
+
+test("CRITICAL offline-photos: shared 2.0.1 inertia is available through the cached fallback", () => {
+  const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
+  const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  const next = stepSharedPhotoInertia({
+    x: 10,
+    y: -4,
+    velocityX: 1,
+    velocityY: -0.5,
+    elapsedMs: 16
+  });
+
+  assert.equal(next.x, 26);
+  assert.equal(next.y, -12);
+  assert.ok(next.velocityX > 0 && next.velocityX < 1);
+  assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
+  assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
+  assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
+  assert.match(fallbackSource, /const VERSION = "2\.0\.1"/);
+  assert.match(fallbackSource, /function stepInertia\(/);
+});
+
+test("CRITICAL offline-photos: zoomed lightbox pans with bounded cancellable inertia only", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /PHOTO_LIGHTBOX_INERTIA_DURATION_MS = 650/);
+  assert.match(source, /stepSharedPhotoInertia\(\{[\s\S]*requestAnimationFrame\(step\)/);
+  assert.match(source, /scale <= 1 \|\| reducedMotion/);
+  assert.match(source, /if \(panX !== steppedX\) panVelocityX = 0;[\s\S]*if \(panY !== steppedY\) panVelocityY = 0;/);
+  assert.match(source, /targetImage\.addEventListener\("pointerdown",[\s\S]*cancelPanInertia\(\)/);
+  assert.match(source, /overlay\.addEventListener\("wheel",[\s\S]*cancelPanInertia\(\)/);
+  assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*cancelPanInertia\(\)/);
+  assert.match(source, /lightboxResizeHandler = \(\) => \{[\s\S]*resetTransform\(\)/);
+  assert.match(source, /const close = \(\) => \{[\s\S]*cancelPanInertia\(false\)/);
+});
+
+test("CRITICAL offline-photos: shared thumbnails contain and interrupted edge swipes settle", () => {
+  const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(fallbackSource, /\.vpg-slide>img,\.vpg-slide img\{[^}]*object-fit:contain;[^}]*background:var\(--vpg-image-background,#fff\)/);
+  assert.match(fallbackSource, /if \(gesture\.moved\) \{[\s\S]{0,160}scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
+  assert.match(fallbackSource, /listen\(track, "touchcancel",[\s\S]{0,180}scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
+  assert.match(styles, /\.item-photo img,[\s\S]{0,180}object-fit:\s*contain;/);
+  assert.doesNotMatch(styles, /\.vpg-slide[^}]*object-fit:\s*cover/);
 });
 
 test("CRITICAL offline-photos: lightbox backdrop closes without stealing side navigation clicks", () => {

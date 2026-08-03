@@ -16,16 +16,21 @@ import { currentDocumentLanguage } from "../utils/language.js";
 import { updatePhotoLightboxAutoSize } from "./photo-lightbox-sizing.js";
 import {
   bindSharedPhotoGalleries,
-  createSharedFullscreenSwitcher
+  createSharedFullscreenSwitcher,
+  stepSharedPhotoInertia
 } from "./shared-photo-gallery.js";
 
 let lightboxObjectUrls = new Set();
 let lightboxKeydownHandler = null;
 let lightboxLoadingNotice = null;
 let lightboxResizeHandler = null;
+let lightboxInertiaCancel = null;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
+const PHOTO_LIGHTBOX_INERTIA_DURATION_MS = 650;
+const PHOTO_LIGHTBOX_INERTIA_MIN_SPEED = 0.025;
+const PHOTO_LIGHTBOX_INERTIA_MAX_SPEED = 2.4;
 const decodedPhotoLightboxSources = new Set();
 
 function localText(en, ru) {
@@ -542,7 +547,9 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
   let loadingNotice = null;
+  let cancelPanInertia = () => {};
   const close = () => {
+    cancelPanInertia(false);
     if (scrollFrame) cancelAnimationFrame(scrollFrame);
     if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
     fullscreenSwitcher?.destroy();
@@ -574,7 +581,16 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   let moved = false;
   let pinching = false;
   let touchStartedWithPinch = false;
+  let panVelocityX = 0;
+  let panVelocityY = 0;
+  let panVelocitySampleX = 0;
+  let panVelocitySampleY = 0;
+  let panVelocitySampleTime = 0;
+  let inertiaFrame = 0;
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  const now = () => globalThis.performance?.now?.() ?? Date.now();
   const resetTransform = () => {
+    cancelPanInertia(false);
     image?.style?.removeProperty("transform");
     scale = 1;
     panX = 0;
@@ -596,6 +612,98 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     clampPan();
     image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
     track.classList.toggle("photo-lightbox-track-zoomed", scale > 1);
+  };
+  const resetPanVelocity = (clientX, clientY, timestamp = now()) => {
+    panVelocityX = 0;
+    panVelocityY = 0;
+    panVelocitySampleX = Number(clientX) || 0;
+    panVelocitySampleY = Number(clientY) || 0;
+    panVelocitySampleTime = timestamp;
+  };
+  const measurePanVelocity = (clientX, clientY, timestamp = now()) => {
+    const elapsed = timestamp - panVelocitySampleTime;
+    const deltaX = (Number(clientX) || 0) - panVelocitySampleX;
+    const deltaY = (Number(clientY) || 0) - panVelocitySampleY;
+    if (elapsed > 0 && elapsed <= 120) {
+      if (deltaX || deltaY) {
+        const nextVelocityX = deltaX / elapsed;
+        const nextVelocityY = deltaY / elapsed;
+        panVelocityX = panVelocityX * 0.35 + nextVelocityX * 0.65;
+        panVelocityY = panVelocityY * 0.35 + nextVelocityY * 0.65;
+      }
+    } else if (elapsed > 120) {
+      panVelocityX = 0;
+      panVelocityY = 0;
+    }
+    panVelocitySampleX = Number(clientX) || 0;
+    panVelocitySampleY = Number(clientY) || 0;
+    panVelocitySampleTime = timestamp;
+  };
+  cancelPanInertia = (settle = true) => {
+    if (inertiaFrame) cancelAnimationFrame(inertiaFrame);
+    inertiaFrame = 0;
+    panVelocityX = 0;
+    panVelocityY = 0;
+    if (settle && image) apply();
+  };
+  lightboxInertiaCancel = () => cancelPanInertia(false);
+  const startPanInertia = () => {
+    if (inertiaFrame) cancelAnimationFrame(inertiaFrame);
+    inertiaFrame = 0;
+    if (scale <= 1 || reducedMotion || now() - panVelocitySampleTime > 100) {
+      apply();
+      return;
+    }
+    const speed = Math.hypot(panVelocityX, panVelocityY);
+    if (speed < PHOTO_LIGHTBOX_INERTIA_MIN_SPEED) {
+      apply();
+      return;
+    }
+    if (speed > PHOTO_LIGHTBOX_INERTIA_MAX_SPEED) {
+      const speedRatio = PHOTO_LIGHTBOX_INERTIA_MAX_SPEED / speed;
+      panVelocityX *= speedRatio;
+      panVelocityY *= speedRatio;
+    }
+    const startedAt = now();
+    let previousFrameAt = startedAt;
+    const step = (timestamp) => {
+      if (!overlay.isConnected || scale <= 1) {
+        cancelPanInertia();
+        return;
+      }
+      const next = stepSharedPhotoInertia({
+        x: panX,
+        y: panY,
+        velocityX: panVelocityX,
+        velocityY: panVelocityY,
+        elapsedMs: timestamp - previousFrameAt
+      });
+      if (!next) {
+        cancelPanInertia();
+        return;
+      }
+      previousFrameAt = timestamp;
+      panX = next.x;
+      panY = next.y;
+      panVelocityX = next.velocityX;
+      panVelocityY = next.velocityY;
+      const steppedX = panX;
+      const steppedY = panY;
+      clampPan();
+      if (panX !== steppedX) panVelocityX = 0;
+      if (panY !== steppedY) panVelocityY = 0;
+      apply();
+      const elapsed = timestamp - startedAt;
+      if (
+        elapsed >= PHOTO_LIGHTBOX_INERTIA_DURATION_MS
+        || Math.hypot(panVelocityX, panVelocityY) < PHOTO_LIGHTBOX_INERTIA_MIN_SPEED
+      ) {
+        cancelPanInertia();
+        return;
+      }
+      inertiaFrame = requestAnimationFrame(step);
+    };
+    inertiaFrame = requestAnimationFrame(step);
   };
   const updateNavigation = () => {
     fullscreenSwitcher?.render(activeIndex, false);
@@ -652,6 +760,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   let bindImageInteractions = () => {};
   const showPhoto = async (nextIndex, { force = false } = {}) => {
     if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
+    cancelPanInertia(false);
     const token = ++renderToken;
     loadingNotice.settle("idle");
     const entry = entries[nextIndex];
@@ -858,11 +967,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     targetImage.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "touch") return;
       if (pinching) return;
+      cancelPanInertia();
       targetImage.setPointerCapture(event.pointerId);
       startX = event.clientX;
       startY = event.clientY;
       startPanX = panX;
       startPanY = panY;
+      resetPanVelocity(event.clientX, event.clientY);
       moved = false;
     });
     targetImage.addEventListener("pointermove", (event) => {
@@ -870,6 +981,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       if (!targetImage.hasPointerCapture(event.pointerId)) return;
       const dx = event.clientX - startX;
       const dy = event.clientY - startY;
+      measurePanVelocity(event.clientX, event.clientY);
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       if (scale <= 1) return;
       panX = startPanX + dx;
@@ -879,15 +991,19 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     targetImage.addEventListener("pointerup", (event) => {
       if (event.pointerType === "touch") return;
       if (targetImage.hasPointerCapture(event.pointerId)) targetImage.releasePointerCapture(event.pointerId);
+      measurePanVelocity(event.clientX, event.clientY);
       const dx = event.clientX - startX;
       const dy = event.clientY - startY;
       if (scale <= 1 && Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
         navigatePhoto(activeIndex + (dx < 0 ? 1 : -1));
+      } else if (scale > 1 && moved) {
+        startPanInertia();
       }
     });
     targetImage.addEventListener("pointercancel", (event) => {
       if (event.pointerType === "touch") return;
       if (targetImage.hasPointerCapture(event.pointerId)) targetImage.releasePointerCapture(event.pointerId);
+      cancelPanInertia();
     });
   };
   lightboxImages.forEach(bindImageInteractions);
@@ -904,6 +1020,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
+    cancelPanInertia();
     const delta = event.deltaY < 0 ? 0.18 : -0.18;
     scale = Math.max(1, Math.min(4, scale + delta));
     if (scale === 1) {
@@ -915,6 +1032,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
   let pinchDistance = 0;
   let pinchScale = 1;
   overlay.addEventListener("touchstart", (event) => {
+    cancelPanInertia();
     if (isPhotoLightboxControlTarget(event.target)) return;
     if (event.touches.length === 1) {
       const touch = event.touches[0];
@@ -927,11 +1045,13 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       startPanY = panY;
       touchStartScrollLeft = track.scrollLeft;
       touchStartTime = Date.now();
+      resetPanVelocity(touch.clientX, touch.clientY);
       moved = false;
       return;
     }
     if (event.touches.length !== 2) return;
     event.preventDefault();
+    cancelPanInertia();
     const center = touchCenter(event.touches[0], event.touches[1]);
     pinching = true;
     touchStartedWithPinch = true;
@@ -950,6 +1070,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       const touch = event.touches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
+      measurePanVelocity(touch.clientX, touch.clientY);
       if (Math.hypot(dx, dy) > PHOTO_GALLERY_TAP_MOVE_LIMIT_PX) moved = true;
       if (scale <= 1) return;
       event.preventDefault();
@@ -960,6 +1081,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
     }
     if (event.touches.length !== 2 || !pinchDistance) return;
     event.preventDefault();
+    cancelPanInertia();
     const center = touchCenter(event.touches[0], event.touches[1]);
     const nextDistance = touchDistance(event.touches[0], event.touches[1]);
     scale = Math.max(1, Math.min(4, pinchScale * (nextDistance / pinchDistance)));
@@ -982,6 +1104,7 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
       startY = touch.clientY;
       startPanX = panX;
       startPanY = panY;
+      resetPanVelocity(touch.clientX, touch.clientY);
       return;
     }
     if (!touchStartedWithPinch && !moved && scale <= 1 && event.changedTouches.length) {
@@ -1008,11 +1131,17 @@ export async function openPhotoLightbox(sourceImage, { gallery = null, index = -
         event.stopPropagation();
       }
     }
+    if (!touchStartedWithPinch && moved && scale > 1 && event.changedTouches.length) {
+      const touch = event.changedTouches[0];
+      measurePanVelocity(touch.clientX, touch.clientY);
+      startPanInertia();
+    }
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
+    cancelPanInertia();
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
@@ -1314,6 +1443,8 @@ function closePhotoLightboxOnEscape(event) {
 }
 
 export function closePhotoLightbox() {
+  lightboxInertiaCancel?.();
+  lightboxInertiaCancel = null;
   const overlay = document.querySelector(".photo-lightbox");
   if (overlay?.open && typeof overlay.close === "function") overlay.close();
   overlay?.remove();

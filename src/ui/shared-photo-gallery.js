@@ -6,6 +6,7 @@ const bindings = new Set();
 let stableLoadStarted = false;
 
 const runtime = () => globalThis.VniipoPhotoGallery;
+const fallbackRuntime = runtime();
 
 const updateRuntimeLabel = () => {
   const api = runtime();
@@ -59,6 +60,11 @@ export function bindSharedPhotoGalleries(root, options = {}) {
 
 export function createSharedFullscreenSwitcher(options = {}) {
   return runtime()?.createFullscreenSwitcher?.(options) || null;
+}
+
+export function stepSharedPhotoInertia(options = {}) {
+  const helper = runtime()?.helpers?.stepInertia || fallbackRuntime?.helpers?.stepInertia;
+  return helper?.(options) || null;
 }
 
 loadSharedPhotoGallery();
