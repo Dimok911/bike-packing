@@ -2128,18 +2128,20 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.3 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.4 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.3");
+  assert.equal(manifest.version, "2.1.4");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "82b216c98522adccce40854cb899b1e4e0a2f3ee3d85d84b990dc21cc1b3131b");
+  assert.equal(manifest.sha256, "71df9063759e891e3686e6d8ebc3a159e0a2feb46ebf842b9654b4c9da538ffa");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
   assert.match(asset, /function createFullscreenSourceController\(/);
   assert.match(asset, /function replaceFullscreenImageSource\(/);
+  assert.match(asset, /const fullscreenControlStyleId = "vniipo-photo-gallery-v2-fullscreen-controls"/);
+  assert.match(asset, /ensureFullscreenControlStyles\(doc\)/);
 });
 
 test("CRITICAL offline-photos: cached stable 2.0.1 cannot hide the bundled fullscreen lifecycle", async () => {
@@ -2339,7 +2341,7 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.3 fallback", () => {
+test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.4 fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const next = stepSharedPhotoInertia({
@@ -2356,7 +2358,7 @@ test("CRITICAL offline-photos: shared inertia is available through the cached 2.
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.3"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.4"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 });
 
