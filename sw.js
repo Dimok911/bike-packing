@@ -1,9 +1,9 @@
-const CACHE_NAME = "bike-packing-prototype-v1429";
+const CACHE_NAME = "bike-packing-prototype-v1430";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=1429",
-  "./app.js?v=1429",
+  "./styles.css?v=1430",
+  "./app.js?v=1430",
   "./manifest.webmanifest"
 ];
 

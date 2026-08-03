@@ -1081,6 +1081,7 @@ const publishedItemKeyStateCache = createPublicTemplatePayloadCache({
   normalizePayload: normalizePublishedStatePayload
 });
 const REQUIRED_ADMIN_API_CAPABILITIES = [
+  "slidingSessionRenewal",
   "dictionaryPhysicalEntityRows",
   "dictionaryCustomEntityRows",
   "dictionaryHiddenDefaultRows",
@@ -1146,7 +1147,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-07-26.magic-link-client-localization-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-08-03.sliding-session-renewal-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
