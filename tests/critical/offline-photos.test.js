@@ -69,7 +69,10 @@ import {
   photoLightboxAutoSize,
   updatePhotoLightboxAutoSize
 } from "../../src/ui/photo-lightbox-sizing.js";
-import { stepSharedPhotoInertia } from "../../src/ui/shared-photo-gallery.js";
+import {
+  createSharedFullscreenSourceController,
+  stepSharedPhotoInertia
+} from "../../src/ui/shared-photo-gallery.js";
 import {
   bindDialogBackdropClickGuard,
   bindFilePickerDialogDismissGuard
@@ -521,6 +524,36 @@ test("CRITICAL offline-photos: Bikepacking registry retains separate preview and
     full: "blob:variant-2"
   });
   assert.equal(objectUrls.getRecord(task), record);
+});
+
+test("CRITICAL offline-photos: a hydrated card advertises its verified full without displaying it as the thumbnail", () => {
+  const photo = {
+    id: "photo-direct-full",
+    url: "https://api.example.test/photo-direct-full/file",
+    thumbUrl: "https://api.example.test/photo-direct-full/thumb",
+    updatedAt: "v1"
+  };
+  const [task] = collectOfflinePhotoCacheTasks({
+    items: { item1: { photos: [photo] } },
+    containers: {}
+  });
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: (blob) => blob.size === 7 ? "blob:preview" : "blob:verified-full",
+    revokeObjectUrl: () => {}
+  });
+  objectUrls.activateScope("id:user-1");
+  objectUrls.setReady(true);
+  objectUrls.setRecord(task, {
+    id: task.key,
+    sourceSignature: task.sourceSignature,
+    thumbBlob: new Blob(["preview"]),
+    blob: new Blob(["verified-full"]),
+    fullBlobVerified: true
+  });
+  const html = renderPhotoSlide(photo, { photoObjectUrls: objectUrls });
+  assert.match(html, /src="blob:preview"/);
+  assert.match(html, /data-photo-full-src="blob:verified-full"/);
+  assert.match(html, /data-photo-verified-full-src="blob:verified-full"/);
 });
 
 test("CRITICAL offline-photos: an unverified legacy cache is repaired instead of accepted as full-size", async () => {
@@ -1800,6 +1833,7 @@ test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reus
     thumbBlob: new Blob(["thumb"])
   };
   let fetchCount = 0;
+  let memoryRecord = null;
   const options = {
     getCachedPhotoForLightbox: async () => cached,
     putCachedPhotoForLightbox: async (record) => { cached = record; },
@@ -1810,7 +1844,11 @@ test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reus
         blob: async () => new Blob([url.endsWith("/thumb") ? "thumb" : "full-size"])
       };
     },
-    createObjectUrl: (blob) => `blob:photo-${blob.size}-${fetchCount}`
+    createObjectUrl: (blob) => `blob:photo-${blob.size}-${fetchCount}`,
+    onCachedRecord: async (record) => {
+      memoryRecord = record;
+      return "blob:memory-full";
+    }
   };
 
   const first = await resolvePhotoLightboxSource(entry, options);
@@ -1821,6 +1859,9 @@ test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reus
   assert.equal(cached.fullBlobVerified, true);
   assert.equal(cached.sourceSignature, sourceSignature);
   assert.equal(await cached.blob.text(), "full-size");
+  assert.equal(memoryRecord, cached);
+  assert.equal(first.src, "blob:memory-full");
+  assert.equal(first.objectUrl, "");
   assert.equal(reopenedAfterRerender.isFull, true);
   assert.equal(fetchCount, afterFirstFetches);
 });
@@ -2027,6 +2068,42 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.1 manifest", () => {
+  const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
+  assert.equal(manifest.version, "2.1.1");
+  assert.equal(manifest.contractVersion, 2);
+  assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
+  assert.equal(manifest.sha256, "a8a8ee240f2aba8aa17450fa9651e509ebc3935bc21c29c5aacf802d1746c973");
+  assert.match(asset, /fullscreenSourceLifecycle: 1/);
+  assert.match(asset, /function createFullscreenSourceController\(/);
+});
+
+test("CRITICAL offline-photos: cached stable 2.0.1 cannot hide the bundled fullscreen lifecycle", async () => {
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  globalThis.VniipoPhotoGallery = {
+    version: "2.0.1",
+    contractVersion: 2,
+    helpers: currentRuntime.helpers
+  };
+  try {
+    const committed = [];
+    const controller = createSharedFullscreenSourceController({
+      entries: [{ previewSrc: "preview", verifiedFullSrc: "blob:full" }],
+      getPreviewSource: (entry) => entry.previewSrc,
+      getVerifiedFullSource: (entry) => entry.verifiedFullSrc,
+      decodeSource: () => true,
+      commitSource: ({ src }) => committed.push(src)
+    });
+    assert.equal(controller.initialSource(0), "blob:full");
+    assert.equal((await controller.activate(0)).success, true);
+    assert.deepEqual(committed, ["blob:full"]);
+    controller.destroy();
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
+});
+
 test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remote namespace", () => {
   const [task] = collectOfflinePhotoCacheTasks({
     items: { item1: { photos: [{ id: "photo-1", url: "https://example.test/photo/file" }] } },
@@ -2152,7 +2229,7 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("CRITICAL offline-photos: shared 2.0.1 inertia is available through the cached fallback", () => {
+test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.1 fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const next = stepSharedPhotoInertia({
@@ -2169,7 +2246,7 @@ test("CRITICAL offline-photos: shared 2.0.1 inertia is available through the cac
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.0\.1"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.1"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 });
 
@@ -2238,10 +2315,12 @@ test("CRITICAL offline-photos: lightbox keeps the preview visible until the full
   assert.match(source, /PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450/);
   assert.match(source, /loadingNotice\.pending\(\)/);
   assert.doesNotMatch(source, /updateLoadStatus\("loading"\)/);
-  assert.match(source, /const displaySrc = readyFullSrc \|\| previewSrc;[\s\S]*image\.src = displaySrc;[\s\S]*await replacePhotoLightboxImageSource\(currentImage, next\.src/);
-  assert.match(source, /await loadAndDecode\(replacement, src\);[\s\S]*currentImage\.replaceWith\(replacement\);/);
-  assert.match(source, /await decodePhotoLightboxImage\(replacement\);/);
+  assert.match(source, /const activation = sourceController\?\.activate\(nextIndex\)[\s\S]*const displaySrc = sourceController\?\.initialSource\(nextIndex\) \|\| previewSrc;[\s\S]*image\.src = displaySrc;/);
+  assert.match(source, /const decodeLifecycleSource = async[\s\S]*await loadAndDecodePhotoLightboxImage\(replacement, src\);/);
+  assert.match(source, /const commitLifecycleSource = async[\s\S]*await replacePhotoLightboxImageSource\(currentImage, src,[\s\S]*createReplacement: \(\) => replacement/);
+  assert.match(source, /await afterPhotoLightboxPaint\(\);[\s\S]*photoLightboxImageUsesSource\(replacement, src\)/);
   assert.match(source, /photoLightboxImageUsesSource\(replacement, src\)/);
+  assert.match(source, /decodeSource: decodeLifecycleSource,[\s\S]*commitSource: commitLifecycleSource/);
   assert.match(source, /Preview · full-size photo is unavailable/);
   assert.match(source, /Предпросмотр · полная версия фото недоступна/);
   assert.match(source, /Preview · only the preview is stored/);
@@ -2257,10 +2336,10 @@ test("CRITICAL offline-photos: lightbox keeps stable geometry and never downgrad
   const styles = readProjectFile("styles.css");
   assert.match(source, /const decodedPhotoLightboxSources = new Set\(\);/);
   assert.match(source, /resolvedFullSrc: decodedPhotoLightboxSources\.has\(fullSrc\) \? fullSrc : ""/);
-  assert.match(source, /const readyFullSrc = entry\?\.resolvedFullSrc \|\| "";/);
-  assert.match(source, /image\.dataset\.photoLightboxQuality = readyFullSrc \? "full" : "preview";[\s\S]*if \(readyFullSrc\) return true;/);
-  assert.match(source, /entry\.resolvedFullSrc = next\.src;/);
-  assert.match(source, /decodedPhotoLightboxSources\.add\(next\.src\);/);
+  assert.match(source, /const readyFullSrc = entry\?\.verifiedFullSrc \|\| entry\?\.resolvedFullSrc \|\| "";/);
+  assert.match(source, /image\.dataset\.photoLightboxQuality = readyFullSrc \? "full" : "preview";/);
+  assert.match(source, /entry\.resolvedFullSrc = src;/);
+  assert.match(source, /decodedPhotoLightboxSources\.add\(src\);/);
   assert.doesNotMatch(source, /image\.src = previewSrc;/);
   assert.match(styles, /\.photo-lightbox-image\s*\{[\s\S]*width:\s*calc\(100vw - 18px\);[\s\S]*height:\s*calc\(100dvh - 18px\);[\s\S]*object-fit:\s*contain;/);
   assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-no-upscale\s*\{[\s\S]*--photo-lightbox-natural-width[\s\S]*--photo-lightbox-natural-height/);

@@ -62,6 +62,12 @@ export function createSharedFullscreenSwitcher(options = {}) {
   return runtime()?.createFullscreenSwitcher?.(options) || null;
 }
 
+export function createSharedFullscreenSourceController(options = {}) {
+  const factory = runtime()?.createFullscreenSourceController
+    || fallbackRuntime?.createFullscreenSourceController;
+  return factory?.(options) || null;
+}
+
 export function stepSharedPhotoInertia(options = {}) {
   const helper = runtime()?.helpers?.stepInertia || fallbackRuntime?.helpers?.stepInertia;
   return helper?.(options) || null;

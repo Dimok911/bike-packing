@@ -3817,6 +3817,7 @@ function renderItemPhoto(item, { force = false } = {}) {
 
 function photoGalleryBindingOptions() {
   return {
+    photoObjectUrls,
     onItemPreviewActive(index) {
       runtime.itemDialogPhotoActiveIndex = index;
       updateItemDialogPhotoPrimaryButton();
