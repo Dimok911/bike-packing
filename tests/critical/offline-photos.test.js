@@ -2128,13 +2128,13 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.2 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.3 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.2");
+  assert.equal(manifest.version, "2.1.3");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "72e61ab2673f1b51961e3ba18c0747186d71821e4f0bb0c880c17d15d3075af3");
+  assert.equal(manifest.sha256, "82b216c98522adccce40854cb899b1e4e0a2f3ee3d85d84b990dc21cc1b3131b");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2302,7 +2302,7 @@ test("CRITICAL offline-photos: lightbox close and side navigation use the shared
   assert.match(source, /if \(direction < 0 && activeIndex <= 0\) return;/);
   assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*50%;[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
   assert.doesNotMatch(styles, /\.photo-lightbox-(?:close|nav)\s*\{[^}]*(?:background|border|color):/);
-  assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*background:rgba\(40,44,52,\.82\)/);
+  assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*border:1px solid rgba\(255,255,255,\.28\)[^}]*border-radius:10px[^}]*background:rgba\(8,15,13,\.62\)/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*color:#fff/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control:focus-visible/);
   assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenControlStyles >= 1[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
@@ -2339,7 +2339,7 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.2 fallback", () => {
+test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.3 fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const next = stepSharedPhotoInertia({
@@ -2356,7 +2356,7 @@ test("CRITICAL offline-photos: shared inertia is available through the cached 2.
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.2"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.3"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 });
 
