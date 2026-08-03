@@ -1,7 +1,7 @@
 {
   "name": "vniipo-photo-cache-engine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "contractVersion": 1,
   "asset": "index.js",
-  "sha256": "cc0b87f2d0cc17278a2490aa1e85bebb3228ca24c942f14910143a2aad9f2821"
+  "sha256": "3fa7f77ff0bc6bc2d2a113938d04a52cfbb1d149c3a823462e1488972391e488"
 }

@@ -9,7 +9,9 @@ import { photoBlobsAreDistinct, photoCacheSourceSignature } from "../sync/photo-
 import {
   cachedPhotoMatchesTask,
   cachedPhotoPreview,
-  cachedPhotoVerifiedFull
+  cachedPhotoVerifiedFull,
+  downloadPhotoBlob,
+  registerVerifiedPhotoRecord
 } from "../sync/photo-cache-engine.js";
 import {
   normalizeItemPhotos,
@@ -23,6 +25,10 @@ import {
   bindSharedPhotoGalleries,
   createSharedFullscreenSourceController,
   createSharedFullscreenSwitcher,
+  decodeSharedFullscreenImage,
+  loadAndDecodeSharedFullscreenImage,
+  replaceSharedFullscreenImageSource,
+  sharedFullscreenImageUsesSource,
   stepSharedPhotoInertia
 } from "./shared-photo-gallery.js";
 
@@ -563,8 +569,8 @@ export async function openPhotoLightbox(sourceImage, {
       </div>`
     : "";
   overlay.innerHTML = `
-    <button class="photo-lightbox-close" type="button" aria-label="${closeLabel}">×</button>
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev" type="button" aria-label="${previousLabel}"><span aria-hidden="true">‹</span></button>` : ""}
+    <button class="photo-lightbox-close vpg-fullscreen-control vpg-fullscreen-close" type="button" aria-label="${closeLabel}">×</button>
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-prev vpg-fullscreen-control vpg-fullscreen-nav" type="button" aria-label="${previousLabel}"><span aria-hidden="true">‹</span></button>` : ""}
     <div class="photo-lightbox-track">
       ${slidesHtml}
     </div>
@@ -573,7 +579,7 @@ export async function openPhotoLightbox(sourceImage, {
       <span data-photo-lightbox-status-text>${loadingFullLabel}</span>
     </div>
     ${dotsHtml}
-    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
+    ${hasNavigation ? `<button class="photo-lightbox-nav photo-lightbox-next vpg-fullscreen-control vpg-fullscreen-nav" type="button" aria-label="${nextLabel}"><span aria-hidden="true">›</span></button>` : ""}
   `;
   document.body.append(overlay);
   if (typeof overlay.showModal === "function") {
@@ -759,8 +765,14 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const updateNavigation = () => {
     fullscreenSwitcher?.render(activeIndex, false);
-    if (prevButton) prevButton.setAttribute("aria-disabled", activeIndex <= 0 ? "true" : "false");
-    if (nextButton) nextButton.setAttribute("aria-disabled", activeIndex >= entries.length - 1 ? "true" : "false");
+    if (prevButton) {
+      prevButton.disabled = activeIndex <= 0;
+      prevButton.setAttribute("aria-disabled", prevButton.disabled ? "true" : "false");
+    }
+    if (nextButton) {
+      nextButton.disabled = activeIndex >= entries.length - 1;
+      nextButton.setAttribute("aria-disabled", nextButton.disabled ? "true" : "false");
+    }
     lightboxDots.forEach((dot, dotIndex) => {
       const active = dotIndex === activeIndex;
       dot.classList.toggle("active", active);
@@ -821,9 +833,9 @@ export async function openPhotoLightbox(sourceImage, {
     const currentImage = lightboxImages[entryIndex];
     if (!currentImage || !src || signal?.aborted) return false;
     const key = preparedImageKey(entryIndex, src);
-    if (photoLightboxImageUsesSource(currentImage, src)) {
+    if (sharedFullscreenImageUsesSource(currentImage, src)) {
       try {
-        await decodePhotoLightboxImage(currentImage);
+        await decodeSharedFullscreenImage(currentImage, { signal });
       } catch (error) {
         if (signal?.aborted) throw abortLifecycleDecode();
         throw error;
@@ -838,18 +850,14 @@ export async function openPhotoLightbox(sourceImage, {
     replacement.removeAttribute?.("sizes");
     replacement.removeAttribute?.("loading");
     replacement.decoding = "async";
-    const cancelLoad = () => replacement.removeAttribute?.("src");
-    signal?.addEventListener?.("abort", cancelLoad, { once: true });
     try {
-      await loadAndDecodePhotoLightboxImage(replacement, src);
+      await loadAndDecodeSharedFullscreenImage(replacement, src, { signal });
     } catch (error) {
       if (signal?.aborted) throw abortLifecycleDecode();
       throw error;
-    } finally {
-      signal?.removeEventListener?.("abort", cancelLoad);
     }
     if (signal?.aborted) throw abortLifecycleDecode();
-    if (!photoLightboxImageUsesSource(replacement, src)) return false;
+    if (!sharedFullscreenImageUsesSource(replacement, src)) return false;
     preparedFullImages.set(key, replacement);
     return true;
   };
@@ -862,35 +870,29 @@ export async function openPhotoLightbox(sourceImage, {
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
+    let visibleImage = replacement;
     try {
-      if (replacement === currentImage) {
-        if (!shouldCommit()) return false;
-        await decodePhotoLightboxImage(replacement);
-        await afterPhotoLightboxPaint();
-        if (!shouldCommit() || !photoLightboxImageUsesSource(replacement, src)) return false;
-        await decodePhotoLightboxImage(replacement);
-      } else {
-        await replacePhotoLightboxImageSource(currentImage, src, {
-          createReplacement: () => replacement,
-          shouldCommit,
-          onReplaced: (visibleImage) => {
-            lightboxImages[entryIndex] = visibleImage;
-            if (activeIndex === entryIndex) image = visibleImage;
-            bindImageInteractions(visibleImage);
-          },
-          onRollback: (restoredImage) => {
-            lightboxImages[entryIndex] = restoredImage;
-            if (activeIndex === entryIndex) image = restoredImage;
-          }
-        });
-      }
+      await replacePhotoLightboxImageSource(currentImage, src, {
+        ...(replacement === currentImage ? {} : { createReplacement: () => replacement }),
+        shouldCommit,
+        onReplaced: (nextImage) => {
+          visibleImage = nextImage;
+          lightboxImages[entryIndex] = nextImage;
+          if (activeIndex === entryIndex) image = nextImage;
+          bindImageInteractions(nextImage);
+        },
+        onRollback: (restoredImage) => {
+          lightboxImages[entryIndex] = restoredImage;
+          if (activeIndex === entryIndex) image = restoredImage;
+        }
+      });
     } catch {
       return false;
     }
-    replacement.dataset.photoLightboxQuality = "full";
+    visibleImage.dataset.photoLightboxQuality = "full";
     entry.resolvedFullSrc = src;
     if (!String(src).startsWith("blob:")) decodedPhotoLightboxSources.add(src);
-    updatePhotoLightboxAutoSize(replacement, overlay);
+    updatePhotoLightboxAutoSize(visibleImage, overlay);
     return true;
   };
   sourceController = createSharedFullscreenSourceController({
@@ -1360,6 +1362,7 @@ export async function resolvePhotoLightboxSource(entry, {
   fetchImpl = globalThis.fetch,
   createObjectUrl = (blob) => URL.createObjectURL(blob),
   onCachedRecord = () => "",
+  onDownloadProgress = () => {},
   signal = null
 } = {}) {
   if (!entry) return { src: "", objectUrl: "", isFull: false, reason: "unavailable" };
@@ -1401,36 +1404,51 @@ export async function resolvePhotoLightboxSource(entry, {
     const previewBlobPromise = cachedSourceMatches && cached?.thumbBlob
       ? Promise.resolve(cached.thumbBlob)
       : previewFetchSrc && previewFetchSrc !== fullFetchSrc
-        ? fetchPhotoLightboxBlob(previewFetchSrc, fetchImpl, signal)
+        ? fetchPhotoLightboxBlob(previewFetchSrc, fetchImpl, signal, (progress) => {
+          onDownloadProgress({ variant: "preview", ...progress });
+        })
         : Promise.resolve(null);
     try {
-      const fullBlob = await fetchPhotoLightboxBlob(fullFetchSrc, fetchImpl, signal);
+      const fullBlob = await fetchPhotoLightboxBlob(fullFetchSrc, fetchImpl, signal, (progress) => {
+        onDownloadProgress({ variant: "full", ...progress });
+      });
       if (!fullBlob?.size) throw new Error("full-photo-empty");
       const comparisonThumbBlob = await previewBlobPromise;
       const fullBlobDistinct = await photoBlobsAreDistinct(fullBlob, comparisonThumbBlob);
       let verifiedRecord = null;
       if (entry.localId) {
         const savedAt = new Date().toISOString();
-        verifiedRecord = {
-          ...(cached || {}),
-          id: entry.localId,
-          blob: fullBlob,
-          thumbBlob: comparisonThumbBlob
+        verifiedRecord = await registerVerifiedPhotoRecord({
+          key: entry.localId,
+          namespace: "offline-remote",
+          fullUrl: remoteFullSrc || fullSrc,
+          thumbUrl: remoteThumbSrc || previewSrc,
+          sourceSignature,
+          fileName: cached?.fileName || `${entry.localId}.jpg`,
+          type: fullBlob.type || cached?.type || "image/jpeg",
+          width: cached?.width,
+          height: cached?.height
+        }, {
+          fullBlob,
+          previewBlob: comparisonThumbBlob
             || (cachedSourceMatches ? cached?.thumbBlob : null)
             || fullBlob,
-          fullBlobVerified: true,
+          cachedRecord: cachedSourceMatches ? cached : null,
           fullBlobDistinct,
-          sourceSignature,
-          type: fullBlob.type || cached?.type || "image/jpeg",
-          size: fullBlob.size,
-          createdAt: cached?.createdAt || savedAt,
-          updatedAt: savedAt
-        };
-        try {
-          await putCachedPhotoForLightbox(verifiedRecord);
-        } catch {
-          // The downloaded full-size blob can still be displayed for this lightbox session.
-        }
+          recordPatch: {
+            cachePurpose: "offline-remote",
+            createdAt: cached?.createdAt || savedAt,
+            updatedAt: savedAt
+          },
+          putCachedPhoto: async (record) => {
+            try {
+              await putCachedPhotoForLightbox(record);
+            } catch {
+              // The downloaded full-size blob can still be displayed for this lightbox session.
+            }
+          },
+          now: () => savedAt
+        });
       }
       const registeredSrc = verifiedRecord ? await registerCachedRecord(verifiedRecord) : "";
       const objectUrl = registeredSrc ? "" : createObjectUrl(fullBlob);
@@ -1463,126 +1481,25 @@ function isRemotePhotoLightboxSource(src) {
   return /^https?:\/\//i.test(String(src || ""));
 }
 
-async function fetchPhotoLightboxBlob(src, fetchImpl, signal = null) {
+async function fetchPhotoLightboxBlob(src, fetchImpl, signal = null, onProgress = () => {}) {
   if (!src || typeof fetchImpl !== "function") return null;
   try {
-    const response = await fetchImpl(src, {
-      credentials: "include",
-      cache: "no-store",
-      ...(signal ? { signal } : {})
+    return await downloadPhotoBlob(src, {
+      fetchImpl,
+      signal,
+      requestInit: {
+        credentials: "include",
+        cache: "no-store"
+      },
+      onProgress
     });
-    if (!response?.ok) return null;
-    const blob = await response.blob();
-    return blob?.size ? blob : null;
   } catch {
     return null;
   }
 }
 
-async function decodePhotoLightboxImage(image) {
-  if (typeof image?.decode === "function") await image.decode();
-  if ("complete" in image && image.complete !== true) {
-    throw new Error("full-photo-not-complete");
-  }
-  if ("naturalWidth" in image && Number(image.naturalWidth) <= 0) {
-    throw new Error("full-photo-decode-empty");
-  }
-  return image;
-}
-
-function loadAndDecodePhotoLightboxImage(image, src) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => {
-      image.removeEventListener?.("load", onLoad);
-      image.removeEventListener?.("error", onError);
-    };
-    const finish = async () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      try {
-        await decodePhotoLightboxImage(image);
-        resolve(image);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    const onLoad = () => finish();
-    const onError = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error("full-photo-load-failed"));
-    };
-    image.addEventListener?.("load", onLoad, { once: true });
-    image.addEventListener?.("error", onError, { once: true });
-    image.src = src;
-    if (image.complete) {
-      if (!("naturalWidth" in image) || Number(image.naturalWidth) > 0) finish();
-      else onError();
-    }
-  });
-}
-
-function afterPhotoLightboxPaint() {
-  if (typeof requestAnimationFrame !== "function") return Promise.resolve();
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-}
-
-function normalizedPhotoLightboxSource(src) {
-  const value = String(src || "");
-  if (!value) return "";
-  try {
-    return new URL(value, globalThis.document?.baseURI || "https://local.invalid/").href;
-  } catch {
-    return value;
-  }
-}
-
-function photoLightboxImageUsesSource(image, src) {
-  const expected = normalizedPhotoLightboxSource(src);
-  const actual = normalizedPhotoLightboxSource(image?.currentSrc || image?.src || "");
-  return Boolean(expected && actual === expected);
-}
-
-export async function replacePhotoLightboxImageSource(currentImage, src, {
-  createReplacement = (image) => image.cloneNode(false),
-  loadAndDecode = loadAndDecodePhotoLightboxImage,
-  afterPaint = afterPhotoLightboxPaint,
-  shouldCommit = () => true,
-  onReplaced = () => {},
-  onRollback = () => {}
-} = {}) {
-  if (!currentImage || !src) throw new Error("full-photo-replacement-missing");
-  const replacement = createReplacement(currentImage);
-  replacement.removeAttribute?.("src");
-  replacement.removeAttribute?.("srcset");
-  replacement.removeAttribute?.("sizes");
-  replacement.removeAttribute?.("loading");
-  replacement.decoding = "async";
-  await loadAndDecode(replacement, src);
-  if (!photoLightboxImageUsesSource(replacement, src)) {
-    throw new Error("full-photo-source-not-selected");
-  }
-  if (!shouldCommit()) throw new Error("full-photo-replacement-superseded");
-  currentImage.replaceWith(replacement);
-  onReplaced(replacement);
-  try {
-    await afterPaint();
-    if (!shouldCommit()) throw new Error("full-photo-replacement-superseded");
-    await decodePhotoLightboxImage(replacement);
-    if (!photoLightboxImageUsesSource(replacement, src)) {
-      throw new Error("full-photo-source-not-visible");
-    }
-  } catch (error) {
-    if (shouldCommit() && replacement.isConnected && !currentImage.isConnected) {
-      replacement.replaceWith(currentImage);
-      onRollback(currentImage);
-    }
-    throw error;
-  }
-  return replacement;
+export function replacePhotoLightboxImageSource(currentImage, src, options = {}) {
+  return replaceSharedFullscreenImageSource(currentImage, src, options);
 }
 
 function touchDistance(first, second) {

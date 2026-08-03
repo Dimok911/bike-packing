@@ -59,7 +59,11 @@ export function bindSharedPhotoGalleries(root, options = {}) {
 }
 
 export function createSharedFullscreenSwitcher(options = {}) {
-  return runtime()?.createFullscreenSwitcher?.(options) || null;
+  const api = runtime();
+  const factory = api?.capabilities?.fullscreenControlStyles >= 1
+    ? api.createFullscreenSwitcher
+    : fallbackRuntime?.createFullscreenSwitcher;
+  return factory?.(options) || null;
 }
 
 export function createSharedFullscreenSourceController(options = {}) {
@@ -71,6 +75,32 @@ export function createSharedFullscreenSourceController(options = {}) {
 export function stepSharedPhotoInertia(options = {}) {
   const helper = runtime()?.helpers?.stepInertia || fallbackRuntime?.helpers?.stepInertia;
   return helper?.(options) || null;
+}
+
+export function sharedFullscreenImageUsesSource(image, src) {
+  const helper = runtime()?.fullscreenImageUsesSource
+    || fallbackRuntime?.fullscreenImageUsesSource;
+  return helper?.(image, src) === true;
+}
+
+export function decodeSharedFullscreenImage(image, options = {}) {
+  const helper = runtime()?.decodeFullscreenImage
+    || fallbackRuntime?.decodeFullscreenImage;
+  return helper?.(image, options) || Promise.reject(new Error("shared-fullscreen-decode-unavailable"));
+}
+
+export function loadAndDecodeSharedFullscreenImage(image, src, options = {}) {
+  const helper = runtime()?.loadAndDecodeFullscreenImage
+    || fallbackRuntime?.loadAndDecodeFullscreenImage;
+  return helper?.(image, src, options)
+    || Promise.reject(new Error("shared-fullscreen-load-unavailable"));
+}
+
+export function replaceSharedFullscreenImageSource(currentImage, src, options = {}) {
+  const helper = runtime()?.replaceFullscreenImageSource
+    || fallbackRuntime?.replaceFullscreenImageSource;
+  return helper?.(currentImage, src, options)
+    || Promise.reject(new Error("shared-fullscreen-replace-unavailable"));
 }
 
 loadSharedPhotoGallery();

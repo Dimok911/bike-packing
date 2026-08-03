@@ -6386,56 +6386,40 @@ dialog.photo-lightbox::backdrop {
   width: 42px;
   min-height: 42px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
   font-size: 26px;
   line-height: 1;
+  cursor: pointer;
 }
 
 .photo-lightbox-nav {
   position: fixed;
-  top: 0;
-  bottom: 0;
+  top: 50%;
   z-index: 2;
-  width: clamp(72px, 22vw, 148px);
-  min-height: 0;
+  width: 46px;
+  min-height: 62px;
   padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #fff;
   font-size: 42px;
   line-height: 1;
   cursor: pointer;
   display: grid;
-  align-items: center;
+  place-items: center;
+  transform: translate3d(0, -50%, 0);
   touch-action: manipulation;
 }
 
 .photo-lightbox-prev {
   left: 12px;
-  justify-items: start;
 }
 
 .photo-lightbox-next {
   right: 12px;
-  justify-items: end;
 }
 
 .photo-lightbox-nav span {
-  width: 46px;
-  min-height: 62px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  display: grid;
-  place-items: center;
+  pointer-events: none;
 }
 
 .photo-lightbox-nav[aria-disabled="true"] {
-  opacity: 0.28;
   cursor: default;
 }
 

@@ -88,6 +88,229 @@ const buildRecord = (task, cached, patch, { now, decorateRecord }) => {
     : base;
 };
 
+export class PhotoBlobDownloadError extends Error {
+  constructor(code, message, { url = "", status = 0, cause = null } = {}) {
+    super(message);
+    this.name = "PhotoBlobDownloadError";
+    this.code = code;
+    this.url = url;
+    this.status = status;
+    if (cause) this.cause = cause;
+  }
+}
+
+const responseHeader = (response, name) => {
+  const value = response?.headers?.get?.(name);
+  return value === null || value === undefined ? "" : String(value);
+};
+
+const responseContentLength = (response) => {
+  const value = responseHeader(response, "content-length");
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const emitDownloadProgress = (onProgress, loaded, total, done = false) => {
+  if (typeof onProgress !== "function") return;
+  const percent = total === null || total <= 0
+    ? null
+    : Math.min(100, (loaded / total) * 100);
+  try {
+    onProgress({ loaded, total, percent, done });
+  } catch {
+    // Observers cannot invalidate an otherwise successful download.
+  }
+};
+
+export async function downloadPhotoBlob(url, {
+  fetchImpl = globalThis.fetch,
+  requestInit,
+  signal,
+  timeoutMs = 0,
+  onProgress = () => {},
+} = {}) {
+  const sourceUrl = clean(url);
+  if (!sourceUrl) {
+    throw new PhotoBlobDownloadError("invalid-url", "Photo URL is required");
+  }
+  if (typeof fetchImpl !== "function") {
+    throw new PhotoBlobDownloadError("fetch-unavailable", "A fetch implementation is required", {
+      url: sourceUrl,
+    });
+  }
+  if (signal?.aborted) {
+    throw new PhotoBlobDownloadError("aborted", "Photo download was aborted", { url: sourceUrl });
+  }
+
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timedOut = false;
+  const abort = () => controller?.abort();
+  signal?.addEventListener?.("abort", abort, { once: true });
+  const timer = controller && Number(timeoutMs) > 0
+    ? globalThis.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, Number(timeoutMs))
+    : null;
+  const effectiveSignal = controller?.signal || signal;
+
+  let response;
+  try {
+    response = await fetchImpl(sourceUrl, {
+      ...(requestInit || {}),
+      ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+    });
+  } catch (cause) {
+    const code = signal?.aborted ? "aborted" : timedOut ? "timeout" : "network";
+    const message = code === "aborted"
+      ? "Photo download was aborted"
+      : code === "timeout"
+        ? "Photo download timed out"
+        : "Photo download failed";
+    throw new PhotoBlobDownloadError(code, message, { url: sourceUrl, cause });
+  } finally {
+    if (!response) {
+      if (timer !== null) globalThis.clearTimeout(timer);
+      signal?.removeEventListener?.("abort", abort);
+    }
+  }
+
+  if (!response?.ok) {
+    if (timer !== null) globalThis.clearTimeout(timer);
+    signal?.removeEventListener?.("abort", abort);
+    throw new PhotoBlobDownloadError("http", `Photo download returned HTTP ${response?.status || 0}`, {
+      url: sourceUrl,
+      status: Number(response?.status) || 0,
+    });
+  }
+
+  const total = responseContentLength(response);
+  const type = responseHeader(response, "content-type");
+  let loaded = 0;
+  emitDownloadProgress(onProgress, loaded, total, false);
+  try {
+    let blob;
+    const reader = response.body?.getReader?.();
+    if (reader) {
+      const chunks = [];
+      try {
+        while (true) {
+          if (effectiveSignal?.aborted) {
+            throw new PhotoBlobDownloadError(
+              timedOut ? "timeout" : "aborted",
+              timedOut ? "Photo download timed out" : "Photo download was aborted",
+              { url: sourceUrl },
+            );
+          }
+          const part = await reader.read();
+          if (part.done) break;
+          const chunk = part.value;
+          const size = Number(chunk?.byteLength);
+          if (!Number.isFinite(size) || size < 0) {
+            throw new PhotoBlobDownloadError("read", "Photo response contained an invalid chunk", {
+              url: sourceUrl,
+            });
+          }
+          chunks.push(chunk);
+          loaded += size;
+          emitDownloadProgress(onProgress, loaded, total, false);
+        }
+      } catch (cause) {
+        try {
+          await reader.cancel?.();
+        } catch {
+          // The original strict read error remains authoritative.
+        }
+        if (cause instanceof PhotoBlobDownloadError) throw cause;
+        const code = signal?.aborted ? "aborted" : timedOut ? "timeout" : "read";
+        throw new PhotoBlobDownloadError(code, code === "read"
+          ? "Photo response stream could not be read"
+          : code === "timeout"
+            ? "Photo download timed out"
+            : "Photo download was aborted", { url: sourceUrl, cause });
+      } finally {
+        reader.releaseLock?.();
+      }
+      blob = new Blob(chunks, { type });
+    } else {
+      if (typeof response.blob !== "function") {
+        throw new PhotoBlobDownloadError("invalid-response", "Photo response has no readable body", {
+          url: sourceUrl,
+        });
+      }
+      blob = await response.blob();
+      loaded = Number(blob?.size) || 0;
+    }
+    if (!blob?.size) {
+      throw new PhotoBlobDownloadError("empty", "Photo response was empty", { url: sourceUrl });
+    }
+    emitDownloadProgress(onProgress, loaded, total, true);
+    return blob;
+  } catch (cause) {
+    if (cause instanceof PhotoBlobDownloadError) throw cause;
+    const code = signal?.aborted ? "aborted" : timedOut ? "timeout" : "read";
+    throw new PhotoBlobDownloadError(code, code === "read"
+      ? "Photo response could not be read"
+      : code === "timeout"
+        ? "Photo download timed out"
+        : "Photo download was aborted", { url: sourceUrl, cause });
+  } finally {
+    if (timer !== null) globalThis.clearTimeout(timer);
+    signal?.removeEventListener?.("abort", abort);
+  }
+}
+
+export async function registerVerifiedPhotoRecord(candidate, {
+  fullBlob,
+  previewBlob = null,
+  cachedRecord = null,
+  fullBlobDistinct = true,
+  recordPatch = {},
+  putCachedPhoto,
+  registry = null,
+  onRecord = () => {},
+  decorateRecord,
+  isCurrent = () => true,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const task = normalizePhotoTask(candidate);
+  if (!task.key) throw new TypeError("A normalized photo task key is required");
+  if (!fullBlob?.size) throw new TypeError("A non-empty verified full Blob is required");
+  if (!isCurrent()) return null;
+  const preview = previewBlob?.size ? previewBlob : fullBlob;
+  const current = cachedPhotoMatchesTask(cachedRecord, task) ? cachedRecord : null;
+  const patch = recordPatch || {};
+  const built = buildRecord(task, current, {
+    ...patch,
+    blob: fullBlob,
+    thumbBlob: preview,
+    fullBlobVerified: true,
+    fullBlobDistinct: Boolean(fullBlobDistinct),
+    fileName: patch.fileName ?? task.fileName,
+    type: patch.type || fullBlob.type || preview.type || task.type,
+    size: fullBlob.size,
+    width: patch.width ?? task.width,
+    height: patch.height ?? task.height,
+  }, { now: now(), decorateRecord });
+  const record = {
+    ...built,
+    id: task.key,
+    sourceSignature: task.sourceSignature,
+    namespace: task.namespace,
+    blob: fullBlob,
+    thumbBlob: preview,
+    fullBlobVerified: true,
+    fullBlobDistinct: Boolean(fullBlobDistinct),
+    size: fullBlob.size,
+  };
+  if (typeof putCachedPhoto === "function") await putCachedPhoto(record);
+  if (!isCurrent()) return null;
+  registry?.setRecord?.(task, record);
+  await onRecord(task, record, { previewBlob: preview, fullBlob });
+  return record;
+}
+
 async function runWorkers(tasks, concurrency, visit) {
   let cursor = 0;
   const worker = async () => {
@@ -108,28 +331,19 @@ async function fetchPhotoBlob(url, {
   requestInit,
   signal,
 } = {}) {
-  if (!url || typeof fetchImpl !== "function" || signal?.aborted) return null;
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const abort = () => controller?.abort();
-  signal?.addEventListener?.("abort", abort, { once: true });
-  const timer = controller && timeoutMs > 0
-    ? globalThis.setTimeout(() => controller.abort(), timeoutMs)
-    : null;
   try {
-    const response = await fetchImpl(url, {
-      credentials: "include",
-      cache: "no-store",
-      ...(requestInit || {}),
-      ...(controller ? { signal: controller.signal } : signal ? { signal } : {}),
+    return await downloadPhotoBlob(url, {
+      fetchImpl,
+      timeoutMs,
+      signal,
+      requestInit: {
+        credentials: "include",
+        cache: "no-store",
+        ...(requestInit || {}),
+      },
     });
-    if (!response?.ok) return null;
-    const blob = await response.blob();
-    return blob?.size ? blob : null;
   } catch {
     return null;
-  } finally {
-    if (timer) globalThis.clearTimeout(timer);
-    signal?.removeEventListener?.("abort", abort);
   }
 }
 
@@ -294,20 +508,18 @@ async function cacheNormalizedPhotoTask(task, options) {
   const fullBlobDistinct = task.thumbUrl && task.thumbUrl !== task.fullUrl
     ? await blobsAreDistinct(fullBlob, finalPreviewBlob)
     : true;
-  const fullRecord = buildRecord(task, sourceMatches ? cached : null, {
-    blob: fullBlob,
-    thumbBlob: finalPreviewBlob,
-    fullBlobVerified: true,
+  const fullRecord = await registerVerifiedPhotoRecord(task, {
+    fullBlob,
+    previewBlob: finalPreviewBlob,
+    cachedRecord: sourceMatches ? cached : null,
     fullBlobDistinct,
-    fileName: task.fileName,
-    type: fullBlob.type || finalPreviewBlob.type || task.type,
-    size: fullBlob.size || 0,
-    width: task.width,
-    height: task.height,
-  }, { now: savedAt, decorateRecord });
-  await putCachedPhoto(fullRecord);
-  if (!isCurrent()) return "failed";
-  await onRecord(task, fullRecord, { previewBlob: finalPreviewBlob, fullBlob });
+    putCachedPhoto,
+    onRecord,
+    decorateRecord,
+    isCurrent,
+    now: () => savedAt,
+  });
+  if (!fullRecord) return "failed";
   return "downloaded";
 }
 
@@ -576,5 +788,5 @@ export function createPhotoCacheRunController({
   };
 }
 
-export const PHOTO_CACHE_ENGINE_VERSION = "1.0.0";
+export const PHOTO_CACHE_ENGINE_VERSION = "1.0.1";
 export const PHOTO_CACHE_ENGINE_CONTRACT_VERSION = 1;

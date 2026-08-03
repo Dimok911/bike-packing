@@ -71,6 +71,7 @@ import {
 } from "../../src/ui/photo-lightbox-sizing.js";
 import {
   createSharedFullscreenSourceController,
+  replaceSharedFullscreenImageSource,
   stepSharedPhotoInertia
 } from "../../src/ui/shared-photo-gallery.js";
 import {
@@ -1866,6 +1867,63 @@ test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reus
   assert.equal(fetchCount, afterFirstFetches);
 });
 
+test("CRITICAL offline-photos: lightbox uses shared streamed progress without inventing thumbnail percent", async () => {
+  const progress = [];
+  const response = (url) => {
+    const full = url.endsWith("/file");
+    const chunks = full
+      ? [new Uint8Array([1, 2]), new Uint8Array([3, 4, 5, 6])]
+      : [new Uint8Array([7, 8, 9])];
+    let index = 0;
+    return {
+      ok: true,
+      headers: {
+        get(name) {
+          if (String(name).toLowerCase() === "content-length") return full ? "6" : null;
+          if (String(name).toLowerCase() === "content-type") return "image/jpeg";
+          return null;
+        }
+      },
+      body: {
+        getReader() {
+          return {
+            async read() {
+              return index < chunks.length
+                ? { done: false, value: chunks[index++] }
+                : { done: true };
+            },
+            releaseLock() {}
+          };
+        }
+      }
+    };
+  };
+  const result = await resolvePhotoLightboxSource({
+    localId: "photo-stream",
+    previewSrc: "https://api.example.test/photo-stream/thumb",
+    fullSrc: "https://api.example.test/photo-stream/file",
+    remoteFullSrc: "https://api.example.test/photo-stream/file",
+    remoteThumbSrc: "https://api.example.test/photo-stream/thumb",
+    sourceSignature: "file|thumb|v1"
+  }, {
+    getCachedPhotoForLightbox: async () => null,
+    putCachedPhotoForLightbox: async () => {},
+    fetchImpl: async (url) => response(url),
+    createObjectUrl: () => "blob:streamed-full",
+    onDownloadProgress: (value) => progress.push(value)
+  });
+
+  assert.equal(result.isFull, true);
+  assert.equal(progress.filter((value) => value.variant === "preview").every((value) => value.percent === null), true);
+  assert.deepEqual(progress.filter((value) => value.variant === "full").at(-1), {
+    variant: "full",
+    loaded: 6,
+    total: 6,
+    percent: 100,
+    done: true
+  });
+});
+
 test("CRITICAL offline-photos: stale verified cache is ignored when offline", async () => {
   const cachedThumb = new Blob(["saved-preview"]);
   const result = await resolvePhotoLightboxSource({
@@ -2058,25 +2116,30 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   const asset = readProjectFile("src/vendor/vniipo-photo-cache-engine.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-cache-engine-manifest.json"));
   const adapter = readProjectFile("src/sync/photo-cache-engine.js");
-  assert.equal(PHOTO_CACHE_ENGINE_VERSION, "1.0.0");
+  assert.equal(PHOTO_CACHE_ENGINE_VERSION, "1.0.1");
   assert.equal(PHOTO_CACHE_ENGINE_CONTRACT_VERSION, 1);
   assert.equal(manifest.version, PHOTO_CACHE_ENGINE_VERSION);
   assert.equal(manifest.contractVersion, PHOTO_CACHE_ENGINE_CONTRACT_VERSION);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "cc0b87f2d0cc17278a2490aa1e85bebb3228ca24c942f14910143a2aad9f2821");
+  assert.equal(manifest.sha256, "3fa7f77ff0bc6bc2d2a113938d04a52cfbb1d149c3a823462e1488972391e488");
   assert.match(adapter, /from "\.\.\/vendor\/vniipo-photo-cache-engine\.js"/);
+  assert.match(adapter, /downloadPhotoBlob/);
+  assert.match(adapter, /registerVerifiedPhotoRecord/);
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.1 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.2 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.1");
+  assert.equal(manifest.version, "2.1.2");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "a8a8ee240f2aba8aa17450fa9651e509ebc3935bc21c29c5aacf802d1746c973");
+  assert.equal(manifest.sha256, "72e61ab2673f1b51961e3ba18c0747186d71821e4f0bb0c880c17d15d3075af3");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
+  assert.match(asset, /safeFullscreenImageReplace: 1/);
+  assert.match(asset, /fullscreenControlStyles: 1/);
   assert.match(asset, /function createFullscreenSourceController\(/);
+  assert.match(asset, /function replaceFullscreenImageSource\(/);
 });
 
 test("CRITICAL offline-photos: cached stable 2.0.1 cannot hide the bundled fullscreen lifecycle", async () => {
@@ -2099,6 +2162,45 @@ test("CRITICAL offline-photos: cached stable 2.0.1 cannot hide the bundled fulls
     assert.equal((await controller.activate(0)).success, true);
     assert.deepEqual(committed, ["blob:full"]);
     controller.destroy();
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
+});
+
+test("CRITICAL offline-photos: cached stable 2.0.1 cannot hide bundled safe image replacement", async () => {
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  globalThis.VniipoPhotoGallery = {
+    version: "2.0.1",
+    contractVersion: 2,
+    helpers: currentRuntime.helpers
+  };
+  const currentImage = {
+    isConnected: true,
+    replaceWith(replacement) {
+      this.isConnected = false;
+      replacement.isConnected = true;
+    }
+  };
+  const replacement = {
+    src: "",
+    currentSrc: "",
+    complete: true,
+    naturalWidth: 2000,
+    isConnected: false,
+    removeAttribute: () => {},
+    decode: async () => {}
+  };
+  try {
+    const result = await replaceSharedFullscreenImageSource(currentImage, "blob:full", {
+      createReplacement: () => replacement,
+      loadAndDecode: async (image, src) => {
+        image.src = src;
+        image.currentSrc = src;
+      },
+      afterPaint: async () => {}
+    });
+    assert.equal(result, replacement);
+    assert.equal(replacement.isConnected, true);
   } finally {
     globalThis.VniipoPhotoGallery = currentRuntime;
   }
@@ -2187,16 +2289,24 @@ test("CRITICAL offline-photos: dot navigation keeps its target active throughout
   });
 });
 
-test("CRITICAL offline-photos: lightbox side navigation uses full-height hit zones", () => {
+test("CRITICAL offline-photos: lightbox close and side navigation use the shared control style", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
   const styles = readProjectFile("styles.css");
-  assert.match(source, /photo-lightbox-prev[\s\S]*<span aria-hidden="true">/);
-  assert.match(source, /setAttribute\("aria-disabled", activeIndex <= 0 \? "true" : "false"\)/);
+  const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
+  const sharedRuntime = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  assert.match(source, /photo-lightbox-close vpg-fullscreen-control vpg-fullscreen-close/);
+  assert.match(source, /photo-lightbox-prev vpg-fullscreen-control vpg-fullscreen-nav[\s\S]*<span aria-hidden="true">/);
+  assert.match(source, /photo-lightbox-next vpg-fullscreen-control vpg-fullscreen-nav/);
+  assert.match(source, /prevButton\.disabled = activeIndex <= 0/);
+  assert.match(source, /nextButton\.disabled = activeIndex >= entries\.length - 1/);
   assert.match(source, /if \(direction < 0 && activeIndex <= 0\) return;/);
-  assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*clamp\(72px,\s*22vw,\s*148px\);/);
-  assert.match(styles, /\.photo-lightbox-nav span\s*\{[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
+  assert.match(styles, /\.photo-lightbox-nav\s*\{[\s\S]*top:\s*50%;[\s\S]*width:\s*46px;[\s\S]*min-height:\s*62px;/);
+  assert.doesNotMatch(styles, /\.photo-lightbox-(?:close|nav)\s*\{[^}]*(?:background|border|color):/);
+  assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*background:rgba\(40,44,52,\.82\)/);
+  assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*color:#fff/);
+  assert.match(sharedRuntime, /\.vpg-fullscreen-control:focus-visible/);
+  assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenControlStyles >= 1[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
   assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(baseIndex \+ \(dx < 0 \? 1 : -1\)\);/);
-  assert.doesNotMatch(styles, /\.photo-lightbox-nav:disabled/);
 });
 
 test("CRITICAL offline-photos: phone lightbox gives the full screen to swipe and tap-to-close", () => {
@@ -2229,7 +2339,7 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.1 fallback", () => {
+test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.2 fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const next = stepSharedPhotoInertia({
@@ -2246,7 +2356,7 @@ test("CRITICAL offline-photos: shared inertia is available through the cached 2.
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.1"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.2"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 });
 
@@ -2316,10 +2426,11 @@ test("CRITICAL offline-photos: lightbox keeps the preview visible until the full
   assert.match(source, /loadingNotice\.pending\(\)/);
   assert.doesNotMatch(source, /updateLoadStatus\("loading"\)/);
   assert.match(source, /const activation = sourceController\?\.activate\(nextIndex\)[\s\S]*const displaySrc = sourceController\?\.initialSource\(nextIndex\) \|\| previewSrc;[\s\S]*image\.src = displaySrc;/);
-  assert.match(source, /const decodeLifecycleSource = async[\s\S]*await loadAndDecodePhotoLightboxImage\(replacement, src\);/);
-  assert.match(source, /const commitLifecycleSource = async[\s\S]*await replacePhotoLightboxImageSource\(currentImage, src,[\s\S]*createReplacement: \(\) => replacement/);
-  assert.match(source, /await afterPhotoLightboxPaint\(\);[\s\S]*photoLightboxImageUsesSource\(replacement, src\)/);
-  assert.match(source, /photoLightboxImageUsesSource\(replacement, src\)/);
+  assert.match(source, /const decodeLifecycleSource = async[\s\S]*await loadAndDecodeSharedFullscreenImage\(replacement, src, \{ signal \}\);/);
+  assert.match(source, /sharedFullscreenImageUsesSource\(replacement, src\)/);
+  assert.match(source, /const commitLifecycleSource = async[\s\S]*await replacePhotoLightboxImageSource\(currentImage, src,[\s\S]*replacement === currentImage[\s\S]*createReplacement: \(\) => replacement/);
+  assert.match(source, /return replaceSharedFullscreenImageSource\(currentImage, src, options\);/);
+  assert.match(readProjectFile("src/ui/shared-photo-gallery.js"), /fallbackRuntime\?\.replaceFullscreenImageSource/);
   assert.match(source, /decodeSource: decodeLifecycleSource,[\s\S]*commitSource: commitLifecycleSource/);
   assert.match(source, /Preview · full-size photo is unavailable/);
   assert.match(source, /Предпросмотр · полная версия фото недоступна/);
