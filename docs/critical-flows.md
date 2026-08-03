@@ -139,6 +139,11 @@ test:critical` дополнительно к `npm.cmd run check`.
 
 ## CRITICAL: offline-photos
 
+- Before the first board render in a storage scope, matching IndexedDB thumbnails must be hydrated into reusable Blob URLs. A remote image URL must not become an `<img src>` while that hydration is pending.
+- Remote cache records are current only when their `full URL + thumb URL + updatedAt` signature matches. A stale Blob may neither be rendered nor copied into a record with the new signature.
+- The thumbnail is persisted first; the verified original follows in the background. A matching verified original prevents every later photo fetch, while a matching thumbnail remains a valid offline lightbox fallback when the original is unavailable.
+- IndexedDB photo keys and card Blob URLs are storage-scope aware. Scope changes, source changes and server-side deletion revoke or prune only offline remote cache entries; pending local upload records must remain intact.
+
 - В онлайн-режиме выбранные в карточке фото начинают загружаться до нажатия «Сохранить». Для новой вещи или сумки draft заранее резервирует будущий ID записи; сохранение обязано использовать тот же ID. Отмена карточки останавливает оставшуюся очередь и удаляет уже загруженные файлы draft.
 - Пакетная загрузка показывает прямо на фотогалерее номер текущего фото, общее количество и круг с процентом текущего файла. При сохранении карточки тот же пакет и его прогресс продолжаются на галерее основной страницы без отдельной верхней полосы.
 - Ошибка одного файла не должна останавливать остальные файлы пакета. Временный сбой iPhone получает ровно одну повторную попытку, а уже подтверждённое сервером фото не загружается повторно.

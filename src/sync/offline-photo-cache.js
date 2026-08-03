@@ -1,5 +1,10 @@
 import { normalizeRemotePhotoUrl, remotePhotoSourceFromRecord } from "./photos.js";
 import { photoBlobsAreDistinct, photoCacheSourceSignature } from "./photo-cache-quality.js";
+import {
+  cacheNormalizedPhotoTasks,
+  hydrateNormalizedPhotoTasks
+} from "./photo-cache-engine.js";
+import { photoObjectUrlKey } from "../ui/photo-object-url-registry.js";
 
 function photoUrl(photo, variant) {
   if (!photo || typeof photo !== "object") return "";
@@ -27,6 +32,7 @@ export function collectOfflinePhotoCacheTasks(targetState) {
   const visit = (record) => {
     (Array.isArray(record?.photos) ? record.photos : []).forEach((photo) => {
       const key = photoCacheKey(photo);
+      const localId = String(photo?.localId || "").trim();
       const fullUrl = photoUrl(photo, "file");
       const thumbUrl = photoUrl(photo, "thumb") || fullUrl;
       if (!key || (!fullUrl && !thumbUrl)) return;
@@ -40,10 +46,42 @@ export function collectOfflinePhotoCacheTasks(targetState) {
         hasFullSource: Boolean(fullUrl),
         hasDistinctThumbSource: Boolean(fullUrl && thumbUrl && fullUrl !== thumbUrl),
         signature,
+        sourceSignature: signature,
+        cachePurpose: "offline-remote",
+        allowUnversionedVerifiedFull: Boolean(localId && key === localId),
         fileName: String(photo.fileName || `${key}.jpg`),
         type: String(photo.type || "image/jpeg"),
         width: Number.isFinite(Number(photo.width)) ? Number(photo.width) : 0,
         height: Number.isFinite(Number(photo.height)) ? Number(photo.height) : 0
+      });
+    });
+  };
+  Object.values(targetState?.items || {}).forEach(visit);
+  Object.values(targetState?.containers || {}).forEach(visit);
+  return tasks;
+}
+
+export function collectPhotoHydrationTasks(targetState) {
+  const tasks = [];
+  const seen = new Set();
+  const visit = (record) => {
+    (Array.isArray(record?.photos) ? record.photos : []).forEach((photo) => {
+      const key = photoCacheKey(photo);
+      const localId = String(photo?.localId || "").trim();
+      if (!key) return;
+      const fullUrl = photoUrl(photo, "file");
+      const thumbUrl = photoUrl(photo, "thumb") || fullUrl;
+      const sourceSignature = fullUrl
+        ? photoSourceSignature(photo, fullUrl, thumbUrl)
+        : "";
+      const identity = `${key}|${sourceSignature}`;
+      if (seen.has(identity)) return;
+      seen.add(identity);
+      tasks.push({
+        key,
+        sourceSignature,
+        cachePurpose: "offline-remote",
+        allowUnversionedVerifiedFull: Boolean(localId && key === localId)
       });
     });
   };
@@ -59,136 +97,116 @@ export function offlinePhotoCacheFingerprint(targetState) {
     .join("\n");
 }
 
-async function fetchPhotoBlob(url, { fetchImpl, timeoutMs }) {
-  if (!url || typeof fetchImpl !== "function") return null;
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const timeoutId = controller && timeoutMs > 0
-    ? globalThis.setTimeout(() => controller.abort(), timeoutMs)
-    : null;
-  try {
-    const response = await fetchImpl(url, {
-      credentials: "include",
-      cache: "no-store",
-      ...(controller ? { signal: controller.signal } : {})
-    });
-    if (!response?.ok) return null;
-    const blob = await response.blob();
-    return blob?.size ? blob : null;
-  } catch {
-    return null;
-  } finally {
-    if (timeoutId) globalThis.clearTimeout(timeoutId);
-  }
-}
-
-async function cacheTask(task, {
-  fetchImpl,
-  getCachedPhoto,
-  putCachedPhoto,
-  onPending,
-  timeoutMs
-}) {
-  const cached = await getCachedPhoto(task.key).catch(() => null);
-  if (
-    cached?.blob
-    && cached.fullBlobVerified === true
-    && cached.sourceSignature === task.signature
-  ) {
-    return "cached";
-  }
-  onPending();
-  const fullBlobPromise = task.hasFullSource
-    ? fetchPhotoBlob(task.fullUrl, { fetchImpl, timeoutMs })
-    : Promise.resolve(null);
-  const thumbBlobPromise = task.hasFullSource && task.thumbUrl === task.fullUrl
-    ? Promise.resolve(null)
-    : fetchPhotoBlob(task.thumbUrl, { fetchImpl, timeoutMs });
-  const thumbBlob = await thumbBlobPromise;
-  const cachedThumbBlob = cached?.thumbBlob
-    || (cached?.fullBlobVerified !== true ? cached?.blob : null);
-  const previewBlob = thumbBlob || cachedThumbBlob || null;
-  const savedAt = new Date().toISOString();
-  if (thumbBlob) {
-    const hasVerifiedCachedFull = Boolean(cached?.blob && cached.fullBlobVerified === true);
-    await putCachedPhoto({
-      ...(cached || {}),
-      id: task.key,
-      blob: cached?.blob || null,
-      thumbBlob: previewBlob,
-      fullBlobVerified: hasVerifiedCachedFull,
-      fullBlobDistinct: hasVerifiedCachedFull ? cached?.fullBlobDistinct : false,
-      fileName: task.fileName,
-      type: cached?.type || previewBlob.type || task.type,
-      size: cached?.size || 0,
-      width: task.width,
-      height: task.height,
-      sourceSignature: hasVerifiedCachedFull
-        ? cached?.sourceSignature || ""
-        : task.signature,
-      createdAt: cached?.createdAt || savedAt,
-      updatedAt: savedAt
-    });
-  }
-  const fullBlob = await fullBlobPromise;
-  if (!fullBlob) return "failed";
-  const finalPreviewBlob = previewBlob || fullBlob;
-  const fullBlobDistinct = !task.hasDistinctThumbSource
-    || await photoBlobsAreDistinct(fullBlob, finalPreviewBlob);
-  await putCachedPhoto({
-    ...(cached || {}),
-    id: task.key,
-    blob: fullBlob,
-    thumbBlob: finalPreviewBlob,
-    fullBlobVerified: true,
-    fullBlobDistinct,
-    fileName: task.fileName,
-    type: fullBlob.type || finalPreviewBlob.type || task.type,
-    size: fullBlob.size || 0,
-    width: task.width,
-    height: task.height,
-    sourceSignature: task.signature,
-    createdAt: cached?.createdAt || savedAt,
-    updatedAt: savedAt
-  });
-  return "downloaded";
-}
-
 export async function cacheRemotePhotosForOffline(targetState, {
   fetchImpl = globalThis.fetch,
   getCachedPhoto = async () => null,
   putCachedPhoto = async () => {},
   concurrency = 2,
   timeoutMs = 30000,
-  onPending = () => {}
+  onPending = () => {},
+  onRecord = () => {}
 } = {}) {
-  const tasks = collectOfflinePhotoCacheTasks(targetState);
-  if (!tasks.length) return { total: 0, cached: 0, downloaded: 0, failed: 0 };
-  let cursor = 0;
-  let pendingReported = false;
-  const result = { total: tasks.length, cached: 0, downloaded: 0, failed: 0 };
-  const worker = async () => {
-    while (cursor < tasks.length) {
-      const task = tasks[cursor++];
-      const reportPending = () => {
-        if (pendingReported) return;
-        pendingReported = true;
-        onPending(tasks.length);
-      };
-      const status = await cacheTask(task, {
-        fetchImpl,
-        getCachedPhoto,
-        putCachedPhoto,
-        onPending: reportPending,
-        timeoutMs
-      }).catch(() => "failed");
-      result[status] += 1;
-    }
+  const tasks = collectOfflinePhotoCacheTasks(targetState).map((task) => ({
+    ...task,
+    fullUrl: task.hasFullSource ? task.fullUrl : ""
+  }));
+  return cacheNormalizedPhotoTasks(tasks, {
+    fetchImpl,
+    getCachedPhoto,
+    putCachedPhoto,
+    concurrency,
+    timeoutMs,
+    onPending,
+    onRecord,
+    blobsAreDistinct: photoBlobsAreDistinct
+  });
+}
+
+export function createOfflinePhotoRenderCoordinator({
+  getState = () => null,
+  getScopeKey = () => "guest",
+  getCachedPhoto = async () => null,
+  putCachedPhoto = async () => {},
+  listCachedPhotos = async () => [],
+  deleteCachedPhoto = async () => {},
+  onScopeChange = () => {},
+  objectUrls
+} = {}) {
+  let preparedFingerprint = "";
+  let pendingFingerprint = "";
+  let pendingRun = null;
+  let generation = 0;
+
+  const fingerprint = (targetState, scopeKey) => collectPhotoHydrationTasks(targetState)
+    .map((task) => `${task.key}|${task.sourceSignature}`)
+    .sort()
+    .join(`\n${scopeKey}|`);
+
+  const activateScope = (scopeKey = getScopeKey()) => {
+    generation += 1;
+    onScopeChange(scopeKey);
+    objectUrls?.activateScope?.(scopeKey);
+    preparedFingerprint = "";
+    pendingFingerprint = "";
+    pendingRun = null;
   };
-  await Promise.all(Array.from(
-    { length: Math.max(1, Math.min(Number(concurrency) || 1, tasks.length)) },
-    () => worker()
-  ));
-  return result;
+
+  const prepare = async () => {
+    const targetState = getState();
+    const scopeKey = String(getScopeKey() || "guest");
+    if (objectUrls?.currentScope?.() !== scopeKey) activateScope(scopeKey);
+    const tasks = collectPhotoHydrationTasks(targetState);
+    const nextFingerprint = `${scopeKey}|${fingerprint(targetState, scopeKey)}`;
+    if (objectUrls?.isReady?.() && preparedFingerprint === nextFingerprint) return null;
+    if (pendingRun && pendingFingerprint === nextFingerprint) return pendingRun;
+    objectUrls?.setReady?.(false);
+    pendingFingerprint = nextFingerprint;
+    const runGeneration = generation;
+    pendingRun = (async () => {
+      const activeObjectUrlKeys = new Set(tasks.map((task) =>
+        photoObjectUrlKey(task.key, task.sourceSignature)));
+      await hydrateNormalizedPhotoTasks(tasks, {
+        getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
+        putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
+        onRecord: (task, _record, blobs) => {
+          if (runGeneration !== generation) return;
+          objectUrls?.ensure?.(task.key, task.sourceSignature, blobs.previewBlob || blobs.fullBlob);
+        }
+      });
+      if (runGeneration !== generation) return null;
+      objectUrls?.reconcile?.(activeObjectUrlKeys);
+      const activePhotoIds = new Set(tasks.map((task) => task.key));
+      const cachedRecords = await listCachedPhotos(scopeKey).catch(() => []);
+      await Promise.all(cachedRecords
+        .filter((record) => record?.cachePurpose === "offline-remote" && !activePhotoIds.has(record.id))
+        .map((record) => deleteCachedPhoto(record.id, scopeKey).catch(() => null)));
+      preparedFingerprint = nextFingerprint;
+      objectUrls?.setReady?.(true);
+      return { total: tasks.length };
+    })().catch((error) => {
+      if (runGeneration === generation) {
+        preparedFingerprint = nextFingerprint;
+        objectUrls?.setReady?.(true);
+      }
+      throw error;
+    }).finally(() => {
+      if (runGeneration === generation && pendingFingerprint === nextFingerprint) {
+        pendingRun = null;
+        pendingFingerprint = "";
+      }
+    });
+    return pendingRun;
+  };
+
+  return {
+    activateScope,
+    isReady: () => {
+      const scopeKey = String(getScopeKey() || "guest");
+      const currentFingerprint = `${scopeKey}|${fingerprint(getState(), scopeKey)}`;
+      return Boolean(objectUrls?.isReady?.()) && preparedFingerprint === currentFingerprint;
+    },
+    prepare
+  };
 }
 
 export function createOfflinePhotoCacheController({
@@ -199,6 +217,7 @@ export function createOfflinePhotoCacheController({
   onChange = () => {},
   cachePhotos = cacheRemotePhotosForOffline,
   cacheOptions = {},
+  getCacheOptions = () => cacheOptions,
   retryDelaysMs = [5000, 15000, 45000],
   setTimer = (callback, delay) => globalThis.setTimeout(callback, delay),
   clearTimer = (timer) => globalThis.clearTimeout(timer)
@@ -256,7 +275,7 @@ export function createOfflinePhotoCacheController({
     lastAttemptFingerprint = fingerprint;
     try {
       const result = await cachePhotos(targetState, {
-        ...cacheOptions,
+        ...getCacheOptions(),
         onPending: () => setActive(true)
       });
       const hasFailures = Number(result?.failed) > 0;

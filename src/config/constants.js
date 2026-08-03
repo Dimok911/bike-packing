@@ -1,5 +1,5 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v1431";
+export const APP_VERSION = "v1432";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -20,7 +20,7 @@ export const ACTIVE_LAYOUT_CHOICE_SOURCE_KEY = "bike-packing-active-layout-choic
 export const ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY = "bike-packing-active-private-layout-choice-v1";
 export const API_BASE = "https://api.vniipo-help.ru/letters-vniipo/api";
 export const PHOTO_DB_NAME = "bike-packing-photo-cache-v1";
-export const PHOTO_DB_VERSION = 1;
+export const PHOTO_DB_VERSION = 2;
 export const PHOTO_STORE = "photos";
 export const ITEM_PHOTO_MAX_SIZE = 1600;
 export const ITEM_PHOTO_THUMB_SIZE = 520;

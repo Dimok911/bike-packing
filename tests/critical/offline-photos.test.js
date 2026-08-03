@@ -30,8 +30,10 @@ import { apiUploadFormDataRequest, isTimeoutError } from "../../src/sync/api-cli
 import {
   cacheRemotePhotosForOffline,
   collectOfflinePhotoCacheTasks,
-  createOfflinePhotoCacheController
+  createOfflinePhotoCacheController,
+  createOfflinePhotoRenderCoordinator
 } from "../../src/sync/offline-photo-cache.js";
+import { photoBlobsAreDistinct } from "../../src/sync/photo-cache-quality.js";
 import {
   markPhotoUploadStarted,
   uploadPhotoToPath,
@@ -54,8 +56,10 @@ import {
   resolvePhotoGalleryActiveIndex,
   resolvePhotoGallerySnapIndex,
   resolvePhotoLightboxSource,
-  renderItemPhotoHtml
+  renderItemPhotoHtml,
+  renderPhotoSlide
 } from "../../src/ui/photo-gallery.js";
+import { createPhotoObjectUrlRegistry } from "../../src/ui/photo-object-url-registry.js";
 import {
   PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS,
   photoLightboxAutoSize,
@@ -164,6 +168,46 @@ test("CRITICAL offline-photos: existing local photo blobs prevent duplicate serv
   assert.equal(result.downloaded, 0);
 });
 
+test("CRITICAL offline-photos: a newly uploaded verified original adopts its remote signature without download", async () => {
+  const state = {
+    items: {
+      item1: {
+        photos: [{
+          id: "photo-server-new",
+          localId: "photo-local-new",
+          url: "https://api.example.test/photo-server-new/file",
+          thumbUrl: "https://api.example.test/photo-server-new/thumb",
+          updatedAt: "v1"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const original = new Blob(["local-original"]);
+  let stored = null;
+  let fetchCount = 0;
+  const result = await cacheRemotePhotosForOffline(state, {
+    getCachedPhoto: async () => ({
+      id: "photo-local-new",
+      blob: original,
+      thumbBlob: new Blob(["local-thumb"]),
+      fullBlobVerified: true,
+      sourceSignature: ""
+    }),
+    putCachedPhoto: async (record) => { stored = record; },
+    fetchImpl: async () => {
+      fetchCount += 1;
+      throw new Error("must not fetch");
+    }
+  });
+
+  assert.deepEqual(result, { total: 1, cached: 1, downloaded: 0, failed: 0 });
+  assert.equal(fetchCount, 0);
+  assert.equal(stored.blob, original);
+  assert.equal(stored.sourceSignature,
+    "https://api.example.test/photo-server-new/file|https://api.example.test/photo-server-new/thumb|v1");
+});
+
 test("CRITICAL offline-photos: cache controller exposes readiness work once per photo state", async () => {
   const state = {
     items: {
@@ -260,7 +304,7 @@ test("CRITICAL offline-photos: thumbnail is persisted before a slow full-size do
   assert.equal(await stored[1].blob.text(), "full-size");
 });
 
-test("CRITICAL offline-photos: a failed refresh preserves an older verified full-size blob", async () => {
+test("CRITICAL offline-photos: a failed refresh never promotes an older signature as current", async () => {
   const oldFull = new Blob(["old-full"]);
   const stored = [];
   const state = {
@@ -292,10 +336,164 @@ test("CRITICAL offline-photos: a failed refresh preserves an older verified full
 
   assert.equal(result.failed, 1);
   assert.equal(stored.length, 1);
-  assert.equal(stored[0].blob, oldFull);
-  assert.equal(stored[0].fullBlobVerified, true);
-  assert.equal(stored[0].sourceSignature, "old|old|old");
+  assert.equal(stored[0].blob, null);
+  assert.equal(stored[0].fullBlobVerified, false);
+  assert.equal(stored[0].sourceSignature,
+    "https://api.example.test/photo-preserve/file|https://api.example.test/photo-preserve/thumb|new");
   assert.equal(await stored[0].thumbBlob.text(), "new-thumb");
+});
+
+test("CRITICAL offline-photos: first download is reused on a second application start without fetch", async () => {
+  const state = {
+    items: {
+      item1: {
+        photos: [{
+          id: "photo-repeat",
+          url: "https://api.example.test/photo-repeat/file",
+          thumbUrl: "https://api.example.test/photo-repeat/thumb",
+          updatedAt: "v1"
+        }]
+      }
+    },
+    containers: {}
+  };
+  const records = new Map();
+  let fetchCount = 0;
+  const options = {
+    getCachedPhoto: async (id) => records.get(id) || null,
+    putCachedPhoto: async (record) => records.set(record.id, record),
+    fetchImpl: async (url) => {
+      fetchCount += 1;
+      return { ok: true, blob: async () => new Blob([url]) };
+    }
+  };
+
+  const first = await cacheRemotePhotosForOffline(state, options);
+  assert.deepEqual(first, { total: 1, cached: 0, downloaded: 1, failed: 0 });
+  assert.equal(fetchCount, 2);
+
+  const second = await cacheRemotePhotosForOffline(state, options);
+  assert.deepEqual(second, { total: 1, cached: 1, downloaded: 0, failed: 0 });
+  assert.equal(fetchCount, 2);
+});
+
+test("CRITICAL offline-photos: cached thumbnail is hydrated before a card can expose its remote src", async () => {
+  const photo = {
+    id: "photo-hydrated",
+    url: "https://api.example.test/photo-hydrated/file",
+    thumbUrl: "https://api.example.test/photo-hydrated/thumb",
+    updatedAt: "v1"
+  };
+  const state = { items: { item1: { photos: [photo] } }, containers: {} };
+  const [task] = collectOfflinePhotoCacheTasks(state);
+  const revoked = [];
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => "blob:cached-thumb",
+    revokeObjectUrl: (url) => revoked.push(url)
+  });
+  objectUrls.activateScope("id:user-1");
+  const coordinator = createOfflinePhotoRenderCoordinator({
+    getState: () => state,
+    getScopeKey: () => "id:user-1",
+    getCachedPhoto: async () => ({
+      id: photo.id,
+      blob: null,
+      thumbBlob: new Blob(["thumb"]),
+      fullBlobVerified: false,
+      sourceSignature: task.signature
+    }),
+    objectUrls
+  });
+
+  const blockedHtml = renderPhotoSlide(photo, { photoObjectUrls: objectUrls });
+  assert.doesNotMatch(blockedHtml, /\n\s+src="/);
+  await coordinator.prepare();
+  const hydratedHtml = renderPhotoSlide(photo, { photoObjectUrls: objectUrls });
+  assert.match(hydratedHtml, /src="blob:cached-thumb"/);
+  assert.equal(coordinator.isReady(), true);
+  assert.deepEqual(revoked, []);
+});
+
+test("CRITICAL offline-photos: render hydration prunes deleted remote cache records and releases Blob URLs", async () => {
+  let state = {
+    items: { item1: { photos: [{ id: "photo-live", url: "https://api.example.test/live/file" }] } },
+    containers: {}
+  };
+  const deleted = [];
+  const revoked = [];
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => "blob:live",
+    revokeObjectUrl: (url) => revoked.push(url)
+  });
+  objectUrls.activateScope("id:user-1");
+  const coordinator = createOfflinePhotoRenderCoordinator({
+    getState: () => state,
+    getScopeKey: () => "id:user-1",
+    getCachedPhoto: async () => null,
+    listCachedPhotos: async () => [
+      { id: "photo-live", cachePurpose: "offline-remote" },
+      { id: "photo-deleted", cachePurpose: "offline-remote" },
+      { id: "photo-upload", cachePurpose: "local-upload" }
+    ],
+    deleteCachedPhoto: async (id) => deleted.push(id),
+    objectUrls
+  });
+  await coordinator.prepare();
+  assert.deepEqual(deleted, ["photo-deleted"]);
+
+  objectUrls.ensure("photo-live", "https://api.example.test/live/file|https://api.example.test/live/file|", new Blob(["live"]));
+  state = { items: {}, containers: {} };
+  await coordinator.prepare();
+  assert.ok(revoked.includes("blob:live"));
+});
+
+test("CRITICAL offline-photos: large equal-sized blobs are compared in bounded chunks", async () => {
+  const prefix = new Uint8Array(2 * 1024 * 1024);
+  const full = new Blob([prefix, new Uint8Array([1])]);
+  const thumb = new Blob([prefix, new Uint8Array([2])]);
+  assert.equal(await photoBlobsAreDistinct(full, thumb), true);
+});
+
+test("CRITICAL offline-photos: a thumbnail-only remote source is cached without a failed original retry", async () => {
+  const stored = [];
+  let fetchCount = 0;
+  const result = await cacheRemotePhotosForOffline({
+    items: {
+      item1: {
+        photos: [{ id: "photo-thumb-only", thumbUrl: "https://api.example.test/thumb-only" }]
+      }
+    },
+    containers: {}
+  }, {
+    getCachedPhoto: async () => null,
+    putCachedPhoto: async (record) => stored.push(record),
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return { ok: true, blob: async () => new Blob(["thumb-only"]) };
+    }
+  });
+
+  assert.deepEqual(result, { total: 1, cached: 0, downloaded: 1, failed: 0 });
+  assert.equal(fetchCount, 1);
+  assert.equal(stored.at(-1).fullBlobVerified, false);
+  assert.equal(await stored.at(-1).thumbBlob.text(), "thumb-only");
+});
+
+test("CRITICAL offline-photos: changing the data scope revokes and isolates card Blob URLs", () => {
+  const revoked = [];
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => "blob:user-1",
+    revokeObjectUrl: (url) => revoked.push(url)
+  });
+  objectUrls.activateScope("id:user-1");
+  objectUrls.ensure("photo-1", "signature-1", new Blob(["photo"]));
+  objectUrls.setReady(true);
+
+  objectUrls.activateScope("id:user-2");
+
+  assert.deepEqual(revoked, ["blob:user-1"]);
+  assert.equal(objectUrls.get("photo-1", "signature-1"), "");
+  assert.equal(objectUrls.isReady(), false);
 });
 
 test("CRITICAL offline-photos: an unverified legacy cache is repaired instead of accepted as full-size", async () => {
@@ -1600,7 +1798,7 @@ test("CRITICAL offline-photos: lightbox repairs an unverified thumbnail and reus
   assert.equal(fetchCount, afterFirstFetches);
 });
 
-test("CRITICAL offline-photos: stale verified cache falls back to its saved preview when offline", async () => {
+test("CRITICAL offline-photos: stale verified cache is ignored when offline", async () => {
   const cachedThumb = new Blob(["saved-preview"]);
   const result = await resolvePhotoLightboxSource({
     localId: "photo-stale",
@@ -1624,7 +1822,8 @@ test("CRITICAL offline-photos: stale verified cache falls back to its saved prev
     createObjectUrl: (blob) => `blob:fallback-${blob.size}`
   });
 
-  assert.equal(result.src, `blob:fallback-${cachedThumb.size}`);
+  assert.equal(result.src, "https://api.example.test/photo-stale/thumb");
+  assert.equal(result.objectUrl, "");
   assert.equal(result.isFull, false);
   assert.equal(result.reason, "cached-preview");
 });

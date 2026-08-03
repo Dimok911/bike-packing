@@ -163,6 +163,42 @@ export function openPhotoDb() {
   });
 }
 
+let activePhotoCacheScopeKey = "guest";
+
+function normalizedPhotoCacheScopeKey(scopeKey) {
+  return String(scopeKey || "guest").trim() || "guest";
+}
+
+function scopedPhotoCacheRecordId(id, scopeKey = activePhotoCacheScopeKey) {
+  return `${normalizedPhotoCacheScopeKey(scopeKey)}\u0000${String(id || "").trim()}`;
+}
+
+function photoCacheRecordForStorage(record, scopeKey = activePhotoCacheScopeKey) {
+  const logicalId = String(record?.id || record?.photoId || "").trim();
+  if (!logicalId) throw new Error("Photo cache record id is required");
+  return {
+    ...record,
+    id: scopedPhotoCacheRecordId(logicalId, scopeKey),
+    photoId: logicalId,
+    cacheScope: normalizedPhotoCacheScopeKey(scopeKey)
+  };
+}
+
+function photoCacheRecordForRuntime(record, fallbackId = "") {
+  if (!record) return null;
+  const logicalId = String(record.photoId || fallbackId || record.id || "").trim();
+  return { ...record, id: logicalId, photoId: logicalId };
+}
+
+export function setPhotoCacheScope(scopeKey) {
+  activePhotoCacheScopeKey = normalizedPhotoCacheScopeKey(scopeKey);
+  return activePhotoCacheScopeKey;
+}
+
+export function getPhotoCacheScope() {
+  return activePhotoCacheScopeKey;
+}
+
 export async function photoDbStore(mode, callback) {
   const db = await openPhotoDb();
   return new Promise((resolve, reject) => {
@@ -185,18 +221,36 @@ export async function photoDbStore(mode, callback) {
   });
 }
 
-export function putCachedPhoto(record) {
-  return photoDbStore("readwrite", (store) => store.put(record));
+export function putCachedPhoto(record, scopeKey = activePhotoCacheScopeKey) {
+  return photoDbStore("readwrite", (store) => store.put(photoCacheRecordForStorage(record, scopeKey)));
 }
 
-export function getCachedPhoto(id) {
+export async function getCachedPhoto(id, scopeKey = activePhotoCacheScopeKey) {
   if (!id) return Promise.resolve(null);
-  return photoDbStore("readonly", (store) => store.get(id)).catch(() => null);
+  const logicalId = String(id).trim();
+  const scoped = await photoDbStore("readonly", (store) =>
+    store.get(scopedPhotoCacheRecordId(logicalId, scopeKey))).catch(() => null);
+  if (scoped) return photoCacheRecordForRuntime(scoped, logicalId);
+  const legacy = await photoDbStore("readonly", (store) => store.get(logicalId)).catch(() => null);
+  if (!legacy || legacy.cacheScope) return null;
+  const runtimeRecord = photoCacheRecordForRuntime(legacy, logicalId);
+  putCachedPhoto(runtimeRecord, scopeKey).catch(() => null);
+  return runtimeRecord;
 }
 
-export function deleteCachedPhoto(id) {
+export async function deleteCachedPhoto(id, scopeKey = activePhotoCacheScopeKey) {
   if (!id) return Promise.resolve();
-  return photoDbStore("readwrite", (store) => store.delete(id)).catch(() => null);
+  const logicalId = String(id).trim();
+  await photoDbStore("readwrite", (store) =>
+    store.delete(scopedPhotoCacheRecordId(logicalId, scopeKey))).catch(() => null);
+}
+
+export async function listCachedPhotos(scopeKey = activePhotoCacheScopeKey) {
+  const normalizedScope = normalizedPhotoCacheScopeKey(scopeKey);
+  const records = await photoDbStore("readonly", (store) => store.getAll()).catch(() => []);
+  return (Array.isArray(records) ? records : [])
+    .filter((record) => record?.cacheScope === normalizedScope)
+    .map((record) => photoCacheRecordForRuntime(record));
 }
 
 function createLocalPhotoId() {

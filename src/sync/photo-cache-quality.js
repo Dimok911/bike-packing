@@ -16,15 +16,20 @@ export async function photoBlobsAreDistinct(fullBlob, thumbBlob) {
     return false;
   }
   try {
-    const [fullBuffer, thumbBuffer] = await Promise.all([
-      fullBlob.arrayBuffer(),
-      thumbBlob.arrayBuffer()
-    ]);
-    const fullBytes = new Uint8Array(fullBuffer);
-    const thumbBytes = new Uint8Array(thumbBuffer);
-    if (fullBytes.length !== thumbBytes.length) return true;
-    for (let index = 0; index < fullBytes.length; index += 1) {
-      if (fullBytes[index] !== thumbBytes[index]) return true;
+    const chunkSize = 1024 * 1024;
+    const size = Number(fullBlob.size) || 0;
+    for (let offset = 0; offset < size; offset += chunkSize) {
+      const end = Math.min(size, offset + chunkSize);
+      const [fullBuffer, thumbBuffer] = await Promise.all([
+        fullBlob.slice(offset, end).arrayBuffer(),
+        thumbBlob.slice(offset, end).arrayBuffer()
+      ]);
+      const fullBytes = new Uint8Array(fullBuffer);
+      const thumbBytes = new Uint8Array(thumbBuffer);
+      if (fullBytes.length !== thumbBytes.length) return true;
+      for (let index = 0; index < fullBytes.length; index += 1) {
+        if (fullBytes[index] !== thumbBytes[index]) return true;
+      }
     }
     return false;
   } catch {

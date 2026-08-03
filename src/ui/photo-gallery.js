@@ -7,6 +7,10 @@ import {
 } from "../sync/photos.js";
 import { photoBlobsAreDistinct, photoCacheSourceSignature } from "../sync/photo-cache-quality.js";
 import {
+  cachedPhotoMatchesTask,
+  cachedPhotoPreview
+} from "../sync/photo-cache-engine.js";
+import {
   normalizeItemPhotos,
   photoUploadBatchInfo,
   photoUploadBatchSummary
@@ -72,7 +76,6 @@ export function renderPhotoSlide(photo, {
   uploadState = null
 } = {}) {
   const localId = photo.localId || photo.id;
-  const localSrc = localId ? photoObjectUrls.get(localId) : "";
   const remoteSrc = photoRemoteSrc(photo);
   const remoteFullUrl = photo.url ? normalizeRemotePhotoUrl(photo.url) : "";
   const remoteThumbUrl = photo.thumbUrl ? normalizeRemotePhotoUrl(photo.thumbUrl) : remoteFullUrl;
@@ -85,7 +88,11 @@ export function renderPhotoSlide(photo, {
   const sourceSignature = remoteFullUrl
     ? photoCacheSourceSignature(remoteFullUrl, remoteThumbUrl, photo.updatedAt || "")
     : "";
-  const src = localSrc || remoteSrc || "";
+  const localSrc = localId ? photoObjectUrls.get(localId, sourceSignature) : "";
+  const remoteSourcesReady = typeof photoObjectUrls?.isReady === "function"
+    ? photoObjectUrls.isReady()
+    : true;
+  const src = localSrc || (remoteSourcesReady ? remoteSrc : "") || "";
   const fullSrc = remoteFullSrc;
   const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : "";
   const fullAttr = fullSrc ? ` data-photo-full-src="${escapeHtml(fullSrc)}"` : "";
@@ -171,7 +178,6 @@ export async function renderPhotoGalleryHtml(photos, {
 
 async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = null } = {}) {
   const cached = await getCachedPhoto(photo.localId || photo.id);
-  const blob = cached?.thumbBlob || cached?.blob;
   const remoteFullUrl = photo.url ? normalizeRemotePhotoUrl(photo.url) : "";
   const remoteThumbUrl = photo.thumbUrl ? normalizeRemotePhotoUrl(photo.thumbUrl) : remoteFullUrl;
   const sourceSignature = remoteFullUrl
@@ -180,6 +186,7 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
   const cachedSourceMatches = !remoteFullUrl || Boolean(
     sourceSignature && cached?.sourceSignature === sourceSignature
   );
+  const blob = cachedSourceMatches ? (cached?.thumbBlob || cached?.blob) : null;
   const fullBlob = cached?.blob && (
     (cached.fullBlobVerified === true && cachedSourceMatches)
     || (cached.fullBlobVerified !== false && !remoteFullUrl)
@@ -412,21 +419,28 @@ export async function hydrateItemPhotos(root = document, { photoObjectUrls = new
   const images = [...root.querySelectorAll("img[data-photo-local-id]")];
   await Promise.all(images.map(async (image) => {
     const localId = image.dataset.photoLocalId;
-    const existingUrl = photoObjectUrls.get(localId);
+    const sourceSignature = image.dataset.photoSourceSignature || "";
+    const existingUrl = photoObjectUrls.get(localId, sourceSignature);
     if (existingUrl) {
       image.src = existingUrl;
       image.removeAttribute("data-photo-local-id");
       return;
     }
     const cached = await getCachedPhoto(localId);
-    const blob = cached?.thumbBlob || cached?.blob;
+    const task = { sourceSignature };
+    const blob = cachedPhotoMatchesTask(cached, task)
+      ? cachedPhotoPreview(cached, task)
+      : null;
     if (!blob) return;
-    image.src = getPhotoObjectUrl(localId, blob, photoObjectUrls);
+    image.src = getPhotoObjectUrl(localId, sourceSignature, blob, photoObjectUrls);
     image.removeAttribute("data-photo-local-id");
   }));
 }
 
-function getPhotoObjectUrl(id, blob, photoObjectUrls) {
+function getPhotoObjectUrl(id, sourceSignature, blob, photoObjectUrls) {
+  if (typeof photoObjectUrls?.ensure === "function") {
+    return photoObjectUrls.ensure(id, sourceSignature, blob);
+  }
   if (photoObjectUrls.has(id)) return photoObjectUrls.get(id);
   const url = URL.createObjectURL(blob);
   photoObjectUrls.set(id, url);
@@ -1235,7 +1249,7 @@ export async function resolvePhotoLightboxSource(entry, {
       ? Promise.resolve(cached.thumbBlob)
       : previewFetchSrc && previewFetchSrc !== fullFetchSrc
         ? fetchPhotoLightboxBlob(previewFetchSrc, fetchImpl)
-        : Promise.resolve(cached?.thumbBlob || null);
+        : Promise.resolve(null);
     try {
       const fullBlob = await fetchPhotoLightboxBlob(fullFetchSrc, fetchImpl);
       if (!fullBlob?.size) throw new Error("full-photo-empty");
@@ -1249,8 +1263,8 @@ export async function resolvePhotoLightboxSource(entry, {
             id: entry.localId,
             blob: fullBlob,
             thumbBlob: comparisonThumbBlob
-              || cached?.thumbBlob
-              || (cached?.fullBlobVerified !== true ? cached?.blob : null),
+              || (cachedSourceMatches ? cached?.thumbBlob : null)
+              || fullBlob,
             fullBlobVerified: true,
             fullBlobDistinct,
             sourceSignature,
@@ -1266,8 +1280,9 @@ export async function resolvePhotoLightboxSource(entry, {
       const objectUrl = createObjectUrl(fullBlob);
       return { src: objectUrl, objectUrl, isFull: true };
     } catch {
-      const fallbackBlob = cached?.thumbBlob
-        || (cached?.fullBlobVerified !== true ? cached?.blob : null);
+      const fallbackBlob = cachedSourceMatches
+        ? (cached?.thumbBlob || (cached?.fullBlobVerified !== true ? cached?.blob : null))
+        : null;
       if (fallbackBlob) {
         const objectUrl = createObjectUrl(fallbackBlob);
         return { src: objectUrl, objectUrl, isFull: false, reason: "cached-preview" };
