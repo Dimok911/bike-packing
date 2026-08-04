@@ -2242,18 +2242,19 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.6 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.7 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.6");
+  assert.equal(manifest.version, "2.1.7");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "2be42e319b087615badca5c33264443d60d985b4929827cf656140e65679c12d");
+  assert.equal(manifest.sha256, "863afb93da1328db26e87f4acd1ddcdec0823a362d0423f4104fab8064a3d071");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
   assert.match(asset, /fullscreenImagePresentation: 1/);
-  assert.match(asset, /fullscreenEdgeSettling: 1/);
+  assert.match(asset, /fullscreenEdgeSettling: 2/);
+  assert.match(asset, /fullscreenEdgeRubberBand: 1/);
   assert.match(asset, /function resolveFullscreenImagePresentation\(/);
   assert.match(asset, /function createFullscreenSourceController\(/);
   assert.match(asset, /function replaceFullscreenImageSource\(/);
@@ -2434,7 +2435,7 @@ test("CRITICAL offline-photos: lightbox close and side navigation use the shared
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*border:1px solid rgba\(255,255,255,\.28\)[^}]*border-radius:10px[^}]*background:rgba\(8,15,13,\.62\)/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*color:#fff/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control:focus-visible/);
-  assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenEdgeSettling >= 1[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
+  assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenEdgeRubberBand >= 1[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
   assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(baseIndex \+ \(dx < 0 \? 1 : -1\)\);/);
 });
 
@@ -2484,11 +2485,11 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.ok(next.velocityX > 0 && next.velocityX < 1);
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /capabilities\?\.fullscreenImagePresentation >= 1/);
-  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeSettling >= 1/);
+  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 1/);
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.6"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.7"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
@@ -2536,6 +2537,17 @@ test("CRITICAL offline-photos: shared thumbnails contain and interrupted edge sw
   assert.match(fallbackSource, /listen\(track, "touchcancel",[\s\S]{0,180}scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
   assert.match(styles, /\.item-photo img,[\s\S]{0,180}object-fit:\s*contain;/);
   assert.doesNotMatch(styles, /\.vpg-slide[^}]*object-fit:\s*cover/);
+});
+
+test("CRITICAL offline-photos: inline and fullscreen edges share rubber-band without delayed normal-swipe snapping", () => {
+  const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
+  const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
+  assert.equal((fallbackSource.match(/createEdgeRubberBandController\(\{/g) || []).length, 2);
+  assert.match(fallbackSource, /function bindGallery\(gallery, options\)[\s\S]*edgeRubberBand = createEdgeRubberBandController\(\{[\s\S]*getSlides: \(\) => slides/);
+  assert.match(fallbackSource, /track\?\.addEventListener\?\.\("touchmove", onTouchMove, \{ passive: false \}\)/);
+  assert.match(fallbackSource, /vpg-edge-rubber-band-returning/);
+  assert.doesNotMatch(fallbackSource, /\[180, 420\]/);
+  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 1/);
 });
 
 test("CRITICAL offline-photos: lightbox backdrop closes without stealing side navigation clicks", () => {
