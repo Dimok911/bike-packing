@@ -27,10 +27,48 @@ The local FTP connection is configured in the Git-ignored
 `.vscode/sftp.json`. Treat the whole file as a secret even though only the
 password field is confidential.
 
-For a recoverable update, upload into a new sibling staging directory first
-and verify it through HTTPS. Then rename the current `bike-packing` directory
-to a versioned backup and rename the verified staging directory to
-`bike-packing`. If activation fails, restore the backup immediately.
+## Exact FTP topology
+
+The FTP connection root and the production directory are different levels:
+
+- `.vscode/sftp.json` must keep `protocol: "ftp"` and `remotePath: "/"`;
+- `remotePath: "/"` means the FTP account root; it is not the public
+  bike-packing directory;
+- the production directory relative to that FTP root is fixed as
+  `/www/vniipo-help.ru/bike-packing/`;
+- FTP `/www/vniipo-help.ru/bike-packing/index.html` maps to public
+  `https://vniipo-help.ru/bike-packing/index.html`;
+- staging and backup directories are siblings below FTP
+  `/www/vniipo-help.ru/`, so directory-swap deployment is available;
+- never upload application files directly to FTP `/`, and never derive the
+  production path from `remotePath` alone.
+
+Use the project deployment script instead of composing FTP commands manually:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-production-ftp.ps1 -ExpectedVersion vNNN
+```
+
+The script reads `.vscode/sftp.json` without printing it, passes credentials to
+the approved `C:\Windows\System32\curl.exe` through stdin, refuses any
+`remotePath` other than `/`, and always targets the fixed production path
+`/www/vniipo-help.ru/bike-packing/`. It performs this recoverable sequence:
+
+1. upload the build to a unique sibling staging directory below FTP
+   `/www/vniipo-help.ru/`;
+2. download it back and compare every file with the local artifact by SHA-256;
+3. verify staging `index.html`, `app.js`, `styles.css`, and `sw.js` through its
+   public HTTPS sibling URL;
+4. rename production to a unique backup and staging to `bike-packing`;
+5. download production back and compare every artifact file by SHA-256;
+6. verify `index.html`, `app.js`, `styles.css`, and `sw.js` through production
+   HTTPS;
+7. automatically restore and verify the previous directory if activation or
+   public verification fails.
+
+The versioned backup is intentionally retained for manual recovery. A failed
+release directory is also retained if a post-activation rollback was needed;
+never delete deployment directories using an unvalidated wildcard.
 
 ## Verification
 
