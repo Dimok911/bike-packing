@@ -282,7 +282,7 @@ export function createAppTailControllers(ctx) {
     openModalDialog, openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog,
     openSharedListFromLink, orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible,
     parseContainerDimensionInput, parseVolumeInput, parseWeightInput, persistActiveLayoutSelection,
-    persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoObjectUrls,
+    persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator,
     photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
@@ -3818,6 +3818,7 @@ function renderItemPhoto(item, { force = false } = {}) {
 function photoGalleryBindingOptions() {
   return {
     photoObjectUrls,
+    prepareFullscreenSource: (entry) => offlinePhotoRenderCoordinator.prepareFullscreenSource(entry),
     onItemPreviewActive(index) {
       runtime.itemDialogPhotoActiveIndex = index;
       updateItemDialogPhotoPrimaryButton();

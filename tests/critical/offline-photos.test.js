@@ -30,6 +30,7 @@ import { apiUploadFormDataRequest, isTimeoutError } from "../../src/sync/api-cli
 import {
   cacheRemotePhotosForOffline,
   collectOfflinePhotoCacheTasks,
+  createPhotoHydrationTask,
   createOfflinePhotoCacheController,
   createOfflinePhotoRenderCoordinator
 } from "../../src/sync/offline-photo-cache.js";
@@ -453,6 +454,80 @@ test("CRITICAL offline-photos: render hydration prunes deleted remote cache reco
   state = { items: {}, containers: {} };
   await coordinator.prepare();
   assert.ok(revoked.includes("blob:live"));
+});
+
+test("CRITICAL offline-photos: fullscreen preparation hydrates verified full before render and skips a second IDB read", async () => {
+  const signature = "https://api.example.test/full|https://api.example.test/thumb|v1";
+  let reads = 0;
+  let urlIndex = 0;
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => `blob:fullscreen-${++urlIndex}`,
+    revokeObjectUrl: () => {}
+  });
+  objectUrls.activateScope("id:user-1");
+  const coordinator = createOfflinePhotoRenderCoordinator({
+    getScopeKey: () => "id:user-1",
+    getCachedPhoto: async () => {
+      reads += 1;
+      return {
+        id: "photo-fullscreen",
+        blob: new Blob(["full"]),
+        thumbBlob: new Blob(["thumb"]),
+        fullBlobVerified: true,
+        sourceSignature: signature,
+        cachePurpose: "offline-remote"
+      };
+    },
+    objectUrls
+  });
+
+  const first = await coordinator.prepareFullscreenSource({
+    localId: "photo-fullscreen",
+    sourceSignature: signature
+  });
+  const second = await coordinator.prepareFullscreenSource({
+    localId: "photo-fullscreen",
+    sourceSignature: signature
+  });
+
+  assert.match(first.preview, /^blob:fullscreen-/);
+  assert.match(first.full, /^blob:fullscreen-/);
+  assert.equal(second.full, first.full);
+  assert.equal(reads, 1);
+});
+
+test("CRITICAL offline-photos: fullscreen preparation rejects a stale source signature", async () => {
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => "blob:must-not-be-created",
+    revokeObjectUrl: () => {}
+  });
+  objectUrls.activateScope("id:user-1");
+  const coordinator = createOfflinePhotoRenderCoordinator({
+    getScopeKey: () => "id:user-1",
+    getCachedPhoto: async () => ({
+      id: "photo-stale",
+      blob: new Blob(["old-full"]),
+      fullBlobVerified: true,
+      sourceSignature: "old-signature",
+      cachePurpose: "offline-remote"
+    }),
+    objectUrls
+  });
+
+  assert.deepEqual(await coordinator.prepareFullscreenSource({
+    localId: "photo-stale",
+    sourceSignature: "new-signature"
+  }), { preview: "", full: "" });
+  assert.deepEqual(createPhotoHydrationTask({
+    localId: "photo-stale",
+    sourceSignature: "new-signature"
+  }), {
+    key: "photo-stale",
+    sourceSignature: "new-signature",
+    namespace: "offline-remote",
+    cachePurpose: "offline-remote",
+    allowUnversionedVerifiedFull: false
+  });
 });
 
 test("CRITICAL offline-photos: large equal-sized blobs are compared in bounded chunks", async () => {
@@ -2217,6 +2292,16 @@ test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remot
   assert.equal(task.cachePurpose, "offline-remote");
   assert.equal("blob" in task, false);
   assert.equal("thumbBlob" in task, false);
+});
+
+test("CRITICAL offline-photos: fullscreen waits for adapter hydration before creating the dialog", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const awaitIndex = source.indexOf("await prepareFullscreenSource(initialEntry)");
+  const dialogIndex = source.indexOf('document.createElement("dialog")');
+  assert.ok(awaitIndex >= 0);
+  assert.ok(dialogIndex > awaitIndex);
+  assert.match(source, /if \(openRequestId !== lightboxOpenRequestId\) return;/);
+  assert.match(source, /closePhotoLightbox\(\{ preserveOpenRequest: true \}\)/);
 });
 
 test("CRITICAL offline-photos: first stationary touch opens a packing photo during iOS momentum", () => {

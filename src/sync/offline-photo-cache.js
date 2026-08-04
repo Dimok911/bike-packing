@@ -101,6 +101,19 @@ export function collectPhotoHydrationTasks(targetState) {
   return tasks;
 }
 
+export function createPhotoHydrationTask(photo) {
+  const key = String(photo?.key || photo?.localId || photo?.id || "").trim();
+  if (!key) return null;
+  const sourceSignature = String(photo?.sourceSignature || "").trim();
+  return {
+    key,
+    sourceSignature,
+    namespace: OFFLINE_REMOTE_PHOTO_NAMESPACE,
+    cachePurpose: "offline-remote",
+    allowUnversionedVerifiedFull: Boolean(!sourceSignature && (photo?.localId || photo?.key))
+  };
+}
+
 export function offlinePhotoCacheFingerprint(targetState) {
   return collectOfflinePhotoCacheTasks(targetState)
     .map((task) => `${task.key}|${task.signature}`)
@@ -217,6 +230,27 @@ export function createOfflinePhotoRenderCoordinator({
     return pendingRun;
   };
 
+  const prepareFullscreenSource = async (photo) => {
+    const task = createPhotoHydrationTask(photo);
+    if (!task) return { preview: "", full: "" };
+    const scopeKey = String(getScopeKey() || "guest");
+    if (objectUrls?.currentScope?.() !== scopeKey) activateScope(scopeKey);
+    const runGeneration = generation;
+    await hydrateNormalizedPhotoTasks([task], {
+      getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
+      putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
+      getMemoryRecord: (candidate) => objectUrls?.getRecord?.(candidate),
+      decorateRecord: decorateBikepackingCacheRecord,
+      isCurrent: () => runGeneration === generation,
+      onRecord: (candidate, record) => {
+        if (runGeneration !== generation) return;
+        objectUrls?.setRecord?.(candidate, record);
+      }
+    });
+    if (runGeneration !== generation) return { preview: "", full: "" };
+    return objectUrls?.sources?.(task.key, task.sourceSignature) || { preview: "", full: "" };
+  };
+
   return {
     activateScope,
     isReady: () => {
@@ -224,7 +258,8 @@ export function createOfflinePhotoRenderCoordinator({
       const currentFingerprint = `${scopeKey}|${fingerprint(getState(), scopeKey)}`;
       return Boolean(objectUrls?.isReady?.()) && preparedFingerprint === currentFingerprint;
     },
-    prepare
+    prepare,
+    prepareFullscreenSource
   };
 }
 

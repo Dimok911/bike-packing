@@ -1776,7 +1776,7 @@ const appTailControllerDeps = {
   openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog, openSharedListFromLink,
   orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible, parseContainerDimensionInput,
   parseVolumeInput, parseWeightInput, persistActiveLayoutSelection, persistStateSnapshot,
-  personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
+  personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,

@@ -38,6 +38,7 @@ let lightboxLoadingNotice = null;
 let lightboxResizeHandler = null;
 let lightboxInertiaCancel = null;
 let lightboxSourceLifecycleCleanup = null;
+let lightboxOpenRequestId = 0;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
@@ -508,11 +509,12 @@ export function bindPhotoGalleries(root = document, {
   onItemPreviewActive = () => {},
   onRootContainerPreviewActive = () => {},
   photoObjectUrls = null,
+  prepareFullscreenSource = async () => null,
   openLightbox = openPhotoLightbox
 } = {}) {
   return bindSharedPhotoGalleries(root, {
     openLightbox: ({ image, gallery, index }) => {
-      if (image) openLightbox(image, { gallery, index, photoObjectUrls });
+      if (image) openLightbox(image, { gallery, index, photoObjectUrls, prepareFullscreenSource });
     },
     onActiveIndexChange: ({ gallery, index }) => {
       if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(index);
@@ -524,8 +526,10 @@ export function bindPhotoGalleries(root = document, {
 export async function openPhotoLightbox(sourceImage, {
   gallery = null,
   index = -1,
-  photoObjectUrls = null
+  photoObjectUrls = null,
+  prepareFullscreenSource = async () => null
 } = {}) {
+  const openRequestId = ++lightboxOpenRequestId;
   const { entries, activeIndex: initialIndex } = photoLightboxEntries(sourceImage, { gallery, index });
   if (typeof photoObjectUrls?.sources === "function") {
     entries.forEach((entry) => {
@@ -534,9 +538,16 @@ export async function openPhotoLightbox(sourceImage, {
       if (localSources.full) entry.verifiedFullSrc = localSources.full;
     });
   }
-  closePhotoLightbox();
   const initialEntry = entries[initialIndex];
-  const initialPreviewSrc = initialEntry?.previewSrc || initialEntry?.fullSrc || "";
+  if (initialEntry?.localId && !initialEntry.verifiedFullSrc) {
+    const preparedSources = await prepareFullscreenSource(initialEntry).catch(() => null);
+    if (openRequestId !== lightboxOpenRequestId) return;
+    if (preparedSources?.full) initialEntry.verifiedFullSrc = preparedSources.full;
+    if (preparedSources?.preview) initialEntry.previewSrc = preparedSources.preview;
+  }
+  if (openRequestId !== lightboxOpenRequestId) return;
+  closePhotoLightbox({ preserveOpenRequest: true });
+  const initialPreviewSrc = initialEntry?.verifiedFullSrc || initialEntry?.previewSrc || initialEntry?.fullSrc || "";
   if (!initialPreviewSrc) return;
   const overlay = document.createElement("dialog");
   overlay.className = "photo-lightbox";
@@ -1531,7 +1542,8 @@ function closePhotoLightboxOnEscape(event) {
   if (event.key === "Escape") closePhotoLightbox();
 }
 
-export function closePhotoLightbox() {
+export function closePhotoLightbox({ preserveOpenRequest = false } = {}) {
+  if (!preserveOpenRequest) lightboxOpenRequestId += 1;
   lightboxInertiaCancel?.();
   lightboxInertiaCancel = null;
   lightboxSourceLifecycleCleanup?.();
