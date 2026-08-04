@@ -24,6 +24,7 @@ import {
   photoLightboxSizingPresentation,
   updatePhotoLightboxAutoSize
 } from "./photo-lightbox-sizing.js";
+import { resolvePhotoLightboxPinchPan } from "./photo-lightbox-zoom.js";
 import {
   bindSharedPhotoGalleries,
   createSharedFullscreenSourceController,
@@ -1222,6 +1223,8 @@ export async function openPhotoLightbox(sourceImage, {
   }, { passive: false });
   let pinchDistance = 0;
   let pinchScale = 1;
+  let pinchOriginX = 0;
+  let pinchOriginY = 0;
   overlay.addEventListener("touchstart", (event) => {
     cancelPanInertia();
     if (isPhotoLightboxControlTarget(event.target)) return;
@@ -1252,6 +1255,9 @@ export async function openPhotoLightbox(sourceImage, {
     startY = center.y;
     startPanX = panX;
     startPanY = panY;
+    const imageRect = image.getBoundingClientRect();
+    pinchOriginX = imageRect.left + imageRect.width / 2 - panX;
+    pinchOriginY = imageRect.top + imageRect.height / 2 - panY;
     moved = true;
   }, { passive: false });
   overlay.addEventListener("touchmove", (event) => {
@@ -1275,13 +1281,27 @@ export async function openPhotoLightbox(sourceImage, {
     cancelPanInertia();
     const center = touchCenter(event.touches[0], event.touches[1]);
     const nextDistance = touchDistance(event.touches[0], event.touches[1]);
-    scale = Math.max(1, Math.min(4, pinchScale * (nextDistance / pinchDistance)));
-    if (scale === 1) {
+    const nextScale = Math.max(1, Math.min(4, pinchScale * (nextDistance / pinchDistance)));
+    if (nextScale === 1) {
+      scale = nextScale;
       panX = 0;
       panY = 0;
     } else {
-      panX = startPanX + (center.x - startX);
-      panY = startPanY + (center.y - startY);
+      const nextPan = resolvePhotoLightboxPinchPan({
+        startScale: pinchScale,
+        nextScale,
+        startPanX,
+        startPanY,
+        startCenterX: startX,
+        startCenterY: startY,
+        centerX: center.x,
+        centerY: center.y,
+        originX: pinchOriginX,
+        originY: pinchOriginY
+      });
+      scale = nextScale;
+      panX = nextPan.x;
+      panY = nextPan.y;
     }
     apply();
   }, { passive: false });
