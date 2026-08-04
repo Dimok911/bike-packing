@@ -68,11 +68,13 @@ import { createPhotoObjectUrlRegistry } from "../../src/ui/photo-object-url-regi
 import {
   PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS,
   photoLightboxAutoSize,
+  photoLightboxSizingPresentation,
   updatePhotoLightboxAutoSize
 } from "../../src/ui/photo-lightbox-sizing.js";
 import {
   createSharedFullscreenSourceController,
   replaceSharedFullscreenImageSource,
+  resolveSharedFullscreenImagePresentation,
   stepSharedPhotoInertia
 } from "../../src/ui/shared-photo-gallery.js";
 import {
@@ -475,7 +477,9 @@ test("CRITICAL offline-photos: fullscreen preparation hydrates verified full bef
         thumbBlob: new Blob(["thumb"]),
         fullBlobVerified: true,
         sourceSignature: signature,
-        cachePurpose: "offline-remote"
+        cachePurpose: "offline-remote",
+        width: 640,
+        height: 480
       };
     },
     objectUrls
@@ -492,6 +496,8 @@ test("CRITICAL offline-photos: fullscreen preparation hydrates verified full bef
 
   assert.match(first.preview, /^blob:fullscreen-/);
   assert.match(first.full, /^blob:fullscreen-/);
+  assert.equal(first.width, 640);
+  assert.equal(first.height, 480);
   assert.equal(second.full, first.full);
   assert.equal(reads, 1);
 });
@@ -2069,6 +2075,39 @@ test("CRITICAL offline-photos: low-resolution lightbox photos stay at their natu
     width: 800,
     height: 600
   });
+  assert.deepEqual(photoLightboxSizingPresentation({
+    naturalWidth: 800,
+    naturalHeight: 600,
+    availableWidth: 1900,
+    availableHeight: 1000
+  }), {
+    limitAutoUpscale: true,
+    width: 800,
+    height: 600,
+    className: "photo-lightbox-image-no-upscale",
+    cssVariables: {
+      "--photo-lightbox-natural-width": "800px",
+      "--photo-lightbox-natural-height": "600px"
+    }
+  });
+});
+
+test("CRITICAL offline-photos: known dimensions constrain a small fullscreen photo before dialog paint", () => {
+  const html = renderPhotoSlide({
+    id: "photo-small",
+    url: "https://api.example.test/photo-small/file",
+    thumbUrl: "https://api.example.test/photo-small/thumb",
+    width: 640,
+    height: 480
+  });
+  assert.match(html, /data-photo-width="640" data-photo-height="480"/);
+
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const sizingIndex = source.indexOf("const sizing = photoLightboxSizingPresentation");
+  const appendIndex = source.indexOf("document.body.append(overlay)");
+  assert.ok(sizingIndex >= 0);
+  assert.ok(appendIndex > sizingIndex);
+  assert.match(source, /photo-lightbox-image\$\{sizingClass\}/);
 });
 
 test("CRITICAL offline-photos: high-resolution or already-downscaled photos keep screen fitting", () => {
@@ -2203,16 +2242,18 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.4 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.5 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.4");
+  assert.equal(manifest.version, "2.1.5");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "71df9063759e891e3686e6d8ebc3a159e0a2feb46ebf842b9654b4c9da538ffa");
+  assert.equal(manifest.sha256, "e8410ad85f615da7825f1aa3537249655c686a9dcb06ef2d50e59db8496082e9");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
+  assert.match(asset, /fullscreenImagePresentation: 1/);
+  assert.match(asset, /function resolveFullscreenImagePresentation\(/);
   assert.match(asset, /function createFullscreenSourceController\(/);
   assert.match(asset, /function replaceFullscreenImageSource\(/);
   assert.match(asset, /const fullscreenControlStyleId = "vniipo-photo-gallery-v2-fullscreen-controls"/);
@@ -2426,7 +2467,7 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("CRITICAL offline-photos: shared inertia is available through the cached 2.1.4 fallback", () => {
+test("CRITICAL offline-photos: shared helpers are available through the cached 2.1.5 fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const next = stepSharedPhotoInertia({
@@ -2441,10 +2482,35 @@ test("CRITICAL offline-photos: shared inertia is available through the cached 2.
   assert.equal(next.y, -12);
   assert.ok(next.velocityX > 0 && next.velocityX < 1);
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
+  assert.match(sharedSource, /capabilities\?\.fullscreenImagePresentation >= 1/);
+  assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.4"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.5"/);
   assert.match(fallbackSource, /function stepInertia\(/);
+
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  globalThis.VniipoPhotoGallery = {
+    version: "2.1.4",
+    contractVersion: 2,
+    capabilities: { fullscreenControlStyles: 1 },
+    helpers: { stepInertia: currentRuntime.helpers.stepInertia }
+  };
+  try {
+    assert.deepEqual(resolveSharedFullscreenImagePresentation({
+      naturalWidth: 640,
+      naturalHeight: 480,
+      availableWidth: 1280,
+      availableHeight: 960
+    }), {
+      known: true,
+      preventUpscale: true,
+      width: 640,
+      height: 480
+    });
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
 });
 
 test("CRITICAL offline-photos: zoomed lightbox pans with bounded cancellable inertia only", () => {

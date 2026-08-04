@@ -77,6 +77,18 @@ export function stepSharedPhotoInertia(options = {}) {
   return helper?.(options) || null;
 }
 
+export function resolveSharedFullscreenImagePresentation(options = {}) {
+  const api = runtime()?.capabilities?.fullscreenImagePresentation >= 1
+    ? runtime()
+    : fallbackRuntime;
+  return api?.helpers?.resolveFullscreenImagePresentation?.(options) || {
+    known: false,
+    preventUpscale: false,
+    width: 0,
+    height: 0
+  };
+}
+
 export function sharedFullscreenImageUsesSource(image, src) {
   const helper = runtime()?.fullscreenImageUsesSource
     || fallbackRuntime?.fullscreenImageUsesSource;

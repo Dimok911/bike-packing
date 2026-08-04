@@ -248,7 +248,14 @@ export function createOfflinePhotoRenderCoordinator({
       }
     });
     if (runGeneration !== generation) return { preview: "", full: "" };
-    return objectUrls?.sources?.(task.key, task.sourceSignature) || { preview: "", full: "" };
+    const sources = objectUrls?.sources?.(task.key, task.sourceSignature) || { preview: "", full: "" };
+    const record = objectUrls?.getRecord?.(task);
+    const width = Math.max(0, Number(record?.width) || 0);
+    const height = Math.max(0, Number(record?.height) || 0);
+    return {
+      ...sources,
+      ...(width && height ? { width, height } : {})
+    };
   };
 
   return {

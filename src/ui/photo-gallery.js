@@ -20,7 +20,10 @@ import {
 } from "../state/item-photos.js";
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
-import { updatePhotoLightboxAutoSize } from "./photo-lightbox-sizing.js";
+import {
+  photoLightboxSizingPresentation,
+  updatePhotoLightboxAutoSize
+} from "./photo-lightbox-sizing.js";
 import {
   bindSharedPhotoGalleries,
   createSharedFullscreenSourceController,
@@ -114,6 +117,11 @@ export function renderPhotoSlide(photo, {
   const remoteFullAttr = remoteFullSrc ? ` data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : "";
   const remoteThumbAttr = remoteThumbSrc ? ` data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : "";
   const sourceSignatureAttr = sourceSignature ? ` data-photo-source-signature="${escapeHtml(sourceSignature)}"` : "";
+  const width = Math.max(0, Number(photo.width) || 0);
+  const height = Math.max(0, Number(photo.height) || 0);
+  const dimensionsAttr = width && height
+    ? ` data-photo-width="${width}" data-photo-height="${height}"`
+    : "";
   return `
     <button class="photo-gallery-slide vpg-slide" type="button" data-photo-open>
       <img
@@ -124,6 +132,7 @@ export function renderPhotoSlide(photo, {
         ${remoteFullAttr}
         ${remoteThumbAttr}
         ${sourceSignatureAttr}
+        ${dimensionsAttr}
         alt=""
         loading="lazy"
       />
@@ -544,6 +553,8 @@ export async function openPhotoLightbox(sourceImage, {
     if (openRequestId !== lightboxOpenRequestId) return;
     if (preparedSources?.full) initialEntry.verifiedFullSrc = preparedSources.full;
     if (preparedSources?.preview) initialEntry.previewSrc = preparedSources.preview;
+    if (preparedSources?.width) initialEntry.width = preparedSources.width;
+    if (preparedSources?.height) initialEntry.height = preparedSources.height;
   }
   if (openRequestId !== lightboxOpenRequestId) return;
   closePhotoLightbox({ preserveOpenRequest: true });
@@ -562,9 +573,21 @@ export async function openPhotoLightbox(sourceImage, {
       ? (entry?.verifiedFullSrc || entry?.resolvedFullSrc || "")
       : "";
     const initialSrc = directFullSrc || previewSrc;
+    const viewportWidth = Math.max(0, Number(window.visualViewport?.width || window.innerWidth) - 18);
+    const viewportHeight = Math.max(0, Number(window.visualViewport?.height || window.innerHeight) - 18);
+    const sizing = photoLightboxSizingPresentation({
+      naturalWidth: entry?.width,
+      naturalHeight: entry?.height,
+      availableWidth: viewportWidth,
+      availableHeight: viewportHeight
+    });
+    const sizingClass = sizing.className ? ` ${sizing.className}` : "";
+    const sizingStyle = sizing.limitAutoUpscale
+      ? ` style="--photo-lightbox-natural-width: ${sizing.width}px; --photo-lightbox-natural-height: ${sizing.height}px"`
+      : "";
     return `
       <div class="photo-lightbox-slide" data-photo-lightbox-index="${entryIndex}">
-        <img class="photo-lightbox-image" src="${escapeHtml(initialSrc)}" alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" ${entryIndex === initialIndex ? "" : 'loading="lazy"'} />
+        <img class="photo-lightbox-image${sizingClass}"${sizingStyle} src="${escapeHtml(initialSrc)}" alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" ${entryIndex === initialIndex ? "" : 'loading="lazy"'} />
       </div>
     `;
   }).join("");
@@ -1345,6 +1368,8 @@ function photoLightboxEntry(image) {
     remoteFullSrc: image.dataset.photoRemoteFullSrc || "",
     remoteThumbSrc: image.dataset.photoRemoteThumbSrc || "",
     sourceSignature: image.dataset.photoSourceSignature || "",
+    width: Math.max(0, Number(image.dataset.photoWidth) || 0),
+    height: Math.max(0, Number(image.dataset.photoHeight) || 0),
     hasExplicitFullSrc: Boolean(image.dataset.photoFullSrc),
     resolvedFullSrc: decodedPhotoLightboxSources.has(fullSrc) ? fullSrc : ""
   };
