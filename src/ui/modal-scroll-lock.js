@@ -1,6 +1,7 @@
 import {
   currentViewportScrollPosition,
-  scrollViewportTo
+  scrollViewportTo,
+  viewportScrollHost
 } from "./viewport-scroll-host.js";
 
 export function createModalScrollLockController() {
@@ -38,8 +39,11 @@ export function createModalScrollLockController() {
     if (modalScrollLock) return;
     const softLock = shouldUseSoftModalScrollLock();
     const position = currentViewportScrollPosition();
+    const scrollHost = softLock ? viewportScrollHost() : null;
     modalScrollLock = {
       softLock,
+      scrollHost,
+      scrollHostOverflow: scrollHost?.style?.overflow || "",
       x: position.x,
       y: position.y,
       position: document.body.style.position,
@@ -50,7 +54,10 @@ export function createModalScrollLockController() {
       overflow: document.body.style.overflow
     };
     document.body.classList.add("modal-scroll-locked");
-    if (softLock) return;
+    if (softLock) {
+      if (scrollHost?.style) scrollHost.style.overflow = "hidden";
+      return;
+    }
     document.body.style.position = "fixed";
     document.body.style.top = `-${modalScrollLock.y}px`;
     document.body.style.left = `-${modalScrollLock.x}px`;
@@ -61,18 +68,32 @@ export function createModalScrollLockController() {
 
   function unlockPageScrollForModal() {
     if (!modalScrollLock) return;
-    const { softLock, x, y, position, top, left, right, width, overflow } = modalScrollLock;
+    const {
+      softLock,
+      scrollHost,
+      scrollHostOverflow,
+      x,
+      y,
+      position,
+      top,
+      left,
+      right,
+      width,
+      overflow
+    } = modalScrollLock;
     modalScrollLock = null;
     document.body.classList.remove("modal-scroll-locked");
-    if (!softLock) {
-      document.body.style.position = position;
-      document.body.style.top = top;
-      document.body.style.left = left;
-      document.body.style.right = right;
-      document.body.style.width = width;
-      document.body.style.overflow = overflow;
-      scrollViewportTo({ left: x, top: y, behavior: "auto" });
+    if (softLock) {
+      if (scrollHost?.style) scrollHost.style.overflow = scrollHostOverflow;
+      return;
     }
+    document.body.style.position = position;
+    document.body.style.top = top;
+    document.body.style.left = left;
+    document.body.style.right = right;
+    document.body.style.width = width;
+    document.body.style.overflow = overflow;
+    scrollViewportTo({ left: x, top: y, behavior: "auto" });
   }
 
   function shouldUseSoftModalScrollLock() {
@@ -96,16 +117,35 @@ export function createModalScrollLockController() {
     if (dialog?.open) {
       const currentY = event.touches?.[0]?.clientY || modalTouchStartY;
       const deltaY = currentY - modalTouchStartY;
-      if (canScrollInsideOpenDialog(event.target, dialog, deltaY)) return;
+      if (eventTargetsDialogContent(event, dialog)
+        && canScrollInsideOpenDialog(event.target, dialog, deltaY)) return;
     }
-    event.preventDefault();
+    stopBackgroundModalEvent(event);
   }
 
   function preventBackgroundModalWheel(event) {
     if (!modalScrollLock) return;
     const dialog = event.target.closest?.("dialog");
-    if (dialog?.open && canScrollInsideOpenDialog(event.target, dialog, -event.deltaY)) return;
+    if (dialog?.open
+      && eventTargetsDialogContent(event, dialog)
+      && canScrollInsideOpenDialog(event.target, dialog, -event.deltaY)) return;
+    stopBackgroundModalEvent(event);
+  }
+
+  function eventTargetsDialogContent(event, dialog) {
+    if (event.target !== dialog) return true;
+    const point = event.touches?.[0] || event;
+    const x = Number(point?.clientX);
+    const y = Number(point?.clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return true;
+    const rect = dialog.getBoundingClientRect?.();
+    if (!rect) return true;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function stopBackgroundModalEvent(event) {
     event.preventDefault();
+    event.stopImmediatePropagation?.();
   }
 
   function canScrollInsideOpenDialog(target, dialog, deltaY) {
