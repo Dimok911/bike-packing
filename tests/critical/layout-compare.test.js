@@ -11,7 +11,10 @@ import {
   saveLayoutComparisonSelection
 } from "../../src/ui/layout-comparison-selection.js";
 import { comparisonMoveArrowGeometry } from "../../src/ui/layout-comparison-link.js";
-import { normalizeLayoutFields } from "../../src/state/layout-normalize.js";
+import {
+  layoutItemQuantityMigrationRecovered,
+  normalizeLayoutFields
+} from "../../src/state/layout-normalize.js";
 import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 import {
   getLayoutItemQuantity,
@@ -366,6 +369,7 @@ test("CRITICAL v1444 captured quantities are recovered once and later explicit c
 
   assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
   assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 3);
+  assert.equal(layoutItemQuantityMigrationRecovered(state), true);
 
   setLayoutItemQuantity(state, "short", "bottle", 1);
   normalizeLayoutFields(state);

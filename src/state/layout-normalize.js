@@ -15,6 +15,11 @@ import { normalizeItemQuantity } from "./normalize.js";
 const DEFAULT_LAYOUT_NAME = "Текущая укладка";
 const DEFAULT_LAYOUT_NAMES = new Set([DEFAULT_LAYOUT_NAME, "Current layout"]);
 const BROKEN_LAYOUT_QUANTITY_CAPTURE_RELEASED_AT = Date.parse("2026-08-14T18:41:17Z");
+const layoutQuantityMigrationRecoveredStates = new WeakSet();
+
+export function layoutItemQuantityMigrationRecovered(targetState) {
+  return Boolean(targetState && typeof targetState === "object" && layoutQuantityMigrationRecoveredStates.has(targetState));
+}
 
 function layoutTimestamp(layout, field) {
   const timestamp = Date.parse(String(layout?.[field] || ""));
@@ -213,6 +218,9 @@ export function normalizeLayoutArrangement(layout, targetState) {
       : items[itemId]?.quantity;
     arrangement.itemQuantities[itemId] = normalizeItemQuantity(source);
   });
+  if (recoverBrokenCapturedQuantities) {
+    layoutQuantityMigrationRecoveredStates.add(targetState);
+  }
   if (hasLegacyMultiQuantity(arrangement, items)) {
     arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
   }

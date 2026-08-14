@@ -514,6 +514,7 @@ import {
   unavailableSnapshotItems
 } from "./src/state/layout-locks.js";
 import {
+  layoutItemQuantityMigrationRecovered,
   layoutDisplayNameForLanguage,
   normalizeLayoutArrangement,
   normalizeLayoutFields,
@@ -7521,6 +7522,7 @@ const queuedSaveRemoteState = createQueuedRemoteSave((options = {}) => saveRemot
       isSuspiciousEmptyPackingState,
       isTemporaryServerStorageError,
       isTimeoutError,
+      layoutItemQuantityMigrationRecovered,
       localText,
       loadBaseState,
       nowIso,

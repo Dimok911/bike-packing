@@ -1,5 +1,14 @@
 import { STARTUP_CACHE_INTEGRITY_VERSION } from "./list-freshness.js";
 
+export async function persistRecoveredLayoutQuantityMigration({ remoteState, runtime, dependencies }) {
+  if (!dependencies.layoutItemQuantityMigrationRecovered?.(remoteState)) return false;
+  runtime.syncMeta.dirty = true;
+  runtime.syncMeta.localUpdatedAt = dependencies.nowIso();
+  dependencies.saveSyncMeta();
+  await dependencies.saveRemoteState({ notify: false, forceOverwrite: true });
+  return true;
+}
+
 export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDirtySave = false, preferredLayout = null } = {}) {
   const state = runtime.state;
   const syncMeta = runtime.syncMeta;
@@ -73,6 +82,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       deferRender
     });
     if (!applied) return false;
+    await persistRecoveredLayoutQuantityMigration({ remoteState, runtime, dependencies });
     const handled = await offerPendingGuestLoginHandoffAfterRemoteLoad();
     if (deferRender && !handled) {
       renderPreservingPackingScroll();

@@ -39,7 +39,10 @@ import { expectedEntitySyncConfirmationFailures } from "../../src/sync/entity-sy
 import { preflightRemoteSaveConflictFlow } from "../../src/sync/save-preflight.js";
 import { ensurePersonalListId } from "../../src/sync/personal-list-bootstrap.js";
 import { shouldRecoverUnsyncedLocalChanges } from "../../src/sync/local-dirty.js";
-import { loadRemoteStateFlow } from "../../src/sync/load-remote-state-flow.js";
+import {
+  loadRemoteStateFlow,
+  persistRecoveredLayoutQuantityMigration
+} from "../../src/sync/load-remote-state-flow.js";
 import { saveRemoteStateFlow } from "../../src/sync/save-remote-state-flow.js";
 import { runSyncNowFlow } from "../../src/sync/run-sync-now-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
@@ -309,6 +312,28 @@ test("CRITICAL sync-save: blank server list revision is remembered before guest 
   assert.equal(offeredRevision, 1);
   assert.deepEqual(transitionEvents, ["prepare-personal-demo"]);
   assert.equal(runtime.appUnlocked, true);
+});
+
+test("CRITICAL sync-save: recovered layout quantities are persisted to the server", async () => {
+  const remoteState = { layouts: { "layout-1": { id: "layout-1" } } };
+  const runtime = { syncMeta: { dirty: false, localUpdatedAt: "old" } };
+  const savedMeta = [];
+  const saveCalls = [];
+
+  const persisted = await persistRecoveredLayoutQuantityMigration({
+    remoteState,
+    runtime,
+    dependencies: {
+      layoutItemQuantityMigrationRecovered: (candidate) => candidate === remoteState,
+      nowIso: () => "2026-08-14T20:00:00.000Z",
+      saveRemoteState: async (options) => { saveCalls.push(options); },
+      saveSyncMeta: () => { savedMeta.push({ ...runtime.syncMeta }); }
+    }
+  });
+
+  assert.equal(persisted, true);
+  assert.deepEqual(savedMeta, [{ dirty: true, localUpdatedAt: "2026-08-14T20:00:00.000Z" }]);
+  assert.deepEqual(saveCalls, [{ notify: false, forceOverwrite: true }]);
 });
 
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {
