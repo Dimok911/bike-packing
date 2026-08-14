@@ -92,6 +92,10 @@ import {
   clearLayoutComparisonMoveLink,
   toggleLayoutComparisonMoveLink
 } from "../ui/layout-comparison-link.js";
+import {
+  pickerListThumbnailHtml,
+  syncPickerListPhotoToggle
+} from "../ui/picker-list-thumbnails.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -541,21 +545,28 @@ function renderAddToContainerResults() {
     .filter((item) => matchesAddToContainerSearch(item, query))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"))
     .slice(0, 60);
+  const showPhotos = runtime.pickerListPhotos === true;
+  updatePickerListPhotoToggles();
   refs.addToContainerResults.innerHTML = items.map((item) => {
     const alreadyHere = getItemContainerIdInLayout(layout, item.id) === containerId;
     const unavailable = isItemUnavailableForPacking(item);
     return `
       <button
-        class="add-item-result ${alreadyHere ? "already-here" : ""} ${unavailable ? "unavailable" : ""}"
+        class="add-item-result ${showPhotos ? "with-thumbnail" : ""} ${alreadyHere ? "already-here" : ""} ${unavailable ? "unavailable" : ""}"
         type="button"
         data-add-existing-item="${item.id}"
         ${alreadyHere || unavailable ? "disabled" : ""}
       >
-        <strong>${highlightSearchText(item.name, query)}</strong>
-        ${unavailable ? `<small>${escapeHtml(t("items.unavailableBadge"))}</small>` : ""}
+        ${pickerListThumbnailHtml(item, { enabled: showPhotos, photoObjectUrls })}
+        <span class="picker-list-result-copy">
+          <strong>${highlightSearchText(item.name, query)}</strong>
+          ${unavailable ? `<small>${escapeHtml(t("items.unavailableBadge"))}</small>` : ""}
+        </span>
       </button>
     `;
   }).join("") || `<div class="empty">${escapeHtml(t("empty.notFound"))}</div>`;
+
+  if (showPhotos) hydrateItemPhotos(refs.addToContainerResults, { photoObjectUrls }).catch(() => null);
 
   refs.addToContainerResults.querySelectorAll("[data-add-existing-item]").forEach((button) => {
     button.addEventListener("click", () => addExistingItemToContainer(button.dataset.addExistingItem));
@@ -663,15 +674,22 @@ function renderLayoutRootResults() {
     ))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const roots = availableRoots.filter((container) => matchesLayoutRootSearch(container, query));
+  const showPhotos = runtime.pickerListPhotos === true;
+  updatePickerListPhotoToggles();
   refs.layoutRootResults.innerHTML = roots.map((container) => `
-    <button class="add-item-result" type="button" data-add-layout-root="${container.id}">
-      <strong>${highlightSearchText(container.name, query)}</strong>
+    <button class="add-item-result ${showPhotos ? "with-thumbnail" : ""}" type="button" data-add-layout-root="${container.id}">
+      ${pickerListThumbnailHtml(container, { enabled: showPhotos, photoObjectUrls })}
+      <span class="picker-list-result-copy">
+        <strong>${highlightSearchText(container.name, query)}</strong>
       <small>${formatWeight(Number(container.weight || 0))}${container.volume ? ` · ${formatVolume(container.volume)}` : ""}</small>
+      </span>
     </button>
   `).join("") || renderEmptyState(
     t(query ? "empty.notFoundByFilter" : "rootContainers.noneAvailable"),
     { filtered: Boolean(query) }
   );
+
+  if (showPhotos) hydrateItemPhotos(refs.layoutRootResults, { photoObjectUrls }).catch(() => null);
 
   refs.layoutRootResults.querySelectorAll("[data-add-layout-root]").forEach((button) => {
     button.addEventListener("click", () => selectRootContainerFromPicker(button.dataset.addLayoutRoot));
@@ -1130,6 +1148,23 @@ function markRecentlyAddedItem(itemId, layoutId = state.activeLayoutId) {
   runtime.recentlyAddedContainerId = "";
   runtime.recentlyAddedLayoutId = layoutId || "";
   if (expandItemPlacementPath(state, layoutId, itemId).length) saveLocalUiState();
+}
+
+function updatePickerListPhotoToggles() {
+  const labels = {
+    showLabel: t("picker.showPhotos"),
+    hideLabel: t("picker.hidePhotos")
+  };
+  syncPickerListPhotoToggle(refs.addToContainerPhotoToggleBtn, runtime.pickerListPhotos, labels);
+  syncPickerListPhotoToggle(refs.layoutRootPhotoToggleBtn, runtime.pickerListPhotos, labels);
+}
+
+function togglePickerListPhotos() {
+  runtime.pickerListPhotos = runtime.pickerListPhotos !== true;
+  saveUiSettings();
+  updatePickerListPhotoToggles();
+  if (refs.addToContainerDialog?.open) renderAddToContainerResults();
+  if (refs.layoutRootDialog?.open) renderLayoutRootResults();
 }
 
 function markRecentlyAddedContainer(containerId, layoutId = state.activeLayoutId) {
@@ -9045,7 +9080,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
 
   return {
     openAddToContainerDialog, openNewItemForAddTarget, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
-    clearAddToContainerSearch, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
+    clearAddToContainerSearch, togglePickerListPhotos, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
     clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,
     canRemoveContainerFromActiveLayout, confirmRemoveEditingContainerFromActiveLayout, removeContainerFromLayoutWithAnimation, findContainerElementInPacking,
     getLayoutContainerRootStatus, getLayoutSubtreeItemCount, getRootContainerDialogParentId, getRootContainerDialogParentIndex,

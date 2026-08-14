@@ -6391,6 +6391,61 @@ dialog.photo-lightbox::backdrop {
   cursor: pointer;
 }
 
+.picker-list-options {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.picker-list-photo-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.picker-list-photo-toggle.active {
+  border-color: hsl(var(--interface-hue) 56.34% 27.84% / 0.42);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.picker-list-photo-toggle-icon {
+  position: relative;
+  width: 17px;
+  height: 14px;
+  overflow: hidden;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.picker-list-photo-toggle-icon::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.picker-list-photo-toggle-icon::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  bottom: 1px;
+  width: 11px;
+  height: 7px;
+  background: currentColor;
+  clip-path: polygon(0 100%, 38% 28%, 58% 61%, 77% 35%, 100% 100%);
+}
+
 .photo-lightbox-nav {
   position: fixed;
   top: 50%;
@@ -7394,7 +7449,7 @@ dialog.photo-lightbox::backdrop {
   width: min(500px, calc(100vw - 28px));
   height: min(680px, calc(100dvh - 28px));
   max-height: calc(100dvh - 28px);
-  grid-template-rows: auto auto auto auto minmax(120px, 1fr);
+  grid-template-rows: auto auto auto auto auto minmax(120px, 1fr);
   gap: 10px;
   overflow: hidden;
 }
@@ -7411,6 +7466,10 @@ dialog.photo-lightbox::backdrop {
   padding: 8px 12px 10px 0;
   border-top: 1px solid rgba(216, 221, 215, 0.85);
   box-shadow: inset -3px 0 0 hsl(calc(var(--interface-hue) - 7.5deg) 29.63% 89.41% / 0.78);
+}
+
+.add-item-dialog-card > .add-item-results {
+  grid-row: -2 / -1;
 }
 
 .add-list-row {
@@ -7860,6 +7919,48 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.add-item-result.with-thumbnail {
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 66px;
+  padding: 7px 10px 7px 7px;
+}
+
+.add-item-result .picker-list-result-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.picker-list-thumbnail {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 52px;
+  overflow: hidden;
+  border: 1px solid rgba(216, 221, 215, 0.9);
+  border-radius: 7px;
+  background: #f1f3ef;
+}
+
+.picker-list-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.picker-list-thumbnail.empty::before {
+  content: "";
+  width: 19px;
+  height: 15px;
+  border: 1.5px solid var(--muted);
+  border-radius: 3px;
+  opacity: 0.42;
 }
 
 .history-shared-field > label {

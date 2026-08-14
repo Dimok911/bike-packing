@@ -1222,6 +1222,7 @@ let itemUsageFilter = "all";
 let itemSortMode = normalizeSortMode(uiSettings.itemSortMode);
 let rootContainerUsageFilter = "all";
 let rootContainerSortMode = normalizeSortMode(uiSettings.rootContainerSortMode);
+let pickerListPhotos = uiSettings.pickerListPhotos === true;
 let dictionaryLocationSortMode = normalizeSortMode(uiSettings.dictionaryLocationSortMode);
 let dictionaryCategorySortMode = normalizeSortMode(uiSettings.dictionaryCategorySortMode);
 let selectedCatalogItemIds = new Set();
@@ -1563,6 +1564,8 @@ const appTailRuntime = {
   set packingDragController(value) { packingDragController = value; },
   get packingViewMode() { return packingViewMode; },
   set packingViewMode(value) { packingViewMode = value; },
+  get pickerListPhotos() { return pickerListPhotos; },
+  set pickerListPhotos(value) { pickerListPhotos = value === true; },
   get pendingFilterJump() { return pendingFilterJump; },
   set pendingFilterJump(value) { pendingFilterJump = value; },
   get pendingPackingScroll() { return pendingPackingScroll; },
@@ -1876,7 +1879,7 @@ const appTailControllerDeps = {
 };
 const {
   openAddToContainerDialog, openNewItemForAddTarget, openPackingItemReplacementDialog, openContainerReplacementDialog, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
-  clearAddToContainerSearch, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
+  clearAddToContainerSearch, togglePickerListPhotos, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
   clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,
   canRemoveContainerFromActiveLayout, confirmRemoveEditingContainerFromActiveLayout, removeContainerFromLayoutWithAnimation, findContainerElementInPacking,
   getLayoutContainerRootStatus, getLayoutSubtreeItemCount, getRootContainerDialogParentId, getRootContainerDialogParentIndex,
@@ -3035,6 +3038,7 @@ async function init() {
   refs.addToContainerSearch.addEventListener("input", renderAddToContainerResults);
   refs.clearAddToContainerSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
   refs.clearAddToContainerSearchBtn.addEventListener("click", clearAddToContainerSearch);
+  refs.addToContainerPhotoToggleBtn?.addEventListener("click", togglePickerListPhotos);
   refs.createSubcontainerBtn.addEventListener("click", createSubcontainerFromAddDialog);
   refs.createItemForContainerBtn?.addEventListener("click", openNewItemForAddTarget);
   refs.addToContainerDialog.addEventListener("close", () => {
@@ -3049,6 +3053,7 @@ async function init() {
   refs.layoutRootSearch.addEventListener("input", renderLayoutRootResults);
   refs.clearLayoutRootSearchBtn.addEventListener("pointerdown", (event) => event.preventDefault());
   refs.clearLayoutRootSearchBtn.addEventListener("click", clearLayoutRootSearch);
+  refs.layoutRootPhotoToggleBtn?.addEventListener("click", togglePickerListPhotos);
   refs.createRootForLayoutBtn?.addEventListener("click", openCreateRootContainerForCurrentLayout);
   refs.layoutRootDialog.addEventListener("close", () => {
     refs.layoutRootSearch.value = "";
@@ -3581,6 +3586,7 @@ function saveUiSettings() {
     interfaceColorTheme,
     packingVisualStyle,
     packingViewMode,
+    pickerListPhotos,
     bike3dTransforms,
     bike3dViewState
   }, {

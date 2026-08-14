@@ -64,6 +64,7 @@ export function saveStoredUiSettings(settings, {
       packingVisualStyleVersion,
       packingVisualStyle: normalizePackingVisualStyle(settings.packingVisualStyle),
       packingViewMode: normalizePackingViewMode(settings.packingViewMode),
+      pickerListPhotos: settings.pickerListPhotos === true,
       bike3dTransforms: normalizeBike3dTransforms(settings.bike3dTransforms),
       bike3dViewState: normalizeBike3dViewState(settings.bike3dViewState)
     }));
@@ -102,6 +103,7 @@ function normalizeUiSettings(parsed, options) {
       ? normalizePackingVisualStyle(parsed.packingVisualStyle)
       : defaultPackingVisualStyle,
     packingViewMode: normalizePackingViewMode(parsed.packingViewMode),
+    pickerListPhotos: parsed.pickerListPhotos === true,
     bike3dTransforms: normalizeBike3dTransforms(parsed.bike3dTransforms),
     bike3dViewState: normalizeBike3dViewState(parsed.bike3dViewState)
   };
@@ -123,6 +125,7 @@ function defaultUiSettings({
     interfaceColorTheme: defaultInterfaceColorTheme,
     packingVisualStyle: defaultPackingVisualStyle,
     packingViewMode: defaultPackingViewMode,
+    pickerListPhotos: false,
     bike3dTransforms: {},
     bike3dViewState: normalizeBike3dViewState()
   };
