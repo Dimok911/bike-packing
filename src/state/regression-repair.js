@@ -35,7 +35,9 @@ export function repairPlacementRegressionFromReference(targetState, referenceSta
   migrateContainerOrder(targetState);
   const layout = targetState.layouts?.[targetState.activeLayoutId];
   if (layout) {
-    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || []);
+    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || [], {
+      itemQuantities: layout.arrangement?.itemQuantities
+    });
     layout.rootContainerIds = [...layout.arrangement.rootContainerIds];
   }
   return true;
@@ -96,7 +98,9 @@ export function repairContainerHierarchyRegressionFromReference(targetState, ref
     layout.rootContainerIds = referenceRoots.length
       ? referenceRoots
       : Object.values(targetState.containers || {}).filter((container) => !container.parentId).map((container) => container.id);
-    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds);
+    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds, {
+      itemQuantities: layout.arrangement?.itemQuantities
+    });
   }
   return true;
 }

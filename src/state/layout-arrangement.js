@@ -1,9 +1,12 @@
+export const LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION = 2;
+
 export function createEmptyLayoutArrangement() {
   return {
     rootContainerIds: [],
     containers: {},
     items: {},
     itemQuantities: {},
+    itemQuantityMigrationVersion: LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION,
     packedItems: {}
   };
 }
@@ -12,7 +15,9 @@ export function uniqueLayoutIds(list) {
   return list.filter((id, index) => typeof id === "string" && id && list.indexOf(id) === index);
 }
 
-export function createLayoutArrangementFromCurrentState(targetState, rootIds = []) {
+export function createLayoutArrangementFromCurrentState(targetState, rootIds = [], {
+  itemQuantities: preservedItemQuantities = null
+} = {}) {
   const arrangement = createEmptyLayoutArrangement();
   const containers = targetState.containers || {};
   const items = targetState.items || {};
@@ -42,7 +47,10 @@ export function createLayoutArrangementFromCurrentState(targetState, rootIds = [
     };
     itemIds.forEach((itemId) => {
       arrangement.items[itemId] = containerId;
-      arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(items[itemId]?.quantity) || 1));
+      const sourceQuantity = preservedItemQuantities && Object.prototype.hasOwnProperty.call(preservedItemQuantities, itemId)
+        ? preservedItemQuantities[itemId]
+        : items[itemId]?.quantity;
+      arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(sourceQuantity) || 1));
     });
     childIds.forEach((childId) => walk(childId, containerId));
   };

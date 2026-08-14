@@ -12,6 +12,7 @@ import {
 } from "../../src/ui/layout-comparison-selection.js";
 import { comparisonMoveArrowGeometry } from "../../src/ui/layout-comparison-link.js";
 import { normalizeLayoutFields } from "../../src/state/layout-normalize.js";
+import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 import {
   getLayoutItemQuantity,
   itemWithLayoutQuantity,
@@ -354,6 +355,34 @@ test("CRITICAL legacy item quantity migrates to each layout independently", () =
   assert.equal(comparison.summary.fromWeight, 200);
   assert.equal(comparison.summary.toWeight, 300);
   assert.equal(comparisonEntryVisible(comparison, { type: "item", id: "bottle" }, true), true);
+});
+
+test("CRITICAL v1444 captured quantities are recovered once and later explicit changes remain", () => {
+  const state = legacyQuantityState();
+  state.layouts.short.updatedAt = "2026-07-29T10:56:02.223Z";
+  state.layouts.short.arrangement.itemQuantities = { bottle: 1 };
+
+  normalizeLayoutFields(state);
+
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
+  assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 2);
+
+  setLayoutItemQuantity(state, "short", "bottle", 1);
+  normalizeLayoutFields(state);
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 1);
+});
+
+test("CRITICAL arrangement capture preserves the active layout quantity", () => {
+  const state = legacyQuantityState();
+  normalizeLayoutFields(state);
+  const layout = state.layouts.short;
+  setLayoutItemQuantity(state, layout, "bottle", 4);
+
+  const captured = createLayoutArrangementFromCurrentState(state, layout.rootContainerIds, {
+    itemQuantities: layout.arrangement.itemQuantities
+  });
+
+  assert.equal(captured.itemQuantities.bottle, 4);
 });
 
 test("CRITICAL moving preserves placement quantity and removing clears it", () => {

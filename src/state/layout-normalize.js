@@ -6,6 +6,7 @@ import { clonePlain } from "../utils/json.js";
 import {
   createEmptyLayoutArrangement,
   createLayoutArrangementFromCurrentState,
+  LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION,
   uniqueLayoutIds
 } from "./layout-arrangement.js";
 import { repairContainerMembershipFromItemLinks } from "./repair.js";
@@ -13,6 +14,34 @@ import { normalizeItemQuantity } from "./normalize.js";
 
 const DEFAULT_LAYOUT_NAME = "Текущая укладка";
 const DEFAULT_LAYOUT_NAMES = new Set([DEFAULT_LAYOUT_NAME, "Current layout"]);
+const BROKEN_LAYOUT_QUANTITY_CAPTURE_RELEASED_AT = Date.parse("2026-08-14T18:41:17Z");
+
+function layoutTimestamp(layout, field) {
+  const timestamp = Date.parse(String(layout?.[field] || ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function layoutCreationTimestamp(layout) {
+  const stored = layoutTimestamp(layout, "createdAt");
+  if (stored) return stored;
+  const embedded = String(layout?.id || "").match(/(?:^|[-_])(\d{13})(?:$|[-_])/);
+  return embedded ? Number(embedded[1]) : 0;
+}
+
+function shouldRecoverBrokenCapturedQuantities(layout, arrangement, items) {
+  const migrationVersion = Math.max(0, Math.round(Number(arrangement?.itemQuantityMigrationVersion) || 0));
+  if (migrationVersion >= LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION) return false;
+  const createdAt = layoutCreationTimestamp(layout);
+  if (createdAt && createdAt >= BROKEN_LAYOUT_QUANTITY_CAPTURE_RELEASED_AT) return false;
+  const updatedAt = layoutTimestamp(layout, "updatedAt");
+  if (updatedAt && updatedAt >= BROKEN_LAYOUT_QUANTITY_CAPTURE_RELEASED_AT) return false;
+  const placedItemIds = Object.keys(arrangement?.items || {});
+  const storedQuantities = arrangement?.itemQuantities;
+  if (!placedItemIds.length || !storedQuantities || typeof storedQuantities !== "object") return false;
+  if (!placedItemIds.every((itemId) => Object.prototype.hasOwnProperty.call(storedQuantities, itemId))) return false;
+  const legacyMultiItemIds = placedItemIds.filter((itemId) => normalizeItemQuantity(items[itemId]?.quantity) > 1);
+  return legacyMultiItemIds.length > 0 && legacyMultiItemIds.every((itemId) => normalizeItemQuantity(storedQuantities[itemId]) === 1);
+}
 
 export function layoutDisplayNameForLanguage(layout, language = "ru") {
   const storedName = String(layout?.name || "").trim();
@@ -112,7 +141,9 @@ export function repairPublishedLayoutArrangement(targetState) {
   const rootContainerIds = Array.isArray(layout.rootContainerIds) && layout.rootContainerIds.length
     ? layout.rootContainerIds
     : Object.values(targetState.containers || {}).filter((container) => container && !container.parentId).map((container) => container.id).filter(Boolean);
-  layout.arrangement = createLayoutArrangementFromCurrentState(targetState, rootContainerIds);
+  layout.arrangement = createLayoutArrangementFromCurrentState(targetState, rootContainerIds, {
+    itemQuantities: layout.arrangement?.itemQuantities
+  });
 }
 
 export function normalizeLayoutArrangement(layout, targetState) {
@@ -165,15 +196,20 @@ export function normalizeLayoutArrangement(layout, targetState) {
   arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object"
     ? arrangement.itemQuantities
     : {};
+  const recoverBrokenCapturedQuantities = shouldRecoverBrokenCapturedQuantities(layout, arrangement, items);
   Object.keys(arrangement.itemQuantities).forEach((itemId) => {
     if (!arrangement.items[itemId]) delete arrangement.itemQuantities[itemId];
   });
   Object.keys(arrangement.items).forEach((itemId) => {
-    const source = Object.prototype.hasOwnProperty.call(arrangement.itemQuantities, itemId)
+    const legacyQuantity = normalizeItemQuantity(items[itemId]?.quantity);
+    const source = recoverBrokenCapturedQuantities && legacyQuantity > 1
+      ? legacyQuantity
+      : Object.prototype.hasOwnProperty.call(arrangement.itemQuantities, itemId)
       ? arrangement.itemQuantities[itemId]
       : items[itemId]?.quantity;
     arrangement.itemQuantities[itemId] = normalizeItemQuantity(source);
   });
+  arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
   if (!hadStoredArrangement) repairBareLayoutRootArrangement(layout, targetState);
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     if (!containerIdSet.has(containerId) || !placement || typeof placement !== "object") {
@@ -202,7 +238,9 @@ export function normalizeLayoutArrangement(layout, targetState) {
   const arrangedItems = Object.keys(arrangement.items || {}).length;
   if (!hadStoredArrangement && placedItems >= 3 && arrangedItems < Math.max(1, Math.floor(placedItems * 0.5))) {
     repairContainerMembershipFromItemLinks(targetState);
-    const rebuilt = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || uniqueRootIds);
+    const rebuilt = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || uniqueRootIds, {
+      itemQuantities: arrangement.itemQuantities
+    });
     if (Object.keys(rebuilt.items || {}).length > arrangedItems) {
       layout.arrangement = rebuilt;
       return normalizeLayoutArrangement(layout, targetState);

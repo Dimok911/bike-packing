@@ -4024,7 +4024,9 @@ function captureActiveLayoutArrangement(targetState = state) {
   if (applyingLayoutArrangement) return;
   const layout = targetState.layouts?.[targetState.activeLayoutId];
   if (!layout) return;
-  layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || []);
+  layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds || [], {
+    itemQuantities: layout.arrangement?.itemQuantities
+  });
   layout.rootContainerIds = [...layout.arrangement.rootContainerIds];
 }
 
@@ -9473,7 +9475,9 @@ function copySharedRootToState(root, { targetLayoutId = selectedSharedTargetLayo
   if (targetLayoutId && state.layouts[targetLayoutId]) {
     const layout = state.layouts[targetLayoutId];
     layout.rootContainerIds = [...(layout.rootContainerIds || []), id];
-    layout.arrangement = createLayoutArrangementFromCurrentState(state, layout.rootContainerIds);
+    layout.arrangement = createLayoutArrangementFromCurrentState(state, layout.rootContainerIds, {
+      itemQuantities: layout.arrangement?.itemQuantities
+    });
     touchLayout(targetLayoutId, changedAt);
   }
   return id;

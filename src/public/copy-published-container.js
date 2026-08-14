@@ -148,7 +148,9 @@ export function copyPublishedContainerToState(targetState, sourceState, containe
   if (!parentId && targetLayoutId && targetState.layouts[targetLayoutId]) {
     const layout = targetState.layouts[targetLayoutId];
     layout.rootContainerIds = [...(layout.rootContainerIds || []), id];
-    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds);
+    layout.arrangement = createLayoutArrangementFromCurrentState(targetState, layout.rootContainerIds, {
+      itemQuantities: layout.arrangement?.itemQuantities
+    });
     touchLayout(targetLayoutId, changedAt);
   }
   return id;
