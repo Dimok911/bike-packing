@@ -1,5 +1,5 @@
 const normalizeText = (value) => String(value ?? "").trim();
-export const STARTUP_CACHE_INTEGRITY_VERSION = 2;
+export const STARTUP_CACHE_INTEGRITY_VERSION = 3;
 
 const normalizeRevision = (value) => {
   if (value == null || value === "") return null;
