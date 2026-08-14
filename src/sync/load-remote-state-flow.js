@@ -1,5 +1,9 @@
 import { STARTUP_CACHE_INTEGRITY_VERSION } from "./list-freshness.js";
 
+export function startupCacheAllowsEntityChanges(syncMeta) {
+  return Number(syncMeta?.cacheIntegrityVersion) === STARTUP_CACHE_INTEGRITY_VERSION;
+}
+
 export async function persistRecoveredLayoutQuantityMigration({ remoteState, runtime, dependencies }) {
   if (!dependencies.layoutItemQuantityMigrationRecovered?.(remoteState)) return false;
   runtime.syncMeta.dirty = true;
@@ -144,7 +148,13 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
           updateSyncUi();
           return;
         }
-        if (accountMatches && hasLocalStateForStartup && !syncMeta.dirty && tryApplyRemoteEntityChanges) {
+        if (
+          accountMatches &&
+          hasLocalStateForStartup &&
+          !syncMeta.dirty &&
+          startupCacheAllowsEntityChanges(syncMeta) &&
+          tryApplyRemoteEntityChanges
+        ) {
           try {
             const changesResult = await tryApplyRemoteEntityChanges(startupListId, freshness, { preferredLayout });
             if (changesResult?.applied) {
