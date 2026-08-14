@@ -4,9 +4,9 @@ import {
   containerWeight,
   countItemsByLocation,
   countItemsInContainer,
-  itemQuantity,
   itemTotalWeight
 } from "../state/metrics.js";
+import { getLayoutItemQuantity } from "../state/layout-item-quantity.js";
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
 import { formatWeight } from "../utils/weight.js";
@@ -739,8 +739,9 @@ function renderChecklistHeader({ includeLabels = true } = {}) {
 function renderPrintableItem(targetState, itemId, { includeLabels = true, depth = 0 } = {}) {
   const item = targetState.items?.[itemId];
   if (!item) return "";
-  const quantity = itemQuantity(item);
-  const weight = itemTotalWeight(item);
+  const layout = targetState.layouts?.[targetState.activeLayoutId];
+  const quantity = getLayoutItemQuantity(targetState, layout, itemId);
+  const weight = itemTotalWeight(item, quantity);
   const categories = itemCategories(item).join(", ");
   const location = item.location || "";
   const attention = ATTENTION_LOCATIONS.includes(location);

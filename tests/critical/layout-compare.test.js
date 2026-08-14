@@ -11,7 +11,47 @@ import {
   saveLayoutComparisonSelection
 } from "../../src/ui/layout-comparison-selection.js";
 import { comparisonMoveArrowGeometry } from "../../src/ui/layout-comparison-link.js";
+import { normalizeLayoutFields } from "../../src/state/layout-normalize.js";
+import {
+  getLayoutItemQuantity,
+  itemWithLayoutQuantity,
+  setLayoutItemQuantity
+} from "../../src/state/layout-item-quantity.js";
+import { moveItemInLayoutArrangement, removeItemFromLayoutArrangement } from "../../src/state/layout-ops.js";
+import { containerWeight, itemTotalWeight } from "../../src/state/metrics.js";
+import { saveItemDialogAction } from "../../src/ui/item-dialog-save.js";
 import { readFileSync } from "node:fs";
+
+function legacyQuantityState() {
+  const arrangement = (containerId) => ({
+    rootContainerIds: [containerId],
+    containers: {
+      [containerId]: {
+        parentId: "",
+        itemIds: ["bottle"],
+        childIds: [],
+        order: [{ type: "item", id: "bottle" }]
+      }
+    },
+    items: { bottle: containerId },
+    packedItems: {}
+  });
+  return {
+    items: {
+      bottle: { id: "bottle", name: "Bottle", weight: 100, quantity: 2, location: "Home", categories: [], note: "" }
+    },
+    containers: {
+      bagA: { id: "bagA", itemIds: ["bottle"], childIds: [], order: [{ type: "item", id: "bottle" }] },
+      bagB: { id: "bagB", itemIds: [], childIds: [], order: [] }
+    },
+    layouts: {
+      short: { id: "short", name: "Short", rootContainerIds: ["bagA"], arrangement: arrangement("bagA") },
+      long: { id: "long", name: "Long", rootContainerIds: ["bagA"], arrangement: arrangement("bagA") }
+    },
+    activeLayoutId: "short",
+    packedItems: {}
+  };
+}
 
 const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 const appTailSource = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
@@ -290,4 +330,73 @@ test("CRITICAL moved-item arrow points from the source card edge to the destinat
   assert.match(appTailSource, /data-compare-show-move-link[\s\S]*toggleLayoutComparisonMoveLink/);
   assert.match(stylesSource, /\.comparison-move-arrow-overlay\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
   assert.match(stylesSource, /\.comparison-move-arrow-path\s*\{[^}]*stroke:\s*#aa7c00;[^}]*vector-effect:\s*non-scaling-stroke;/s);
+});
+
+test("CRITICAL legacy item quantity migrates to each layout independently", () => {
+  const state = legacyQuantityState();
+  normalizeLayoutFields(state);
+
+  assert.equal(state.items.bottle.quantity, 1);
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
+  assert.equal(getLayoutItemQuantity(state, "long", "bottle"), 2);
+
+  setLayoutItemQuantity(state, "long", "bottle", 3);
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
+  assert.equal(getLayoutItemQuantity(state, "long", "bottle"), 3);
+  assert.equal(itemTotalWeight(itemWithLayoutQuantity(state, "short", state.items.bottle)), 200);
+  assert.equal(itemTotalWeight(itemWithLayoutQuantity(state, "long", state.items.bottle)), 300);
+  assert.equal(containerWeight(state, "bagA", state.layouts.short), 200);
+  assert.equal(containerWeight(state, "bagA", state.layouts.long), 300);
+  const comparison = buildLayoutComparison(state, "short", "long");
+  assert.equal(comparison.itemDiffs.bottle.status, "changed");
+  assert.equal(comparison.itemDiffs.bottle.fromQuantity, 2);
+  assert.equal(comparison.itemDiffs.bottle.toQuantity, 3);
+  assert.equal(comparison.summary.fromWeight, 200);
+  assert.equal(comparison.summary.toWeight, 300);
+  assert.equal(comparisonEntryVisible(comparison, { type: "item", id: "bottle" }, true), true);
+});
+
+test("CRITICAL moving preserves placement quantity and removing clears it", () => {
+  const state = legacyQuantityState();
+  normalizeLayoutFields(state);
+  setLayoutItemQuantity(state, "short", "bottle", 4);
+
+  assert.equal(moveItemInLayoutArrangement(state, state.layouts.short, "bottle", "bagB"), true);
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 4);
+  assert.equal(removeItemFromLayoutArrangement(state.layouts.short, "bottle"), true);
+  assert.equal(state.layouts.short.arrangement.itemQuantities.bottle, undefined);
+});
+
+test("CRITICAL item dialog changes only the selected layout quantity", () => {
+  const state = legacyQuantityState();
+  normalizeLayoutFields(state);
+  const refs = {
+    saveItemBtn: { disabled: false },
+    dialog: {},
+    itemName: { value: "Bottle" },
+    itemWeight: { value: "100" },
+    itemColor: { value: "" },
+    itemLocation: { value: "Home" },
+    itemAvailabilityStatus: { value: "available" },
+    itemContainer: { value: "bagA" },
+    itemNote: { value: "" }
+  };
+
+  saveItemDialogAction({
+    editingItemId: "bottle",
+    getDialogSelectedCategories: () => [],
+    getItemContainerIdInLayout: (layout, itemId) => layout.arrangement.items[itemId] || "",
+    getPublishedEditLayoutId: () => "short",
+    itemDialogTargetLayoutId: "short",
+    normalizeItemAvailabilityStatus: (value) => value,
+    parseWeightInput: Number,
+    readItemDialogQuantity: () => 5,
+    refs,
+    setLayoutItemQuantity: (layout, itemId, quantity) => setLayoutItemQuantity(state, layout, itemId, quantity),
+    state
+  });
+
+  assert.equal(state.items.bottle.quantity, 1);
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 5);
+  assert.equal(getLayoutItemQuantity(state, "long", "bottle"), 2);
 });

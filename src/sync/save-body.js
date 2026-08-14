@@ -157,6 +157,10 @@ export function pruneAdminPublishedDraftsForSync(cloned, {
       Object.entries(arrangement.items).forEach(([itemId, containerId]) => {
         if (!cloned.items?.[itemId] || !cloned.containers?.[containerId]) delete arrangement.items[itemId];
       });
+      arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object" ? arrangement.itemQuantities : {};
+      Object.keys(arrangement.itemQuantities).forEach((itemId) => {
+        if (!arrangement.items[itemId]) delete arrangement.itemQuantities[itemId];
+      });
       arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
       Object.keys(arrangement.packedItems).forEach((itemId) => {
         if (!cloned.items?.[itemId]) delete arrangement.packedItems[itemId];

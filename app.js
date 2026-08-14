@@ -521,6 +521,11 @@ import {
   snapshotContainerTreeFromLayoutArrangement
 } from "./src/state/layout-normalize.js";
 import {
+  getLayoutItemQuantity as getLayoutItemQuantityForState,
+  itemWithLayoutQuantity as itemWithLayoutQuantityForState,
+  setLayoutItemQuantity as setLayoutItemQuantityForState
+} from "./src/state/layout-item-quantity.js";
+import {
   containerWeight as containerWeightForState,
   itemQuantity as itemQuantityForState,
   itemTotalWeight as itemTotalWeightForState,
@@ -1739,7 +1744,7 @@ const appTailControllerDeps = {
   isStartupGuestDemoPreviewState, isStoredActiveLayoutChoiceExplicit, isSuspiciousEmptyPackingState, isTemplateCopySharedLayoutId, isTemporaryServerStorageError,
   isTimeoutError, isViewingPublishedTarget, itemCategories, itemCopyConfirm, itemCreatedTimeForState,
   itemDeleteConfirm, itemDisplayMode, itemDisplayModeFromFlags, itemDisplayModeLabel, itemEntitySyncUnavailable,
-  itemPhotoSignature, itemQuantityForState, itemSortMode, itemTotalWeightForState, itemUsageCountsForCatalog,
+  itemPhotoSignature, getLayoutItemQuantityForState, itemQuantityForState, itemSortMode, itemTotalWeightForState, itemUsageCountsForCatalog, itemWithLayoutQuantityForState,
   itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel, languageOptionLabelValue,
   lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap, lastToastAt,
   lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState, layoutCreateModeState,
@@ -1762,7 +1767,7 @@ const appTailControllerDeps = {
   mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState, moveContainerInLayoutArrangementForState,
   moveItemInLayoutArrangementForState, moveLayoutBeforeInSections, moveLayoutWithinSections, moveRootColumnInState, addRootContainerToLayoutInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue, nextServerConfirmedSharedLayoutAfter,
   normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms, normalizeBike3dViewState,
-  normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, normalizeContainerFields,
+  normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, normalizeContainerFields, setLayoutItemQuantityForState,
   normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues, normalizeIntegrityCount,
   lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, normalizeItemAvailabilityStatus,
   normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos, normalizeItemQuantity,

@@ -44,6 +44,7 @@ function layoutArrangementFromContainerSnapshots(targetState, snapshots) {
       };
       itemIds.forEach((itemId) => {
         arrangement.items[itemId] = containerId;
+        arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(snapshot.items?.[itemId]?.quantity) || 1));
       });
     });
     Object.entries(snapshot.items || {}).forEach(([itemId, item]) => {
@@ -51,6 +52,7 @@ function layoutArrangementFromContainerSnapshots(targetState, snapshots) {
       const placement = arrangement.containers?.[containerId];
       if (!targetState.items?.[itemId] || !placement) return;
       arrangement.items[itemId] = containerId;
+      arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(item.quantity) || 1));
       if (!placement.itemIds.includes(itemId)) placement.itemIds.push(itemId);
       if (!placement.order.some((entry) => entry?.type === "item" && entry.id === itemId)) {
         placement.order.push({ type: "item", id: itemId });

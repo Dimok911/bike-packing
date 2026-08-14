@@ -193,6 +193,10 @@ test("CRITICAL layout lock: record field edits are distinct from layout placemen
     { containerId: "bag-a" },
     { containerId: "bag-b" }
   ), true);
+  assert.equal(itemPlacementSnapshotChanged(
+    { containerId: "bag-a", quantity: 1 },
+    { containerId: "bag-a", quantity: 2 }
+  ), true);
   assert.equal(containerPlacementSnapshotChanged(
     { name: "Old", weight: 100, parentId: "", parentIndex: "", layoutRootIds: "bag-a\u0000bag-b", photo: "" },
     { name: "New", weight: 120, parentId: "", parentIndex: "", layoutRootIds: "bag-a\u0000bag-b", photo: "draft:1" }

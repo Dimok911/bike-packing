@@ -139,6 +139,7 @@ export function saveItemDialogAction({
   requireUsageCapacity = () => true,
   restoreAdminPublishedLayoutContext = () => {},
   saveLayoutMutation = () => {},
+  setLayoutItemQuantity = () => false,
   showToast = () => {},
   state,
   touchItem = () => {},
@@ -155,6 +156,7 @@ export function saveItemDialogAction({
   const dimensions = readItemDialogDimensions();
   const availabilityStatus = normalizeItemAvailabilityStatus(refs.itemAvailabilityStatus?.value);
   const itemIsUnavailable = availabilityStatus !== "available";
+  const placementQuantity = readItemDialogQuantity();
   let savedItemId = editingItemId || "";
   let created = false;
 
@@ -163,7 +165,7 @@ export function saveItemDialogAction({
     const previousContainerId = getItemContainerIdInLayout(layout, editingItemId);
     item.name = name;
     item.weight = parseWeightInput(refs.itemWeight.value);
-    item.quantity = readItemDialogQuantity();
+    item.quantity = 1;
     item.color = normalizeItemColor(refs.itemColor?.value);
     applyItemDimensions(item, dimensions);
     item.location = refs.itemLocation.value;
@@ -185,6 +187,8 @@ export function saveItemDialogAction({
           showToast(placementFailedText, "error");
           return;
         }
+        setLayoutItemQuantity(layout, editingItemId, placementQuantity);
+        touchLayout(layoutId, changedAt);
         restoreAdminPublishedLayoutContext(layoutId);
         saveLayoutMutation(layoutId);
         render();
@@ -199,6 +203,9 @@ export function saveItemDialogAction({
       render();
       return;
     }
+    if (containerId && setLayoutItemQuantity(layout, editingItemId, placementQuantity)) {
+      touchLayout(layoutId, changedAt);
+    }
   } else {
     if (!requireUsageCapacity("items")) return;
     const id = createItemId();
@@ -208,7 +215,7 @@ export function saveItemDialogAction({
       id,
       name,
       weight: parseWeightInput(refs.itemWeight.value),
-      quantity: readItemDialogQuantity(),
+      quantity: 1,
       color: normalizeItemColor(refs.itemColor?.value),
       ...(hasItemDimensions(dimensions) ? { dimensions } : {}),
       location: refs.itemLocation.value,
@@ -232,6 +239,8 @@ export function saveItemDialogAction({
         showToast(placementFailedText, "error");
         return;
       }
+      setLayoutItemQuantity(layout, id, placementQuantity);
+      touchLayout(layoutId, changedAt);
     }
   }
 

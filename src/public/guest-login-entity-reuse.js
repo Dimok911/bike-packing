@@ -187,11 +187,15 @@ export function remapGuestLayoutArrangement(sourceLayout, targetState, {
   Object.entries(source.items || {}).forEach(([sourceItemId, sourceContainerId]) => {
     const itemId = mappedExistingId(itemIdMap, sourceItemId, targetState?.items);
     const containerId = mappedExistingId(containerIdMap, sourceContainerId, targetState?.containers);
-    if (itemId && containerId) arrangement.items[itemId] = containerId;
+    if (itemId && containerId) {
+      arrangement.items[itemId] = containerId;
+      arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(source.itemQuantities?.[sourceItemId]) || 1));
+    }
   });
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     placement.itemIds.forEach((itemId) => {
       arrangement.items[itemId] = containerId;
+      if (!arrangement.itemQuantities[itemId]) arrangement.itemQuantities[itemId] = 1;
     });
   });
   Object.entries(source.packedItems || {}).forEach(([sourceItemId, packed]) => {

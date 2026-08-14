@@ -3,6 +3,7 @@ export function createEmptyLayoutArrangement() {
     rootContainerIds: [],
     containers: {},
     items: {},
+    itemQuantities: {},
     packedItems: {}
   };
 }
@@ -41,6 +42,7 @@ export function createLayoutArrangementFromCurrentState(targetState, rootIds = [
     };
     itemIds.forEach((itemId) => {
       arrangement.items[itemId] = containerId;
+      arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(items[itemId]?.quantity) || 1));
     });
     childIds.forEach((childId) => walk(childId, containerId));
   };

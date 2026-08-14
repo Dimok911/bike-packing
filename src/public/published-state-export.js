@@ -38,6 +38,7 @@ export function exportLayoutAsPublishedState(targetState, layoutId, {
     if (items[nextItemId]) return nextItemId;
     items[nextItemId] = clone(item);
     items[nextItemId].id = nextItemId;
+    items[nextItemId].quantity = Math.max(1, Math.round(Number(layout.arrangement?.itemQuantities?.[itemId] ?? item.quantity) || 1));
     items[nextItemId].containerId = containerId;
     stripPublishedPublicOriginMarkers(items[nextItemId]);
     return nextItemId;

@@ -9,6 +9,7 @@ import {
   uniqueLayoutIds
 } from "./layout-arrangement.js";
 import { repairContainerMembershipFromItemLinks } from "./repair.js";
+import { normalizeItemQuantity } from "./normalize.js";
 
 const DEFAULT_LAYOUT_NAME = "Текущая укладка";
 const DEFAULT_LAYOUT_NAMES = new Set([DEFAULT_LAYOUT_NAME, "Current layout"]);
@@ -78,7 +79,12 @@ export function normalizeLayoutFields(targetState, { createFallbackLayout = true
       name: DEFAULT_LAYOUT_NAME,
       rootContainerIds: [...privateRootContainerIds]
     };
+    normalizeLayoutArrangement(targetState.layouts[id], targetState);
   }
+
+  Object.values(targetState.items || {}).forEach((item) => {
+    if (item && typeof item === "object") item.quantity = 1;
+  });
 
   if (!targetState.activeLayoutId || !targetState.layouts[targetState.activeLayoutId]) {
     const firstWithContainers = Object.values(targetState.layouts).find((layout) => layout.rootContainerIds?.length);
@@ -156,6 +162,18 @@ export function normalizeLayoutArrangement(layout, targetState) {
   Object.entries(arrangement.items).forEach(([itemId, containerId]) => {
     if (!itemIdSet.has(itemId) || !containerIdSet.has(containerId)) delete arrangement.items[itemId];
   });
+  arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object"
+    ? arrangement.itemQuantities
+    : {};
+  Object.keys(arrangement.itemQuantities).forEach((itemId) => {
+    if (!arrangement.items[itemId]) delete arrangement.itemQuantities[itemId];
+  });
+  Object.keys(arrangement.items).forEach((itemId) => {
+    const source = Object.prototype.hasOwnProperty.call(arrangement.itemQuantities, itemId)
+      ? arrangement.itemQuantities[itemId]
+      : items[itemId]?.quantity;
+    arrangement.itemQuantities[itemId] = normalizeItemQuantity(source);
+  });
   if (!hadStoredArrangement) repairBareLayoutRootArrangement(layout, targetState);
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     if (!containerIdSet.has(containerId) || !placement || typeof placement !== "object") {
@@ -205,7 +223,11 @@ export function snapshotContainerTreeFromLayoutArrangement(containerId, { source
   const copyItem = (itemId, parentId) => {
     if (items[itemId]) return;
     const item = targetState.items?.[itemId];
-    if (item) items[itemId] = { ...clonePlain(item), containerId: parentId };
+    if (item) items[itemId] = {
+      ...clonePlain(item),
+      quantity: normalizeItemQuantity(arrangement.itemQuantities?.[itemId] ?? item.quantity),
+      containerId: parentId
+    };
   };
   const copyContainer = (id, parentId = null) => {
     if (visitedContainers.has(id)) return;
@@ -259,7 +281,9 @@ function repairBareLayoutRootArrangement(layout, targetState) {
       };
     });
     Object.entries(snapshot.items).forEach(([itemId, item]) => {
-      if (item?.containerId) arrangement.items[itemId] = item.containerId;
+      if (!item?.containerId) return;
+      arrangement.items[itemId] = item.containerId;
+      arrangement.itemQuantities[itemId] = normalizeItemQuantity(item.quantity);
     });
     repaired = true;
   });

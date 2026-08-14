@@ -53,6 +53,7 @@ export function replaceItemInLayoutState(targetState, layoutId, sourceItemId, re
   const sourcePlacement = layout.arrangement?.containers?.[sourceContainerId];
   const sourceIndex = (sourcePlacement?.order || [])
     .findIndex((entry) => entry?.type === "item" && entry.id === sourceItemId);
+  const sourceQuantity = layout.arrangement?.itemQuantities?.[sourceItemId] ?? 1;
   if (!sourcePlacement || sourceIndex < 0) return false;
 
   const snapshot = {
@@ -63,6 +64,7 @@ export function replaceItemInLayoutState(targetState, layoutId, sourceItemId, re
   if (!addItemToLayoutArrangement(targetState, layout, replacementItemId, sourceContainerId, sourceIndex)) {
     return replacementRollback(layout, snapshot, layoutId, activeLayoutId, applyLayoutArrangement);
   }
+  layout.arrangement.itemQuantities[replacementItemId] = Math.max(1, Math.round(Number(sourceQuantity) || 1));
   normalizeLayoutArrangement(layout, targetState);
   if (getItemContainerIdInLayout(targetState, layout, replacementItemId) !== sourceContainerId ||
       getItemContainerIdInLayout(targetState, layout, sourceItemId)) {

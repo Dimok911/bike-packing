@@ -133,7 +133,7 @@ export function applyStaticTranslationsUi({
 
   setFirstText(refs.dialog?.querySelector("label:has(#itemName)"), t("forms.name"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemWeight)"), t("forms.weightGrams"));
-  setFirstText(refs.dialog?.querySelector(".quantity-field"), t("forms.quantity"));
+  setFirstText(refs.dialog?.querySelector(".quantity-field"), t("forms.layoutQuantity"));
   setText(refs.dialog?.querySelector(".item-total-weight span"), t("forms.totalWeight"));
   setFirstText(refs.dialog?.querySelector("label:has(#itemColor)"), t("forms.color"));
   if (refs.itemColor) refs.itemColor.placeholder = t("forms.colorPlaceholder");

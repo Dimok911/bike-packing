@@ -81,6 +81,10 @@ export function scrubMissingEntityReferences(targetState) {
       const containerId = arrangement.items[itemId];
       if (!itemIds.has(itemId) || !containerIds.has(containerId)) delete arrangement.items[itemId];
     });
+    arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object" ? arrangement.itemQuantities : {};
+    Object.keys(arrangement.itemQuantities).forEach((itemId) => {
+      if (!arrangement.items[itemId]) delete arrangement.itemQuantities[itemId];
+    });
     arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
     Object.keys(arrangement.packedItems).forEach((itemId) => {
       if (!itemIds.has(itemId)) delete arrangement.packedItems[itemId];

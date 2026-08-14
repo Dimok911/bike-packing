@@ -247,7 +247,7 @@ export function createAppTailControllers(ctx) {
     isStartupGuestDemoPreview, isStartupGuestDemoPreviewState, isStoredActiveLayoutChoiceExplicit, isSuspiciousEmptyPackingState, isTemplateCopySharedLayoutId,
     isTemporaryServerStorageError, isTimeoutError, isViewingPublishedTarget, itemCategories, itemCopyConfirm,
     itemCreatedTimeForState, itemDeleteConfirm, itemDisplayMode, itemDisplayModeFromFlags, itemDisplayModeLabel,
-    itemEntitySyncUnavailable, itemPhotoSignature, itemQuantityForState, itemSortMode, itemTotalWeightForState,
+    itemEntitySyncUnavailable, itemPhotoSignature, getLayoutItemQuantityForState, itemQuantityForState, itemSortMode, itemTotalWeightForState, itemWithLayoutQuantityForState,
     itemUsageCountsForCatalog, itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel,
     languageOptionLabelValue, lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap,
     lastToastAt, lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState,
@@ -269,7 +269,7 @@ export function createAppTailControllers(ctx) {
     mergeStateFromBase, mergeStateFromBaseValue, migrateContainerOrder, missingDemoPublicTemplates, modeState,
     moveContainerInLayoutArrangementForState, moveItemInLayoutArrangementForState, moveLayoutBeforeInSections, moveLayoutWithinSections, moveRootColumnInState, rootColumnInsertIndexFromVisibleNeighbors, nextDemoTemplateAfter, nextItemDisplayModeValue,
     itemAvailabilityBlocksPlacement, itemPlacementSnapshotChanged, lockedLayoutMutationBlocked, lockedLayoutsContainingContainer, lockedLayoutsContainingItem, lockedLayoutsContainingNestedContainer, selectUnlockedLayoutTargetId, unavailableSnapshotItems, nextServerConfirmedSharedLayoutAfter, normalizeActiveLayoutChoice, normalizeActiveLayoutChoiceValue, normalizeBike3dTransform, normalizeBike3dTransforms,
-    normalizeBike3dViewState, normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions,
+    normalizeBike3dViewState, normalizeCatalogSelection, normalizeCollectionModeState, normalizeContainerColor, normalizeContainerDimensions, setLayoutItemQuantityForState,
     normalizeContainerFields, normalizeDemoLayoutName, normalizeDemoPayloadForLanguage, normalizeDemoTemplateName, normalizeDictionaryValues,
     normalizeIntegrityCount, normalizeItemCategories, normalizeItemDisplayMode, normalizeItemFields, normalizeItemPhotos,
     normalizeItemAvailabilityStatus, normalizeItemQuantity, normalizeLayoutArrangement, normalizeLayoutFields, normalizeListFreshness, normalizePackingListsResponse,
@@ -1912,6 +1912,7 @@ function selectItemContainer(containerId) {
   runtime.itemDialogTargetLayoutId = layoutId;
   refs.itemContainer.value = containerId || "";
   updateItemContainerPickerButton();
+  updateItemPlacementQuantityUi();
   updateItemRemoveFromLayoutButton();
   updateItemDialogSaveState();
   refs.containerPickerDialog.close();
@@ -3778,6 +3779,7 @@ function unpackAllItems() {
 }
 
 function renderItemCard(item) {
+  item = itemWithLayoutQuantityForState(state, state.layouts?.[state.activeLayoutId], item);
   const packed = isItemPacked(item.id);
   const packedVisible = isCollectionPackedVisible(state, packed);
   const collection = Boolean(state.collectionMode);
@@ -5363,8 +5365,6 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   refs.dialogTitle.textContent = itemId ? t("items.editItem") : t("items.addItem");
   refs.itemName.value = item.name;
   refs.itemWeight.value = item.weight || 0;
-  refs.itemQuantity.value = itemQuantity(item);
-  updateItemQuantityUi();
   if (refs.itemColor) refs.itemColor.value = item.color || "";
   const dimensions = normalizeContainerDimensions(item.dimensions);
   if (refs.itemWidth) refs.itemWidth.value = dimensions.width ? String(dimensions.width).replace(".", ",") : "";
@@ -5378,6 +5378,10 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
     : state.containers?.[targetContainerId] && getLayoutContainerIdSet(state.layouts?.[runtime.itemDialogTargetLayoutId]).has(targetContainerId)
       ? targetContainerId
       : "";
+  refs.itemQuantity.value = itemId
+    ? getLayoutItemQuantityForState(state, state.layouts?.[runtime.itemDialogTargetLayoutId], itemId)
+    : 1;
+  updateItemPlacementQuantityUi();
   if (refs.itemContainerField) refs.itemContainerField.hidden = false;
   updateItemContainerPickerButton();
   if (refs.itemCopyToContainerBtn) refs.itemCopyToContainerBtn.hidden = !itemId;
@@ -5449,8 +5453,6 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
   refs.dialogTitle.textContent = t("items.viewItem");
   refs.itemName.value = item.name || "";
   refs.itemWeight.value = Number(item.weight || 0);
-  refs.itemQuantity.value = itemQuantity(item);
-  updateItemQuantityUi();
   if (refs.itemColor) refs.itemColor.value = item.color || "";
   const dimensions = normalizeContainerDimensions(item.dimensions);
   if (refs.itemWidth) refs.itemWidth.value = dimensions.width ? String(dimensions.width).replace(".", ",") : "";
@@ -5467,6 +5469,11 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
   const containerId = sharedRecordItemContainerId(match.sourceState, sourceItemId, item.containerId);
   const entityOnlyItem = !shouldShowSharedEntityPlacement(match.sourceState, "item");
   refs.itemContainer.value = entityOnlyItem ? "" : containerId;
+  const sourceLayout = Object.values(match.sourceState?.layouts || {}).find((layout) =>
+    layout?.arrangement?.items?.[sourceItemId]
+  );
+  refs.itemQuantity.value = getLayoutItemQuantityForState(match.sourceState, sourceLayout, sourceItemId);
+  updateItemPlacementQuantityUi();
   if (refs.itemContainerField) refs.itemContainerField.hidden = entityOnlyItem;
   if (refs.itemContainerLabel) refs.itemContainerLabel.textContent = t("forms.locatedIn");
   if (refs.itemContainerCurrent) {
@@ -8324,6 +8331,8 @@ function saveDialogItem(event) {
     requireUsageCapacity,
     restoreAdminPublishedLayoutContext,
     saveLayoutMutation,
+    setLayoutItemQuantity: (layout, itemId, quantity) =>
+      setLayoutItemQuantityForState(state, layout, itemId, quantity),
     showToast,
     state,
     touchItem,
@@ -8404,7 +8413,10 @@ function normalizeContainerParentInsertIndex(containerId, targetParentId, reques
 }
 
 function getActiveLayoutItems() {
-  return Object.values(state.items).filter((item) => !isItemRemovedFromActiveLayout(item) && isItemInActiveLayout(item));
+  const layout = state.layouts?.[state.activeLayoutId];
+  return Object.values(state.items)
+    .filter((item) => !isItemRemovedFromActiveLayout(item) && isItemInActiveLayout(item))
+    .map((item) => itemWithLayoutQuantityForState(state, layout, item));
 }
 
 function getItemsForItemsView() {
@@ -8624,6 +8636,17 @@ function itemQuantity(item) {
 
 function itemTotalWeight(item) {
   return itemTotalWeightForState(item);
+}
+
+function updateItemPlacementQuantityUi() {
+  const hasPlacement = Boolean(refs.itemContainer?.value);
+  if (refs.itemQuantityField) refs.itemQuantityField.hidden = !hasPlacement;
+  if (refs.itemTotalWeightField) refs.itemTotalWeightField.hidden = !hasPlacement;
+  if (!hasPlacement && refs.itemQuantity) refs.itemQuantity.value = 1;
+  if (refs.itemQuantity) refs.itemQuantity.disabled = !hasPlacement;
+  if (refs.itemQuantityMinus) refs.itemQuantityMinus.disabled = !hasPlacement;
+  if (refs.itemQuantityPlus) refs.itemQuantityPlus.disabled = !hasPlacement;
+  updateItemQuantityUi();
 }
 
 function openBackupDialog() {

@@ -65,7 +65,8 @@ export function unavailableSnapshotItems(sourceSnapshot) {
 }
 
 export function itemPlacementSnapshotChanged(initialSnapshot, currentSnapshot) {
-  return String(initialSnapshot?.containerId || "") !== String(currentSnapshot?.containerId || "");
+  return String(initialSnapshot?.containerId || "") !== String(currentSnapshot?.containerId || "") ||
+    Number(initialSnapshot?.quantity || 1) !== Number(currentSnapshot?.quantity || 1);
 }
 
 export function containerPlacementSnapshotChanged(initialSnapshot, currentSnapshot) {

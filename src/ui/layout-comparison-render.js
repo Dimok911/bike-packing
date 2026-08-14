@@ -21,6 +21,10 @@ function comparisonStatusLabel({
   if (!diff || diff.status === "unchanged") return "";
   if (diff.status === "added") return t("compare.statusAdd");
   if (diff.status === "removed") return t("compare.statusRemove");
+  if (diff.status === "changed") return t("compare.statusQuantity", {
+    from: diff.fromQuantity,
+    to: diff.toQuantity
+  });
   const fromId = entityType === "item" ? diff.fromContainerId : diff.fromParentId;
   const toId = entityType === "item" ? diff.toContainerId : diff.toParentId;
   if (variant === "source-ghost") {
@@ -38,6 +42,7 @@ function comparisonClass(status, variant) {
   if (status === "added") return "comparison-added";
   if (status === "removed") return "comparison-removed";
   if (status === "moved") return "comparison-moved";
+  if (status === "changed") return "comparison-moved";
   return "comparison-unchanged";
 }
 
@@ -59,7 +64,11 @@ function renderComparisonItem({
   state,
   t
 }) {
-  const item = state?.items?.[entry.id];
+  const sourceItem = state?.items?.[entry.id];
+  const quantity = entry.variant === "source" || entry.variant === "source-ghost"
+    ? comparison.from.itemQuantities[entry.id]
+    : comparison.to.itemQuantities[entry.id];
+  const item = sourceItem ? { ...sourceItem, quantity: quantity || 1 } : null;
   if (!item) return "";
   const diff = comparison.itemDiffs[entry.id] || { status: "unchanged" };
   const classes = comparisonClass(diff.status, entry.variant);

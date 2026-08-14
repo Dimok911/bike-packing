@@ -20,6 +20,7 @@ function layoutPlacementSnapshot(layout = {}) {
   const placements = {};
   const itemParents = {};
   const containerParents = {};
+  const itemQuantities = {};
   const roots = uniqueIds(Array.isArray(arrangement.rootContainerIds)
     ? arrangement.rootContainerIds
     : (Array.isArray(layout.rootContainerIds) ? layout.rootContainerIds : []));
@@ -58,7 +59,10 @@ function layoutPlacementSnapshot(layout = {}) {
     });
   });
   Object.entries(arrangement.items || {}).forEach(([itemId, containerId]) => {
-    if (itemId && containerId) itemParents[itemId] = String(containerId);
+    if (itemId && containerId) {
+      itemParents[itemId] = String(containerId);
+      itemQuantities[itemId] = recordQuantity({ quantity: arrangement.itemQuantities?.[itemId] });
+    }
   });
   roots.forEach((containerId) => {
     containerParents[containerId] = "";
@@ -81,6 +85,7 @@ function layoutPlacementSnapshot(layout = {}) {
     roots,
     placements,
     itemParents,
+    itemQuantities,
     containerParents,
     itemIds: new Set(Object.keys(itemParents)),
     containerIds: new Set(Object.keys(containerParents))
@@ -109,16 +114,16 @@ function recordQuantity(record) {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-function recordWeight(record, { quantity = false } = {}) {
+function recordWeight(record, { quantity = 1 } = {}) {
   const weight = Number(record?.weight);
   if (!Number.isFinite(weight)) return 0;
-  return weight * (quantity ? recordQuantity(record) : 1);
+  return weight * recordQuantity({ quantity });
 }
 
 function layoutWeight(state, snapshot) {
   let total = 0;
   snapshot.itemIds.forEach((itemId) => {
-    total += recordWeight(state?.items?.[itemId], { quantity: true });
+    total += recordWeight(state?.items?.[itemId], { quantity: snapshot.itemQuantities[itemId] });
   });
   snapshot.containerIds.forEach((containerId) => {
     total += recordWeight(state?.containers?.[containerId]);
@@ -144,8 +149,11 @@ export function buildLayoutComparison(state, fromLayoutId, toLayoutId) {
     const inTo = to.itemIds.has(itemId);
     const fromContainerId = inFrom ? from.itemParents[itemId] || "" : "";
     const toContainerId = inTo ? to.itemParents[itemId] || "" : "";
-    const status = presenceStatus(inFrom, inTo, fromContainerId, toContainerId);
-    itemDiffs[itemId] = { id: itemId, status, fromContainerId, toContainerId };
+    const fromQuantity = inFrom ? from.itemQuantities[itemId] || 1 : 0;
+    const toQuantity = inTo ? to.itemQuantities[itemId] || 1 : 0;
+    const placementStatus = presenceStatus(inFrom, inTo, fromContainerId, toContainerId);
+    const status = placementStatus === "unchanged" && fromQuantity !== toQuantity ? "changed" : placementStatus;
+    itemDiffs[itemId] = { id: itemId, status, fromContainerId, toContainerId, fromQuantity, toQuantity };
     if (status !== "unchanged") {
       addAncestors(changedContainerIds, from, fromContainerId);
       addAncestors(changedContainerIds, to, toContainerId);

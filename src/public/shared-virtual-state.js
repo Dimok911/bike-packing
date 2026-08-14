@@ -170,6 +170,7 @@ export function createSharedVirtualStateFromPublishedState(layout, sourceState, 
     items[nextId] = {
       ...cloneValue(item),
       id: nextId,
+      quantity: Math.max(1, Math.round(Number(sourceLayout?.arrangement?.itemQuantities?.[itemId] ?? item.quantity) || 1)),
       containerId,
       sharedSourceId: itemId,
       createdAt: item.createdAt || changedAt,

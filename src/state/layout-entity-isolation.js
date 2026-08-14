@@ -141,6 +141,14 @@ function rewriteLayoutEntityIds(layout, { containerReplacements, itemReplacement
   });
   arrangement.items = nextItems;
 
+  const nextItemQuantities = {};
+  Object.entries(arrangement.itemQuantities || {}).forEach(([itemId, value]) => {
+    const nextItemId = replaceItemId(itemId);
+    if (nextItemId !== itemId) changed = true;
+    nextItemQuantities[nextItemId] = cloneValue(value);
+  });
+  arrangement.itemQuantities = nextItemQuantities;
+
   const nextPackedItems = {};
   Object.entries(arrangement.packedItems || {}).forEach(([itemId, value]) => {
     const nextItemId = replaceItemId(itemId);

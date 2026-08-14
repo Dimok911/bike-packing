@@ -450,6 +450,7 @@ function removeContainerPlacementTreeFromLayout(layout, containerId) {
       if (!containerIds.has(placedContainerId)) return;
       itemIds.add(itemId);
       delete arrangement.items[itemId];
+      delete arrangement.itemQuantities?.[itemId];
     });
     itemIds.forEach((itemId) => delete arrangement.packedItems?.[itemId]);
     layout.rootContainerIds = [...arrangement.rootContainerIds];

@@ -79,6 +79,7 @@ export function ensureLayoutContainerPlacement(targetState, layout, containerId)
   arrangement.rootContainerIds = Array.isArray(arrangement.rootContainerIds) ? arrangement.rootContainerIds : [];
   arrangement.containers = arrangement.containers && typeof arrangement.containers === "object" ? arrangement.containers : {};
   arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
+  arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object" ? arrangement.itemQuantities : {};
   arrangement.packedItems = arrangement.packedItems && typeof arrangement.packedItems === "object" ? arrangement.packedItems : {};
   if (arrangement.containers[containerId]) return arrangement.containers[containerId];
 
@@ -119,6 +120,10 @@ export function removeItemFromLayoutArrangement(layout, itemId) {
     delete arrangement.packedItems[itemId];
     changed = true;
   }
+  if (arrangement.itemQuantities && typeof arrangement.itemQuantities === "object" && Object.prototype.hasOwnProperty.call(arrangement.itemQuantities, itemId)) {
+    delete arrangement.itemQuantities[itemId];
+    changed = true;
+  }
   Object.values(arrangement.containers || {}).forEach((placement) => {
     if (!placement || typeof placement !== "object") return;
     const currentItemIds = Array.isArray(placement.itemIds) ? placement.itemIds : [];
@@ -142,9 +147,12 @@ export function addItemToLayoutArrangement(targetState, layout, itemId, containe
   const targetPlacement = ensureLayoutContainerPlacement(targetState, layout, containerId);
   if (!targetPlacement) return false;
   const arrangement = layout.arrangement;
+  const previousQuantity = arrangement.itemQuantities?.[itemId] ?? targetState.items[itemId]?.quantity ?? 1;
   removeItemFromLayoutArrangement(layout, itemId);
   arrangement.items = arrangement.items && typeof arrangement.items === "object" ? arrangement.items : {};
   arrangement.items[itemId] = containerId;
+  arrangement.itemQuantities = arrangement.itemQuantities && typeof arrangement.itemQuantities === "object" ? arrangement.itemQuantities : {};
+  arrangement.itemQuantities[itemId] = Math.max(1, Math.round(Number(previousQuantity) || 1));
   targetPlacement.itemIds = Array.isArray(targetPlacement.itemIds) ? targetPlacement.itemIds.filter((id) => id !== itemId) : [];
   targetPlacement.order = Array.isArray(targetPlacement.order)
     ? targetPlacement.order.filter((entry) => !(entry?.type === "item" && entry.id === itemId))
@@ -394,6 +402,7 @@ function createEmptyRootContainerPlacement(arrangement, containerId) {
   Object.entries(arrangement.items || {}).forEach(([itemId, placedContainerId]) => {
     if (placedContainerId !== containerId) return;
     delete arrangement.items[itemId];
+    delete arrangement.itemQuantities?.[itemId];
     delete arrangement.packedItems?.[itemId];
   });
   arrangement.containers[containerId] = {
@@ -476,6 +485,7 @@ export function removeContainerFromLayoutOnlyInState(targetState, layout, contai
   Object.entries(arrangement.items || {}).forEach(([itemId, itemContainerId]) => {
     if (!removedContainerIds.has(itemContainerId)) return;
     delete arrangement.items[itemId];
+    delete arrangement.itemQuantities?.[itemId];
     delete arrangement.packedItems?.[itemId];
     if (targetState.items?.[itemId]) {
       markRecordActivePublicCatalog(targetState.items[itemId]);

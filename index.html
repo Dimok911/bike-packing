@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1443" />
+    <link rel="stylesheet" href="./styles.css?v=1444" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -169,7 +169,7 @@
             Weight, g
             <input id="itemWeight" type="number" min="0" step="1" inputmode="numeric" enterkeyhint="done" />
           </label>
-          <div class="quantity-field field-label">
+          <div id="itemQuantityField" class="quantity-field field-label">
             Quantity
             <div class="quantity-stepper">
               <button id="itemQuantityMinus" class="ghost" type="button" aria-label="Decrease quantity">−</button>
@@ -177,7 +177,7 @@
               <button id="itemQuantityPlus" class="ghost" type="button" aria-label="Increase quantity">+</button>
             </div>
           </div>
-          <div class="item-total-weight" aria-live="polite">
+          <div id="itemTotalWeightField" class="item-total-weight" aria-live="polite">
             <span>Total weight</span>
             <strong id="itemTotalWeight">0 g</strong>
           </div>
@@ -806,6 +806,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1443" type="module"></script>
+    <script src="./app.js?v=1444" type="module"></script>
   </body>
 </html>

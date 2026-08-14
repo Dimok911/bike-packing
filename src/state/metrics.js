@@ -1,19 +1,21 @@
 import { normalizeItemQuantity } from "./normalize.js";
+import { getLayoutItemQuantity } from "./layout-item-quantity.js";
 
 export function itemQuantity(item) {
   return normalizeItemQuantity(item?.quantity);
 }
 
-export function itemTotalWeight(item) {
-  return Number(item?.weight || 0) * itemQuantity(item);
+export function itemTotalWeight(item, quantity = itemQuantity(item)) {
+  return Number(item?.weight || 0) * normalizeItemQuantity(quantity);
 }
 
-export function containerWeight(targetState, containerId) {
+export function containerWeight(targetState, containerId, layout = targetState.layouts?.[targetState.activeLayoutId]) {
   const container = targetState.containers?.[containerId];
   if (!container) return 0;
   const ownContainerWeight = Number(container.weight || 0);
-  const own = (container.itemIds || []).reduce((sum, id) => sum + itemTotalWeight(targetState.items?.[id]), 0);
-  const children = (container.childIds || []).reduce((sum, id) => sum + containerWeight(targetState, id), 0);
+  const own = (container.itemIds || []).reduce((sum, id) =>
+    sum + itemTotalWeight(targetState.items?.[id], getLayoutItemQuantity(targetState, layout, id)), 0);
+  const children = (container.childIds || []).reduce((sum, id) => sum + containerWeight(targetState, id, layout), 0);
   return ownContainerWeight + own + children;
 }
 

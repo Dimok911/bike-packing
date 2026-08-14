@@ -155,7 +155,11 @@ function layoutSnapshotPayload(targetState, { entityId, entityType, layoutId }) 
     const source = targetState.items?.[id];
     if (!source) return;
     const containerId = arrangement.items?.[id] || source.containerId || "";
-    items[id] = { ...cloneValue(source), containerId: ids.containerIds.has(containerId) ? containerId : "" };
+    items[id] = {
+      ...cloneValue(source),
+      quantity: Math.max(1, Math.round(Number(arrangement.itemQuantities?.[id] ?? source.quantity) || 1)),
+      containerId: ids.containerIds.has(containerId) ? containerId : ""
+    };
   });
 
   const rootContainerIds = [...new Set(arrangement.rootContainerIds || sourceLayout.rootContainerIds || [])]
@@ -169,6 +173,7 @@ function layoutSnapshotPayload(targetState, { entityId, entityType, layoutId }) 
       order: cloneValue(container.order)
     }])),
     items: Object.fromEntries(Object.entries(items).filter(([, item]) => item.containerId).map(([id, item]) => [id, item.containerId])),
+    itemQuantities: Object.fromEntries(Object.entries(items).filter(([, item]) => item.containerId).map(([id, item]) => [id, item.quantity])),
     packedItems: Object.fromEntries(Object.entries(arrangement.packedItems || {}).filter(([id]) => items[id]))
   };
   const layout = {
