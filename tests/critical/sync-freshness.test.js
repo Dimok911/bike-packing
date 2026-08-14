@@ -49,6 +49,8 @@ import { runSyncNowFlow } from "../../src/sync/run-sync-now-flow.js";
 import { mergeStateFromBase } from "../../src/sync/state-merge.js";
 import { snapshotsEqual } from "../../src/utils/json.js";
 
+const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+
 test("CRITICAL sync-save: manual sync checks remote freshness when local state is clean", async () => {
   const statuses = [];
   const freshnessCalls = [];
@@ -395,9 +397,14 @@ test("CRITICAL sync-save: equal normalized state still persists recovered quanti
 });
 
 test("CRITICAL offline-start: entity changes cannot bypass a required full cache refresh", () => {
-  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 5 }), true);
-  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 4 }), false);
+  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 6 }), true);
+  assert.equal(startupCacheAllowsEntityChanges({ cacheIntegrityVersion: 5 }), false);
   assert.equal(startupCacheAllowsEntityChanges({}), false);
+});
+
+test("CRITICAL sync-save: runtime passes the quantity migration signal into remote loading", () => {
+  const loadFlowWiring = appSource.match(/loadRemoteStateFlow\(\{[\s\S]*?\n\s*\}, options\);/)?.[0] || "";
+  assert.match(loadFlowWiring, /layoutItemQuantityMigrationRecovered/);
 });
 
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {
@@ -999,7 +1006,7 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
       hasLocalState: true,
       syncMeta: {
         dirty: false,
-        cacheIntegrityVersion: 5,
+        cacheIntegrityVersion: 6,
         listId: "list-1",
         serverUpdatedAt: "2026-05-27T20:00:00.000Z",
         stateRevision: 7,
@@ -1040,7 +1047,7 @@ test("CRITICAL offline-start: quantity persistence invalidates the previous star
     hasLocalState: true,
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 4,
+      cacheIntegrityVersion: 5,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
@@ -1064,7 +1071,7 @@ test("CRITICAL offline-start: incomplete local cache cannot mask server items be
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 5,
+      cacheIntegrityVersion: 6,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
@@ -1096,7 +1103,7 @@ test("CRITICAL offline-start: startup tries entity changes before full state whe
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 5,
+      cacheIntegrityVersion: 6,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
