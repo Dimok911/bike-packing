@@ -336,6 +336,63 @@ test("CRITICAL sync-save: recovered layout quantities are persisted to the serve
   assert.deepEqual(saveCalls, [{ notify: false, forceOverwrite: true }]);
 });
 
+test("CRITICAL sync-save: equal normalized state still persists recovered quantities", async () => {
+  const currentState = { items: {}, containers: {}, layouts: { "layout-1": { id: "layout-1" } } };
+  const remoteState = structuredClone(currentState);
+  const saveCalls = [];
+  const runtime = {
+    appUnlocked: false,
+    currentUser: { id: "user-1" },
+    initialRemoteLoadPending: false,
+    remoteRefreshInFlight: true,
+    state: currentState,
+    syncMeta: { dirty: false, stateRevision: 7 }
+  };
+
+  await loadRemoteStateFlow({
+    runtime,
+    dependencies: {
+      blockRemoteIntegrityFailureIfNeeded: () => false,
+      canLocalStateOverrideRemote: () => true,
+      clearStaleDirtyFlagIfNoLocalChanges: () => false,
+      cloneStateForSync: (candidate) => candidate,
+      fetchRemoteStateRecord: async () => ({
+        record: {
+          payload: remoteState,
+          stateRevision: 7,
+          updatedAt: "2026-08-14T20:00:00.000Z"
+        },
+        source: "catalog"
+      }),
+      hasLocalSavedState: () => true,
+      isPublicLayoutContext: () => false,
+      isSharedListLinkRoute: () => false,
+      layoutItemQuantityMigrationRecovered: (candidate) => candidate === remoteState,
+      normalizeRemoteState: () => remoteState,
+      nowIso: () => "2026-08-14T20:00:01.000Z",
+      offerPendingGuestLoginHandoffAfterRemoteLoad: async () => false,
+      remoteUpdatedAt: (record) => record.updatedAt,
+      rememberCurrentSyncAccount: () => {},
+      rememberRemoteIntegrityMeta: () => {},
+      repairPrivateMojibakeLayoutNames: () => {},
+      saveBaseState: () => {},
+      saveRemoteState: async (options) => { saveCalls.push(options); },
+      saveSyncMeta: () => {},
+      serializeState: () => runtime.state,
+      setLayoutLoadProgress: () => {},
+      setPersonalLayoutsLoadedStatus: () => {},
+      stateIntegrityMetaFromResponse: () => ({ stateRevision: 7 }),
+      statePrivateLayoutCount: () => 1,
+      timeValue: (value) => Date.parse(value) || 0,
+      updateSyncUi: () => {}
+    }
+  });
+
+  assert.deepEqual(saveCalls, [{ notify: false, forceOverwrite: true }]);
+  assert.equal(runtime.appUnlocked, true);
+  assert.equal(runtime.syncMeta.dirty, false);
+});
+
 test("CRITICAL sync-save: freshness metadata can be normalized without payload", () => {
   const freshness = normalizeListFreshness({
     ok: true,
@@ -935,7 +992,7 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
       hasLocalState: true,
       syncMeta: {
         dirty: false,
-        cacheIntegrityVersion: 3,
+        cacheIntegrityVersion: 4,
         listId: "list-1",
         serverUpdatedAt: "2026-05-27T20:00:00.000Z",
         stateRevision: 7,
@@ -976,7 +1033,7 @@ test("CRITICAL offline-start: quantity persistence invalidates the previous star
     hasLocalState: true,
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 2,
+      cacheIntegrityVersion: 3,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
@@ -1000,7 +1057,7 @@ test("CRITICAL offline-start: incomplete local cache cannot mask server items be
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 3,
+      cacheIntegrityVersion: 4,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7

@@ -37,6 +37,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     isSuspiciousEmptyPackingState,
     isTemporaryServerStorageError,
     isTimeoutError,
+    layoutItemQuantityMigrationRecovered,
     loadBaseState,
     currentPackingListId,
     mergeStateFromBase,
@@ -358,6 +359,11 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
       updateSyncUi(localText("Conflicts merged · sending to the server...", "Конфликты объединены · отправляю на сервер..."));
       await saveRemoteState({ notify: notifyDirtySave });
       return;
+    }
+
+    if (layoutItemQuantityMigrationRecovered?.(remoteState)) {
+      rememberLoadedRemoteRecordMeta();
+      await persistRecoveredLayoutQuantityMigration({ remoteState, runtime, dependencies });
     }
 
     syncMeta.dirty = false;
