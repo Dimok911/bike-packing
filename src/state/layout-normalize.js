@@ -43,6 +43,10 @@ function shouldRecoverBrokenCapturedQuantities(layout, arrangement, items) {
   return legacyMultiItemIds.length > 0 && legacyMultiItemIds.every((itemId) => normalizeItemQuantity(storedQuantities[itemId]) === 1);
 }
 
+function hasLegacyMultiQuantity(arrangement, items) {
+  return Object.keys(arrangement?.items || {}).some((itemId) => normalizeItemQuantity(items[itemId]?.quantity) > 1);
+}
+
 export function layoutDisplayNameForLanguage(layout, language = "ru") {
   const storedName = String(layout?.name || "").trim();
   if (layout?.id === "layout-main" && (!storedName || DEFAULT_LAYOUT_NAMES.has(storedName))) {
@@ -209,7 +213,9 @@ export function normalizeLayoutArrangement(layout, targetState) {
       : items[itemId]?.quantity;
     arrangement.itemQuantities[itemId] = normalizeItemQuantity(source);
   });
-  arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
+  if (hasLegacyMultiQuantity(arrangement, items)) {
+    arrangement.itemQuantityMigrationVersion = LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION;
+  }
   if (!hadStoredArrangement) repairBareLayoutRootArrangement(layout, targetState);
   Object.entries(arrangement.containers).forEach(([containerId, placement]) => {
     if (!containerIdSet.has(containerId) || !placement || typeof placement !== "object") {

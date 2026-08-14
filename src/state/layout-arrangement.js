@@ -1,4 +1,4 @@
-export const LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION = 2;
+export const LAYOUT_ITEM_QUANTITY_MIGRATION_VERSION = 3;
 
 export function createEmptyLayoutArrangement() {
   return {

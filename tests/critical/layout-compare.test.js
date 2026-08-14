@@ -365,11 +365,30 @@ test("CRITICAL v1444 captured quantities are recovered once and later explicit c
   normalizeLayoutFields(state);
 
   assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
-  assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 2);
+  assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 3);
 
   setLayoutItemQuantity(state, "short", "bottle", 1);
   normalizeLayoutFields(state);
   assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 1);
+});
+
+test("CRITICAL server legacy quantities recover after an earlier local-only migration pass", () => {
+  const state = legacyQuantityState();
+  state.layouts.short.updatedAt = "2026-07-29T10:56:02.223Z";
+  state.layouts.short.arrangement.itemQuantities = { bottle: 1 };
+  state.layouts.short.arrangement.itemQuantityMigrationVersion = 2;
+  state.items.bottle.quantity = 1;
+
+  normalizeLayoutFields(state);
+
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 1);
+  assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 2);
+
+  state.items.bottle.quantity = 2;
+  normalizeLayoutFields(state);
+
+  assert.equal(getLayoutItemQuantity(state, "short", "bottle"), 2);
+  assert.equal(state.layouts.short.arrangement.itemQuantityMigrationVersion, 3);
 });
 
 test("CRITICAL arrangement capture preserves the active layout quantity", () => {
