@@ -910,7 +910,7 @@ test("CRITICAL offline-start: startup can reuse cached state when freshness is u
       hasLocalState: true,
       syncMeta: {
         dirty: false,
-        cacheIntegrityVersion: 1,
+        cacheIntegrityVersion: 2,
         listId: "list-1",
         serverUpdatedAt: "2026-05-27T20:00:00.000Z",
         stateRevision: 7,
@@ -945,6 +945,25 @@ test("CRITICAL offline-start: legacy cache requires one full server verification
   }), false);
 });
 
+test("CRITICAL offline-start: quantity migration invalidates the previous startup cache version", () => {
+  assert.equal(canUseCachedStartupState({
+    currentListId: "list-1",
+    hasLocalState: true,
+    syncMeta: {
+      dirty: false,
+      cacheIntegrityVersion: 1,
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    },
+    remoteFreshness: {
+      listId: "list-1",
+      serverUpdatedAt: "2026-05-27T20:00:00.000Z",
+      stateRevision: 7
+    }
+  }), false);
+});
+
 test("CRITICAL offline-start: incomplete local cache cannot mask server items behind unchanged freshness", () => {
   assert.equal(canUseCachedStartupState({
     currentListId: "list-1",
@@ -956,7 +975,7 @@ test("CRITICAL offline-start: incomplete local cache cannot mask server items be
     },
     syncMeta: {
       dirty: false,
-      cacheIntegrityVersion: 1,
+      cacheIntegrityVersion: 2,
       listId: "list-1",
       serverUpdatedAt: "2026-05-27T20:00:00.000Z",
       stateRevision: 7
