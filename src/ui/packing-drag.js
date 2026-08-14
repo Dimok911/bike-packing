@@ -35,6 +35,7 @@ export function createPackingDragController({
   onBeforePackingDragEnter = () => {},
   isOriginalRootColumnPosition,
   canStartPackingDrag = () => true,
+  canMoveContainerToRoot = () => true,
   moveContainer,
   moveContainerIntoContainerTop,
   moveContainerToRoot = () => false,
@@ -867,7 +868,7 @@ export function createPackingDragController({
           !target?.closest?.(".dropzone") &&
           !target?.closest?.(".subcontainer")
         );
-        if (sourceIsNestedContainer && board && rootSurface) {
+        if (sourceIsNestedContainer && canMoveContainerToRoot(id) && board && rootSurface) {
           clearDropzoneDragOvers(root);
           root.querySelectorAll(".item-card.group-target, .item-card.move-into-target").forEach((card) => card.classList.remove("group-target", "move-into-target"));
           currentZone = null;

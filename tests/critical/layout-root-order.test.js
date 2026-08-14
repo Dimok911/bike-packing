@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   addRootContainerToLayoutInState,
+  canMoveContainerToLayoutRoot,
   moveContainerInLayoutArrangement,
   moveItemInLayoutArrangement,
   moveRootColumnInState,
@@ -470,6 +471,40 @@ test("CRITICAL reusable nested bag: dragging it out promotes it to the selected 
   assert.equal(layout.arrangement.containers["bag-a"].parentId, "");
   assert.deepEqual(layout.arrangement.containers["bag-b"].childIds, []);
   assert.deepEqual(layout.arrangement.containers["bag-b"].order, []);
+});
+
+test("CRITICAL temporary package: it cannot be promoted from inside a bag to the layout root", () => {
+  const state = createState();
+  state.activeLayoutId = "layout-a";
+  state.collapsedContainers = {};
+  const layout = state.layouts["layout-a"];
+  layout.rootContainerIds = ["bag-b", "bag-c"];
+  layout.arrangement.rootContainerIds = ["bag-b", "bag-c"];
+  layout.arrangement.containers["bag-a"] = {
+    parentId: "bag-b",
+    itemIds: ["item-a"],
+    childIds: [],
+    order: [{ type: "item", id: "item-a" }]
+  };
+  layout.arrangement.containers["bag-b"].childIds = ["bag-a"];
+  layout.arrangement.containers["bag-b"].order = [{ type: "container", id: "bag-a" }];
+  layout.arrangement.items["item-a"] = "bag-a";
+
+  assert.equal(canMoveContainerToLayoutRoot(state, layout, "bag-a"), false);
+  assert.equal(placeExistingContainerInLayoutInState(state, "bag-a", "", "layout-a", { targetIndex: 1 }), false);
+  assert.deepEqual(layout.rootContainerIds, ["bag-b", "bag-c"]);
+  assert.equal(layout.arrangement.containers["bag-a"].parentId, "bag-b");
+  assert.deepEqual(layout.arrangement.containers["bag-b"].childIds, ["bag-a"]);
+  assert.deepEqual(layout.arrangement.containers["bag-b"].order, [{ type: "container", id: "bag-a" }]);
+});
+
+test("CRITICAL temporary package drag: the root drop surface checks layout-root eligibility", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const dragSource = readFileSync(resolve(projectRoot, "src/ui/packing-drag.js"), "utf8");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.match(dragSource, /sourceIsNestedContainer && canMoveContainerToRoot\(id\) && board && rootSurface/);
+  assert.match(controllers, /canMoveContainerToRoot: \(containerId\) => canMoveContainerToLayoutRoot\(/);
 });
 
 test("CRITICAL reusable nested bag: it stays in the catalog and survives removal from a layout", () => {

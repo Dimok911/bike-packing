@@ -190,6 +190,14 @@ export function getLayoutDescendantContainerIds(layout, containerId) {
   return result;
 }
 
+export function canMoveContainerToLayoutRoot(targetState, layout, containerId) {
+  const container = targetState?.containers?.[containerId];
+  const placement = layout?.arrangement?.containers?.[containerId];
+  if (!container || !placement) return false;
+  if (!placement.parentId) return true;
+  return container.nestable === true;
+}
+
 export function moveContainerInLayoutArrangement(targetState, layout, containerId, targetParentId, targetIndex = null) {
   if (!layout || !targetState.containers?.[containerId] || !targetState.containers?.[targetParentId]) return false;
   if (containerId === targetParentId) return false;
@@ -277,6 +285,7 @@ export function placeExistingContainerInLayoutInState(targetState, containerId, 
   const layout = targetState?.layouts?.[layoutId];
   if (!targetState?.containers?.[containerId] || !layout) return false;
   if (parentId && !targetState.containers?.[parentId]) return false;
+  if (!parentId && !canMoveContainerToLayoutRoot(targetState, layout, containerId)) return false;
   const previousArrangement = clonePlain(layout.arrangement || createEmptyLayoutArrangement());
   const previousRootContainerIds = [...(layout.rootContainerIds || [])];
   const previousParentId = targetState.containers[containerId].parentId || null;

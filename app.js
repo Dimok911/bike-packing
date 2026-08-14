@@ -974,7 +974,9 @@ import {
 import {
   hasHistoryStateChanges,
   historyActionDescription,
+  historyQuantityStorageScope,
   historyRecordAction,
+  historyRestoreScopeText,
   historyRestoreActionText,
   historyUndoConfirmation,
   renderHistoryRecordArticle as renderHistoryRecordArticleHtml,
@@ -1147,6 +1149,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "listSaveNoopHistoryGuard",
   "historyPreviousSnapshots",
   "historyActionJournal",
+  "historyQuantityStorageScope",
   "historyMeaningfulActions",
   "historyTechnicalMetadataGuard",
   "historySummaryPagination",
@@ -1160,7 +1163,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-08-03.sliding-session-renewal-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-08-15.history-quantity-scope-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -10021,6 +10024,10 @@ async function openHistoryRecordDetails(recordKey) {
         localText,
         recordState: historyRecordState,
         recordTitle: historyRecordTitle,
+        restoreScopeText: historyRestoreScopeText(record, index, records, {
+          forceFull: activeHistorySource !== "private",
+          localText
+        }),
         restoreComparisonTitle: t(
           String(detail.record?.snapshotKind || detail.record?.snapshot_kind || "undo") === "daily"
             ? "history.checkpointChangesTitle"
@@ -10106,7 +10113,8 @@ async function restoreHistoryRecord(recordKey) {
     actionText: historyUndoActionText(record, index, records),
     ...impact,
     layoutName: restoredLayoutName,
-    localText
+    localText,
+    quantityStorageScope: historyQuantityStorageScope(record)
   }));
   if (!confirmed) return;
   refs.historyDialog.close();
@@ -10240,7 +10248,8 @@ async function publishPublicHistoryRecord(record, payload, {
     : historyUndoConfirmation({
       actionText: historyUndoActionText(record, index, records),
       ...impact,
-      localText
+      localText,
+      quantityStorageScope: historyQuantityStorageScope(record)
     }));
   if (!confirmed) return;
   await assertAdminApiCompatibility({ force: true });

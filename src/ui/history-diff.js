@@ -1,7 +1,11 @@
 import { itemCategories } from "../state/normalize.js";
 import { comparableValueForMerge } from "../sync/conflict-merge.js";
 import { isConflictMetaField } from "../sync/conflict-meta.js";
-import { historyNewerRecord, historyRollbackImpact } from "../sync/history.js";
+import {
+  historyNewerRecord,
+  historyRecordRestoreLayoutIds,
+  historyRollbackImpact
+} from "../sync/history.js";
 import { escapeHtml } from "../utils/html.js";
 import {
   formatCompactJson,
@@ -272,6 +276,31 @@ export function historyRestoreCauseText(record, {
     : "";
 }
 
+export function historyQuantityStorageScope(record) {
+  return String(record?.quantityStorageScope || record?.quantity_storage_scope || "").trim().toLowerCase();
+}
+
+export function historyQuantityWarningText(record, {
+  localText = historyRuText
+} = {}) {
+  return historyQuantityStorageScope(record) === "legacy"
+    ? localText("Old quantity scheme", "Старая схема количества")
+    : "";
+}
+
+export function historyRestoreScopeText(record, index, records = [], {
+  forceFull = false,
+  localText = historyRuText
+} = {}) {
+  const impact = historyRollbackImpact(record, index, records);
+  const layoutId = !forceFull && !impact.isDeepRollback ? historyRecordRestoreLayoutIds(record)[0] || "" : "";
+  if (!layoutId) return localText("Entire list", "Весь список");
+  const affectedLayout = (Array.isArray(record?.affectedLayouts) ? record.affectedLayouts : [])
+    .find((layout) => String(layout?.id || "") === layoutId);
+  const name = String(affectedLayout?.name || layoutId).trim() || layoutId;
+  return localText(`Only layout “${name}”`, `Только укладка «${name}»`);
+}
+
 export function historyRestoreActionText(record, index, records = [], {
   restoreBeforeChangeText = "Восстановить состояние до этого изменения",
   restoreCheckpointText = "Восстановить состояние до этой точки",
@@ -290,7 +319,8 @@ export function historyUndoConfirmation({
   isDeepRollback = false,
   layoutName = "",
   localText = (en, ru) => ru,
-  newerActionCount = 0
+  newerActionCount = 0,
+  quantityStorageScope = ""
 } = {}) {
   const deepWarning = isDeepRollback
     ? crossesCheckpoint
@@ -302,6 +332,12 @@ export function historyUndoConfirmation({
         `Later actions shown above will also be undone: ${newerActionCount}.`,
         `Также будут отменены более поздние действия, расположенные выше: ${newerActionCount}.`
       )
+    : "";
+  const quantityWarning = String(quantityStorageScope || "") === "legacy"
+    ? localText(
+      "This version uses the old quantity scheme. After restoring it, check item quantities in the affected layouts.",
+      "Эта версия использует старую схему количества. После восстановления проверьте количество вещей в затронутых укладках."
+    )
     : "";
   const text = isDeepRollback
     ? localText(
@@ -320,9 +356,9 @@ export function historyUndoConfirmation({
   return {
     title: actionText || localText("Undo action?", "Отменить действие?"),
     text,
-    highlightText: deepWarning,
+    highlightText: [deepWarning, quantityWarning].filter(Boolean).join(" "),
     highlightCount: isDeepRollback && newerActionCount ? `+${newerActionCount}` : "",
-    tone: isDeepRollback ? "danger" : "",
+    tone: isDeepRollback || quantityWarning ? "danger" : "",
     okText: isDeepRollback
       ? localText("Restore state", "Восстановить состояние")
       : localText("Undo action", "Отменить действие"),
@@ -728,6 +764,11 @@ export function renderHistoryRecordArticle(record, index, records, {
   const createdAt = formatDateTime(record.createdAt || record.created_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
   const restoreCause = historyRestoreCauseText(record, { localText });
+  const restoreScope = historyRestoreScopeText(record, index, records, {
+    forceFull: activeSource !== "private",
+    localText
+  });
+  const quantityWarning = historyQuantityWarningText(record, { localText });
   const context = String(recordMetaText(record, payload, index, records) || "").trim();
   const actionRestoreText = typeof restoreTextForRecord === "function"
     ? restoreTextForRecord(record, index, records)
@@ -740,7 +781,11 @@ export function renderHistoryRecordArticle(record, index, records, {
     <article class="history-record" data-history-record="${escapeHtml(key)}" tabindex="0" role="button">
       <div class="history-record-main">
         <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
-        ${restoreCause ? `<span class="history-record-cause">${escapeHtml(restoreCause)}</span>` : ""}
+        <div class="history-record-badges">
+          ${restoreCause ? `<span class="history-record-cause">${escapeHtml(restoreCause)}</span>` : ""}
+          <span class="history-record-scope">${escapeHtml(restoreScope)}</span>
+          ${quantityWarning ? `<span class="history-record-warning">${escapeHtml(quantityWarning)}</span>` : ""}
+        </div>
         ${showTitle ? `<p class="history-record-title">${escapeHtml(title)}</p>` : ""}
         ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
       </div>
@@ -774,6 +819,7 @@ export function renderHistoryRecordDetails(record, index, records, {
   localText = historyRuText,
   recordState = () => null,
   recordTitle = (_record, _payload, fallback) => fallback || "",
+  restoreScopeText = "",
   restoreComparisonTitle = "Изменения этого шага относительно следующей версии",
   summarizePayload = () => ""
 } = {}) {
@@ -783,6 +829,11 @@ export function renderHistoryRecordDetails(record, index, records, {
   const sourceAt = formatDateTime(record.sourceUpdatedAt || record.source_updated_at);
   const device = String(record.sourceDeviceName || record.source_device_name || "").trim();
   const restoreCause = historyRestoreCauseText(record, { localText });
+  const restoreScope = String(restoreScopeText || historyRestoreScopeText(record, index, records, {
+    forceFull: activeSource !== "private",
+    localText
+  })).trim();
+  const quantityWarning = historyQuantityWarningText(record, { localText });
   const meta = [
     device,
     sourceAt ? localText(`changed: ${sourceAt}`, `изменение: ${sourceAt}`) : ""
@@ -792,6 +843,11 @@ export function renderHistoryRecordDetails(record, index, records, {
       <strong>${escapeHtml(createdAt || localText("no date", "без даты"))}</strong>
       ${restoreCause ? `<span class="history-record-cause">${escapeHtml(restoreCause)}</span>` : ""}
       ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+      ${restoreScope ? `<p class="history-detail-scope">${escapeHtml(localText(`Restore scope: ${restoreScope}`, `Область восстановления: ${restoreScope}`))}</p>` : ""}
+      ${quantityWarning ? `<p class="history-detail-warning">${escapeHtml(localText(
+        "This snapshot uses the old quantity scheme. Restoring it can bring back quantities recorded before they became layout-specific.",
+        "В этом снимке используется старая схема количества. Восстановление может вернуть значения, записанные до разделения количества по укладкам."
+      ))}</p>` : ""}
       <p>${escapeHtml(summary)}</p>
     </div>
     ${renderHistoryRecordComparison(record, index, records, {

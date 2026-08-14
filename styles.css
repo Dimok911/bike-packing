@@ -8023,9 +8023,15 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   white-space: nowrap;
 }
 
+.history-record-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
 .history-record-cause {
   display: inline-block;
-  margin-left: 8px;
   border: 1px solid hsl(var(--interface-hue) 35% 72% / 0.8);
   border-radius: 999px;
   padding: 2px 7px;
@@ -8035,6 +8041,28 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-weight: 800;
   line-height: 1.35;
   vertical-align: middle;
+}
+
+.history-record-scope,
+.history-record-warning {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.history-record-scope {
+  border: 1px solid #ccd7d3;
+  background: #f1f5f3;
+  color: #52645e;
+}
+
+.history-record-warning {
+  border: 1px solid #e0b45c;
+  background: #fff4d6;
+  color: #805612;
 }
 
 .history-record-title {
@@ -8149,6 +8177,14 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
 .history-detail-meta p {
   margin: 2px 0 0;
+}
+
+.history-detail-meta .history-detail-warning {
+  border-left: 3px solid #d49a28;
+  padding: 7px 9px;
+  background: #fff7df;
+  color: #704b08;
+  font-weight: 700;
 }
 
 .history-record-details {

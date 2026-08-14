@@ -54,6 +54,7 @@ import {
 import { dialogHasSavableChanges } from "../ui/dialog-save-guard.js";
 import { normalizeAuthAuthorization } from "../auth/permissions.js";
 import { focusCreatedCatalogCard } from "../ui/catalog-created-focus.js";
+import { canMoveContainerToLayoutRoot } from "../state/layout-ops.js";
 import { shouldShowContainerPickerLayoutSelect } from "../ui/container-picker-layout-select.js";
 import { resetDialogScrollPosition } from "../ui/modal-focus.js";
 import {
@@ -3946,6 +3947,11 @@ function getPackingDragController() {
       getState: () => state,
       isOriginalRootColumnPosition,
       canStartPackingDrag: () => !warnLockedLayoutMutation(state.activeLayoutId),
+      canMoveContainerToRoot: (containerId) => canMoveContainerToLayoutRoot(
+        state,
+        state.layouts?.[state.activeLayoutId],
+        containerId
+      ),
       onBeforePackingDragEnter: clearContentFiltersForPackingDrag,
       moveContainer,
       moveContainerIntoContainerTop,

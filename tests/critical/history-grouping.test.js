@@ -41,9 +41,12 @@ import {
   hasHistoryStateChanges,
   buildHistoryStateDiff,
   historyActionDescription,
+  historyQuantityStorageScope,
+  historyQuantityWarningText,
   historyRecordAction,
   historyRestoreActionText,
   historyRestoreCauseText,
+  historyRestoreScopeText,
   renderHistoryRecordArticle,
   renderHistoryRecordDetails,
   historyUndoConfirmation,
@@ -842,6 +845,48 @@ test("CRITICAL history: only a single-layout action requests an independent layo
   assert.equal(historyRecordScopeText({ snapshotKind: "daily" }, {}, {
     daily: "Daily checkpoint"
   }), "Daily checkpoint");
+});
+
+test("CRITICAL history: restore rows mark scope and warn about legacy quantities", () => {
+  const record = {
+    id: 9,
+    listId: "list-a",
+    snapshotKind: "undo",
+    changeScope: "layout",
+    affectedLayoutIds: ["layout-a"],
+    affectedLayouts: [{ id: "layout-a", name: "Two week trip" }],
+    quantityStorageScope: "legacy"
+  };
+  const records = [record];
+
+  assert.equal(historyQuantityStorageScope(record), "legacy");
+  assert.equal(historyQuantityWarningText(record, { localText: (_en, ru) => ru }), "Старая схема количества");
+  assert.equal(
+    historyRestoreScopeText(record, 0, records, { localText: (_en, ru) => ru }),
+    "Только укладка «Two week trip»"
+  );
+  assert.equal(
+    historyRestoreScopeText(record, 0, records, { forceFull: true, localText: (_en, ru) => ru }),
+    "Весь список"
+  );
+
+  const html = renderHistoryRecordArticle(record, 0, records, {
+    localText: (_en, ru) => ru,
+    recordMetaText: () => "Изменено количество",
+    restoreTextForRecord: () => "Отменить"
+  });
+  assert.match(html, /history-record-scope/);
+  assert.match(html, /Только укладка «Two week trip»/);
+  assert.match(html, /history-record-warning/);
+  assert.match(html, /Старая схема количества/);
+
+  const confirmation = historyUndoConfirmation({
+    layoutName: "Two week trip",
+    localText: (_en, ru) => ru,
+    quantityStorageScope: "legacy"
+  });
+  assert.equal(confirmation.tone, "danger");
+  assert.match(confirmation.highlightText, /старую схему количества/);
 });
 
 test("CRITICAL history: deep rollback warns about later actions in the same history stream", () => {
