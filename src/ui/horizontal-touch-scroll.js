@@ -42,6 +42,7 @@ export function bindHorizontalTouchScroll(board, {
   let lastTime = 0;
   let velocityX = 0;
   let momentumFrame = null;
+  let resetFrame = null;
   let activePointerId = null;
   let pointerCaptured = false;
 
@@ -49,6 +50,12 @@ export function bindHorizontalTouchScroll(board, {
     if (!momentumFrame) return;
     cancelAnimationFrame(momentumFrame);
     momentumFrame = null;
+  };
+
+  const cancelScheduledReset = () => {
+    if (resetFrame == null) return;
+    cancelAnimationFrame(resetFrame);
+    resetFrame = null;
   };
 
   const releasePointer = () => {
@@ -70,9 +77,16 @@ export function bindHorizontalTouchScroll(board, {
 
   const reset = () => {
     stopMomentum();
+    cancelScheduledReset();
     resetGesture();
     suppressClickUntil = 0;
     board.scrollLeft = 0;
+    if (typeof requestAnimationFrame === "function") {
+      resetFrame = requestAnimationFrame(() => {
+        resetFrame = null;
+        board.scrollLeft = 0;
+      });
+    }
   };
 
   const clampScrollLeft = (value) => {
@@ -82,6 +96,7 @@ export function bindHorizontalTouchScroll(board, {
 
   const beginGesture = (clientX, clientY) => {
     stopMomentum();
+    cancelScheduledReset();
     startX = clientX;
     startY = clientY;
     startLeft = board.scrollLeft;

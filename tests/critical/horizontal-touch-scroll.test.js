@@ -115,32 +115,48 @@ test("a clearly vertical gesture never switches to horizontal scrolling", () => 
 });
 
 test("pointer scrolling captures the whole board and a new picker opening resets it", () => {
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  let scheduledReset = null;
+  globalThis.requestAnimationFrame = (callback) => {
+    scheduledReset = callback;
+    return 17;
+  };
+  globalThis.cancelAnimationFrame = () => {};
   const board = createBoard();
-  bindHorizontalTouchScroll(board, { pointerEventsSupported: true });
-  board.dispatch("pointerdown", {
-    pointerType: "touch",
-    pointerId: 7,
-    clientX: 200,
-    clientY: 100
-  });
-  board.dispatch("pointermove", {
-    pointerType: "touch",
-    pointerId: 7,
-    clientX: 198,
-    clientY: 95
-  });
-  board.dispatch("pointermove", {
-    pointerType: "touch",
-    pointerId: 7,
-    clientX: 180,
-    clientY: 94
-  });
+  try {
+    bindHorizontalTouchScroll(board, { pointerEventsSupported: true });
+    board.dispatch("pointerdown", {
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 200,
+      clientY: 100
+    });
+    board.dispatch("pointermove", {
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 198,
+      clientY: 95
+    });
+    board.dispatch("pointermove", {
+      pointerType: "touch",
+      pointerId: 7,
+      clientX: 180,
+      clientY: 94
+    });
 
-  assert.equal(board.scrollLeft, 120);
-  assert.equal(board.hasPointerCapture(7), true);
-  resetHorizontalTouchScroll(board);
-  assert.equal(board.scrollLeft, 0);
-  assert.equal(board.hasPointerCapture(7), false);
+    assert.equal(board.scrollLeft, 120);
+    assert.equal(board.hasPointerCapture(7), true);
+    resetHorizontalTouchScroll(board);
+    assert.equal(board.scrollLeft, 0);
+    assert.equal(board.hasPointerCapture(7), false);
+    board.scrollLeft = 70;
+    scheduledReset();
+    assert.equal(board.scrollLeft, 0);
+  } finally {
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+  }
 });
 
 test("picker boards reserve horizontal gestures for the custom touch handler", async () => {
