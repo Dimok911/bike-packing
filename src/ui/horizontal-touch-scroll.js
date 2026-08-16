@@ -1,14 +1,36 @@
-const TOUCH_AXIS_LOCK_DISTANCE = 4;
+const HORIZONTAL_AXIS_LOCK_DISTANCE = 4;
+const VERTICAL_AXIS_LOCK_DISTANCE = 12;
+const VERTICAL_AXIS_DOMINANCE = 1.4;
+const boardControllers = new WeakMap();
 
-export function classifyTouchScrollAxis(dx, dy, minDistance = TOUCH_AXIS_LOCK_DISTANCE) {
+export function classifyTouchScrollAxis(dx, dy, {
+  horizontalDistance = HORIZONTAL_AXIS_LOCK_DISTANCE,
+  verticalDistance = VERTICAL_AXIS_LOCK_DISTANCE,
+  verticalDominance = VERTICAL_AXIS_DOMINANCE
+} = {}) {
   const distanceX = Math.abs(Number(dx) || 0);
   const distanceY = Math.abs(Number(dy) || 0);
-  const threshold = Math.max(0, Number(minDistance) || 0);
-  if (Math.max(distanceX, distanceY) < threshold) return "";
-  return distanceX > distanceY ? "horizontal" : "vertical";
+  if (distanceX >= Math.max(0, Number(horizontalDistance) || 0) && distanceX > distanceY) {
+    return "horizontal";
+  }
+  if (
+    distanceY >= Math.max(0, Number(verticalDistance) || 0) &&
+    distanceY > distanceX * Math.max(1, Number(verticalDominance) || 1)
+  ) {
+    return "vertical";
+  }
+  return "";
 }
 
-export function bindHorizontalTouchScroll(board) {
+export function resetHorizontalTouchScroll(board) {
+  const controller = boardControllers.get(board);
+  controller?.reset();
+  if (board) board.scrollLeft = 0;
+}
+
+export function bindHorizontalTouchScroll(board, {
+  pointerEventsSupported = typeof PointerEvent !== "undefined"
+} = {}) {
   if (!board || board.dataset.touchScrollBound === "true") return;
   board.dataset.touchScrollBound = "true";
   let startX = 0;
@@ -20,6 +42,8 @@ export function bindHorizontalTouchScroll(board) {
   let lastTime = 0;
   let velocityX = 0;
   let momentumFrame = null;
+  let activePointerId = null;
+  let pointerCaptured = false;
 
   const stopMomentum = () => {
     if (!momentumFrame) return;
@@ -27,10 +51,61 @@ export function bindHorizontalTouchScroll(board) {
     momentumFrame = null;
   };
 
+  const releasePointer = () => {
+    if (!pointerCaptured || activePointerId == null) return;
+    try {
+      if (board.hasPointerCapture?.(activePointerId)) board.releasePointerCapture(activePointerId);
+    } catch {
+      // The browser may release capture while beginning a native vertical pan.
+    }
+    pointerCaptured = false;
+  };
+
+  const resetGesture = () => {
+    releasePointer();
+    activePointerId = null;
+    touchScrollAxis = "";
+    velocityX = 0;
+  };
+
+  const reset = () => {
+    stopMomentum();
+    resetGesture();
+    suppressClickUntil = 0;
+    board.scrollLeft = 0;
+  };
+
   const clampScrollLeft = (value) => {
     const max = Math.max(0, board.scrollWidth - board.clientWidth);
     return Math.max(0, Math.min(max, value));
   };
+
+  const beginGesture = (clientX, clientY) => {
+    stopMomentum();
+    startX = clientX;
+    startY = clientY;
+    startLeft = board.scrollLeft;
+    touchScrollAxis = "";
+    lastX = clientX;
+    lastTime = performance.now();
+    velocityX = 0;
+  };
+
+  const moveGesture = (clientX, clientY) => {
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+    if (!touchScrollAxis) touchScrollAxis = classifyTouchScrollAxis(dx, dy);
+    if (touchScrollAxis !== "horizontal") return false;
+    const now = performance.now();
+    const elapsed = Math.max(1, now - lastTime);
+    velocityX = (clientX - lastX) / elapsed;
+    lastX = clientX;
+    lastTime = now;
+    board.scrollLeft = clampScrollLeft(startLeft - dx);
+    suppressClickUntil = Date.now() + 350;
+    return true;
+  };
+
   const startMomentum = () => {
     stopMomentum();
     if (touchScrollAxis !== "horizontal" || Math.abs(velocityX) < 0.08) return;
@@ -53,38 +128,58 @@ export function bindHorizontalTouchScroll(board) {
     momentumFrame = requestAnimationFrame(step);
   };
 
-  board.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) return;
-    stopMomentum();
-    const touch = event.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
-    startLeft = board.scrollLeft;
-    touchScrollAxis = "";
-    lastX = touch.clientX;
-    lastTime = performance.now();
-    velocityX = 0;
-  }, { passive: true });
+  if (pointerEventsSupported) {
+    board.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch" || activePointerId != null) return;
+      activePointerId = event.pointerId;
+      pointerCaptured = false;
+      beginGesture(event.clientX, event.clientY);
+    }, { passive: true });
 
-  board.addEventListener("touchmove", (event) => {
-    if (event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    const dx = touch.clientX - startX;
-    const dy = touch.clientY - startY;
-    if (!touchScrollAxis) touchScrollAxis = classifyTouchScrollAxis(dx, dy);
-    if (touchScrollAxis !== "horizontal") return;
-    if (event.cancelable) event.preventDefault();
-    const now = performance.now();
-    const elapsed = Math.max(1, now - lastTime);
-    velocityX = (touch.clientX - lastX) / elapsed;
-    lastX = touch.clientX;
-    lastTime = now;
-    board.scrollLeft = clampScrollLeft(startLeft - dx);
-    suppressClickUntil = Date.now() + 350;
-  }, { passive: false });
+    board.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "touch" || event.pointerId !== activePointerId) return;
+      if (!moveGesture(event.clientX, event.clientY)) return;
+      if (!pointerCaptured) {
+        try {
+          board.setPointerCapture?.(event.pointerId);
+          pointerCaptured = Boolean(board.hasPointerCapture?.(event.pointerId));
+        } catch {
+          pointerCaptured = false;
+        }
+      }
+    }, { passive: true });
 
-  board.addEventListener("touchend", startMomentum, { passive: true });
-  board.addEventListener("touchcancel", stopMomentum, { passive: true });
+    board.addEventListener("pointerup", (event) => {
+      if (event.pointerId !== activePointerId) return;
+      startMomentum();
+      releasePointer();
+      activePointerId = null;
+    }, { passive: true });
+
+    board.addEventListener("pointercancel", (event) => {
+      if (event.pointerId !== activePointerId) return;
+      stopMomentum();
+      resetGesture();
+    }, { passive: true });
+  } else {
+    board.addEventListener("touchstart", (event) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      beginGesture(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    board.addEventListener("touchmove", (event) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      if (moveGesture(touch.clientX, touch.clientY) && event.cancelable) event.preventDefault();
+    }, { passive: false });
+
+    board.addEventListener("touchend", startMomentum, { passive: true });
+    board.addEventListener("touchcancel", () => {
+      stopMomentum();
+      resetGesture();
+    }, { passive: true });
+  }
 
   board.addEventListener("click", (event) => {
     if (Date.now() <= suppressClickUntil) {
@@ -92,4 +187,6 @@ export function bindHorizontalTouchScroll(board) {
       event.stopPropagation();
     }
   }, true);
+
+  boardControllers.set(board, { reset });
 }

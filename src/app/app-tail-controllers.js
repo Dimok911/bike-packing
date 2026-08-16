@@ -154,7 +154,7 @@ export function createAppTailControllers(ctx) {
     arePublishedTemplatesBlocked, askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog,
     assertAdminApiCompatibility, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity,
     adminBackupPayloads, backupDownloadName, bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls,
-    bindFixedScrollbar, bindStickyRootHeaderRow, bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries,
+    bindFixedScrollbar, bindStickyRootHeaderRow, bindHorizontalTouchScroll, resetHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries,
     bindRootContainersEditorControls, bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi,
     blockDestructiveLocalSave, blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions,
     backupAdminTemplateRows, buildAdminSharedTemplateOptions, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync,
@@ -976,6 +976,7 @@ function renderRootPlacementBoard(containerId) {
     button.addEventListener("click", () => placeRootContainerInActiveLayout(containerId, Number(button.dataset.placeRootIndex)));
   });
   bindHorizontalTouchScroll(refs.rootPlacementBoard);
+  resetHorizontalTouchScroll(refs.rootPlacementBoard);
 }
 
 function renderRootPlacementSlot(containerId, slotIndex) {
@@ -1588,6 +1589,7 @@ function renderContainerPicker() {
   refs.containerPickerBoard.querySelector("[data-add-packing-root]")
     ?.addEventListener("click", openCopyTargetContainerSetup);
   bindHorizontalTouchScroll(refs.containerPickerBoard);
+  resetHorizontalTouchScroll(refs.containerPickerBoard);
 }
 
 function renderRootCopyPlacementBoard() {

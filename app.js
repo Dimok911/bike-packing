@@ -834,7 +834,10 @@ import {
   bindRootContainersEditorControls
 } from "./src/ui/settings-editor-bindings.js";
 import { openHelpLimitsDialogUi } from "./src/ui/help-limits-dialog.js";
-import { bindHorizontalTouchScroll } from "./src/ui/horizontal-touch-scroll.js";
+import {
+  bindHorizontalTouchScroll,
+  resetHorizontalTouchScroll
+} from "./src/ui/horizontal-touch-scroll.js";
 import {
   renderEmptyState,
   renderPackingAddRootCard,
@@ -1647,7 +1650,7 @@ const appTailControllerDeps = {
   askConfirmDialog, askConflictResolution, askPrintLabelsChoice, askUnsavedChangesDialog, assertAdminApiCompatibility,
   adminBackupPayloads, assertEntitySyncConfirmed, assertEntitySyncListFreshnessApi, assertPublishedTemplateCopyConfirmed, assertRemoteStateIntegrity, backupDownloadName,
   bestCatalogListRecord, bestMeaningfulLayoutId, bindBoardScroll, bindDictionaryControls, bindFixedScrollbar, bindStickyRootHeaderRow,
-  bindHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
+  bindHorizontalTouchScroll, resetHorizontalTouchScroll, bindLayoutEditorControls, bindLayoutOrderPointerDrag, bindLongPressTooltips, bindPackingEventsUi, bindPhotoGalleries, bindRootContainersEditorControls,
   bindSettingsPointerDragUi, bindSharedLayoutEvents, bindSharedVirtualEvents, bindSharedVirtualEventsUi, blockDestructiveLocalSave,
   blockDestructiveRemoteState, blockRemoteIntegrityFailureIfNeeded, blurActiveEditableBeforeButtonAction, buildAdminDemoTemplateOptions, buildAdminSharedTemplateOptions,
   backupAdminTemplateRows, buildBackupLayoutRows, buildBackupPhotoEntries, buildChangedEntitySyncEntries, buildChangedEntitySyncEntriesForSync, buildCurrentBackupManifestValue,
