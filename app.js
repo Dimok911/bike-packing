@@ -1459,15 +1459,6 @@ const newAccountDemoSeedCoordinator = createNewAccountDemoSeedCoordinator({
     console.warn("[bike-packing] Default demo layout could not be seeded for the new account", error);
   }
 });
-adminReportsDialogController = createAdminReportsDialogController({
-  refs,
-  fetchReports: () => fetchAdminReports(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
-  canOpenAdmin: canOpenAdminPublishedEdit,
-  isForcedOffline,
-  openModalDialog,
-  showToast,
-  apiErrorMessage
-});
 const remoteListRecords = createRemoteListRecordSelector({
   normalizeRemoteListRecord,
   normalizeRemoteState,
@@ -1993,6 +1984,16 @@ const {
   restoreSelectedBackupLayouts, restoreSelectedBackupAdminTemplates, restoreFullBackup, exportData, buildPrintableHtmlFromChoice,
   readRootContainerDialogDimensions, applyRootContainerDimensions
 } = createAppTailControllers(appTailControllerDeps);
+
+adminReportsDialogController = createAdminReportsDialogController({
+  refs,
+  fetchReports: () => fetchAdminReports(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
+  canOpenAdmin: canOpenAdminPublishedEdit,
+  isForcedOffline,
+  openModalDialog,
+  showToast,
+  apiErrorMessage
+});
 
 init();
 

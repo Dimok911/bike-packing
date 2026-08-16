@@ -7185,13 +7185,13 @@ dialog.photo-lightbox::backdrop {
   max-height: min(560px, 58vh);
   padding: 2px 2px 8px;
   overscroll-behavior-x: contain;
-  touch-action: pan-x;
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
 }
 
 .root-placement-board > * {
-  touch-action: pan-x;
+  touch-action: pan-y pinch-zoom;
 }
 
 .root-placement-slot {
@@ -7291,13 +7291,13 @@ dialog.photo-lightbox::backdrop {
   height: min(560px, calc(100dvh - 190px));
   padding: 2px 2px 12px;
   overscroll-behavior-x: contain;
-  touch-action: pan-x pan-y;
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
 }
 
 .container-picker-board * {
-  touch-action: pan-x pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 .container-picker-board.root-copy-placement-board {
@@ -7307,7 +7307,7 @@ dialog.photo-lightbox::backdrop {
 }
 
 .container-picker-board.root-copy-placement-board > * {
-  touch-action: pan-x;
+  touch-action: pan-y pinch-zoom;
 }
 
 .container-picker-column {

@@ -1,10 +1,20 @@
+const TOUCH_AXIS_LOCK_DISTANCE = 4;
+
+export function classifyTouchScrollAxis(dx, dy, minDistance = TOUCH_AXIS_LOCK_DISTANCE) {
+  const distanceX = Math.abs(Number(dx) || 0);
+  const distanceY = Math.abs(Number(dy) || 0);
+  const threshold = Math.max(0, Number(minDistance) || 0);
+  if (Math.max(distanceX, distanceY) < threshold) return "";
+  return distanceX > distanceY ? "horizontal" : "vertical";
+}
+
 export function bindHorizontalTouchScroll(board) {
   if (!board || board.dataset.touchScrollBound === "true") return;
   board.dataset.touchScrollBound = "true";
   let startX = 0;
   let startY = 0;
   let startLeft = 0;
-  let horizontalScroll = false;
+  let touchScrollAxis = "";
   let suppressClickUntil = 0;
   let lastX = 0;
   let lastTime = 0;
@@ -23,7 +33,7 @@ export function bindHorizontalTouchScroll(board) {
   };
   const startMomentum = () => {
     stopMomentum();
-    if (!horizontalScroll || Math.abs(velocityX) < 0.08) return;
+    if (touchScrollAxis !== "horizontal" || Math.abs(velocityX) < 0.08) return;
     let velocity = velocityX;
     let previousTime = performance.now();
     const step = (time) => {
@@ -50,7 +60,7 @@ export function bindHorizontalTouchScroll(board) {
     startX = touch.clientX;
     startY = touch.clientY;
     startLeft = board.scrollLeft;
-    horizontalScroll = false;
+    touchScrollAxis = "";
     lastX = touch.clientX;
     lastTime = performance.now();
     velocityX = 0;
@@ -61,10 +71,8 @@ export function bindHorizontalTouchScroll(board) {
     const touch = event.touches[0];
     const dx = touch.clientX - startX;
     const dy = touch.clientY - startY;
-    if (!horizontalScroll) {
-      if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
-      horizontalScroll = true;
-    }
+    if (!touchScrollAxis) touchScrollAxis = classifyTouchScrollAxis(dx, dy);
+    if (touchScrollAxis !== "horizontal") return;
     if (event.cancelable) event.preventDefault();
     const now = performance.now();
     const elapsed = Math.max(1, now - lastTime);

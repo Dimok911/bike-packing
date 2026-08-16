@@ -46,6 +46,15 @@ test("CRITICAL offline-start: normal startup stays covered until auth, catalogs,
   assert.match(startupFlow, /renderBeforeFinishingAppStartup\(\{ documentRef: document, render \}\)/);
 });
 
+test("app-tail UI dependencies are initialized before startup controllers consume them", () => {
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const appTailReadyAt = source.indexOf("} = createAppTailControllers(appTailControllerDeps);");
+  const adminReportsReadyAt = source.indexOf("adminReportsDialogController = createAdminReportsDialogController({");
+
+  assert.ok(appTailReadyAt >= 0);
+  assert.ok(adminReportsReadyAt > appTailReadyAt);
+});
+
 test("shared-link startup stays covered until the resolved content has rendered", () => {
   const classes = new Set(["app-starting", "auth-gated"]);
   const attributes = new Map([["aria-busy", "true"]]);
