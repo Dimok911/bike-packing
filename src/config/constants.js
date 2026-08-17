@@ -1,5 +1,5 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v1458";
+export const APP_VERSION = "v1460";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -66,7 +66,7 @@ export const TOUCH_DRAG_DELAY_MS = 260;
 export const TOUCH_DRAG_CANCEL_DISTANCE = 10;
 export const TOUCH_SCROLL_CANCEL_DISTANCE = 4;
 export const NESTED_GROUP_HOVER_DELAY_MS = 360;
-export const EDGE_SCROLL_ZONE = 42;
-export const EDGE_SCROLL_MAX_SPEED = 10;
+export const EDGE_SCROLL_ZONE = 72;
+export const EDGE_SCROLL_MAX_SPEED = 24;
 export const REMOTE_REFRESH_INTERVAL_MS = 30000;
 export const SEARCH_RENDER_DEBOUNCE_MS = 350;

@@ -4,6 +4,47 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const ADAPTIVE_SCROLL_CURVE_EXPONENT = 1.7;
+const ADAPTIVE_SCROLL_HOLD_DELAY_MS = 450;
+const ADAPTIVE_SCROLL_HOLD_RAMP_MS = 900;
+
+function adaptiveEdgeSpeed(distance, zone, {
+  holdBoost = 1.35,
+  holdMs = 0,
+  maxSpeed,
+  minSpeed = 1
+} = {}) {
+  if (!(zone > 0) || !(distance < zone) || !(maxSpeed > 0)) return 0;
+  const pressure = clamp((zone - distance) / zone, 0, 1);
+  if (!pressure) return 0;
+  const holdProgress = clamp(
+    (Math.max(0, holdMs) - ADAPTIVE_SCROLL_HOLD_DELAY_MS) / ADAPTIVE_SCROLL_HOLD_RAMP_MS,
+    0,
+    1
+  );
+  const boostedMaxSpeed = maxSpeed * (1 + holdProgress * (Math.max(1, holdBoost) - 1));
+  const curvedPressure = pressure ** ADAPTIVE_SCROLL_CURVE_EXPONENT;
+  return Math.max(minSpeed, Math.round(minSpeed + (boostedMaxSpeed - minSpeed) * curvedPressure));
+}
+
+export function getPackingAdaptiveEdgeScrollProfile({
+  baseZone = 72,
+  inputType = "mouse",
+  maxSpeed = 24,
+  viewportHeight = 800,
+  viewportWidth = 1200
+} = {}) {
+  const coarse = inputType === "touch" || inputType === "pen";
+  const horizontalTarget = Math.max(baseZone, coarse ? 88 : 72);
+  const verticalTarget = Math.max(baseZone * 1.5, coarse ? 112 : 96);
+  return {
+    holdBoost: coarse ? 1.25 : 1.35,
+    horizontalZone: Math.min(horizontalTarget, viewportWidth / 3),
+    maxSpeed: coarse ? Math.max(18, Math.round(maxSpeed * 0.9)) : maxSpeed,
+    verticalZone: Math.min(verticalTarget, viewportHeight / 4)
+  };
+}
+
 function isVisibleOverlay(element, windowRef, viewportTop, viewportBottom) {
   if (!element?.getBoundingClientRect) return false;
   const style = windowRef?.getComputedStyle?.(element);
@@ -57,6 +98,9 @@ export function getPackingDragBottomBoundary({
 export function calculatePackingEdgeScroll({
   clientX,
   clientY,
+  holdBoost = 1.35,
+  holdMsX = 0,
+  holdMsY = 0,
   maxSpeed,
   horizontalZone,
   verticalZone,
@@ -70,25 +114,25 @@ export function calculatePackingEdgeScroll({
 }) {
   const leftDistance = clientX - viewportLeft;
   const rightDistance = viewportRight - clientX;
-  const topProbe = verticalDirection < 0 && Number.isFinite(dragTop) ? Math.min(clientY, dragTop) : clientY;
-  const bottomProbe = verticalDirection > 0 && Number.isFinite(dragBottom) ? Math.max(clientY, dragBottom) : clientY;
-  const topDistance = topProbe - topBoundary;
-  const bottomDistance = bottomBoundary - bottomProbe;
+  const topTriggerProbe = verticalDirection < 0 && Number.isFinite(dragTop) ? Math.min(clientY, dragTop) : clientY;
+  const bottomTriggerProbe = verticalDirection > 0 && Number.isFinite(dragBottom) ? Math.max(clientY, dragBottom) : clientY;
+  const topTriggerDistance = topTriggerProbe - topBoundary;
+  const bottomTriggerDistance = bottomBoundary - bottomTriggerProbe;
+  const topControlDistance = clientY - topBoundary;
+  const bottomControlDistance = bottomBoundary - clientY;
   let speedX = 0;
   let speedY = 0;
   if (leftDistance < horizontalZone) {
-    const ratio = clamp((horizontalZone - leftDistance) / horizontalZone, 0, 1) ** 1.35;
-    speedX = -Math.ceil(ratio * maxSpeed);
+    speedX = -adaptiveEdgeSpeed(leftDistance, horizontalZone, { holdBoost, holdMs: holdMsX, maxSpeed });
   } else if (rightDistance < horizontalZone) {
-    const ratio = clamp((horizontalZone - rightDistance) / horizontalZone, 0, 1) ** 1.35;
-    speedX = Math.ceil(ratio * maxSpeed);
+    speedX = adaptiveEdgeSpeed(rightDistance, horizontalZone, { holdBoost, holdMs: holdMsX, maxSpeed });
   }
-  if (verticalDirection <= 0 && topDistance < verticalZone) {
-    const ratio = clamp((verticalZone - topDistance) / verticalZone, 0, 1) ** 1.35;
-    speedY = -Math.ceil(ratio * maxSpeed);
-  } else if (verticalDirection >= 0 && bottomDistance < verticalZone) {
-    const ratio = clamp((verticalZone - bottomDistance) / verticalZone, 0, 1) ** 1.35;
-    speedY = Math.ceil(ratio * maxSpeed);
+  if (verticalDirection <= 0 && topTriggerDistance < verticalZone) {
+    const controlDistance = Math.min(topControlDistance, Math.max(0, verticalZone - 0.01));
+    speedY = -adaptiveEdgeSpeed(controlDistance, verticalZone, { holdBoost, holdMs: holdMsY, maxSpeed });
+  } else if (verticalDirection >= 0 && bottomTriggerDistance < verticalZone) {
+    const controlDistance = Math.min(bottomControlDistance, Math.max(0, verticalZone - 0.01));
+    speedY = adaptiveEdgeSpeed(controlDistance, verticalZone, { holdBoost, holdMs: holdMsY, maxSpeed });
   }
   return { speedX, speedY };
 }

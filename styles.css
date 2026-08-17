@@ -7726,6 +7726,49 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-size: inherit;
 }
 
+.dictionary-delete-impact {
+  white-space: normal;
+}
+
+.dictionary-delete-impact-summary {
+  display: block;
+}
+
+.dictionary-delete-impact-groups {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dictionary-delete-impact-group strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.dictionary-delete-impact-group ul {
+  margin: 0;
+  padding-left: 22px;
+  font-weight: 600;
+}
+
+.dictionary-delete-impact-group li {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.dictionary-delete-impact-details {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.dictionary-delete-impact-details summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .confirm-layout-name {
   display: inline;
   max-width: 100%;

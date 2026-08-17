@@ -8,6 +8,7 @@ import { getPackingEntryAfterPointer } from "./packing-drop-target.js";
 import {
   calculatePackingEdgeScroll,
   getPackingBottomScrollRoom,
+  getPackingAdaptiveEdgeScrollProfile,
   getPackingDragBottomBoundary,
   getPackingDragTopBoundary
 } from "./packing-edge-scroll.js";
@@ -201,13 +202,56 @@ export function createPackingDragController({
     return { update, stop };
   }
 
-  function createBoardEdgeScroller(board, onScroll, getDragMetrics = () => ({})) {
+  function createBoardEdgeScroller(board, onScroll, getDragMetrics = () => ({}), { inputType = "mouse" } = {}) {
     let frame = null;
     let speedX = 0;
     let speedY = 0;
     let baseBoardHeight = 0;
     let lastClientY = null;
     let verticalDirection = 0;
+    let calculationOptions = null;
+    let activeDirectionX = 0;
+    let activeDirectionY = 0;
+    let enteredAtX = 0;
+    let enteredAtY = 0;
+
+    const currentTime = () => globalThis.performance?.now?.() || Date.now();
+
+    const resetAdaptiveState = () => {
+      calculationOptions = null;
+      activeDirectionX = 0;
+      activeDirectionY = 0;
+      enteredAtX = 0;
+      enteredAtY = 0;
+    };
+
+    const refreshAdaptiveSpeed = (now = currentTime()) => {
+      if (!calculationOptions) {
+        speedX = 0;
+        speedY = 0;
+        return;
+      }
+      const baseSpeed = calculatePackingEdgeScroll({
+        ...calculationOptions,
+        holdMsX: 0,
+        holdMsY: 0
+      });
+      const nextDirectionX = Math.sign(baseSpeed.speedX);
+      const nextDirectionY = Math.sign(baseSpeed.speedY);
+      if (nextDirectionX !== activeDirectionX) {
+        activeDirectionX = nextDirectionX;
+        enteredAtX = nextDirectionX ? now : 0;
+      }
+      if (nextDirectionY !== activeDirectionY) {
+        activeDirectionY = nextDirectionY;
+        enteredAtY = nextDirectionY ? now : 0;
+      }
+      ({ speedX, speedY } = calculatePackingEdgeScroll({
+        ...calculationOptions,
+        holdMsX: activeDirectionX ? now - enteredAtX : 0,
+        holdMsY: activeDirectionY ? now - enteredAtY : 0
+      }));
+    };
 
     const ensureBottomScrollRoom = (reserve = 0) => {
       if (!board) return;
@@ -262,6 +306,7 @@ export function createPackingDragController({
 
     const tick = () => {
       frame = null;
+      refreshAdaptiveSpeed();
       if (!board || (!speedX && !speedY)) return;
       const movedX = speedX ? (scrollTarget(board, speedX) || scrollPageX(speedX)) : false;
       const movedY = speedY ? scrollPageY(speedY) : false;
@@ -291,15 +336,21 @@ export function createPackingDragController({
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
       const scrollTriggerTop = getPackingDragTopBoundary({ viewportTop, viewportHeight });
       const scrollTriggerBottom = getDragScrollTriggerBottom(viewportTop, viewportHeight);
-      const horizontalZone = Math.min(edgeScrollZone, viewportWidth / 3);
-      const verticalZone = Math.min(Math.max(edgeScrollZone * 1.5, 60), viewportHeight / 4);
+      const profile = getPackingAdaptiveEdgeScrollProfile({
+        baseZone: edgeScrollZone,
+        inputType,
+        maxSpeed: edgeScrollMaxSpeed,
+        viewportHeight,
+        viewportWidth
+      });
       const dragMetrics = getDragMetrics?.(clientY) || {};
-      ({ speedX, speedY } = calculatePackingEdgeScroll({
+      calculationOptions = {
         clientX,
         clientY,
-        maxSpeed: edgeScrollMaxSpeed,
-        horizontalZone,
-        verticalZone,
+        holdBoost: profile.holdBoost,
+        maxSpeed: profile.maxSpeed,
+        horizontalZone: profile.horizontalZone,
+        verticalZone: profile.verticalZone,
         viewportLeft,
         viewportRight,
         topBoundary: scrollTriggerTop,
@@ -307,9 +358,10 @@ export function createPackingDragController({
         dragTop: dragMetrics.top,
         dragBottom: dragMetrics.bottom,
         verticalDirection
-      }));
+      };
+      refreshAdaptiveSpeed();
       const page = viewportScrollHost();
-      if (speedY > 0) ensureBottomScrollRoom(verticalZone + 80);
+      if (speedY > 0) ensureBottomScrollRoom(profile.verticalZone + 80);
       const pageMaxScroll = Math.max(0, page.scrollWidth - page.clientWidth);
       const pageMaxScrollY = Math.max(0, page.scrollHeight - page.clientHeight);
       const pageScrollLeft = viewportScrollLeft();
@@ -329,6 +381,7 @@ export function createPackingDragController({
     const stop = () => {
       speedX = 0;
       speedY = 0;
+      resetAdaptiveState();
       if (frame) cancelAnimationFrame(frame);
       frame = null;
       if (!board) return;
@@ -344,6 +397,7 @@ export function createPackingDragController({
     const pause = () => {
       speedX = 0;
       speedY = 0;
+      resetAdaptiveState();
       if (frame) cancelAnimationFrame(frame);
       frame = null;
       board?.classList?.remove("edge-scrolling");
@@ -403,7 +457,7 @@ export function createPackingDragController({
         const preDragScroller = createPreDragScroller(board, startX, startY);
         const edgeScroller = createBoardEdgeScroller(board, () => {
           if (started) place(latestX, latestY);
-        }, () => ({ height: Math.min(rect.height, 180) }));
+        }, () => ({ height: Math.min(rect.height, 180) }), { inputType: holdInput });
         const placeholder = document.createElement("div");
         placeholder.className = "column-placeholder";
         placeholder.style.width = `${rect.width}px`;
@@ -694,7 +748,7 @@ export function createPackingDragController({
           top: kind === "item" ? top : null,
           bottom: kind === "item" ? top + sourceRect.height : null
         };
-      });
+      }, { inputType: holdInput });
       const dragOffsetX = startX - sourceRect.left;
 
       const resetNestedGroupCandidate = () => {
@@ -1187,7 +1241,7 @@ export function createPackingDragController({
       }, (clientY) => {
         const top = clientY - dragOffsetY;
         return { height: sourceRect.height, top, bottom: top + sourceRect.height };
-      });
+      }, { inputType: holdInput });
       const dragOffsetX = startX - sourceRect.left;
       const placeholder = document.createElement("div");
       placeholder.className = "drop-placeholder";

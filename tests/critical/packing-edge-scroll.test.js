@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import "./horizontal-touch-scroll.test.js";
 import {
   calculatePackingEdgeScroll,
   getPackingBottomScrollRoom,
+  getPackingAdaptiveEdgeScrollProfile,
   getPackingDragBottomBoundary,
   getPackingDragTopBoundary
 } from "../../src/ui/packing-edge-scroll.js";
@@ -36,6 +38,81 @@ const fakeWindow = {
   getComputedStyle: (element) => element.style,
   innerHeight: 800
 };
+
+test("packing adaptive edge profile uses wider touch zones with a controlled maximum", () => {
+  const mouse = getPackingAdaptiveEdgeScrollProfile({
+    baseZone: 72,
+    inputType: "mouse",
+    maxSpeed: 24,
+    viewportHeight: 800,
+    viewportWidth: 1200
+  });
+  const touch = getPackingAdaptiveEdgeScrollProfile({
+    baseZone: 72,
+    inputType: "touch",
+    maxSpeed: 24,
+    viewportHeight: 800,
+    viewportWidth: 1200
+  });
+
+  assert.deepEqual(mouse, {
+    holdBoost: 1.35,
+    horizontalZone: 72,
+    maxSpeed: 24,
+    verticalZone: 108
+  });
+  assert.deepEqual(touch, {
+    holdBoost: 1.25,
+    horizontalZone: 88,
+    maxSpeed: 22,
+    verticalZone: 112
+  });
+});
+
+test("packing edge pressure progressively controls vertical and horizontal speed", () => {
+  const base = {
+    maxSpeed: 24,
+    horizontalZone: 72,
+    verticalZone: 108,
+    viewportLeft: 0,
+    viewportRight: 1000,
+    topBoundary: 190,
+    bottomBoundary: 782
+  };
+  const verticalSlow = calculatePackingEdgeScroll({ ...base, clientX: 500, clientY: 290, verticalDirection: -1 });
+  const verticalMedium = calculatePackingEdgeScroll({ ...base, clientX: 500, clientY: 244, verticalDirection: -1 });
+  const verticalFast = calculatePackingEdgeScroll({ ...base, clientX: 500, clientY: 194, verticalDirection: -1 });
+  const horizontalSlow = calculatePackingEdgeScroll({ ...base, clientX: 935, clientY: 500 });
+  const horizontalMedium = calculatePackingEdgeScroll({ ...base, clientX: 964, clientY: 500 });
+  const horizontalFast = calculatePackingEdgeScroll({ ...base, clientX: 998, clientY: 500 });
+
+  assert.ok(Math.abs(verticalSlow.speedY) < Math.abs(verticalMedium.speedY));
+  assert.ok(Math.abs(verticalMedium.speedY) < Math.abs(verticalFast.speedY));
+  assert.ok(horizontalSlow.speedX < horizontalMedium.speedX);
+  assert.ok(horizontalMedium.speedX < horizontalFast.speedX);
+});
+
+test("packing edge hold accelerates without changing pointer pressure", async () => {
+  const base = {
+    clientX: 998,
+    clientY: 194,
+    maxSpeed: 24,
+    horizontalZone: 72,
+    verticalZone: 108,
+    viewportLeft: 0,
+    viewportRight: 1000,
+    topBoundary: 190,
+    bottomBoundary: 782,
+    verticalDirection: -1
+  };
+  const initial = calculatePackingEdgeScroll(base);
+  const held = calculatePackingEdgeScroll({ ...base, holdMsX: 1600, holdMsY: 1600 });
+  const dragSource = await readFile(new URL("../../src/ui/packing-drag.js", import.meta.url), "utf8");
+
+  assert.ok(Math.abs(held.speedX) > Math.abs(initial.speedX));
+  assert.ok(Math.abs(held.speedY) > Math.abs(initial.speedY));
+  assert.match(dragSource, /const tick = \(\) => \{\s*frame = null;\s*refreshAdaptiveSpeed\(\);/);
+});
 
 test("packing upward edge scroll starts at the bottom of stacked sticky headers", () => {
   const overlays = [
@@ -135,7 +212,7 @@ test("a tall photo card starts downward scroll when its leading edge reaches the
   });
 
   assert.equal(pointerOnly.speedY, 0);
-  assert.ok(photoCard.speedY > 0);
+  assert.equal(photoCard.speedY, 1);
 });
 
 test("hidden fixed scrollbar does not move the bottom drag boundary", () => {

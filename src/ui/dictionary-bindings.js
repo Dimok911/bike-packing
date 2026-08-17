@@ -1,4 +1,8 @@
 import { currentDocumentLanguage } from "../utils/language.js";
+import {
+  collectDictionaryValueUsage,
+  dictionaryDeleteImpactHtml
+} from "./dictionary-delete-impact.js";
 
 function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
@@ -108,13 +112,13 @@ export function bindDictionaryControls(type, {
     button.addEventListener("click", () => {
       const value = button.dataset[`remove${capitalize(type)}`];
       const dictionaryValues = dictionaryOptionsForOwner(type, owner);
-      const affectedCount = scope.items.filter((item) => {
-        if (type === "location") return item.location === value;
-        return itemCategories(item).includes(value);
-      }).length + scope.containers.filter((container) => {
-        if (type === "location") return container.location === value;
-        return containerCategories(container).includes(value);
-      }).length;
+      const usage = collectDictionaryValueUsage(type, value, {
+        items: scope.items,
+        containers: scope.containers,
+        itemCategories,
+        containerCategories
+      });
+      const affectedCount = usage.items.length + usage.containers.length;
       const fallback = dictionaryValues.find((item) => item !== value) || "";
       const title = type === "location"
         ? localText("Delete storage place?", "Удалить место хранения?")
@@ -128,12 +132,13 @@ export function bindDictionaryControls(type, {
       openConfirmDialog({
         title,
         text: localText(
-          `If you delete the ${subject} “${value}”, linked items will be moved to ${fallbackText}.`,
-          `Если удалить ${subject} «${value}», связанные вещи будут перенесены в ${fallbackText}.`
+          `If you delete the ${subject} “${value}”, linked items, bags, and places will be moved to ${fallbackText}.`,
+          `Если удалить ${subject} «${value}», связанные вещи, сумки и места будут перенесены в ${fallbackText}.`
         ),
         highlightText: affectedCount
-          ? localText(`Currently used by ${affectedCount} item(s).`, `Сейчас применяется к ${formatThingCount(affectedCount)}.`)
-          : localText("Currently not used by any items.", "Сейчас не применяется ни к одной вещи."),
+          ? ""
+          : localText("Currently not used by any items, bags, or places.", "Сейчас не применяется ни к одной вещи, сумке или месту."),
+        highlightHtml: affectedCount ? dictionaryDeleteImpactHtml(usage) : "",
         okText: localText("Delete", "Удалить"),
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
