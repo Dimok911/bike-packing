@@ -50,9 +50,15 @@ powershell -ExecutionPolicy Bypass -File scripts/deploy-production-ftp.ps1 -Expe
 ```
 
 The script reads `.vscode/sftp.json` without printing it, passes credentials to
-the approved `C:\Windows\System32\curl.exe` through stdin, refuses any
+the approved `C:\Windows\System32\curl.exe` through UTF-8 stdin, refuses any
 `remotePath` other than `/`, and always targets the fixed production path
-`/www/vniipo-help.ru/bike-packing/`. It performs this recoverable sequence:
+`/www/vniipo-help.ru/bike-packing/`. The transport is explicit FTPS on port 21
+in passive mode. Curl connects with the canonical hostname `vniipo-help.ru`,
+uses `88.212.206.188` as the fixed fallback address, requires TLS, and verifies
+the hosting server with its pinned SPKI public key. The legacy hosting
+certificate is self-signed and has a different certificate name, so the SPKI
+pin is the trust anchor; changing it requires a separately verified hosting
+certificate rotation. The script performs this recoverable sequence:
 
 1. upload the build to a unique sibling staging directory below FTP
    `/www/vniipo-help.ru/`;

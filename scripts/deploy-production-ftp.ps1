@@ -8,6 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path.TrimEnd("\")
 if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
@@ -21,6 +22,10 @@ $ConfigPath = (Resolve-Path $ConfigPath).Path
 $curlPath = "C:\Windows\System32\curl.exe"
 $productionRemotePath = "www/vniipo-help.ru/bike-packing"
 $productionParentPath = "www/vniipo-help.ru"
+$ftpCanonicalHost = "vniipo-help.ru"
+$ftpFallbackIp = "88.212.206.188"
+$ftpPort = 21
+$ftpPinnedPublicKey = "sha256//+gOwS0YQ8/CGtOD9zgyFzgYGLtl38K9YhxYssMpjz+Y="
 if (-not (Test-Path -LiteralPath $curlPath -PathType Leaf)) {
   throw "Required curl.exe was not found at the project-approved path."
 }
@@ -33,8 +38,23 @@ function Curl-Line([string]$name, [string]$value) {
   return ('{0} = "{1}"' -f $name, (Escape-CurlConfigValue $value))
 }
 
-function Invoke-CurlConfig([string[]]$lines) {
-  (($lines -join "`n") + "`n") | & $curlPath --config -
+function Invoke-CurlConfig {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Lines,
+    [switch]$Ftps
+  )
+  $effectiveLines = @($Lines)
+  if ($Ftps) {
+    $effectiveLines = @(
+      "ssl-reqd"
+      "insecure"
+      "ftp-pasv"
+      (Curl-Line "pinnedpubkey" $ftpPinnedPublicKey)
+      (Curl-Line "resolve" "${ftpCanonicalHost}:${ftpPort}:${ftpFallbackIp}")
+    ) + $effectiveLines
+  }
+  (($effectiveLines -join "`n") + "`n") | & $curlPath --config -
   return $LASTEXITCODE
 }
 
@@ -50,9 +70,14 @@ if ([string]$settings.protocol -ne "ftp") {
 if (([string]$settings.remotePath).Trim() -ne "/") {
   throw "The FTP account root configuration has changed; remotePath must remain '/'."
 }
+if ([int]$settings.port -ne $ftpPort) {
+  throw "Production FTPS requires port 21."
+}
+if ([string]$settings.host -notin @($ftpCanonicalHost, $ftpFallbackIp)) {
+  throw "Production FTPS host must remain vniipo-help.ru or its approved fallback IP."
+}
 
-$portPart = if ($settings.port) { ":" + [string]$settings.port } else { "" }
-$ftpAccountRootUrl = "ftp://$($settings.host)$portPart/"
+$ftpAccountRootUrl = "ftp://${ftpCanonicalHost}:${ftpPort}/"
 $credential = ([string]$settings.username) + ":" + ([string]$settings.password)
 
 function Encode-RemotePath([string]$relativePath) {
@@ -66,7 +91,7 @@ function Get-FtpUrl([string]$accountRelativePath) {
 }
 
 function Send-FtpFile([string]$localPath, [string]$accountRelativePath) {
-  $exitCode = Invoke-CurlConfig @(
+  $exitCode = Invoke-CurlConfig -Ftps -Lines @(
     "silent"
     "show-error"
     "fail"
@@ -83,7 +108,7 @@ function Receive-FtpFile([string]$accountRelativePath, [string]$localPath) {
   if (-not (Test-Path -LiteralPath $parent)) {
     New-Item -Path $parent -ItemType Directory -Force | Out-Null
   }
-  $exitCode = Invoke-CurlConfig @(
+  $exitCode = Invoke-CurlConfig -Ftps -Lines @(
     "silent"
     "show-error"
     "fail"
@@ -95,7 +120,7 @@ function Receive-FtpFile([string]$accountRelativePath, [string]$localPath) {
 }
 
 function Move-FtpDirectory([string]$fromPath, [string]$toPath) {
-  $exitCode = Invoke-CurlConfig @(
+  $exitCode = Invoke-CurlConfig -Ftps -Lines @(
     "silent"
     "show-error"
     "fail"
@@ -124,7 +149,7 @@ function Receive-HttpsFile([string]$url, [string]$localPath, [int]$attempts = 5)
     New-Item -Path $parent -ItemType Directory -Force | Out-Null
   }
   for ($attempt = 1; $attempt -le $attempts; $attempt += 1) {
-    $exitCode = Invoke-CurlConfig @(
+    $exitCode = Invoke-CurlConfig -Lines @(
       "silent"
       "show-error"
       "fail"
