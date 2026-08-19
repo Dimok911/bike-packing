@@ -4347,6 +4347,9 @@ button.photo-gallery-slide.touch-feedback-active {
   pointer-events: none;
   opacity: 0.82;
   transform: translate(-12px, -12px);
+  transition: none !important;
+  will-change: transform;
+  backface-visibility: hidden;
   box-shadow: 0 16px 34px rgba(29, 37, 34, 0.18);
   max-width: 360px;
 }

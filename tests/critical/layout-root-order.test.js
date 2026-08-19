@@ -33,8 +33,18 @@ import {
 import { I18N } from "../../src/data/i18n.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
 import { createConflictValueFormatter } from "../../src/ui/conflict-format.js";
+import { getPackingRootPlaceholderBefore } from "../../src/ui/packing-drop-target.js";
 import { itemDisplayModeLabel } from "../../src/ui/item-display-mode.js";
 import { usageLimitExceededMessage } from "../../src/state/usage-limits.js";
+
+test("CRITICAL root column drag: the final placeholder stays before the add-root card", () => {
+  const rootCard = { hasAttribute: () => false };
+  const addRootCard = { hasAttribute: (name) => name === "data-add-packing-root" };
+  const board = { children: [rootCard, addRootCard] };
+
+  assert.equal(getPackingRootPlaceholderBefore(board), addRootCard);
+  assert.equal(getPackingRootPlaceholderBefore(board, rootCard), rootCard);
+});
 
 test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {
   const html = renderPackingEmptyState({

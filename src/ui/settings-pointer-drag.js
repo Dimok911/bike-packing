@@ -1,4 +1,5 @@
 import { suppressNextClickAfterDrag } from "./drag-click-suppression.js";
+import { getPackingRootPlaceholderBefore } from "./packing-drop-target.js";
 
 export function createPackingEdgeScrollBinding({
   createScroller,
@@ -253,9 +254,9 @@ export function bindSettingsPointerDrag({
 
     const placePlaceholder = (parent, beforeNode = null) => {
       if (!parent) return;
-      const targetNext = beforeNode || null;
+      const targetNext = getPackingRootPlaceholderBefore(parent, beforeNode);
       if (placeholder.parentElement === parent && placeholder.nextElementSibling === targetNext) return;
-      if (beforeNode) parent.insertBefore(placeholder, beforeNode);
+      if (targetNext) parent.insertBefore(placeholder, targetNext);
       else if (placeholder.parentElement !== parent || placeholder.nextElementSibling) parent.appendChild(placeholder);
     };
 

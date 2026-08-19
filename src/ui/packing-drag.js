@@ -1,10 +1,14 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
 import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
+import { createDragGhostMotion } from "./drag-ghost-motion.js";
 import {
   shouldSuppressClickAfterDragAttempt,
   suppressNextClickAfterDrag
 } from "./drag-click-suppression.js";
-import { getPackingEntryAfterPointer } from "./packing-drop-target.js";
+import {
+  getPackingEntryAfterPointer,
+  getPackingRootPlaceholderBefore
+} from "./packing-drop-target.js";
 import {
   calculatePackingEdgeScroll,
   getPackingBottomScrollRoom,
@@ -127,15 +131,15 @@ export function createPackingDragController({
     boardHeightLock.ensureMinHeight(board, minHeight);
   }
 
-  function fittedDragGhostTop(targetTop, ghost) {
+  function fittedDragGhostTop(targetTop, ghost, ghostHeight = 0) {
     if (!ghost) return targetTop;
     const viewportTop = window.visualViewport?.offsetTop || 0;
     const viewportHeight = window.visualViewport?.height || window.innerHeight;
     const topLimit = getPackingDragTopBoundary({ viewportTop, viewportHeight }) + 8;
     const bottomLimit = getDragSafeViewportBottom(viewportTop, viewportHeight);
-    const ghostHeight = ghost.getBoundingClientRect?.().height || ghost.offsetHeight || 0;
-    if (!ghostHeight) return Math.max(topLimit, targetTop);
-    return Math.max(topLimit, Math.min(targetTop, bottomLimit - ghostHeight));
+    const measuredHeight = ghostHeight || ghost.getBoundingClientRect?.().height || ghost.offsetHeight || 0;
+    if (!measuredHeight) return Math.max(topLimit, targetTop);
+    return Math.max(topLimit, Math.min(targetTop, bottomLimit - measuredHeight));
   }
 
   function getDragSafeViewportBottom(viewportTop = window.visualViewport?.offsetTop || 0, viewportHeight = window.visualViewport?.height || window.innerHeight) {
@@ -146,10 +150,12 @@ export function createPackingDragController({
     return getPackingDragBottomBoundary({ viewportTop, viewportHeight, reserveAboveFixedBar: 16 });
   }
 
-  function setDragGhostPosition(ghost, left, top, { fitTop = true } = {}) {
+  function setDragGhostPosition(ghost, left, top, { fitTop = true, ghostHeight = 0 } = {}) {
     if (!ghost) return;
-    ghost.style.left = `${left}px`;
-    ghost.style.top = `${fitTop ? fittedDragGhostTop(top, ghost) : top}px`;
+    const fittedTop = fitTop ? fittedDragGhostTop(top, ghost, ghostHeight) : top;
+    ghost.style.left = "0";
+    ghost.style.top = "0";
+    ghost.style.transform = `translate3d(${left}px, ${fittedTop}px, 0)`;
   }
 
   function createPreDragScroller(board, startX, startY) {
@@ -440,11 +446,7 @@ export function createPackingDragController({
         let latestX = startX;
         let latestY = startY;
         let ghost = null;
-        let ghostFrame = null;
-        let ghostX = startX;
-        let ghostY = startY;
-        let ghostTargetX = startX;
-        let ghostTargetY = startY;
+        let ghostMotion = null;
         let currentIndex = -1;
         let nestedTargetContainerId = "";
         let nestedTargetZone = null;
@@ -489,6 +491,10 @@ export function createPackingDragController({
           ghost.classList.add("drag-ghost", "column-ghost");
           ghost.style.width = `${rect.width}px`;
           document.body.appendChild(ghost);
+          ghostMotion = createDragGhostMotion({
+            responsiveness: needsHold ? 0.45 : 1,
+            applyPosition: (left, top) => setDragGhostPosition(ghost, left, top, { fitTop: false })
+          });
           board.insertBefore(placeholder, source);
           source.classList.add("drag-source-collapsed");
           moveGhost(latestX, latestY, true);
@@ -497,28 +503,7 @@ export function createPackingDragController({
         };
 
         const moveGhost = (clientX, clientY, immediate = false) => {
-          if (!ghost) return;
-          ghostTargetX = clientX - dragOffsetX;
-          ghostTargetY = clientY - dragOffsetY;
-          if (immediate) {
-            ghostX = ghostTargetX;
-            ghostY = ghostTargetY;
-            setDragGhostPosition(ghost, ghostX, ghostY, { fitTop: false });
-            return;
-          }
-          if (ghostFrame) return;
-          const tick = () => {
-            ghostX += (ghostTargetX - ghostX) * 0.45;
-            ghostY += (ghostTargetY - ghostY) * 0.45;
-            setDragGhostPosition(ghost, ghostX, ghostY, { fitTop: false });
-            if (Math.abs(ghostTargetX - ghostX) < 0.5 && Math.abs(ghostTargetY - ghostY) < 0.5) {
-              setDragGhostPosition(ghost, ghostTargetX, ghostTargetY, { fitTop: false });
-              ghostFrame = null;
-              return;
-            }
-            ghostFrame = requestAnimationFrame(tick);
-          };
-          ghostFrame = requestAnimationFrame(tick);
+          ghostMotion?.move(clientX - dragOffsetX, clientY - dragOffsetY, { immediate });
         };
 
         const place = (clientX, clientY) => {
@@ -623,7 +608,7 @@ export function createPackingDragController({
           } else if (!canceled && started && currentIndex >= 0 && !isOriginalRootColumnPosition(containerId, currentIndex)) {
             moveRootColumn(containerId, currentIndex);
           }
-          if (ghostFrame) cancelAnimationFrame(ghostFrame);
+          ghostMotion?.stop();
           ghost?.remove();
           placeholder.remove();
           clearDropzoneDragOvers(root);
@@ -724,11 +709,7 @@ export function createPackingDragController({
       let latestX = startX;
       let latestY = startY;
       let ghost = null;
-      let ghostFrame = null;
-      let ghostX = startX;
-      let ghostY = startY;
-      let ghostTargetX = startX;
-      let ghostTargetY = startY;
+      let ghostMotion = null;
       let holdTimer = null;
       let blockingTouchMove = false;
       const dragCancelTarget = createDragCancelTarget();
@@ -815,6 +796,10 @@ export function createPackingDragController({
         placeholder.style.width = `${sourceRect.width}px`;
         placeholder.style.maxWidth = "100%";
         document.body.appendChild(ghost);
+        ghostMotion = createDragGhostMotion({
+          responsiveness: needsHold ? (kind === "item" ? 0.28 : 0.38) : 1,
+          applyPosition: (left, top) => setDragGhostPosition(ghost, left, top, { ghostHeight: sourceRect.height })
+        });
         placePlaceholder(source.parentElement, placeholder, source);
         source.classList.add("drag-source-collapsed");
         moveGhost(latestX, latestY, true);
@@ -823,31 +808,7 @@ export function createPackingDragController({
       };
 
       const moveGhost = (clientX, clientY, immediate = false) => {
-        if (!ghost) return;
-        const targetLeft = clientX - dragOffsetX;
-        const targetTop = clientY - dragOffsetY;
-        ghostTargetX = targetLeft;
-        ghostTargetY = targetTop;
-        if (immediate) {
-          ghostX = targetLeft;
-          ghostY = targetTop;
-          setDragGhostPosition(ghost, ghostX, ghostY);
-          return;
-        }
-        if (ghostFrame) return;
-        const tick = () => {
-          const easing = kind === "item" ? 0.28 : 0.38;
-          ghostX += (ghostTargetX - ghostX) * easing;
-          ghostY += (ghostTargetY - ghostY) * easing;
-          setDragGhostPosition(ghost, ghostX, ghostY);
-          if (Math.abs(ghostTargetX - ghostX) < 0.5 && Math.abs(ghostTargetY - ghostY) < 0.5) {
-            setDragGhostPosition(ghost, ghostTargetX, ghostTargetY);
-            ghostFrame = null;
-            return;
-          }
-          ghostFrame = requestAnimationFrame(tick);
-        };
-        ghostFrame = requestAnimationFrame(tick);
+        ghostMotion?.move(clientX - dragOffsetX, clientY - dragOffsetY, { immediate });
       };
 
       const clearZones = () => {
@@ -1089,7 +1050,7 @@ export function createPackingDragController({
             }
           }
         }
-        if (ghostFrame) cancelAnimationFrame(ghostFrame);
+        ghostMotion?.stop();
         ghost?.remove();
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
@@ -1224,11 +1185,7 @@ export function createPackingDragController({
       let latestX = startX;
       let latestY = startY;
       let ghost = null;
-      let ghostFrame = null;
-      let ghostX = startX;
-      let ghostY = startY;
-      let ghostTargetX = startX;
-      let ghostTargetY = startY;
+      let ghostMotion = null;
       let holdTimer = null;
       let blockingTouchMove = false;
       const dragCancelTarget = createDragCancelTarget();
@@ -1308,6 +1265,10 @@ export function createPackingDragController({
         placeholder.style.width = `${sourceRect.width}px`;
         placeholder.style.maxWidth = "100%";
         document.body.appendChild(ghost);
+        ghostMotion = createDragGhostMotion({
+          responsiveness: needsHold ? 0.28 : 1,
+          applyPosition: (left, top) => setDragGhostPosition(ghost, left, top, { ghostHeight: sourceRect.height })
+        });
         placePlaceholder(source.parentElement, placeholder, source);
         source.classList.add("drag-source-collapsed");
         moveGhost(latestX, latestY, true);
@@ -1316,30 +1277,7 @@ export function createPackingDragController({
       };
 
       const moveGhost = (clientX, clientY, immediate = false) => {
-        if (!ghost) return;
-        const targetLeft = clientX - dragOffsetX;
-        const targetTop = clientY - dragOffsetY;
-        ghostTargetX = targetLeft;
-        ghostTargetY = targetTop;
-        if (immediate) {
-          ghostX = targetLeft;
-          ghostY = targetTop;
-          setDragGhostPosition(ghost, ghostX, ghostY);
-          return;
-        }
-        if (ghostFrame) return;
-        const tick = () => {
-          ghostX += (ghostTargetX - ghostX) * 0.28;
-          ghostY += (ghostTargetY - ghostY) * 0.28;
-          setDragGhostPosition(ghost, ghostX, ghostY);
-          if (Math.abs(ghostTargetX - ghostX) < 0.5 && Math.abs(ghostTargetY - ghostY) < 0.5) {
-            setDragGhostPosition(ghost, ghostTargetX, ghostTargetY);
-            ghostFrame = null;
-            return;
-          }
-          ghostFrame = requestAnimationFrame(tick);
-        };
-        ghostFrame = requestAnimationFrame(tick);
+        ghostMotion?.move(clientX - dragOffsetX, clientY - dragOffsetY, { immediate });
       };
 
       const clearZones = () => {
@@ -1494,7 +1432,7 @@ export function createPackingDragController({
             moveItem(id, currentZone.dataset.containerId, index);
           }
         }
-        if (ghostFrame) cancelAnimationFrame(ghostFrame);
+        ghostMotion?.stop();
         ghost?.remove();
         clearDragPending(source);
         source.classList.remove("drag-source-collapsed");
@@ -1668,7 +1606,7 @@ export function createPackingDragController({
 
   function placePlaceholder(parent, placeholder, beforeNode = null) {
     if (!parent) return;
-    const targetNext = beforeNode || null;
+    const targetNext = getPackingRootPlaceholderBefore(parent, beforeNode);
     if (placeholder.parentElement === parent && placeholder.nextElementSibling === targetNext) return;
     if (targetNext) parent.insertBefore(placeholder, targetNext);
     else if (placeholder.parentElement !== parent || placeholder.nextElementSibling) parent.appendChild(placeholder);

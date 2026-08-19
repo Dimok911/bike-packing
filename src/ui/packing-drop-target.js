@@ -14,3 +14,10 @@ export function getPackingEntryAfterPointer(zone, pointerY, placeholder = null) 
     { offset: Number.NEGATIVE_INFINITY, entry: null }
   ).entry;
 }
+
+export function getPackingRootPlaceholderBefore(board, beforeNode = null) {
+  if (beforeNode) return beforeNode;
+  return [...(board?.children || [])].find((child) =>
+    child?.hasAttribute?.("data-add-packing-root")
+  ) || null;
+}
