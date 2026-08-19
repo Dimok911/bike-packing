@@ -555,8 +555,7 @@ function renderAddToContainerResults() {
     .filter((container) => matchesAddToContainerSearch(container, query))
     .map((record) => ({ kind: "container", record }));
   const results = [...itemResults, ...containerResults]
-    .sort((a, b) => a.record.name.localeCompare(b.record.name, "ru"))
-    .slice(0, 60);
+    .sort((a, b) => a.record.name.localeCompare(b.record.name, "ru"));
   const showPhotos = true;
   updatePickerListPhotoToggles();
   refs.addToContainerResults.innerHTML = results.map(({ kind, record }) => {

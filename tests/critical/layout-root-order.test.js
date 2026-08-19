@@ -529,6 +529,7 @@ test("CRITICAL add-to-container plus: reusable bags are rendered and handled by 
   assert.match(controllers, /isContainerAvailableForNestedPicker\(state, layout, containerId, container\)/);
   assert.match(controllers, /data-add-existing-container=/);
   assert.match(controllers, /addExistingContainerToContainer\(button\.dataset\.addExistingContainer\)/);
+  assert.doesNotMatch(controllers, /\.slice\(0,\s*60\)/);
 });
 
 test("CRITICAL temporary package: it cannot be promoted from inside a bag to the layout root", () => {
