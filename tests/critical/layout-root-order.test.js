@@ -67,7 +67,8 @@ test("CRITICAL container drag: a nested package target shows the localized nesti
 
   assert.match(html, /class="container-drop-action"[^>]*>Вложить в пакет</);
   assert.equal(I18N.en["drag.nestContainer"], "Nest inside");
-  assert.match(styles, /\.subcontainer\.container-drop-target > \.subcontainer-title > \.container-drop-action\s*\{\s*display: inline-flex;/);
+  assert.match(styles, /\.container-drop-action\s*\{[\s\S]*?position: absolute;[\s\S]*?transform: translate\(-50%, -50%\);[\s\S]*?pointer-events: none;/);
+  assert.match(styles, /\.subcontainer\.container-drop-target > \.subcontainer-title > \.container-drop-action\s*\{\s*display: inline-flex;\s*color: white;/);
 });
 
 test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {

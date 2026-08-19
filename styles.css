@@ -4154,23 +4154,34 @@ button.photo-gallery-slide.touch-feedback-active {
 }
 
 .subcontainer.container-drop-target > .subcontainer-title {
+  position: relative;
   background: hsl(calc(var(--interface-hue) - 8.48deg) 40.35% 88.82%);
 }
 
 .container-drop-action {
   display: none;
-  flex: 0 0 auto;
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  max-width: calc(100% - 24px);
+  transform: translate(-50%, -50%);
   border-radius: 999px;
   background: var(--accent);
-  color: white;
   padding: 4px 9px;
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 3px 12px hsl(var(--interface-hue) 56.34% 18% / 0.28);
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.22);
 }
 
 .subcontainer.container-drop-target > .subcontainer-title > .container-drop-action {
   display: inline-flex;
+  color: white;
 }
 
 .item-card.move-into-target {
