@@ -167,6 +167,7 @@ export function renderSubcontainerSectionHtml({
   const iconClass = collapsed ? "chevron-down" : "chevron-up";
   const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
+  const nestContainerLabel = tr(t, "drag.nestContainer", "Вложить в пакет");
   return `
     <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}" ${filterMatch ? `data-filter-match-id="bag-${container.id}"` : ""}>
       <div class="subcontainer-title">
@@ -176,6 +177,7 @@ export function renderSubcontainerSectionHtml({
           </button>
           ${titleHtml}
         </div>
+        <span class="container-drop-action" aria-hidden="true">${escapeHtml(nestContainerLabel)}</span>
         <div class="subcontainer-tools">
           <button class="header-icon-button add-to-container-button" data-add-to-container="${container.id}" aria-label="${escapeHtml(addItemLabel)}" title="${escapeHtml(addItemLabel)}">+</button>
           ${weightHtml}

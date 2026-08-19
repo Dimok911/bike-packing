@@ -29,6 +29,7 @@ import {
   renderPackingAddRootCard,
   renderPackingEmptyState
 } from "../../src/ui/empty-state.js";
+import { renderSubcontainerSectionHtml } from "../../src/ui/packing-board-render.js";
 import {
   applyContentFilterHighlight,
   contentFilterHasNoResults,
@@ -48,6 +49,25 @@ test("CRITICAL root column drag: the final placeholder stays before the add-root
 
   assert.equal(getPackingRootPlaceholderBefore(board), addRootCard);
   assert.equal(getPackingRootPlaceholderBefore(board, rootCard), rootCard);
+});
+
+test("CRITICAL container drag: a nested package target shows the localized nesting action", () => {
+  const html = renderSubcontainerSectionHtml({
+    collapsed: false,
+    container: { id: "package-a" },
+    contentsHtml: "",
+    justAdded: false,
+    packed: false,
+    photoHtml: "",
+    t: (key) => I18N.ru[key] || key,
+    titleHtml: "<strong>Пакет</strong>",
+    weightHtml: ""
+  });
+  const styles = readFileSync(resolve(import.meta.dirname, "../../styles.css"), "utf8");
+
+  assert.match(html, /class="container-drop-action"[^>]*>Вложить в пакет</);
+  assert.equal(I18N.en["drag.nestContainer"], "Nest inside");
+  assert.match(styles, /\.subcontainer\.container-drop-target > \.subcontainer-title > \.container-drop-action\s*\{\s*display: inline-flex;/);
 });
 
 test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {

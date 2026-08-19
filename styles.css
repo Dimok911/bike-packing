@@ -4157,6 +4157,22 @@ button.photo-gallery-slide.touch-feedback-active {
   background: hsl(calc(var(--interface-hue) - 8.48deg) 40.35% 88.82%);
 }
 
+.container-drop-action {
+  display: none;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.subcontainer.container-drop-target > .subcontainer-title > .container-drop-action {
+  display: inline-flex;
+}
+
 .item-card.move-into-target {
   border-color: hsl(var(--interface-hue) 56.34% 27.84% / 0.92);
   background: hsl(calc(var(--interface-hue) - 9deg) 42.86% 93.14%);
