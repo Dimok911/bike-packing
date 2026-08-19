@@ -132,6 +132,14 @@ export function isContainerAvailableForLayoutRoot(targetState, layout, container
   return container.nestable === true && Boolean(placement?.parentId);
 }
 
+export function isContainerAvailableForNestedPicker(targetState, layout, targetParentId, container) {
+  if (!container?.id || !layout || !targetState?.containers?.[targetParentId]) return false;
+  if (container.id === targetParentId || container.nestable !== true) return false;
+  const targetDescendantIds = getLayoutDescendantContainerIds(layout, targetParentId);
+  if (targetDescendantIds.includes(container.id)) return false;
+  return !getLayoutDescendantContainerIds(layout, container.id).includes(targetParentId);
+}
+
 export function isItemInCatalog(targetState, layout, item, { scoped = false, catalogLayoutId = "" } = {}) {
   if (!scoped) return true;
   if (!item) return false;

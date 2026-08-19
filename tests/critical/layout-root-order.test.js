@@ -14,6 +14,7 @@ import {
 } from "../../src/state/layout-ops.js";
 import {
   isContainerAvailableForLayoutRoot,
+  isContainerAvailableForNestedPicker,
   isRootContainerForEditor
 } from "../../src/state/layout-selectors.js";
 import {
@@ -501,6 +502,33 @@ test("CRITICAL root picker: a reusable nested bag is available for promotion", (
 
   state.containers["bag-a"].nestable = false;
   assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-a"]), false);
+});
+
+test("CRITICAL nested picker: a reusable root bag is available without cycles or duplicates", () => {
+  const state = createState();
+  state.activeLayoutId = "layout-a";
+  state.collapsedContainers = {};
+  state.containers["bag-a"].nestable = true;
+  state.containers["bag-b"].nestable = true;
+  const layout = state.layouts["layout-a"];
+
+  assert.equal(addRootContainerToLayoutInState(state, "layout-a", "bag-a"), true);
+  assert.equal(isContainerAvailableForNestedPicker(state, layout, "bag-b", state.containers["bag-a"]), true);
+  assert.equal(placeExistingContainerInLayoutInState(state, "bag-a", "bag-b", "layout-a"), true);
+  assert.equal(isContainerAvailableForNestedPicker(state, layout, "bag-b", state.containers["bag-a"]), false);
+  assert.equal(isContainerAvailableForNestedPicker(state, layout, "bag-a", state.containers["bag-b"]), false);
+
+  state.containers["bag-c"].nestable = false;
+  assert.equal(isContainerAvailableForNestedPicker(state, layout, "bag-b", state.containers["bag-c"]), false);
+});
+
+test("CRITICAL add-to-container plus: reusable bags are rendered and handled by the picker", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.match(controllers, /isContainerAvailableForNestedPicker\(state, layout, containerId, container\)/);
+  assert.match(controllers, /data-add-existing-container=/);
+  assert.match(controllers, /addExistingContainerToContainer\(button\.dataset\.addExistingContainer\)/);
 });
 
 test("CRITICAL temporary package: it cannot be promoted from inside a bag to the layout root", () => {

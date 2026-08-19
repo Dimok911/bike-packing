@@ -69,7 +69,10 @@ import {
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
-import { isContainerAvailableForLayoutRoot } from "../state/layout-selectors.js";
+import {
+  isContainerAvailableForLayoutRoot,
+  isContainerAvailableForNestedPicker
+} from "../state/layout-selectors.js";
 import { bindCardEditorClicks } from "../ui/card-edit-click.js";
 import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
@@ -542,14 +545,37 @@ function renderAddToContainerResults() {
   }
   const query = refs.addToContainerSearch.value.trim().toLowerCase();
   refs.clearAddToContainerSearchBtn.hidden = !query;
-  const items = getItemsForActiveCatalog()
+  const itemResults = getItemsForActiveCatalog()
     .filter((item) => !getItemContainerIdInLayout(layout, item.id))
     .filter((item) => matchesAddToContainerSearch(item, query))
-    .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+    .map((record) => ({ kind: "item", record }));
+  const containerResults = replacingPackingItemId ? [] : getRootContainers()
+    .filter(isRootContainerInActiveCatalog)
+    .filter((container) => isContainerAvailableForNestedPicker(state, layout, containerId, container))
+    .filter((container) => matchesAddToContainerSearch(container, query))
+    .map((record) => ({ kind: "container", record }));
+  const results = [...itemResults, ...containerResults]
+    .sort((a, b) => a.record.name.localeCompare(b.record.name, "ru"))
     .slice(0, 60);
-  const showPhotos = runtime.pickerListPhotos === true;
+  const showPhotos = true;
   updatePickerListPhotoToggles();
-  refs.addToContainerResults.innerHTML = items.map((item) => {
+  refs.addToContainerResults.innerHTML = results.map(({ kind, record }) => {
+    if (kind === "container") {
+      return `
+        <button
+          class="add-item-result ${showPhotos ? "with-thumbnail" : ""}"
+          type="button"
+          data-add-existing-container="${record.id}"
+        >
+          ${pickerListThumbnailHtml(record, { enabled: showPhotos, photoObjectUrls })}
+          <span class="picker-list-result-copy">
+            <strong>${highlightSearchText(record.name, query)}</strong>
+            <small>${escapeHtml(t("rootContainers.nestableBadge"))}</small>
+          </span>
+        </button>
+      `;
+    }
+    const item = record;
     const alreadyHere = getItemContainerIdInLayout(layout, item.id) === containerId;
     const unavailable = isItemUnavailableForPacking(item);
     return `
@@ -573,18 +599,14 @@ function renderAddToContainerResults() {
   refs.addToContainerResults.querySelectorAll("[data-add-existing-item]").forEach((button) => {
     button.addEventListener("click", () => addExistingItemToContainer(button.dataset.addExistingItem));
   });
+  refs.addToContainerResults.querySelectorAll("[data-add-existing-container]").forEach((button) => {
+    button.addEventListener("click", () => addExistingContainerToContainer(button.dataset.addExistingContainer));
+  });
 }
 
-function matchesAddToContainerSearch(item, query) {
+function matchesAddToContainerSearch(record, query) {
   if (!query) return true;
-  return item.name.toLowerCase().includes(query);
-  return [
-    item.name,
-    itemCategories(item).join(" "),
-    item.location,
-    item.note || "",
-    item.containerId ? containerPath(item.containerId) : t("forms.outsideLayout")
-  ].join(" ").toLowerCase().includes(query);
+  return record.name.toLowerCase().includes(query);
 }
 
 function clearAddToContainerSearch() {
@@ -1121,6 +1143,26 @@ function addExistingItemToContainer(itemId) {
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
+}
+
+function addExistingContainerToContainer(containerId) {
+  const parentId = runtime.addToContainerTargetId;
+  const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
+  const changedAt = nowIso();
+  if (!placeExistingContainerInLayout(containerId, parentId, layoutId, { changedAt, renderAfter: false })) {
+    showToast(localText("Could not add the bag to this layout.", "Не удалось добавить сумку в эту укладку."), "error");
+    return;
+  }
+  state.collapsedContainers[parentId] = false;
+  state.collapsedContainers[containerId] = false;
+  saveLocalUiState();
+  markRecentlyAddedContainer(containerId, layoutId);
+  refs.addToContainerDialog.close();
+  render();
+  requestAnimationFrame(() => {
+    refs.packingView.querySelector(`[data-subcontainer-id="${cssEscape(containerId)}"]`)
+      ?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  });
 }
 
 function replaceExistingItemInLayout(replacementItemId) {

@@ -91,11 +91,11 @@ test("picker list photo preference survives UI settings reload", () => {
   assert.equal(loadStoredUiSettings(options).pickerListPhotos, true);
 });
 
-test("both list pickers share the persisted photo toggle and bilingual labels", () => {
-  assert.match(htmlSource, /id="addToContainerPhotoToggleBtn"/);
+test("the nested picker always shows photos while the root picker keeps its persisted toggle", () => {
+  assert.doesNotMatch(htmlSource, /id="addToContainerPhotoToggleBtn"/);
   assert.match(htmlSource, /id="layoutRootPhotoToggleBtn"/);
-  assert.match(appSource, /addToContainerPhotoToggleBtn\?\.addEventListener\("click", togglePickerListPhotos\)/);
   assert.match(appSource, /layoutRootPhotoToggleBtn\?\.addEventListener\("click", togglePickerListPhotos\)/);
+  assert.match(controllerSource, /function renderAddToContainerResults\(\)[\s\S]*?const showPhotos = true;/);
   assert.match(controllerSource, /pickerListThumbnailHtml\(item/);
   assert.match(controllerSource, /pickerListThumbnailHtml\(container/);
   assert.match(controllerSource, /saveUiSettings\(\)/);
