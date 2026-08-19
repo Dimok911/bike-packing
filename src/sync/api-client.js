@@ -38,9 +38,6 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
   if (isForcedOffline()) {
     throw createNetworkError("принудительный офлайн-режим");
   }
-  if ("onLine" in navigator && !navigator.onLine) {
-    throw createNetworkError("нет соединения с сервером");
-  }
   const { timeoutMs = API_TIMEOUT_MS, silentErrors = false, ...fetchOptions } = options;
   const isFormDataBody = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const controller = new AbortController();
@@ -99,9 +96,6 @@ export function apiUploadFormDataRequest(
 ) {
   if (isForcedOffline()) {
     return Promise.reject(createNetworkError("принудительный офлайн-режим"));
-  }
-  if ("onLine" in navigator && !navigator.onLine) {
-    return Promise.reject(createNetworkError("нет соединения с сервером"));
   }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();

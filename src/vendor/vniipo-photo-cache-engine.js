@@ -630,8 +630,10 @@ export function createScopedPhotoBlobUrlRegistry({
     if (!clean(key) || !blob) return "";
     const identity = blobKey(key, signature, variant);
     const existing = urls.get(identity);
-    if (existing?.blob === blob) return existing.url;
-    if (existing) removeUrl(identity);
+    // A source signature is the cache identity. Rehydrating the same source can
+    // produce a fresh Blob instance, but replacing its object URL would break
+    // images that Safari is still rendering from the previous URL.
+    if (existing) return existing.url;
     const url = createObjectUrl(blob);
     urls.set(identity, { blob, url });
     return url;
@@ -788,5 +790,5 @@ export function createPhotoCacheRunController({
   };
 }
 
-export const PHOTO_CACHE_ENGINE_VERSION = "1.0.1";
+export const PHOTO_CACHE_ENGINE_VERSION = "1.0.2";
 export const PHOTO_CACHE_ENGINE_CONTRACT_VERSION = 1;

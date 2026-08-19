@@ -5253,7 +5253,7 @@ test("CRITICAL template drafts: offline edits stay pending until an authenticate
   assert.match(appSource, /for \(const layout of pendingAdminTemplateDraftLayouts\(state\.layouts\)\)[\s\S]*?savePublishedLayoutRecord\(layout\.id, \{ published: false \}\)/);
   assert.match(
     appSource,
-    /async function checkAuthAndLoad\(options = \{\}\)[\s\S]*?await refreshAdminTemplateDrafts\(\{ renderAfter: true \}\)[\s\S]*?return result;/
+    /async function checkAuthAndLoad\(options = \{\}\)[\s\S]*?const adminDraftRefresh = refreshAdminTemplateDrafts\(\{ renderAfter: true \}\)[\s\S]*?if \(deferAdminTemplates\)[\s\S]*?else \{\s*await adminDraftRefresh\.catch\(\(\) => null\);[\s\S]*?return result;/
   );
   assert.match(
     appSource,

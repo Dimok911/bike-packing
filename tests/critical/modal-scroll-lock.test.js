@@ -117,6 +117,64 @@ test("CRITICAL modal scroll lock blocks wheel events retargeted from the backdro
   }
 });
 
+test("CRITICAL modal scroll lock lets a fullscreen gallery swipe above an edit dialog", () => {
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  const listeners = new Map();
+  const bodyClasses = testClassList();
+  const bodyStyle = { position: "", top: "", left: "", right: "", width: "", overflow: "" };
+  const editDialog = {
+    addEventListener: () => {},
+    open: true
+  };
+  const lightbox = {
+    addEventListener: () => {},
+    hasAttribute: (name) => name === "data-modal-gesture-surface",
+    open: true
+  };
+  const image = {
+    closest: (selector) => selector === "dialog" ? lightbox : null
+  };
+
+  globalThis.document = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    body: { classList: bodyClasses, style: bodyStyle },
+    querySelectorAll: (selector) => selector === "dialog" ? [editDialog, lightbox] : []
+  };
+  globalThis.window = {
+    getComputedStyle: () => ({ overflowY: "hidden", position: "static" }),
+    innerHeight: 1080,
+    innerWidth: 390,
+    matchMedia: () => ({ matches: true }),
+    scrollTo: () => {},
+    scrollX: 0,
+    scrollY: 320
+  };
+
+  try {
+    const controller = createModalScrollLockController();
+    controller.setupModalScrollLock();
+    controller.updateModalScrollLock();
+    let prevented = false;
+    let stopped = false;
+    listeners.get("touchstart")({
+      target: image,
+      touches: [{ clientX: 300, clientY: 200 }]
+    });
+    listeners.get("touchmove")({
+      target: image,
+      touches: [{ clientX: 120, clientY: 204 }],
+      preventDefault: () => { prevented = true; },
+      stopImmediatePropagation: () => { stopped = true; }
+    });
+    assert.equal(prevented, false);
+    assert.equal(stopped, false, "the lightbox must receive its horizontal swipe above another modal");
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test("CRITICAL modal scroll lock still uses the hard lock when no sticky tabs are visible", () => {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;

@@ -1,3 +1,5 @@
+export const OPTIONAL_STARTUP_TASK_TIMEOUT_MS = 1200;
+
 export function resolveAppStartupLanguage({
   uiLanguage = "en",
   authenticated = false,
@@ -22,7 +24,7 @@ export function renderBeforeFinishingAppStartup({ documentRef = document, render
 }
 
 export async function waitForStartupTask(task, {
-  timeoutMs = 8000,
+  timeoutMs = OPTIONAL_STARTUP_TASK_TIMEOUT_MS,
   setTimeoutFn = globalThis.setTimeout,
   clearTimeoutFn = globalThis.clearTimeout
 } = {}) {

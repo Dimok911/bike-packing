@@ -4085,7 +4085,7 @@ function updateFixedScrollbarThumb(board = getPackingScrollHost()) {
   const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
   const progress = maxScroll ? board.scrollLeft / maxScroll : 0;
   thumb.style.width = `${thumbWidth}px`;
-  thumb.style.transform = `translate3d(${progress * maxThumbLeft}px, 0, 0)`;
+  thumb.style.left = `${progress * maxThumbLeft}px`;
 }
 
 function scheduleFixedScrollbarRefresh() {
@@ -5041,7 +5041,7 @@ async function copyItem(itemId, options = {}) {
   if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
   if (keepPlacement && warnLockedLayoutMutation(state.activeLayoutId)) return;
-  const offlineCopy = isForcedOffline() || !runtime.currentUser || globalThis.navigator?.onLine === false;
+  const offlineCopy = isForcedOffline() || !runtime.currentUser;
   let cachedFallbackSourceIds = offlineCopy
     ? normalizeItemPhotos(item).map((photo) => String(photo.localId || photo.id || "").trim()).filter(Boolean)
     : [];

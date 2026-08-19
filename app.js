@@ -825,6 +825,8 @@ import {
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
 import { createConnectionStatusController } from "./src/ui/connection-status.js";
+import { shouldReportConnectionFailure } from "./src/sync/connection-failure-policy.js";
+import { createNetworkTransitionController } from "./src/sync/network-transition.js";
 import {
   bindDictionaryControls,
   renameDictionaryEntry as renameDictionaryEntryValue
@@ -1376,8 +1378,7 @@ const offlinePhotoCacheController = createOfflinePhotoCacheController({
   getState: () => isReadOnlyStateScope() ? createSharedVirtualState() : state,
   isEnabled: () => (
     !isForcedOffline() &&
-    !initialRemoteLoadPending &&
-    (!("onLine" in navigator) || navigator.onLine)
+    !initialRemoteLoadPending
   ),
   getProgressMessage: () => t("sync.cachingPhotosOffline"),
   getFailureMessage: () => t("sync.photoOfflineCacheIncomplete"),
@@ -2327,8 +2328,6 @@ function allSharedLayoutsByAdminOrder() {
 function currentPublishedTemplateBlockReason() {
   return publishedTemplateBlockReason({
     forcedOffline: isForcedOffline(),
-    hasNavigatorOnline: typeof navigator !== "undefined" && "onLine" in navigator,
-    navigatorOnline: typeof navigator === "undefined" ? true : navigator.onLine,
     language: uiLanguage
   });
 }
@@ -3299,43 +3298,33 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeTopMenu();
   });
-  window.addEventListener("online", () => {
-    if (isForcedOffline()) {
+  const networkTransitionController = createNetworkTransitionController({
+    onOnline: () => {
+      if (isForcedOffline()) {
+        updateSyncUi();
+        return;
+      }
+      offlinePhotoCacheController.schedule({ force: true }).catch(() => null);
+      if (currentUser) {
+        uploadPendingPhotos({ markDirty: true }).catch(() => null);
+        syncNow();
+      } else if (isOfflineRememberedSession()) {
+        checkAuthAndLoad({
+          restoreLayoutChoice: false,
+          preferredLayout: preferredCurrentLayoutRef()
+        });
+      } else if (appUnlocked) {
+        updateSyncUi("Connection restored · click “Sync” to check sign-in");
+      }
+    },
+    onOffline: () => {
+      // Safari may report `offline` while LTE can still reach the API.
+      // Authentication scope changes only after a real request fails.
       updateSyncUi();
-      return;
-    }
-    offlinePhotoCacheController.schedule({ force: true }).catch(() => null);
-    if (currentUser) {
-      uploadPendingPhotos({ markDirty: true }).catch(() => null);
-      syncNow();
-    } else if (isOfflineRememberedSession()) {
-      checkAuthAndLoad({
-        restoreLayoutChoice: false,
-        preferredLayout: preferredCurrentLayoutRef()
-      });
-    } else if (appUnlocked) {
-      updateSyncUi("Connection restored · click “Sync” to check sign-in");
     }
   });
-  window.addEventListener("offline", () => {
-    connectionStatusController.reportFailure("offline");
-    const rememberedUser = rememberedOfflineUser(currentUser);
-    currentUser = null;
-    offlineRememberedUser = rememberedUser;
-    appUnlocked = true;
-    if (isExplicitlySignedOut() || !rememberedUser) {
-      enterSignedOutPublicMode(localText("Offline · personal lists are hidden, local demo copy is open", "Офлайн · личные списки скрыты, открыта локальная демо-копия")).catch(() => {
-        setActiveReadOnlyScope(DEMO_SHARED_LAYOUT_ID);
-        render();
-        updateSyncUi(localText("Offline · personal lists are hidden, demo/public template is open", "Офлайн · личные списки скрыты, открыт демо/публичный шаблон"));
-      });
-      return;
-    }
-    activateLocalStorageScope(userStorageScopeKey(rememberedUser));
-    setActivePrivateScope();
-    renderInitialLocalFallbackIfNeeded();
-    updateSyncUi(localText("Offline · local layout is available", "Офлайн · локальная укладка доступна"));
-  });
+  window.addEventListener("online", networkTransitionController.reportOnline);
+  window.addEventListener("offline", networkTransitionController.reportOffline);
   window.addEventListener("focus", handleWindowReturn);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) handleWindowReturn();
@@ -3357,7 +3346,6 @@ async function init() {
   appUnlocked = true;
   const sharedListId = sharedListIdFromLocation();
   const signedOut = isExplicitlySignedOut();
-  const offlineNow = "onLine" in navigator && !navigator.onLine;
   const shouldLoadLocalFirst = Boolean(sharedListId) || (!signedOut && isForcedOffline());
   if (shouldLoadLocalFirst) {
     repairActiveEmptyAdminDemoDraft();
@@ -3380,12 +3368,8 @@ async function init() {
     if (isForcedOffline()) {
       if (signedOut) await enterSignedOutPublicMode(localText("Signed out · personal lists are hidden, local demo copy is open", "Вы вышли · личные списки скрыты, открыта локальная демо-копия"));
       else unlockOfflineState(localText("Forced offline · local layout is available", "Принудительный офлайн · локальная укладка доступна"));
-    } else if (offlineNow) {
-      if (!activateOfflineRememberedSession(localText("Offline · local copy of personal layouts is open", "Офлайн · открыта локальная копия личных укладок"))) {
-        await enterSignedOutPublicMode(localText("Offline · sign-in is not confirmed, local demo copy is open", "Офлайн · вход не подтверждён, открыта локальная демо-копия"));
-      }
     } else {
-      await checkAuthAndLoad();
+      await checkAuthAndLoad({ deferAdminTemplates: true });
     }
     const publicIndexStartupStatus = await waitForStartupTask(publicIndexRefresh);
     if (publicIndexStartupStatus === "timeout") {
@@ -5878,12 +5862,16 @@ function updateSyncUi(message = "") {
 }
 
 async function apiFetch(path, options = {}) {
+  const { connectionFailureMode = "auto", ...requestOptions } = options;
   try {
-    const response = await apiFetchRequest(path, options, { isForcedOffline });
+    const response = await apiFetchRequest(path, requestOptions, { isForcedOffline });
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
-    if (!isForcedOffline() && isNetworkError(error)) {
+    if (!isForcedOffline() && isNetworkError(error) && shouldReportConnectionFailure({
+      mode: connectionFailureMode,
+      method: requestOptions.method
+    })) {
       connectionStatusController.reportFailure(isTimeoutError(error) ? "timeout" : "offline");
     }
     throw error;
@@ -6202,6 +6190,7 @@ async function ensureCurrentPackingListId() {
 }
 
 async function checkAuthAndLoad(options = {}) {
+  const { deferAdminTemplates = false, ...flowOptions } = options;
   const result = await checkAuthAndLoadFlow({
     runtime: {
       get appUnlocked() { return appUnlocked; },
@@ -6245,9 +6234,14 @@ async function checkAuthAndLoad(options = {}) {
       updateSyncUi,
       GUEST_STORAGE_SCOPE
     }
-  }, options);
+  }, flowOptions);
   if (currentUser && canOpenAdminPublishedEdit() && !isForcedOffline()) {
-    await refreshAdminTemplateDrafts({ renderAfter: true }).catch(() => null);
+    const adminDraftRefresh = refreshAdminTemplateDrafts({ renderAfter: true });
+    if (deferAdminTemplates) {
+      adminDraftRefresh.catch(() => null);
+    } else {
+      await adminDraftRefresh.catch(() => null);
+    }
   }
   return result;
 }
@@ -6719,7 +6713,8 @@ async function fetchRemoteListDetailRecord(listId) {
 async function fetchRemoteListFreshnessRecord(listId) {
   const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/freshness`, {
     timeoutMs: API_TIMEOUT_MS,
-    silentErrors: true
+    silentErrors: true,
+    connectionFailureMode: "background"
   });
   return normalizeListFreshness(data);
 }
@@ -7851,7 +7846,6 @@ async function checkRemoteStateFreshness({ notify = false, preferredLayout = nul
   if (recoverUnsyncedLocalChanges("remote-freshness")) return;
   if (syncMeta.dirty) return;
   if (document.hidden) return;
-  if ("onLine" in navigator && !navigator.onLine) return;
   const previousServerUpdatedAt = syncMeta.serverUpdatedAt;
   try {
     remoteRefreshInFlight = true;

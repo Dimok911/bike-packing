@@ -170,7 +170,10 @@ test("first touch during momentum activates without any preliminary scroll event
   harness.button.dispatch("touchend", end);
 
   assert.equal(harness.windowRef.listenerCount("scroll"), 1, "one stable controller owns the scroll listener");
-  assert.deepEqual(harness.scrollCalls, [{ top: 0, left: 0, behavior: "auto" }]);
+  assert.deepEqual(harness.scrollCalls, [
+    { top: 900, left: 0, behavior: "auto" },
+    { top: 0, left: 0, behavior: "auto" }
+  ]);
   assert.equal(harness.scrollingElement.scrollTop, 0);
   assert.equal(harness.documentElement.scrollTop, 0);
   assert.equal(harness.body.scrollTop, 0);
@@ -187,7 +190,7 @@ test("synthetic click after the first touch does not start a second scroll", () 
   harness.button.dispatch("touchend", touchEvent(30, 190));
   harness.button.dispatch("click", touchEvent(30, 190));
 
-  assert.equal(harness.scrollCalls.length, 1);
+  assert.equal(harness.scrollCalls.length, 2);
 });
 
 test("vertical swipe beginning on the portal button is not treated as activation", () => {
@@ -199,7 +202,7 @@ test("vertical swipe beginning on the portal button is not treated as activation
   harness.button.dispatch("touchmove", touchEvent(30, 210));
   harness.button.dispatch("touchend", touchEvent(30, 210));
 
-  assert.equal(harness.scrollCalls.length, 0);
+  assert.deepEqual(harness.scrollCalls, [{ top: 900, left: 0, behavior: "auto" }]);
 });
 
 test("panel rerender replaces only the anchor and keeps one live portal handler", () => {
@@ -219,7 +222,7 @@ test("panel rerender replaces only the anchor and keeps one live portal handler"
   assert.equal(harness.button.style.top, "196px");
   harness.button.dispatch("touchstart", touchEvent(30, 200));
   harness.button.dispatch("touchend", touchEvent(30, 200));
-  assert.equal(harness.scrollCalls.length, 1);
+  assert.equal(harness.scrollCalls.length, 2);
 });
 
 test("one portal follows the visible items and bags catalog anchors", () => {

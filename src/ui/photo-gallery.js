@@ -563,6 +563,7 @@ export async function openPhotoLightbox(sourceImage, {
   if (!initialPreviewSrc) return;
   const overlay = document.createElement("dialog");
   overlay.className = "photo-lightbox";
+  overlay.setAttribute("data-modal-gesture-surface", "true");
   const hasNavigation = entries.length > 1;
   const closeLabel = escapeHtml(localText("Close", "Закрыть"));
   const previousLabel = escapeHtml(localText("Previous photo", "Предыдущее фото"));

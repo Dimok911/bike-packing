@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   finishAppStartup,
+  OPTIONAL_STARTUP_TASK_TIMEOUT_MS,
   renderBeforeFinishingAppStartup,
   resolveAppStartupLanguage,
   waitForStartupTask
@@ -41,7 +42,7 @@ test("CRITICAL offline-start: normal startup stays covered until auth, catalogs,
   const startupFlow = source.slice(source.indexOf("  appUnlocked = true;"), source.indexOf("\n}\n\nfunction createEmptyUserState"));
 
   assert.doesNotMatch(startupFlow, /if \(!sharedListId\) finishAppStartup/);
-  assert.match(startupFlow, /await checkAuthAndLoad\(\)/);
+  assert.match(startupFlow, /await checkAuthAndLoad\(\{ deferAdminTemplates: true \}\)/);
   assert.match(startupFlow, /await waitForStartupTask\(publicIndexRefresh\)/);
   assert.match(startupFlow, /renderBeforeFinishingAppStartup\(\{ documentRef: document, render \}\)/);
 });
@@ -136,4 +137,28 @@ test("CRITICAL offline-start: optional catalog refresh cannot block startup fore
   scheduled();
   assert.equal(await resultPromise, "timeout");
   assert.equal(cleared, true);
+});
+
+test("CRITICAL offline-start: optional catalogs get only a short startup budget", async () => {
+  let scheduledDelay = null;
+  let releaseTimeout = null;
+  const pending = new Promise(() => {});
+  const resultPromise = waitForStartupTask(pending, {
+    setTimeoutFn: (callback, delay) => {
+      scheduledDelay = delay;
+      releaseTimeout = callback;
+      return 11;
+    },
+    clearTimeoutFn: () => {}
+  });
+  assert.equal(OPTIONAL_STARTUP_TASK_TIMEOUT_MS, 1200);
+  assert.equal(scheduledDelay, OPTIONAL_STARTUP_TASK_TIMEOUT_MS);
+  releaseTimeout();
+  assert.equal(await resultPromise, "timeout");
+});
+
+test("CRITICAL offline-start: admin drafts continue after the personal workspace opens", () => {
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  assert.match(source, /const \{ deferAdminTemplates = false, \.\.\.flowOptions \} = options;/);
+  assert.match(source, /if \(deferAdminTemplates\) \{\s*adminDraftRefresh\.catch\(\(\) => null\);/);
 });

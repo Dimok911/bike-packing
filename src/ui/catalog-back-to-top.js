@@ -161,6 +161,14 @@ export function createCatalogBackToTopController({
     }, { documentRef, windowRef });
   };
 
+  const interruptMomentum = () => {
+    scrollViewportTo({
+      top: pageScrollY(),
+      left: 0,
+      behavior: "auto"
+    }, { documentRef, windowRef });
+  };
+
   const beginGesture = (input, event) => {
     if (activeInput && activeInput !== input) return;
     if (input === "pointer" && !isTouchPointer(event)) return;
@@ -171,6 +179,10 @@ export function createCatalogBackToTopController({
     gestureStartY = point.y;
     gestureMoved = false;
     stopEvent(event);
+    // Safari 27 beta may ignore a new scroll target while native momentum is
+    // still active. Re-applying the current position ends momentum without
+    // moving the viewport, so touchend can perform the requested jump.
+    interruptMomentum();
   };
 
   const moveGesture = (input, event) => {

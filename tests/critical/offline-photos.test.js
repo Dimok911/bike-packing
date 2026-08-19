@@ -608,6 +608,39 @@ test("CRITICAL offline-photos: Bikepacking registry retains separate preview and
   assert.equal(objectUrls.getRecord(task), record);
 });
 
+test("CRITICAL offline-photos: rehydrating the same source keeps rendered Safari Blob URLs alive", () => {
+  const created = [];
+  const revoked = [];
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: () => `blob:stable-${created.push(true)}`,
+    revokeObjectUrl: (url) => revoked.push(url)
+  });
+  const task = { key: "photo-stable", sourceSignature: "full|thumb|v1" };
+  objectUrls.activateScope("id:user-1");
+  objectUrls.setRecord(task, {
+    id: task.key,
+    sourceSignature: task.sourceSignature,
+    thumbBlob: new Blob(["preview"]),
+    blob: new Blob(["full"]),
+    fullBlobVerified: true
+  });
+  const initialSources = objectUrls.sources(task.key, task.sourceSignature);
+
+  const refreshedRecord = {
+    id: task.key,
+    sourceSignature: task.sourceSignature,
+    thumbBlob: new Blob(["preview"]),
+    blob: new Blob(["full"]),
+    fullBlobVerified: true
+  };
+  objectUrls.setRecord(task, refreshedRecord);
+
+  assert.deepEqual(objectUrls.sources(task.key, task.sourceSignature), initialSources);
+  assert.equal(objectUrls.getRecord(task), refreshedRecord);
+  assert.deepEqual(revoked, []);
+  assert.equal(objectUrls.urlCount(), 2);
+});
+
 test("CRITICAL offline-photos: a hydrated card advertises its verified full without displaying it as the thumbnail", () => {
   const photo = {
     id: "photo-direct-full",
@@ -1457,7 +1490,8 @@ test("CRITICAL offline-photos: item copy audits online server loss but keeps off
     controllers.indexOf("async function copyItem(itemId"),
     controllers.indexOf("async function copyRootContainer")
   );
-  assert.match(copyBlock, /const offlineCopy = isForcedOffline\(\) \|\| !runtime\.currentUser \|\| globalThis\.navigator\?\.onLine === false/);
+  assert.match(copyBlock, /const offlineCopy = isForcedOffline\(\) \|\| !runtime\.currentUser/);
+  assert.doesNotMatch(copyBlock, /navigator\?\.onLine/);
   assert.match(copyBlock, /normalizeItemPhotos\(item\).*localId \|\| photo\.id/s);
   assert.match(copyBlock, /await inspectRecordRemotePhotoSources\(item\)/);
   assert.match(copyBlock, /title: localText\("Photo is missing from the server", "Фото отсутствует на сервере"\)/);
@@ -2230,12 +2264,12 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   const asset = readProjectFile("src/vendor/vniipo-photo-cache-engine.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-cache-engine-manifest.json"));
   const adapter = readProjectFile("src/sync/photo-cache-engine.js");
-  assert.equal(PHOTO_CACHE_ENGINE_VERSION, "1.0.1");
+  assert.equal(PHOTO_CACHE_ENGINE_VERSION, "1.0.2");
   assert.equal(PHOTO_CACHE_ENGINE_CONTRACT_VERSION, 1);
   assert.equal(manifest.version, PHOTO_CACHE_ENGINE_VERSION);
   assert.equal(manifest.contractVersion, PHOTO_CACHE_ENGINE_CONTRACT_VERSION);
   assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "3fa7f77ff0bc6bc2d2a113938d04a52cfbb1d149c3a823462e1488972391e488");
+  assert.equal(manifest.sha256, "3ce28fcc73130a974a92e81f8d988e1af76e223e21d20e541f3e0e8a9bd072ed");
   assert.match(adapter, /from "\.\.\/vendor\/vniipo-photo-cache-engine\.js"/);
   assert.match(adapter, /downloadPhotoBlob/);
   assert.match(adapter, /registerVerifiedPhotoRecord/);
@@ -2444,6 +2478,7 @@ test("CRITICAL offline-photos: phone lightbox gives the full screen to swipe and
   const styles = readProjectFile("styles.css");
   assert.match(styles, /@media \(hover:\s*none\) and \(pointer:\s*coarse\)\s*\{[\s\S]*?\.photo-lightbox-nav\s*\{[\s\S]*?display:\s*none;/);
   assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*overlay\.addEventListener\("touchmove",[\s\S]*overlay\.addEventListener\("touchend",/);
+  assert.match(source, /overlay\.setAttribute\("data-modal-gesture-surface", "true"\)/);
   assert.match(source, /if \(!touchStartedWithPinch && !moved && scale <= 1[\s\S]*close\(\);/);
   assert.match(styles, /\.photo-lightbox-track\s*\{[\s\S]*inset:\s*0;[\s\S]*width:\s*100%;[\s\S]*height:\s*100%;/);
 });
