@@ -506,6 +506,320 @@ test("CRITICAL history: layout changes explain visible fields and hide template 
   assert.equal(changed[0].details[0], "Изменён порядок сумок: Задняя сумка → Передняя сумка");
 });
 
+test("CRITICAL history: item moves describe both bags, root hierarchy, positions, and neighbors", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Поход 2026",
+        rootContainerIds: ["frame-bag", "left-pannier"],
+        arrangement: {
+          rootContainerIds: ["frame-bag", "left-pannier"],
+          containers: {
+            "frame-bag": {
+              parentId: "",
+              itemIds: ["tube", "pump", "levers"],
+              childIds: [],
+              order: [
+                { type: "item", id: "tube" },
+                { type: "item", id: "pump" },
+                { type: "item", id: "levers" }
+              ]
+            },
+            "left-pannier": {
+              parentId: "",
+              itemIds: [],
+              childIds: ["small-pouch"],
+              order: [{ type: "container", id: "small-pouch" }]
+            },
+            "small-pouch": {
+              parentId: "left-pannier",
+              itemIds: ["first-aid", "power-bank"],
+              childIds: [],
+              order: [
+                { type: "item", id: "first-aid" },
+                { type: "item", id: "power-bank" }
+              ]
+            }
+          },
+          items: {
+            tube: "frame-bag",
+            pump: "frame-bag",
+            levers: "frame-bag",
+            "first-aid": "small-pouch",
+            "power-bank": "small-pouch"
+          }
+        }
+      }
+    },
+    containers: {
+      "frame-bag": { id: "frame-bag", name: "Сумка на раму" },
+      "left-pannier": { id: "left-pannier", name: "Левый баул" },
+      "small-pouch": { id: "small-pouch", name: "Мелочёвка" }
+    },
+    items: {
+      tube: { id: "tube", name: "Камера", containerId: "frame-bag" },
+      pump: { id: "pump", name: "Насос", containerId: "frame-bag" },
+      levers: { id: "levers", name: "Монтажки", containerId: "frame-bag" },
+      "first-aid": { id: "first-aid", name: "Аптечка", containerId: "small-pouch" },
+      "power-bank": { id: "power-bank", name: "Пауэрбанк", containerId: "small-pouch" }
+    }
+  };
+  const after = structuredClone(before);
+  const arrangement = after.layouts.layout.arrangement;
+  arrangement.containers["frame-bag"].itemIds = ["tube", "levers"];
+  arrangement.containers["frame-bag"].order = [
+    { type: "item", id: "tube" },
+    { type: "item", id: "levers" }
+  ];
+  arrangement.containers["small-pouch"].itemIds = ["first-aid", "pump", "power-bank"];
+  arrangement.containers["small-pouch"].order = [
+    { type: "item", id: "first-aid" },
+    { type: "item", id: "pump" },
+    { type: "item", id: "power-bank" }
+  ];
+  arrangement.items.pump = "small-pouch";
+  after.items.pump.containerId = "small-pouch";
+
+  const russian = buildHistoryStateDiff(before, after, { localText: (_en, ru) => ru });
+  assert.deepEqual(russian.layouts.changed[0].details, [
+    "Вещь «Насос» перемещена. Из верхнеуровневой сумки «Сумка на раму», позиция 2 из 3. В сумку «Мелочёвка» внутри верхнеуровневой сумки «Левый баул», позиция 2 из 3."
+  ]);
+
+  const english = buildHistoryStateDiff(before, after, { localText: (en) => en });
+  assert.deepEqual(english.layouts.changed[0].details, [
+    "Item “Насос” moved. From top-level bag “Сумка на раму”, position 2 of 3. To nested bag “Мелочёвка” in top-level bag “Левый баул”, position 2 of 3."
+  ]);
+});
+
+test("CRITICAL history: an unambiguous reorder names the moved item and its old and new neighbors", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Tour",
+        rootContainerIds: ["bag"],
+        arrangement: {
+          rootContainerIds: ["bag"],
+          containers: {
+            bag: {
+              parentId: "",
+              itemIds: ["pump", "tube", "levers", "patches"],
+              childIds: [],
+              order: ["pump", "tube", "levers", "patches"].map((id) => ({ type: "item", id }))
+            }
+          },
+          items: { pump: "bag", tube: "bag", levers: "bag", patches: "bag" }
+        }
+      }
+    },
+    containers: { bag: { id: "bag", name: "Frame bag" } },
+    items: {
+      pump: { id: "pump", name: "Pump" },
+      tube: { id: "tube", name: "Tube" },
+      levers: { id: "levers", name: "Levers" },
+      patches: { id: "patches", name: "Patches" }
+    }
+  };
+  const after = structuredClone(before);
+  after.layouts.layout.arrangement.containers.bag.itemIds = ["tube", "levers", "pump", "patches"];
+  after.layouts.layout.arrangement.containers.bag.order = ["tube", "levers", "pump", "patches"]
+    .map((id) => ({ type: "item", id }));
+
+  const changed = buildHistoryStateDiff(before, after, { localText: (en) => en }).layouts.changed;
+  assert.deepEqual(changed[0].details, [
+    "Item “Pump” moved. From top-level bag “Frame bag”, position 1 of 4. To top-level bag “Frame bag”, position 3 of 4."
+  ]);
+});
+
+test("CRITICAL history: an ambiguous adjacent swap reports the exact order without inventing the dragged item", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        arrangement: {
+          rootContainerIds: ["bag"],
+          containers: {
+            bag: {
+              parentId: "",
+              itemIds: ["pump", "tube"],
+              childIds: [],
+              order: ["pump", "tube"].map((id) => ({ type: "item", id }))
+            }
+          },
+          items: { pump: "bag", tube: "bag" }
+        }
+      }
+    },
+    containers: { bag: { id: "bag", name: "Сумка на раму" } },
+    items: { pump: { id: "pump", name: "Насос" }, tube: { id: "tube", name: "Камера" } }
+  };
+  const after = structuredClone(before);
+  after.layouts.layout.arrangement.containers.bag.itemIds = ["tube", "pump"];
+  after.layouts.layout.arrangement.containers.bag.order = ["tube", "pump"]
+    .map((id) => ({ type: "item", id }));
+
+  const changed = buildHistoryStateDiff(before, after).layouts.changed;
+  assert.deepEqual(changed[0].details, [
+    "Изменено содержимое сумки «Сумка на раму». Было: «Насос» → «Камера»; стало: «Камера» → «Насос»"
+  ]);
+});
+
+test("CRITICAL history: a grouped legacy step describes every item moved between bags", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Tour",
+        rootContainerIds: ["left", "right"],
+        arrangement: {
+          rootContainerIds: ["left", "right"],
+          containers: {
+            left: { parentId: "", itemIds: ["pump", "tube"], childIds: [], order: ["pump", "tube"] },
+            right: { parentId: "", itemIds: ["food", "stove"], childIds: [], order: ["food", "stove"] }
+          },
+          items: {}
+        }
+      }
+    },
+    containers: {
+      left: { id: "left", name: "Левый баул" },
+      right: { id: "right", name: "Правый баул" }
+    },
+    items: {
+      pump: { id: "pump", name: "Насос" },
+      tube: { id: "tube", name: "Камера" },
+      food: { id: "food", name: "Еда" },
+      stove: { id: "stove", name: "Горелка" }
+    }
+  };
+  const after = structuredClone(before);
+  after.layouts.layout.arrangement.containers.left.itemIds = ["tube", "stove"];
+  after.layouts.layout.arrangement.containers.left.order = ["tube", "stove"];
+  after.layouts.layout.arrangement.containers.right.itemIds = ["food", "pump"];
+  after.layouts.layout.arrangement.containers.right.order = ["food", "pump"];
+
+  const changed = buildHistoryStateDiff(before, after).layouts.changed;
+  assert.deepEqual(changed[0].details, [
+    "Вещь «Насос» перемещена. Из верхнеуровневой сумки «Левый баул», позиция 1 из 2. В верхнеуровневую сумку «Правый баул», позиция 2 из 2.",
+    "Вещь «Горелка» перемещена. Из верхнеуровневой сумки «Правый баул», позиция 2 из 2. В верхнеуровневую сумку «Левый баул», позиция 2 из 2."
+  ]);
+});
+
+test("CRITICAL history: a moved nested bag replaces long contents lists and is highlighted", () => {
+  const before = {
+    layouts: {
+      layout: {
+        id: "layout",
+        name: "Поход",
+        rootContainerIds: ["left", "right"],
+        arrangement: {
+          rootContainerIds: ["left", "right"],
+          containers: {
+            left: {
+              parentId: "",
+              itemIds: [],
+              childIds: ["first", "power", "meal", "rain", "last"],
+              order: ["first", "power", "meal", "rain", "last"].map((id) => ({ type: "container", id }))
+            },
+            right: {
+              parentId: "",
+              itemIds: [],
+              childIds: ["cold"],
+              order: [{ type: "container", id: "cold" }]
+            },
+            power: { parentId: "left", itemIds: [], childIds: [], order: [] },
+            first: { parentId: "left", itemIds: [], childIds: [], order: [] },
+            meal: { parentId: "left", itemIds: [], childIds: [], order: [] },
+            rain: { parentId: "left", itemIds: [], childIds: [], order: [] },
+            last: { parentId: "left", itemIds: [], childIds: [], order: [] },
+            cold: {
+              parentId: "right",
+              itemIds: [],
+              childIds: ["scarf", "jacket", "gloves"],
+              order: ["scarf", "jacket", "gloves"].map((id) => ({ type: "container", id }))
+            },
+            scarf: { parentId: "cold", itemIds: [], childIds: [], order: [] },
+            jacket: { parentId: "cold", itemIds: [], childIds: [], order: [] },
+            gloves: { parentId: "cold", itemIds: [], childIds: [], order: [] }
+          },
+          items: {}
+        }
+      }
+    },
+    containers: {
+      left: { id: "left", name: "Левый задний баул" },
+      right: { id: "right", name: "Правый задний баул" },
+      first: { id: "first", name: "Первый пакет" },
+      power: { id: "power", name: "Повербанк" },
+      meal: { id: "meal", name: "Пакет для приготовления пищи" },
+      rain: { id: "rain", name: "Дождевой пакет" },
+      last: { id: "last", name: "Последний пакет" },
+      cold: { id: "cold", name: "Пакет с вещами на прохладную погоду" },
+      scarf: { id: "scarf", name: "Шарф" },
+      jacket: { id: "jacket", name: "Куртка" },
+      gloves: { id: "gloves", name: "Перчатки" }
+    },
+    items: {}
+  };
+  const after = structuredClone(before);
+  const placements = after.layouts.layout.arrangement.containers;
+  placements.left.childIds = ["first", "power", "rain", "last"];
+  placements.left.order = ["first", "power", "rain", "last"].map((id) => ({ type: "container", id }));
+  placements.cold.childIds = ["scarf", "meal", "jacket", "gloves"];
+  placements.cold.order = ["scarf", "meal", "jacket", "gloves"].map((id) => ({ type: "container", id }));
+  placements.meal.parentId = "cold";
+
+  const changed = buildHistoryStateDiff(before, after).layouts.changed[0];
+  assert.deepEqual(changed.details, [
+    "Сумка «Пакет для приготовления пищи» перемещена. Из верхнеуровневой сумки «Левый задний баул», позиция 3 из 5. В сумку «Пакет с вещами на прохладную погоду» внутри верхнеуровневой сумки «Правый задний баул», позиция 2 из 4."
+  ]);
+  assert.deepEqual(changed.detailHighlights, ["Пакет для приготовления пищи"]);
+  assert.deepEqual(changed.detailRoutes[0], {
+    heading: "Сумка «Пакет для приготовления пищи» перемещена",
+    entityTitle: "Пакет для приготовления пищи",
+    fromLabel: "Из",
+    fromText: "верхнеуровневой сумки «Левый задний баул», позиция 3 из 5",
+    toLabel: "В",
+    toText: "сумку «Пакет с вещами на прохладную погоду» внутри верхнеуровневой сумки «Правый задний баул», позиция 2 из 4"
+  });
+  assert.deepEqual(changed.detailContexts[0], {
+    before: {
+      titles: ["Первый пакет", "Повербанк", "Пакет для приготовления пищи", "Дождевой пакет", "Последний пакет"],
+      activeIndex: 2
+    },
+    after: {
+      titles: ["Шарф", "Пакет для приготовления пищи", "Куртка", "Перчатки"],
+      activeIndex: 1
+    }
+  });
+
+  const english = buildHistoryStateDiff(before, after, { localText: (en) => en }).layouts.changed[0];
+  assert.deepEqual(english.details, [
+    "Bag “Пакет для приготовления пищи” moved. From top-level bag “Левый задний баул”, position 3 of 5. To nested bag “Пакет с вещами на прохладную погоду” in top-level bag “Правый задний баул”, position 2 of 4."
+  ]);
+  assert.deepEqual(english.detailHighlights, ["Пакет для приготовления пищи"]);
+
+  const records = [
+    { id: "after", createdAt: "2026-08-19T10:00:00Z", payload: after },
+    { id: "before", createdAt: "2026-08-19T09:00:00Z", payload: before }
+  ];
+  const html = renderHistoryRecordDetails(records[1], 1, records, {
+    currentComparisonState: () => after,
+    recordState: (record) => record.payload,
+    summarizePayload: () => ""
+  });
+  assert.match(html, /<mark class="history-placement-highlight">Пакет для приготовления пищи<\/mark>/);
+  assert.match(html, /history-placement-context/);
+  assert.match(html, /history-movement-route/);
+  assert.match(html, />Из<\/b>/);
+  assert.match(html, />В<\/b>/);
+  assert.match(html, /aria-label="Показать весь список"/);
+  assert.match(html, /history-placement-token is-active">Пакет для приготовления пищи<\/span>/);
+  assert.doesNotMatch(html, /перемещена:|→/);
+  assert.doesNotMatch(html, /Изменено содержимое сумки/);
+});
+
 test("CRITICAL history: adding an existing bag names the bag instead of dumping layout internals", () => {
   const before = {
     layouts: {

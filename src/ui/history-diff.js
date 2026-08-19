@@ -18,6 +18,7 @@ import {
 import {
   conflictDiffFieldDefinitions
 } from "./conflict-format.js";
+import { historyPlacementDetailEntries } from "./history-placement.js";
 
 const HISTORY_TECHNICAL_FIELDS = new Set([
   "originListId",
@@ -385,11 +386,14 @@ function diffHistoryMap(type, fromMap, toMap, fromState, toState, localText) {
     const beforeValue = historyComparableEntity(type, before);
     const afterValue = historyComparableEntity(type, after);
     if (!snapshotsEqual(beforeValue, afterValue)) {
-      const details = historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText);
-      if (!details.length) return;
+      const detailEntries = historyChangedFields(type, beforeValue, afterValue, fromState, toState, localText);
+      if (!detailEntries.length) return;
       changed.push({
         title: historyEntityTitle(type, after || before) || id,
-        details
+        details: detailEntries.map((detail) => typeof detail === "string" ? detail : detail.text),
+        detailHighlights: detailEntries.map((detail) => typeof detail === "string" ? "" : String(detail.highlight || "")),
+        detailContexts: detailEntries.map((detail) => typeof detail === "string" ? null : detail.context || null),
+        detailRoutes: detailEntries.map((detail) => typeof detail === "string" ? null : detail.route || null)
       });
     }
   });
@@ -599,6 +603,8 @@ function historyLayoutPlacementAction(fromState = {}, toState = {}) {
 function historyLayoutPlacementDetails(beforeValue, afterValue, fromState, toState, localText) {
   const syntheticFrom = { ...fromState, layouts: { [beforeValue?.id || "layout"]: beforeValue } };
   const syntheticTo = { ...toState, layouts: { [afterValue?.id || beforeValue?.id || "layout"]: afterValue } };
+  const itemMoveDetails = historyPlacementDetailEntries(syntheticFrom, syntheticTo, { localText });
+  if (itemMoveDetails.length) return itemMoveDetails;
   const delta = historyLayoutPlacementDelta(syntheticFrom, syntheticTo);
   if (!delta) return [];
   const rows = [];
@@ -914,7 +920,14 @@ function renderHistoryDiffGroup(title, rows, mode, localText = historyRuText) {
           <li>
             <span>${escapeHtml(row.title || localText("untitled", "без названия"))}</span>
             ${Array.isArray(row.details)
-              ? `<small>${row.details.map((detail) => escapeHtml(detail)).join("<br>")}</small>`
+              ? `<div class="history-diff-details">${row.details.map((detail, detailIndex) => `
+                <div class="history-diff-detail-entry">
+                  ${row.detailRoutes?.[detailIndex]
+                    ? renderHistoryMovementRoute(row.detailRoutes[detailIndex])
+                    : `<span>${renderHistoryDetailText(detail, row.detailHighlights?.[detailIndex])}</span>`}
+                  ${renderHistoryPlacementContext(row.detailContexts?.[detailIndex], { localText })}
+                </div>
+              `).join("")}</div>`
               : row.details
                 ? `<small>${escapeHtml(row.details)}</small>`
                 : ""}
@@ -923,4 +936,67 @@ function renderHistoryDiffGroup(title, rows, mode, localText = historyRuText) {
       </ul>
     </div>
   `;
+}
+
+function renderHistoryDetailText(detail, highlight = "") {
+  const text = String(detail || "");
+  const target = String(highlight || "").trim();
+  if (!target) return escapeHtml(text);
+  const index = text.indexOf(target);
+  if (index < 0) return escapeHtml(text);
+  return `${escapeHtml(text.slice(0, index))}<mark class="history-placement-highlight">${escapeHtml(target)}</mark>${escapeHtml(text.slice(index + target.length))}`;
+}
+
+function renderHistoryMovementRoute(route) {
+  if (!route) return "";
+  return `<div class="history-movement-route">
+    <strong>${renderHistoryDetailText(route.heading, route.entityTitle)}</strong>
+    <div class="history-movement-route-step">
+      <b>${escapeHtml(route.fromLabel)}</b>
+      <span>${escapeHtml(route.fromText)}</span>
+    </div>
+    <div class="history-movement-route-step">
+      <b>${escapeHtml(route.toLabel)}</b>
+      <span>${escapeHtml(route.toText)}</span>
+    </div>
+  </div>`;
+}
+
+function renderHistoryPlacementContext(context, { localText = historyRuText } = {}) {
+  if (!context?.before || !context?.after) return "";
+  return `<div class="history-placement-context">
+    ${renderHistoryPlacementContextState(context.before, localText("Before moving", "До перемещения"), { localText })}
+    ${renderHistoryPlacementContextState(context.after, localText("After moving", "После перемещения"), { localText })}
+  </div>`;
+}
+
+function renderHistoryPlacementContextState(state, label, { localText = historyRuText } = {}) {
+  const titles = Array.isArray(state?.titles) ? state.titles.map(String) : [];
+  if (!titles.length) return "";
+  const activeIndex = Math.min(titles.length - 1, Math.max(0, Number(state?.activeIndex) || 0));
+  const firstVisible = Math.max(0, activeIndex - 1);
+  const lastVisible = Math.min(titles.length - 1, activeIndex + 1);
+  const compact = [];
+  if (firstVisible > 0) compact.push('<span class="history-placement-omission" aria-hidden="true">…</span>');
+  for (let index = firstVisible; index <= lastVisible; index += 1) {
+    compact.push(renderHistoryPlacementToken(titles[index], index === activeIndex));
+  }
+  if (lastVisible < titles.length - 1) compact.push('<span class="history-placement-omission" aria-hidden="true">…</span>');
+  const hasHidden = firstVisible > 0 || lastVisible < titles.length - 1;
+  const full = titles.map((title, index) => renderHistoryPlacementToken(title, index === activeIndex)).join("");
+  return `<div class="history-placement-context-state">
+    <strong>${escapeHtml(label)}</strong>
+    <div class="history-placement-context-value">
+      <div class="history-placement-sequence history-placement-sequence-compact">${compact.join("")}</div>
+      ${hasHidden ? `<details class="history-placement-full-order">
+        <summary aria-label="${escapeHtml(localText("Show the full list", "Показать весь список"))}" title="${escapeHtml(localText("Show the full list", "Показать весь список"))}">…</summary>
+        <div class="history-placement-sequence">${full}</div>
+      </details>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderHistoryPlacementToken(title, active) {
+  const className = active ? "history-placement-token is-active" : "history-placement-token";
+  return `<span class="${className}">${escapeHtml(title)}</span>`;
 }
