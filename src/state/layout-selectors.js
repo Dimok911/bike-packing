@@ -124,6 +124,14 @@ export function isRootContainerForEditor(targetState, layout, container) {
   return !container.parentId;
 }
 
+export function isContainerAvailableForLayoutRoot(targetState, layout, container, { replacing = false } = {}) {
+  if (!container?.id || !layout) return false;
+  if (!getLayoutContainerIdSet(targetState, layout).has(container.id)) return true;
+  if (replacing || isRootContainerInLayout(layout, container.id)) return false;
+  const placement = layout.arrangement?.containers?.[container.id];
+  return container.nestable === true && Boolean(placement?.parentId);
+}
+
 export function isItemInCatalog(targetState, layout, item, { scoped = false, catalogLayoutId = "" } = {}) {
   if (!scoped) return true;
   if (!item) return false;

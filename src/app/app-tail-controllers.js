@@ -69,6 +69,7 @@ import {
 import { acquirePhotoUploadSlot } from "../sync/photo-upload-lock.js";
 import { containerCopySnapshotForContext } from "../public/copy-published-container.js";
 import { resetContentFilterControls } from "../ui/filter-controls.js";
+import { isContainerAvailableForLayoutRoot } from "../state/layout-selectors.js";
 import { bindCardEditorClicks } from "../ui/card-edit-click.js";
 import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
@@ -662,11 +663,13 @@ function openContainerReplacementDialog(event) {
 function renderLayoutRootResults() {
   const query = refs.layoutRootSearch.value.trim().toLowerCase();
   refs.clearLayoutRootSearchBtn.hidden = !query;
-  const activeIds = getLayoutContainerIdSet(state.layouts?.[getLayoutRootTargetLayoutId()]);
+  const targetLayout = state.layouts?.[getLayoutRootTargetLayoutId()];
   const replacementLayout = state.layouts?.[getPublishedEditLayoutId()];
   const catalogRoots = getRootContainers().filter(isRootContainerInActiveCatalog);
   const availableRoots = catalogRoots
-    .filter((container) => !activeIds.has(container.id))
+    .filter((container) => isContainerAvailableForLayoutRoot(state, targetLayout, container, {
+      replacing: Boolean(replacingPackingContainerId)
+    }))
     .filter((container) => !replacingPackingContainerId || isContainerReplacementCandidateInLayoutState(
       state,
       replacementLayout,

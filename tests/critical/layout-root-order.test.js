@@ -12,7 +12,10 @@ import {
   removeContainerFromLayoutOnlyInState,
   rootColumnInsertIndexFromVisibleNeighbors
 } from "../../src/state/layout-ops.js";
-import { isRootContainerForEditor } from "../../src/state/layout-selectors.js";
+import {
+  isContainerAvailableForLayoutRoot,
+  isRootContainerForEditor
+} from "../../src/state/layout-selectors.js";
 import {
   cleanupEmptyContainersInState,
   createSubcontainerInLayoutState,
@@ -481,6 +484,23 @@ test("CRITICAL reusable nested bag: dragging it out promotes it to the selected 
   assert.equal(layout.arrangement.containers["bag-a"].parentId, "");
   assert.deepEqual(layout.arrangement.containers["bag-b"].childIds, []);
   assert.deepEqual(layout.arrangement.containers["bag-b"].order, []);
+});
+
+test("CRITICAL root picker: a reusable nested bag is available for promotion", () => {
+  const state = createState();
+  state.activeLayoutId = "layout-a";
+  state.collapsedContainers = {};
+  state.containers["bag-a"].nestable = true;
+  const layout = state.layouts["layout-a"];
+
+  assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-a"]), true);
+  assert.equal(placeExistingContainerInLayoutInState(state, "bag-a", "bag-b", "layout-a"), true);
+  assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-a"]), true);
+  assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-a"], { replacing: true }), false);
+  assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-b"]), false);
+
+  state.containers["bag-a"].nestable = false;
+  assert.equal(isContainerAvailableForLayoutRoot(state, layout, state.containers["bag-a"]), false);
 });
 
 test("CRITICAL temporary package: it cannot be promoted from inside a bag to the layout root", () => {
