@@ -915,6 +915,8 @@ test("CRITICAL mobile account label gets one safe wrap opportunity after the ema
   assert.equal(syncAccountLabelWithEmailWrap("dimok911@gmail.com", "dimok911@gmail.com"), "dimok911@\u200bgmail.com");
   assert.equal(syncAccountLabelWithEmailWrap("Локально · dimok911@gmail.com", "dimok911@gmail.com"), "Локально · dimok911@\u200bgmail.com");
   assert.equal(syncAccountLabelWithEmailWrap("Локальный аккаунт", ""), "Локальный аккаунт");
+  const stylesSource = readProjectFile("styles.css");
+  assert.match(stylesSource, /\.sync-user-email\s*\{[^}]*justify-content:\s*center;[^}]*text-align:\s*center;/s);
 });
 
 test("container category edits can save an explicitly empty category list", () => {

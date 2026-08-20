@@ -319,6 +319,7 @@ body.sync-syncing #syncBtn::before {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   padding: 7px 10px;
   border: 1px solid var(--line);
@@ -327,6 +328,7 @@ body.sync-syncing #syncBtn::before {
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 750;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
