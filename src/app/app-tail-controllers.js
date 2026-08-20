@@ -83,9 +83,13 @@ import {
   COPY_FOCUS_SYNC_FALLBACK_DELAY_MS
 } from "../ui/copy-focus-flow.js";
 import { expandItemPlacementPath } from "../state/layout-focus.js";
-import { buildLayoutComparison } from "../state/layout-compare.js";
+import {
+  buildLayoutComparison,
+  comparisonNestedContainerIds
+} from "../state/layout-compare.js";
 import {
   renderLayoutComparisonBoardHtml,
+  renderLayoutComparisonItemChangesHtml,
   renderLayoutComparisonToolbarHtml
 } from "../ui/layout-comparison-render.js";
 import {
@@ -2760,6 +2764,19 @@ function bindLayoutComparisonView() {
   refs.packingView.querySelector("[data-compare-swap]")?.addEventListener("click", swapActiveLayoutComparison);
   refs.packingView.querySelector("[data-compare-choose]")?.addEventListener("click", openLayoutComparisonDialog);
   refs.packingView.querySelector("[data-compare-close]")?.addEventListener("click", closeLayoutComparison);
+  refs.packingView.querySelector("[data-compare-toggle-all]")?.addEventListener("click", () => {
+    const comparison = currentLayoutComparison();
+    if (!comparison) return;
+    capturePackingScroll();
+    const containerIds = comparisonNestedContainerIds(comparison);
+    const expandAll = containerIds.length > 0
+      && containerIds.every((containerId) => layoutComparisonCollapsedIds.has(containerId));
+    layoutComparisonCollapsedIds.clear();
+    if (!expandAll) {
+      containerIds.forEach((containerId) => layoutComparisonCollapsedIds.add(containerId));
+    }
+    render();
+  });
   refs.packingView.querySelectorAll("[data-compare-toggle-container]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -3044,6 +3061,9 @@ function renderPacking() {
   document.body.classList.toggle("layout-comparison-active", Boolean(comparison));
   syncLayoutComparisonMenu();
   if (comparison) {
+    const comparisonContainerIds = comparisonNestedContainerIds(comparison);
+    const allComparisonContainersCollapsed = comparisonContainerIds.length > 0
+      && comparisonContainerIds.every((containerId) => layoutComparisonCollapsedIds.has(containerId));
     refs.packingView.innerHTML = `
       ${renderLayoutComparisonToolbarHtml({
         comparison,
@@ -3051,7 +3071,14 @@ function renderPacking() {
         onlyChanges: layoutComparisonOnlyChanges,
         t
       })}
+      ${renderLayoutComparisonItemChangesHtml({
+        comparison,
+        escapeHtml,
+        state,
+        t
+      })}
       ${renderLayoutComparisonBoardHtml({
+        allCollapsed: allComparisonContainersCollapsed,
         collapsedIds: layoutComparisonCollapsedIds,
         comparison,
         escapeHtml,

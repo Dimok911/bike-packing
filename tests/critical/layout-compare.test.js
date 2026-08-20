@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import {
   buildLayoutComparison,
   comparisonContainerEntries,
-  comparisonEntryVisible
+  comparisonEntryVisible,
+  comparisonNestedContainerIds
 } from "../../src/state/layout-compare.js";
-import { renderLayoutComparisonBoardHtml } from "../../src/ui/layout-comparison-render.js";
+import {
+  renderLayoutComparisonBoardHtml,
+  renderLayoutComparisonItemChangesHtml,
+  renderLayoutComparisonToolbarHtml
+} from "../../src/ui/layout-comparison-render.js";
 import {
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
@@ -128,6 +133,29 @@ test("CRITICAL layout comparison uses shared entity ids across independently cre
     weightDelta: 30
   });
 
+  const itemChangeTranslations = {
+    "compare.itemsTitle": "Item differences",
+    "compare.itemsAdded": "Added",
+    "compare.itemsRemoved": "Excluded",
+    "compare.itemAddedTo": "Added to {container}",
+    "compare.itemRemovedFrom": "Excluded from {container}",
+    "compare.itemsNone": "None",
+    "compare.layoutRoot": "root",
+    "compare.unnamedItem": "Unnamed item"
+  };
+  const itemChangesHtml = renderLayoutComparisonItemChangesHtml({
+    comparison,
+    escapeHtml: (value) => String(value),
+    state,
+    t: (key, values = {}) => String(itemChangeTranslations[key] || key)
+      .replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "")
+  });
+  assert.match(itemChangesHtml, /Item differences/);
+  assert.match(itemChangesHtml, /Added[\s\S]*Pump[\s\S]*Added to Saddle/);
+  assert.match(itemChangesHtml, /Excluded[\s\S]*Mug[\s\S]*Excluded from Handlebar/);
+  assert.ok(itemChangesHtml.indexOf("Pump") < itemChangesHtml.indexOf("Mug"));
+  assert.doesNotMatch(itemChangesHtml, /Stove/);
+
   assert.deepEqual(comparisonContainerEntries(comparison, "handlebar"), [
     { type: "item", id: "stove", variant: "source-ghost" },
     { type: "item", id: "mug", variant: "source" }
@@ -172,6 +200,7 @@ test("CRITICAL moved container stays one operation while its internal changes ar
   assert.equal(comparison.itemDiffs.patches.status, "added");
   assert.equal(comparison.summary.movedContainers, 1);
   assert.equal(comparison.summary.movedItems, 0);
+  assert.deepEqual(comparisonNestedContainerIds(comparison), ["firstAid"]);
 
   assert.deepEqual(comparisonContainerEntries(comparison, "handlebar"), [
     { type: "container", id: "firstAid", variant: "source-ghost" }
@@ -189,8 +218,8 @@ test("CRITICAL moved container stays one operation while its internal changes ar
   assert.equal(comparisonEntryVisible(comparison, { type: "container", id: "firstAid" }, true), true);
 
   const translations = {
-    "compare.statusAdd": "+ Add",
-    "compare.statusRemove": "− Remove",
+    "compare.statusAdd": "+ Added",
+    "compare.statusRemove": "− Removed",
     "compare.statusMoveHere": "Here from {source}",
     "compare.statusTakeFromHere": "Take from here to {destination}",
     "compare.layoutRoot": "root",
@@ -214,9 +243,10 @@ test("CRITICAL moved container stays one operation while its internal changes ar
 
   assert.match(html, /comparison-source-ghost[\s\S]*First aid[\s\S]*Take from here to Saddle/);
   assert.match(html, /comparison-moved[\s\S]*First aid[\s\S]*Here from Handlebar/);
-  assert.match(html, /Patches[\s\S]*\+ Add/);
-  assert.match(html, /Iodine[\s\S]*− Remove/);
+  assert.match(html, /Patches[\s\S]*\+ Added/);
+  assert.match(html, /Iodine[\s\S]*− Removed/);
   assert.doesNotMatch(html, /Bandage/);
+  assert.equal((html.match(/data-compare-show-move-link/g) || []).length, 2);
 });
 
 test("CRITICAL comparison is read-only and does not mutate either layout", () => {
@@ -235,9 +265,113 @@ test("CRITICAL comparison is read-only and does not mutate either layout", () =>
   assert.deepEqual(state, before);
 });
 
+test("CRITICAL moved bag explains unchanged hidden contents until all entries are shown", () => {
+  const state = {
+    items: { bandage: { id: "bandage", name: "Bandage" } },
+    containers: {
+      handlebar: { id: "handlebar", name: "Handlebar" },
+      saddle: { id: "saddle", name: "Saddle" },
+      firstAid: { id: "firstAid", name: "First aid" }
+    },
+    layouts: {
+      before: layout("before", ["handlebar", "saddle"], {
+        handlebar: placement({ childIds: ["firstAid"] }),
+        saddle: placement(),
+        firstAid: placement({ parentId: "handlebar", itemIds: ["bandage"] })
+      }, { bandage: "firstAid" }),
+      after: layout("after", ["handlebar", "saddle"], {
+        handlebar: placement(),
+        saddle: placement({ childIds: ["firstAid"] }),
+        firstAid: placement({ parentId: "saddle", itemIds: ["bandage"] })
+      }, { bandage: "firstAid" })
+    }
+  };
+  const comparison = buildLayoutComparison(state, "before", "after");
+  const translations = {
+    "compare.statusMoveHere": "Here from {source}",
+    "compare.statusTakeFromHere": "Take from here to {destination}",
+    "compare.layoutRoot": "root",
+    "compare.unnamedItem": "Unnamed item",
+    "compare.unnamedContainer": "Unnamed container",
+    "compare.noChangesTitle": "No changes",
+    "compare.noChangesText": "Layouts match",
+    "compare.layoutStructureTitle": "Layout structure",
+    "compare.contentsUnchanged": "Contents unchanged",
+    "tooltips.expand": "Expand",
+    "tooltips.collapse": "Collapse"
+  };
+  const t = (key, values = {}) => String(translations[key] || key)
+    .replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+  const render = (onlyChanges) => renderLayoutComparisonBoardHtml({
+    comparison,
+    escapeHtml: (value) => String(value),
+    formatItemWeight: () => "0 g",
+    onlyChanges,
+    state,
+    t
+  });
+
+  const changesOnlyHtml = render(true);
+  assert.match(changesOnlyHtml, /Contents unchanged/);
+  assert.doesNotMatch(changesOnlyHtml, /Bandage/);
+
+  const allEntriesHtml = render(false);
+  assert.match(allEntriesHtml, /Bandage/);
+  assert.doesNotMatch(allEntriesHtml, /Contents unchanged/);
+});
+
 test("CRITICAL comparison dialog remains scrollable inside the viewport", () => {
   assert.match(stylesSource, /#layoutCompareDialog\s*\{[^}]*max-height:\s*calc\(100dvh - 24px\);[^}]*overflow:\s*hidden;/s);
   assert.match(stylesSource, /\.layout-compare-dialog-card\s*\{[^}]*max-height:\s*inherit;[^}]*box-sizing:\s*border-box;[^}]*overflow-y:\s*auto;/s);
+});
+
+test("CRITICAL comparison structure heading can collapse and expand all bags independently", () => {
+  const toolbarHtml = renderLayoutComparisonToolbarHtml({
+    comparison: {
+      fromLayout: { name: "Before" },
+      toLayout: { name: "After" }
+    },
+    escapeHtml: (value) => String(value),
+    onlyChanges: true,
+    t: (key) => key
+  });
+  const renderStructure = (allCollapsed) => renderLayoutComparisonBoardHtml({
+    allCollapsed,
+    comparison: {
+      rootEntries: []
+    },
+    escapeHtml: (value) => String(value),
+    state: {},
+    t: (key) => key
+  });
+  assert.doesNotMatch(toolbarHtml, /data-compare-toggle-all/);
+  assert.match(renderStructure(false), /layout-comparison-structure-heading[\s\S]*data-compare-toggle-all[\s\S]*collapse-all-icon/);
+  assert.match(renderStructure(true), /layout-comparison-structure-heading[\s\S]*data-compare-toggle-all[\s\S]*expand-all-icon/);
+  assert.match(appTailSource, /data-compare-toggle-all[\s\S]*layoutComparisonCollapsedIds\.clear\(\)/);
+});
+
+test("CRITICAL item additions and exclusions render before layout structure", () => {
+  const renderPackingSource = appTailSource.slice(appTailSource.indexOf("function renderPacking()"));
+  const itemChangesIndex = renderPackingSource.indexOf("renderLayoutComparisonItemChangesHtml");
+  const structureIndex = renderPackingSource.indexOf("renderLayoutComparisonBoardHtml");
+  assert.ok(itemChangesIndex >= 0);
+  assert.ok(structureIndex > itemChangesIndex);
+  assert.match(stylesSource, /\.comparison-item-change-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
+});
+
+test("CRITICAL mobile layout selector stays wider than its icon actions", () => {
+  assert.match(stylesSource, /\.controls:not\(:has\(\.layout-actions-single\)\) \.layout-select-control\s*\{[^}]*grid-column:\s*span 3;/s);
+  assert.match(stylesSource, /\.layout-actions:not\(\.layout-actions-single\)\s*\{[^}]*grid-column:\s*span 1;[^}]*grid-template-columns:\s*repeat\(2, 34px\);/s);
+  assert.match(stylesSource, /#newLayoutBtn::before\s*\{[^}]*content:\s*"\+";/s);
+  assert.match(stylesSource, /#editLayoutBtn::before\s*\{[^}]*content:\s*"✎";/s);
+});
+
+test("CRITICAL mobile comparison headers cannot be squeezed by long move labels", () => {
+  assert.match(stylesSource, /\.comparison-status\s*\{[^}]*box-sizing:\s*border-box;[^}]*max-width:\s*100%;[^}]*white-space:\s*normal;/s);
+  assert.match(stylesSource, /\.comparison-status \.comparison-status-text\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:\s*break-word;[^}]*white-space:\s*pre-line;/s);
+  assert.match(stylesSource, /@media \(max-width: 720px\)[\s\S]*\.comparison-container-header\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+  assert.match(stylesSource, /\.comparison-container-title strong\s*\{[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*normal;/s);
+  assert.match(stylesSource, /\.comparison-container-header > \.comparison-status\s*\{[^}]*width:\s*calc\(100% - 12px\);[^}]*margin-inline:\s*6px;/s);
 });
 
 test("CRITICAL comparison remembers the last valid layout pair locally", () => {
@@ -334,6 +468,42 @@ test("CRITICAL moved-item arrow points from the source card edge to the destinat
   assert.match(appTailSource, /data-compare-show-move-link[\s\S]*toggleLayoutComparisonMoveLink/);
   assert.match(stylesSource, /\.comparison-move-arrow-overlay\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
   assert.match(stylesSource, /\.comparison-move-arrow-path\s*\{[^}]*stroke:\s*#aa7c00;[^}]*vector-effect:\s*non-scaling-stroke;/s);
+});
+
+test("CRITICAL moved-container cards expose variants required for their move arrow", () => {
+  const state = {
+    items: {},
+    containers: {
+      left: { id: "left", name: "Left" },
+      right: { id: "right", name: "Right" },
+      pouch: { id: "pouch", name: "Pouch" }
+    },
+    layouts: {
+      before: layout("before", ["left", "right"], {
+        left: placement({ childIds: ["pouch"] }),
+        right: placement(),
+        pouch: placement({ parentId: "left" })
+      }),
+      after: layout("after", ["left", "right"], {
+        left: placement(),
+        right: placement({ childIds: ["pouch"] }),
+        pouch: placement({ parentId: "right" })
+      })
+    }
+  };
+  const comparison = buildLayoutComparison(state, "before", "after");
+  const html = renderLayoutComparisonBoardHtml({
+    comparison,
+    escapeHtml: (value) => String(value),
+    formatItemWeight: () => "0 g",
+    state,
+    t: (key) => key
+  });
+
+  assert.match(html, /data-comparison-entity="container:pouch"[\s\S]*data-comparison-variant="source-ghost"/);
+  assert.match(html, /data-comparison-entity="container:pouch"[\s\S]*data-comparison-variant="target"/);
+  assert.equal((html.match(/data-comparison-entity="container:pouch"/g) || []).length, 2);
+  assert.equal((html.match(/data-compare-show-move-link/g) || []).length, 2);
 });
 
 test("CRITICAL legacy item quantity migrates to each layout independently", () => {

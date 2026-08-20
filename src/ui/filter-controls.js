@@ -253,14 +253,20 @@ export function renderFilterControls({
   refs.layoutSelect.title = selectedPublicReadonly
     ? (uiLanguage === "en" ? "Offline: templates are read-only" : "Офлайн: шаблоны доступны только для просмотра")
     : "";
-  refs.newLayoutBtn.textContent = isSharedLayoutView()
+  const sharedLayoutView = isSharedLayoutView();
+  refs.newLayoutBtn.textContent = sharedLayoutView
     ? (activeReadOnlyLayoutId() === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
     : t("buttons.newLayout");
+  const newLayoutAccessibleLabel = sharedLayoutView ? refs.newLayoutBtn.textContent : t("tooltips.newLayout");
+  refs.newLayoutBtn.setAttribute("aria-label", newLayoutAccessibleLabel);
+  refs.newLayoutBtn.title = newLayoutAccessibleLabel;
   if (refs.editLayoutBtn) {
     const canManageLayout = canManageActiveLayout();
     const hideManageLayout = isReadOnlyStateScope() || isSharedLayoutView() || !state.layouts?.[activeEditableLayoutId];
     refs.editLayoutBtn.hidden = hideManageLayout;
     refs.editLayoutBtn.disabled = !canManageLayout;
+    refs.editLayoutBtn.setAttribute("aria-label", t("tooltips.editLayout"));
+    refs.editLayoutBtn.title = t("tooltips.editLayout");
     refs.editLayoutBtn.closest(".layout-actions")?.classList.toggle("layout-actions-single", hideManageLayout);
   }
   fillSelect(

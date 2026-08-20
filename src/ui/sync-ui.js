@@ -8,6 +8,13 @@ function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
 }
 
+export function syncAccountLabelWithEmailWrap(accountLabel, email) {
+  const label = String(accountLabel || "");
+  const address = String(email || "");
+  if (!address.includes("@") || !label.includes(address)) return label;
+  return label.replace(address, address.replace("@", "@\u200b"));
+}
+
 export function updateSyncUiControls({
   appUnlocked = false,
   adminReportsDialogController = null,
@@ -76,8 +83,9 @@ export function updateSyncUiControls({
       )
       : accountLabel;
     refs.syncUserEmail.hidden = !unlocked;
-    refs.syncUserEmail.textContent = accountLabel;
+    refs.syncUserEmail.textContent = syncAccountLabelWithEmailWrap(accountLabel, email);
     refs.syncUserEmail.title = accountTitle;
+    refs.syncUserEmail.setAttribute("aria-label", accountLabel);
     refs.syncUserEmail.classList.toggle("admin-user-email", canOpenAdminPublishedEdit());
     refs.syncUserEmail.classList.toggle("local-remembered-email", rememberedOffline);
     refs.syncUserEmail.classList.toggle("guest-user-email", !loggedIn);

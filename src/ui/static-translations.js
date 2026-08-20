@@ -96,11 +96,17 @@ export function applyStaticTranslationsUi({
   setText(refs.interfaceColorDoneBtn, t("buttons.done"));
   setFirstText(layoutLabel, t("labels.layout"));
   if (refs.newLayoutBtn) {
-    refs.newLayoutBtn.textContent = isSharedLayoutView()
+    const sharedLayoutView = isSharedLayoutView();
+    refs.newLayoutBtn.textContent = sharedLayoutView
       ? (activeReadOnlyLayoutId() === demoSharedLayoutId && !canOpenAdminPublishedEdit() ? demoCopyActionText() : t("buttons.copyAll"))
       : t("buttons.newLayout");
+    const accessibleLabel = sharedLayoutView ? refs.newLayoutBtn.textContent : t("tooltips.newLayout");
+    setAttr(refs.newLayoutBtn, "aria-label", accessibleLabel);
+    setAttr(refs.newLayoutBtn, "title", accessibleLabel);
   }
   setText(refs.editLayoutBtn, t("buttons.edit"));
+  setAttr(refs.editLayoutBtn, "aria-label", t("tooltips.editLayout"));
+  setAttr(refs.editLayoutBtn, "title", t("tooltips.editLayout"));
   setFirstText(searchLabel, t("labels.search"));
   if (refs.searchInput) refs.searchInput.placeholder = t("placeholders.search");
   setFirstText(locationLabel, t("labels.storage"));

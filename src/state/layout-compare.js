@@ -259,3 +259,12 @@ export function comparisonEntryVisible(comparison, entry, onlyChanges = true) {
   }
   return comparison.changedContainerIds.has(entry.id);
 }
+
+export function comparisonNestedContainerIds(comparison) {
+  return Object.values(comparison?.containerDiffs || {})
+    .filter((diff) => {
+      if (diff.status === "removed") return Boolean(diff.fromParentId);
+      return Boolean(diff.toParentId);
+    })
+    .map((diff) => diff.id);
+}

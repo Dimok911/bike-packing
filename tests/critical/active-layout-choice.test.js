@@ -29,6 +29,7 @@ import {
   isAuthCheckUnavailableError
 } from "../../src/sync/auth-load-flow.js";
 import {
+  syncAccountLabelWithEmailWrap,
   updateSyncUiControls
 } from "../../src/ui/sync-ui.js";
 import {
@@ -717,7 +718,7 @@ test("CRITICAL offline-auth-scope: public readonly status cannot mask an active 
   }
 
   assert.equal(refs.syncStatus.textContent, "synced");
-  assert.equal(refs.syncUserEmail.textContent, "u@example.test");
+  assert.equal(refs.syncUserEmail.textContent, "u@\u200bexample.test");
   assert.equal(refs.syncBtn.hidden, false);
 });
 
@@ -786,7 +787,7 @@ test("CRITICAL offline-auth-scope: remembered local account is not shown as conf
   assert.equal(refs.authBtn.hidden, false);
   assert.equal(refs.authBtn.textContent, "Подтвердить вход");
   assert.equal(signOutBtn.hidden, false);
-  assert.equal(refs.syncUserEmail.textContent, "Локально · u@example.test");
+  assert.equal(refs.syncUserEmail.textContent, "Локально · u@\u200bexample.test");
   assert.equal(refs.syncUserEmail.title, "Вход на сервере не подтверждён. Локальная копия: u@example.test");
   assert.equal(refs.syncBtn.dataset.syncState, "offline");
   assert.equal(toggles.some(([name, enabled]) => name === "local-remembered-email" && enabled), true);
@@ -906,8 +907,14 @@ test("CRITICAL offline-auth-scope: remembered local account labels follow Englis
 
   assert.equal(refs.syncStatus.textContent, "Local copy of personal layouts · sign in to sync");
   assert.equal(refs.authBtn.textContent, "Confirm sign-in");
-  assert.equal(refs.syncUserEmail.textContent, "Local · u@example.test");
+  assert.equal(refs.syncUserEmail.textContent, "Local · u@\u200bexample.test");
   assert.equal(refs.syncUserEmail.title, "Server sign-in is not confirmed. Local copy: u@example.test");
+});
+
+test("CRITICAL mobile account label gets one safe wrap opportunity after the email at-sign", () => {
+  assert.equal(syncAccountLabelWithEmailWrap("dimok911@gmail.com", "dimok911@gmail.com"), "dimok911@\u200bgmail.com");
+  assert.equal(syncAccountLabelWithEmailWrap("Локально · dimok911@gmail.com", "dimok911@gmail.com"), "Локально · dimok911@\u200bgmail.com");
+  assert.equal(syncAccountLabelWithEmailWrap("Локальный аккаунт", ""), "Локальный аккаунт");
 });
 
 test("container category edits can save an explicitly empty category list", () => {

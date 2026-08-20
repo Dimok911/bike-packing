@@ -52,7 +52,66 @@ function statusBadgeHtml({ comparison, entityType, id, state, t, variant, escape
     : comparison.containerDiffs[id];
   const label = comparisonStatusLabel({ comparison, entityType, id, state, t, variant });
   if (!label) return "";
-  return `<span class="comparison-status comparison-status-${escapeHtml(diff?.status || "unchanged")}">${escapeHtml(label)}</span>`;
+  return `<span class="comparison-status comparison-status-${escapeHtml(diff?.status || "unchanged")}"><span class="comparison-status-text">${escapeHtml(label)}</span></span>`;
+}
+
+function comparisonItemChangeEntries(comparison, state, status, t) {
+  return Object.values(comparison?.itemDiffs || {})
+    .filter((diff) => diff.status === status)
+    .map((diff) => ({
+      diff,
+      name: state?.items?.[diff.id]?.name || t("compare.unnamedItem")
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function renderComparisonItemChangeGroup({
+  comparison,
+  escapeHtml,
+  state,
+  status,
+  t
+}) {
+  const added = status === "added";
+  const entries = comparisonItemChangeEntries(comparison, state, status, t);
+  const title = t(added ? "compare.itemsAdded" : "compare.itemsRemoved");
+  const locationKey = added ? "compare.itemAddedTo" : "compare.itemRemovedFrom";
+  return `
+    <section class="comparison-item-change-group comparison-item-change-${status}">
+      <h3>${escapeHtml(title)} <span>${entries.length}</span></h3>
+      ${entries.length ? `
+        <ul>
+          ${entries.map(({ diff, name }) => {
+            const containerId = added ? diff.toContainerId : diff.fromContainerId;
+            const container = parentName(state, containerId, t("compare.layoutRoot"));
+            return `
+              <li>
+                <strong>${escapeHtml(name)}</strong>
+                <small>${escapeHtml(t(locationKey, { container }))}</small>
+              </li>
+            `;
+          }).join("")}
+        </ul>
+      ` : `<p>${escapeHtml(t("compare.itemsNone"))}</p>`}
+    </section>
+  `;
+}
+
+export function renderLayoutComparisonItemChangesHtml({
+  comparison,
+  escapeHtml,
+  state,
+  t
+}) {
+  return `
+    <section class="layout-comparison-item-changes" aria-labelledby="comparisonItemChangesTitle">
+      <h2 id="comparisonItemChangesTitle">${escapeHtml(t("compare.itemsTitle"))}</h2>
+      <div class="comparison-item-change-grid">
+        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, state, status: "added", t })}
+        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, state, status: "removed", t })}
+      </div>
+    </section>
+  `;
 }
 
 function renderComparisonItem({
@@ -133,11 +192,21 @@ function renderComparisonContainer({
   const diff = comparison.containerDiffs[entry.id] || { status: "unchanged" };
   const classes = comparisonClass(diff.status, entry.variant);
   const ghost = entry.variant === "source-ghost";
+  const moved = diff.status === "moved";
+  const moveLinkLabel = entry.variant === "source-ghost"
+    ? t("compare.showDestinationCard")
+    : t("compare.showSourceCard");
   const collapsed = !ghost && collapsedIds.has(entry.id);
-  const childEntries = ghost
+  const availableChildEntries = ghost
     ? []
-    : comparisonContainerEntries(comparison, entry.id, entry.variant)
-      .filter((child) => comparisonEntryVisible(comparison, child, onlyChanges));
+    : comparisonContainerEntries(comparison, entry.id, entry.variant);
+  const childEntries = availableChildEntries
+    .filter((child) => comparisonEntryVisible(comparison, child, onlyChanges));
+  const unchangedContentsHidden = onlyChanges
+    && diff.status === "moved"
+    && entry.variant === "target"
+    && availableChildEntries.length > 0
+    && childEntries.length === 0;
   const contentsHtml = childEntries.map((child) => {
     if (child.type === "item") {
       return renderComparisonItem({
@@ -170,6 +239,7 @@ function renderComparisonContainer({
     <${tag}
       class="${containerClass} comparison-container ${classes}"
       data-comparison-entity="container:${escapeHtml(entry.id)}"
+      data-comparison-variant="${escapeHtml(entry.variant)}"
       tabindex="0"
     >
       <header class="${root ? "container-header" : "subcontainer-title"} comparison-container-header">
@@ -184,6 +254,16 @@ function renderComparisonContainer({
             ><span class="chevron-icon ${collapsed ? "chevron-down" : "chevron-up"}" aria-hidden="true"></span></button>
           `}
           <strong>${escapeHtml(container.name || t("compare.unnamedContainer"))}</strong>
+          ${moved ? `
+            <button
+              class="ghost comparison-move-link-button"
+              type="button"
+              data-compare-show-move-link
+              aria-label="${escapeHtml(moveLinkLabel)}"
+              title="${escapeHtml(moveLinkLabel)}"
+              aria-pressed="false"
+            ><span aria-hidden="true">⇄</span></button>
+          ` : ""}
         </div>
         ${statusBadgeHtml({
           comparison,
@@ -196,7 +276,13 @@ function renderComparisonContainer({
         })}
       </header>
       ${ghost || collapsed ? "" : renderPhoto(container)}
-      ${ghost || collapsed ? "" : `<div class="dropzone comparison-contents">${contentsHtml}</div>`}
+      ${ghost || collapsed ? "" : `
+        <div class="dropzone comparison-contents">
+          ${unchangedContentsHidden
+            ? `<p class="comparison-unchanged-contents">${escapeHtml(t("compare.contentsUnchanged"))}</p>`
+            : contentsHtml}
+        </div>
+      `}
     </${tag}>
   `;
 }
@@ -226,7 +312,31 @@ export function renderLayoutComparisonToolbarHtml({
   `;
 }
 
+function comparisonStructureHeadingHtml({ allCollapsed, escapeHtml, t }) {
+  const toggleAllLabel = t(allCollapsed
+    ? "tooltips.expandAllInLayout"
+    : "tooltips.collapseAllInLayout");
+  return `
+    <div class="layout-comparison-structure-heading">
+      <h2 id="comparisonStructureTitle">${escapeHtml(t("compare.layoutStructureTitle"))}</h2>
+      <button
+        class="ghost comparison-collapse-all-button"
+        type="button"
+        data-compare-toggle-all
+        aria-label="${escapeHtml(toggleAllLabel)}"
+        title="${escapeHtml(toggleAllLabel)}"
+      >
+        <span class="stack-icon ${allCollapsed ? "expand-all-icon" : "collapse-all-icon"}" aria-hidden="true">
+          <span class="stack-chevron stack-chevron-up"></span>
+          <span class="stack-chevron stack-chevron-down"></span>
+        </span>
+      </button>
+    </div>
+  `;
+}
+
 export function renderLayoutComparisonBoardHtml({
+  allCollapsed = false,
   collapsedIds = new Set(),
   comparison,
   escapeHtml,
@@ -241,26 +351,32 @@ export function renderLayoutComparisonBoardHtml({
   ));
   if (!rootEntries.length) {
     return `
-      <div class="empty comparison-empty">
-        <strong>${escapeHtml(t("compare.noChangesTitle"))}</strong>
-        <span>${escapeHtml(t("compare.noChangesText"))}</span>
-      </div>
+      <section class="layout-comparison-structure" aria-labelledby="comparisonStructureTitle">
+        ${comparisonStructureHeadingHtml({ allCollapsed, escapeHtml, t })}
+        <div class="empty comparison-empty">
+          <strong>${escapeHtml(t("compare.noChangesTitle"))}</strong>
+          <span>${escapeHtml(t("compare.noChangesText"))}</span>
+        </div>
+      </section>
     `;
   }
   return `
-    <div class="board comparison-board">
-      ${rootEntries.map((entry) => renderComparisonContainer({
-        collapsedIds,
-        comparison,
-        entry,
-        escapeHtml,
-        formatItemWeight,
-        onlyChanges,
-        renderPhoto,
-        root: true,
-        state,
-        t
-      })).join("")}
-    </div>
+    <section class="layout-comparison-structure" aria-labelledby="comparisonStructureTitle">
+      ${comparisonStructureHeadingHtml({ allCollapsed, escapeHtml, t })}
+      <div class="board comparison-board">
+        ${rootEntries.map((entry) => renderComparisonContainer({
+          collapsedIds,
+          comparison,
+          entry,
+          escapeHtml,
+          formatItemWeight,
+          onlyChanges,
+          renderPhoto,
+          root: true,
+          state,
+          t
+        })).join("")}
+      </div>
+    </section>
   `;
 }
