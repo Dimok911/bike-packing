@@ -29,6 +29,8 @@ import {
   isAuthCheckUnavailableError
 } from "../../src/sync/auth-load-flow.js";
 import {
+  OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE,
+  offlineRememberedStatusMessages,
   syncAccountLabelWithEmailWrap,
   updateSyncUiControls
 } from "../../src/ui/sync-ui.js";
@@ -478,17 +480,15 @@ test("CRITICAL offline-auth-scope: auth network failure prefers remembered priva
     syncMeta: { dirty: false }
   };
   let offlineActivated = false;
-  let offlineSyncMessage = "";
-  let offlineLayoutStatusMessage = "";
+  let offlineReason = "";
   let enteredPublic = false;
   let keptReadonly = false;
   const dependencies = {
     activateLocalStorageScope: () => {},
     activateLocalStorageScopeForCurrentUser: () => {},
-    activateOfflineRememberedSession: (syncMessage, layoutStatusMessage) => {
+    activateOfflineRememberedSession: (_syncMessage, _layoutStatusMessage, reason) => {
       offlineActivated = true;
-      offlineSyncMessage = syncMessage;
-      offlineLayoutStatusMessage = layoutStatusMessage;
+      offlineReason = reason;
       return true;
     },
     apiFetch: async () => {
@@ -532,8 +532,7 @@ test("CRITICAL offline-auth-scope: auth network failure prefers remembered priva
   await checkAuthAndLoadFlow({ runtime, dependencies });
 
   assert.equal(offlineActivated, true);
-  assert.equal(offlineSyncMessage, "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally");
-  assert.equal(offlineLayoutStatusMessage, "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally");
+  assert.equal(offlineReason, OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE);
   assert.equal(enteredPublic, false);
   assert.equal(keptReadonly, false);
 });
@@ -669,6 +668,37 @@ test("CRITICAL offline-auth-scope: temporary auth HTTP failures are treated as o
   assert.equal(isAuthCheckUnavailableError({ status: 429 }, () => false), true);
   assert.equal(isAuthCheckUnavailableError({ status: 401 }, () => false), false);
   assert.equal(isAuthCheckUnavailableError({ status: 403 }, () => false), false);
+});
+
+test("CRITICAL offline-auth-scope: API outage status is reassuring and follows the UI language", () => {
+  const previousDocument = globalThis.document;
+  try {
+    globalThis.document = { documentElement: { lang: "en" } };
+    assert.deepEqual(
+      offlineRememberedStatusMessages(OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE),
+      {
+        layout: "API unavailable · local copy",
+        sync: "API unavailable · working locally · sync later"
+      }
+    );
+
+    globalThis.document = { documentElement: { lang: "ru" } };
+    assert.deepEqual(
+      offlineRememberedStatusMessages(OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE),
+      {
+        layout: "API недоступен · локальная копия",
+        sync: "API недоступен · работаем локально · синхронизация позже"
+      }
+    );
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+
+  const appSource = readProjectFile("app.js");
+  assert.match(appSource, /let offlineRememberedSessionReason = ""/);
+  assert.match(appSource, /message \|\|\s*rememberedStatus\.sync/);
+  assert.match(appSource, /setOfflineRememberedLayoutLoadStatus\(layoutStatusMessage \|\| rememberedStatus\.layout\)/);
 });
 
 test("CRITICAL offline-auth-scope: public readonly status cannot mask an active private login", () => {

@@ -1000,7 +1000,11 @@ import {
   shouldShowItemLabelsForMode,
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
-import { updateSyncUiControls } from "./src/ui/sync-ui.js";
+import {
+  OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE,
+  offlineRememberedStatusMessages,
+  updateSyncUiControls
+} from "./src/ui/sync-ui.js";
 import {
   canReplaceLayoutCreateNameSuggestion as canReplaceLayoutCreateNameSuggestionValue,
   isLayoutCreateTemplateLayoutMode as isLayoutCreateTemplateLayoutModeValue,
@@ -1271,6 +1275,7 @@ const conflictFormatter = createConflictValueFormatter({
 let currentUser = null;
 let currentAuthorization = null;
 let offlineRememberedUser = null;
+let offlineRememberedSessionReason = "";
 let syncTimer = null;
 let syncInFlight = false;
 let syncQueued = false;
@@ -3673,7 +3678,8 @@ function setLayoutLoadStatus(tone = "idle", text = "") {
 }
 
 function setOfflineRememberedLayoutLoadStatus(message = "") {
-  setLayoutLoadStatus("warning", message || localText(
+  const rememberedStatus = offlineRememberedStatusMessages(offlineRememberedSessionReason);
+  setLayoutLoadStatus("warning", message || rememberedStatus.layout || localText(
     "Local copy: server sign-in is not confirmed",
     "Локальная копия: вход на сервере не подтверждён"
   ));
@@ -5594,23 +5600,29 @@ function isOfflineRememberedSession() {
 
 function clearOfflineRememberedSession() {
   offlineRememberedUser = null;
+  offlineRememberedSessionReason = "";
 }
 
 function activateOfflineRememberedSession(
   message = localText("Local copy of personal layouts · sign in to sync", "Локальная копия личных укладок · войдите для синхронизации"),
-  layoutStatusMessage = ""
+  layoutStatusMessage = "",
+  reason = ""
 ) {
   const rememberedUser = rememberedOfflineUser(offlineRememberedUser);
   if (!rememberedUser) return false;
   currentUser = null;
   offlineRememberedUser = rememberedUser;
+  offlineRememberedSessionReason = reason === OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE
+    ? reason
+    : "";
+  const rememberedStatus = offlineRememberedStatusMessages(offlineRememberedSessionReason);
   appUnlocked = true;
   activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
   setActivePrivateScope();
-  setOfflineRememberedLayoutLoadStatus(layoutStatusMessage);
+  setOfflineRememberedLayoutLoadStatus(layoutStatusMessage || rememberedStatus.layout);
   const renderedFallback = renderInitialLocalFallbackIfNeeded();
   if (!renderedFallback) renderPreservingPackingScroll();
-  updateSyncUi(message);
+  updateSyncUi(message || rememberedStatus.sync);
   return true;
 }
 
@@ -5834,7 +5846,13 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 
 function updateSyncUi(message = "") {
   connectionStatusController.refresh();
-  const effectiveMessage = connectionStatusController.currentMessage() || offlinePhotoCacheController.currentMessage() || message;
+  const rememberedStatus = isOfflineRememberedSession()
+    ? offlineRememberedStatusMessages(offlineRememberedSessionReason)
+    : { sync: "" };
+  const effectiveMessage = connectionStatusController.currentMessage() ||
+    offlinePhotoCacheController.currentMessage() ||
+    message ||
+    rememberedStatus.sync;
   updateSyncUiControls({
     adminReportsDialogController,
     appUnlocked,

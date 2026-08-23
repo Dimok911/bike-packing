@@ -8,6 +8,24 @@ function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
 }
 
+export const OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE = "api-unavailable";
+
+export function offlineRememberedStatusMessages(reason = "") {
+  if (reason !== OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE) {
+    return { layout: "", sync: "" };
+  }
+  return {
+    layout: localText(
+      "API unavailable · local copy",
+      "API недоступен · локальная копия"
+    ),
+    sync: localText(
+      "API unavailable · working locally · sync later",
+      "API недоступен · работаем локально · синхронизация позже"
+    )
+  };
+}
+
 export function syncAccountLabelWithEmailWrap(accountLabel, email) {
   const label = String(accountLabel || "");
   const address = String(email || "");
