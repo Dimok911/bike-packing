@@ -1948,6 +1948,7 @@ const {
   deleteRootContainer, removeRootContainerFromActiveLayout, removeContainerFromLayoutOnly, deleteUnusedLayoutContainerEntity,
   deleteContainerPhotos, makeItemCopyName, touchLayoutsReferencingItem, cleanupEmptyContainers,
   getColumnPlaceholderIndex, isOriginalRootColumnPosition, moveRootColumn, openRootContainerDialog,
+  flushOpenEntityFormDrafts, syncNewEntityFormDraftBadges, discardNewItemFormDraft, discardNewRootContainerFormDraft,
   fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
   resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, openSharedReadonlyContainerDialog,
   setSharedReadonlyRootContainerDialog, resetSharedReadonlyRootContainerDialog, uniqueLayoutName, uniquePublishedTemplateName,
@@ -2934,6 +2935,7 @@ function applyStaticTranslations() {
     t,
     uiLanguage
   });
+  syncNewEntityFormDraftBadges();
   desktopInputLayoutController.refresh();
   interfaceColorThemeController.refresh();
 }
@@ -2949,6 +2951,7 @@ async function init() {
   setupModalScrollLock();
   setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();
+  window.addEventListener("pagehide", flushOpenEntityFormDrafts);
   document.addEventListener("pointerdown", (event) => {
     blurActiveEditableBeforeButtonAction(event, { ignoredButton: refs.saveRootContainerBtn });
   }, true);
@@ -3106,6 +3109,7 @@ async function init() {
   });
   refs.unpackAllBtn.addEventListener("click", unpackAllItems);
   refs.saveItemBtn.addEventListener("click", saveDialogItem);
+  refs.discardItemFormDraftBtn?.addEventListener("click", discardNewItemFormDraft);
   refs.shareItemLinkBtn?.addEventListener("click", shareEditingItemByLink);
   refs.itemWeight.addEventListener("input", updateItemQuantityUi);
   refs.itemQuantity.addEventListener("input", updateItemQuantityUi);
@@ -3131,6 +3135,7 @@ async function init() {
     requestCloseItemDialog();
   });
   refs.saveRootContainerBtn.addEventListener("click", saveRootContainerDialog);
+  refs.discardRootContainerFormDraftBtn?.addEventListener("click", discardNewRootContainerFormDraft);
   refs.shareRootContainerLinkBtn?.addEventListener("click", shareEditingContainerByLink);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("input", updateRootContainerDialogSaveState);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("change", updateRootContainerDialogSaveState);

@@ -213,6 +213,19 @@ test("CRITICAL layout order: personal order save waits for every changed private
   assert.match(saveFlow, /layouts:\s*personalOrderLayoutIds/);
 });
 
+test("CRITICAL layout order: an in-flight save cannot open a second unsaved-changes flow", () => {
+  const controllers = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  const closeFlow = controllers.slice(
+    controllers.indexOf("async function requestCloseLayoutOrderDialog"),
+    controllers.indexOf("function handleLayoutOrderListClick")
+  );
+
+  assert.match(closeFlow, /if \(layoutOrderSavePromise\) \{\s*await layoutOrderSavePromise;\s*return;/);
+  assert.match(closeFlow, /if \(layoutOrderSavePromise\) return layoutOrderSavePromise;/);
+  assert.match(closeFlow, /layoutOrderSavePromise = savePromise;/);
+  assert.match(closeFlow, /layoutOrderDialog\?\.open\) refs\.layoutOrderDialog\.close\("default"\)/);
+});
+
 test("CRITICAL layout order: applying public template order updates runtime catalogs", () => {
   const state = createState();
   const demoTemplates = [

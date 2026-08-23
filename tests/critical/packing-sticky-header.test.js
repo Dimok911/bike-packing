@@ -10,10 +10,12 @@ import {
 import {
   applyPackingBoardZoomToDragGhost,
   clampPackingBoardZoom,
+  PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE,
   packingBoardAllowsDiagonalPan,
   packingBoardAnchoredPageScrollTop,
   packingBoardAnchoredScrollLeft,
   packingBoardFitMaxZoom,
+  packingBoardGestureTargetsOpenDialog,
   packingBoardPinchZoom,
   packingBoardMomentumScrollLeft,
   packingBoardPageMomentumScrollTop,
@@ -658,6 +660,12 @@ test("CRITICAL packing zoom: pinch scale is bounded and keeps the touched conten
     paddingBottom: 18,
     zoom: 0.2
   }) - 178) < 0.001);
+  assert.ok(Math.abs(packingBoardScaledHeight({
+    bottomClearance: PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE,
+    contentHeight: 800,
+    paddingBottom: 18,
+    zoom: 0.2
+  }) - 230) < 0.001);
 });
 
 test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is continuous", () => {
@@ -681,6 +689,22 @@ test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is
     maxScrollLeft: 500,
     velocity: 0.5
   }), 500);
+});
+
+test("CRITICAL packing zoom: an open dialog keeps wheel and touch gestures away from the board", () => {
+  const openDialog = { open: true };
+  const closedDialog = { open: false };
+
+  assert.equal(packingBoardGestureTargetsOpenDialog({
+    target: { closest: () => openDialog }
+  }), true);
+  assert.equal(packingBoardGestureTargetsOpenDialog({
+    target: { closest: () => closedDialog }
+  }), false);
+  assert.equal(packingBoardGestureTargetsOpenDialog({
+    target: { closest: () => null }
+  }), false);
+  assert.equal(packingBoardGestureTargetsOpenDialog({ target: null }), false);
 });
 
 test("CRITICAL packing zoom: drag ghosts retain the board's visual scale", () => {
@@ -719,6 +743,7 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingZoomSource, /desiredScrollLeft[\s\S]*?naturalMaxScrollLeft[\s\S]*?horizontalAnchorGutter[\s\S]*?paddingRight/);
   assert.match(packingZoomSource, /packingBoardFitMaxZoom\([\s\S]*?elasticMaxZoom[\s\S]*?settleZoomToFit/);
   assert.match(packingZoomSource, /dragHeightLocked[^\n]*!== "true"[\s\S]*?removeProperty\("min-height"\)/);
+  assert.match(packingZoomSource, /fixedScrollbar[\s\S]*?PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE[\s\S]*?bottomClearance/);
   assert.match(packingZoomSource, /settleBoardGeometry[\s\S]*?verticalScrollMaximum\(\)[\s\S]*?scrollTop = maxScrollTop/);
   assert.match(packingZoomSource, /verticalScrollMaximum[\s\S]*?packingBoardVisualMaxScrollTop[\s\S]*?Math\.min\(verticalScrollMaximum\(\), packingBoardPagePanScrollTop/);
   assert.match(packingZoomSource, /gesturestart[\s\S]*?preventNativeBoardZoom[\s\S]*?passive: false/);
@@ -736,6 +761,9 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingScrollSource, /remainsVisibleDuringPinch[\s\S]*?headerRow\.classList\.contains\("is-visible"\)/);
   assert.match(packingZoomSource, /PinchEndEventCtor[\s\S]*?packing-board-pinch-end/);
   assert.match(packingZoomSource, /const gestureSurface = documentRef[\s\S]*?gestureY >= Number\(boardRect\.top\)/);
+  assert.match(packingZoomSource, /const isNativeGestureInsideBoard = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return false;/);
+  assert.match(packingZoomSource, /const onTouchStart = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return;/);
+  assert.match(packingZoomSource, /const onTouchMove = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return;/);
   assert.match(packingZoomSource, /activatePagePan[\s\S]*?packing-board-page-pan-start", \{ bubbles: true \}[\s\S]*?keepPagePanAxisLocked/);
   assert.match(horizontalTouchSource, /packing-board-page-panning[\s\S]*?cancelForPagePan[\s\S]*?packing-board-page-pan-start/);
   assert.match(styles, /\.board\.packing-board-zooming \.photo-gallery-track\s*\{[\s\S]*?pointer-events:\s*none;[\s\S]*?touch-action:\s*none;/);

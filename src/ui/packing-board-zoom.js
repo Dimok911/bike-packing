@@ -4,6 +4,7 @@ export const PACKING_BOARD_ZOOM_STORAGE_KEY = "bike-packing-board-zoom-v1";
 export const PACKING_BOARD_ZOOM_MIN = 0.2;
 export const PACKING_BOARD_ZOOM_MAX = 1.6;
 export const PACKING_BOARD_ZOOM_ELASTIC_MAX = 1.8;
+export const PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE = 52;
 
 let activePackingBoardZoomController = null;
 
@@ -65,6 +66,11 @@ export function packingBoardWheelPageDelta({
   if (Number(deltaMode) === 1) return amount * 16;
   if (Number(deltaMode) === 2) return amount * Math.max(1, Number(viewportHeight) || 0);
   return amount;
+}
+
+export function packingBoardGestureTargetsOpenDialog(event) {
+  const dialog = event?.target?.closest?.("dialog");
+  return Boolean(dialog?.open);
 }
 
 export function packingBoardTwoFingerMode({
@@ -184,6 +190,7 @@ export function packingBoardAnchoredPageScrollTop({
 }
 
 export function packingBoardScaledHeight({
+  bottomClearance = 0,
   contentHeight,
   paddingBottom = 0,
   paddingTop = 0,
@@ -191,7 +198,9 @@ export function packingBoardScaledHeight({
 } = {}) {
   const safeContentHeight = Math.max(0, Number(contentHeight) || 0);
   const safePadding = Math.max(0, Number(paddingTop) || 0) + Math.max(0, Number(paddingBottom) || 0);
-  return safeContentHeight * clampPackingBoardZoom(zoom, { max: PACKING_BOARD_ZOOM_ELASTIC_MAX }) + safePadding;
+  return safeContentHeight * clampPackingBoardZoom(zoom, { max: PACKING_BOARD_ZOOM_ELASTIC_MAX }) +
+    safePadding +
+    Math.max(0, Number(bottomClearance) || 0);
 }
 
 function touchPair(touches) {
@@ -548,7 +557,12 @@ export function bindPackingBoardZoom(board, {
     const contentHeight = targets.reduce((height, target) => (
       Math.max(height, Number(target?.offsetHeight) || 0)
     ), 0);
+    const fixedScrollbar = documentRef?.querySelector?.("#kanbanScrollbar");
+    const bottomClearance = fixedScrollbar?.classList?.contains?.("hidden") === false
+      ? PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE
+      : 0;
     board.style.height = `${packingBoardScaledHeight({
+      bottomClearance,
       contentHeight,
       paddingBottom: boardPaddingBottom,
       paddingTop: boardPaddingTop,
@@ -756,6 +770,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const isNativeGestureInsideBoard = (event) => {
+    if (packingBoardGestureTargetsOpenDialog(event)) return false;
     if (gestureActive) return true;
     if (board.contains?.(event?.target)) return true;
     const clientX = Number(event?.clientX);
@@ -830,6 +845,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onTouchStart = (event) => {
+    if (packingBoardGestureTargetsOpenDialog(event)) return;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomSettle();
@@ -902,6 +918,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onTouchMove = (event) => {
+    if (packingBoardGestureTargetsOpenDialog(event)) return;
     if (!gestureActive) return;
     if (!pinching) {
       const remainingTouch = event?.touches?.length === 1 ? event.touches[0] : null;
