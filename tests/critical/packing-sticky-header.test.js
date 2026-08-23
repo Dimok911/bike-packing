@@ -858,6 +858,9 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(styles, /\.board\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /\.board\.packing-board-zoom-active\s*\{[\s\S]*?contain:\s*paint;[\s\S]*?touch-action:\s*none;/);
   assert.match(styles, /\.board\.packing-board-zoom-active \.photo-gallery-track\s*\{[\s\S]*?overscroll-behavior-y:\s*none;[\s\S]*?touch-action:\s*none;/);
+  assert.match(styles, /\.subcontainer-title\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
+  assert.match(styles, /\.item-title-hitarea\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
+  assert.match(styles, /\.item-title\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
   assert.match(packingZoomSource, /const onWheel = \(event\) => \{[\s\S]*?isNativeGestureInsideBoard\(event\)[\s\S]*?event\?\.ctrlKey[\s\S]*?packingBoardWheelPageDelta[\s\S]*?packingBoardWheelZoom[\s\S]*?preserveHorizontalPoint:\s*true[\s\S]*?preserveVerticalPoint:\s*true/);
   assert.match(packingZoomSource, /gestureSurface\?\.addEventListener\?\.\("wheel", onWheel, \{ capture: true, passive: false \}\)/);
   assert.match(packingDragSource, /packing-board-page-panning/);

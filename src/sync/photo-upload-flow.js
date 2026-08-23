@@ -10,6 +10,7 @@ import {
   clonePhotoUploadBlob,
   hasRemotePhotoUrl,
   isMissingRemotePhotoCopyError,
+  normalizeRemotePhotoUrl,
   normalizeUploadedPhotoAssetUrls,
   photoCopyApiPath,
   remotePhotoSourceFromRecord,
@@ -17,6 +18,7 @@ import {
   resolveUploadedPhotoByContentHash,
   shouldRetryLocalPhotoUploadAfterFailure
 } from "./photos.js";
+import { photoCacheSourceSignature } from "./photo-cache-quality.js";
 
 export async function uploadPhotoToPath({
   path = "",
@@ -30,6 +32,7 @@ export async function uploadPhotoToPath({
   apiFetch,
   apiUploadFormData,
   getCachedPhoto,
+  putCachedPhoto = async () => {},
   markEntityChanged = () => {},
   persistStateSnapshot = () => {},
   scheduleProgressRender = () => {},
@@ -136,7 +139,34 @@ export async function uploadPhotoToPath({
     if (uploadSource.thumbBlob) formData.append("thumb", clonePhotoUploadBlob(uploadSource.thumbBlob), `thumb-${photo.id}.jpg`);
     return formData;
   };
-  const applyUploadedPhotoResult = (targetPhoto, data) => {
+  const persistUploadedPhotoCacheBinding = async (targetPhoto) => {
+    if (!localId || !uploadSource?.blob || !targetPhoto) return;
+    const fullUrl = normalizeRemotePhotoUrl(targetPhoto.url || "");
+    const thumbUrl = normalizeRemotePhotoUrl(targetPhoto.thumbUrl || targetPhoto.url || "");
+    if (!fullUrl && !thumbUrl) return;
+    const updatedAt = targetPhoto.updatedAt || nowIso();
+    const cacheRecord = {
+      ...uploadSource,
+      id: localId,
+      photoId: localId,
+      blob: uploadSource.blob,
+      thumbBlob: uploadSource.thumbBlob || uploadSource.blob,
+      fullBlobVerified: true,
+      fullBlobDistinct: uploadSource.fullBlobDistinct !== false,
+      fullUrl: fullUrl || thumbUrl,
+      thumbUrl: thumbUrl || fullUrl,
+      sourceSignature: photoCacheSourceSignature(fullUrl || thumbUrl, thumbUrl || fullUrl, updatedAt),
+      namespace: "offline-remote",
+      cachePurpose: "offline-remote",
+      updatedAt
+    };
+    try {
+      await putCachedPhoto(cacheRecord);
+    } catch {
+      // A successful server upload must not be reverted when the local cache is unavailable.
+    }
+  };
+  const applyUploadedPhotoResult = async (targetPhoto, data) => {
     const changedAt = nowIso();
     const serverPhoto = normalizeUploadedPhotoAssetUrls(
       { ...((data && (data.photo || data)) || {}) },
@@ -158,6 +188,7 @@ export async function uploadPhotoToPath({
       });
       clearPhotoUploadProgress(candidate);
     });
+    await persistUploadedPhotoCacheBinding(targetPhoto);
     markChanged(targetPhoto.updatedAt);
     if (typeof onPhotoProgress === "function") {
       onPhotoProgress(targetPhoto, 100);
@@ -189,6 +220,7 @@ export async function uploadPhotoToPath({
         uploadPath: path
       });
     });
+    await persistUploadedPhotoCacheBinding(targetPhoto);
     clearPhotoPairProgress(targetPhoto);
     markChanged(targetPhoto.updatedAt);
     if (typeof onPhotoProgress === "function") {
@@ -208,7 +240,7 @@ export async function uploadPhotoToPath({
         updatePhotoProgress(resolvePhoto(), progress);
       }
     });
-    applyUploadedPhotoResult(resolvePhoto(), data);
+    await applyUploadedPhotoResult(resolvePhoto(), data);
     return true;
   } catch (error) {
     const targetPhoto = resolvePhoto();

@@ -1816,6 +1816,10 @@ button.ghost.context-toggle.active:focus-visible {
 @media (hover: none), (pointer: coarse) {
   .board .item-photo .photo-gallery-track {
     overflow-x: hidden;
+    touch-action: pan-x pan-y;
+  }
+
+  .board.packing-board-zoom-active .item-photo .photo-gallery-track {
     touch-action: none;
   }
 
@@ -2881,7 +2885,7 @@ body:has(.board.fixed-bar-scroll-ready) .kanban-scroll-thumb {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  touch-action: pan-x pan-y;
 }
 
 .subcontainer-title:active {
@@ -4590,7 +4594,7 @@ button.photo-gallery-slide.touch-feedback-active {
   -webkit-user-drag: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: auto;
+  touch-action: pan-x pan-y;
   user-select: none;
 }
 
@@ -4601,7 +4605,7 @@ button.photo-gallery-slide.touch-feedback-active {
   -webkit-user-drag: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: auto;
+  touch-action: pan-x pan-y;
   user-select: none;
 }
 

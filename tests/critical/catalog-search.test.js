@@ -116,3 +116,31 @@ test("matching root and nested bags participate in packing search navigation", (
   assert.match(nestedHtml, /data-filter-match-id="bag-bag-1"/);
   assert.doesNotMatch(nestedHtml, /search-note-match-badge/);
 });
+
+test("collapsed bags keep their own photo visible while hiding their contents", () => {
+  const container = { id: "bag-photo", name: "Photo bag", note: "" };
+  const photoHtml = '<div data-test="own-photo"></div>';
+  const rootHtml = renderRootContainerColumnHtml({
+    container,
+    contentsHtml: '<div data-test="root-contents"></div>',
+    photoHtml,
+    rootCollapsed: true,
+    t: (key) => key,
+    titleHtml: "Photo bag",
+    totalWeightHtml: ""
+  });
+  const nestedHtml = renderSubcontainerSectionHtml({
+    collapsed: true,
+    container,
+    contentsHtml: '<div data-test="nested-contents"></div>',
+    photoHtml,
+    t: (key) => key,
+    titleHtml: "Photo bag",
+    weightHtml: ""
+  });
+
+  assert.match(rootHtml, /data-test="own-photo"/);
+  assert.doesNotMatch(rootHtml, /data-test="root-contents"/);
+  assert.match(nestedHtml, /data-test="own-photo"/);
+  assert.match(nestedHtml, /class="subcontainer collapsed/);
+});

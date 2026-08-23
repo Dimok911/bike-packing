@@ -85,7 +85,7 @@ export function renderRootContainerColumnHtml({
         ${rootContainerToolsHtml({ allNestedCollapsed, container, hasNestedContainers, readonlyTemplate, t, totalWeightHtml })}
       </header>
       ${renderSearchNoteMatchBadge(container, searchQuery, t)}
-      ${rootCollapsed ? "" : photoHtml}
+      ${photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
       </div>
@@ -118,7 +118,7 @@ export function renderFilteredRootContainerColumnHtml({
         ${rootContainerToolsHtml({ container, readonlyTemplate, t, totalWeightHtml })}
       </header>
       ${renderSearchNoteMatchBadge(container, searchQuery, t)}
-      ${rootCollapsed ? "" : photoHtml}
+      ${photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
       </div>
@@ -184,7 +184,7 @@ export function renderSubcontainerSectionHtml({
         </div>
       </div>
       ${renderSearchNoteMatchBadge(container, searchQuery, t)}
-      ${collapsed ? "" : photoHtml}
+      ${photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${contentsHtml}
       </div>

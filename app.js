@@ -6131,6 +6131,7 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     apiFetch,
     apiUploadFormData,
     getCachedPhoto,
+    putCachedPhoto,
     markEntityChanged: (targetEntity, targetType, updatedAt) => {
       if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
       else touchItem(targetEntity.id, updatedAt);

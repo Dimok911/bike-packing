@@ -52,6 +52,7 @@ import {
 import { compactPhotoForSync, prunePhotoPayloadForSync } from "../../src/sync/serialize.js";
 import {
   bindPhotoGalleries,
+  bindPackingBoardPhotoGesturePassThrough,
   createPhotoLightboxLoadingNotice,
   photoDialogStatusText,
   photoGalleryVisibleDotIndexes,
@@ -1726,6 +1727,7 @@ test("CRITICAL offline-photos: server response syncs both dialog draft and saved
     thumbUrl: ""
   };
   const entity = { id: "item-1", photos: [savedPhoto] };
+  let reboundCache = null;
   const uploaded = await uploadPhotoToPath({
     path: "/bike-packing/lists/list-1/photos",
     listId: "list-1",
@@ -1755,6 +1757,7 @@ test("CRITICAL offline-photos: server response syncs both dialog draft and saved
       thumbBlob: new Blob(["thumb"], { type: "image/jpeg" }),
       fileName: "photo.jpg"
     }),
+    putCachedPhoto: async (record) => { reboundCache = record; },
     markEntityChanged: () => {},
     onPhotoProgress: () => {},
     persistStateSnapshot: () => {}
@@ -1770,6 +1773,11 @@ test("CRITICAL offline-photos: server response syncs both dialog draft and saved
     assert.match(photo.url, /photo-server\/file/);
     assert.match(photo.thumbUrl, /photo-server\/thumb/);
   }
+  assert.equal(reboundCache.id, "photo-local");
+  assert.equal(reboundCache.photoId, "photo-local");
+  assert.equal(reboundCache.fullBlobVerified, true);
+  assert.equal(await reboundCache.blob.text(), "full");
+  assert.match(reboundCache.sourceSignature, /photo-server\/file\|.*photo-server\/thumb\|2026-06-06T00:00:03\.000Z$/);
   assert.equal(photoUploadState(entity.photos).active, false);
   assert.doesNotMatch(renderItemPhotoHtml(entity, { force: true }), /data-photo-upload-status|item-photo-pending|photo-upload-progress/);
 });
@@ -2204,6 +2212,55 @@ test("CRITICAL offline-photos: dialog photo gallery keeps vertical scroll withou
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*overscroll-behavior-x:\s*contain;[\s\S]*overscroll-behavior-y:\s*auto;/);
   assert.match(styles, /\.photo-gallery-track\s*\{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /button\.photo-gallery-slide:not\(:disabled\):active,\s*button\.photo-gallery-slide\.touch-feedback-active\s*\{[\s\S]*translate:\s*0;[\s\S]*filter:\s*none;/);
+});
+
+test("CRITICAL offline-photos: board photos pass one-finger swipes to board and page scrolling", () => {
+  const listeners = new Map();
+  const track = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type, listener) => {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    }
+  };
+  const root = {
+    querySelectorAll: (selector) => selector === ".board .item-photo .photo-gallery-track" ? [track] : []
+  };
+  let currentTime = 100;
+  const controller = bindPackingBoardPhotoGesturePassThrough(root, { now: () => currentTime });
+  const touchEvent = (x, y) => {
+    const state = { prevented: false, stopped: false };
+    return {
+      state,
+      touches: [{ clientX: x, clientY: y }],
+      preventDefault: () => { state.prevented = true; },
+      stopImmediatePropagation: () => { state.stopped = true; }
+    };
+  };
+  const start = touchEvent(120, 240);
+  listeners.get("touchstart")(start);
+  const move = touchEvent(80, 180);
+  listeners.get("touchmove")(move);
+  listeners.get("touchend")({ stopImmediatePropagation: () => {} });
+  const clickState = { prevented: false, stopped: false };
+  listeners.get("click")({
+    preventDefault: () => { clickState.prevented = true; },
+    stopImmediatePropagation: () => { clickState.stopped = true; }
+  });
+
+  assert.equal(start.state.stopped, true);
+  assert.equal(move.state.stopped, true);
+  assert.equal(move.state.prevented, false);
+  assert.deepEqual(clickState, { prevented: true, stopped: true });
+  currentTime = 800;
+  const laterClick = { prevented: false };
+  listeners.get("click")({ preventDefault: () => { laterClick.prevented = true; } });
+  assert.equal(laterClick.prevented, false);
+  controller.destroy();
+  assert.equal(listeners.size, 0);
+
+  const styles = readProjectFile("styles.css");
+  assert.match(styles, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.board \.item-photo \.photo-gallery-track\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?touch-action:\s*pan-x pan-y;/);
+  assert.match(styles, /\.board\.packing-board-zoom-active \.item-photo \.photo-gallery-track\s*\{\s*touch-action:\s*none;/);
 });
 
 function photoGalleryTouchHarness() {

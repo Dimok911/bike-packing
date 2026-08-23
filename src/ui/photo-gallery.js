@@ -53,6 +53,7 @@ export const PHOTO_GALLERY_COMPACT_DOT_THRESHOLD = 7;
 export const PHOTO_GALLERY_COMPACT_DOT_WINDOW = 5;
 const decodedPhotoLightboxSources = new Set();
 const compactPhotoGalleryBindings = new WeakMap();
+const packingBoardPhotoGestureBindings = new WeakMap();
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
@@ -639,6 +640,7 @@ export function bindPhotoGalleries(root = document, {
   prepareFullscreenSource = async () => null,
   openLightbox = openPhotoLightbox
 } = {}) {
+  const boardGesturePassThrough = bindPackingBoardPhotoGesturePassThrough(root);
   let compactControls = null;
   const sharedController = bindSharedPhotoGalleries(root, {
     openLightbox: ({ image, gallery, index }) => {
@@ -659,8 +661,87 @@ export function bindPhotoGalleries(root = document, {
       compactControls.refresh();
     },
     destroy() {
+      boardGesturePassThrough.destroy();
       compactControls.destroy();
       sharedController?.destroy?.();
+    }
+  };
+}
+
+export function bindPackingBoardPhotoGesturePassThrough(root = document, {
+  movementThreshold = 4,
+  now = () => Date.now()
+} = {}) {
+  const scope = root?.querySelectorAll ? root : document;
+  const tracks = [...scope.querySelectorAll(".board .item-photo .photo-gallery-track")];
+  const cleanups = [];
+  tracks.forEach((track) => {
+    packingBoardPhotoGestureBindings.get(track)?.();
+    let gesture = null;
+    let suppressClickUntil = 0;
+    const stopGalleryGesture = (event) => event.stopImmediatePropagation?.();
+    const onTouchStart = (event) => {
+      if (event.touches?.length !== 1) {
+        gesture = null;
+        stopGalleryGesture(event);
+        return;
+      }
+      const point = event.touches[0];
+      gesture = {
+        x: Number(point.clientX) || 0,
+        y: Number(point.clientY) || 0,
+        moved: false
+      };
+      stopGalleryGesture(event);
+    };
+    const onTouchMove = (event) => {
+      if (gesture && event.touches?.length === 1) {
+        const point = event.touches[0];
+        const dx = (Number(point.clientX) || 0) - gesture.x;
+        const dy = (Number(point.clientY) || 0) - gesture.y;
+        if (Math.hypot(dx, dy) > movementThreshold) {
+          gesture.moved = true;
+          suppressClickUntil = now() + 600;
+        }
+      }
+      stopGalleryGesture(event);
+    };
+    const onTouchEnd = (event) => {
+      if (gesture?.moved) suppressClickUntil = now() + 600;
+      gesture = null;
+      stopGalleryGesture(event);
+    };
+    const onTouchCancel = (event) => {
+      gesture = null;
+      stopGalleryGesture(event);
+    };
+    const onClick = (event) => {
+      if (now() >= suppressClickUntil) return;
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+    };
+    track.addEventListener("touchstart", onTouchStart, { capture: true, passive: true });
+    track.addEventListener("touchmove", onTouchMove, { capture: true, passive: true });
+    track.addEventListener("touchend", onTouchEnd, { capture: true, passive: true });
+    track.addEventListener("touchcancel", onTouchCancel, { capture: true, passive: true });
+    track.addEventListener("click", onClick, { capture: true });
+    const cleanup = () => {
+      track.removeEventListener("touchstart", onTouchStart, { capture: true });
+      track.removeEventListener("touchmove", onTouchMove, { capture: true });
+      track.removeEventListener("touchend", onTouchEnd, { capture: true });
+      track.removeEventListener("touchcancel", onTouchCancel, { capture: true });
+      track.removeEventListener("click", onClick, { capture: true });
+    };
+    packingBoardPhotoGestureBindings.set(track, cleanup);
+    cleanups.push(() => {
+      if (packingBoardPhotoGestureBindings.get(track) !== cleanup) return;
+      cleanup();
+      packingBoardPhotoGestureBindings.delete(track);
+    });
+  });
+  return {
+    destroy() {
+      cleanups.splice(0).forEach((cleanup) => cleanup());
     }
   };
 }
