@@ -75,6 +75,11 @@ export function bindHorizontalTouchScroll(board, {
     velocityX = 0;
   };
 
+  const cancelForPagePan = () => {
+    stopMomentum();
+    resetGesture();
+  };
+
   const reset = () => {
     stopMomentum();
     cancelScheduledReset();
@@ -107,6 +112,10 @@ export function bindHorizontalTouchScroll(board, {
   };
 
   const moveGesture = (clientX, clientY) => {
+    if (board.classList?.contains?.("packing-board-page-panning")) {
+      cancelForPagePan();
+      return false;
+    }
     const dx = clientX - startX;
     const dy = clientY - startY;
     if (!touchScrollAxis) touchScrollAxis = classifyTouchScrollAxis(dx, dy);
@@ -202,6 +211,7 @@ export function bindHorizontalTouchScroll(board, {
       event.stopPropagation();
     }
   }, true);
+  board.addEventListener("packing-board-page-pan-start", cancelForPagePan);
 
   boardControllers.set(board, { reset });
 }

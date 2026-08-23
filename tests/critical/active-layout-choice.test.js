@@ -478,13 +478,17 @@ test("CRITICAL offline-auth-scope: auth network failure prefers remembered priva
     syncMeta: { dirty: false }
   };
   let offlineActivated = false;
+  let offlineSyncMessage = "";
+  let offlineLayoutStatusMessage = "";
   let enteredPublic = false;
   let keptReadonly = false;
   const dependencies = {
     activateLocalStorageScope: () => {},
     activateLocalStorageScopeForCurrentUser: () => {},
-    activateOfflineRememberedSession: () => {
+    activateOfflineRememberedSession: (syncMessage, layoutStatusMessage) => {
       offlineActivated = true;
+      offlineSyncMessage = syncMessage;
+      offlineLayoutStatusMessage = layoutStatusMessage;
       return true;
     },
     apiFetch: async () => {
@@ -528,6 +532,8 @@ test("CRITICAL offline-auth-scope: auth network failure prefers remembered priva
   await checkAuthAndLoadFlow({ runtime, dependencies });
 
   assert.equal(offlineActivated, true);
+  assert.equal(offlineSyncMessage, "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally");
+  assert.equal(offlineLayoutStatusMessage, "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally");
   assert.equal(enteredPublic, false);
   assert.equal(keptReadonly, false);
 });
@@ -539,6 +545,7 @@ test("CRITICAL offline-auth-scope: empty auth response keeps remembered private 
     syncMeta: { dirty: false }
   };
   let offlineActivated = false;
+  let offlineLayoutStatusMessage = null;
   let clearedOffline = false;
   let guestScopeActivated = false;
   let loadedGuestDemo = false;
@@ -547,8 +554,9 @@ test("CRITICAL offline-auth-scope: empty auth response keeps remembered private 
       guestScopeActivated = true;
     },
     activateLocalStorageScopeForCurrentUser: () => {},
-    activateOfflineRememberedSession: () => {
+    activateOfflineRememberedSession: (_syncMessage, layoutStatusMessage) => {
       offlineActivated = true;
+      offlineLayoutStatusMessage = layoutStatusMessage;
       return true;
     },
     apiFetch: async () => ({ user: null, session: null }),
@@ -588,6 +596,7 @@ test("CRITICAL offline-auth-scope: empty auth response keeps remembered private 
   await checkAuthAndLoadFlow({ runtime, dependencies });
 
   assert.equal(offlineActivated, true);
+  assert.equal(offlineLayoutStatusMessage, undefined);
   assert.equal(clearedOffline, false);
   assert.equal(guestScopeActivated, false);
   assert.equal(loadedGuestDemo, false);

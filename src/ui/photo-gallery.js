@@ -49,7 +49,10 @@ const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
 const PHOTO_LIGHTBOX_INERTIA_DURATION_MS = 650;
 const PHOTO_LIGHTBOX_INERTIA_MIN_SPEED = 0.025;
 const PHOTO_LIGHTBOX_INERTIA_MAX_SPEED = 2.4;
+export const PHOTO_GALLERY_COMPACT_DOT_THRESHOLD = 7;
+export const PHOTO_GALLERY_COMPACT_DOT_WINDOW = 5;
 const decodedPhotoLightboxSources = new Set();
+const compactPhotoGalleryBindings = new WeakMap();
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
@@ -142,13 +145,109 @@ export function renderPhotoSlide(photo, {
   `;
 }
 
+export function photoGalleryVisibleDotIndexes(count, activeIndex = 0, windowSize = PHOTO_GALLERY_COMPACT_DOT_WINDOW) {
+  const safeCount = Math.max(0, Math.trunc(Number(count) || 0));
+  const safeWindow = Math.max(1, Math.min(safeCount, Math.trunc(Number(windowSize) || 1)));
+  const safeActive = Math.max(0, Math.min(Math.max(0, safeCount - 1), Math.trunc(Number(activeIndex) || 0)));
+  const start = Math.max(0, Math.min(
+    Math.max(0, safeCount - safeWindow),
+    safeActive - Math.floor(safeWindow / 2)
+  ));
+  return Array.from({ length: safeWindow }, (_, index) => start + index);
+}
+
+function renderPhotoDotButtons(count, activeIndex, compact = false) {
+  const visible = compact
+    ? new Set(photoGalleryVisibleDotIndexes(count, activeIndex))
+    : null;
+  return Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot vpg-dot ${index === activeIndex ? "active" : ""}" type="button" data-vpg-dot data-photo-index="${index}" aria-label="${escapeHtml(localText("Photo", "Фото"))} ${index + 1}" aria-current="${index === activeIndex ? "true" : "false"}"${visible && !visible.has(index) ? " hidden" : ""}><i class="photo-gallery-dot-mark" aria-hidden="true"></i></button>`).join("");
+}
+
 export function renderPhotoDots(count, activeIndex = 0) {
   if (count <= 1) return "";
-  return `
-    <div class="photo-gallery-dots" data-photo-controls data-vpg-dots>
-      ${Array.from({ length: count }, (_, index) => `<button class="photo-gallery-dot vpg-dot ${index === activeIndex ? "active" : ""}" type="button" data-vpg-dot data-photo-index="${index}" aria-label="${escapeHtml(localText("Photo", "Фото"))} ${index + 1}" aria-current="${index === activeIndex ? "true" : "false"}"><i class="photo-gallery-dot-mark" aria-hidden="true"></i></button>`).join("")}
+  const safeActiveIndex = Math.max(0, Math.min(count - 1, Math.trunc(Number(activeIndex) || 0)));
+  if (count > PHOTO_GALLERY_COMPACT_DOT_THRESHOLD) {
+    return `
+    <div class="photo-gallery-dots photo-gallery-dots-compact" data-photo-controls data-vpg-dots data-photo-count="${count}">
+      <button class="photo-gallery-step photo-gallery-step-prev" type="button" data-photo-step="-1" aria-label="${escapeHtml(localText("Previous photo", "Предыдущее фото"))}" disabled>‹</button>
+      ${renderPhotoDotButtons(count, safeActiveIndex, true)}
+      <span class="photo-gallery-counter" data-photo-counter aria-live="polite">${safeActiveIndex + 1} / ${count}</span>
+      <button class="photo-gallery-step photo-gallery-step-next" type="button" data-photo-step="1" aria-label="${escapeHtml(localText("Next photo", "Следующее фото"))}"${safeActiveIndex >= count - 1 ? " disabled" : ""}>›</button>
     </div>
   `;
+  }
+  return `
+    <div class="photo-gallery-dots" data-photo-controls data-vpg-dots>
+      ${renderPhotoDotButtons(count, safeActiveIndex)}
+    </div>
+  `;
+}
+
+export function syncCompactPhotoGalleryControls(gallery, activeIndex = 0) {
+  const controls = gallery?.querySelector?.(".photo-gallery-dots-compact");
+  if (!controls) return false;
+  const dots = [...controls.querySelectorAll("[data-vpg-dot]")];
+  if (!dots.length) return false;
+  const safeActive = Math.max(0, Math.min(dots.length - 1, Math.trunc(Number(activeIndex) || 0)));
+  const visible = new Set(photoGalleryVisibleDotIndexes(dots.length, safeActive));
+  dots.forEach((dot, index) => {
+    dot.hidden = !visible.has(index);
+  });
+  const counter = controls.querySelector("[data-photo-counter]");
+  if (counter) counter.textContent = `${safeActive + 1} / ${dots.length}`;
+  const previous = controls.querySelector('[data-photo-step="-1"]');
+  const next = controls.querySelector('[data-photo-step="1"]');
+  if (previous) previous.disabled = safeActive <= 0;
+  if (next) next.disabled = safeActive >= dots.length - 1;
+  return true;
+}
+
+function bindCompactPhotoGalleryControls(root, { onStep = () => false } = {}) {
+  const existing = compactPhotoGalleryBindings.get(root);
+  if (existing) {
+    existing.setOnStep(onStep);
+    existing.refresh();
+    return existing;
+  }
+  let stepHandler = onStep;
+  const galleries = () => {
+    const result = [];
+    if (root?.matches?.("[data-photo-gallery]")) result.push(root);
+    result.push(...(root?.querySelectorAll?.("[data-photo-gallery]") || []));
+    return result;
+  };
+  const syncAll = () => galleries().forEach((gallery) => {
+    const activeDot = gallery.querySelector('[data-vpg-dot][aria-current="true"]');
+    syncCompactPhotoGalleryControls(gallery, Number(activeDot?.dataset?.photoIndex) || 0);
+  });
+  const onClick = (event) => {
+    const stepButton = event?.target?.closest?.("[data-photo-step]");
+    if (!stepButton || !root?.contains?.(stepButton)) return;
+    const gallery = stepButton.closest("[data-photo-gallery]");
+    if (!gallery) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    const dots = [...gallery.querySelectorAll("[data-vpg-dot]")];
+    const foundActiveIndex = dots.findIndex((dot) => dot.getAttribute("aria-current") === "true");
+    const activeIndex = Math.max(0, foundActiveIndex);
+    const targetIndex = Math.max(0, Math.min(dots.length - 1, activeIndex + Number(stepButton.dataset.photoStep || 0)));
+    if (targetIndex !== activeIndex && !stepHandler(gallery, targetIndex)) dots[targetIndex]?.click?.();
+  };
+  root?.addEventListener?.("click", onClick, true);
+  syncAll();
+  const controller = {
+    refresh: syncAll,
+    sync: syncCompactPhotoGalleryControls,
+    setOnStep(nextOnStep) {
+      stepHandler = typeof nextOnStep === "function" ? nextOnStep : () => false;
+    },
+    destroy() {
+      root?.removeEventListener?.("click", onClick, true);
+      if (compactPhotoGalleryBindings.get(root) === controller) compactPhotoGalleryBindings.delete(root);
+    }
+  };
+  compactPhotoGalleryBindings.set(root, controller);
+  return controller;
 }
 
 export function renderItemPhotoHtml(item, { force = false, showPhotos = true, photoObjectUrls = new Map() } = {}) {
@@ -515,6 +614,18 @@ export function resolvePhotoGallerySnapIndex({
   return Math.max(0, Math.min(lastIndex, Math.round((Number(scrollLeft) || 0) / width)));
 }
 
+export function photoLightboxUsesTouchCarousel({
+  coarsePointer = false,
+  maxTouchPoints = 0,
+  viewportWidth = 0
+} = {}) {
+  return Boolean(coarsePointer) || (
+    Number(maxTouchPoints) > 0 &&
+    Number(viewportWidth) > 0 &&
+    Number(viewportWidth) <= 760
+  );
+}
+
 export function bindPhotoGalleries(root = document, {
   onItemPreviewActive = () => {},
   onRootContainerPreviewActive = () => {},
@@ -522,15 +633,30 @@ export function bindPhotoGalleries(root = document, {
   prepareFullscreenSource = async () => null,
   openLightbox = openPhotoLightbox
 } = {}) {
-  return bindSharedPhotoGalleries(root, {
+  let compactControls = null;
+  const sharedController = bindSharedPhotoGalleries(root, {
     openLightbox: ({ image, gallery, index }) => {
       if (image) openLightbox(image, { gallery, index, photoObjectUrls, prepareFullscreenSource });
     },
     onActiveIndexChange: ({ gallery, index }) => {
+      compactControls?.sync?.(gallery, index);
       if (gallery.closest("#itemPhotoPreview")) onItemPreviewActive(index);
       if (gallery.closest("#rootContainerPhotoPreview")) onRootContainerPreviewActive(index);
     }
   });
+  compactControls = bindCompactPhotoGalleryControls(root, {
+    onStep: (gallery, index) => sharedController?.goTo?.(gallery, index, "smooth") === true
+  });
+  return {
+    refresh() {
+      sharedController?.refresh?.();
+      compactControls.refresh();
+    },
+    destroy() {
+      compactControls.destroy();
+      sharedController?.destroy?.();
+    }
+  };
 }
 
 export async function openPhotoLightbox(sourceImage, {
@@ -631,11 +757,17 @@ export async function openPhotoLightbox(sourceImage, {
   const prevButton = overlay.querySelector(".photo-lightbox-prev");
   const nextButton = overlay.querySelector(".photo-lightbox-next");
   let activeIndex = initialIndex;
+  const touchCarousel = photoLightboxUsesTouchCarousel({
+    coarsePointer: window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches === true,
+    maxTouchPoints: window.navigator?.maxTouchPoints,
+    viewportWidth: window.visualViewport?.width || window.innerWidth
+  });
   const fullscreenSwitcher = createSharedFullscreenSwitcher({
     root: overlay,
     track,
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
-    initialIndex
+    initialIndex,
+    directDesktop: !touchCarousel
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
   let loadingNotice = null;

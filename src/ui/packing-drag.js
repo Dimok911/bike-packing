@@ -1,6 +1,7 @@
 import { createDeferredBoardHeightLock } from "./packing-board-height-lock.js";
 import { createPackingDragCancelTarget } from "./packing-drag-cancel.js";
 import { createDragGhostMotion } from "./drag-ghost-motion.js";
+import { applyPackingBoardZoomToDragGhost } from "./packing-board-zoom.js";
 import {
   shouldSuppressClickAfterDragAttempt,
   suppressNextClickAfterDrag
@@ -155,7 +156,15 @@ export function createPackingDragController({
     const fittedTop = fitTop ? fittedDragGhostTop(top, ghost, ghostHeight) : top;
     ghost.style.left = "0";
     ghost.style.top = "0";
-    ghost.style.transform = `translate3d(${left}px, ${fittedTop}px, 0)`;
+    ghost.style.transform = `translate3d(${left}px, ${fittedTop}px, 0) scale(var(--packing-board-drag-ghost-scale, 1))`;
+  }
+
+  function isPackingBoardPinching(board) {
+    return Boolean(
+      board?.classList?.contains?.("packing-board-zooming") ||
+      board?.classList?.contains?.("packing-board-page-panning") ||
+      board?.classList?.contains?.("packing-board-zoom-active")
+    );
   }
 
   function createPreDragScroller(board, startX, startY) {
@@ -419,6 +428,7 @@ export function createPackingDragController({
     root.querySelectorAll(".container-card > .container-header").forEach((header) => {
       header.addEventListener("contextmenu", preventDragContextMenu);
       const startColumnDrag = (event, inputType = "pointer") => {
+        if (inputType === "touch" && Number(event?.touches?.length || 0) !== 1) return;
         const point = inputType === "touch" ? getTouchPoint(event) : event;
         if (!point) return;
         if (inputType !== "touch" && event.button !== 0) return;
@@ -467,6 +477,12 @@ export function createPackingDragController({
         const begin = () => {
           if (started) return true;
           if (dragStartBlocked) return false;
+          if (inputType === "touch" && isPackingBoardPinching(board)) {
+            canceled = true;
+            dragStartBlocked = true;
+            clearDragPending(source);
+            return false;
+          }
           if (!canStartPackingDrag({ kind: "root-container", id: containerId })) {
             canceled = true;
             dragStartBlocked = true;
@@ -489,7 +505,7 @@ export function createPackingDragController({
           lockBoardHeightForDrag(board);
           ghost = source.cloneNode(true);
           ghost.classList.add("drag-ghost", "column-ghost");
-          ghost.style.width = `${rect.width}px`;
+          applyPackingBoardZoomToDragGhost(source, ghost, rect);
           document.body.appendChild(ghost);
           ghostMotion = createDragGhostMotion({
             responsiveness: needsHold ? 0.45 : 1,
@@ -632,11 +648,14 @@ export function createPackingDragController({
           window.removeEventListener("blur", cancelAndFinish);
           document.removeEventListener("visibilitychange", cancelWhenHidden);
           document.removeEventListener("keydown", onKeyDown);
+          document.removeEventListener("packing-board-pinch-start", cancelAndFinish);
+          document.removeEventListener("packing-board-page-pan-start", cancelAndFinish);
         };
 
-        function cancelAndFinish() {
+        function cancelAndFinish(cancelEvent) {
           canceled = true;
           finish();
+          if (cancelEvent?.type?.startsWith?.("packing-board-")) boardHeightLock.unlock();
         }
 
         function cancelWhenHidden() {
@@ -665,6 +684,8 @@ export function createPackingDragController({
         window.addEventListener("blur", cancelAndFinish);
         document.addEventListener("visibilitychange", cancelWhenHidden);
         document.addEventListener("keydown", onKeyDown);
+        document.addEventListener("packing-board-pinch-start", cancelAndFinish);
+        document.addEventListener("packing-board-page-pan-start", cancelAndFinish);
       };
 
       header.addEventListener("pointerdown", (event) => {
@@ -677,6 +698,7 @@ export function createPackingDragController({
 
   function bindPointerPackingDrag(root, placeholder) {
     const startDrag = ({ kind, id, handle, source, event, inputType = "pointer" }) => {
+      if (inputType === "touch" && Number(event?.touches?.length || 0) !== 1) return;
       const point = inputType === "touch" ? getTouchPoint(event) : event;
       if (!point) return;
       if (inputType !== "touch" && event.button !== 0) return;
@@ -765,6 +787,12 @@ export function createPackingDragController({
       const begin = () => {
         if (started) return true;
         if (dragStartBlocked) return false;
+        if (inputType === "touch" && isPackingBoardPinching(board)) {
+          canceled = true;
+          dragStartBlocked = true;
+          clearDragPending(source);
+          return false;
+        }
         if (!canStartPackingDrag({ kind, id })) {
           canceled = true;
           dragStartBlocked = true;
@@ -790,7 +818,7 @@ export function createPackingDragController({
         ghost = source.cloneNode(true);
         ghost.classList.add("drag-ghost");
         if (kind === "item") ghost.classList.add("item-ghost");
-        ghost.style.width = `${sourceRect.width}px`;
+        applyPackingBoardZoomToDragGhost(source, ghost, sourceRect);
         ghost.style.transform = "none";
         placeholder.style.height = `${sourceRect.height}px`;
         placeholder.style.width = `${sourceRect.width}px`;
@@ -1078,11 +1106,14 @@ export function createPackingDragController({
         window.removeEventListener("blur", cancelAndFinish);
         document.removeEventListener("visibilitychange", cancelWhenHidden);
         document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("packing-board-pinch-start", cancelAndFinish);
+        document.removeEventListener("packing-board-page-pan-start", cancelAndFinish);
       };
 
-      function cancelAndFinish() {
+      function cancelAndFinish(cancelEvent) {
         canceled = true;
         finish();
+        if (cancelEvent?.type?.startsWith?.("packing-board-")) boardHeightLock.unlock();
       }
 
       function cancelWhenHidden() {
@@ -1111,6 +1142,8 @@ export function createPackingDragController({
       window.addEventListener("blur", cancelAndFinish);
       document.addEventListener("visibilitychange", cancelWhenHidden);
       document.addEventListener("keydown", onKeyDown);
+      document.addEventListener("packing-board-pinch-start", cancelAndFinish);
+      document.addEventListener("packing-board-page-pan-start", cancelAndFinish);
     };
 
     root.querySelectorAll("[data-item-drag]").forEach((handle) => {
@@ -1152,6 +1185,7 @@ export function createPackingDragController({
     if (!sourceRoot) return;
 
     const startDrag = ({ id, source, event, inputType = "pointer" }) => {
+      if (inputType === "touch" && Number(event?.touches?.length || 0) !== 1) return;
       const point = inputType === "touch" ? getTouchPoint(event) : event;
       if (!point) return;
       if (inputType !== "touch" && event.button !== 0) return;
@@ -1190,9 +1224,10 @@ export function createPackingDragController({
       let blockingTouchMove = false;
       const dragCancelTarget = createDragCancelTarget();
       const sourceRect = source.getBoundingClientRect();
+      const board = getPackingBoard();
       const dragOffsetY = startY - sourceRect.top;
       const preDragScroller = createPreDragScroller(null, startX, startY);
-      const edgeScroller = createBoardEdgeScroller(getPackingBoard(), () => {
+      const edgeScroller = createBoardEdgeScroller(board, () => {
         if (!started) return;
         place(latestX, latestY);
       }, (clientY) => {
@@ -1236,6 +1271,12 @@ export function createPackingDragController({
       const begin = () => {
         if (started) return true;
         if (dragStartBlocked) return false;
+        if (inputType === "touch" && isPackingBoardPinching(board)) {
+          canceled = true;
+          dragStartBlocked = true;
+          clearDragPending(source);
+          return false;
+        }
         if (!canStartPackingDrag({ kind: "catalog-item", id })) {
           canceled = true;
           dragStartBlocked = true;
@@ -1259,7 +1300,7 @@ export function createPackingDragController({
         source.classList.add("dragging");
         ghost = source.cloneNode(true);
         ghost.classList.add("drag-ghost", "item-ghost");
-        ghost.style.width = `${sourceRect.width}px`;
+        applyPackingBoardZoomToDragGhost(source, ghost, sourceRect);
         ghost.style.transform = "none";
         placeholder.style.height = `${sourceRect.height}px`;
         placeholder.style.width = `${sourceRect.width}px`;
@@ -1458,11 +1499,14 @@ export function createPackingDragController({
         window.removeEventListener("blur", cancelAndFinish);
         document.removeEventListener("visibilitychange", cancelWhenHidden);
         document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("packing-board-pinch-start", cancelAndFinish);
+        document.removeEventListener("packing-board-page-pan-start", cancelAndFinish);
       };
 
-      function cancelAndFinish() {
+      function cancelAndFinish(cancelEvent) {
         canceled = true;
         finish();
+        if (cancelEvent?.type?.startsWith?.("packing-board-")) boardHeightLock.unlock();
       }
 
       function cancelWhenHidden() {
@@ -1491,6 +1535,8 @@ export function createPackingDragController({
       window.addEventListener("blur", cancelAndFinish);
       document.addEventListener("visibilitychange", cancelWhenHidden);
       document.addEventListener("keydown", onKeyDown);
+      document.addEventListener("packing-board-pinch-start", cancelAndFinish);
+      document.addEventListener("packing-board-page-pan-start", cancelAndFinish);
     };
 
     sourceRoot.querySelectorAll("[data-list-item-id]").forEach((source) => {

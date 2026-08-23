@@ -98,6 +98,7 @@ export function bindStickyRootHeaderRow(board, {
   let positionAnimation = null;
   let animatedMaxScroll = null;
   let usesScrollTimeline = false;
+  let pinchActive = false;
   const readRootPx = (name) => {
     const value = getComputedStyle(document.documentElement).getPropertyValue(name);
     const parsed = Number.parseFloat(value);
@@ -105,16 +106,23 @@ export function bindStickyRootHeaderRow(board, {
     return name === "--sticky-tabs-height" ? 44 : 0;
   };
   const syncPosition = () => {
-    if (usesScrollTimeline) return;
+    if (usesScrollTimeline && !pinchActive) return;
     const nextLeft = Math.max(0, Number(board.scrollLeft) || 0);
     if (Math.abs(headerRow.scrollLeft - nextLeft) > 0.5) headerRow.scrollLeft = nextLeft;
   };
+  const cancelPositionTimeline = () => {
+    positionAnimation?.cancel?.();
+    positionAnimation = null;
+    animatedMaxScroll = null;
+    usesScrollTimeline = false;
+  };
   const syncPositionTimeline = () => {
+    if (pinchActive) return false;
     if (typeof ScrollTimelineCtor !== "function" || typeof track.animate !== "function") return false;
     const maxScroll = Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth));
     if (usesScrollTimeline && animatedMaxScroll === maxScroll) return true;
     try {
-      positionAnimation?.cancel?.();
+      cancelPositionTimeline();
       const timeline = new ScrollTimelineCtor({ source: board, axis: "x" });
       positionAnimation = track.animate([
         { transform: "translate3d(0, 0, 0)" },
@@ -138,7 +146,14 @@ export function bindStickyRootHeaderRow(board, {
     geometryFrame = null;
     const rect = board.getBoundingClientRect();
     const stickyTop = readRootPx("--sticky-controls-height") + readRootPx("--sticky-tabs-height");
-    const visible = rect.top < stickyTop - 1 && rect.bottom > stickyTop + 24;
+    const remainsVisibleDuringPagePan = (
+      board.classList?.contains?.("packing-board-page-panning") &&
+      headerRow.classList.contains("is-visible")
+    );
+    const remainsVisibleDuringPinch = pinchActive && headerRow.classList.contains("is-visible");
+    const visible = remainsVisibleDuringPagePan || remainsVisibleDuringPinch || (
+      rect.top < stickyTop - 1 && rect.bottom > stickyTop + 24
+    );
     headerRow.classList.toggle("is-visible", visible);
     headerRow.style.setProperty("--packing-root-header-left", `${Math.max(0, rect.left)}px`);
     headerRow.style.setProperty("--packing-root-header-width", `${Math.max(0, rect.width)}px`);
@@ -166,8 +181,20 @@ export function bindStickyRootHeaderRow(board, {
     if (geometryFrame) return;
     geometryFrame = requestAnimationFrame(syncGeometry);
   };
+  const onPinchStart = () => {
+    pinchActive = true;
+    cancelPositionTimeline();
+    syncPosition();
+    requestGeometrySync();
+  };
+  const onPinchEnd = () => {
+    pinchActive = false;
+    requestGeometrySync();
+  };
 
   board.addEventListener("scroll", syncPosition, { passive: true });
+  board.addEventListener("packing-board-pinch-start", onPinchStart);
+  board.addEventListener("packing-board-pinch-end", onPinchEnd);
   window.addEventListener("scroll", requestGeometrySync, { passive: true });
   window.addEventListener("resize", requestGeometrySync, { passive: true });
   // Initialize before the browser can paint the freshly rendered header row.
@@ -747,6 +774,12 @@ export function bindFixedScrollbar(board, {
     stopSwipe();
   };
 
+  const cancelForBoardGesture = () => {
+    mouseDragging = false;
+    stopMomentum();
+    stopSwipe();
+  };
+
   const updateWidth = () => updateThumb();
   const destroy = () => {
     stopMomentum();
@@ -754,6 +787,8 @@ export function bindFixedScrollbar(board, {
     thumbFrame = null;
     releasePointer();
     board.removeEventListener?.("scroll", requestThumbUpdate);
+    board.removeEventListener?.("packing-board-pinch-start", cancelForBoardGesture);
+    board.removeEventListener?.("packing-board-page-pan-start", cancelForBoardGesture);
     bar.removeEventListener?.("click", onBarClick);
     if (pointerEventsSupported) {
       bar.removeEventListener?.("pointerdown", onPointerDown);
@@ -770,6 +805,8 @@ export function bindFixedScrollbar(board, {
   };
 
   board.addEventListener("scroll", requestThumbUpdate, { passive: true });
+  board.addEventListener("packing-board-pinch-start", cancelForBoardGesture);
+  board.addEventListener("packing-board-page-pan-start", cancelForBoardGesture);
   bar.addEventListener("click", onBarClick);
   if (pointerEventsSupported) {
     bar.addEventListener("pointerdown", onPointerDown, { passive: false });

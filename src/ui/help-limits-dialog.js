@@ -39,7 +39,8 @@ export function openHelpLimitsDialogUi({
     </section>
     <section class="help-limits-section">
       <h3>Photo Viewer</h3>
-      <p>Swipe to switch photos. On desktop, dots below the photo show the current slide. Click a photo to open it fullscreen; drag to pan, use the mouse wheel or pinch to zoom, and click the photo again to close.</p>
+      <p>On a packing board, use the dots below a photo to switch slides; a swipe over the photo scrolls the board or page. Open a photo fullscreen for regular swipe navigation; drag to pan, use the mouse wheel or pinch to zoom, and click the photo again to close.</p>
+      <p>Pinch the packing board to resize it on a phone. On a computer, point at the needed place and use Ctrl + mouse wheel. The percentage button returns the board to 100%.</p>
     </section>
   ` : `
     <section class="help-limits-section">
@@ -68,7 +69,8 @@ export function openHelpLimitsDialogUi({
     </section>
     <section class="help-limits-section">
       <h3>Просмотр фото</h3>
-      <p>Фото можно листать свайпом. На десктопе точки под фото показывают текущий слайд. Клик по фото открывает полноэкранный просмотр; фото можно двигать, масштаб менять колесом мыши или pinch-жестом, следующий клик по фото закрывает просмотр.</p>
+      <p>На доске укладки фотографии переключаются точками под снимком, а свайп по фото прокручивает доску или страницу. В полноэкранном просмотре остаётся обычное перелистывание свайпом; фото можно двигать, масштаб менять колесом мыши или pinch-жестом, следующий клик по фото закрывает просмотр.</p>
+      <p>На телефоне масштаб доски меняется pinch-жестом. На компьютере наведите курсор на нужное место и используйте Ctrl + колесо мыши. Кнопка с процентом возвращает доску к 100%.</p>
     </section>
   `;
   openModalDialog(dialog);

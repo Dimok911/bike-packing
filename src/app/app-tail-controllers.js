@@ -101,6 +101,7 @@ import {
   clearLayoutComparisonMoveLink,
   toggleLayoutComparisonMoveLink
 } from "../ui/layout-comparison-link.js";
+import { bindPackingBoardZoom } from "../ui/packing-board-zoom.js";
 import {
   pickerListThumbnailHtml,
   syncPickerListPhotoToggle
@@ -3094,6 +3095,7 @@ function renderPacking() {
     const comparisonBoard = refs.packingView.querySelector(".comparison-board");
     restorePendingPackingScroll(comparisonBoard);
     bindBoardScroll(comparisonBoard);
+    bindPackingBoardZoom(comparisonBoard, { resetLabel: t("packing.zoomReset") });
     bindFixedScrollbar(comparisonBoard);
     return;
   }
@@ -3153,6 +3155,7 @@ function renderPacking() {
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
+  bindPackingBoardZoom(sharedBoard, { resetLabel: t("packing.zoomReset") });
   bindStickyRootHeaderRow(sharedBoard);
   bindFixedScrollbar(sharedBoard);
 }
@@ -3333,6 +3336,7 @@ function renderSharedPacking() {
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
+  bindPackingBoardZoom(sharedBoard, { resetLabel: t("packing.zoomReset") });
   bindStickyRootHeaderRow(sharedBoard);
   bindFixedScrollbar(sharedBoard);
 }

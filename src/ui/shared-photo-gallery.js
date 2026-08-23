@@ -51,6 +51,12 @@ export function bindSharedPhotoGalleries(root, options = {}) {
     refresh() {
       binding.controller?.refresh();
     },
+    goTo(gallery, index, behavior = "smooth") {
+      const galleryBinding = binding.controller?.bindings?.find?.((candidate) => candidate?.gallery === gallery);
+      if (typeof galleryBinding?.goTo !== "function") return false;
+      galleryBinding.goTo(index, behavior);
+      return true;
+    },
     destroy() {
       binding.controller?.destroy();
       bindings.delete(binding);

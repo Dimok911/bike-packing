@@ -54,6 +54,8 @@ import {
   bindPhotoGalleries,
   createPhotoLightboxLoadingNotice,
   photoDialogStatusText,
+  photoGalleryVisibleDotIndexes,
+  photoLightboxUsesTouchCarousel,
   photoStatusText,
   photoUploadProgressState,
   photoUploadState,
@@ -62,6 +64,7 @@ import {
   resolvePhotoGallerySnapIndex,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml,
+  renderPhotoDots,
   renderPhotoSlide
 } from "../../src/ui/photo-gallery.js";
 import { createPhotoObjectUrlRegistry } from "../../src/ui/photo-object-url-registry.js";
@@ -2615,6 +2618,26 @@ test("CRITICAL offline-photos: packing gallery dots stay above iOS scrolling lay
   assert.match(styles, /\.photo-gallery-dot-mark\s*\{[\s\S]*width:\s*8px;[\s\S]*height:\s*8px;[\s\S]*border:\s*1px solid[\s\S]*pointer-events:\s*none;/);
   assert.match(styles, /\.photo-gallery-dot\.active \.photo-gallery-dot-mark\s*\{[\s\S]*background:\s*var\(--accent\);/);
   assert.doesNotMatch(styles, /\.photo-gallery-dot::before/);
+});
+
+test("CRITICAL offline-photos: long galleries keep a centered compact dot window with arrows and counter", () => {
+  assert.deepEqual(photoGalleryVisibleDotIndexes(12, 0), [0, 1, 2, 3, 4]);
+  assert.deepEqual(photoGalleryVisibleDotIndexes(12, 6), [4, 5, 6, 7, 8]);
+  assert.deepEqual(photoGalleryVisibleDotIndexes(12, 11), [7, 8, 9, 10, 11]);
+  const html = renderPhotoDots(12, 6);
+  assert.match(html, /photo-gallery-dots-compact/);
+  assert.match(html, /data-photo-step="-1"/);
+  assert.match(html, /data-photo-step="1"/);
+  assert.match(html, /data-photo-counter[^>]*>7 \/ 12</);
+  assert.equal((html.match(/data-photo-index=/g) || []).length, 12);
+  assert.equal((html.match(/data-vpg-dot[^>]* hidden/g) || []).length, 7);
+});
+
+test("CRITICAL offline-photos: fullscreen photos force carousel mode on phones only", () => {
+  assert.equal(photoLightboxUsesTouchCarousel({ coarsePointer: true, viewportWidth: 390 }), true);
+  assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 5, viewportWidth: 390 }), true);
+  assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 5, viewportWidth: 1280 }), false);
+  assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 0, viewportWidth: 390 }), false);
 });
 
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {

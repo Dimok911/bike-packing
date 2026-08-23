@@ -63,8 +63,11 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     if (isAuthCheckUnavailableError(error, isNetworkError)) {
       setLayoutLoadStatus("warning", () => localText("Server unavailable, trying the local copy", "Сервер недоступен, пробуем локальную копию"));
       if (activateOfflineRememberedSession(localText(
-        "Server unavailable · local copy of personal layouts is open",
-        "Сервер недоступен · открыта локальная копия личных укладок"
+        "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally",
+        "API недоступен · вход сейчас нельзя подтвердить · личные укладки открыты локально"
+      ), localText(
+        "API unavailable · sign-in cannot be confirmed now · personal layouts are open locally",
+        "API недоступен · вход сейчас нельзя подтвердить · личные укладки открыты локально"
       ))) return;
       if (shouldKeepCurrentReadonlyDemoAfterAuthCheck()) {
         runtime.appUnlocked = true;

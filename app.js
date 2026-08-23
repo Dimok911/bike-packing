@@ -3672,8 +3672,8 @@ function setLayoutLoadStatus(tone = "idle", text = "") {
   layoutLoadStatus.setStatus(tone, text);
 }
 
-function setOfflineRememberedLayoutLoadStatus() {
-  setLayoutLoadStatus("warning", localText(
+function setOfflineRememberedLayoutLoadStatus(message = "") {
+  setLayoutLoadStatus("warning", message || localText(
     "Local copy: server sign-in is not confirmed",
     "Локальная копия: вход на сервере не подтверждён"
   ));
@@ -5596,7 +5596,10 @@ function clearOfflineRememberedSession() {
   offlineRememberedUser = null;
 }
 
-function activateOfflineRememberedSession(message = localText("Local copy of personal layouts · sign in to sync", "Локальная копия личных укладок · войдите для синхронизации")) {
+function activateOfflineRememberedSession(
+  message = localText("Local copy of personal layouts · sign in to sync", "Локальная копия личных укладок · войдите для синхронизации"),
+  layoutStatusMessage = ""
+) {
   const rememberedUser = rememberedOfflineUser(offlineRememberedUser);
   if (!rememberedUser) return false;
   currentUser = null;
@@ -5604,7 +5607,7 @@ function activateOfflineRememberedSession(message = localText("Local copy of per
   appUnlocked = true;
   activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
   setActivePrivateScope();
-  setOfflineRememberedLayoutLoadStatus();
+  setOfflineRememberedLayoutLoadStatus(layoutStatusMessage);
   const renderedFallback = renderInitialLocalFallbackIfNeeded();
   if (!renderedFallback) renderPreservingPackingScroll();
   updateSyncUi(message);
