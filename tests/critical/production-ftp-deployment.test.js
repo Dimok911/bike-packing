@@ -26,10 +26,13 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(script, /Curl-Line "pinnedpubkey" \$ftpPinnedPublicKey/);
   assert.match(script, /Curl-Line "resolve" "\$\{ftpCanonicalHost\}:\$\{ftpPort\}:\$\{ftpFallbackIp\}"/);
   assert.match(script, /Invoke-CurlConfig -Ftps -Lines/);
+  assert.match(script, /function Send-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
+  assert.match(script, /function Receive-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
 
   assert.match(docs, /`remotePath: "\/"` means the FTP account root/);
   assert.match(docs, /`\/www\/vniipo-help\.ru\/bike-packing\/`/);
   assert.match(docs, /scripts\/deploy-production-ftp\.ps1 -ExpectedVersion vNNN/);
   assert.match(docs, /explicit FTPS/i);
   assert.match(docs, /pinned SPKI public key/i);
+  assert.match(docs, /retries transient upload and download failures/i);
 });

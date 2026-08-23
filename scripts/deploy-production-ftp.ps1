@@ -42,7 +42,9 @@ function Invoke-CurlConfig {
   param(
     [Parameter(Mandatory = $true)]
     [string[]]$Lines,
-    [switch]$Ftps
+    [switch]$Ftps,
+    [ValidateRange(1, 10)]
+    [int]$Attempts = 1
   )
   $effectiveLines = @($Lines)
   if ($Ftps) {
@@ -54,8 +56,16 @@ function Invoke-CurlConfig {
       (Curl-Line "resolve" "${ftpCanonicalHost}:${ftpPort}:${ftpFallbackIp}")
     ) + $effectiveLines
   }
-  (($effectiveLines -join "`n") + "`n") | & $curlPath --config -
-  return $LASTEXITCODE
+  for ($attempt = 1; $attempt -le $Attempts; $attempt += 1) {
+    (($effectiveLines -join "`n") + "`n") | & $curlPath --config -
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) { return 0 }
+    if ($attempt -lt $Attempts) {
+      Write-Warning "Transfer attempt $attempt of $Attempts failed; retrying."
+      Start-Sleep -Seconds 2
+    }
+  }
+  return $exitCode
 }
 
 $settings = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
@@ -91,7 +101,7 @@ function Get-FtpUrl([string]$accountRelativePath) {
 }
 
 function Send-FtpFile([string]$localPath, [string]$accountRelativePath) {
-  $exitCode = Invoke-CurlConfig -Ftps -Lines @(
+  $exitCode = Invoke-CurlConfig -Ftps -Attempts 5 -Lines @(
     "silent"
     "show-error"
     "fail"
@@ -108,7 +118,7 @@ function Receive-FtpFile([string]$accountRelativePath, [string]$localPath) {
   if (-not (Test-Path -LiteralPath $parent)) {
     New-Item -Path $parent -ItemType Directory -Force | Out-Null
   }
-  $exitCode = Invoke-CurlConfig -Ftps -Lines @(
+  $exitCode = Invoke-CurlConfig -Ftps -Attempts 5 -Lines @(
     "silent"
     "show-error"
     "fail"

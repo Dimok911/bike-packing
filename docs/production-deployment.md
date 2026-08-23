@@ -76,6 +76,11 @@ The versioned backup is intentionally retained for manual recovery. A failed
 release directory is also retained if a post-activation rollback was needed;
 never delete deployment directories using an unvalidated wildcard.
 
+The script retries transient upload and download failures for each individual
+file. Directory renames are deliberately single-attempt operations because an
+ambiguous retry after a connection reset could reverse or obscure the actual
+activation state.
+
 ## Verification
 
 After both deployments:
