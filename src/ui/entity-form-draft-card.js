@@ -7,6 +7,25 @@ function tr(t, key, fallback, values = {}) {
   return value === key ? fallback : value;
 }
 
+export function newEntityFormDraftDisplayName({ draft, kind = "item", t = (key) => key } = {}) {
+  const fallbackName = kind === "container"
+    ? tr(t, "formDraft.newContainer", "Новая сумка или место")
+    : tr(t, "formDraft.newItem", "Новая вещь");
+  return String(draft?.fields?.name || "").trim() || fallbackName;
+}
+
+export function newEntityFormDraftDeleteConfirm({ draft, kind = "item", t = (key) => key } = {}) {
+  const name = newEntityFormDraftDisplayName({ draft, kind, t });
+  return {
+    title: tr(t, "formDraft.deleteTitle", "Удалить черновик?"),
+    text: tr(t, "formDraft.deleteText", "Черновик «{name}» будет удалён с этого устройства. Это действие нельзя отменить.", { name }),
+    okText: tr(t, "buttons.deleteLayout", "Удалить"),
+    cancelText: tr(t, "buttons.cancel", "Отмена"),
+    tone: "danger",
+    hideClose: true
+  };
+}
+
 export function renderNewEntityFormDraftCardHtml({
   draft,
   kind = "item",
@@ -15,10 +34,7 @@ export function renderNewEntityFormDraftCardHtml({
 } = {}) {
   if (!draft || (kind !== "item" && kind !== "container")) return "";
   const fields = draft.fields || {};
-  const fallbackName = kind === "container"
-    ? tr(t, "formDraft.newContainer", "Новая сумка или место")
-    : tr(t, "formDraft.newItem", "Новая вещь");
-  const name = String(fields.name || "").trim() || fallbackName;
+  const name = newEntityFormDraftDisplayName({ draft, kind, t });
   const weight = Number(fields.weight || 0);
   const meta = [
     weight > 0 ? formatWeight(weight) : "",

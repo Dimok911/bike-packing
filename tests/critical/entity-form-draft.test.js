@@ -6,7 +6,10 @@ import {
   entityFormDraftStorageKey,
   parseNewEntityFormDraft
 } from "../../src/ui/entity-form-draft.js";
-import { renderNewEntityFormDraftCardHtml } from "../../src/ui/entity-form-draft-card.js";
+import {
+  newEntityFormDraftDeleteConfirm,
+  renderNewEntityFormDraftCardHtml
+} from "../../src/ui/entity-form-draft-card.js";
 
 test("CRITICAL form drafts: item fields, placement, and photo references survive serialization", () => {
   const draft = createNewEntityFormDraft({
@@ -70,6 +73,26 @@ test("CRITICAL form drafts: interrupted work is rendered as an accessible catalo
   assert.match(html, /entity-form-draft-photo[^>]*>Local draft</);
 });
 
+test("CRITICAL form drafts: deleting a recovery card requires an irreversible-action confirmation", () => {
+  const config = newEntityFormDraftDeleteConfirm({
+    draft: createNewEntityFormDraft({ kind: "item", fields: { name: "Tent draft" } }),
+    kind: "item",
+    t: (key, values = {}) => ({
+      "formDraft.deleteTitle": "Delete draft?",
+      "formDraft.deleteText": `Delete ${values.name} forever`,
+      "buttons.deleteLayout": "Delete",
+      "buttons.cancel": "Cancel"
+    })[key] || key
+  });
+
+  assert.equal(config.title, "Delete draft?");
+  assert.equal(config.text, "Delete Tent draft forever");
+  assert.equal(config.okText, "Delete");
+  assert.equal(config.cancelText, "Cancel");
+  assert.equal(config.tone, "danger");
+  assert.equal(config.hideClose, true);
+});
+
 test("CRITICAL form drafts: dialogs autosave silently, recover after interruption, and only explicit choices clear", () => {
   const controllers = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
@@ -81,6 +104,9 @@ test("CRITICAL form drafts: dialogs autosave silently, recover after interruptio
   assert.match(controllers, /window\.setTimeout\(persistNewRootContainerFormDraft, 250\)/);
   assert.match(controllers, /if \(!list \|\| !addButton \|\| dialog\?\.open \|\| saving\) return/);
   assert.match(controllers, /renderNewEntityFormDraftCardHtml\(\{/);
+  assert.match(controllers, /const confirmed = await askConfirmDialog\(newEntityFormDraftDeleteConfirm\(\{/);
+  assert.match(controllers, /if \(!confirmed\) return;\s+clearStoredNewEntityFormDraft\("item"\)/);
+  assert.match(controllers, /if \(!confirmed\) return;\s+clearStoredNewEntityFormDraft\("container"\)/);
   assert.match(controllers, /const action = await askUnsavedChangesDialog\(\)/);
   assert.match(controllers, /if \(action === "save"\) \{\s+saveDialogItem\(\)/);
   assert.match(controllers, /if \(action === "save"\) \{\s+saveRootContainerDialog\(\)/);

@@ -83,7 +83,10 @@ import {
   entityFormDraftStorageKey,
   parseNewEntityFormDraft
 } from "../ui/entity-form-draft.js";
-import { renderNewEntityFormDraftCardHtml } from "../ui/entity-form-draft-card.js";
+import {
+  newEntityFormDraftDeleteConfirm,
+  renderNewEntityFormDraftCardHtml
+} from "../ui/entity-form-draft-card.js";
 import {
   closeDialogsThenFocus,
   COPY_FOCUS_SYNC_FALLBACK_DELAY_MS
@@ -5691,15 +5694,31 @@ function flushOpenEntityFormDrafts() {
   if (refs.rootContainerDialog?.open && !runtime.editingRootContainerId) persistNewRootContainerFormDraft();
 }
 
-function discardNewItemFormDraft(event) {
+async function discardNewItemFormDraft(event) {
   event?.preventDefault();
+  const draft = loadNewEntityFormDraft("item");
+  if (!draft) return;
+  const confirmed = await askConfirmDialog(newEntityFormDraftDeleteConfirm({
+    draft,
+    kind: "item",
+    t
+  }));
+  if (!confirmed) return;
   clearStoredNewEntityFormDraft("item");
   if (refs.dialog?.open) refs.dialog.close("cancel");
   showToast(t("formDraft.deleted"), "success");
 }
 
-function discardNewRootContainerFormDraft(event) {
+async function discardNewRootContainerFormDraft(event) {
   event?.preventDefault();
+  const draft = loadNewEntityFormDraft("container");
+  if (!draft) return;
+  const confirmed = await askConfirmDialog(newEntityFormDraftDeleteConfirm({
+    draft,
+    kind: "container",
+    t
+  }));
+  if (!confirmed) return;
   clearStoredNewEntityFormDraft("container");
   if (refs.rootContainerDialog?.open) refs.rootContainerDialog.close("cancel");
   showToast(t("formDraft.deleted"), "success");
