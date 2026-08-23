@@ -1948,7 +1948,7 @@ const {
   deleteRootContainer, removeRootContainerFromActiveLayout, removeContainerFromLayoutOnly, deleteUnusedLayoutContainerEntity,
   deleteContainerPhotos, makeItemCopyName, touchLayoutsReferencingItem, cleanupEmptyContainers,
   getColumnPlaceholderIndex, isOriginalRootColumnPosition, moveRootColumn, openRootContainerDialog,
-  flushOpenEntityFormDrafts, syncNewEntityFormDraftBadges, discardNewItemFormDraft, discardNewRootContainerFormDraft,
+  flushOpenEntityFormDrafts, syncNewEntityFormDraftCatalogCards,
   fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
   resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, openSharedReadonlyContainerDialog,
   setSharedReadonlyRootContainerDialog, resetSharedReadonlyRootContainerDialog, uniqueLayoutName, uniquePublishedTemplateName,
@@ -2935,7 +2935,7 @@ function applyStaticTranslations() {
     t,
     uiLanguage
   });
-  syncNewEntityFormDraftBadges();
+  syncNewEntityFormDraftCatalogCards();
   desktopInputLayoutController.refresh();
   interfaceColorThemeController.refresh();
 }
@@ -3109,7 +3109,6 @@ async function init() {
   });
   refs.unpackAllBtn.addEventListener("click", unpackAllItems);
   refs.saveItemBtn.addEventListener("click", saveDialogItem);
-  refs.discardItemFormDraftBtn?.addEventListener("click", discardNewItemFormDraft);
   refs.shareItemLinkBtn?.addEventListener("click", shareEditingItemByLink);
   refs.itemWeight.addEventListener("input", updateItemQuantityUi);
   refs.itemQuantity.addEventListener("input", updateItemQuantityUi);
@@ -3135,7 +3134,6 @@ async function init() {
     requestCloseItemDialog();
   });
   refs.saveRootContainerBtn.addEventListener("click", saveRootContainerDialog);
-  refs.discardRootContainerFormDraftBtn?.addEventListener("click", discardNewRootContainerFormDraft);
   refs.shareRootContainerLinkBtn?.addEventListener("click", shareEditingContainerByLink);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("input", updateRootContainerDialogSaveState);
   refs.rootContainerDialog.querySelector("form")?.addEventListener("change", updateRootContainerDialogSaveState);

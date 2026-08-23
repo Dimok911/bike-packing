@@ -184,10 +184,6 @@ export function applyStaticTranslationsUi({
   setText(refs.itemPhotoOrderBtn, t("buttons.photoOrder"));
   setText(refs.copySharedItemDialogBtn, t("buttons.copy"));
   setText(refs.shareItemLinkBtn, t("shareEntity.button"));
-  setText(refs.discardItemFormDraftBtn, t("formDraft.delete"));
-  if (refs.itemFormDraftStatus?.dataset.formDraftStatus) {
-    setText(refs.itemFormDraftStatus, t(`formDraft.${refs.itemFormDraftStatus.dataset.formDraftStatus}`));
-  }
 
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerName)"), t("forms.name"));
   setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerWeight)"), t("forms.weightGrams"));
@@ -223,10 +219,6 @@ export function applyStaticTranslationsUi({
   setText(refs.rootContainerPhotoPrimaryBtn, t("buttons.primaryPhoto"));
   setText(refs.rootContainerPhotoOrderBtn, t("buttons.photoOrder"));
   setText(refs.shareRootContainerLinkBtn, t("shareEntity.button"));
-  setText(refs.discardRootContainerFormDraftBtn, t("formDraft.delete"));
-  if (refs.rootContainerFormDraftStatus?.dataset.formDraftStatus) {
-    setText(refs.rootContainerFormDraftStatus, t(`formDraft.${refs.rootContainerFormDraftStatus.dataset.formDraftStatus}`));
-  }
   documentRef.querySelectorAll(".photo-paste-hint").forEach((hint) => setText(hint, t("photo.pasteHint")));
 
   setText(refs.rootPlacementTitle, t("forms.inCurrentLayout"));

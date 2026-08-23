@@ -83,6 +83,7 @@ import {
   entityFormDraftStorageKey,
   parseNewEntityFormDraft
 } from "../ui/entity-form-draft.js";
+import { renderNewEntityFormDraftCardHtml } from "../ui/entity-form-draft-card.js";
 import {
   closeDialogsThenFocus,
   COPY_FOCUS_SYNC_FALLBACK_DELAY_MS
@@ -4208,7 +4209,7 @@ function renderItems() {
     showPhotos: shouldShowItemPhotos(),
     t
   });
-  syncNewEntityFormDraftBadges();
+  syncNewEntityFormDraftCatalogCards();
   bindCatalogBackToTop(refs.itemsView);
   bindEmptyContentFilterReset(refs.itemsView);
   refs.itemsView.querySelector("#addItemBtn").addEventListener("click", () => openItemDialog());
@@ -4760,7 +4761,7 @@ function renderRootContainerCard(container) {
 }
 
 function bindRootContainersEditor() {
-  syncNewEntityFormDraftBadges();
+  syncNewEntityFormDraftCatalogCards();
   bindCatalogBackToTop(refs.bagsView);
   bindRootContainersEditorControls({
     bindRootCatalogSelection,
@@ -5434,10 +5435,6 @@ function loadNewEntityFormDraft(kind) {
   }
 }
 
-function hasStoredNewEntityFormDraft(kind) {
-  return Boolean(loadNewEntityFormDraft(kind));
-}
-
 function clearNewEntityFormDraftTimer(kind) {
   const timer = kind === "container" ? rootContainerFormDraftSaveTimer : itemFormDraftSaveTimer;
   if (timer) window.clearTimeout(timer);
@@ -5452,51 +5449,55 @@ function clearStoredNewEntityFormDraft(kind) {
   } catch {
     // Draft cleanup is best-effort.
   }
-  setNewEntityFormDraftNotice(kind, "");
-  syncNewEntityFormDraftBadges();
+  syncNewEntityFormDraftCatalogCards();
 }
 
-function newEntityFormDraftNoticeRefs(kind) {
-  return kind === "container"
-    ? {
-        notice: refs.rootContainerFormDraftNotice,
-        status: refs.rootContainerFormDraftStatus,
-        discard: refs.discardRootContainerFormDraftBtn
-      }
-    : {
-        notice: refs.itemFormDraftNotice,
-        status: refs.itemFormDraftStatus,
-        discard: refs.discardItemFormDraftBtn
-      };
-}
-
-function setNewEntityFormDraftNotice(kind, mode = "saved") {
-  const { notice, status, discard } = newEntityFormDraftNoticeRefs(kind);
-  if (!notice || !status) return;
-  const visible = Boolean(mode);
-  notice.hidden = !visible;
-  status.dataset.formDraftStatus = mode;
-  status.textContent = visible ? t(`formDraft.${mode}`) : "";
-  if (discard) discard.textContent = t("formDraft.delete");
-}
-
-function syncNewEntityFormDraftBadge(button, kind) {
-  if (!button) return;
-  button.querySelector(".entity-form-draft-badge")?.remove();
-  if ((kind === "item" && itemFormDraftSaving) || (kind === "container" && rootContainerFormDraftSaving)) return;
-  if (!hasStoredNewEntityFormDraft(kind)) return;
-  const badge = document.createElement("span");
-  badge.className = "entity-form-draft-badge";
-  badge.textContent = t("formDraft.badge");
-  button.append(badge);
-}
-
-function syncNewEntityFormDraftBadges() {
-  document.querySelectorAll("#addItemBtn, #createItemForContainerBtn").forEach((button) => {
-    syncNewEntityFormDraftBadge(button, "item");
-  });
-  document.querySelectorAll("#addRootContainerBtn, #createRootForLayoutBtn").forEach((button) => {
-    syncNewEntityFormDraftBadge(button, "container");
+function syncNewEntityFormDraftCatalogCards() {
+  document.querySelectorAll("[data-entity-form-draft-card]").forEach((card) => card.remove());
+  [
+    {
+      kind: "item",
+      list: refs.itemsView?.querySelector(".items-list"),
+      addButton: refs.itemsView?.querySelector("#addItemBtn"),
+      dialog: refs.dialog,
+      saving: itemFormDraftSaving,
+      open: () => openItemDialog(),
+      discard: discardNewItemFormDraft
+    },
+    {
+      kind: "container",
+      list: refs.bagsView?.querySelector(".root-container-list"),
+      addButton: refs.bagsView?.querySelector("#addRootContainerBtn"),
+      dialog: refs.rootContainerDialog,
+      saving: rootContainerFormDraftSaving,
+      open: () => openRootContainerDialog(),
+      discard: discardNewRootContainerFormDraft
+    }
+  ].forEach(({ addButton, dialog, discard, kind, list, open, saving }) => {
+    if (!list || !addButton || dialog?.open || saving) return;
+    const draft = loadNewEntityFormDraft(kind);
+    if (!draft) return;
+    list.insertAdjacentHTML("afterbegin", renderNewEntityFormDraftCardHtml({
+      draft,
+      kind,
+      showPhotos: list.classList.contains("with-photo-slots"),
+      t
+    }));
+    const card = list.querySelector(`[data-entity-form-draft-card="${kind}"]`);
+    if (!card) return;
+    card.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-delete-entity-form-draft]")) return;
+      open();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      open();
+    });
+    card.querySelector("[data-delete-entity-form-draft]")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      discard(event);
+    });
   });
 }
 
@@ -5560,8 +5561,7 @@ function persistNewItemFormDraft() {
     JSON.stringify(draft),
     { silent: true }
   );
-  setNewEntityFormDraftNotice("item", saved ? "saved" : "saveFailed");
-  if (saved) syncNewEntityFormDraftBadges();
+  if (saved) syncNewEntityFormDraftCatalogCards();
   return { meaningful: true, saved };
 }
 
@@ -5593,8 +5593,7 @@ function persistNewRootContainerFormDraft() {
     JSON.stringify(draft),
     { silent: true }
   );
-  setNewEntityFormDraftNotice("container", saved ? "saved" : "saveFailed");
-  if (saved) syncNewEntityFormDraftBadges();
+  if (saved) syncNewEntityFormDraftCatalogCards();
   return { meaningful: true, saved };
 }
 
@@ -5656,7 +5655,6 @@ function restoreNewItemFormDraft() {
   updateItemDialogPhotoPreview(runtime.itemDialogPhotoDraft?.photos || []);
   updateItemPlacementQuantityUi();
   updateItemContainerPickerButton();
-  setNewEntityFormDraftNotice("item", "restored");
   return true;
 }
 
@@ -5685,7 +5683,6 @@ function restoreNewRootContainerFormDraft() {
   runtime.rootContainerDialogPhotoActiveIndex = 0;
   updateRootContainerDialogPhotoPreview(runtime.rootContainerDialogPhotoDraft?.photos || []);
   updateRootContainerPlacementButton();
-  setNewEntityFormDraftNotice("container", "restored");
   return true;
 }
 
@@ -5714,7 +5711,6 @@ function openRootContainerDialog(containerId = null, {
   targetLayoutId = ""
 } = {}) {
   resetSharedReadonlyRootContainerDialog();
-  setNewEntityFormDraftNotice("container", "");
   const container = containerId ? state.containers[containerId] : null;
   if (containerId && !container) return;
   placeNewRootInCurrentLayout = Boolean(!containerId && placeInCurrentLayout);
@@ -5769,7 +5765,6 @@ function fillRootContainerLocationSelect(selected = "") {
 
 function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId = "" } = {}) {
   resetSharedReadonlyItemDialog();
-  setNewEntityFormDraftNotice("item", "");
   runtime.editingItemId = itemId;
   runtime.itemDialogTargetLayoutId = !itemId && targetLayoutId
     ? targetLayoutId
@@ -5861,7 +5856,6 @@ function sharedRecordItemContainerId(sourceState, itemId, fallback = "") {
 async function openSharedReadonlyItemDialog(sourceItemId) {
   const match = findSharedItem(sourceItemId);
   if (!match) return;
-  setNewEntityFormDraftNotice("item", "");
   runtime.sharedDialogCopyItemId = sourceItemId;
   runtime.editingItemId = null;
   const sharedItem = match.item;
@@ -5967,7 +5961,6 @@ function copySharedItemFromReadonlyDialog() {
 async function openSharedReadonlyContainerDialog(sourceContainerId) {
   const match = findSharedRoot(sourceContainerId);
   if (!match) return;
-  setNewEntityFormDraftNotice("container", "");
   const container = match.sourceRecord || {
     name: match.name || "",
     weight: Number(match.weightGrams || 0),
@@ -7604,17 +7597,20 @@ function handleItemFormSubmit(event) {
 
 async function requestCloseItemDialog() {
   if (!runtime.editingItemId && !refs.saveItemBtn?.hidden) {
-    const draft = persistNewItemFormDraft();
-    if (!draft.meaningful) {
+    if (!hasSavableItemDialogChanges()) {
       refs.dialog.close("cancel");
       return;
     }
-    if (draft.saved) {
-      refs.dialog.close("draft");
-      syncNewEntityFormDraftBadges();
+    persistNewItemFormDraft();
+    const action = await askUnsavedChangesDialog();
+    if (action === "save") {
+      saveDialogItem();
       return;
     }
-    showToast(t("formDraft.saveFailed"), "error");
+    if (action === "discard") {
+      clearStoredNewEntityFormDraft("item");
+      refs.dialog.close("cancel");
+    }
     return;
   }
   if (!hasSavableItemDialogChanges()) {
@@ -7631,17 +7627,20 @@ async function requestCloseItemDialog() {
 
 async function requestCloseRootContainerDialog() {
   if (!runtime.editingRootContainerId && !refs.saveRootContainerBtn?.hidden) {
-    const draft = persistNewRootContainerFormDraft();
-    if (!draft.meaningful) {
+    if (!hasSavableRootContainerDialogChanges()) {
       refs.rootContainerDialog.close("cancel");
       return;
     }
-    if (draft.saved) {
-      refs.rootContainerDialog.close("draft");
-      syncNewEntityFormDraftBadges();
+    persistNewRootContainerFormDraft();
+    const action = await askUnsavedChangesDialog();
+    if (action === "save") {
+      saveRootContainerDialog();
       return;
     }
-    showToast(t("formDraft.saveFailed"), "error");
+    if (action === "discard") {
+      clearStoredNewEntityFormDraft("container");
+      refs.rootContainerDialog.close("cancel");
+    }
     return;
   }
   if (!hasSavableRootContainerDialogChanges()) {
@@ -9613,7 +9612,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
     deleteRootContainer, removeRootContainerFromActiveLayout, removeContainerFromLayoutOnly, deleteUnusedLayoutContainerEntity,
     deleteContainerPhotos, makeItemCopyName, touchLayoutsReferencingItem, cleanupEmptyContainers,
     getColumnPlaceholderIndex, isOriginalRootColumnPosition, moveRootColumn, openRootContainerDialog,
-    flushOpenEntityFormDrafts, syncNewEntityFormDraftBadges, discardNewItemFormDraft, discardNewRootContainerFormDraft,
+    flushOpenEntityFormDrafts, syncNewEntityFormDraftCatalogCards,
     openPackingItemReplacementDialog, openContainerReplacementDialog,
     fillRootContainerLocationSelect, openItemDialog, openSharedReadonlyItemDialog, setSharedReadonlyItemDialog,
     resetSharedReadonlyItemDialog, copySharedItemFromReadonlyDialog, openSharedReadonlyContainerDialog,

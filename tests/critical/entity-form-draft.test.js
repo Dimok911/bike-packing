@@ -6,6 +6,7 @@ import {
   entityFormDraftStorageKey,
   parseNewEntityFormDraft
 } from "../../src/ui/entity-form-draft.js";
+import { renderNewEntityFormDraftCardHtml } from "../../src/ui/entity-form-draft-card.js";
 
 test("CRITICAL form drafts: item fields, placement, and photo references survive serialization", () => {
   const draft = createNewEntityFormDraft({
@@ -39,17 +40,56 @@ test("CRITICAL form drafts: invalid, outdated, or wrong-kind payloads are ignore
   assert.notEqual(entityFormDraftStorageKey("item"), entityFormDraftStorageKey("container"));
 });
 
-test("CRITICAL form drafts: new dialogs autosave, restore, close safely, and clear after creation", () => {
+test("CRITICAL form drafts: interrupted work is rendered as an accessible catalog card", () => {
+  const html = renderNewEntityFormDraftCardHtml({
+    draft: createNewEntityFormDraft({
+      kind: "item",
+      fields: {
+        name: "Tent <draft>",
+        weight: "1234",
+        categories: ["Camp"],
+        location: "Home"
+      }
+    }),
+    kind: "item",
+    showPhotos: true,
+    t: (key, values = {}) => ({
+      "formDraft.badge": "Draft",
+      "formDraft.catalogStatus": "Not saved · click to continue",
+      "formDraft.open": `Continue ${values.name}`,
+      "formDraft.delete": "Delete draft",
+      "formDraft.photoPlaceholder": "Local draft"
+    })[key] || key
+  });
+
+  assert.match(html, /data-entity-form-draft-card="item"/);
+  assert.match(html, /Tent &lt;draft&gt;/);
+  assert.match(html, /Not saved · click to continue/);
+  assert.match(html, /entity-form-draft-card-badge[^>]*>Draft</);
+  assert.match(html, /data-delete-entity-form-draft="item"/);
+  assert.match(html, /entity-form-draft-photo[^>]*>Local draft</);
+});
+
+test("CRITICAL form drafts: dialogs autosave silently, recover after interruption, and only explicit choices clear", () => {
   const controllers = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
   assert.match(controllers, /if \(!containerId\) restoreNewRootContainerFormDraft\(\)/);
   assert.match(controllers, /if \(!itemId\) restoreNewItemFormDraft\(\)/);
-  assert.match(controllers, /scheduleNewItemFormDraftSave\(\)/);
-  assert.match(controllers, /scheduleNewRootContainerFormDraftSave\(\)/);
-  assert.match(controllers, /refs\.dialog\.close\("draft"\)/);
-  assert.match(controllers, /refs\.rootContainerDialog\.close\("draft"\)/);
+  assert.match(controllers, /window\.setTimeout\(persistNewItemFormDraft, 250\)/);
+  assert.match(controllers, /window\.setTimeout\(persistNewRootContainerFormDraft, 250\)/);
+  assert.match(controllers, /if \(!list \|\| !addButton \|\| dialog\?\.open \|\| saving\) return/);
+  assert.match(controllers, /renderNewEntityFormDraftCardHtml\(\{/);
+  assert.match(controllers, /const action = await askUnsavedChangesDialog\(\)/);
+  assert.match(controllers, /if \(action === "save"\) \{\s+saveDialogItem\(\)/);
+  assert.match(controllers, /if \(action === "save"\) \{\s+saveRootContainerDialog\(\)/);
+  assert.match(controllers, /if \(action === "discard"\) \{\s+clearStoredNewEntityFormDraft\("item"\)/);
+  assert.match(controllers, /if \(action === "discard"\) \{\s+clearStoredNewEntityFormDraft\("container"\)/);
+  assert.doesNotMatch(controllers, /close\("draft"\)/);
+  assert.doesNotMatch(index, /FormDraftNotice|FormDraftStatus/);
   assert.match(controllers, /result\?\.created\) clearStoredNewEntityFormDraft\("item"\)/);
   assert.match(controllers, /result\?\.created\) clearStoredNewEntityFormDraft\("container"\)/);
+  assert.match(app, /syncNewEntityFormDraftCatalogCards\(\)/);
   assert.match(app, /window\.addEventListener\("pagehide", flushOpenEntityFormDrafts\)/);
 });
