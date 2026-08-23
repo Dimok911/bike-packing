@@ -68,9 +68,12 @@ export function packingBoardWheelPageDelta({
   return amount;
 }
 
-export function packingBoardGestureTargetsOpenDialog(event) {
+export function packingBoardGestureTargetsOpenDialog(event, {
+  documentRef = globalThis.document
+} = {}) {
   const dialog = event?.target?.closest?.("dialog");
-  return Boolean(dialog?.open);
+  if (dialog?.open) return true;
+  return Boolean(documentRef?.querySelector?.("dialog[open]"));
 }
 
 export function packingBoardTwoFingerMode({
@@ -770,7 +773,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const isNativeGestureInsideBoard = (event) => {
-    if (packingBoardGestureTargetsOpenDialog(event)) return false;
+    if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return false;
     if (gestureActive) return true;
     if (board.contains?.(event?.target)) return true;
     const clientX = Number(event?.clientX);
@@ -845,7 +848,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onTouchStart = (event) => {
-    if (packingBoardGestureTargetsOpenDialog(event)) return;
+    if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomSettle();
@@ -918,7 +921,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onTouchMove = (event) => {
-    if (packingBoardGestureTargetsOpenDialog(event)) return;
+    if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     if (!gestureActive) return;
     if (!pinching) {
       const remainingTouch = event?.touches?.length === 1 ? event.touches[0] : null;

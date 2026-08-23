@@ -705,6 +705,11 @@ test("CRITICAL packing zoom: an open dialog keeps wheel and touch gestures away 
     target: { closest: () => null }
   }), false);
   assert.equal(packingBoardGestureTargetsOpenDialog({ target: null }), false);
+  assert.equal(packingBoardGestureTargetsOpenDialog({
+    target: { closest: () => null }
+  }, {
+    documentRef: { querySelector: () => openDialog }
+  }), true);
 });
 
 test("CRITICAL packing zoom: drag ghosts retain the board's visual scale", () => {
@@ -761,9 +766,9 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingScrollSource, /remainsVisibleDuringPinch[\s\S]*?headerRow\.classList\.contains\("is-visible"\)/);
   assert.match(packingZoomSource, /PinchEndEventCtor[\s\S]*?packing-board-pinch-end/);
   assert.match(packingZoomSource, /const gestureSurface = documentRef[\s\S]*?gestureY >= Number\(boardRect\.top\)/);
-  assert.match(packingZoomSource, /const isNativeGestureInsideBoard = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return false;/);
-  assert.match(packingZoomSource, /const onTouchStart = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return;/);
-  assert.match(packingZoomSource, /const onTouchMove = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event\)\) return;/);
+  assert.match(packingZoomSource, /const isNativeGestureInsideBoard = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event, \{ documentRef \}\)\) return false;/);
+  assert.match(packingZoomSource, /const onTouchStart = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event, \{ documentRef \}\)\) return;/);
+  assert.match(packingZoomSource, /const onTouchMove = \(event\) => \{\s*if \(packingBoardGestureTargetsOpenDialog\(event, \{ documentRef \}\)\) return;/);
   assert.match(packingZoomSource, /activatePagePan[\s\S]*?packing-board-page-pan-start", \{ bubbles: true \}[\s\S]*?keepPagePanAxisLocked/);
   assert.match(horizontalTouchSource, /packing-board-page-panning[\s\S]*?cancelForPagePan[\s\S]*?packing-board-page-pan-start/);
   assert.match(styles, /\.board\.packing-board-zooming \.photo-gallery-track\s*\{[\s\S]*?pointer-events:\s*none;[\s\S]*?touch-action:\s*none;/);
