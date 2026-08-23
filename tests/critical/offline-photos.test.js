@@ -76,6 +76,7 @@ import {
 } from "../../src/ui/photo-lightbox-sizing.js";
 import {
   createSharedFullscreenSourceController,
+  fullscreenSwitcherMatchesRequestedMode,
   replaceSharedFullscreenImageSource,
   resolveSharedFullscreenImagePresentation,
   stepSharedPhotoInertia
@@ -2563,7 +2564,7 @@ test("CRITICAL offline-photos: zoomed lightbox pans with bounded cancellable ine
   assert.match(source, /targetImage\.addEventListener\("pointerdown",[\s\S]*cancelPanInertia\(\)/);
   assert.match(source, /overlay\.addEventListener\("wheel",[\s\S]*cancelPanInertia\(\)/);
   assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*cancelPanInertia\(\)/);
-  assert.match(source, /lightboxResizeHandler = \(\) => \{[\s\S]*resetTransform\(\)/);
+  assert.match(source, /lightboxResizeHandler = \(\) => \{[\s\S]*apply\(\)/);
   assert.match(source, /const close = \(\) => \{[\s\S]*cancelPanInertia\(false\)/);
 });
 
@@ -2636,8 +2637,25 @@ test("CRITICAL offline-photos: long galleries keep a centered compact dot window
 test("CRITICAL offline-photos: fullscreen photos force carousel mode on phones only", () => {
   assert.equal(photoLightboxUsesTouchCarousel({ coarsePointer: true, viewportWidth: 390 }), true);
   assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 5, viewportWidth: 390 }), true);
+  assert.equal(photoLightboxUsesTouchCarousel({ touchEventCapable: true, viewportWidth: 390 }), true);
+  assert.equal(photoLightboxUsesTouchCarousel({ phoneDevice: true, viewportWidth: 932 }), true);
   assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 5, viewportWidth: 1280 }), false);
   assert.equal(photoLightboxUsesTouchCarousel({ maxTouchPoints: 0, viewportWidth: 390 }), false);
+  assert.equal(fullscreenSwitcherMatchesRequestedMode({ directDesktop: false }, false), true);
+  assert.equal(fullscreenSwitcherMatchesRequestedMode({ directDesktop: true }, false), false);
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /track\.addEventListener\("scroll",[\s\S]*if \(touchCarousel\) return;/);
+  assert.match(source, /if \(!touchCarousel && !touchStartedWithPinch && moved && scale <= 1/);
+});
+
+test("CRITICAL offline-photos: fullscreen pinch keeps its scale while the viewport and full source settle", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  const styles = readProjectFile("styles.css");
+  assert.match(source, /photo-lightbox-touch-carousel/);
+  assert.match(source, /if \(lifecycleResult\.success\) \{[\s\S]*updatePhotoLightboxAutoSize\(image, overlay\);[\s\S]*apply\(\);/);
+  assert.match(source, /lightboxResizeHandler = \(\) => \{[\s\S]*updatePhotoLightboxAutoSize\(image, overlay\);[\s\S]*apply\(\);/);
+  assert.doesNotMatch(source, /lightboxResizeHandler = \(\) => \{[\s\S]*?resetTransform\(\);/);
+  assert.match(styles, /photo-lightbox-touch-carousel[\s\S]*photo-lightbox-track:not\(\.photo-lightbox-track-zoomed\)[\s\S]*scroll-snap-type:\s*x mandatory !important/);
 });
 
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {

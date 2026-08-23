@@ -5,13 +5,20 @@ import test from "node:test";
 import {
   bindHorizontalTouchScroll,
   classifyTouchScrollAxis,
+  packingBoardUsesDedicatedTouchPan,
   resetHorizontalTouchScroll
 } from "../../src/ui/horizontal-touch-scroll.js";
 
 function createBoard() {
   const listeners = new Map();
   const capturedPointers = new Set();
+  const classes = new Set();
   return {
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      contains: (name) => classes.has(name),
+      remove: (...names) => names.forEach((name) => classes.delete(name))
+    },
     dataset: {},
     scrollWidth: 900,
     clientWidth: 300,
@@ -40,6 +47,24 @@ test("touch scroll axis locks after a short intentional movement", () => {
   assert.equal(classifyTouchScrollAxis(1, -4), "");
   assert.equal(classifyTouchScrollAxis(4, 4), "");
   assert.equal(classifyTouchScrollAxis(1, -12), "vertical");
+});
+
+test("zoomed packing boards reserve the gesture for their diagonal pan controller", () => {
+  const board = createBoard();
+  board.classList.add("packing-board-zoom-active");
+  assert.equal(packingBoardUsesDedicatedTouchPan(board), true);
+  bindHorizontalTouchScroll(board, { pointerEventsSupported: false });
+  board.dispatch("touchstart", { touches: [{ clientX: 200, clientY: 100 }] });
+  let prevented = false;
+  board.dispatch("touchmove", {
+    touches: [{ clientX: 150, clientY: 70 }],
+    cancelable: true,
+    preventDefault() {
+      prevented = true;
+    }
+  });
+  assert.equal(board.scrollLeft, 100);
+  assert.equal(prevented, false);
 });
 
 test("horizontal swipe scrolls the board and suppresses the following click", () => {

@@ -155,12 +155,19 @@ export function createModalScrollLockController() {
 
   function canScrollInsideOpenDialog(target, dialog, deltaY) {
     if (!deltaY) return true;
-    const scroller = findModalScrollableAncestor(target, dialog);
-    if (!scroller) return false;
-    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
-    if (maxScroll <= 0) return false;
-    if (deltaY > 0) return scroller.scrollTop > 0;
-    return scroller.scrollTop < maxScroll - 1;
+    let scroller = findModalScrollableAncestor(target, dialog);
+    while (scroller) {
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+      if (maxScroll > 0) {
+        if (deltaY > 0 && scroller.scrollTop > 0) return true;
+        if (deltaY < 0 && scroller.scrollTop < maxScroll - 1) return true;
+      }
+      // When a nested field has reached its edge, keep looking for the
+      // dialog card. Leaving the event native lets Safari hand the same
+      // gesture from the field to the modal instead of freezing it.
+      scroller = findModalScrollableAncestor(scroller.parentElement, dialog);
+    }
+    return false;
   }
 
   function findModalScrollableAncestor(target, dialog) {

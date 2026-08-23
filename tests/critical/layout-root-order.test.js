@@ -38,7 +38,10 @@ import {
 import { I18N } from "../../src/data/i18n.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
 import { createConflictValueFormatter } from "../../src/ui/conflict-format.js";
-import { getPackingRootPlaceholderBefore } from "../../src/ui/packing-drop-target.js";
+import {
+  getPackingRootPlaceholderBefore,
+  isPackingContainerPhotoDropSurface
+} from "../../src/ui/packing-drop-target.js";
 import { itemDisplayModeLabel } from "../../src/ui/item-display-mode.js";
 import { usageLimitExceededMessage } from "../../src/state/usage-limits.js";
 
@@ -69,6 +72,22 @@ test("CRITICAL container drag: a nested package target shows the localized nesti
   assert.equal(I18N.en["drag.nestContainer"], "Nest inside");
   assert.match(styles, /\.container-drop-action\s*\{[\s\S]*?position: absolute;[\s\S]*?transform: translate\(-50%, -50%\);[\s\S]*?pointer-events: none;/);
   assert.match(styles, /\.subcontainer\.container-drop-target > \.subcontainer-title > \.container-drop-action\s*\{\s*display: inline-flex;\s*color: white;/);
+});
+
+test("CRITICAL item drag: a nested bag photo remains one stable container drop surface", () => {
+  const container = {};
+  const photo = { parentElement: container };
+  const photoImage = {
+    closest: (selector) => selector === ".item-photo" ? photo : null
+  };
+  const nestedItemPhoto = { parentElement: {} };
+  const nestedItemImage = {
+    closest: (selector) => selector === ".item-photo" ? nestedItemPhoto : null
+  };
+
+  assert.equal(isPackingContainerPhotoDropSurface(photoImage, container), true);
+  assert.equal(isPackingContainerPhotoDropSurface(nestedItemImage, container), false);
+  assert.equal(isPackingContainerPhotoDropSurface(null, container), false);
 });
 
 test("CRITICAL empty packing: guidance is actionable and the add button opens the bag picker", () => {
@@ -506,6 +525,20 @@ test("CRITICAL reusable nested bag: dragging it out promotes it to the selected 
   assert.equal(layout.arrangement.containers["bag-a"].parentId, "");
   assert.deepEqual(layout.arrangement.containers["bag-b"].childIds, []);
   assert.deepEqual(layout.arrangement.containers["bag-b"].order, []);
+});
+
+test("CRITICAL nested reusable bag: the placement picker offers a localized top-level position dialog", () => {
+  const projectRoot = resolve(import.meta.dirname, "../..");
+  const app = readFileSync(resolve(projectRoot, "app.js"), "utf8");
+  const controllers = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
+
+  assert.equal(I18N.ru["forms.moveToTopLevel"], "На верхний уровень");
+  assert.equal(I18N.en["forms.moveToTopLevel"], "Move to top level");
+  assert.match(app, /containerPickerMode === "container" \|\| isContainerPickerContainerCopyMode\(\)/);
+  assert.match(controllers, /runtime\.containerPickerMode === "container"[\s\S]*?t\("forms\.moveToTopLevel"\)/);
+  assert.match(controllers, /if \(!containerId\) \{[\s\S]*?openRootPlacementDialog\(\);/);
+  assert.match(controllers, /rootContainerDialogPendingParentId = "";[\s\S]*?rootContainerDialogPendingParentIndex = Math\.max/);
+  assert.match(controllers, /placeExistingContainerInLayoutInState\(state, container\.id, "", layoutId/);
 });
 
 test("CRITICAL root picker: a reusable nested bag is available for promotion", () => {

@@ -3087,7 +3087,7 @@ async function init() {
     renderContainerPicker();
   });
   refs.containerPickerNoneBtn.addEventListener("click", () => {
-    if (isContainerPickerContainerCopyMode()) {
+    if (containerPickerMode === "container" || isContainerPickerContainerCopyMode()) {
       selectContainerPickerTarget("");
       return;
     }

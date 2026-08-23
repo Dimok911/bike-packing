@@ -11,16 +11,19 @@ import {
   applyPackingBoardZoomToDragGhost,
   clampPackingBoardZoom,
   PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE,
+  PACKING_BOARD_POST_PINCH_PAN_DELAY_MS,
   packingBoardAllowsDiagonalPan,
   packingBoardAnchoredPageScrollTop,
   packingBoardAnchoredScrollLeft,
   packingBoardFitMaxZoom,
+  packingBoardGestureTargetsFixedScrollbar,
   packingBoardGestureTargetsOpenDialog,
   packingBoardPinchZoom,
   packingBoardMomentumScrollLeft,
   packingBoardPageMomentumScrollTop,
   packingBoardPagePanScrollTop,
   packingBoardPagePanVelocity,
+  packingBoardPostPinchPanReady,
   packingBoardProportionalScrollLeft,
   packingBoardScaledHeight,
   packingBoardTwoFingerMode,
@@ -28,6 +31,7 @@ import {
   packingBoardVisualMaxScrollTop,
   packingBoardWheelZoom,
   packingBoardWheelPageDelta,
+  packingBoardZoomMomentumValue,
   packingBoardZoomedTouchScrollAxis
 } from "../../src/ui/packing-board-zoom.js";
 import fs from "node:fs";
@@ -257,10 +261,15 @@ function createEventTarget() {
 function createFixedScrollbarHarness() {
   const scrollCalls = [];
   const boardClasses = new Set();
+  const detachFromParent = (node) => {
+    if (!node?.parentNode?.children) return;
+    node.parentNode.children = node.parentNode.children.filter((child) => child !== node);
+  };
   const board = Object.assign(createEventTarget(), {
     children: [],
     classList: {
       add: (name) => boardClasses.add(name),
+      contains: (name) => boardClasses.has(name),
       remove: (name) => boardClasses.delete(name)
     },
     clientWidth: 300,
@@ -272,6 +281,7 @@ function createFixedScrollbarHarness() {
       scrollCalls.push({ behavior, left });
     },
     appendChild(node) {
+      detachFromParent(node);
       node.parentNode = this;
       this.children.push(node);
       return node;
@@ -316,6 +326,15 @@ function createFixedScrollbarHarness() {
     }
   });
   const documentRef = {
+    body: {
+      children: [],
+      appendChild(node) {
+        detachFromParent(node);
+        node.parentNode = this;
+        this.children.push(node);
+        return node;
+      }
+    },
     createElement() {
       return surface;
     },
@@ -351,10 +370,12 @@ function createFixedScrollbarHarness() {
     bind,
     board,
     boardClasses,
+    body: documentRef.body,
     frames,
     surface,
     scrollCalls,
-    thumb
+    thumb,
+    windowRef
   };
 }
 
@@ -368,6 +389,20 @@ test("CRITICAL fixed scrollbar: touch surface is a board child so Safari scrolls
   harness.board.scrollLeft = 360;
   harness.board.dispatch("scroll");
   assert.equal(harness.board.scrollLeft, 360);
+});
+
+test("CRITICAL fixed scrollbar: zoom portals the fixed touch surface outside paint containment", () => {
+  const harness = createFixedScrollbarHarness();
+  harness.bind();
+  assert.equal(harness.surface.parentNode, harness.board);
+
+  harness.board.classList.add("packing-board-zoom-active");
+  harness.windowRef.dispatch("resize");
+  assert.equal(harness.surface.parentNode, harness.body);
+
+  harness.board.classList.remove("packing-board-zoom-active");
+  harness.windowRef.dispatch("resize");
+  assert.equal(harness.surface.parentNode, harness.board);
 });
 
 test("CRITICAL fixed scrollbar: animation-frame timestamp cannot send the thumb beyond its track", () => {
@@ -571,6 +606,9 @@ test("CRITICAL packing zoom: pinch scale is bounded and keeps the touched conten
   assert.equal(packingBoardAllowsDiagonalPan(0.99), true);
   assert.equal(packingBoardAllowsDiagonalPan(1), false);
   assert.equal(packingBoardAllowsDiagonalPan(1.2), false);
+  assert.equal(PACKING_BOARD_POST_PINCH_PAN_DELAY_MS, 80);
+  assert.equal(packingBoardPostPinchPanReady(79), false);
+  assert.equal(packingBoardPostPinchPanReady(80), true);
   assert.equal(packingBoardProportionalScrollLeft({
     nextMaxScrollLeft: 400,
     startMaxScrollLeft: 800,
@@ -689,6 +727,24 @@ test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is
     maxScrollLeft: 500,
     velocity: 0.5
   }), 500);
+  assert.ok(packingBoardZoomMomentumValue({
+    currentZoom: 0.7,
+    elapsedMs: 16,
+    maxZoom: 1.4,
+    velocity: 0.002
+  }) > 0.7);
+  assert.ok(packingBoardZoomMomentumValue({
+    currentZoom: 0.7,
+    elapsedMs: 16,
+    maxZoom: 1.4,
+    velocity: -0.002
+  }) < 0.7);
+  assert.equal(packingBoardZoomMomentumValue({
+    currentZoom: 1.39,
+    elapsedMs: 16,
+    maxZoom: 1.4,
+    velocity: 0.002
+  }), 1.4);
 });
 
 test("CRITICAL packing zoom: an open dialog keeps wheel and touch gestures away from the board", () => {
@@ -710,6 +766,27 @@ test("CRITICAL packing zoom: an open dialog keeps wheel and touch gestures away 
   }, {
     documentRef: { querySelector: () => openDialog }
   }), true);
+});
+
+test("CRITICAL packing zoom: the fixed scrollbar keeps exclusive ownership of its touch direction", () => {
+  assert.equal(packingBoardGestureTargetsFixedScrollbar({
+    target: { closest: (selector) => selector.includes("kanban-board-touch-surface") ? {} : null }
+  }), true);
+  assert.equal(packingBoardGestureTargetsFixedScrollbar({
+    target: { closest: () => null }
+  }), false);
+  assert.equal(packingBoardGestureTargetsFixedScrollbar({
+    target: { closest: () => null },
+    touches: [{ clientX: 180, clientY: 826 }]
+  }, {
+    documentRef: {
+      querySelector: () => ({
+        getBoundingClientRect: () => ({ left: 12, right: 378, top: 800, bottom: 844 })
+      })
+    }
+  }), true);
+  const source = fs.readFileSync(new URL("../../src/ui/packing-board-zoom.js", import.meta.url), "utf8");
+  assert.match(source, /const onTouchStart = \(event\) => \{[\s\S]*packingBoardGestureTargetsFixedScrollbar\(event, \{ documentRef \}\)[\s\S]*stopPageMomentum\(\)/);
 });
 
 test("CRITICAL packing zoom: drag ghosts retain the board's visual scale", () => {
@@ -739,9 +816,14 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.equal((packingDragSource.match(/addEventListener\("packing-board-page-pan-start", cancelAndFinish\)/g) || []).length, 3);
   assert.equal((packingDragSource.match(/isPackingBoardPinching\(board\)/g) || []).length, 4);
   assert.match(packingDragSource, /packing-board-zooming[\s\S]*?packing-board-page-panning/);
+  const packingGestureGuard = packingDragSource.match(/function isPackingBoardPinching\(board\) \{[\s\S]*?\n  \}/)?.[0] || "";
+  assert.doesNotMatch(packingGestureGuard, /packing-board-zoom-active/);
   assert.equal((packingDragSource.match(/boardHeightLock\.unlock\(\)/g) || []).length, 3);
   assert.equal((packingDragSource.match(/inputType === "touch" && Number\(event\?\.touches\?\.length \|\| 0\) !== 1/g) || []).length, 3);
   assert.match(packingZoomSource, /postPinchPanning[\s\S]*?verticalScrollHost\.scrollTop\s*=\s*nextScrollTop/);
+  assert.match(packingZoomSource, /packingBoardPostPinchPanReady\(frameNow\(\) - postPinchStartedAt\)[\s\S]*?singleTouchBoardVelocity = 0;[\s\S]*?return;/);
+  assert.match(packingZoomSource, /const anchor = currentPinchAnchor\(\);[\s\S]*?packingBoardZoomMomentumValue\([\s\S]*?applyZoom/);
+  assert.match(packingZoomSource, /continueZoomMomentum = postPinchPanning && !postPinchPanActivated/);
   assert.match(packingZoomSource, /classifyTouchScrollAxis\([\s\S]*?singleTouchAxis === "vertical"[\s\S]*?verticalScrollHost\.scrollTop\s*=\s*nextScrollTop/);
   assert.match(packingZoomSource, /startPageMomentum[\s\S]*?packingBoardPageMomentumScrollTop[\s\S]*?requestFrame\(step\)/);
   assert.match(packingZoomSource, /preserveHorizontalPoint[\s\S]*?packingBoardAnchoredScrollLeft/);
@@ -757,6 +839,7 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingZoomSource, /requestVerticalScrollClamp[\s\S]*?verticalScrollMaximum\(\)[\s\S]*?scrollTop = maxScrollTop/);
   assert.match(packingZoomSource, /addEventListener\?\.\("scroll", requestVerticalScrollClamp, \{ passive: true \}\)/);
   assert.match(packingZoomSource, /packingBoardAllowsDiagonalPan\(zoom\)[\s\S]*?singleTouchAxis = "diagonal"[\s\S]*?board\.scrollLeft = clampBoardScrollLeft[\s\S]*?verticalScrollHost\.scrollTop = nextScrollTop/);
+  assert.match(packingZoomSource, /const onTouchMove = \(event\) => \{[\s\S]*?dragging-ui[\s\S]*?return;[\s\S]*?if \(!pinching\)/);
   assert.match(packingZoomSource, /singleTouchAxis === "diagonal"[\s\S]*?startPageMomentum\(\)[\s\S]*?startBoardMomentum\(\)/);
   assert.match(packingZoomSource, /singleTouchGallery && singleTouchAxis[\s\S]*?preventDefault[\s\S]*?stopPropagation/);
   assert.match(packingZoomSource, /addEventListener\?\.\("touchend", finishPinch, \{ capture: true, passive: false \}\)/);
@@ -777,7 +860,7 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(styles, /\.board\.packing-board-zoom-active \.photo-gallery-track\s*\{[\s\S]*?overscroll-behavior-y:\s*none;[\s\S]*?touch-action:\s*none;/);
   assert.match(packingZoomSource, /const onWheel = \(event\) => \{[\s\S]*?isNativeGestureInsideBoard\(event\)[\s\S]*?event\?\.ctrlKey[\s\S]*?packingBoardWheelPageDelta[\s\S]*?packingBoardWheelZoom[\s\S]*?preserveHorizontalPoint:\s*true[\s\S]*?preserveVerticalPoint:\s*true/);
   assert.match(packingZoomSource, /gestureSurface\?\.addEventListener\?\.\("wheel", onWheel, \{ capture: true, passive: false \}\)/);
-  assert.match(packingDragSource, /packing-board-page-panning[\s\S]*?packing-board-zoom-active/);
+  assert.match(packingDragSource, /packing-board-page-panning/);
   assert.match(styles, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.board \.item-photo \.photo-gallery-track\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?touch-action:\s*none;/);
   assert.match(styles, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.board \.photo-gallery-dot\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;/);
   assert.match(styles, /\.board\.packing-board-zoom-active > \.container-card,[\s\S]*?width:\s*var\(--packing-board-base-column-width, 360px\);[\s\S]*?transform:\s*scale\(var\(--packing-board-zoom, 1\)\);/);

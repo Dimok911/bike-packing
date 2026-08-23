@@ -5,6 +5,7 @@ export const PACKING_BOARD_ZOOM_MIN = 0.2;
 export const PACKING_BOARD_ZOOM_MAX = 1.6;
 export const PACKING_BOARD_ZOOM_ELASTIC_MAX = 1.8;
 export const PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE = 52;
+export const PACKING_BOARD_POST_PINCH_PAN_DELAY_MS = 80;
 
 let activePackingBoardZoomController = null;
 
@@ -76,6 +77,27 @@ export function packingBoardGestureTargetsOpenDialog(event, {
   return Boolean(documentRef?.querySelector?.("dialog[open]"));
 }
 
+export function packingBoardGestureTargetsFixedScrollbar(event, {
+  documentRef = globalThis.document
+} = {}) {
+  if (event?.target?.closest?.(
+    ".kanban-board-touch-surface, #kanbanScrollbar, #kanbanScrollThumb"
+  )) return true;
+  const touch = event?.touches?.[0] || event?.changedTouches?.[0] || null;
+  if (!touch) return false;
+  const surface = documentRef?.querySelector?.(".kanban-board-touch-surface")
+    || documentRef?.querySelector?.("#kanbanScrollbar");
+  const rect = surface?.getBoundingClientRect?.();
+  if (!rect) return false;
+  const x = Number(touch.clientX);
+  const y = Number(touch.clientY);
+  return Number.isFinite(x) && Number.isFinite(y)
+    && x >= Number(rect.left)
+    && x <= Number(rect.right)
+    && y >= Number(rect.top)
+    && y <= Number(rect.bottom);
+}
+
 export function packingBoardTwoFingerMode({
   currentDistance,
   startDistance
@@ -96,6 +118,12 @@ export function packingBoardZoomedTouchScrollAxis(dx, dy) {
 
 export function packingBoardAllowsDiagonalPan(value) {
   return clampPackingBoardZoom(value, { max: PACKING_BOARD_ZOOM_ELASTIC_MAX }) < 0.995;
+}
+
+export function packingBoardPostPinchPanReady(elapsedMs, {
+  delayMs = PACKING_BOARD_POST_PINCH_PAN_DELAY_MS
+} = {}) {
+  return Math.max(0, Number(elapsedMs) || 0) >= Math.max(0, Number(delayMs) || 0);
 }
 
 export function packingBoardProportionalScrollLeft({
@@ -162,6 +190,18 @@ export function packingBoardMomentumScrollLeft({
   const maximum = Math.max(0, Number(maxScrollLeft) || 0);
   const next = (Number(currentScrollLeft) || 0) + (Number(velocity) || 0) * Math.max(0, Number(elapsedMs) || 0);
   return Math.max(0, Math.min(maximum, next));
+}
+
+export function packingBoardZoomMomentumValue({
+  currentZoom,
+  elapsedMs,
+  maxZoom = PACKING_BOARD_ZOOM_ELASTIC_MAX,
+  velocity
+} = {}) {
+  return clampPackingBoardZoom(
+    (Number(currentZoom) || 1) + (Number(velocity) || 0) * Math.max(0, Number(elapsedMs) || 0),
+    { max: maxZoom }
+  );
 }
 
 export function packingBoardVisualMaxScrollTop({
@@ -337,6 +377,8 @@ export function bindPackingBoardZoom(board, {
   let pinchBoardDocumentTop = 0;
   let photoScrollPositions = new Map();
   let postPinchPanning = false;
+  let postPinchPanActivated = false;
+  let postPinchStartedAt = 0;
   let postPinchLastX = 0;
   let postPinchLastY = 0;
   let singleTouchAxis = "";
@@ -357,7 +399,11 @@ export function bindPackingBoardZoom(board, {
   let heightFrame = null;
   let geometrySettleFrame = null;
   let zoomSettleFrame = null;
+  let zoomMomentumFrame = null;
   let zoomNeedsSettle = false;
+  let pinchZoomLastTime = 0;
+  let pinchZoomLastValue = 1;
+  let pinchZoomVelocity = 0;
   let lastPinchCenterX = 0;
   let lastPinchCenterY = 0;
   let twoFingerMode = "";
@@ -420,6 +466,12 @@ export function bindPackingBoardZoom(board, {
     if (boardMomentumFrame === null) return;
     windowRef?.cancelAnimationFrame?.(boardMomentumFrame);
     boardMomentumFrame = null;
+  };
+
+  const stopZoomMomentum = () => {
+    if (zoomMomentumFrame === null) return;
+    windowRef?.cancelAnimationFrame?.(zoomMomentumFrame);
+    zoomMomentumFrame = null;
   };
 
   const startBoardMomentum = () => {
@@ -734,6 +786,7 @@ export function bindPackingBoardZoom(board, {
   });
 
   const settleZoomToFit = () => {
+    stopZoomMomentum();
     stopZoomSettle();
     zoomNeedsSettle = false;
     const maximum = fitMaxZoom();
@@ -770,6 +823,49 @@ export function bindPackingBoardZoom(board, {
       settleBoardGeometry();
     };
     zoomSettleFrame = requestFrame(step);
+  };
+
+  const startZoomMomentum = () => {
+    stopZoomMomentum();
+    stopZoomSettle();
+    if (
+      frameNow() - pinchZoomLastTime > 100 ||
+      Math.abs(pinchZoomVelocity) < 0.00018
+    ) return false;
+    const anchor = currentPinchAnchor();
+    let velocity = Math.max(-0.0032, Math.min(0.0032, pinchZoomVelocity));
+    let previousTime = frameNow();
+    const requestFrame = windowRef?.requestAnimationFrame;
+    if (typeof requestFrame !== "function") return false;
+    const finish = () => {
+      zoomMomentumFrame = null;
+      zoomNeedsSettle = zoom > fitMaxZoom() + 0.001;
+      if (zoomNeedsSettle) settleZoomToFit();
+      else {
+        saveZoom(storage, storageKey, zoom, fitMaxZoom());
+        settleBoardGeometry();
+      }
+    };
+    const step = (time) => {
+      const elapsed = Math.min(32, Math.max(1, Number(time) - previousTime));
+      previousTime = Number(time) || frameNow();
+      const previousZoom = zoom;
+      applyZoom(packingBoardZoomMomentumValue({
+        currentZoom: zoom,
+        elapsedMs: elapsed,
+        maxZoom: elasticMaxZoom(),
+        velocity
+      }), anchor, { maxZoom: elasticMaxZoom(), notify: false });
+      velocity *= Math.pow(0.86, elapsed / 16);
+      const hitLimit = Math.abs(zoom - previousZoom) < 0.0005;
+      if (hitLimit || Math.abs(velocity) < 0.00004) {
+        finish();
+        return;
+      }
+      zoomMomentumFrame = requestFrame(step);
+    };
+    zoomMomentumFrame = requestFrame(step);
+    return true;
   };
 
   const isNativeGestureInsideBoard = (event) => {
@@ -826,6 +922,7 @@ export function bindPackingBoardZoom(board, {
     event.stopPropagation?.();
     stopPageMomentum();
     stopBoardMomentum();
+    stopZoomMomentum();
     stopZoomSettle();
     stopGeometrySettle();
     if (!baseColumnWidth) baseColumnWidth = measureBaseColumnWidth();
@@ -849,8 +946,10 @@ export function bindPackingBoardZoom(board, {
 
   const onTouchStart = (event) => {
     if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
+    if (packingBoardGestureTargetsFixedScrollbar(event, { documentRef })) return;
     stopPageMomentum();
     stopBoardMomentum();
+    stopZoomMomentum();
     stopZoomSettle();
     stopGeometrySettle();
     const pair = touchPair(event.touches);
@@ -871,6 +970,8 @@ export function bindPackingBoardZoom(board, {
       if (Number(event?.touches?.length || 0) === 1) {
         gestureActive = true;
         postPinchPanning = false;
+        postPinchPanActivated = false;
+        postPinchStartedAt = 0;
         const touch = event.touches[0];
         singleTouchAxis = "";
         singleTouchStartX = Number(touch?.clientX) || 0;
@@ -891,6 +992,9 @@ export function bindPackingBoardZoom(board, {
     pinching = true;
     twoFingerMode = "";
     startZoom = zoom;
+    pinchZoomLastValue = zoom;
+    pinchZoomLastTime = frameNow();
+    pinchZoomVelocity = 0;
     startDistance = pair.distance;
     pinchStartScrollLeft = Number(board.scrollLeft) || 0;
     board.scrollTo?.({ left: pinchStartScrollLeft, behavior: "auto" });
@@ -923,11 +1027,28 @@ export function bindPackingBoardZoom(board, {
   const onTouchMove = (event) => {
     if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     if (!gestureActive) return;
+    // A deliberate long-press drag owns the remaining one-finger gesture.
+    // Adding a second finger still reaches onTouchStart, which cancels the
+    // drag before starting a pinch.
+    if (documentRef?.body?.classList?.contains?.("dragging-ui")) return;
     if (!pinching) {
       const remainingTouch = event?.touches?.length === 1 ? event.touches[0] : null;
       if (postPinchPanning && remainingTouch && verticalScrollHost) {
         activatePagePan();
         const currentX = Number(remainingTouch.clientX) || 0;
+        const currentY = Number(remainingTouch.clientY) || 0;
+        if (!packingBoardPostPinchPanReady(frameNow() - postPinchStartedAt)) {
+          postPinchLastX = currentX;
+          postPinchLastY = currentY;
+          beginPagePan(currentY);
+          singleTouchLastX = currentX;
+          singleTouchLastTime = frameNow();
+          singleTouchBoardVelocity = 0;
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          return;
+        }
+        postPinchPanActivated = true;
         if (packingBoardAllowsDiagonalPan(zoom)) {
           updateBoardPanVelocity(currentX);
           board.scrollLeft = clampBoardScrollLeft(
@@ -942,7 +1063,7 @@ export function bindPackingBoardZoom(board, {
           currentScrollTop: verticalScrollHost.scrollTop,
           previousClientY: postPinchLastY
         }));
-        postPinchLastY = Number(remainingTouch.clientY) || 0;
+        postPinchLastY = currentY;
         if (Math.abs((Number(verticalScrollHost.scrollTop) || 0) - nextScrollTop) > 0.5) {
           verticalScrollHost.scrollTop = nextScrollTop;
         }
@@ -1029,10 +1150,11 @@ export function bindPackingBoardZoom(board, {
     }
     lastPinchCenterX = pair.centerX;
     lastPinchCenterY = pair.centerY;
-    applyZoom(packingBoardPinchZoom(startZoom, startDistance, pair.distance, {
+    const nextZoom = packingBoardPinchZoom(startZoom, startDistance, pair.distance, {
       elastic: true,
       maxZoom: fitMaxZoom()
-    }), {
+    });
+    const appliedZoom = applyZoom(nextZoom, {
       preserveHorizontalPoint: true,
       preserveVerticalPoint: true,
       anchorClientX: pair.centerX,
@@ -1042,6 +1164,14 @@ export function bindPackingBoardZoom(board, {
       boardClientLeft: pinchBoardClientLeft,
       boardDocumentTop: pinchBoardDocumentTop,
     }, { maxZoom: elasticMaxZoom() });
+    const zoomSampleTime = frameNow();
+    const zoomSampleElapsed = Math.max(1, zoomSampleTime - pinchZoomLastTime);
+    const zoomSampleVelocity = (appliedZoom - pinchZoomLastValue) / zoomSampleElapsed;
+    pinchZoomVelocity = pinchZoomVelocity
+      ? pinchZoomVelocity * 0.3 + zoomSampleVelocity * 0.7
+      : zoomSampleVelocity;
+    pinchZoomLastValue = appliedZoom;
+    pinchZoomLastTime = zoomSampleTime;
     restorePhotoScrollPositions();
   };
 
@@ -1049,6 +1179,7 @@ export function bindPackingBoardZoom(board, {
     const remainingTouchCount = Number(event?.touches?.length || 0);
     if (!pinching) {
       if (!remainingTouchCount) {
+        const continueZoomMomentum = postPinchPanning && !postPinchPanActivated && event?.type !== "touchcancel";
         if ((singleTouchGallery && singleTouchAxis) || singleTouchAxis === "diagonal") {
           event.preventDefault?.();
           event.stopPropagation?.();
@@ -1063,11 +1194,15 @@ export function bindPackingBoardZoom(board, {
           }
         }
         postPinchPanning = false;
+        postPinchPanActivated = false;
+        postPinchStartedAt = 0;
         singleTouchAxis = "";
         board.classList.remove("packing-board-page-panning");
         gestureActive = false;
-        if (zoomNeedsSettle) settleZoomToFit();
-        else settleBoardGeometry();
+        if (!continueZoomMomentum || !startZoomMomentum()) {
+          if (zoomNeedsSettle) settleZoomToFit();
+          else settleBoardGeometry();
+        }
         singleTouchGallery = null;
         singleTouchBoardVelocity = 0;
       }
@@ -1085,6 +1220,8 @@ export function bindPackingBoardZoom(board, {
     board.classList.remove("packing-board-page-panning");
     const remainingTouch = remainingTouchCount === 1 ? event.touches[0] : null;
     postPinchPanning = Boolean(remainingTouch && event?.type !== "touchcancel" && verticalScrollHost);
+    postPinchPanActivated = false;
+    postPinchStartedAt = postPinchPanning ? frameNow() : 0;
     gestureActive = Boolean(remainingTouch);
     postPinchLastX = Number(remainingTouch?.clientX) || 0;
     postPinchLastY = Number(remainingTouch?.clientY) || 0;
@@ -1095,13 +1232,16 @@ export function bindPackingBoardZoom(board, {
       singleTouchBoardVelocity = 0;
     }
     zoomNeedsSettle = zoom > fitMaxZoom() + 0.001;
-    if (!remainingTouch) settleZoomToFit();
+    if (!remainingTouch && event?.type !== "touchcancel" && startZoomMomentum()) {
+      // The fixed pinch anchor keeps scale inertia separate from panning.
+    } else if (!remainingTouch) settleZoomToFit();
     else if (!zoomNeedsSettle) saveZoom(storage, storageKey, zoom, fitMaxZoom());
     notifyGeometryChanged(board, windowRef);
     twoFingerMode = "";
   };
 
   const resetZoom = () => {
+    stopZoomMomentum();
     stopZoomSettle();
     stopGeometrySettle();
     zoomNeedsSettle = false;
@@ -1148,6 +1288,7 @@ export function bindPackingBoardZoom(board, {
     if (heightFrame !== null) windowRef?.cancelAnimationFrame?.(heightFrame);
     if (verticalClampFrame !== null) windowRef?.cancelAnimationFrame?.(verticalClampFrame);
     stopZoomSettle();
+    stopZoomMomentum();
     stopGeometrySettle();
     stopPageMomentum();
     stopBoardMomentum();
@@ -1158,6 +1299,8 @@ export function bindPackingBoardZoom(board, {
     horizontalAnchorGutter = 0;
     board.style.removeProperty("padding-right");
     postPinchPanning = false;
+    postPinchPanActivated = false;
+    postPinchStartedAt = 0;
     zoomNeedsSettle = false;
     singleTouchAxis = "";
     singleTouchGallery = null;

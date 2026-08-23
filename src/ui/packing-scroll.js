@@ -210,6 +210,7 @@ export function bindStickyRootHeaderRow(board, {
 
 function bindPrimaryFixedScrollbar(board, {
   bar,
+  documentRef,
   track,
   thumb,
   surface,
@@ -293,7 +294,18 @@ function bindPrimaryFixedScrollbar(board, {
     board.scrollTo?.({ left: targetLeft, behavior: "smooth" });
   };
 
-  const syncGeometry = () => updateThumb();
+  const syncSurfaceHost = () => {
+    const body = documentRef?.body;
+    const target = board.classList?.contains?.("packing-board-zoom-active") && body?.appendChild
+      ? body
+      : board;
+    if (surface.parentNode !== target) target.appendChild?.(surface);
+  };
+
+  const syncGeometry = () => {
+    syncSurfaceHost();
+    updateThumb();
+  };
 
   const pointHitsThumb = (clientX) => {
     const { maxScroll, maxThumbLeft, thumbWidth } = getGeometry();
@@ -552,6 +564,7 @@ export function bindFixedScrollbar(board, {
     board.appendChild(surface);
     return bindPrimaryFixedScrollbar(board, {
       bar,
+      documentRef,
       track,
       thumb,
       surface,

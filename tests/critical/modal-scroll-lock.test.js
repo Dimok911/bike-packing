@@ -175,6 +175,88 @@ test("CRITICAL modal scroll lock lets a fullscreen gallery swipe above an edit d
   }
 });
 
+test("CRITICAL modal scroll lock hands a category edge swipe to the dialog card", () => {
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  const listeners = new Map();
+  const bodyClasses = testClassList();
+  const bodyStyle = { position: "", top: "", left: "", right: "", width: "", overflow: "" };
+  const dialog = {
+    addEventListener: () => {},
+    hasAttribute: () => false,
+    open: true,
+    parentElement: null
+  };
+  const dialogCard = {
+    clientHeight: 500,
+    parentElement: dialog,
+    scrollHeight: 1000,
+    scrollTop: 200
+  };
+  const categoryPicker = {
+    clientHeight: 180,
+    parentElement: dialogCard,
+    scrollHeight: 360,
+    scrollTop: 180
+  };
+  const categoryOption = {
+    clientHeight: 40,
+    closest: (selector) => selector === "dialog" ? dialog : null,
+    parentElement: categoryPicker,
+    scrollHeight: 40,
+    scrollTop: 0
+  };
+
+  globalThis.document = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    body: { classList: bodyClasses, style: bodyStyle },
+    querySelectorAll: (selector) => selector === "dialog" ? [dialog] : []
+  };
+  globalThis.window = {
+    getComputedStyle: (element) => ({
+      overflowY: element === categoryPicker || element === dialogCard ? "auto" : "visible",
+      position: "static"
+    }),
+    innerHeight: 844,
+    innerWidth: 390,
+    matchMedia: () => ({ matches: true }),
+    scrollTo: () => {},
+    scrollX: 0,
+    scrollY: 0
+  };
+
+  try {
+    const controller = createModalScrollLockController();
+    controller.setupModalScrollLock();
+    controller.updateModalScrollLock();
+    let prevented = false;
+    listeners.get("touchstart")({
+      target: categoryOption,
+      touches: [{ clientX: 180, clientY: 300 }]
+    });
+    listeners.get("touchmove")({
+      target: categoryOption,
+      touches: [{ clientX: 180, clientY: 250 }],
+      preventDefault: () => { prevented = true; },
+      stopImmediatePropagation: () => {}
+    });
+    assert.equal(prevented, false, "a downward swipe at the field bottom must continue in the dialog card");
+
+    dialogCard.scrollTop = 500;
+    prevented = false;
+    listeners.get("touchmove")({
+      target: categoryOption,
+      touches: [{ clientX: 180, clientY: 220 }],
+      preventDefault: () => { prevented = true; },
+      stopImmediatePropagation: () => {}
+    });
+    assert.equal(prevented, true, "the background stays locked after every modal scroller reaches its edge");
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test("CRITICAL modal scroll lock still uses the hard lock when no sticky tabs are visible", () => {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;

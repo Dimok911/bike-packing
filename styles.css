@@ -6709,6 +6709,21 @@ dialog.photo-lightbox::backdrop {
   touch-action: none;
 }
 
+dialog.photo-lightbox.photo-lightbox-touch-carousel
+  .photo-lightbox-track:not(.photo-lightbox-track-zoomed) {
+  display: flex !important;
+  overflow-x: auto !important;
+  scroll-snap-type: x mandatory !important;
+  touch-action: pan-x !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
+  display: grid !important;
+  flex: 0 0 100% !important;
+  scroll-snap-align: center !important;
+}
+
 .photo-lightbox-slide {
   position: relative;
   flex: 0 0 100%;

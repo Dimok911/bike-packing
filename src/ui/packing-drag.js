@@ -7,6 +7,7 @@ import {
   suppressNextClickAfterDrag
 } from "./drag-click-suppression.js";
 import {
+  isPackingContainerPhotoDropSurface,
   getPackingEntryAfterPointer,
   getPackingRootPlaceholderBefore
 } from "./packing-drop-target.js";
@@ -162,8 +163,7 @@ export function createPackingDragController({
   function isPackingBoardPinching(board) {
     return Boolean(
       board?.classList?.contains?.("packing-board-zooming") ||
-      board?.classList?.contains?.("packing-board-page-panning") ||
-      board?.classList?.contains?.("packing-board-zoom-active")
+      board?.classList?.contains?.("packing-board-page-panning")
     );
   }
 
@@ -1579,7 +1579,8 @@ export function createPackingDragController({
     const directZone = target.closest(".dropzone");
     const closestEntry = target.closest(".item-card, .subcontainer");
     const directEmptySpace = directZone === zone && (!closestEntry || closestEntry === container);
-    if (!title && !container.classList.contains("collapsed") && !directEmptySpace) return null;
+    const directPhoto = isPackingContainerPhotoDropSurface(target, container);
+    if (!title && !container.classList.contains("collapsed") && !directEmptySpace && !directPhoto) return null;
     return { container, containerId, zone, insertByPointer: directEmptySpace && !container.classList.contains("collapsed") };
   }
 

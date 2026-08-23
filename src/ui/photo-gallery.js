@@ -617,10 +617,16 @@ export function resolvePhotoGallerySnapIndex({
 export function photoLightboxUsesTouchCarousel({
   coarsePointer = false,
   maxTouchPoints = 0,
-  viewportWidth = 0
+  viewportWidth = 0,
+  touchEventCapable = false,
+  phoneDevice = false
 } = {}) {
-  return Boolean(coarsePointer) || (
-    Number(maxTouchPoints) > 0 &&
+  if (phoneDevice) return true;
+  return (
+    Boolean(coarsePointer) ||
+    Number(maxTouchPoints) > 0 ||
+    Boolean(touchEventCapable)
+  ) && (
     Number(viewportWidth) > 0 &&
     Number(viewportWidth) <= 760
   );
@@ -760,8 +766,11 @@ export async function openPhotoLightbox(sourceImage, {
   const touchCarousel = photoLightboxUsesTouchCarousel({
     coarsePointer: window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches === true,
     maxTouchPoints: window.navigator?.maxTouchPoints,
-    viewportWidth: window.visualViewport?.width || window.innerWidth
+    viewportWidth: window.visualViewport?.width || window.innerWidth,
+    touchEventCapable: "ontouchstart" in window,
+    phoneDevice: /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(window.navigator?.userAgent || "")
   });
+  overlay.classList.toggle("photo-lightbox-touch-carousel", touchCarousel);
   const fullscreenSwitcher = createSharedFullscreenSwitcher({
     root: overlay,
     track,
@@ -1137,7 +1146,8 @@ export async function openPhotoLightbox(sourceImage, {
     }
     if (lifecycleResult.success) {
       loadingNotice.settle("idle");
-      resetTransform();
+      updatePhotoLightboxAutoSize(image, overlay);
+      apply();
       return true;
     }
     const next = entry.lifecycleFallback || {};
@@ -1199,6 +1209,7 @@ export async function openPhotoLightbox(sourceImage, {
   track.addEventListener("scroll", () => {
     suppressImageCloseUntil = Date.now() + 300;
     if (!scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
+    if (touchCarousel) return;
     if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
@@ -1334,7 +1345,7 @@ export async function openPhotoLightbox(sourceImage, {
   lightboxImages.forEach(bindImageInteractions);
   lightboxResizeHandler = () => {
     updatePhotoLightboxAutoSize(image, overlay);
-    resetTransform();
+    apply();
     fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
   window.addEventListener("resize", lightboxResizeHandler);
@@ -1457,7 +1468,7 @@ export async function openPhotoLightbox(sourceImage, {
       close();
       return;
     }
-    if (!touchStartedWithPinch && moved && scale <= 1 && event.changedTouches.length) {
+    if (!touchCarousel && !touchStartedWithPinch && moved && scale <= 1 && event.changedTouches.length) {
       const touch = event.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;

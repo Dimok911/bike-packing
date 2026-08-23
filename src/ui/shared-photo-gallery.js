@@ -69,7 +69,21 @@ export function createSharedFullscreenSwitcher(options = {}) {
   const factory = api?.capabilities?.fullscreenEdgeRubberBand >= 1
     ? api.createFullscreenSwitcher
     : fallbackRuntime?.createFullscreenSwitcher;
-  return factory?.(options) || null;
+  const controller = factory?.(options) || null;
+  if (
+    controller
+    && !fullscreenSwitcherMatchesRequestedMode(controller, options.directDesktop)
+    && factory !== fallbackRuntime?.createFullscreenSwitcher
+  ) {
+    controller.destroy?.();
+    return fallbackRuntime?.createFullscreenSwitcher?.(options) || null;
+  }
+  return controller;
+}
+
+export function fullscreenSwitcherMatchesRequestedMode(controller, directDesktop) {
+  return typeof directDesktop !== "boolean"
+    || controller?.directDesktop === directDesktop;
 }
 
 export function createSharedFullscreenSourceController(options = {}) {

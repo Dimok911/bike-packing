@@ -780,9 +780,13 @@ function updateRootContainerPlacementButton() {
     return;
   }
   const pendingParentId = runtime.rootContainerDialogPendingParentId;
+  const pendingRootIndex = runtime.rootContainerDialogPendingParentIndex;
   const isPackage = pendingParentId !== undefined ? Boolean(pendingParentId) : Boolean(container.parentId);
-  const active = isPackage || getRootContainerDialogLayoutRootIds().includes(containerId);
-  const currentText = isPackage
+  const pendingTopLevel = pendingParentId === "" && Number.isFinite(pendingRootIndex);
+  const active = pendingTopLevel || isPackage || getRootContainerDialogLayoutRootIds().includes(containerId);
+  const currentText = pendingTopLevel
+    ? t("forms.moveToTopLevel")
+    : isPackage
     ? layoutContainerPath(layout, getRootContainerDialogParentId())
     : (active ? t("settings.currentLayout") : t("settings.outsideCurrentLayout"));
   refs.rootContainerPlacementField.hidden = false;
@@ -1001,9 +1005,12 @@ function openRootPlacementDialog() {
   const containerId = runtime.editingRootContainerId;
   const container = state.containers[containerId];
   if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
-  if (!container || container.parentId) return;
+  if (!container) return;
+  const nestedPlacement = Boolean(container.parentId || runtime.rootContainerDialogPendingParentId);
+  if (nestedPlacement && !refs.rootContainerNestable?.checked) return;
   refs.rootPlacementTitle.textContent = t("forms.moveNamedContainer", { name: container.name });
   renderRootPlacementBoard(containerId);
+  if (refs.containerPickerDialog?.open) refs.containerPickerDialog.close("choose-root-placement");
   openModalDialog(refs.rootPlacementDialog);
 }
 
@@ -1058,6 +1065,19 @@ function renderRootPlacementColumn(rootId, selectedId) {
 
 function placeRootContainerInActiveLayout(containerId, slotIndex) {
   if (warnLockedLayoutMutation(getPublishedEditLayoutId())) return;
+  const container = state.containers?.[containerId];
+  const nestedPlacement = Boolean(container?.parentId || runtime.rootContainerDialogPendingParentId);
+  if (nestedPlacement) {
+    runtime.rootContainerDialogPendingRootIds = null;
+    runtime.rootContainerDialogPendingParentId = "";
+    runtime.rootContainerDialogPendingParentIndex = Math.max(0, Number(slotIndex) || 0);
+    refs.rootPlacementDialog.close();
+    updateRootContainerPlacementButton();
+    updateRootContainerRemoveFromLayoutButton();
+    updateRootContainerDialogSaveState();
+    showToast(localText("Place selected. Click “Save”.", "Место выбрано. Нажмите «Сохранить»."), "success");
+    return;
+  }
   const index = normalizeRootPlacementIndex(containerId, slotIndex);
   const rootIds = getRootContainerDialogLayoutRootIds().filter((id) => id !== containerId);
   rootIds.splice(Math.max(0, Math.min(index, rootIds.length)), 0, containerId);
@@ -1633,9 +1653,15 @@ function renderContainerPicker() {
     : `<div class="empty">${escapeHtml(t(newItemPlacementMode && !runtime.containerPickerLayoutId
         ? "forms.noUnlockedLayouts"
         : "forms.emptyTopLevel"))}</div>`);
-  refs.containerPickerNoneBtn.hidden = runtime.containerPickerMode === "container" || isContainerPickerItemCopyMode() || rootCopyPicker;
+  const canMoveNestedContainerToRoot = runtime.containerPickerMode === "container" && Boolean(
+    refs.rootContainerNestable?.checked &&
+    (state.containers?.[runtime.containerPickerTargetContainerId]?.parentId || runtime.rootContainerDialogPendingParentId)
+  );
+  refs.containerPickerNoneBtn.hidden = (runtime.containerPickerMode === "container" && !canMoveNestedContainerToRoot) || isContainerPickerItemCopyMode() || rootCopyPicker;
   refs.containerPickerNoneBtn.classList.toggle("active", runtime.containerPickerMode === "item" && !refs.itemContainer.value);
-  refs.containerPickerNoneBtn.textContent = isContainerPickerContainerCopyMode()
+  refs.containerPickerNoneBtn.textContent = runtime.containerPickerMode === "container"
+    ? t("forms.moveToTopLevel")
+    : isContainerPickerContainerCopyMode()
     ? t("forms.rootOfLayout")
     : refs.itemContainer.value ? t("forms.removeFromLayout") : t("forms.outsideLayout");
   refs.containerPickerBoard.querySelectorAll("[data-pick-container]").forEach((button) => {
@@ -1957,6 +1983,10 @@ function isContainerPickerTargetAllowed(containerId) {
 
 async function selectContainerPickerTarget(containerId, targetIndex = null) {
   if (runtime.containerPickerMode === "container") {
+    if (!containerId) {
+      openRootPlacementDialog();
+      return;
+    }
     selectRootContainerParent(containerId, targetIndex);
     return;
   }
@@ -8898,8 +8928,20 @@ function applyRootContainerDialogParent(changedAt = nowIso()) {
   if (warnLockedLayoutMutation(layoutId)) return false;
   const layout = state.layouts?.[layoutId];
   const container = state.containers[runtime.editingRootContainerId];
-  const targetParent = state.containers[runtime.rootContainerDialogPendingParentId];
-  if (!layout || !container || !targetParent) return false;
+  const targetParentId = runtime.rootContainerDialogPendingParentId;
+  const requestedIndex = runtime.rootContainerDialogPendingParentIndex;
+  if (!layout || !container) return false;
+  if (!targetParentId) {
+    return placeExistingContainerInLayoutInState(state, container.id, "", layoutId, {
+      activeLayoutId: state.activeLayoutId,
+      applyLayoutArrangement,
+      changedAt,
+      targetIndex: requestedIndex,
+      touchLayout
+    });
+  }
+  const targetParent = state.containers[targetParentId];
+  if (!targetParent) return false;
   let placement = layout.arrangement?.containers?.[runtime.editingRootContainerId];
   if (!placement) {
     if (!addRootContainerToLayoutInState(state, layoutId, container.id, null, {
@@ -8911,7 +8953,6 @@ function applyRootContainerDialogParent(changedAt = nowIso()) {
   }
   if (!placement) return false;
   if (container.id === targetParent.id) return false;
-  const requestedIndex = runtime.rootContainerDialogPendingParentIndex;
   if (placement.parentId === targetParent.id && requestedIndex === null) return false;
   const insertIndex = normalizeContainerParentInsertIndex(container.id, targetParent.id, requestedIndex);
   if (!moveContainerInLayoutArrangement(layout, container.id, targetParent.id, insertIndex)) return false;

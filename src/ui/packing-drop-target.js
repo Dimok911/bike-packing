@@ -21,3 +21,8 @@ export function getPackingRootPlaceholderBefore(board, beforeNode = null) {
     child?.hasAttribute?.("data-add-packing-root")
   ) || null;
 }
+
+export function isPackingContainerPhotoDropSurface(target, container) {
+  const photo = target?.closest?.(".item-photo");
+  return Boolean(photo && photo.parentElement === container);
+}

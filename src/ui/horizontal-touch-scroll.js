@@ -28,6 +28,13 @@ export function resetHorizontalTouchScroll(board) {
   if (board) board.scrollLeft = 0;
 }
 
+export function packingBoardUsesDedicatedTouchPan(board) {
+  return Boolean(
+    board?.classList?.contains?.("packing-board-zoom-active")
+    || board?.classList?.contains?.("packing-board-zooming")
+  );
+}
+
 export function bindHorizontalTouchScroll(board, {
   pointerEventsSupported = typeof PointerEvent !== "undefined"
 } = {}) {
@@ -112,6 +119,10 @@ export function bindHorizontalTouchScroll(board, {
   };
 
   const moveGesture = (clientX, clientY) => {
+    if (packingBoardUsesDedicatedTouchPan(board)) {
+      cancelForPagePan();
+      return false;
+    }
     if (board.classList?.contains?.("packing-board-page-panning")) {
       cancelForPagePan();
       return false;
@@ -132,6 +143,10 @@ export function bindHorizontalTouchScroll(board, {
 
   const startMomentum = () => {
     stopMomentum();
+    if (packingBoardUsesDedicatedTouchPan(board)) {
+      resetGesture();
+      return;
+    }
     if (touchScrollAxis !== "horizontal" || Math.abs(velocityX) < 0.08) return;
     let velocity = velocityX;
     let previousTime = performance.now();
@@ -155,6 +170,7 @@ export function bindHorizontalTouchScroll(board, {
   if (pointerEventsSupported) {
     board.addEventListener("pointerdown", (event) => {
       if (event.pointerType !== "touch" || activePointerId != null) return;
+      if (packingBoardUsesDedicatedTouchPan(board)) return;
       activePointerId = event.pointerId;
       pointerCaptured = false;
       beginGesture(event.clientX, event.clientY);
@@ -188,6 +204,7 @@ export function bindHorizontalTouchScroll(board, {
   } else {
     board.addEventListener("touchstart", (event) => {
       if (event.touches.length !== 1) return;
+      if (packingBoardUsesDedicatedTouchPan(board)) return;
       const touch = event.touches[0];
       beginGesture(touch.clientX, touch.clientY);
     }, { passive: true });
@@ -212,6 +229,7 @@ export function bindHorizontalTouchScroll(board, {
     }
   }, true);
   board.addEventListener("packing-board-page-pan-start", cancelForPagePan);
+  board.addEventListener("packing-board-pinch-start", cancelForPagePan);
 
   boardControllers.set(board, { reset });
 }
