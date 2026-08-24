@@ -1,4 +1,5 @@
 import { sharedVirtualContainerId, sharedVirtualItemId } from "../public/shared-virtual-state.js";
+import { packingBoardZoomControllerFor } from "./packing-board-zoom.js";
 
 function selectorValue(value) {
   return String(value || "").replace(/["\\]/g, "\\$&");
@@ -17,6 +18,7 @@ export function sharedEntityFocusSelector(target) {
 
 export function focusSharedEntityTarget(root, target, {
   attempts = 8,
+  controllerForBoard = packingBoardZoomControllerFor,
   requestFrame = (callback) => requestAnimationFrame(callback),
   setTimer = (callback, delay) => setTimeout(callback, delay)
 } = {}) {
@@ -28,20 +30,26 @@ export function focusSharedEntityTarget(root, target, {
     if (!element) {
       remaining -= 1;
       if (remaining > 0) requestFrame(focus);
-      return;
+      return false;
     }
     const hadTabIndex = element.hasAttribute("tabindex");
     const previousTabIndex = element.getAttribute("tabindex");
     if (!hadTabIndex) element.setAttribute("tabindex", "-1");
     element.classList.add("shared-link-focus");
-    element.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
+    const board = element.closest?.(".board");
+    const presented = target?.scope === "layout" &&
+      controllerForBoard?.(board)?.presentElement?.(element) === true;
+    if (!presented) {
+      element.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
+    }
     element.focus?.({ preventScroll: true });
     setTimer(() => {
       element.classList.remove("shared-link-focus");
       if (!hadTabIndex) element.removeAttribute("tabindex");
       else if (previousTabIndex !== null) element.setAttribute("tabindex", previousTabIndex);
     }, 3300);
+    return true;
   };
-  requestFrame(focus);
+  focus();
   return true;
 }

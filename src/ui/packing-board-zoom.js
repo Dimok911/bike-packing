@@ -6,8 +6,15 @@ export const PACKING_BOARD_ZOOM_MAX = 1.6;
 export const PACKING_BOARD_ZOOM_ELASTIC_MAX = 1.8;
 export const PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE = 52;
 export const PACKING_BOARD_POST_PINCH_PAN_DELAY_MS = 80;
+export const PACKING_BOARD_PAN_MAX_VELOCITY = 1.5;
 
 let activePackingBoardZoomController = null;
+
+export function packingBoardZoomControllerFor(board) {
+  return activePackingBoardZoomController?.board === board
+    ? activePackingBoardZoomController
+    : null;
+}
 
 export function clampPackingBoardZoom(value, {
   max = PACKING_BOARD_ZOOM_MAX,
@@ -27,6 +34,29 @@ export function packingBoardFitMaxZoom({
   const baseWidth = Math.max(0, Number(columnWidth) || 0);
   if (!availableWidth || !baseWidth) return 1;
   return Math.max(1, Math.min(Number(max) || PACKING_BOARD_ZOOM_MAX, availableWidth / baseWidth));
+}
+
+export function packingBoardPresentationZooms({
+  boardWidth,
+  columnCount,
+  columnGap = 0,
+  columnWidth,
+  maxZoom = PACKING_BOARD_ZOOM_MAX
+} = {}) {
+  const count = Math.max(1, Math.round(Number(columnCount) || 1));
+  const width = Math.max(0, Number(columnWidth) || 0);
+  const gap = Math.max(0, Number(columnGap) || 0);
+  const availableWidth = Math.max(0, Number(boardWidth) || 0);
+  const contentWidth = width * count + gap * Math.max(0, count - 1);
+  const overview = contentWidth && availableWidth
+    ? clampPackingBoardZoom(availableWidth / contentWidth, { max: 1 })
+    : 1;
+  const maximum = Math.max(1, Number(maxZoom) || PACKING_BOARD_ZOOM_MAX);
+  const detail = Math.min(maximum, Math.max(1.35, overview + 0.35));
+  return {
+    overview: Math.round(overview * 1000) / 1000,
+    detail: Math.round(detail * 1000) / 1000
+  };
 }
 
 export function packingBoardUsableColumnWidth(...values) {
@@ -158,16 +188,38 @@ export function packingBoardPagePanScrollTop({
   return Math.max(0, (Number(currentScrollTop) || 0) + (Number(previousClientY) || 0) - (Number(currentClientY) || 0));
 }
 
+export function packingBoardPanVelocity({
+  currentClientCoordinate,
+  elapsedMs,
+  maxVelocity = PACKING_BOARD_PAN_MAX_VELOCITY,
+  previousClientCoordinate,
+  previousVelocity = 0,
+  sampleWeight = 0.75
+} = {}) {
+  const elapsed = Math.max(1, Number(elapsedMs) || 1);
+  const maximum = Math.max(0, Number(maxVelocity) || PACKING_BOARD_PAN_MAX_VELOCITY);
+  const rawSample = (
+    (Number(previousClientCoordinate) || 0) - (Number(currentClientCoordinate) || 0)
+  ) / elapsed;
+  const sample = Math.max(-maximum, Math.min(maximum, rawSample));
+  const prior = Number(previousVelocity) || 0;
+  const weight = Math.max(0, Math.min(1, Number(sampleWeight) || 0));
+  const velocity = prior ? prior * (1 - weight) + sample * weight : sample;
+  return Math.max(-maximum, Math.min(maximum, velocity));
+}
+
 export function packingBoardPagePanVelocity({
   currentClientY,
   elapsedMs,
   previousClientY,
   previousVelocity = 0
 } = {}) {
-  const elapsed = Math.max(1, Number(elapsedMs) || 1);
-  const sample = ((Number(previousClientY) || 0) - (Number(currentClientY) || 0)) / elapsed;
-  const prior = Number(previousVelocity) || 0;
-  return prior ? prior * 0.25 + sample * 0.75 : sample;
+  return packingBoardPanVelocity({
+    currentClientCoordinate: currentClientY,
+    elapsedMs,
+    previousClientCoordinate: previousClientY,
+    previousVelocity
+  });
 }
 
 export function packingBoardPageMomentumScrollTop({
@@ -385,7 +437,6 @@ export function bindPackingBoardZoom(board, {
   let singleTouchStartX = 0;
   let singleTouchStartY = 0;
   let singleTouchStartScrollTop = 0;
-  let singleTouchGallery = null;
   let singleTouchStartBoardScrollLeft = 0;
   let singleTouchLastX = 0;
   let singleTouchLastTime = 0;
@@ -410,6 +461,8 @@ export function bindPackingBoardZoom(board, {
   let gestureActive = false;
   let horizontalAnchorGutter = 0;
   let verticalClampFrame = null;
+  let presentationTimer = null;
+  let presentationZoomFrame = null;
 
   const frameNow = () => Number(windowRef?.performance?.now?.()) || Date.now();
 
@@ -545,11 +598,12 @@ export function bindPackingBoardZoom(board, {
 
   const updateBoardPanVelocity = (clientX) => {
     const now = frameNow();
-    const elapsed = Math.max(1, now - singleTouchLastTime);
-    const sampleVelocity = (singleTouchLastX - Number(clientX || 0)) / elapsed;
-    singleTouchBoardVelocity = singleTouchBoardVelocity
-      ? singleTouchBoardVelocity * 0.25 + sampleVelocity * 0.75
-      : sampleVelocity;
+    singleTouchBoardVelocity = packingBoardPanVelocity({
+      currentClientCoordinate: clientX,
+      elapsedMs: now - singleTouchLastTime,
+      previousClientCoordinate: singleTouchLastX,
+      previousVelocity: singleTouchBoardVelocity
+    });
     singleTouchLastX = Number(clientX) || 0;
     singleTouchLastTime = now;
   };
@@ -561,7 +615,10 @@ export function bindPackingBoardZoom(board, {
       frameNow() - pagePanLastTime > 100 ||
       Math.abs(pagePanVelocity) < 0.08
     ) return;
-    let velocity = pagePanVelocity;
+    let velocity = Math.max(
+      -PACKING_BOARD_PAN_MAX_VELOCITY,
+      Math.min(PACKING_BOARD_PAN_MAX_VELOCITY, pagePanVelocity)
+    );
     let previousTime = frameNow();
     const requestFrame = windowRef?.requestAnimationFrame || ((callback) => callback(frameNow()));
     const step = (time) => {
@@ -977,8 +1034,6 @@ export function bindPackingBoardZoom(board, {
         singleTouchStartX = Number(touch?.clientX) || 0;
         singleTouchStartY = Number(touch?.clientY) || 0;
         singleTouchStartScrollTop = Number(verticalScrollHost?.scrollTop) || 0;
-        singleTouchGallery = event?.target?.closest?.(".photo-gallery-track") || null;
-        if (!board.contains?.(singleTouchGallery)) singleTouchGallery = null;
         singleTouchStartBoardScrollLeft = Number(board.scrollLeft) || 0;
         singleTouchLastX = singleTouchStartX;
         singleTouchLastTime = frameNow();
@@ -1114,7 +1169,7 @@ export function bindPackingBoardZoom(board, {
           event.stopPropagation?.();
         } else if (
           singleTouchAxis === "vertical" &&
-          (singleTouchGallery || Math.abs(zoom - 1) >= 0.005)
+          Math.abs(zoom - 1) >= 0.005
         ) {
           activatePagePan();
           updatePagePanVelocity(currentY);
@@ -1180,7 +1235,7 @@ export function bindPackingBoardZoom(board, {
     if (!pinching) {
       if (!remainingTouchCount) {
         const continueZoomMomentum = postPinchPanning && !postPinchPanActivated && event?.type !== "touchcancel";
-        if ((singleTouchGallery && singleTouchAxis) || singleTouchAxis === "diagonal") {
+        if (singleTouchAxis === "diagonal") {
           event.preventDefault?.();
           event.stopPropagation?.();
         }
@@ -1203,7 +1258,6 @@ export function bindPackingBoardZoom(board, {
           if (zoomNeedsSettle) settleZoomToFit();
           else settleBoardGeometry();
         }
-        singleTouchGallery = null;
         singleTouchBoardVelocity = 0;
       }
       return;
@@ -1256,6 +1310,95 @@ export function bindPackingBoardZoom(board, {
     settleBoardGeometry();
   };
 
+  const stopPresentation = () => {
+    if (presentationTimer !== null) {
+      (windowRef?.clearTimeout || globalThis.clearTimeout)?.(presentationTimer);
+      presentationTimer = null;
+    }
+    if (presentationZoomFrame !== null) {
+      windowRef?.cancelAnimationFrame?.(presentationZoomFrame);
+      presentationZoomFrame = null;
+    }
+  };
+
+  const presentElement = (element, {
+    detailDelayMs = 760,
+    durationMs = 560,
+    scrollSettleMs = 360
+  } = {}) => {
+    if (!element || !board.contains?.(element)) return false;
+    stopPresentation();
+    stopZoomMomentum();
+    stopZoomSettle();
+    stopGeometrySettle();
+    stopPageMomentum();
+    stopBoardMomentum();
+    if (!baseColumnWidth) baseColumnWidth = measureBaseColumnWidth();
+    const zooms = packingBoardPresentationZooms({
+      boardWidth: Math.max(0, (Number(board.clientWidth) || 0) - basePaddingRight),
+      columnCount: targets.length,
+      columnGap: baseGap,
+      columnWidth: baseColumnWidth,
+      maxZoom: fitMaxZoom()
+    });
+    applyZoom(zooms.overview, null, { notify: false });
+    board.scrollLeft = 0;
+    notifyGeometryChanged(board, windowRef);
+
+    const reducedMotion = Boolean(windowRef?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+    const setTimer = windowRef?.setTimeout || globalThis.setTimeout;
+    const requestFrame = windowRef?.requestAnimationFrame || ((callback) => callback(frameNow()));
+    const beginDetail = () => {
+      presentationTimer = null;
+      element.scrollIntoView?.({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "center",
+        inline: "center"
+      });
+      presentationTimer = setTimer(() => {
+        presentationTimer = null;
+        const boardRect = board.getBoundingClientRect?.();
+        const elementRect = element.getBoundingClientRect?.();
+        if (!boardRect || !elementRect) return;
+        const startValue = zoom;
+        const targetValue = zooms.detail;
+        const anchorClientX = Number(elementRect.left) + Number(elementRect.width) / 2;
+        const anchorClientY = Number(elementRect.top) + Number(elementRect.height) / 2;
+        const pageScrollTop = Number(verticalScrollHost?.scrollTop) || 0;
+        const anchor = {
+          preserveHorizontalPoint: true,
+          preserveVerticalPoint: true,
+          anchorClientX,
+          anchorContentX: ((Number(board.scrollLeft) || 0) + anchorClientX - Number(boardRect.left)) / startValue,
+          anchorClientY,
+          anchorContentY: (anchorClientY - Number(boardRect.top)) / startValue,
+          boardClientLeft: Number(boardRect.left) || 0,
+          boardDocumentTop: Number(boardRect.top) + pageScrollTop
+        };
+        if (reducedMotion || durationMs <= 0 || Math.abs(targetValue - startValue) < 0.005) {
+          applyZoom(targetValue, anchor);
+          settleBoardGeometry();
+          return;
+        }
+        const startedAt = frameNow();
+        const step = (time) => {
+          const progress = Math.max(0, Math.min(1, (Number(time) - startedAt) / durationMs));
+          const eased = 1 - Math.pow(1 - progress, 3);
+          applyZoom(startValue + (targetValue - startValue) * eased, anchor, { notify: progress >= 1 });
+          if (progress < 1) {
+            presentationZoomFrame = requestFrame(step);
+            return;
+          }
+          presentationZoomFrame = null;
+          settleBoardGeometry();
+        };
+        presentationZoomFrame = requestFrame(step);
+      }, reducedMotion ? 0 : Math.max(0, Number(scrollSettleMs) || 0));
+    };
+    presentationTimer = setTimer(beginDetail, reducedMotion ? 0 : Math.max(0, Number(detailDelayMs) || 0));
+    return true;
+  };
+
   const onTargetResize = () => {
     if (!baseColumnWidth && measureBaseColumnWidth()) {
       applyZoom(zoom);
@@ -1274,6 +1417,7 @@ export function bindPackingBoardZoom(board, {
   targets.forEach((target) => resizeObserver?.observe?.(target));
 
   const destroy = () => {
+    stopPresentation();
     gestureSurface?.removeEventListener?.("touchstart", onTouchStart, true);
     gestureSurface?.removeEventListener?.("touchmove", onTouchMove, true);
     gestureSurface?.removeEventListener?.("touchend", finishPinch, true);
@@ -1303,7 +1447,6 @@ export function bindPackingBoardZoom(board, {
     postPinchStartedAt = 0;
     zoomNeedsSettle = false;
     singleTouchAxis = "";
-    singleTouchGallery = null;
     singleTouchBoardVelocity = 0;
     twoFingerMode = "";
     if (resetButton) resetButton.hidden = true;
@@ -1327,8 +1470,10 @@ export function bindPackingBoardZoom(board, {
 
   const controller = {
     applyZoom,
+    board,
     destroy,
     getZoom: () => zoom,
+    presentElement,
     resetZoom
   };
   activePackingBoardZoomController = controller;

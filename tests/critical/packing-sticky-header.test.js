@@ -11,6 +11,7 @@ import {
   applyPackingBoardZoomToDragGhost,
   clampPackingBoardZoom,
   PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE,
+  PACKING_BOARD_PAN_MAX_VELOCITY,
   PACKING_BOARD_POST_PINCH_PAN_DELAY_MS,
   packingBoardAllowsDiagonalPan,
   packingBoardAnchoredPageScrollTop,
@@ -20,6 +21,7 @@ import {
   packingBoardGestureTargetsOpenDialog,
   packingBoardPinchZoom,
   packingBoardMomentumScrollLeft,
+  packingBoardPanVelocity,
   packingBoardPageMomentumScrollTop,
   packingBoardPagePanScrollTop,
   packingBoardPagePanVelocity,
@@ -642,12 +644,22 @@ test("CRITICAL packing zoom: pinch scale is bounded and keeps the touched conten
     currentClientY: 140,
     elapsedMs: 20,
     previousClientY: 180
-  }), 2);
+  }), PACKING_BOARD_PAN_MAX_VELOCITY);
   assert.equal(packingBoardPagePanVelocity({
     currentClientY: 220,
     elapsedMs: 20,
     previousClientY: 180
-  }), -2);
+  }), -PACKING_BOARD_PAN_MAX_VELOCITY);
+  assert.equal(packingBoardPanVelocity({
+    currentClientCoordinate: 20,
+    elapsedMs: 1,
+    previousClientCoordinate: 120
+  }), PACKING_BOARD_PAN_MAX_VELOCITY);
+  assert.equal(packingBoardPanVelocity({
+    currentClientCoordinate: 120,
+    elapsedMs: 1,
+    previousClientCoordinate: 20
+  }), -PACKING_BOARD_PAN_MAX_VELOCITY);
   assert.equal(packingBoardPageMomentumScrollTop({
     currentScrollTop: 300,
     elapsedMs: 16,
@@ -841,7 +853,8 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingZoomSource, /packingBoardAllowsDiagonalPan\(zoom\)[\s\S]*?singleTouchAxis = "diagonal"[\s\S]*?board\.scrollLeft = clampBoardScrollLeft[\s\S]*?verticalScrollHost\.scrollTop = nextScrollTop/);
   assert.match(packingZoomSource, /const onTouchMove = \(event\) => \{[\s\S]*?dragging-ui[\s\S]*?return;[\s\S]*?if \(!pinching\)/);
   assert.match(packingZoomSource, /singleTouchAxis === "diagonal"[\s\S]*?startPageMomentum\(\)[\s\S]*?startBoardMomentum\(\)/);
-  assert.match(packingZoomSource, /singleTouchGallery && singleTouchAxis[\s\S]*?preventDefault[\s\S]*?stopPropagation/);
+  assert.doesNotMatch(packingZoomSource, /singleTouchGallery/);
+  assert.match(packingZoomSource, /singleTouchAxis === "vertical"\s*&&\s*Math\.abs\(zoom - 1\) >= 0\.005/);
   assert.match(packingZoomSource, /addEventListener\?\.\("touchend", finishPinch, \{ capture: true, passive: false \}\)/);
   assert.match(packingZoomSource, /anchorClientX: pair\.centerX[\s\S]*?anchorClientY: pair\.centerY/);
   assert.match(packingScrollSource, /cancelForBoardGesture[\s\S]*?packing-board-pinch-start[\s\S]*?packing-board-page-pan-start/);
@@ -857,6 +870,7 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(styles, /\.board\.packing-board-zooming \.photo-gallery-track\s*\{[\s\S]*?pointer-events:\s*none;[\s\S]*?touch-action:\s*none;/);
   assert.match(styles, /\.board\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /\.board\.packing-board-zoom-active\s*\{[\s\S]*?contain:\s*paint;[\s\S]*?touch-action:\s*none;/);
+  assert.match(styles, /\.packing-root-header-row\.packing-board-zoom-active\s*\{[\s\S]*?touch-action:\s*none;/);
   assert.match(styles, /\.board\.packing-board-zoom-active \.photo-gallery-track\s*\{[\s\S]*?overscroll-behavior-y:\s*none;[\s\S]*?touch-action:\s*none;/);
   assert.match(styles, /\.subcontainer-title\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);
   assert.match(styles, /\.item-title-hitarea\s*\{[\s\S]*?touch-action:\s*pan-x pan-y;/);

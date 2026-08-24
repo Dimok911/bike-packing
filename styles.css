@@ -1808,6 +1808,11 @@ button.ghost.context-toggle.active:focus-visible {
   touch-action: none;
 }
 
+.packing-root-header-row.packing-board-zoom-active {
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
 .board.packing-board-zoom-active .photo-gallery-track {
   overscroll-behavior-y: none;
   touch-action: none;

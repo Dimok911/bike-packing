@@ -6847,6 +6847,10 @@ async function openSharedListFromLink(listId, layoutId = "") {
     const payload = activateSharedPayloadLayout(record.payload, layoutId);
     assertRemoteStateIntegrity(payload, stateIntegrityMetaFromResponse(record), record.payload);
     if (!payload) throw new Error("Сервер вернул пустую или повреждённую укладку.");
+    const entityFocusTarget = entityTarget ? {
+      ...entityTarget,
+      scope: payload.sharedEntityTarget?.scope === "layout" ? "layout" : "entity"
+    } : null;
     if (entityTarget) {
       const targetExists = entityTarget.type === "item"
         ? Boolean(payload.items?.[entityTarget.id])
@@ -6869,7 +6873,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
       statePayload: payload,
       listRecord: record,
       linkedSharedList: true,
-      sharedEntityTarget: entityTarget
+      sharedEntityTarget: entityFocusTarget
     };
     linkedSharedListLayout.name = activeLayout?.name || linkedSharedListLayout.name;
     await hydrateAuthForSharedLink();
@@ -6897,7 +6901,7 @@ async function openSharedListFromLink(listId, layoutId = "") {
       documentRef: document,
       render: () => {
         render();
-        if (entityTarget) focusSharedEntityTarget(refs.packingView, entityTarget);
+        if (entityFocusTarget) focusSharedEntityTarget(refs.packingView, entityFocusTarget);
       }
     });
     updateSyncUi(localText(`Shared list · ${linkedSharedListLayout.name}`, `Общий список · ${linkedSharedListLayout.name}`));

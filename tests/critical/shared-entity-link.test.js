@@ -9,7 +9,8 @@ import {
   sharedEntityTargetFromUrl,
   shouldShowSharedEntityPlacement
 } from "../../src/public/shared-entity-link.js";
-import { sharedEntityFocusSelector } from "../../src/ui/shared-entity-focus.js";
+import { packingBoardPresentationZooms } from "../../src/ui/packing-board-zoom.js";
+import { focusSharedEntityTarget, sharedEntityFocusSelector } from "../../src/ui/shared-entity-focus.js";
 import { sharedCardSourceTarget } from "../../src/ui/shared-virtual-events.js";
 
 function sourceState() {
@@ -113,6 +114,45 @@ test("publish dialog options keep mode and scope independent", () => {
 test("focus selector targets virtual item and container cards", () => {
   assert.equal(sharedEntityFocusSelector({ type: "item", id: "target" }), '[data-item-id="shared-virtual-item-target"]');
   assert.match(sharedEntityFocusSelector({ type: "container", id: "root" }), /shared-virtual-container-root/);
+});
+
+test("layout-context links show an overview before presenting the target larger", () => {
+  assert.deepEqual(packingBoardPresentationZooms({
+    boardWidth: 900,
+    columnCount: 3,
+    columnGap: 12,
+    columnWidth: 360,
+    maxZoom: 1.6
+  }), { overview: 0.815, detail: 1.35 });
+
+  const calls = [];
+  const board = {};
+  const classes = new Set();
+  const element = {
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name))
+    },
+    closest: () => board,
+    focus: () => calls.push("focus"),
+    getAttribute: () => null,
+    hasAttribute: () => false,
+    removeAttribute: () => {},
+    scrollIntoView: () => calls.push("fallback-scroll"),
+    setAttribute: () => {}
+  };
+  focusSharedEntityTarget({ querySelector: () => element }, { type: "item", id: "target", scope: "layout" }, {
+    controllerForBoard: (candidate) => ({
+      presentElement(target) {
+        calls.push(candidate === board && target === element ? "present" : "wrong-target");
+        return true;
+      }
+    }),
+    requestFrame: () => calls.push("retry"),
+    setTimer: () => 1
+  });
+  assert.deepEqual(calls, ["present", "focus"]);
+  assert.equal(classes.has("shared-link-focus"), true);
 });
 
 test("readonly shared cards resolve their original item and container for property dialogs", () => {
