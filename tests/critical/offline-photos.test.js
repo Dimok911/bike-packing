@@ -2701,8 +2701,19 @@ test("CRITICAL offline-photos: fullscreen photos force carousel mode on phones o
   assert.equal(fullscreenSwitcherMatchesRequestedMode({ directDesktop: false }, false), true);
   assert.equal(fullscreenSwitcherMatchesRequestedMode({ directDesktop: true }, false), false);
   const source = readProjectFile("src/ui/photo-gallery.js");
-  assert.match(source, /track\.addEventListener\("scroll",[\s\S]*if \(touchCarousel\) return;/);
+  assert.match(source, /track\.addEventListener\("scroll",[\s\S]*if \(!touchCarousel && !scrollFrame\)[\s\S]*scheduleTrackSettle\(\);/);
   assert.match(source, /if \(!touchCarousel && !touchStartedWithPinch && moved && scale <= 1/);
+});
+
+test("CRITICAL offline-photos: phone lightbox settles once after native swipe without mid-swipe source flicker", () => {
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /const settleTouchCarouselTrack = \(\) => \{[\s\S]*resolvePhotoGallerySnapIndex\([\s\S]*pendingScrollIndex = null;[\s\S]*fullscreenSwitcher\?\.goTo\(snapIndex, "auto", false\);/);
+  assert.match(source, /const scheduleTrackSettle = \(\) => \{[\s\S]*if \(touchCarousel\) \{[\s\S]*settleTouchCarouselTrack\(\);/);
+  assert.match(source, /track\.addEventListener\("pointerdown",[\s\S]*cancelTrackSettle\(\);/);
+  assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*if \(event\.touches\.length === 1\) \{[\s\S]*cancelTrackSettle\(\);/);
+  assert.match(source, /if \(!touchCarousel && !scrollFrame\) scrollFrame = requestAnimationFrame\(syncTrackActivePhoto\);/);
+  assert.doesNotMatch(source, /if \(!scrollFrame\) scrollFrame = requestAnimationFrame\(syncTrackActivePhoto\);/);
+  assert.match(source, /if \(!sharedFullscreenImageUsesSource\(image, displaySrc\)\) image\.src = displaySrc;/);
 });
 
 test("CRITICAL offline-photos: fullscreen pinch keeps its scale while the viewport and full source settle", () => {

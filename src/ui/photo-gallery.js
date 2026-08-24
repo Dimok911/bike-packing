@@ -1207,7 +1207,7 @@ export async function openPhotoLightbox(sourceImage, {
     if (image !== targetImage) image.style.removeProperty("transform");
     activeIndex = nextIndex;
     image = targetImage;
-    image.src = displaySrc;
+    if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
     image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
     updateNavigation();
     resetTransform();
@@ -1287,13 +1287,34 @@ export async function openPhotoLightbox(sourceImage, {
     pendingScrollIndex = resolved.pendingIndex;
     if (resolved.activeIndex !== activeIndex) showPhoto(resolved.activeIndex);
   };
-  track.addEventListener("scroll", () => {
-    suppressImageCloseUntil = Date.now() + 300;
-    if (!scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
-    if (touchCarousel) return;
-    if (lightboxSettleTimer !== null) clearTimeout(lightboxSettleTimer);
+  const cancelTrackSettle = () => {
+    if (lightboxSettleTimer === null) return;
+    clearTimeout(lightboxSettleTimer);
+    lightboxSettleTimer = null;
+  };
+  const settleTouchCarouselTrack = () => {
+    cancelTrackSettle();
+    if (scrollFrame) {
+      cancelAnimationFrame(scrollFrame);
+      scrollFrame = 0;
+    }
+    const snapIndex = resolvePhotoGallerySnapIndex({
+      scrollLeft: track.scrollLeft,
+      trackWidth: track.clientWidth,
+      slideCount: entries.length
+    });
+    pendingScrollIndex = null;
+    if (snapIndex !== activeIndex) showPhoto(snapIndex);
+    fullscreenSwitcher?.goTo(snapIndex, "auto", false);
+  };
+  const scheduleTrackSettle = () => {
+    cancelTrackSettle();
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
+      if (touchCarousel) {
+        settleTouchCarouselTrack();
+        return;
+      }
       const snapIndex = resolvePhotoGallerySnapIndex({
         scrollLeft: track.scrollLeft,
         trackWidth: track.clientWidth,
@@ -1301,9 +1322,17 @@ export async function openPhotoLightbox(sourceImage, {
       });
       navigatePhoto(snapIndex);
     }, 160);
+  };
+  track.addEventListener("scroll", () => {
+    suppressImageCloseUntil = Date.now() + 300;
+    if (!touchCarousel && !scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
+    scheduleTrackSettle();
   }, { passive: true });
   track.addEventListener("pointerdown", () => {
-    if (scale <= 1) pendingScrollIndex = null;
+    if (scale <= 1) {
+      pendingScrollIndex = null;
+      cancelTrackSettle();
+    }
   }, { passive: true });
   lightboxDots.forEach((dot, dotIndex) => {
     dot.addEventListener("click", (event) => {
@@ -1454,6 +1483,7 @@ export async function openPhotoLightbox(sourceImage, {
     cancelPanInertia();
     if (isPhotoLightboxControlTarget(event.target)) return;
     if (event.touches.length === 1) {
+      cancelTrackSettle();
       const touch = event.touches[0];
       pinching = false;
       touchStartedWithPinch = false;
@@ -1581,6 +1611,7 @@ export async function openPhotoLightbox(sourceImage, {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    if (touchCarousel && scale <= 1) scheduleTrackSettle();
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
     if (event.key === "Escape") {
