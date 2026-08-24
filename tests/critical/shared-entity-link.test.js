@@ -9,7 +9,7 @@ import {
   sharedEntityTargetFromUrl,
   shouldShowSharedEntityPlacement
 } from "../../src/public/shared-entity-link.js";
-import { packingBoardPresentationZooms } from "../../src/ui/packing-board-zoom.js";
+import { bindPackingBoardZoom, packingBoardPresentationZooms } from "../../src/ui/packing-board-zoom.js";
 import { focusSharedEntityTarget, sharedEntityFocusSelector } from "../../src/ui/shared-entity-focus.js";
 import { sharedCardSourceTarget } from "../../src/ui/shared-virtual-events.js";
 
@@ -124,6 +124,13 @@ test("layout-context links show an overview before presenting the target larger"
     columnWidth: 360,
     maxZoom: 1.6
   }), { overview: 0.815, detail: 1.35 });
+  assert.deepEqual(packingBoardPresentationZooms({
+    boardWidth: 360,
+    columnCount: 1,
+    columnGap: 12,
+    columnWidth: 360,
+    maxZoom: 1.6
+  }), { overview: 1, detail: 1.35 });
 
   const calls = [];
   const board = {};
@@ -153,6 +160,113 @@ test("layout-context links show an overview before presenting the target larger"
   });
   assert.deepEqual(calls, ["present", "focus"]);
   assert.equal(classes.has("shared-link-focus"), true);
+});
+
+test("contextual target presentation reaches 135% on a one-column mobile board", () => {
+  const classList = (...initial) => {
+    const values = new Set(initial);
+    return {
+      add: (...names) => names.forEach((name) => values.add(name)),
+      contains: (name) => values.has(name),
+      remove: (...names) => names.forEach((name) => values.delete(name)),
+      toggle(name, force) {
+        const enabled = force ?? !values.has(name);
+        if (enabled) values.add(name);
+        else values.delete(name);
+        return enabled;
+      }
+    };
+  };
+  const style = () => ({
+    removeProperty() {},
+    setProperty() {}
+  });
+  const timers = [];
+  const frames = [];
+  let now = 100;
+  const rootCard = {
+    classList: classList("container-card"),
+    getBoundingClientRect: () => ({ left: 0, top: 100, right: 360, bottom: 900, width: 360, height: 800 }),
+    offsetHeight: 800
+  };
+  const board = {
+    children: [rootCard],
+    classList: classList("board"),
+    clientWidth: 360,
+    contains: (element) => element === target,
+    dataset: {},
+    getBoundingClientRect: () => ({ left: 0, top: 100, right: 360, bottom: 900, width: 360, height: 800 }),
+    previousElementSibling: null,
+    scrollLeft: 0,
+    scrollWidth: 360,
+    style: style(),
+    addEventListener() {},
+    closest: () => null,
+    dispatchEvent() {},
+    removeEventListener() {}
+  };
+  const target = {
+    getBoundingClientRect: () => ({ left: 20, top: 360, right: 340, bottom: 520, width: 320, height: 160 }),
+    scrollIntoView() {}
+  };
+  const resetButton = {
+    className: "",
+    classList: classList(),
+    hidden: true,
+    style: style(),
+    addEventListener() {},
+    removeEventListener() {},
+    setAttribute() {}
+  };
+  const scrollHost = {
+    clientHeight: 800,
+    scrollHeight: 1600,
+    scrollTop: 0,
+    addEventListener() {},
+    getBoundingClientRect: () => ({ top: 0 }),
+    removeEventListener() {}
+  };
+  const documentRef = {
+    body: { appendChild() {}, classList: classList() },
+    createElement: () => resetButton,
+    documentElement: scrollHost,
+    querySelector: () => null,
+    scrollingElement: scrollHost
+  };
+  const windowRef = {
+    Event: class {},
+    addEventListener() {},
+    cancelAnimationFrame() {},
+    clearTimeout() {},
+    dispatchEvent() {},
+    getComputedStyle: () => ({ columnGap: "12px", paddingBottom: "0", paddingRight: "0", paddingTop: "0" }),
+    matchMedia: () => ({ matches: false }),
+    performance: { now: () => now },
+    removeEventListener() {},
+    requestAnimationFrame(callback) {
+      frames.push(callback);
+      return frames.length;
+    },
+    setTimeout(callback) {
+      timers.push(callback);
+      return timers.length;
+    }
+  };
+  const controller = bindPackingBoardZoom(board, {
+    documentRef,
+    storage: { getItem: () => "1", setItem() {} },
+    windowRef
+  });
+  assert.equal(controller.presentElement(target, { detailDelayMs: 1, durationMs: 64, scrollSettleMs: 1 }), true);
+  assert.equal(controller.getZoom(), 1);
+  timers.shift()();
+  timers.shift()();
+  for (let guard = 0; frames.length && guard < 30; guard += 1) {
+    now += 16;
+    frames.shift()(now);
+  }
+  assert.equal(controller.getZoom(), 1.35);
+  controller.destroy();
 });
 
 test("readonly shared cards resolve their original item and container for property dialogs", () => {

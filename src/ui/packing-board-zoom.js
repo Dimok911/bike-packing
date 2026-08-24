@@ -463,6 +463,7 @@ export function bindPackingBoardZoom(board, {
   let verticalClampFrame = null;
   let presentationTimer = null;
   let presentationZoomFrame = null;
+  let presentationZoomPinned = false;
 
   const frameNow = () => Number(windowRef?.performance?.now?.()) || Date.now();
 
@@ -977,6 +978,8 @@ export function bindPackingBoardZoom(board, {
     if (!boardRect) return;
     event.preventDefault?.();
     event.stopPropagation?.();
+    stopPresentation();
+    presentationZoomPinned = false;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomMomentum();
@@ -1004,6 +1007,8 @@ export function bindPackingBoardZoom(board, {
   const onTouchStart = (event) => {
     if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     if (packingBoardGestureTargetsFixedScrollbar(event, { documentRef })) return;
+    stopPresentation();
+    presentationZoomPinned = false;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomMomentum();
@@ -1295,6 +1300,7 @@ export function bindPackingBoardZoom(board, {
   };
 
   const resetZoom = () => {
+    presentationZoomPinned = false;
     stopZoomMomentum();
     stopZoomSettle();
     stopGeometrySettle();
@@ -1339,8 +1345,9 @@ export function bindPackingBoardZoom(board, {
       columnCount: targets.length,
       columnGap: baseGap,
       columnWidth: baseColumnWidth,
-      maxZoom: fitMaxZoom()
+      maxZoom: PACKING_BOARD_ZOOM_MAX
     });
+    presentationZoomPinned = true;
     applyZoom(zooms.overview, null, { notify: false });
     board.scrollLeft = 0;
     notifyGeometryChanged(board, windowRef);
@@ -1376,7 +1383,7 @@ export function bindPackingBoardZoom(board, {
           boardDocumentTop: Number(boardRect.top) + pageScrollTop
         };
         if (reducedMotion || durationMs <= 0 || Math.abs(targetValue - startValue) < 0.005) {
-          applyZoom(targetValue, anchor);
+          applyZoom(targetValue, anchor, { maxZoom: PACKING_BOARD_ZOOM_MAX });
           settleBoardGeometry();
           return;
         }
@@ -1384,7 +1391,10 @@ export function bindPackingBoardZoom(board, {
         const step = (time) => {
           const progress = Math.max(0, Math.min(1, (Number(time) - startedAt) / durationMs));
           const eased = 1 - Math.pow(1 - progress, 3);
-          applyZoom(startValue + (targetValue - startValue) * eased, anchor, { notify: progress >= 1 });
+          applyZoom(startValue + (targetValue - startValue) * eased, anchor, {
+            maxZoom: PACKING_BOARD_ZOOM_MAX,
+            notify: progress >= 1
+          });
           if (progress < 1) {
             presentationZoomFrame = requestFrame(step);
             return;
@@ -1404,7 +1414,7 @@ export function bindPackingBoardZoom(board, {
       applyZoom(zoom);
       return;
     }
-    if (!pinching && zoom > fitMaxZoom() + 0.001) {
+    if (!presentationZoomPinned && !pinching && zoom > fitMaxZoom() + 0.001) {
       settleZoomToFit();
       return;
     }
@@ -1418,6 +1428,7 @@ export function bindPackingBoardZoom(board, {
 
   const destroy = () => {
     stopPresentation();
+    presentationZoomPinned = false;
     gestureSurface?.removeEventListener?.("touchstart", onTouchStart, true);
     gestureSurface?.removeEventListener?.("touchmove", onTouchMove, true);
     gestureSurface?.removeEventListener?.("touchend", finishPinch, true);
