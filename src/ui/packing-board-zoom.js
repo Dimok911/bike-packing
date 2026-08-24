@@ -36,26 +36,10 @@ export function packingBoardFitMaxZoom({
   return Math.max(1, Math.min(Number(max) || PACKING_BOARD_ZOOM_MAX, availableWidth / baseWidth));
 }
 
-export function packingBoardPresentationZooms({
-  boardWidth,
-  columnCount,
-  columnGap = 0,
-  columnWidth,
-  maxZoom = PACKING_BOARD_ZOOM_MAX
-} = {}) {
-  const count = Math.max(1, Math.round(Number(columnCount) || 1));
-  const width = Math.max(0, Number(columnWidth) || 0);
-  const gap = Math.max(0, Number(columnGap) || 0);
-  const availableWidth = Math.max(0, Number(boardWidth) || 0);
-  const contentWidth = width * count + gap * Math.max(0, count - 1);
-  const overview = contentWidth && availableWidth
-    ? clampPackingBoardZoom(availableWidth / contentWidth, { max: 1 })
-    : 1;
-  const maximum = Math.max(1, Number(maxZoom) || PACKING_BOARD_ZOOM_MAX);
-  const detail = Math.min(maximum, Math.max(1.35, overview + 0.35));
+export function packingBoardPresentationZooms() {
   return {
-    overview: Math.round(overview * 1000) / 1000,
-    detail: Math.round(detail * 1000) / 1000
+    overview: PACKING_BOARD_ZOOM_MIN,
+    detail: 1
   };
 }
 
@@ -463,7 +447,6 @@ export function bindPackingBoardZoom(board, {
   let verticalClampFrame = null;
   let presentationTimer = null;
   let presentationZoomFrame = null;
-  let presentationZoomPinned = false;
 
   const frameNow = () => Number(windowRef?.performance?.now?.()) || Date.now();
 
@@ -979,7 +962,6 @@ export function bindPackingBoardZoom(board, {
     event.preventDefault?.();
     event.stopPropagation?.();
     stopPresentation();
-    presentationZoomPinned = false;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomMomentum();
@@ -1008,7 +990,6 @@ export function bindPackingBoardZoom(board, {
     if (packingBoardGestureTargetsOpenDialog(event, { documentRef })) return;
     if (packingBoardGestureTargetsFixedScrollbar(event, { documentRef })) return;
     stopPresentation();
-    presentationZoomPinned = false;
     stopPageMomentum();
     stopBoardMomentum();
     stopZoomMomentum();
@@ -1300,7 +1281,6 @@ export function bindPackingBoardZoom(board, {
   };
 
   const resetZoom = () => {
-    presentationZoomPinned = false;
     stopZoomMomentum();
     stopZoomSettle();
     stopGeometrySettle();
@@ -1340,14 +1320,7 @@ export function bindPackingBoardZoom(board, {
     stopPageMomentum();
     stopBoardMomentum();
     if (!baseColumnWidth) baseColumnWidth = measureBaseColumnWidth();
-    const zooms = packingBoardPresentationZooms({
-      boardWidth: Math.max(0, (Number(board.clientWidth) || 0) - basePaddingRight),
-      columnCount: targets.length,
-      columnGap: baseGap,
-      columnWidth: baseColumnWidth,
-      maxZoom: PACKING_BOARD_ZOOM_MAX
-    });
-    presentationZoomPinned = true;
+    const zooms = packingBoardPresentationZooms();
     applyZoom(zooms.overview, null, { notify: false });
     board.scrollLeft = 0;
     notifyGeometryChanged(board, windowRef);
@@ -1414,7 +1387,7 @@ export function bindPackingBoardZoom(board, {
       applyZoom(zoom);
       return;
     }
-    if (!presentationZoomPinned && !pinching && zoom > fitMaxZoom() + 0.001) {
+    if (!pinching && zoom > fitMaxZoom() + 0.001) {
       settleZoomToFit();
       return;
     }
@@ -1428,7 +1401,6 @@ export function bindPackingBoardZoom(board, {
 
   const destroy = () => {
     stopPresentation();
-    presentationZoomPinned = false;
     gestureSurface?.removeEventListener?.("touchstart", onTouchStart, true);
     gestureSurface?.removeEventListener?.("touchmove", onTouchMove, true);
     gestureSurface?.removeEventListener?.("touchend", finishPinch, true);

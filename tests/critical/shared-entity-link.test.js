@@ -116,21 +116,21 @@ test("focus selector targets virtual item and container cards", () => {
   assert.match(sharedEntityFocusSelector({ type: "container", id: "root" }), /shared-virtual-container-root/);
 });
 
-test("layout-context links show an overview before presenting the target larger", () => {
+test("layout-context links present the whole tab at 20% before returning to 100% on the target", () => {
   assert.deepEqual(packingBoardPresentationZooms({
     boardWidth: 900,
     columnCount: 3,
     columnGap: 12,
     columnWidth: 360,
     maxZoom: 1.6
-  }), { overview: 0.815, detail: 1.35 });
+  }), { overview: 0.2, detail: 1 });
   assert.deepEqual(packingBoardPresentationZooms({
     boardWidth: 360,
     columnCount: 1,
     columnGap: 12,
     columnWidth: 360,
     maxZoom: 1.6
-  }), { overview: 1, detail: 1.35 });
+  }), { overview: 0.2, detail: 1 });
 
   const calls = [];
   const board = {};
@@ -162,7 +162,7 @@ test("layout-context links show an overview before presenting the target larger"
   assert.equal(classes.has("shared-link-focus"), true);
 });
 
-test("contextual target presentation reaches 135% on a one-column mobile board", () => {
+test("contextual target presentation moves from 20% to 100% on a one-column mobile board", () => {
   const classList = (...initial) => {
     const values = new Set(initial);
     return {
@@ -258,14 +258,14 @@ test("contextual target presentation reaches 135% on a one-column mobile board",
     windowRef
   });
   assert.equal(controller.presentElement(target, { detailDelayMs: 1, durationMs: 64, scrollSettleMs: 1 }), true);
-  assert.equal(controller.getZoom(), 1);
+  assert.equal(controller.getZoom(), 0.2);
   timers.shift()();
   timers.shift()();
   for (let guard = 0; frames.length && guard < 30; guard += 1) {
     now += 16;
     frames.shift()(now);
   }
-  assert.equal(controller.getZoom(), 1.35);
+  assert.equal(controller.getZoom(), 1);
   controller.destroy();
 });
 
