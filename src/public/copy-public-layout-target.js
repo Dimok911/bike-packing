@@ -346,7 +346,35 @@ export function linkExistingContainerTreeToLayoutState(targetState, sourceSnapsh
     rootIds.splice(index, 0, rootId);
     targetLayout.rootContainerIds = rootIds;
   }
-  writeContainerTreeToLayoutArrangement(targetState, targetLayoutId, rootId);
+  if (!writeContainerTreeToLayoutArrangement(targetState, targetLayoutId, rootId)) return "";
+  const arrangement = targetLayout.arrangement;
+  if (targetParentId) {
+    const parentPlacement = arrangement.containers?.[targetParentId];
+    if (!parentPlacement) return "";
+    parentPlacement.childIds = Array.isArray(parentPlacement.childIds)
+      ? parentPlacement.childIds.filter((id) => id !== rootId)
+      : [];
+    parentPlacement.order = Array.isArray(parentPlacement.order)
+      ? parentPlacement.order.filter((entry) => !(entry?.type === "container" && entry.id === rootId))
+      : [];
+    const placementIndex = targetIndex === null
+      ? parentPlacement.order.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, parentPlacement.order.length));
+    parentPlacement.childIds.push(rootId);
+    parentPlacement.order.splice(placementIndex, 0, { type: "container", id: rootId });
+    arrangement.rootContainerIds = arrangement.rootContainerIds.filter((id) => id !== rootId);
+  } else {
+    const rootIds = [...new Set([
+      ...(targetLayout.rootContainerIds || []),
+      ...(arrangement.rootContainerIds || [])
+    ])].filter((id) => id !== rootId);
+    const placementIndex = targetIndex === null
+      ? rootIds.length
+      : Math.max(0, Math.min(Number(targetIndex) || 0, rootIds.length));
+    rootIds.splice(placementIndex, 0, rootId);
+    arrangement.rootContainerIds = rootIds;
+    targetLayout.rootContainerIds = [...rootIds];
+  }
   normalizeLayoutArrangement(targetLayout, targetState);
   touchLayout(targetLayoutId, changedAt);
   return rootId;

@@ -75,6 +75,22 @@ test("CRITICAL private item copy: a live public catalog record still requires an
 test("CRITICAL private copy: top-level bag links existing catalog records when target has no duplicates", () => {
   const state = {
     containers: {
+      "bag-first": {
+        id: "bag-first",
+        name: "First bag",
+        parentId: null,
+        childIds: [],
+        itemIds: [],
+        order: []
+      },
+      "bag-last": {
+        id: "bag-last",
+        name: "Last bag",
+        parentId: null,
+        childIds: [],
+        itemIds: [],
+        order: []
+      },
       "bag-a": {
         id: "bag-a",
         name: "Bag A",
@@ -107,10 +123,13 @@ test("CRITICAL private copy: top-level bag links existing catalog records when t
     layouts: {
       "target-layout": {
         id: "target-layout",
-        rootContainerIds: [],
+        rootContainerIds: ["bag-first", "bag-last"],
         arrangement: {
-          rootContainerIds: [],
-          containers: {},
+          rootContainerIds: ["bag-first", "bag-last"],
+          containers: {
+            "bag-first": { parentId: "", childIds: [], itemIds: [], order: [] },
+            "bag-last": { parentId: "", childIds: [], itemIds: [], order: [] }
+          },
           items: {},
           packedItems: {}
         }
@@ -144,11 +163,83 @@ test("CRITICAL private copy: top-level bag links existing catalog records when t
   assert.equal(linkedId, "bag-a");
   assert.deepEqual(Object.keys(state.containers), beforeContainerIds);
   assert.deepEqual(Object.keys(state.items), beforeItemIds);
-  assert.deepEqual(state.layouts["target-layout"].rootContainerIds, ["bag-a"]);
-  assert.deepEqual(state.layouts["target-layout"].arrangement.rootContainerIds, ["bag-a"]);
+  assert.deepEqual(state.layouts["target-layout"].rootContainerIds, ["bag-a", "bag-first", "bag-last"]);
+  assert.deepEqual(state.layouts["target-layout"].arrangement.rootContainerIds, ["bag-a", "bag-first", "bag-last"]);
   assert.equal(state.layouts["target-layout"].arrangement.items["item-a"], "bag-a");
   assert.equal(state.containers["bag-a"].photos[0].id, "photo-a");
   assert.equal(state.items["item-a"].photos[0].id, "photo-item-a");
+});
+
+test("CRITICAL private copy: a linked nested bag keeps the selected slot", () => {
+  const state = {
+    containers: {
+      parent: {
+        id: "parent",
+        parentId: null,
+        childIds: ["child-a", "child-b"],
+        itemIds: ["parent-item"],
+        order: [
+          { type: "container", id: "child-a" },
+          { type: "item", id: "parent-item" },
+          { type: "container", id: "child-b" }
+        ]
+      },
+      "child-a": { id: "child-a", parentId: "parent", childIds: [], itemIds: [], order: [] },
+      "child-b": { id: "child-b", parentId: "parent", childIds: [], itemIds: [], order: [] },
+      "bag-copy": { id: "bag-copy", parentId: null, childIds: [], itemIds: [], order: [], nestable: true }
+    },
+    items: {
+      "parent-item": { id: "parent-item", containerId: "parent" }
+    },
+    collapsedContainers: {},
+    layouts: {
+      target: {
+        id: "target",
+        rootContainerIds: ["parent"],
+        arrangement: {
+          rootContainerIds: ["parent"],
+          containers: {
+            parent: {
+              parentId: "",
+              childIds: ["child-a", "child-b"],
+              itemIds: ["parent-item"],
+              order: [
+                { type: "container", id: "child-a" },
+                { type: "item", id: "parent-item" },
+                { type: "container", id: "child-b" }
+              ]
+            },
+            "child-a": { parentId: "parent", childIds: [], itemIds: [], order: [] },
+            "child-b": { parentId: "parent", childIds: [], itemIds: [], order: [] }
+          },
+          items: { "parent-item": "parent" },
+          packedItems: {}
+        }
+      }
+    }
+  };
+  const sourceSnapshot = {
+    rootId: "bag-copy",
+    containers: {
+      "bag-copy": state.containers["bag-copy"]
+    },
+    items: {}
+  };
+
+  const linkedId = linkExistingContainerTreeToLayoutState(state, sourceSnapshot, "target", "parent", {
+    normalizeLayoutArrangement: () => {},
+    targetContainerIds: ["parent", "child-a", "child-b"],
+    targetIndex: 1
+  });
+
+  assert.equal(linkedId, "bag-copy");
+  assert.deepEqual(state.containers.parent.order, [
+    { type: "container", id: "child-a" },
+    { type: "container", id: "bag-copy" },
+    { type: "item", id: "parent-item" },
+    { type: "container", id: "child-b" }
+  ]);
+  assert.deepEqual(state.layouts.target.arrangement.containers.parent.order, state.containers.parent.order);
 });
 
 test("CRITICAL private copy: duplicate policy distinguishes link, missing and explicit duplicate routes", () => {
