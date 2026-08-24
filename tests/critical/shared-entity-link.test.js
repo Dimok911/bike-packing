@@ -9,7 +9,11 @@ import {
   sharedEntityTargetFromUrl,
   shouldShowSharedEntityPlacement
 } from "../../src/public/shared-entity-link.js";
-import { bindPackingBoardZoom, packingBoardPresentationZooms } from "../../src/ui/packing-board-zoom.js";
+import {
+  bindPackingBoardZoom,
+  packingBoardCenteredScrollPosition,
+  packingBoardPresentationZooms
+} from "../../src/ui/packing-board-zoom.js";
 import { focusSharedEntityTarget, sharedEntityFocusSelector } from "../../src/ui/shared-entity-focus.js";
 import { sharedCardSourceTarget } from "../../src/ui/shared-virtual-events.js";
 
@@ -267,6 +271,27 @@ test("contextual target presentation moves from 20% to 100% on a one-column mobi
   }
   assert.equal(controller.getZoom(), 1);
   controller.destroy();
+});
+
+test("contextual target centering uses the viewport center and clamps only at scroll edges", () => {
+  assert.equal(packingBoardCenteredScrollPosition({
+    currentScroll: 200,
+    maxScroll: 1000,
+    targetClientCenter: 700,
+    viewportClientCenter: 400
+  }), 500);
+  assert.equal(packingBoardCenteredScrollPosition({
+    currentScroll: 50,
+    maxScroll: 1000,
+    targetClientCenter: 100,
+    viewportClientCenter: 400
+  }), 0);
+  assert.equal(packingBoardCenteredScrollPosition({
+    currentScroll: 900,
+    maxScroll: 1000,
+    targetClientCenter: 700,
+    viewportClientCenter: 400
+  }), 1000);
 });
 
 test("readonly shared cards resolve their original item and container for property dialogs", () => {

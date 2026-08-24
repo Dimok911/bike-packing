@@ -152,6 +152,19 @@ export function packingBoardProportionalScrollLeft({
   return progress * safeNextMax;
 }
 
+export function packingBoardCenteredScrollPosition({
+  currentScroll,
+  maxScroll,
+  targetClientCenter,
+  viewportClientCenter
+} = {}) {
+  const maximum = Math.max(0, Number(maxScroll) || 0);
+  const desired = (Number(currentScroll) || 0) +
+    (Number(targetClientCenter) || 0) -
+    (Number(viewportClientCenter) || 0);
+  return Math.max(0, Math.min(maximum, desired));
+}
+
 export function packingBoardAnchoredScrollLeft({
   anchorClientX,
   anchorContentX,
@@ -479,6 +492,14 @@ export function bindPackingBoardZoom(board, {
       scrollHostClientTop: verticalScrollHost.getBoundingClientRect?.()?.top,
       viewportHeight: verticalScrollHost.clientHeight
     });
+  };
+
+  const verticalViewportTop = () => {
+    if (
+      verticalScrollHost === documentRef?.scrollingElement ||
+      verticalScrollHost === documentRef?.documentElement
+    ) return 0;
+    return Number(verticalScrollHost?.getBoundingClientRect?.()?.top) || 0;
   };
 
   const requestVerticalScrollClamp = () => {
@@ -1342,21 +1363,46 @@ export function bindPackingBoardZoom(board, {
         if (!boardRect || !elementRect) return;
         const startValue = zoom;
         const targetValue = zooms.detail;
-        const anchorClientX = Number(elementRect.left) + Number(elementRect.width) / 2;
-        const anchorClientY = Number(elementRect.top) + Number(elementRect.height) / 2;
+        const targetClientX = Number(elementRect.left) + Number(elementRect.width) / 2;
+        const targetClientY = Number(elementRect.top) + Number(elementRect.height) / 2;
+        const anchorClientX = Number(boardRect.left) + Number(board.clientWidth) / 2;
+        const anchorClientY = verticalViewportTop() + Number(verticalScrollHost?.clientHeight) / 2;
         const pageScrollTop = Number(verticalScrollHost?.scrollTop) || 0;
         const anchor = {
           preserveHorizontalPoint: true,
           preserveVerticalPoint: true,
           anchorClientX,
-          anchorContentX: ((Number(board.scrollLeft) || 0) + anchorClientX - Number(boardRect.left)) / startValue,
+          anchorContentX: ((Number(board.scrollLeft) || 0) + targetClientX - Number(boardRect.left)) / startValue,
           anchorClientY,
-          anchorContentY: (anchorClientY - Number(boardRect.top)) / startValue,
+          anchorContentY: (targetClientY - Number(boardRect.top)) / startValue,
           boardClientLeft: Number(boardRect.left) || 0,
           boardDocumentTop: Number(boardRect.top) + pageScrollTop
         };
+        const centerTarget = () => {
+          const currentBoardRect = board.getBoundingClientRect?.();
+          const currentElementRect = element.getBoundingClientRect?.();
+          if (!currentBoardRect || !currentElementRect) return;
+          const elementCenterX = Number(currentElementRect.left) + Number(currentElementRect.width) / 2;
+          const boardCenterX = Number(currentBoardRect.left) + Number(board.clientWidth) / 2;
+          board.scrollLeft = packingBoardCenteredScrollPosition({
+            currentScroll: board.scrollLeft,
+            maxScroll: Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth)),
+            targetClientCenter: elementCenterX,
+            viewportClientCenter: boardCenterX
+          });
+          if (!verticalScrollHost) return;
+          const elementCenterY = Number(currentElementRect.top) + Number(currentElementRect.height) / 2;
+          const viewportCenterY = verticalViewportTop() + Number(verticalScrollHost.clientHeight) / 2;
+          verticalScrollHost.scrollTop = packingBoardCenteredScrollPosition({
+            currentScroll: verticalScrollHost.scrollTop,
+            maxScroll: verticalScrollMaximum(),
+            targetClientCenter: elementCenterY,
+            viewportClientCenter: viewportCenterY
+          });
+        };
         if (reducedMotion || durationMs <= 0 || Math.abs(targetValue - startValue) < 0.005) {
           applyZoom(targetValue, anchor, { maxZoom: PACKING_BOARD_ZOOM_MAX });
+          centerTarget();
           settleBoardGeometry();
           return;
         }
@@ -1373,7 +1419,9 @@ export function bindPackingBoardZoom(board, {
             return;
           }
           presentationZoomFrame = null;
+          centerTarget();
           settleBoardGeometry();
+          requestFrame(centerTarget);
         };
         presentationZoomFrame = requestFrame(step);
       }, reducedMotion ? 0 : Math.max(0, Number(scrollSettleMs) || 0));
