@@ -11,7 +11,7 @@ function tr(t, key, fallback, values) {
 
 function rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCollapsed, t }) {
   if (!readonly || readonlyTemplate) return "";
-  const rootIconClass = rootCollapsed ? "chevron-down" : "chevron-up";
+  const rootIconClass = rootCollapsed ? "chevron-right" : "chevron-down";
   const label = rootCollapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   return `
     <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
@@ -164,7 +164,7 @@ export function renderSubcontainerSectionHtml({
   titleHtml,
   weightHtml
 }) {
-  const iconClass = collapsed ? "chevron-down" : "chevron-up";
+  const iconClass = collapsed ? "chevron-right" : "chevron-down";
   const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
   const nestContainerLabel = tr(t, "drag.nestContainer", "Вложить в пакет");

@@ -237,3 +237,11 @@ test("CRITICAL card editing: collapse arrows have a 44px hit area without taking
   assert.match(stylesSource, /\.collapse-button::before\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*-8px;/s);
   assert.doesNotMatch(stylesSource, /\.collapse-button\s*\{[^}]*min-width:\s*44px;/s);
 });
+
+test("CRITICAL packing disclosure arrows point right when collapsed and down when expanded", () => {
+  const packingRenderSource = readFileSync(new URL("../../src/ui/packing-board-render.js", import.meta.url), "utf8");
+  const stylesSource = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+  assert.match(packingRenderSource, /rootCollapsed \? "chevron-right" : "chevron-down"/);
+  assert.match(packingRenderSource, /collapsed \? "chevron-right" : "chevron-down"/);
+  assert.match(stylesSource, /\.chevron-right\s*\{[^}]*rotate\(-45deg\)/s);
+});

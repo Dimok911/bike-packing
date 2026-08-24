@@ -4452,6 +4452,10 @@ button.photo-gallery-slide.touch-feedback-active {
   transform: translateY(-2px) rotate(45deg);
 }
 
+.chevron-right {
+  transform: translateX(-2px) rotate(-45deg);
+}
+
 .chevron-up {
   transform: translateY(2px) rotate(-135deg);
 }
