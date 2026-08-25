@@ -1,4 +1,7 @@
-export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies }, { renderAfter = false } = {}) {
+export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies }, {
+  renderAfter = false,
+  onCatalogReady = () => {}
+} = {}) {
   const {
     canOpenAdminPublishedEdit,
     copyPublishedContainerToState,
@@ -47,6 +50,12 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
   let demoMetadataMerged = 0;
   let localDraftReconciled = false;
   let data = null;
+  let catalogReadySignaled = false;
+  const signalCatalogReady = () => {
+    if (catalogReadySignaled) return;
+    catalogReadySignaled = true;
+    onCatalogReady?.();
+  };
   try {
     data = await fetchPublicSharedLayoutCatalog();
   } catch {
@@ -59,6 +68,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     });
     if (purgedUnconfirmed.removedLayoutIds.length) saveState({ sync: false });
     if (renderAfter && (purgedUnconfirmed.removedRuntimeCount || purgedUnconfirmed.removedLayoutIds.length)) render();
+    signalCatalogReady();
     return 0;
   }
   const records = Array.isArray(data?.lists) ? data.lists : [];
@@ -76,7 +86,7 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     );
     demoMetadataMerged = demoEntries.length;
   }
-  const demoPayloadResults = await Promise.all(demoEntries.map(async (entry) => {
+  const demoPayloadPromise = Promise.all(demoEntries.map(async (entry) => {
     try {
       const loaded = await fetchPublishedDemoTemplateState(entry);
       if (!loaded?.payload) return null;
@@ -87,14 +97,31 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
       return null;
     }
   }));
-  const demoPayloadMerged = demoPayloadResults.filter(Boolean).length;
   const sharedRecords = records.filter(isPublicSharedLayoutListRecord);
   const concreteRecords = sharedRecords.filter(isConcretePublicSharedLayoutListRecord);
   const authoritativeSharedCatalog = Boolean(data?.canonical);
-  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(authoritativeSharedCatalog ? [] : runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
+  const confirmedCatalogEntries = serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: runtime.sharedLayoutsByLanguage,
     fallbackLanguage: runtime.uiLanguage
-  }));
+  });
+  runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(
+    authoritativeSharedCatalog ? [] : runtime.serverConfirmedSharedLayouts,
+    confirmedCatalogEntries
+  );
+  confirmedCatalogEntries.forEach((entry) => {
+    const existing = Object.values(runtime.sharedLayoutsByLanguage || {})
+      .flat()
+      .find((layout) => layout?.id === entry.id) || null;
+    upsertRuntimeSharedLayout(runtime.sharedLayoutsByLanguage, {
+      id: entry.id,
+      name: entry.name,
+      language: entry.language,
+      runtimeSharedTemplate: true,
+      // Do not stamp an old cached payload with the new catalog revision before
+      // cachedRuntimeSharedPayload has had a chance to invalidate it.
+      updatedAt: existing?.statePayload ? "" : (entry.updatedAt || "")
+    });
+  });
   runtime.sharedLayoutCatalogDiagnostics = createSharedLayoutCatalogDiagnostics({
     source: data?.fallback || (data?.unified ? "/bike-packing/public-templates" : "/bike-packing/public-shared-layouts"),
     records: concreteRecords,
@@ -117,6 +144,9 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
     layout?.runtimeSharedTemplate &&
     !publicSharedIds.has(layout.id)
   );
+  // The initial UI needs names and languages immediately; full template payloads
+  // continue hydrating in parallel and are loaded on demand when opened.
+  signalCatalogReady();
   await Promise.all(concreteRecords
     .map(async (record) => {
       const sharedId = sharedLayoutIdFromPublicListRecord(record);
@@ -175,6 +205,8 @@ export async function refreshPublicSharedLayoutCatalogFlow({ runtime, dependenci
         }
       }
     }));
+  const demoPayloadResults = await demoPayloadPromise;
+  const demoPayloadMerged = demoPayloadResults.filter(Boolean).length;
   runtime.serverConfirmedSharedLayouts = mergeSharedLayoutCatalogEntries(authoritativeSharedCatalog ? [] : runtime.serverConfirmedSharedLayouts, serverConfirmedSharedLayoutsFromPublicRecords(concreteRecords, {
     layoutsByLanguage: runtime.sharedLayoutsByLanguage,
     fallbackLanguage: runtime.uiLanguage

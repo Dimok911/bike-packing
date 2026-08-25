@@ -158,6 +158,7 @@ import {
   shouldWarnAboutSharedLayoutCatalog
 } from "../../src/public/shared-layout-catalog-diagnostics.js";
 import { refreshPublicSharedLayoutCatalogFlow } from "../../src/public/shared-catalog-refresh-flow.js";
+import { copySharedLayoutFlow } from "../../src/public/shared-layout-copy-flow.js";
 import { createPublicTemplatePayloadCache } from "../../src/public/template-payload-cache.js";
 import {
   guestDemoCopyLayoutName,
@@ -4519,6 +4520,8 @@ test("public shared template payload cache avoids repeated full payload fetches 
     uiLanguage: "ru"
   };
   let payloadFetches = 0;
+  let releasePayload;
+  const payloadGate = new Promise((resolve) => { releasePayload = resolve; });
   const dependencies = {
     canOpenAdminPublishedEdit: () => false,
     copyPublishedContainerToState: () => "",
@@ -4532,6 +4535,7 @@ test("public shared template payload cache avoids repeated full payload fetches 
     fetchPublishedDemoTemplateState: async () => null,
     fetchStateRecordByItemKey: async () => {
       payloadFetches += 1;
+      await payloadGate;
       return payload;
     },
     forgetDeletedSharedLayoutId: () => {},
@@ -4572,13 +4576,113 @@ test("public shared template payload cache avoids repeated full payload fetches 
     upsertRuntimeSharedLayout
   };
 
-  await refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies });
+  let catalogReady = false;
+  const firstRefresh = refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies }, {
+    onCatalogReady: () => { catalogReady = true; }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(catalogReady, true);
+  assert.equal(runtime.sharedLayoutsByLanguage.ru[0].id, "bikepacking-reference-bags");
+  assert.equal(runtime.sharedLayoutsByLanguage.ru[0].statePayload, null);
+
+  releasePayload();
+  await firstRefresh;
   await refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies });
 
   assert.equal(payloadFetches, 1);
   assert.equal(runtime.sharedLayoutsByLanguage.ru[0].id, "bikepacking-reference-bags");
   assert.deepEqual(runtime.serverConfirmedDemoTemplates, []);
   assert.deepEqual(runtime.serverConfirmedSharedLayouts.map((entry) => entry.id), ["bikepacking-reference-bags"]);
+
+  record.updatedAt = "2026-05-30T11:00:00.000Z";
+  await refreshPublicSharedLayoutCatalogFlow({ runtime, dependencies });
+  assert.equal(payloadFetches, 2);
+});
+
+test("shared layout copy opens the created layout before slow photo caching finishes", async () => {
+  const sourceState = {
+    activeLayoutId: "source-layout",
+    layouts: {
+      "source-layout": {
+        id: "source-layout",
+        name: "Tristan",
+        rootContainerIds: ["source-root"]
+      }
+    },
+    containers: { "source-root": { id: "source-root", name: "Frame bag" } },
+    items: {}
+  };
+  const sharedLayout = { id: "tristan", name: "Tristan", statePayload: sourceState };
+  const runtime = {
+    state: { activeLayoutId: "", layouts: {}, containers: {}, items: {} },
+    uiLanguage: "ru",
+    render: () => events.push("render")
+  };
+  const events = [];
+  const progressStages = [];
+  let releasePhotos;
+  const photoGate = new Promise((resolve) => { releasePhotos = resolve; });
+  const progress = {
+    update: (percent, stage) => progressStages.push([percent, stage]),
+    finish: () => progressStages.push([100, "finish"]),
+    cancel: () => progressStages.push([0, "cancel"]),
+    fail: (message) => progressStages.push([-1, message])
+  };
+  const dependencies = {
+    applyLayoutArrangement: (layoutId) => events.push(`arrange:${layoutId}`),
+    beginCopyProgress: () => progress,
+    cacheGuestTemplatePhotoFallbacks: async () => {
+      events.push("photos:start");
+      await photoGate;
+      events.push("photos:end");
+      return 1;
+    },
+    canOpenAdminPublishedEdit: () => false,
+    closeSharedLayoutsDialog: () => events.push("dialog:close"),
+    confirmRepeatedSharedLayoutCopy: async () => true,
+    copyPublishedContainerToState: () => "copied-root",
+    copySharedRootToState: () => "",
+    createLayoutArrangementFromCurrentState: (_state, rootIds) => ({ rootContainerIds: [...rootIds] }),
+    createLayoutId: () => "layout-copy",
+    createLocalDemoCopy: async () => "demo-copy",
+    createdLayoutSyncErrorText: (error) => error.message,
+    currentCreateMeta: () => ({ createdAt: "now" }),
+    ensurePrivateStateForSharedCopy: async () => {},
+    findCopiedSharedLayout: () => null,
+    findSharedLayout: () => sharedLayout,
+    guestLayoutFlags: () => ({ guestCopy: true }),
+    isServerBackedCopy: () => false,
+    loadSharedLayoutPayload: async () => true,
+    markLocalPublicCopyOrigin: () => {},
+    nowIso: () => "now",
+    rememberActiveLayoutChoice: (layoutId) => events.push(`remember:${layoutId}`),
+    saveState: () => events.push("save"),
+    setActivePrivateScope: () => events.push("scope:private"),
+    sharedLayoutPublicSourceId: () => "source-layout",
+    sharedLayoutRoots: () => [],
+    sharedLayoutStatePayload: () => sourceState,
+    showToast: () => {},
+    switchView: (view) => events.push(`view:${view}`),
+    syncCreatedPrivateLayoutEntities: async () => events.push("sync"),
+    t: (key) => key,
+    uniqueLayoutName: (name) => name,
+    updateSyncUi: () => {},
+    DEMO_SHARED_LAYOUT_ID: "demo"
+  };
+
+  const copyTask = copySharedLayoutFlow({ runtime, dependencies }, "tristan");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(runtime.state.activeLayoutId, "layout-copy");
+  assert.ok(events.indexOf("render") < events.indexOf("photos:start"));
+  assert.equal(events.includes("photos:end"), false);
+  assert.deepEqual(progressStages.at(-1), [75, "shared.copyStagePhotos"]);
+
+  releasePhotos();
+  assert.equal(await copyTask, "layout-copy");
+  assert.ok(events.indexOf("photos:end") < events.indexOf("sync"));
+  assert.deepEqual(progressStages.at(-1), [100, "finish"]);
 });
 
 test("public template payload cache invalidates entries when updatedAt changes", () => {

@@ -9166,6 +9166,25 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   color: #8d3f2a;
 }
 
+.template-copy-progress {
+  display: grid;
+  gap: 8px;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent));
+  pointer-events: auto;
+}
+
+.template-copy-progress-label {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.template-copy-progress-bar {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
 .auth-dialog-card footer {
   align-items: stretch;
 }

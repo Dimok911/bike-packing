@@ -198,7 +198,9 @@ export function bindSharedVirtualEvents(root = document, dependencies = {}) {
   root.querySelectorAll("#addRootContainerBtn").forEach((button) => {
     button.textContent = tr(t, "buttons.copyAll", "Скопировать всю укладку");
     if (demoSource) button.textContent = demoCopyActionText();
-    button.addEventListener("click", () => copySharedLayout(activeReadOnlyLayoutId()));
+    button.addEventListener("click", (event) => copySharedLayout(activeReadOnlyLayoutId(), {
+      triggerButton: event.currentTarget
+    }));
   });
   if (!canOpenAdminPublishedEdit()) {
     bindSharedCardDetails(root, {

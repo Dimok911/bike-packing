@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import {
   finishAppStartup,
   OPTIONAL_STARTUP_TASK_TIMEOUT_MS,
+  PUBLIC_CATALOG_STARTUP_TIMEOUT_MS,
   renderBeforeFinishingAppStartup,
   resolveAppStartupLanguage,
   waitForStartupTask
@@ -43,7 +44,8 @@ test("CRITICAL offline-start: normal startup stays covered until auth, catalogs,
 
   assert.doesNotMatch(startupFlow, /if \(!sharedListId\) finishAppStartup/);
   assert.match(startupFlow, /await checkAuthAndLoad\(\{ deferAdminTemplates: true \}\)/);
-  assert.match(startupFlow, /await waitForStartupTask\(publicIndexRefresh\)/);
+  assert.match(startupFlow, /onCatalogReady: resolvePublicCatalogReady/);
+  assert.match(startupFlow, /await waitForStartupTask\(publicCatalogReady, \{\s*timeoutMs: PUBLIC_CATALOG_STARTUP_TIMEOUT_MS/);
   assert.match(startupFlow, /renderBeforeFinishingAppStartup\(\{ documentRef: document, render \}\)/);
 });
 
@@ -155,6 +157,11 @@ test("CRITICAL offline-start: optional catalogs get only a short startup budget"
   assert.equal(scheduledDelay, OPTIONAL_STARTUP_TASK_TIMEOUT_MS);
   releaseTimeout();
   assert.equal(await resultPromise, "timeout");
+});
+
+test("initial public catalog metadata gets a longer budget than optional payload hydration", () => {
+  assert.equal(PUBLIC_CATALOG_STARTUP_TIMEOUT_MS, 3000);
+  assert.ok(PUBLIC_CATALOG_STARTUP_TIMEOUT_MS > OPTIONAL_STARTUP_TASK_TIMEOUT_MS);
 });
 
 test("CRITICAL offline-start: admin drafts continue after the personal workspace opens", () => {

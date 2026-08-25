@@ -1,4 +1,5 @@
 export const OPTIONAL_STARTUP_TASK_TIMEOUT_MS = 1200;
+export const PUBLIC_CATALOG_STARTUP_TIMEOUT_MS = 3000;
 
 export function resolveAppStartupLanguage({
   uiLanguage = "en",

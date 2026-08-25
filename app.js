@@ -298,6 +298,7 @@ import {
   visibleSharedLayoutsForLanguage
 } from "./src/public/shared-layouts.js";
 import { refreshPublicSharedLayoutCatalogFlow } from "./src/public/shared-catalog-refresh-flow.js";
+import { copySharedLayoutFlow } from "./src/public/shared-layout-copy-flow.js";
 import { applyPublishedPayloadPhotosToLayoutState } from "./src/public/published-payload-photos.js";
 import { publishedPhotoUploadRequest } from "./src/public/published-photo-upload.js";
 import {
@@ -328,6 +329,7 @@ import {
 } from "./src/public/shared-entity-link.js";
 import { focusSharedEntityTarget } from "./src/ui/shared-entity-focus.js";
 import {
+  PUBLIC_CATALOG_STARTUP_TIMEOUT_MS,
   renderBeforeFinishingAppStartup,
   resolveAppStartupLanguage,
   waitForStartupTask
@@ -869,6 +871,7 @@ import {
   renderSharedLayoutsHtml
 } from "./src/ui/shared-layout-render.js";
 import { bindSharedVirtualEvents as bindSharedVirtualEventsUi } from "./src/ui/shared-virtual-events.js";
+import { beginSharedLayoutCopyProgress } from "./src/ui/shared-layout-copy-progress.js";
 import {
   renderItemsViewHtml,
   renderListItemHtml,
@@ -3166,9 +3169,9 @@ async function init() {
     photoDraftChanged(rootContainerDialogPhotoDraft, editingRootContainerId ? state.containers?.[editingRootContainerId] : { photos: [] })
   ));
   bindFilePickerDialogDismissGuard(refs.rootContainerDialog, [refs.rootContainerPhotoInput, refs.rootContainerPhotoCameraInput]);
-  refs.newLayoutBtn.addEventListener("click", () => {
+  refs.newLayoutBtn.addEventListener("click", (event) => {
     if (isSharedLayoutView()) {
-      copySharedLayout(activeReadOnlyLayoutId());
+      copySharedLayout(activeReadOnlyLayoutId(), { triggerButton: event.currentTarget });
       return;
     }
     openLayoutDialog();
@@ -3218,7 +3221,9 @@ async function init() {
       select.disabled = false;
     }
   });
-  refs.copySharedLayoutBtn.addEventListener("click", () => copySharedLayout(currentSharedLayouts()[0]?.id));
+  refs.copySharedLayoutBtn.addEventListener("click", (event) => copySharedLayout(currentSharedLayouts()[0]?.id, {
+    triggerButton: event.currentTarget
+  }));
   refs.forceOfflineBtn.addEventListener("click", toggleForcedOfflineMode);
   refs.authForm.addEventListener("submit", submitAuthDialog);
   refs.authConfirmTitle?.addEventListener("click", () => revealAuthMagicLinkConfirmation());
@@ -3367,7 +3372,12 @@ async function init() {
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
   }
   startRemoteStateWatcher();
-  const publicIndexRefresh = refreshPublicSharedTemplates({ renderAfter: false }).catch(() => null);
+  let resolvePublicCatalogReady;
+  const publicCatalogReady = new Promise((resolve) => { resolvePublicCatalogReady = resolve; });
+  const publicIndexRefresh = refreshPublicSharedTemplates({
+    renderAfter: false,
+    onCatalogReady: resolvePublicCatalogReady
+  }).catch(() => null).finally(resolvePublicCatalogReady);
   if (sharedListId) {
     openSharedListFromLink(sharedListId, sharedLayoutIdFromLocation());
     return;
@@ -3379,7 +3389,9 @@ async function init() {
     } else {
       await checkAuthAndLoad({ deferAdminTemplates: true });
     }
-    const publicIndexStartupStatus = await waitForStartupTask(publicIndexRefresh);
+    const publicIndexStartupStatus = await waitForStartupTask(publicCatalogReady, {
+      timeoutMs: PUBLIC_CATALOG_STARTUP_TIMEOUT_MS
+    });
     if (publicIndexStartupStatus === "timeout") {
       publicIndexRefresh.then(() => {
         if (!document.body.classList.contains("app-starting")) render();
@@ -7337,9 +7349,10 @@ async function fetchPublicSharedLayoutCatalog() {
   };
 }
 
-async function refreshPublicSharedTemplates({ renderAfter = false } = {}) {
+async function refreshPublicSharedTemplates(options = {}) {
+  const { renderAfter = false } = options;
   const indexMerged = await refreshPublicSharedLayoutIndex();
-  const catalogMerged = await refreshPublicSharedLayoutCatalog();
+  const catalogMerged = await refreshPublicSharedLayoutCatalog(options);
   if (renderAfter && (indexMerged || catalogMerged)) render();
   return indexMerged + catalogMerged;
 }
@@ -8377,7 +8390,9 @@ function renderSharedLayouts() {
 
 function bindSharedLayoutEvents(root = document) {
   root.querySelectorAll("[data-copy-shared-layout]").forEach((button) => {
-    button.addEventListener("click", () => copySharedLayout(button.dataset.copySharedLayout));
+    button.addEventListener("click", (event) => copySharedLayout(button.dataset.copySharedLayout, {
+      triggerButton: event.currentTarget
+    }));
   });
   root.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
     button.addEventListener("click", () => openSharedContainerCopyPicker(button.dataset.copySharedRoot));
@@ -9278,57 +9293,56 @@ async function copyMissingLayoutSnapshotItemsToLayout(sourceSnapshot, targetLayo
   return changedCount;
 }
 
-async function copySharedLayout(layoutId) {
-  const layout = findSharedLayout(layoutId);
-  if (!layout) return;
-  if (layout.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()) {
-    await createLocalDemoCopy({ forceNew: true }).catch((error) => {
-      const errorText = createdLayoutSyncErrorText(error, uiLanguage);
-      updateSyncUi(localText(`Could not save the demo copy: ${errorText}`, `Не удалось сохранить демо-копию: ${errorText}`));
-      showToast(localText(`Could not save the demo copy: ${errorText}`, `Не удалось сохранить демо-копию: ${errorText}`), "error");
-    });
-    return;
-  }
-  await ensurePrivateStateForSharedCopy();
-  const changedAt = nowIso();
-  const sourceState = sharedLayoutStatePayload(layout);
-  const sourceLayout = sourceState?.layouts?.[sourceState.activeLayoutId] || Object.values(sourceState?.layouts || {})[0];
-  if (!(await confirmRepeatedSharedLayoutCopy(findCopiedSharedLayout(layout, sourceLayout), sourceLayout?.name || layout.name))) return;
-  const rootIds = sourceState
-    ? (sourceLayout?.rootContainerIds || []).map((id) => copyPublishedContainerToState(sourceState, id, { targetLayoutId: "", changedAt }))
-    : sharedLayoutRoots(layout).map((root) => copySharedRootToState(root, { targetLayoutId: "", changedAt }));
-  const nextLayoutId = `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  state.layouts[nextLayoutId] = {
-    id: nextLayoutId,
-    name: uniqueLayoutName(sourceLayout?.name || layout.name),
-    rootContainerIds: rootIds,
-    arrangement: createLayoutArrangementFromCurrentState(state, rootIds),
-    ...(!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
-    ...currentCreateMeta(changedAt)
-  };
-  markLocalPublicCopyOrigin(state.layouts[nextLayoutId], "layout", sharedLayoutPublicSourceId(layout, sourceLayout), sourceState?.activeLayoutId || layout.id);
-  state.activeLayoutId = nextLayoutId;
-  applyLayoutArrangement(nextLayoutId);
-  setActivePrivateScope();
-  rememberActiveLayoutChoice(nextLayoutId);
-  await cacheGuestTemplatePhotoFallbacks(nextLayoutId, { changedAt });
-  saveState({ sync: false });
-  if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
-  switchView("packing");
-  render();
-  try {
-    await syncCreatedPrivateLayoutEntities(nextLayoutId);
-    showToast(localText(
-      `Layout “${layout.name}” copied and saved to the server.`,
-      `Укладка «${layout.name}» скопирована и сохранена на сервере.`
-    ), "success");
-  } catch (error) {
-    const errorText = createdLayoutSyncErrorText(error, uiLanguage);
-    showToast(localText(
-      `The layout was created locally but was not saved to the server: ${errorText}`,
-      `Укладка создана локально, но не сохранена на сервере: ${errorText}`
-    ), "error");
-  }
+async function copySharedLayout(layoutId, options = {}) {
+  return copySharedLayoutFlow({
+    runtime: {
+      get state() { return state; },
+      get uiLanguage() { return uiLanguage; },
+      render
+    },
+    dependencies: {
+      applyLayoutArrangement,
+      beginCopyProgress: (progressOptions) => beginSharedLayoutCopyProgress({
+        ...progressOptions,
+        toastRegion: refs.toastRegion,
+        documentRef: document
+      }),
+      cacheGuestTemplatePhotoFallbacks,
+      canOpenAdminPublishedEdit,
+      closeSharedLayoutsDialog: () => {
+        if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
+      },
+      confirmRepeatedSharedLayoutCopy,
+      copyPublishedContainerToState,
+      copySharedRootToState,
+      createLayoutArrangementFromCurrentState,
+      createLayoutId: () => `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      createLocalDemoCopy,
+      createdLayoutSyncErrorText,
+      currentCreateMeta,
+      ensurePrivateStateForSharedCopy,
+      findCopiedSharedLayout,
+      findSharedLayout,
+      guestLayoutFlags: () => (!canUsePrivateState() ? { [GUEST_DEMO_COPY_FLAG]: true } : {}),
+      isServerBackedCopy: () => Boolean(currentUser && canUsePrivateState()),
+      loadSharedLayoutPayload,
+      markLocalPublicCopyOrigin,
+      nowIso,
+      rememberActiveLayoutChoice,
+      saveState,
+      setActivePrivateScope,
+      sharedLayoutPublicSourceId,
+      sharedLayoutRoots,
+      sharedLayoutStatePayload,
+      showToast,
+      switchView,
+      syncCreatedPrivateLayoutEntities,
+      t,
+      uniqueLayoutName,
+      updateSyncUi,
+      DEMO_SHARED_LAYOUT_ID
+    }
+  }, layoutId, options);
 }
 
 function materializeSharedLayoutForAdmin(layoutId = activeReadOnlyLayoutId(), { sourceLayout = null } = {}) {
