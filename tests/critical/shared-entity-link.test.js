@@ -15,7 +15,10 @@ import {
   packingBoardPresentationZooms
 } from "../../src/ui/packing-board-zoom.js";
 import { focusSharedEntityTarget, sharedEntityFocusSelector } from "../../src/ui/shared-entity-focus.js";
-import { sharedCardSourceTarget } from "../../src/ui/shared-virtual-events.js";
+import {
+  releaseSharedCardPointerFocus,
+  sharedCardSourceTarget
+} from "../../src/ui/shared-virtual-events.js";
 
 function sourceState() {
   return {
@@ -301,4 +304,15 @@ test("readonly shared cards resolve their original item and container for proper
   assert.deepEqual(sharedCardSourceTarget({
     dataset: { rootCard: "shared-virtual-container-root" }
   }), { type: "container", id: "root" });
+});
+
+test("readonly shared cards release tap focus without hiding keyboard focus", () => {
+  let blurCalls = 0;
+  const card = { blur: () => { blurCalls += 1; } };
+
+  assert.equal(releaseSharedCardPointerFocus(card, { type: "click", detail: 1 }), true);
+  assert.equal(blurCalls, 1);
+  assert.equal(releaseSharedCardPointerFocus(card, { type: "keydown", key: "Enter" }), false);
+  assert.equal(releaseSharedCardPointerFocus(card, { type: "click", detail: 0 }), false);
+  assert.equal(blurCalls, 1);
 });

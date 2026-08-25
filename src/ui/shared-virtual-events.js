@@ -22,6 +22,12 @@ export function sharedCardSourceTarget(card) {
   return containerId ? { type: "container", id: containerId } : null;
 }
 
+export function releaseSharedCardPointerFocus(card, event) {
+  if (event?.type !== "click" || Number(event.detail) <= 0) return false;
+  card?.blur?.();
+  return true;
+}
+
 function bindSharedCardDetails(root, {
   openSharedReadonlyContainerDialog,
   openSharedReadonlyItemDialog,
@@ -44,6 +50,7 @@ function bindSharedCardDetails(root, {
       if (event.target?.closest?.("button, a, input, select, textarea, label")) return;
       event.preventDefault();
       event.stopPropagation();
+      releaseSharedCardPointerFocus(card, event);
       if (target.type === "item") openSharedReadonlyItemDialog?.(target.id);
       else openSharedReadonlyContainerDialog?.(target.id);
     };
