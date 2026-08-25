@@ -5,7 +5,7 @@ export async function waitForApp(page) {
   await expect(page.locator("#layoutSelect")).toBeVisible();
 }
 
-export async function prepareIsolatedRussianGuest(page) {
+export async function prepareIsolatedGuest(page, language = "ru") {
   await page.route("**/letters-vniipo/api/**", async (route) => {
     await route.fulfill({
       status: 503,
@@ -13,9 +13,17 @@ export async function prepareIsolatedRussianGuest(page) {
       body: JSON.stringify({ ok: false, code: "e2e_isolated", message: "E2E uses local guest storage" }),
     });
   });
-  await page.addInitScript(() => {
-    localStorage.setItem("bike-packing-language-v1", "ru");
-  });
+  await page.addInitScript((selectedLanguage) => {
+    localStorage.setItem("bike-packing-language-v1", selectedLanguage);
+  }, language);
+}
+
+export async function prepareIsolatedRussianGuest(page) {
+  await prepareIsolatedGuest(page, "ru");
+}
+
+export async function prepareIsolatedEnglishGuest(page) {
+  await prepareIsolatedGuest(page, "en");
 }
 
 export async function openApp(page) {
