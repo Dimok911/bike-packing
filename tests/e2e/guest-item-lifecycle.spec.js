@@ -63,13 +63,15 @@ test("guest searches items and clears the search", async ({ page }) => {
   await expect(container.locator("[data-item-id]").filter({ hasText: "Синий насос" })).toBeVisible();
 });
 
-test("guest marks an item packed and keeps collection state after reload", async ({ page }) => {
+test("guest filters packed items and unpacks everything with state kept after reload", async ({ page }) => {
   const itemName = "Собранная аптечка";
-  const { item } = await createGuestWorkspace(page, {
+  const unpackedItemName = "Несобранная фляга";
+  const { container, item } = await createGuestWorkspace(page, {
     layoutName: "Режим сбора",
     containerName: "Сумка режима сбора",
     itemName,
   });
+  await createItemInContainer(page, container, unpackedItemName);
 
   await page.locator("#menuBtn").click();
   await expect(page.locator("#topMenu")).toBeVisible();
@@ -85,6 +87,37 @@ test("guest marks an item packed and keeps collection state after reload", async
   const restoredItem = page.locator("#packingView [data-item-id]").filter({ hasText: itemName });
   await expect(restoredItem).toHaveClass(/\bpacked-item\b/);
   await expect(restoredItem.locator("[data-toggle-packed]")).toHaveText("✓");
+
+  await page.locator("#unpackedOnlyBtn").click();
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: itemName })).toHaveCount(0);
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: unpackedItemName })).toBeVisible();
+
+  await page.locator("#unpackedOnlyBtn").click();
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: itemName })).toBeVisible();
+  await page.locator("#unpackAllBtn").click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#packingView [data-item-id].packed-item")).toHaveCount(0);
+
+  await page.reload();
+  await waitForApp(page);
+  await expect(page.locator("#collectionModeBtn")).toHaveClass(/\bactive\b/);
+  await expect(page.locator("#packingView [data-item-id].packed-item")).toHaveCount(0);
+});
+
+test("guest quantity contributes to exact total weight after reload", async ({ page }) => {
+  await createGuestWorkspace(page, {
+    layoutName: "Расчёт веса",
+    containerName: "Сумка расчёта веса",
+    itemName: "Три баллона",
+    weight: "125",
+    quantity: "3",
+  });
+
+  await expect(page.locator("#summary")).toContainText("375 г");
+  await page.reload();
+  await waitForApp(page);
+  await expect(page.locator("#summary")).toContainText("375 г");
 });
 
 test("guest deletes an item forever and it does not return after reload", async ({ page }) => {
