@@ -1,0 +1,46 @@
+import { expect, test } from "@playwright/test";
+import {
+  createGuestWorkspace,
+  prepareIsolatedRussianGuest,
+  waitForApp,
+} from "./guest-test-helpers.js";
+
+const TEST_LAYOUT_NAME = "Проверка укладки";
+const TEST_CONTAINER_NAME = "Тестовая подрамная сумка";
+const TEST_ITEM_NAME = "Тестовый насос";
+
+test.beforeEach(async ({ page }) => {
+  await prepareIsolatedRussianGuest(page);
+});
+
+test("guest creates a layout, bag and item and keeps them after reload", async ({ page }) => {
+  await createGuestWorkspace(page, {
+    layoutName: TEST_LAYOUT_NAME,
+    containerName: TEST_CONTAINER_NAME,
+    itemName: TEST_ITEM_NAME,
+  });
+
+  await page.reload();
+  await waitForApp(page);
+
+  await expect(page.locator("#layoutSelect option:checked")).toHaveText(TEST_LAYOUT_NAME);
+  const restoredContainer = page.locator("#packingView [data-root-container-id]").filter({
+    hasText: TEST_CONTAINER_NAME,
+  });
+  await expect(restoredContainer).toHaveCount(1);
+  await expect(restoredContainer.locator("[data-item-id]").filter({ hasText: TEST_ITEM_NAME })).toHaveCount(1);
+
+  const persisted = await page.evaluate(({ layoutName, containerName, itemName }) => {
+    const state = JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1") || "null");
+    return {
+      hasLayout: Object.values(state?.layouts || {}).some((layout) => layout?.name === layoutName),
+      hasContainer: Object.values(state?.containers || {}).some((container) => container?.name === containerName),
+      hasItem: Object.values(state?.items || {}).some((item) => item?.name === itemName),
+    };
+  }, {
+    layoutName: TEST_LAYOUT_NAME,
+    containerName: TEST_CONTAINER_NAME,
+    itemName: TEST_ITEM_NAME,
+  });
+  expect(persisted).toEqual({ hasLayout: true, hasContainer: true, hasItem: true });
+});

@@ -4,6 +4,9 @@ dist/
 ftp-upload/
 www/
 node_modules/
+playwright-report/
+test-results/
+/debug.log
 
 # local editor/deploy settings
 .vscode/sftp.json
