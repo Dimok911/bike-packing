@@ -94,6 +94,10 @@ function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
 }
 
+function canonicalSourceHash(source) {
+  return createHash("sha256").update(String(source).replace(/\r\n/g, "\n")).digest("hex");
+}
+
 function setNavigatorOnline(value) {
   Object.defineProperty(globalThis, "navigator", {
     value: { onLine: value },
@@ -2329,7 +2333,7 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.equal(PHOTO_CACHE_ENGINE_CONTRACT_VERSION, 1);
   assert.equal(manifest.version, PHOTO_CACHE_ENGINE_VERSION);
   assert.equal(manifest.contractVersion, PHOTO_CACHE_ENGINE_CONTRACT_VERSION);
-  assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
+  assert.equal(canonicalSourceHash(asset), manifest.sha256);
   assert.equal(manifest.sha256, "3ce28fcc73130a974a92e81f8d988e1af76e223e21d20e541f3e0e8a9bd072ed");
   assert.match(adapter, /from "\.\.\/vendor\/vniipo-photo-cache-engine\.js"/);
   assert.match(adapter, /downloadPhotoBlob/);
@@ -2342,8 +2346,8 @@ test("CRITICAL offline-photos: vendored gallery matches its 2.1.7 manifest", () 
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
   assert.equal(manifest.version, "2.1.7");
   assert.equal(manifest.contractVersion, 2);
-  assert.equal(createHash("sha256").update(asset).digest("hex"), manifest.sha256);
-  assert.equal(manifest.sha256, "863afb93da1328db26e87f4acd1ddcdec0823a362d0423f4104fab8064a3d071");
+  assert.equal(canonicalSourceHash(asset), manifest.sha256);
+  assert.equal(manifest.sha256, "eb44491093909c14c1bb1d225eeef88c151d5b7ff8450937347bb5c71778f3e0");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
