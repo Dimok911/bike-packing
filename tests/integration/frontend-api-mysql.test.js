@@ -301,7 +301,8 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     browser = await chromium.launch();
     ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token));
     await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
-    assert.match(await page.locator("#syncUserEmail").textContent(), /browser-api@example\.test/);
+    const displayedEmail = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
+    assert.match(displayedEmail, /browser-api@example\.test/);
     assert.equal(await page.locator("#layoutSelect option:checked").textContent(), "Укладка из настоящего API");
 
     const item = page.locator('#packingView [data-item-id="item-browser"]');
