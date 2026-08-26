@@ -325,13 +325,26 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     viteProcess.stderr.on("data", (chunk) => viteLogs.push(chunk.toString()));
     await waitForUrl(frontendUrl, viteProcess, viteLogs, "Vite server");
 
-    const listId = `browser-${randomUUID()}`;
+    const requestedListId = `browser-${randomUUID()}`;
     const created = await requestJson(apiBaseUrl, `${API_BASE_PATH}/bike-packing/lists`, {
       token,
       method: "POST",
-      body: { id: listId, title: "Browser integration list", payload: initialState() },
+      body: { id: requestedListId, title: "Browser integration list", payload: initialState() },
     });
     assert.equal(created.status, 200, JSON.stringify(created.payload));
+    const listId = created.payload?.list?.id || created.payload?.id;
+    assert.ok(listId, `The API did not return the created list id: ${JSON.stringify(created.payload)}`);
+    const seededState = await requestJson(
+      apiBaseUrl,
+      `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/state`,
+      { token }
+    );
+    assert.equal(seededState.status, 200, JSON.stringify(seededState.payload));
+    assert.equal(
+      seededState.payload?.state?.layouts?.["layout-browser"]?.name,
+      "Укладка из настоящего API",
+      `The API did not preserve the seeded browser layout: ${JSON.stringify(seededState.payload)}`
+    );
 
     browser = await chromium.launch();
     ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog));
