@@ -781,6 +781,7 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
     await page.locator("#confirmDialog").waitFor({ state: "visible" });
     await page.locator("#confirmOkBtn").click();
     await page.locator("#confirmDialog").waitFor({ state: "hidden" });
+    await page.locator("#menuBtn").click();
     await page.locator("#authBtn").waitFor({ state: "visible", timeout: 20_000 });
     assert.equal(await page.locator("#signOutBtn").isHidden(), true, "The sign-out action stayed visible");
 
