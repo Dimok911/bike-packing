@@ -181,6 +181,13 @@ async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token) {
   return { context, page };
 }
 
+async function selectDatabaseLayout(page) {
+  const option = page.locator('#layoutSelect option[value="layout-browser"]');
+  await option.waitFor({ state: "attached", timeout: 20_000 });
+  assert.equal(await option.textContent(), "Укладка из настоящего API");
+  await page.locator("#layoutSelect").selectOption("layout-browser");
+}
+
 async function poll(description, check, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -303,7 +310,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
     const displayedEmail = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
     assert.match(displayedEmail, /browser-api@example\.test/);
-    assert.equal(await page.locator("#layoutSelect option:checked").textContent(), "Укладка из настоящего API");
+    await selectDatabaseLayout(page);
 
     const item = page.locator('#packingView [data-item-id="item-browser"]');
     await item.waitFor({ state: "visible" });
@@ -336,6 +343,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     browserContext = null;
     ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token));
     await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
+    await selectDatabaseLayout(page);
     const restoredItem = page.locator('#packingView [data-item-id="item-browser"]');
     await restoredItem.waitFor({ state: "visible" });
     assert.match(await restoredItem.textContent(), new RegExp(changedName));
