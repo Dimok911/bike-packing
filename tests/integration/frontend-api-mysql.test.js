@@ -188,6 +188,13 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, reque
       } catch (error) {
         responseSummary = ` (state response could not be decoded: ${error.message})`;
       }
+    } else if (request.method() === "POST" && /\/bike-packing\/lists\/[^/]+\/items\/sync$/.test(productionUrl.pathname)) {
+      try {
+        const payload = await response.json();
+        responseSummary = ` (upserted=${JSON.stringify(payload?.upserted || [])},conflicts=${JSON.stringify(payload?.conflicts || [])})`;
+      } catch (error) {
+        responseSummary = ` (item sync response could not be decoded: ${error.message})`;
+      }
     }
     requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${response.status()}${responseSummary}`);
     await route.fulfill({ response });
@@ -409,15 +416,22 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     const changedName = "Насос сохранён через MySQL";
     await page.locator("#itemName").fill(changedName);
     await page.locator("#saveItemBtn").click();
+    await page.locator("#itemDialog").waitFor({ state: "hidden" });
+    assert.match(await item.textContent(), new RegExp(changedName), "The browser did not apply the item edit locally");
     await page.locator("#syncBtn").click();
 
+    let lastApiState = null;
     await poll("API state containing the browser edit", async () => {
       const state = await requestJson(
         apiBaseUrl,
         `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/state`,
         { token }
       );
+      lastApiState = state;
       return state.status === 200 && state.payload?.state?.items?.["item-browser"]?.name === changedName;
+    }).catch((error) => {
+      const lastItem = lastApiState?.payload?.state?.items?.["item-browser"] || null;
+      throw new Error(`${error.message}; last API item: ${JSON.stringify(lastItem)}`, { cause: error });
     });
     await poll("MySQL entity row containing the browser edit", async () => {
       const [[row]] = await pool.query(
