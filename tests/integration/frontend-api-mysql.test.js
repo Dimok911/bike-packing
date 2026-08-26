@@ -16,7 +16,7 @@ const COOKIE_NAME = "bikepacking_browser_integration_session";
 const TEST_GUARD_ENV = "BIKE_PACKING_BROWSER_INTEGRATION_TEST";
 const TEST_DB_NAME_ENV = "BIKE_PACKING_TEST_DB_NAME";
 const TEST_DB_NAME_PATTERN = /^[A-Za-z0-9_]*_test(?:_[A-Za-z0-9_]+)?$/;
-const TEST_TIMEOUT_MS = 90_000;
+const TEST_TIMEOUT_MS = 120_000;
 const STARTUP_TIMEOUT_MS = 20_000;
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const frontendDirectory = path.resolve(scriptDirectory, "../..");
@@ -171,14 +171,15 @@ function initialState() {
   };
 }
 
-async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, requestLog) {
+async function installApiProxy(context, apiBaseUrl, frontendOrigin, session, requestLog, hooks = {}) {
   await context.route(`${PRODUCTION_API_BASE}/**`, async (route) => {
     const request = route.request();
     const productionUrl = new URL(request.url());
     const localUrl = new URL(`${productionUrl.pathname}${productionUrl.search}`, apiBaseUrl);
     const headers = { ...request.headers() };
     delete headers.host;
-    headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}`;
+    if (session?.token) headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(session.token)}`;
+    else delete headers.cookie;
     headers.origin = frontendOrigin;
     let response;
     try {
@@ -190,16 +191,38 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, reque
       }
       throw error;
     }
+    let decodedPayload;
+    let payloadDecoded = false;
+    const responsePayload = async () => {
+      if (!payloadDecoded) {
+        payloadDecoded = true;
+        decodedPayload = await response.json();
+      }
+      return decodedPayload;
+    };
+    if (request.method() === "POST" && productionUrl.pathname.endsWith("/auth/request-magic-link")) {
+      const payload = await responsePayload().catch(() => null);
+      if (payload?.magicLinkUrl) hooks.onMagicLink?.(payload.magicLinkUrl);
+    }
+    if (request.method() === "POST" && productionUrl.pathname.endsWith("/auth/verify-magic-link")) {
+      const responseHeaders = await response.headersArray();
+      const setCookie = responseHeaders.find((header) => header.name.toLowerCase() === "set-cookie")?.value || "";
+      const tokenMatch = setCookie.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`));
+      if (tokenMatch?.[1]) {
+        session.token = decodeURIComponent(tokenMatch[1]);
+        hooks.onSession?.(session.token);
+      }
+    }
     let responseSummary = "";
     if (request.method() === "GET" && /\/bike-packing\/lists\/[^/]+\/state$/.test(productionUrl.pathname)) {
       try {
-        responseSummary = ` (${stateSummary(await response.json())})`;
+        responseSummary = ` (${stateSummary(await responsePayload())})`;
       } catch (error) {
         responseSummary = ` (state response could not be decoded: ${error.message})`;
       }
     } else if (request.method() === "POST" && /\/bike-packing\/lists\/[^/]+\/items\/sync$/.test(productionUrl.pathname)) {
       try {
-        const payload = await response.json();
+        const payload = await responsePayload();
         responseSummary = ` (upserted=${JSON.stringify(payload?.upserted || [])},conflicts=${JSON.stringify(payload?.conflicts || [])})`;
       } catch (error) {
         responseSummary = ` (item sync response could not be decoded: ${error.message})`;
@@ -210,9 +233,10 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, reque
   });
 }
 
-async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog) {
+async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog, hooks = {}) {
   const context = await browser.newContext({ locale: "ru-RU", serviceWorkers: "block" });
-  await installApiProxy(context, apiBaseUrl, new URL(frontendUrl).origin, token, requestLog);
+  const session = typeof token === "object" && token ? token : { token };
+  await installApiProxy(context, apiBaseUrl, new URL(frontendUrl).origin, session, requestLog, hooks);
   await context.addInitScript(() => {
     localStorage.setItem("bike-packing-language-v1", "ru");
   });
@@ -255,6 +279,44 @@ async function selectDatabaseLayout(page) {
   await page.locator("#layoutSelect").selectOption(optionValue);
 }
 
+async function selectLayoutByName(page, name) {
+  const option = page.locator("#layoutSelect option").filter({ hasText: name });
+  await option.waitFor({ state: "attached", timeout: 20_000 });
+  const value = await option.getAttribute("value");
+  assert.ok(value, `Layout ${JSON.stringify(name)} does not have a selectable value`);
+  await page.locator("#layoutSelect").selectOption(value);
+  return value;
+}
+
+async function createGuestWorkspace(page, { layoutName, containerName, itemName }) {
+  await page.locator("#newLayoutBtn").click();
+  await page.locator("#layoutDialog").waitFor({ state: "visible" });
+  await page.locator("#layoutCreateMode").selectOption("empty");
+  await page.locator("#layoutName").fill(layoutName);
+  await page.locator("#saveLayoutBtn").click();
+  await page.locator("#layoutDialog").waitFor({ state: "hidden" });
+  await selectLayoutByName(page, layoutName);
+
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#layoutRootDialog").waitFor({ state: "visible" });
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#rootContainerDialog").waitFor({ state: "visible" });
+  await page.locator("#rootContainerName").fill(containerName);
+  await page.locator("#saveRootContainerBtn").click();
+  const container = page.locator("#packingView [data-root-container-id]").filter({ hasText: containerName });
+  await container.waitFor({ state: "visible" });
+
+  await container.locator("[data-add-to-container]").click();
+  await page.locator("#addToContainerDialog").waitFor({ state: "visible" });
+  await page.locator("#createItemForContainerBtn").click();
+  await page.locator("#itemDialog").waitFor({ state: "visible" });
+  await page.locator("#itemName").fill(itemName);
+  await page.locator("#saveItemBtn").click();
+  const item = container.locator("[data-item-id]").filter({ hasText: itemName });
+  await item.waitFor({ state: "visible" });
+  return { container, item };
+}
+
 async function poll(description, check, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -270,7 +332,7 @@ async function poll(description, check, timeoutMs = 15_000) {
   throw new Error(`${description} did not become true within ${timeoutMs}ms${lastError ? `: ${lastError.message}` : ""}`);
 }
 
-test("frontend browser saves through the real API and restores from MySQL", { timeout: TEST_TIMEOUT_MS }, async () => {
+test("[shared-api:auth] frontend browser saves to MySQL and imports guest work after magic-link login", { timeout: TEST_TIMEOUT_MS }, async () => {
   assertSafeTestDatabase();
   await rm(artifactDirectory, { recursive: true, force: true });
   await mkdir(artifactDirectory, { recursive: true });
@@ -341,6 +403,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
         PERSONAL_TAGS_SESSION_COOKIE_NAME: COOKIE_NAME,
         PERSONAL_TAGS_SESSION_COOKIE_SECURE: "0",
         PERSONAL_TAGS_TRUST_USER_ID_HEADER: "0",
+        PERSONAL_TAGS_AUTH_DEV_LOG_ONLY: "1",
         BIKE_PACKING_PHOTOS_STORAGE_DIR: path.join(artifactDirectory, "photos"),
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -483,6 +546,122 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     const restoredItem = page.locator('#packingView [data-item-id="item-browser"]');
     await restoredItem.waitFor({ state: "visible" });
     assert.match(await restoredItem.textContent(), new RegExp(changedName));
+
+    await browserContext.close();
+    browserContext = null;
+
+    const guestEmail = "guest-transfer@example.test";
+    const guestLayoutName = "Гостевая укладка для переноса";
+    const guestContainerName = "Гостевая сумка для переноса";
+    const guestItemName = "Гостевая вещь для переноса";
+    const guestSession = { token: "" };
+    let magicLinkUrl = "";
+    ({ context: browserContext, page } = await openAuthenticatedPage(
+      browser,
+      frontendUrl,
+      apiBaseUrl,
+      guestSession,
+      requestLog,
+      { onMagicLink: (url) => { magicLinkUrl = url; } }
+    ));
+    await createGuestWorkspace(page, {
+      layoutName: guestLayoutName,
+      containerName: guestContainerName,
+      itemName: guestItemName,
+    });
+
+    await page.locator("#menuBtn").click();
+    await page.locator("#authBtn").click();
+    await page.locator("#authDialog").waitFor({ state: "visible" });
+    await page.locator("#authEmail").fill(guestEmail);
+    await page.locator("#authSubmitBtn").click();
+    await poll("test magic-link URL", () => magicLinkUrl);
+    await page.locator("#authConfirmSection").waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator("#authMagicLink").fill(magicLinkUrl);
+    await page.locator("#authConfirmBtn").click();
+    await page.locator("#authDialog").waitFor({ state: "hidden", timeout: 20_000 });
+    await poll("session cookie captured from the real API", () => guestSession.token);
+    await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
+    const guestDisplayedEmail = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
+    assert.match(guestDisplayedEmail, /guest-transfer@example\.test/);
+    await selectLayoutByName(page, guestLayoutName);
+    await page.locator("#packingView [data-root-container-id]").filter({ hasText: guestContainerName })
+      .waitFor({ state: "visible" });
+    await page.locator("#packingView [data-item-id]").filter({ hasText: guestItemName })
+      .waitFor({ state: "visible" });
+
+    const guestLists = await requestJson(apiBaseUrl, `${API_BASE_PATH}/bike-packing/lists`, {
+      token: guestSession.token,
+    });
+    assert.equal(guestLists.status, 200, JSON.stringify(guestLists.payload));
+    const guestDefaultList = guestLists.payload?.lists?.find((list) => list?.isDefault)
+      || guestLists.payload?.lists?.[0];
+    const guestListId = guestDefaultList?.id;
+    assert.ok(guestListId, `The API did not create a personal list for the guest login: ${JSON.stringify(guestLists.payload)}`);
+
+    let guestServerState = null;
+    const guestEntities = await poll("API state containing imported guest work", async () => {
+      const response = await requestJson(
+        apiBaseUrl,
+        `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(guestListId)}/state`,
+        { token: guestSession.token }
+      );
+      guestServerState = response;
+      const state = response.status === 200 ? stateFromApiPayload(response.payload) : null;
+      const layout = Object.values(state?.layouts || {}).find((entry) => entry?.name === guestLayoutName);
+      const container = Object.values(state?.containers || {}).find((entry) => entry?.name === guestContainerName);
+      const importedItem = Object.values(state?.items || {}).find((entry) => entry?.name === guestItemName);
+      return layout && container && importedItem ? { layout, container, item: importedItem } : null;
+    }).catch((error) => {
+      throw new Error(`${error.message}; last guest API state: ${JSON.stringify(guestServerState?.payload || null)}`, {
+        cause: error,
+      });
+    });
+
+    const [[guestUserRow]] = await pool.query(
+      "SELECT id FROM users WHERE email_normalized = ?",
+      [guestEmail]
+    );
+    assert.ok(guestUserRow?.id, "Magic-link verification did not create the isolated test user");
+    const [[guestListRow]] = await pool.query(
+      "SELECT id FROM bike_packing_lists WHERE owner_id = ? AND is_default = 1",
+      [guestUserRow.id]
+    );
+    assert.equal(guestListRow?.id, guestListId, "The imported work is not attached to the user's default list");
+    const entityChecks = [
+      ["bike_packing_layouts", "layout_id", guestEntities.layout.id, guestLayoutName],
+      ["bike_packing_containers", "container_id", guestEntities.container.id, guestContainerName],
+      ["bike_packing_items", "item_id", guestEntities.item.id, guestItemName],
+    ];
+    for (const [table, idColumn, entityId, expectedName] of entityChecks) {
+      const [[row]] = await pool.query(
+        `SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) AS name
+         FROM ${table} WHERE list_id = ? AND ${idColumn} = ? AND deleted_at IS NULL`,
+        [guestListId, entityId]
+      );
+      assert.equal(row?.name, expectedName, `${expectedName} was not stored as a real MySQL entity`);
+    }
+
+    await browserContext.close();
+    browserContext = null;
+    ({ context: browserContext, page } = await openAuthenticatedPage(
+      browser,
+      frontendUrl,
+      apiBaseUrl,
+      guestSession,
+      requestLog
+    ));
+    await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
+    await selectLayoutByName(page, guestLayoutName);
+    assert.equal(
+      await page.locator("#layoutSelect option").filter({ hasText: guestLayoutName }).count(),
+      1,
+      "The guest layout was imported more than once"
+    );
+    await page.locator("#packingView [data-root-container-id]").filter({ hasText: guestContainerName })
+      .waitFor({ state: "visible" });
+    await page.locator("#packingView [data-item-id]").filter({ hasText: guestItemName })
+      .waitFor({ state: "visible" });
   } catch (error) {
     throw new Error([
       error.message,
