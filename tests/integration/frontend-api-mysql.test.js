@@ -180,7 +180,16 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, reque
     delete headers.host;
     headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}`;
     headers.origin = frontendOrigin;
-    const response = await route.fetch({ url: localUrl.toString(), headers });
+    let response;
+    try {
+      response = await route.fetch({ url: localUrl.toString(), headers });
+    } catch (error) {
+      if (/request context disposed|target page, context or browser has been closed/i.test(error.message)) {
+        requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> cancelled while closing browser`);
+        return;
+      }
+      throw error;
+    }
     let responseSummary = "";
     if (request.method() === "GET" && /\/bike-packing\/lists\/[^/]+\/state$/.test(productionUrl.pathname)) {
       try {
