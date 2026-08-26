@@ -795,7 +795,13 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
     const meAfterLogout = await requestJson(apiBaseUrl, `${API_BASE_PATH}/auth/me`, {
       token: guestTokenBeforeLogout,
     });
-    assert.equal(meAfterLogout.status, 401, "The revoked shared Auth session still opens /auth/me");
+    assert.equal(meAfterLogout.status, 200, JSON.stringify(meAfterLogout.payload));
+    assert.equal(meAfterLogout.payload?.user, null, "The revoked shared Auth session still identifies a user");
+    assert.equal(meAfterLogout.payload?.session, null, "The revoked shared Auth session still identifies a session");
+    const privateListsAfterLogout = await requestJson(apiBaseUrl, `${API_BASE_PATH}/bike-packing/lists`, {
+      token: guestTokenBeforeLogout,
+    });
+    assert.equal(privateListsAfterLogout.status, 401, "The revoked shared Auth session still opens private lists");
   } catch (error) {
     throw new Error([
       error.message,

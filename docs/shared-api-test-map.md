@@ -26,7 +26,7 @@
 
 | Контракт | Полная owner-проверка | Bike Packing | OVIK | VDOC Base Edit / Initial |
 | --- | --- | --- | --- | --- |
-| `shared-api:auth` | У владельца shared Auth: одноразовая БД, magic-link single-use, cookie/session, expiry, logout, роли и изоляция приложений | Consumer E2E: гость создаёт данные, входит, данные переходят в личную MySQL, открываются в чистом браузере; logout отзывает сессию и старый token получает `401` | Consumer E2E: вход, `/me`, allowlist/роль, `401/403`, logout | Viewer: вход и personal scope; Base Edit отдельно проверяет handoff общей сессии в локальную admin-сессию |
+| `shared-api:auth` | У владельца shared Auth: одноразовая БД, magic-link single-use, cookie/session, expiry, logout, роли и изоляция приложений | Consumer E2E: гость создаёт данные, входит, данные переходят в личную MySQL, открываются в чистом браузере; logout отзывает сессию, `/me` становится гостевым, приватный API возвращает `401` | Consumer E2E: вход, `/me`, allowlist/роль, `401/403`, logout | Viewer: вход и personal scope; Base Edit отдельно проверяет handoff общей сессии в локальную admin-сессию |
 | `shared-api:personal-tags` | У владельца personal-tags: CRUD, scope, конфликт и изоляция пользователей | Не используется | Не используется | Consumer contract и пользовательский E2E без повторения DB suite |
 | `shared-api:vdoc-build-snapshot` | В VDOC Base Edit: временная MariaDB, relations/order/default и схема snapshot | Не используется | Не используется | Base Edit формирует; Initial валидирует контракт, собирается на fixture и открывает артефакт в E2E |
 | `shared-ui:photo-gallery` | В репозитории `vniipo-photo-gallery`: contractVersion/capabilities, сборка, hash и browser gestures | Проверка версии/capabilities, fallback и пользовательской галереи | Та же consumer-проверка на данных OVIK | Только если runtime будет подключён фактически |
@@ -52,7 +52,7 @@
 
 - Bike Packing уже помечает реальный гостевой login/import/logout сценарий тегом
   `[shared-api:auth]`; он проверяет Chromium, настоящий API, одноразовую MySQL,
-  отзыв сессии и отказ старому token. Фото в этом же job помечены
+  отзыв сессии, гостевой `/me` и отказ приватного API старому token. Фото в этом же job помечены
   `[app-api:bike-packing]`: общий слой галереи и offline cache остаётся
   `shared-ui`, но серверные photo endpoint принадлежат конкретному приложению.
 - В рабочих задачах OVIK, VDOC Base Edit и VDOC Initial уже составлены карты
