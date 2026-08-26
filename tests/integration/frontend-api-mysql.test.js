@@ -366,6 +366,8 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
           force: true,
           forceOverwrite: true,
           fullReplace: true,
+          baseStateRevision: defaultList.stateRevision,
+          baseServerUpdatedAt: defaultList.updatedAt || defaultList.serverUpdatedAt,
         },
       }
     );
