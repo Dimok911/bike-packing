@@ -104,6 +104,22 @@ async function requestJson(baseUrl, route, { token = "", method = "GET", body } 
   return { status: response.status, payload };
 }
 
+function stateFromApiPayload(payload) {
+  const record = payload?.list || payload?.record || payload;
+  return record?.payload || record?.state || payload?.payload || payload?.state || null;
+}
+
+function stateSummary(payload) {
+  const state = stateFromApiPayload(payload);
+  if (!state || typeof state !== "object") return "state=missing";
+  return [
+    `items=${Object.keys(state.items || {}).length}`,
+    `containers=${Object.keys(state.containers || {}).length}`,
+    `layouts=${Object.keys(state.layouts || {}).length}`,
+    `activeLayoutId=${String(state.activeLayoutId || "") || "missing"}`,
+  ].join(",");
+}
+
 function initialState() {
   return {
     locations: ["Велосипед"],
@@ -165,7 +181,15 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, reque
     headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}`;
     headers.origin = frontendOrigin;
     const response = await route.fetch({ url: localUrl.toString(), headers });
-    requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${response.status()}`);
+    let responseSummary = "";
+    if (request.method() === "GET" && /\/bike-packing\/lists\/[^/]+\/state$/.test(productionUrl.pathname)) {
+      try {
+        responseSummary = ` (${stateSummary(await response.json())})`;
+      } catch (error) {
+        responseSummary = ` (state response could not be decoded: ${error.message})`;
+      }
+    }
+    requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${response.status()}${responseSummary}`);
     await route.fulfill({ response });
   });
 }
@@ -340,6 +364,16 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
       { token }
     );
     assert.equal(seededState.status, 200, JSON.stringify(seededState.payload));
+    assert.equal(
+      seededState.payload?.state?.containers?.["bag-browser"]?.name,
+      "Тестовая сумка MySQL",
+      `The API did not preserve the seeded browser bag: ${JSON.stringify(seededState.payload)}`
+    );
+    assert.equal(
+      seededState.payload?.state?.items?.["item-browser"]?.name,
+      "Насос из базы данных",
+      `The API did not preserve the seeded browser item: ${JSON.stringify(seededState.payload)}`
+    );
     assert.equal(
       seededState.payload?.state?.layouts?.["layout-browser"]?.name,
       "Укладка из настоящего API",
