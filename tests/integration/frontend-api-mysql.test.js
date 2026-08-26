@@ -422,7 +422,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     assert.match(await item.textContent(), /Насос из базы данных/);
     await item.locator(".item-title-hitarea").click();
     await page.locator("#itemDialog").waitFor({ state: "visible" });
-    const changedName = "Насос сохранён через MySQL";
+    const changedName = "Насос сохранён в базе данных";
     const itemNameInput = page.locator("#itemName");
     assert.equal(await itemNameInput.inputValue(), "Насос из базы данных");
     await itemNameInput.fill(changedName);
