@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
 const HOST = "127.0.0.1";
 const PORT = 4173;
 const SERVER_URL = `http://${HOST}:${PORT}/`;
+const DIST_DIR = "www/vniipo-help.ru/bike-packing";
 const STARTUP_TIMEOUT_MS = 30_000;
 const SHUTDOWN_GRACE_MS = 1_500;
 const SHUTDOWN_TIMEOUT_MS = 3_000;
@@ -33,13 +34,33 @@ async function waitForServer(serverProcess) {
 
 export default async function globalSetup() {
   const viteBin = fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url));
+  const build = spawnSync(process.execPath, [viteBin, "build", "--outDir", DIST_DIR], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  if (build.status !== 0) {
+    throw new Error(`E2E production build failed with code ${build.status ?? "unknown"}`);
+  }
+  const finalizeBuild = spawnSync(process.execPath, ["scripts/build-dist-assets.mjs", DIST_DIR], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  if (finalizeBuild.status !== 0) {
+    throw new Error(`E2E production asset finalization failed with code ${finalizeBuild.status ?? "unknown"}`);
+  }
+
   const serverProcess = spawn(process.execPath, [
     viteBin,
+    "preview",
     "--host",
     HOST,
     "--port",
     String(PORT),
     "--strictPort",
+    "--outDir",
+    DIST_DIR,
   ], {
     stdio: "inherit",
     windowsHide: true,

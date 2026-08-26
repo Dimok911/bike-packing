@@ -13,6 +13,10 @@ import mysql from "mysql2/promise";
 const API_BASE_PATH = "/letters-vniipo/api";
 const PRODUCTION_API_BASE = "https://api.vniipo-help.ru/letters-vniipo/api";
 const COOKIE_NAME = "bikepacking_browser_integration_session";
+const TEST_PHOTO_BUFFER = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64"
+);
 const TEST_GUARD_ENV = "BIKE_PACKING_BROWSER_INTEGRATION_TEST";
 const TEST_DB_NAME_ENV = "BIKE_PACKING_TEST_DB_NAME";
 const TEST_DB_NAME_PATTERN = /^[A-Za-z0-9_]*_test(?:_[A-Za-z0-9_]+)?$/;
@@ -102,6 +106,21 @@ async function requestJson(baseUrl, route, { token = "", method = "GET", body } 
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   return { status: response.status, payload };
+}
+
+async function requestRaw(baseUrl, route, { token = "", method = "GET" } = {}) {
+  const headers = {};
+  if (token) headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}`;
+  const response = await fetch(`${baseUrl}${route}`, {
+    method,
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type") || "",
+    body: Buffer.from(await response.arrayBuffer()),
+  };
 }
 
 function stateFromApiPayload(payload) {
@@ -332,7 +351,7 @@ async function poll(description, check, timeoutMs = 15_000) {
   throw new Error(`${description} did not become true within ${timeoutMs}ms${lastError ? `: ${lastError.message}` : ""}`);
 }
 
-test("[shared-api:auth] frontend browser saves to MySQL and imports guest work after magic-link login", { timeout: TEST_TIMEOUT_MS }, async () => {
+test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos, guest import and logout", { timeout: TEST_TIMEOUT_MS }, async () => {
   assertSafeTestDatabase();
   await rm(artifactDirectory, { recursive: true, force: true });
   await mkdir(artifactDirectory, { recursive: true });
@@ -547,6 +566,82 @@ test("[shared-api:auth] frontend browser saves to MySQL and imports guest work a
     await restoredItem.waitFor({ state: "visible" });
     assert.match(await restoredItem.textContent(), new RegExp(changedName));
 
+    await restoredItem.locator(".item-title-hitarea").click();
+    await page.locator("#itemDialog").waitFor({ state: "visible" });
+    await page.locator("#itemPhotoInput").setInputFiles({
+      name: "browser-integration.png",
+      mimeType: "image/png",
+      buffer: TEST_PHOTO_BUFFER,
+    });
+    await page.locator("#itemPhotoPreview img").waitFor({ state: "visible", timeout: 20_000 });
+
+    const photoRow = await poll("MySQL photo row created through the browser", async () => {
+      const [[row]] = await pool.query(
+        `SELECT photo_id AS photoId, mime_type AS mimeType, size_bytes AS sizeBytes,
+                file_path AS filePath, thumb_path AS thumbPath
+           FROM bike_packing_photos
+          WHERE list_id = ? AND entity_type = 'item' AND entity_id = ? AND deleted_at IS NULL
+          ORDER BY id DESC LIMIT 1`,
+        [listId, "item-browser"]
+      );
+      return row?.photoId ? row : null;
+    }, 20_000);
+    assert.equal(photoRow.mimeType, "image/png");
+    assert.ok(Number(photoRow.sizeBytes) > 0, "The uploaded photo has no stored bytes");
+    assert.ok(photoRow.filePath && photoRow.thumbPath, "The API did not persist file and thumbnail paths");
+
+    const photoFileRoute = `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoRow.photoId)}/file`;
+    const photoThumbRoute = `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoRow.photoId)}/thumb`;
+    const [photoFile, photoThumb] = await Promise.all([
+      requestRaw(apiBaseUrl, photoFileRoute, { token }),
+      requestRaw(apiBaseUrl, photoThumbRoute, { token }),
+    ]);
+    assert.equal(photoFile.status, 200, "The uploaded full-size photo cannot be read through the API");
+    assert.match(photoFile.contentType, /^image\//);
+    assert.ok(photoFile.body.length > 0);
+    assert.equal(photoThumb.status, 200, "The uploaded thumbnail cannot be read through the API");
+    assert.match(photoThumb.contentType, /^image\//);
+    assert.ok(photoThumb.body.length > 0);
+
+    await page.locator("#saveItemBtn").click();
+    await page.locator("#itemDialog").waitFor({ state: "hidden" });
+    await page.locator("#syncBtn").click();
+    await poll("API item containing the uploaded photo reference", async () => {
+      const state = await requestJson(
+        apiBaseUrl,
+        `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/state`,
+        { token }
+      );
+      const photos = stateFromApiPayload(state.payload)?.items?.["item-browser"]?.photos || [];
+      return state.status === 200 && photos.some((photo) => photo?.id === photoRow.photoId);
+    });
+
+    await browserContext.close();
+    browserContext = null;
+    ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog));
+    await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
+    await selectDatabaseLayout(page);
+    const itemWithServerPhoto = page.locator('#packingView [data-item-id="item-browser"]');
+    await itemWithServerPhoto.waitFor({ state: "visible" });
+    await itemWithServerPhoto.locator(".item-title-hitarea").click();
+    await page.locator("#itemDialog").waitFor({ state: "visible" });
+    await page.locator("#itemPhotoPreview img").waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator("#itemPhotoRemoveBtn").click();
+    await page.locator("#confirmDialog").waitFor({ state: "visible" });
+    await page.locator("#confirmOkBtn").click();
+    await page.locator("#confirmDialog").waitFor({ state: "hidden" });
+    await page.locator("#saveItemBtn").click();
+    await page.locator("#itemDialog").waitFor({ state: "hidden" });
+    await poll("photo soft-delete stored in MySQL", async () => {
+      const [[row]] = await pool.query(
+        "SELECT deleted_at AS deletedAt FROM bike_packing_photos WHERE list_id = ? AND photo_id = ?",
+        [listId, photoRow.photoId]
+      );
+      return Boolean(row?.deletedAt);
+    });
+    const deletedPhotoRead = await requestRaw(apiBaseUrl, photoFileRoute, { token });
+    assert.equal(deletedPhotoRead.status, 404, "A deleted photo is still readable through the API");
+
     await browserContext.close();
     browserContext = null;
 
@@ -662,6 +757,28 @@ test("[shared-api:auth] frontend browser saves to MySQL and imports guest work a
       .waitFor({ state: "visible" });
     await page.locator("#packingView [data-item-id]").filter({ hasText: guestItemName })
       .waitFor({ state: "visible" });
+
+    const guestTokenBeforeLogout = guestSession.token;
+    await page.locator("#menuBtn").click();
+    await page.locator("#signOutBtn").waitFor({ state: "visible" });
+    await page.locator("#signOutBtn").click();
+    await page.locator("#confirmDialog").waitFor({ state: "visible" });
+    await page.locator("#confirmOkBtn").click();
+    await page.locator("#confirmDialog").waitFor({ state: "hidden" });
+    await page.locator("#authBtn").waitFor({ state: "visible", timeout: 20_000 });
+    assert.equal(await page.locator("#signOutBtn").isHidden(), true, "The sign-out action stayed visible");
+
+    await poll("shared Auth session revoked in MySQL", async () => {
+      const [[row]] = await pool.query(
+        "SELECT revoked_at AS revokedAt FROM sessions WHERE session_token_hash = ?",
+        [sha256(guestTokenBeforeLogout)]
+      );
+      return Boolean(row?.revokedAt);
+    });
+    const meAfterLogout = await requestJson(apiBaseUrl, `${API_BASE_PATH}/auth/me`, {
+      token: guestTokenBeforeLogout,
+    });
+    assert.equal(meAfterLogout.status, 401, "The revoked shared Auth session still opens /auth/me");
   } catch (error) {
     throw new Error([
       error.message,

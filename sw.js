@@ -1,9 +1,9 @@
-const CACHE_NAME = "bike-packing-prototype-v1562";
+const CACHE_NAME = "bike-packing-prototype-v1563";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=1562",
-  "./app.js?v=1562",
+  "./styles.css?v=1563",
+  "./app.js?v=1563",
   "./manifest.webmanifest"
 ];
 
@@ -31,13 +31,13 @@ self.addEventListener("fetch", (event) => {
     url.origin !== self.location.origin ||
     url.pathname.includes("/letters-vniipo/api/") ||
     url.pathname.endsWith("/bike-packing-data.json");
-  if (isApiRequest || event.request.cache === "no-store") return;
+  if (isApiRequest) return;
   if (event.request.mode === "navigate" || url.pathname.endsWith("/") || url.pathname.endsWith("/index.html")) {
     event.respondWith(serveAppShell(event.request));
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(event.request, { ignoreVary: true }).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
         const copy = response.clone();

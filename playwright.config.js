@@ -11,7 +11,7 @@ export default defineConfig({
     ? [["line"], ["html", { open: "never" }]]
     : [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "http://bike-packing.localhost:4173",
     locale: "ru-RU",
     serviceWorkers: "block",
     trace: "retain-on-failure",

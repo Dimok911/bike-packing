@@ -37,6 +37,25 @@ test("CRITICAL offline-start: navigation refreshes online and falls back to cach
   assert.ok(fetchIndex < cachedFallbackIndex, "network refresh must happen before cached offline fallback");
 });
 
+test("CRITICAL offline-start: no-store cannot bypass cached same-origin runtime assets", () => {
+  const serviceWorker = read("sw.js");
+  const buildScript = read("scripts/build-dist-assets.mjs");
+
+  assert.doesNotMatch(serviceWorker, /event\.request\.cache\s*===\s*["']no-store["']/);
+  assert.doesNotMatch(buildScript, /event\.request\.cache\s*===\s*["']no-store["']/);
+  assert.match(serviceWorker, /if \(isApiRequest\) return/);
+  assert.match(buildScript, /if \(isApiRequest\) return/);
+});
+
+test("CRITICAL offline-start: cached runtime assets ignore response Vary headers", () => {
+  const worker = read("sw.js");
+  const builder = read("scripts/build-dist-assets.mjs");
+  const cacheMatch = 'caches.match(event.request, { ignoreVary: true })';
+
+  assert.ok(worker.includes(cacheMatch));
+  assert.ok(builder.includes(cacheMatch));
+});
+
 test("CRITICAL offline-start: app registration activates waiting service workers", () => {
   const registration = read("src/sync/service-worker.js");
 
