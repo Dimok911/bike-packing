@@ -182,10 +182,12 @@ async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token) {
 }
 
 async function selectDatabaseLayout(page) {
-  const option = page.locator('#layoutSelect option[value="layout-browser"]');
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Укладка из настоящего API" });
   await option.waitFor({ state: "attached", timeout: 20_000 });
   assert.equal(await option.textContent(), "Укладка из настоящего API");
-  await page.locator("#layoutSelect").selectOption("layout-browser");
+  const optionValue = await option.getAttribute("value");
+  assert.ok(optionValue, "The database layout option must have a selectable value");
+  await page.locator("#layoutSelect").selectOption(optionValue);
 }
 
 async function poll(description, check, timeoutMs = 15_000) {
