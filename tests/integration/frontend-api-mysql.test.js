@@ -155,7 +155,7 @@ function initialState() {
   };
 }
 
-async function installApiProxy(context, apiBaseUrl, frontendOrigin, token) {
+async function installApiProxy(context, apiBaseUrl, frontendOrigin, token, requestLog) {
   await context.route(`${PRODUCTION_API_BASE}/**`, async (route) => {
     const request = route.request();
     const productionUrl = new URL(request.url());
@@ -165,13 +165,14 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, token) {
     headers.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}`;
     headers.origin = frontendOrigin;
     const response = await route.fetch({ url: localUrl.toString(), headers });
+    requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${response.status()}`);
     await route.fulfill({ response });
   });
 }
 
-async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token) {
+async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog) {
   const context = await browser.newContext({ locale: "ru-RU", serviceWorkers: "block" });
-  await installApiProxy(context, apiBaseUrl, new URL(frontendUrl).origin, token);
+  await installApiProxy(context, apiBaseUrl, new URL(frontendUrl).origin, token, requestLog);
   await context.addInitScript(() => {
     localStorage.setItem("bike-packing-language-v1", "ru");
   });
@@ -183,7 +184,29 @@ async function openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token) {
 
 async function selectDatabaseLayout(page) {
   const option = page.locator("#layoutSelect option").filter({ hasText: "Укладка из настоящего API" });
-  await option.waitFor({ state: "attached", timeout: 20_000 });
+  try {
+    await option.waitFor({ state: "attached", timeout: 20_000 });
+  } catch (error) {
+    const optionTexts = await page.locator("#layoutSelect option").allTextContents();
+    const syncStatus = await page.locator("#syncStatus").textContent().catch(() => "");
+    const storedLayouts = await page.evaluate(() => Object.fromEntries(
+      Object.keys(localStorage).map((key) => {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key));
+          const layouts = parsed?.layouts && typeof parsed.layouts === "object"
+            ? Object.values(parsed.layouts).map((layout) => ({ id: layout?.id, name: layout?.name }))
+            : [];
+          return [key, layouts];
+        } catch {
+          return [key, []];
+        }
+      }).filter(([, layouts]) => layouts.length)
+    ));
+    error.message += `\nLayout options: ${JSON.stringify(optionTexts)}`;
+    error.message += `\nSync status: ${JSON.stringify(syncStatus)}`;
+    error.message += `\nStored layouts: ${JSON.stringify(storedLayouts)}`;
+    throw error;
+  }
   assert.equal(await option.textContent(), "Укладка из настоящего API");
   const optionValue = await option.getAttribute("value");
   assert.ok(optionValue, "The database layout option must have a selectable value");
@@ -219,6 +242,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
   let page;
   const apiLogs = [];
   const viteLogs = [];
+  const requestLog = [];
 
   try {
     adminConnection = await mysql.createConnection({
@@ -308,7 +332,7 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     assert.equal(created.status, 200, JSON.stringify(created.payload));
 
     browser = await chromium.launch();
-    ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token));
+    ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog));
     await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
     const displayedEmail = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
     assert.match(displayedEmail, /browser-api@example\.test/);
@@ -343,13 +367,14 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
 
     await browserContext.close();
     browserContext = null;
-    ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token));
+    ({ context: browserContext, page } = await openAuthenticatedPage(browser, frontendUrl, apiBaseUrl, token, requestLog));
     await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
     await selectDatabaseLayout(page);
     const restoredItem = page.locator('#packingView [data-item-id="item-browser"]');
     await restoredItem.waitFor({ state: "visible" });
     assert.match(await restoredItem.textContent(), new RegExp(changedName));
   } catch (error) {
+    if (requestLog.length) error.message += `\nProxied API requests:\n${requestLog.join("\n")}`;
     if (apiLogs.length) error.message += `\nAPI output:\n${apiLogs.join("")}`;
     if (viteLogs.length) error.message += `\nVite output:\n${viteLogs.join("")}`;
     throw error;
