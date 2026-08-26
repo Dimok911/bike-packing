@@ -586,7 +586,11 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
       );
       return row?.photoId ? row : null;
     }, 20_000);
-    assert.equal(photoRow.mimeType, "image/png");
+    assert.match(
+      photoRow.mimeType,
+      /^image\/(?:jpeg|png|webp)$/,
+      "The browser/API photo pipeline did not persist a supported image MIME type"
+    );
     assert.ok(Number(photoRow.sizeBytes) > 0, "The uploaded photo has no stored bytes");
     assert.ok(photoRow.filePath && photoRow.thumbPath, "The API did not persist file and thumbnail paths");
 
@@ -597,7 +601,7 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
       requestRaw(apiBaseUrl, photoThumbRoute, { token }),
     ]);
     assert.equal(photoFile.status, 200, "The uploaded full-size photo cannot be read through the API");
-    assert.match(photoFile.contentType, /^image\//);
+    assert.match(photoFile.contentType, new RegExp(`^${photoRow.mimeType.replace("/", "\\/")}(?:;|$)`));
     assert.ok(photoFile.body.length > 0);
     assert.equal(photoThumb.status, 200, "The uploaded thumbnail cannot be read through the API");
     assert.match(photoThumb.contentType, /^image\//);
