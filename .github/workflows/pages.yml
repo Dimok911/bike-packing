@@ -16,7 +16,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  integration:
+    uses: ./.github/workflows/browser-api-mysql.yml
+
   deploy:
+    needs: integration
     runs-on: ubuntu-latest
     environment:
       name: github-pages
