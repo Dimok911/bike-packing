@@ -202,10 +202,12 @@ async function selectDatabaseLayout(page) {
         }
       }).filter(([, layouts]) => layouts.length)
     ));
-    error.message += `\nLayout options: ${JSON.stringify(optionTexts)}`;
-    error.message += `\nSync status: ${JSON.stringify(syncStatus)}`;
-    error.message += `\nStored layouts: ${JSON.stringify(storedLayouts)}`;
-    throw error;
+    throw new Error([
+      error.message,
+      `Layout options: ${JSON.stringify(optionTexts)}`,
+      `Sync status: ${JSON.stringify(syncStatus)}`,
+      `Stored layouts: ${JSON.stringify(storedLayouts)}`,
+    ].join("\n"), { cause: error });
   }
   assert.equal(await option.textContent(), "Укладка из настоящего API");
   const optionValue = await option.getAttribute("value");
@@ -374,10 +376,12 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     await restoredItem.waitFor({ state: "visible" });
     assert.match(await restoredItem.textContent(), new RegExp(changedName));
   } catch (error) {
-    if (requestLog.length) error.message += `\nProxied API requests:\n${requestLog.join("\n")}`;
-    if (apiLogs.length) error.message += `\nAPI output:\n${apiLogs.join("")}`;
-    if (viteLogs.length) error.message += `\nVite output:\n${viteLogs.join("")}`;
-    throw error;
+    throw new Error([
+      error.message,
+      requestLog.length ? `Proxied API requests:\n${requestLog.join("\n")}` : "",
+      apiLogs.length ? `API output:\n${apiLogs.join("")}` : "",
+      viteLogs.length ? `Vite output:\n${viteLogs.join("")}` : "",
+    ].filter(Boolean).join("\n"), { cause: error });
   } finally {
     await browserContext?.close().catch(() => {});
     await browser?.close().catch(() => {});
