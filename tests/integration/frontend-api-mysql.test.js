@@ -423,10 +423,34 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     await item.locator(".item-title-hitarea").click();
     await page.locator("#itemDialog").waitFor({ state: "visible" });
     const changedName = "Насос сохранён через MySQL";
-    await page.locator("#itemName").fill(changedName);
+    const itemNameInput = page.locator("#itemName");
+    assert.equal(await itemNameInput.inputValue(), "Насос из базы данных");
+    await itemNameInput.fill(changedName);
+    assert.equal(await itemNameInput.inputValue(), changedName);
+    assert.equal(await page.locator("#saveItemBtn").isEnabled(), true, "The item save button did not become enabled");
     await page.locator("#saveItemBtn").click();
     await page.locator("#itemDialog").waitFor({ state: "hidden" });
-    assert.match(await item.textContent(), new RegExp(changedName), "The browser did not apply the item edit locally");
+    const editedLocally = await poll("browser state containing the local item edit", async () => {
+      return (await item.textContent()).includes(changedName);
+    }, 3_000).catch(() => false);
+    if (!editedLocally) {
+      const localItemCopies = await page.evaluate(() => Object.fromEntries(
+        Object.keys(localStorage)
+          .filter((key) => key.includes("bike-packing-prototype-state-v1"))
+          .map((key) => {
+            try {
+              return [key, JSON.parse(localStorage.getItem(key))?.items?.["item-browser"] || null];
+            } catch {
+              return [key, null];
+            }
+          })
+      ));
+      throw new Error([
+        "The browser did not apply the item edit locally",
+        `Rendered item: ${JSON.stringify(await item.textContent())}`,
+        `Stored item copies: ${JSON.stringify(localItemCopies)}`,
+      ].join("\n"));
+    }
     await page.locator("#syncBtn").click();
 
     let lastApiState = null;
