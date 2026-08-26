@@ -349,15 +349,27 @@ test("frontend browser saves through the real API and restores from MySQL", { ti
     viteProcess.stderr.on("data", (chunk) => viteLogs.push(chunk.toString()));
     await waitForUrl(frontendUrl, viteProcess, viteLogs, "Vite server");
 
-    const requestedListId = `browser-${randomUUID()}`;
-    const created = await requestJson(apiBaseUrl, `${API_BASE_PATH}/bike-packing/lists`, {
-      token,
-      method: "POST",
-      body: { id: requestedListId, title: "Browser integration list", payload: initialState() },
-    });
-    assert.equal(created.status, 200, JSON.stringify(created.payload));
-    const listId = created.payload?.list?.id || created.payload?.id;
-    assert.ok(listId, `The API did not return the created list id: ${JSON.stringify(created.payload)}`);
+    const lists = await requestJson(apiBaseUrl, `${API_BASE_PATH}/bike-packing/lists`, { token });
+    assert.equal(lists.status, 200, JSON.stringify(lists.payload));
+    const defaultList = lists.payload?.lists?.find((list) => list?.isDefault) || lists.payload?.lists?.[0];
+    const listId = defaultList?.id;
+    assert.ok(listId, `The API did not create a default list: ${JSON.stringify(lists.payload)}`);
+    const seeded = await requestJson(
+      apiBaseUrl,
+      `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}`,
+      {
+        token,
+        method: "PUT",
+        body: {
+          title: "Browser integration list",
+          payload: initialState(),
+          force: true,
+          forceOverwrite: true,
+          fullReplace: true,
+        },
+      }
+    );
+    assert.equal(seeded.status, 200, JSON.stringify(seeded.payload));
     const seededState = await requestJson(
       apiBaseUrl,
       `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/state`,
