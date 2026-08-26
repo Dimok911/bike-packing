@@ -636,6 +636,16 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
     await page.locator("#confirmDialog").waitFor({ state: "hidden" });
     await page.locator("#saveItemBtn").click();
     await page.locator("#itemDialog").waitFor({ state: "hidden" });
+    await page.locator("#syncBtn").click();
+    await poll("API item without the removed photo reference", async () => {
+      const state = await requestJson(
+        apiBaseUrl,
+        `${API_BASE_PATH}/bike-packing/lists/${encodeURIComponent(listId)}/state`,
+        { token }
+      );
+      const photos = stateFromApiPayload(state.payload)?.items?.["item-browser"]?.photos || [];
+      return state.status === 200 && !photos.some((photo) => photo?.id === photoRow.photoId);
+    });
     await poll("photo soft-delete stored in MySQL", async () => {
       const [[row]] = await pool.query(
         "SELECT deleted_at AS deletedAt FROM bike_packing_photos WHERE list_id = ? AND photo_id = ?",
@@ -643,8 +653,10 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
       );
       return Boolean(row?.deletedAt);
     });
-    const deletedPhotoRead = await requestRaw(apiBaseUrl, photoFileRoute, { token });
-    assert.equal(deletedPhotoRead.status, 404, "A deleted photo is still readable through the API");
+    const retainedHistoryPhoto = await requestRaw(apiBaseUrl, photoFileRoute, { token });
+    assert.equal(retainedHistoryPhoto.status, 200, "A soft-deleted photo is unavailable to 30-day history");
+    assert.match(retainedHistoryPhoto.contentType, /^image\//);
+    assert.ok(retainedHistoryPhoto.body.length > 0);
 
     await browserContext.close();
     browserContext = null;

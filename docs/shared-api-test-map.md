@@ -31,7 +31,7 @@
 | `shared-api:vdoc-build-snapshot` | В VDOC Base Edit: временная MariaDB, relations/order/default и схема snapshot | Не используется | Не используется | Base Edit формирует; Initial валидирует контракт, собирается на fixture и открывает артефакт в E2E |
 | `shared-ui:photo-gallery` | В репозитории `vniipo-photo-gallery`: contractVersion/capabilities, сборка, hash и browser gestures | Проверка версии/capabilities, fallback и пользовательской галереи | Та же consumer-проверка на данных OVIK | Только если runtime будет подключён фактически |
 | `shared-ui:photo-cache` | В `vniipo-photo-cache-engine`: storage/network unit и isolation | Adapter, namespace, offline/online E2E | Adapter, namespace, offline/online E2E | Не используется |
-| `app-api:bike-packing` | В `bikepacking-api`: MySQL, permissions, revision, history, templates и временное photo storage | API contracts и Browser + API + MySQL: upload/read/reload/delete фото, оригинал/thumb, MySQL и `404` после удаления | Не копировать | Не копировать, кроме явно используемого admin consumer-контракта |
+| `app-api:bike-packing` | В `bikepacking-api`: MySQL, permissions, revision, history, templates и временное photo storage | API contracts и Browser + API + MySQL: upload/read/reload/delete фото, оригинал/thumb, MySQL soft-delete и сохранность файла для 30-дневной истории | Не копировать | Не копировать, кроме явно используемого admin consumer-контракта |
 | `app-api:ovik` | В `ovik-project-management`: одноразовая MySQL и временное файловое хранилище | Не копировать | API contracts и Chromium E2E | Не копировать |
 | `app-api:vdoc-admin` | В VDOC Base Edit: MariaDB CRUD/audit/auth integration | Не копировать | Не копировать | Base Edit E2E; Initial получает только versioned build snapshot |
 
