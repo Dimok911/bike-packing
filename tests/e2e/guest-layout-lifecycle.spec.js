@@ -22,11 +22,29 @@ test("guest creates a nested bag and keeps the hierarchy after reload", async ({
   await page.locator("#newSubcontainerName").fill(nestedName);
   await page.locator("#createSubcontainerBtn").click();
 
-  await expect(container.locator("[data-subcontainer-id]").filter({ hasText: nestedName })).toHaveCount(1);
+  const nested = container.locator("[data-subcontainer-id]").filter({ hasText: nestedName });
+  await expect(nested).toHaveCount(1);
+  await nested.evaluate((element) => {
+    element.dataset.domIdentity = "preserved";
+  });
+  const disclosure = nested.locator(":scope > .subcontainer-title [data-toggle-container]");
+  await disclosure.click();
+  await expect(nested).toHaveClass(/collapsed/);
+  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await expect(nested).toHaveAttribute("data-dom-identity", "preserved");
+
+  await disclosure.click();
+  await expect(nested).not.toHaveClass(/collapsed/);
+  await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  await expect(nested).toHaveAttribute("data-dom-identity", "preserved");
+
+  await disclosure.click();
   await page.reload();
   await waitForApp(page);
   const restoredRoot = page.locator("#packingView [data-root-container-id]").filter({ hasText: "Основная сумка" });
-  await expect(restoredRoot.locator("[data-subcontainer-id]").filter({ hasText: nestedName })).toHaveCount(1);
+  const restoredNested = restoredRoot.locator("[data-subcontainer-id]").filter({ hasText: nestedName });
+  await expect(restoredNested).toHaveCount(1);
+  await expect(restoredNested).toHaveClass(/collapsed/);
 });
 
 test("guest deletes a bag forever while keeping its item in the catalog", async ({ page }) => {
