@@ -1,7 +1,6 @@
 import { escapeHtml } from "../utils/html.js";
 import { markExplicitViewportScrollIntent } from "./viewport-scroll-intent.js";
 import {
-  enableIsolatedViewportScrollHost,
   scrollViewportTo,
   viewportScrollHost,
   viewportScrollTop
@@ -300,11 +299,6 @@ export function createCatalogBackToTopController({
 function ensureDocumentController(documentRef, windowRef, threshold) {
   const existing = documentControllers.get(documentRef);
   if (existing) return existing;
-  enableIsolatedViewportScrollHost({
-    documentRef,
-    navigatorRef: windowRef?.navigator || globalThis.navigator,
-    windowRef
-  });
   const { button, layer } = createPortalElements(documentRef);
   const controller = createCatalogBackToTopController({
     button,

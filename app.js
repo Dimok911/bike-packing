@@ -1078,6 +1078,7 @@ import {
 } from "./src/ui/touch-actions.js";
 import { hasExplicitViewportScrollIntent } from "./src/ui/viewport-scroll-intent.js";
 import { createDesktopInputLayoutController } from "./src/ui/desktop-input-layout.js";
+import { createMobileDialogFieldControls } from "./src/ui/mobile-dialog-field-controls.js";
 import {
   DEFAULT_INTERFACE_COLOR_BRIGHTNESS,
   DEFAULT_INTERFACE_COLOR_THEME,
@@ -1372,6 +1373,7 @@ const desktopInputLayoutController = createDesktopInputLayoutController({
   translate: t,
   windowRef: window
 });
+createMobileDialogFieldControls({ refs, windowRef: window });
 const connectionStatusController = createConnectionStatusController({
   getElement: () => refs.connectionStatus,
   getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),

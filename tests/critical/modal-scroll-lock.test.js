@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import "./mobile-dialog-field-controls.test.js";
 import { createModalScrollLockController } from "../../src/ui/modal-scroll-lock.js";
 
 function testClassList(initial = []) {

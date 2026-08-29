@@ -188,18 +188,19 @@ test("disabling isolation restores the scroll position to the document viewport"
   assert.deepEqual(fixture.windowScrollCalls, [{ left: 8, top: 720, behavior: "auto" }]);
 });
 
-test("portal is a body sibling of the isolated scroller and adds no sticky-header spacer", () => {
+test("catalog portal keeps native iPhone document scrolling and adds no sticky-header spacer", () => {
   const source = readFileSync(new URL("../../src/ui/catalog-back-to-top.js", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
-  const enableIndex = source.indexOf("enableIsolatedViewportScrollHost({");
-  const portalIndex = source.indexOf("createPortalElements(documentRef)", enableIndex);
+  const controllerIndex = source.indexOf("function ensureDocumentController");
+  const portalIndex = source.indexOf("createPortalElements(documentRef)", controllerIndex);
 
-  assert.ok(enableIndex >= 0 && portalIndex > enableIndex, "scroll host is isolated before the portal is created");
+  assert.ok(controllerIndex >= 0 && portalIndex > controllerIndex, "the portal is created by the shared document controller");
+  assert.doesNotMatch(
+    source.slice(controllerIndex, source.indexOf("export function bindCatalogBackToTop", controllerIndex)),
+    /enableIsolatedViewportScrollHost/,
+    "iPhone must keep native document momentum instead of a nested app scroller"
+  );
   assert.match(source, /\(documentRef\.body \|\| documentRef\.documentElement\)\?\.append\?\.\(layer\)/);
-  assert.match(styles, /html\.isolated-viewport-scroll,[\s\S]*?overflow:\s*hidden;/);
-  assert.match(styles, /\.app\[data-viewport-scroll-host\]\s*\{[\s\S]*?overflow-y:\s*auto;/);
-  assert.match(styles, /\[data-viewport-scroll-host-no-banner\]\s*\{[\s\S]*?padding-top:\s*0;/);
-  assert.match(styles, /\[data-viewport-scroll-host-no-banner\]\s+\.tabs-row,[\s\S]*?margin-top:\s*0;/);
   assert.match(styles, /\.catalog-back-to-top-layer\s*\{[\s\S]*?position:\s*fixed;/);
   assert.doesNotMatch(styles, /\.catalog-back-to-top-layer\s*\{[^}]*\bmargin\b/);
   assert.doesNotMatch(styles, /\.catalog-back-to-top-layer\s*\{[^}]*\bpadding\b/);

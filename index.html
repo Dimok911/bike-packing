@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1568" />
+    <link rel="stylesheet" href="./styles.css?v=1569" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -213,7 +213,10 @@
             <span class="visually-hidden">Search categories</span>
             <input id="itemCategorySearch" type="search" autocomplete="off" placeholder="Find a category" aria-label="Search categories" />
           </label>
-          <div id="itemCategoryList" class="category-picker"></div>
+          <div class="category-picker-shell">
+            <div id="itemCategoryList" class="category-picker"></div>
+            <input id="itemCategoryScroll" class="mobile-category-scroll-control" type="range" min="0" max="0" value="0" step="1" aria-label="Scroll category list" hidden />
+          </div>
         </div>
         <label>
           Availability
@@ -249,6 +252,9 @@
             </span>
           </div>
           <textarea id="itemNote" rows="3"></textarea>
+          <button id="itemNoteResizeHandle" class="mobile-note-resize-handle" type="button" aria-label="Resize note field" title="Resize note field">
+            <span aria-hidden="true"></span>
+          </button>
         </div>
         <div class="field-label item-photo-field">
           Photo
@@ -330,7 +336,10 @@
             <span class="visually-hidden">Search categories</span>
             <input id="rootContainerCategorySearch" type="search" autocomplete="off" placeholder="Find a category" aria-label="Search categories" />
           </label>
-          <div id="rootContainerCategoryList" class="category-picker"></div>
+          <div class="category-picker-shell">
+            <div id="rootContainerCategoryList" class="category-picker"></div>
+            <input id="rootContainerCategoryScroll" class="mobile-category-scroll-control" type="range" min="0" max="0" value="0" step="1" aria-label="Scroll category list" hidden />
+          </div>
         </div>
         <label class="checkbox-row root-container-nestable-field">
           <input id="rootContainerNestable" type="checkbox" />
@@ -360,6 +369,9 @@
             </span>
           </div>
           <textarea id="rootContainerNote" rows="3"></textarea>
+          <button id="rootContainerNoteResizeHandle" class="mobile-note-resize-handle" type="button" aria-label="Resize note field" title="Resize note field">
+            <span aria-hidden="true"></span>
+          </button>
         </div>
         <div class="field-label item-photo-field">
           Photo
@@ -832,6 +844,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1568" type="module"></script>
+    <script src="./app.js?v=1569" type="module"></script>
   </body>
 </html>
