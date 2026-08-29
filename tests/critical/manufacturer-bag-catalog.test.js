@@ -260,15 +260,16 @@ test("CRITICAL manufacturer catalog: ORTLIEB pair specifications keep per-bag va
   });
 });
 
-test("CRITICAL manufacturer catalog: ORTLIEB pair comparison and import use set totals without losing per-bag provenance", () => {
+test("CRITICAL manufacturer catalog: pair comparison filters by one bag and import keeps set totals", () => {
   const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l-pair");
   const comparison = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier")
     .find(({ id }) => id === backRoller.id);
-  assert.deepEqual(comparison.volumeOptions, [40]);
+  assert.deepEqual(comparison.volumeOptions, [20]);
   assert.deepEqual(comparison.volumePerBagOptions, [20]);
-  assert.deepEqual(manufacturerBagComparisonNumericBounds(comparison, "volume"), { min: 40, max: 40 });
-  assert.ok(filterManufacturerBagComparisonRows([comparison], { volume: { min: 40, max: 40 } }).length);
-  assert.deepEqual(filterManufacturerBagComparisonRows([comparison], { volume: { min: 20, max: 20 } }), []);
+  assert.deepEqual(comparison.volumeTotalOptions, [40]);
+  assert.deepEqual(manufacturerBagComparisonNumericBounds(comparison, "volume"), { min: 20, max: 20 });
+  assert.ok(filterManufacturerBagComparisonRows([comparison], { volume: { min: 20, max: 20 } }).length);
+  assert.deepEqual(filterManufacturerBagComparisonRows([comparison], { volume: { min: 40, max: 40 } }), []);
 
   const draft = manufacturerBagContainerDraft(backRoller);
   assert.equal(draft.name, "ORTLIEB Back-Roller Pair 40 L (2 × 20 L)");
@@ -282,6 +283,40 @@ test("CRITICAL manufacturer catalog: ORTLIEB pair comparison and import use set 
     .find(({ id }) => id === "ortlieb-back-roller-35l-mesh-pocket-pair");
   assert.deepEqual(backRollerXl.weightPerBagOptions, [1006, 1199]);
   assert.deepEqual(backRollerXl.weightOptions, [2012, 2398]);
+});
+
+test("CRITICAL manufacturer catalog: Arkel pair totals are normalized for one-bag comparison", () => {
+  const rows = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier");
+  const dryLites28 = rows.find(({ id }) => id === "arkel-dry-lites-saddle-bags-28l");
+  const dryLites36 = rows.find(({ id }) => id === "arkel-dry-lites-saddle-bags-36l");
+  const gt54 = rows.find(({ id }) => id === "arkel-gt-54-classic-touring-panniers");
+  const t42 = rows.find(({ id }) => id === "arkel-t-42-classic-touring-panniers");
+  const t28 = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "universal-pannier")
+    .find(({ id }) => id === "arkel-t-28-classic-touring-panniers");
+
+  assert.deepEqual(dryLites28.volumeOptions, [14]);
+  assert.deepEqual(dryLites28.volumeTotalOptions, [28]);
+  assert.deepEqual(dryLites36.volumeOptions, [18]);
+  assert.deepEqual(dryLites36.volumeTotalOptions, [36]);
+  assert.deepEqual(t42.volumeOptions, [21]);
+  assert.deepEqual(t42.volumeTotalOptions, [42]);
+  assert.deepEqual(gt54.volumeOptions, []);
+  assert.deepEqual(gt54.volumeTotalOptions, [54]);
+  assert.equal(gt54.volumeSetBasis, "composite-set");
+  assert.equal(manufacturerBagComparisonFilterKey(gt54, "set"), "composite");
+  assert.deepEqual(t28.volumeOptions, []);
+  assert.deepEqual(t28.volumeTotalOptions, [28]);
+  assert.equal(manufacturerBagComparisonNumericBounds(gt54, "volume"), null);
+  assert.deepEqual(filterManufacturerBagComparisonRows([gt54], { volume: { min: 27, max: 27 } }), []);
+  assert.ok(filterManufacturerBagComparisonRows([dryLites28, dryLites36], { volume: { min: 18, max: 18 } })
+    .some(({ id }) => id === dryLites36.id));
+  assert.deepEqual(filterManufacturerBagComparisonRows([dryLites36], { volume: { min: 36, max: 36 } }), []);
+
+  const draft = manufacturerBagContainerDraft(MANUFACTURER_BAG_CATALOG.find(({ id }) => id === dryLites36.id));
+  assert.equal(draft.volume, 36);
+  assert.equal(draft.manufacturerCatalogSource.volumePerBag, 18);
+  assert.equal(draft.manufacturerCatalogSource.totalVolume, 36);
+  assert.equal(draft.manufacturerCatalogSource.specificationBasis, "set-total");
 });
 
 test("CRITICAL manufacturer catalog: editing a per-bag value recalculates the pair total", () => {
@@ -371,6 +406,7 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(controller, /data-bag-catalog-compare-category/);
   assert.match(comparison, /manufacturerBagComparisonRows/);
   assert.match(comparison, /manufacturerBagComparisonViewRows/);
+  assert.match(comparison, /comparisonVolumeText\(entry\.volumeOptions, entry\.volumeTotalOptions/);
   assert.match(comparison, /data-bag-comparison-detail/);
   assert.match(comparison, /visualViewport/);
   assert.match(styles, /grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
@@ -383,6 +419,10 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.equal((i18n.match(/"bagCatalog\.compare\.open"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.filterManufacturers"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.rangeHint"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.volumePerBag"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.perBagWithSetTotal"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.setTotalNotComparable"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.compositeSet"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.openDetailsFor"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.setTotalWithPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.officialPerBag"/g) || []).length, 2);

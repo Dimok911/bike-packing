@@ -67,6 +67,18 @@ function comparisonMetricText(totalValues, perBagValues, quantity, unit, t) {
     : `${total} ${unit}`;
 }
 
+function comparisonVolumeText(perBagValues, totalValues, quantity, unit, t) {
+  const perBag = manufacturerBagComparisonRange(perBagValues, "");
+  const total = manufacturerBagComparisonRange(totalValues, "");
+  if (!perBag && Number(quantity || 1) > 1 && total) {
+    return t("bagCatalog.compare.setTotalNotComparable", { total, unit });
+  }
+  if (!perBag) return "";
+  return Number(quantity || 1) > 1 && total
+    ? t("bagCatalog.compare.perBagWithSetTotal", { perBag, total, quantity, unit })
+    : `${perBag} ${unit}`;
+}
+
 export function createManufacturerBagComparisonDialogController({
   catalog = [],
   categories = [],
@@ -109,11 +121,16 @@ export function createManufacturerBagComparisonDialogController({
       : t("bagCatalog.compare.noAvailableSku");
   }
 
+  function setKindText(entry) {
+    if (entry.volumeSetBasis === "composite-set") return t("bagCatalog.compare.compositeSet");
+    return entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single");
+  }
+
   function columnLabel(column) {
     return t({
       model: "bagCatalog.compare.model",
       manufacturer: "bagCatalog.compare.manufacturer",
-      volume: "bagCatalog.compare.volume",
+      volume: "bagCatalog.compare.volumePerBag",
       weight: "bagCatalog.compare.weight",
       dimensions: "bagCatalog.compare.dimensions",
       waterproof: "bagCatalog.compare.waterproof",
@@ -126,11 +143,14 @@ export function createManufacturerBagComparisonDialogController({
 
   function filterOptionLabel(entry, column) {
     if (manufacturerBagComparisonFilterKey(entry, column) === "__unknown__") {
+      if (column === "volume" && entry.volumeTotalOptions?.length && entry.setQuantity > 1) {
+        return comparisonVolumeText([], entry.volumeTotalOptions, entry.setQuantity, t("bagCatalog.liters"), t);
+      }
       return t("bagCatalog.compare.unknown");
     }
     if (column === "model") return entry.name || "";
     if (column === "manufacturer") return entry.brand || "";
-    if (column === "volume") return comparisonMetricText(entry.volumeOptions, entry.volumePerBagOptions, entry.setQuantity, t("bagCatalog.liters"), t);
+    if (column === "volume") return comparisonVolumeText(entry.volumeOptions, entry.volumeTotalOptions, entry.setQuantity, t("bagCatalog.liters"), t);
     if (column === "weight") return comparisonMetricText(entry.weightOptions, entry.weightPerBagOptions, entry.setQuantity, t("bagCatalog.grams"), t);
     if (column === "dimensions") {
       const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
@@ -138,7 +158,7 @@ export function createManufacturerBagComparisonDialogController({
     }
     if (column === "waterproof") return entry.waterproof || "";
     if (column === "mounting") return (entry.mountingOptions || []).join(" / ") || entry.mounting || "";
-    if (column === "set") return entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single");
+    if (column === "set") return setKindText(entry);
     if (column === "availability") return availabilityText(entry);
     if (column === "source") return entry.provider || entry.brand || "";
     return "";
@@ -147,7 +167,7 @@ export function createManufacturerBagComparisonDialogController({
   function renderRow(entry) {
     const sourceUrl = safeHttpsUrl(entry.sourceUrl);
     const imageUrl = safeLocalImageUrl(entry.imageUrl);
-    const volume = comparisonMetricText(entry.volumeOptions, entry.volumePerBagOptions, entry.setQuantity, t("bagCatalog.liters"), t);
+    const volume = comparisonVolumeText(entry.volumeOptions, entry.volumeTotalOptions, entry.setQuantity, t("bagCatalog.liters"), t);
     const weight = comparisonMetricText(entry.weightOptions, entry.weightPerBagOptions, entry.setQuantity, t("bagCatalog.grams"), t);
     const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
     return `
@@ -163,7 +183,7 @@ export function createManufacturerBagComparisonDialogController({
         <td>${valueOrUnknown(dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}` : "")}</td>
         <td>${valueOrUnknown(entry.waterproof)}</td>
         <td>${valueOrUnknown((entry.mountingOptions || []).join(" / ") || entry.mounting)}</td>
-        <td>${escapeHtml(entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single"))}</td>
+        <td>${escapeHtml(setKindText(entry))}</td>
         <td>${escapeHtml(availabilityText(entry))}</td>
         <td>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("bagCatalog.compare.openSource"))}</a>` : ""}</td>
       </tr>
@@ -387,7 +407,7 @@ export function createManufacturerBagComparisonDialogController({
       [t("bagCatalog.field.waterproof"), entry.waterproof],
       [t("bagCatalog.field.material"), entry.material],
       [t("bagCatalog.field.mounting"), (entry.mountingOptions || []).join(" / ") || entry.mounting],
-      [t("bagCatalog.compare.set"), entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single")],
+      [t("bagCatalog.compare.set"), setKindText(entry)],
       [t("bagCatalog.compare.specificationBasis"), entry.specificationBasis === "per-bag" ? t("bagCatalog.compare.officialPerBag") : ""],
       [t("bagCatalog.compare.availability"), availabilityText(entry)]
     ].filter(([, value]) => value);

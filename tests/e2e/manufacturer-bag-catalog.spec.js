@@ -143,12 +143,15 @@ test("ORTLIEB pair shows and imports the set total while preserving the per-bag 
   const singleBackRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l"]').locator("xpath=ancestor::tr");
   await expect(singleBackRoller).toContainText("Quick-Lock2.1 / Quick-Lock3.1");
   const backRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l-pair"]').locator("xpath=ancestor::tr");
-  await expect(backRoller).toContainText("40 л комплект (20 л × 2)");
+  await expect(backRoller).toContainText("20 л одна сумка (40 л комплект)");
+  const compositeSet = comparison.locator('[data-bag-comparison-detail="arkel-gt-54-classic-touring-panniers"]').locator("xpath=ancestor::tr");
+  await expect(compositeSet).toContainText("54 л неделимый комплект · объём одной сумки неприменим");
+  await expect(compositeSet).toContainText("Составной комплект");
 
   await comparison.locator('[data-bag-comparison-filter="volume"]').click();
   const filterPanel = comparison.locator("#bagCatalogCompareFilterPanel");
-  await filterPanel.locator("#bagCatalogCompareRangeMin").fill("40");
-  await filterPanel.locator("#bagCatalogCompareRangeMax").fill("40");
+  await filterPanel.locator("#bagCatalogCompareRangeMin").fill("20");
+  await filterPanel.locator("#bagCatalogCompareRangeMax").fill("20");
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
   await expect(comparison.locator("tbody")).toContainText("Back-Roller Pair");
 

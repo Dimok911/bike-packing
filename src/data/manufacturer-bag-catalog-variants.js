@@ -44,6 +44,14 @@ const OFFICIAL_SPLIT_WEIGHT_OPTIONS = new Map([
   ["arkel-orca-panniers|22.5|pair", [2020, 2290]]
 ]);
 
+// Derive one-bag volume only when the official source confirms equal bags.
+// Composite and unverified sets must keep their total without arithmetic splitting.
+const VOLUME_SET_BASIS_BY_SOURCE_ID = new Map([
+  ["arkel-dry-lites-saddle-bags", "equal-bags"],
+  ["arkel-t-42-classic-touring-panniers", "equal-bags"],
+  ["arkel-gt-54-classic-touring-panniers", "composite-set"]
+]);
+
 export function manufacturerBagCatalogFixedVolumes(sourceId = "") {
   return [...(FIXED_VOLUMES_BY_SOURCE_ID.get(String(sourceId || "")) || [])];
 }
@@ -130,8 +138,9 @@ function normalizedMountingEntry(entry) {
 function fixedVolumeEntry(rawEntry) {
   const entry = normalizedMountingEntry(rawEntry);
   const fixed = manufacturerBagCatalogFixedVolumes(entry?.sourceProductId || entry?.id);
-  if (!fixed?.length) return entry;
-  return { ...entry, volume: fixed[0], volumeOptions: [...fixed] };
+  const volumeSetBasis = VOLUME_SET_BASIS_BY_SOURCE_ID.get(String(entry?.sourceProductId || entry?.id || ""));
+  const normalized = fixed?.length ? { ...entry, volume: fixed[0], volumeOptions: [...fixed] } : entry;
+  return volumeSetBasis ? { ...normalized, volumeSetBasis } : normalized;
 }
 
 function groupWeightOptions(entry, group, groups) {

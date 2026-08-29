@@ -39,6 +39,19 @@ test("CRITICAL catalog scan: verification dates alone do not create material cha
   assert.deepEqual(result.changes, []);
 });
 
+test("CRITICAL catalog scan: set-volume basis changes require review", () => {
+  const before = bag("arkel-set", "Arkel", {
+    soldAsSet: true,
+    setQuantity: 2,
+    totalVolume: 54,
+    volumeSetBasis: "composite-set",
+  });
+  const after = { ...before, volumeSetBasis: "equal-bags", volumePerBag: 27 };
+  const result = compareManufacturerCatalogSnapshots([before], [after]);
+  const change = result.changes.find(({ productId }) => productId === before.id);
+  assert.deepEqual(change.fields.map(({ field }) => field), ["volumePerBag", "volumeSetBasis"]);
+});
+
 test("CRITICAL catalog scan: report keeps manufacturer adapters independent", () => {
   const report = buildManufacturerCatalogScanReport({
     approvedEntries: [bag("ortlieb-one", "ORTLIEB")],

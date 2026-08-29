@@ -94,15 +94,22 @@ export function manufacturerBagCatalogPerBagSpecifications(entry) {
 
 export function manufacturerBagCatalogVolumeMetrics(entry) {
   const quantity = manufacturerBagCatalogSetQuantity(entry);
-  const perBag = positiveCatalogNumbers(entry?.volumePerBagOptions, entry?.volumePerBag || entry?.volume);
-  const total = positiveCatalogNumbers(
+  const specificationsPerBag = manufacturerBagCatalogPerBagSpecifications(entry);
+  const sourcePerBag = positiveCatalogNumbers(entry?.volumePerBagOptions, entry?.volumePerBag || entry?.volume);
+  const sourceTotal = positiveCatalogNumbers(
     entry?.totalVolumeOptions,
-    entry?.totalVolume || (manufacturerBagCatalogPerBagSpecifications(entry) ? perBag[0] * quantity : entry?.volume)
+    entry?.totalVolume || (specificationsPerBag ? sourcePerBag[0] * quantity : entry?.volume)
   );
+  const total = sourceTotal.length ? sourceTotal : positiveCatalogNumbers(entry?.volumeOptions, entry?.volume);
+  const perBag = specificationsPerBag
+    ? sourcePerBag
+    : (quantity > 1 && entry?.volumeSetBasis === "equal-bags"
+      ? total.map((value) => Math.round((value / quantity) * 100) / 100)
+      : []);
   return {
     quantity,
-    perBag: manufacturerBagCatalogPerBagSpecifications(entry) ? perBag : [],
-    total: total.length ? total : positiveCatalogNumbers(entry?.volumeOptions, entry?.volume)
+    perBag,
+    total
   };
 }
 
@@ -308,7 +315,9 @@ export function manufacturerBagContainerDraft(entry) {
       sourceUrl: String(entry.sourceUrl || ""),
       sourceImageUrl: String(entry.sourceImageUrl || ""),
       setQuantity: manufacturerBagCatalogSetQuantity(entry),
-      specificationBasis: String(entry.specificationBasis || "product"),
+      specificationBasis: String(entry.specificationBasis || (entry.soldAsSet
+        ? (entry.volumeSetBasis === "equal-bags" ? "set-total" : "composite-set")
+        : "product")),
       volumePerBag: perBagVolume,
       totalVolume: volume
     }

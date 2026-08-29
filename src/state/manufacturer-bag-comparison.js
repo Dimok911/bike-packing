@@ -55,7 +55,9 @@ export function manufacturerBagComparisonFilterKey(entry, column = "") {
   else if (column === "mounting") {
     value = (entry?.mountingOptions || []).map(normalizedText).filter(Boolean).sort().join(" / ")
       || normalizedText(entry?.mounting);
-  } else if (column === "set") value = entry?.soldAsSet ? "pair" : "single";
+  } else if (column === "set") {
+    value = entry?.volumeSetBasis === "composite-set" ? "composite" : (entry?.soldAsSet ? "pair" : "single");
+  }
   else if (column === "availability") {
     value = entry?.available ? String(Math.max(0, Number(entry?.availableVariantCount || 0))) : "unavailable";
   } else if (column === "source") value = normalizedText(entry?.provider || entry?.sourceUrl);
@@ -165,8 +167,12 @@ export function manufacturerBagComparisonRows(catalog = [], category = "") {
         : [];
       return {
         ...entry,
-        volumeOptions: volumeMetrics.total,
+        setQuantity: volumeMetrics.quantity,
+        volumeOptions: volumeMetrics.quantity > 1
+          ? volumeMetrics.perBag
+          : volumeMetrics.total,
         volumePerBagOptions: volumeMetrics.perBag,
+        volumeTotalOptions: volumeMetrics.total,
         weightOptions: perBagWeightOptions.length
           ? perBagWeightOptions.map((value) => value * weightMetrics.quantity)
           : sourceWeightOptions,
