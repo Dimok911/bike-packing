@@ -1633,6 +1633,55 @@ test("CRITICAL offline-photos: photo upload flow syncs only after server respons
   assert.deepEqual(touched, [{ id: "item-1", entityType: "item", updatedAt: "2026-06-06T00:00:02.000Z" }]);
 });
 
+test("CRITICAL offline-photos: a completed upload binds its local preview to the server signature before the card rerenders", async () => {
+  const photo = {
+    id: "photo-local",
+    localId: "photo-local",
+    status: "pending",
+    url: "",
+    thumbUrl: ""
+  };
+  const entity = { id: "item-1", photos: [photo] };
+  const objectUrls = createPhotoObjectUrlRegistry({
+    createObjectUrl: (blob) => blob.size === 4 ? "blob:local-full" : "blob:local-thumb",
+    revokeObjectUrl: () => {}
+  });
+  objectUrls.activateScope("id:user-1");
+  objectUrls.setReady(true);
+
+  await uploadPhotoToPath({
+    path: "/bike-packing/lists/list-1/photos",
+    listId: "list-1",
+    entity,
+    photo,
+    entityType: "item",
+    apiFetch: async () => {
+      throw new Error("copy should not run for local-only photos");
+    },
+    apiUploadFormData: async () => ({
+      photo: {
+        id: "photo-server",
+        url: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server/file",
+        thumbUrl: "https://api.example.test/bike-packing/lists/list-1/photos/photo-server/thumb",
+        updatedAt: "2026-06-06T00:00:02.000Z"
+      }
+    }),
+    getCachedPhoto: async () => ({
+      blob: new Blob(["full"], { type: "image/jpeg" }),
+      thumbBlob: new Blob(["thumb"], { type: "image/jpeg" }),
+      fileName: "photo.jpg"
+    }),
+    putCachedPhoto: async () => {},
+    registerCachedPhotoRecord: (task, record) => objectUrls.setRecord(task, record),
+    persistStateSnapshot: () => {}
+  });
+
+  const html = renderPhotoSlide(photo, { photoObjectUrls: objectUrls });
+  assert.match(html, /src="blob:local-thumb"/);
+  assert.match(html, /data-photo-full-src="blob:local-full"/);
+  assert.match(html, /data-photo-remote-thumb-src="https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/lists\/list-1\/photos\/photo-server\/thumb/);
+});
+
 test("CRITICAL offline-photos: dialog progress callbacks still schedule saved card renders", async () => {
   const photo = {
     id: "photo-local",
