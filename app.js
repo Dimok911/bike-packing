@@ -6131,6 +6131,7 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
   retryTemporaryUploadFailure = true,
   scheduleProgressRender = schedulePhotoUploadProgressRender
 } = {}) {
+  const uploadPhotoCacheScopeKey = localStorageScopeKey;
   return uploadPhotoToPath({
     path,
     listId,
@@ -6142,8 +6143,12 @@ async function uploadEntityPhotoToPath(path, listId, entity, photo, entityType =
     retryTemporaryUploadFailure,
     apiFetch,
     apiUploadFormData,
-    getCachedPhoto,
-    putCachedPhoto,
+    getCachedPhoto: (id) => getCachedPhoto(id, uploadPhotoCacheScopeKey),
+    putCachedPhoto: (record) => putCachedPhoto(record, uploadPhotoCacheScopeKey),
+    registerCachedPhotoRecord: (task, record) => {
+      if (photoObjectUrls.currentScope() !== uploadPhotoCacheScopeKey) return;
+      photoObjectUrls.setRecord(task, record);
+    },
     markEntityChanged: (targetEntity, targetType, updatedAt) => {
       if (targetType === "container") touchContainer(targetEntity.id, updatedAt);
       else touchItem(targetEntity.id, updatedAt);

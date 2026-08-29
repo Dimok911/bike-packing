@@ -33,6 +33,7 @@ export async function uploadPhotoToPath({
   apiUploadFormData,
   getCachedPhoto,
   putCachedPhoto = async () => {},
+  registerCachedPhotoRecord = () => {},
   markEntityChanged = () => {},
   persistStateSnapshot = () => {},
   scheduleProgressRender = () => {},
@@ -164,6 +165,11 @@ export async function uploadPhotoToPath({
       await putCachedPhoto(cacheRecord);
     } catch {
       // A successful server upload must not be reverted when the local cache is unavailable.
+    }
+    try {
+      registerCachedPhotoRecord({ key: localId, sourceSignature: cacheRecord.sourceSignature }, cacheRecord);
+    } catch {
+      // The persisted upload remains valid if the in-memory preview registry is unavailable.
     }
   };
   const applyUploadedPhotoResult = async (targetPhoto, data) => {
