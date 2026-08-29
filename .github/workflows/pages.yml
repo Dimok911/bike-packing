@@ -42,7 +42,7 @@ jobs:
         run: npm run test:critical
 
       - name: Install browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Browser smoke
         timeout-minutes: 10
