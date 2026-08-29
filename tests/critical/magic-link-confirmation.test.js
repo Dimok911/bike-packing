@@ -6,6 +6,7 @@ import {
   magicLinkErrorI18nKey,
   magicLinkTokenFromInput
 } from "../../src/auth/magic-link-confirmation.js";
+import { resolveApiBase } from "../../src/config/constants.js";
 
 test("magic link confirmation accepts a full link, pasted message, or raw code", () => {
   const token = "abcdefghijklmnopqrstuvwxyz_1234567890";
@@ -45,16 +46,19 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1580"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1581"/);
 });
 
-test("production shell has no experimental banner and uses the production API", async () => {
+test("production shell has no experimental banner and only the experiment host selects its isolated API", async () => {
   const [indexSource, constantsSource] = await Promise.all([
     readFile(new URL("../../index.html", import.meta.url), "utf8"),
     readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8")
   ]);
 
   assert.doesNotMatch(indexSource, /id="experimentBanner"/);
-  assert.match(constantsSource, /API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api"/);
-  assert.doesNotMatch(constantsSource, /experiment\.vniipo-help\.ru/);
+  assert.equal(resolveApiBase({ hostname: "vniipo-help.ru" }), "https://api.vniipo-help.ru/letters-vniipo/api");
+  assert.equal(resolveApiBase({ hostname: "dimok911.github.io" }), "https://api.vniipo-help.ru/letters-vniipo/api");
+  assert.equal(resolveApiBase({ hostname: "experiment.vniipo-help.ru" }), "https://experiment.vniipo-help.ru/letters-vniipo/api");
+  assert.match(constantsSource, /PRODUCTION_API_BASE\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api"/);
+  assert.match(constantsSource, /EXPERIMENT_API_BASE\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api"/);
 });
