@@ -36,6 +36,7 @@ export function syncAccountLabelWithEmailWrap(accountLabel, email) {
 export function updateSyncUiControls({
   appUnlocked = false,
   adminReportsDialogController = null,
+  manufacturerCatalogReviewDialogController = null,
   canOpenAdminPublishedEdit = () => false,
   canUseLocalEditableState = () => false,
   currentAdminApiWarning = () => "",
@@ -75,6 +76,7 @@ export function updateSyncUiControls({
   if (!canOpenAdminPublishedEdit()) disablePackingVisualStylePanel();
   syncPackingVisualStyleControls();
   adminReportsDialogController?.syncVisibility?.();
+  manufacturerCatalogReviewDialogController?.syncVisibility?.();
   refs.authBtn.textContent = rememberedOffline
     ? localText("Confirm sign-in", "Подтвердить вход")
     : t("menu.signIn");

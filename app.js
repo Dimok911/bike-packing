@@ -699,6 +699,10 @@ import {
 } from "./src/sync/api-client.js";
 import { adminApiWarningFromCapabilities as adminApiWarningFromCapabilitiesValue } from "./src/sync/admin-api-compat.js";
 import { fetchAdminReports } from "./src/sync/admin-reports.js";
+import {
+  fetchManufacturerCatalogScans,
+  saveManufacturerCatalogDecision
+} from "./src/sync/manufacturer-catalog-review.js";
 import { checkAuthAndLoadFlow } from "./src/sync/auth-load-flow.js";
 import {
   canUseCachedStartupState,
@@ -826,6 +830,7 @@ import {
   fullBackupRestoreConfirm
 } from "./src/ui/backup-dialog.js";
 import { createAdminReportsDialogController } from "./src/ui/admin-reports-dialog.js";
+import { createManufacturerCatalogReviewDialogController } from "./src/ui/manufacturer-catalog-review-dialog.js";
 import { createConnectionStatusController } from "./src/ui/connection-status.js";
 import { shouldReportConnectionFailure } from "./src/sync/connection-failure-policy.js";
 import { createNetworkTransitionController } from "./src/sync/network-transition.js";
@@ -1153,6 +1158,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "publicListLightweightCatalog",
   "templateCopyMetadataSidecar",
   "adminUsageReports",
+  "manufacturerCatalogReview",
   "authUserCapabilities",
   "inAppMagicLinkConfirmation",
   "remotePhotoUrlImport",
@@ -1177,7 +1183,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-08-29.experiment-cors-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-08-30.catalog-review-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -1308,6 +1314,7 @@ let activeHistorySource = "private";
 let selectedHistoryDetailRecordKey = "";
 let historyNavigationContext = null;
 let adminReportsDialogController = null;
+let manufacturerCatalogReviewDialogController = null;
 let filterViewCollapseSignature = "";
 let filterViewCollapsedContainers = {};
 let filterMatchIndex = 0;
@@ -2004,6 +2011,20 @@ adminReportsDialogController = createAdminReportsDialogController({
   refs,
   fetchReports: () => fetchAdminReports(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
   canOpenAdmin: canOpenAdminPublishedEdit,
+  isForcedOffline,
+  openModalDialog,
+  showToast,
+  apiErrorMessage
+});
+
+manufacturerCatalogReviewDialogController = createManufacturerCatalogReviewDialogController({
+  refs,
+  fetchScans: () => fetchManufacturerCatalogScans(apiFetch, { timeoutMs: LIST_API_TIMEOUT_MS }),
+  saveDecision: (decision) => saveManufacturerCatalogDecision(apiFetch, {
+    ...decision,
+    timeoutMs: LIST_API_TIMEOUT_MS,
+  }),
+  canOpen: canReviewManufacturerCatalog,
   isForcedOffline,
   openModalDialog,
   showToast,
@@ -3243,6 +3264,7 @@ async function init() {
   });
   refs.historyBtn.addEventListener("click", openHistoryDialog);
   refs.adminReportsBtn?.addEventListener("click", () => adminReportsDialogController?.open());
+  refs.catalogUpdatesBtn?.addEventListener("click", () => manufacturerCatalogReviewDialogController?.open());
   refs.backupBtn?.addEventListener("click", openBackupDialog);
   refs.helpLimitsBtn?.addEventListener("click", openHelpLimitsDialog);
   refs.backupCreateBtn?.addEventListener("click", createBackupArchive);
@@ -5712,6 +5734,16 @@ function canOpenAdminPublishedEdit() {
   return isAdminSession();
 }
 
+function canReviewManufacturerCatalog() {
+  return Boolean(
+    currentUser &&
+    canPermission(FRONTEND_PERMISSION_ACTIONS.CATALOG_REVIEW, {
+      authorization: currentAuthorization,
+      serverSessionConfirmed: true
+    })
+  );
+}
+
 function isOfflineRememberedAdminSession() {
   return Boolean(
     !currentUser &&
@@ -5872,6 +5904,7 @@ function updateSyncUi(message = "") {
     rememberedStatus.sync;
   updateSyncUiControls({
     adminReportsDialogController,
+    manufacturerCatalogReviewDialogController,
     appUnlocked,
     canOpenAdminPublishedEdit,
     canUseLocalEditableState,

@@ -1,10 +1,12 @@
 export const FRONTEND_PERMISSION_ACTIONS = Object.freeze({
   ADMIN_SESSION: "admin.session",
+  CATALOG_REVIEW: "catalog.review",
   TEMPLATES_CATALOG_VIEW: "templates.catalog.view",
   TEMPLATES_WRITE: "templates.write"
 });
 
 export const FRONTEND_CAPABILITIES = Object.freeze({
+  CATALOG_REVIEW: "catalog:review",
   TEMPLATES_WRITE: "templates:write"
 });
 
@@ -43,6 +45,12 @@ export function can(action, {
     serverSessionConfirmed &&
     hasAuthCapability(authorization, FRONTEND_CAPABILITIES.TEMPLATES_WRITE)
   );
+  if (action === FRONTEND_PERMISSION_ACTIONS.CATALOG_REVIEW) {
+    return Boolean(
+      serverSessionConfirmed &&
+      hasAuthCapability(authorization, FRONTEND_CAPABILITIES.CATALOG_REVIEW)
+    );
+  }
   if (action === FRONTEND_PERMISSION_ACTIONS.TEMPLATES_CATALOG_VIEW) {
     return hasAuthCapability(authorization, FRONTEND_CAPABILITIES.TEMPLATES_WRITE);
   }

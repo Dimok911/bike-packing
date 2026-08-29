@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Catalog review visual fixture</title>
+    <link rel="stylesheet" href="../../styles.css" />
+  </head>
+  <body>
+    <dialog id="catalogUpdatesDialog" open>
+      <form method="dialog" class="dialog-card catalog-updates-dialog-card">
+        <header>
+          <h2>Обновления каталога</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note">Проверки сайтов производителей и очередь решений по найденным изменениям.</p>
+        <p class="dialog-status success">Обновлено: 30.08.2026, 12:00</p>
+        <div id="catalogUpdatesContent" class="catalog-updates-content"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+          <button type="button">Обновить</button>
+        </footer>
+      </form>
+    </dialog>
+    <script type="module">
+      import { renderManufacturerCatalogReview } from "../../src/ui/manufacturer-catalog-review-dialog.js";
+      if (new URLSearchParams(location.search).get("lang") === "en") {
+        document.documentElement.lang = "en";
+        document.querySelector("h2").textContent = "Catalog updates";
+        document.querySelector(".dialog-note").textContent = "Manufacturer website scans and a review queue for detected changes.";
+        document.querySelector('footer button[value="cancel"]').textContent = "Close";
+        document.querySelector('footer button[type="button"]').textContent = "Refresh";
+      }
+      const changes = Array.from({ length: 8 }, (_, index) => ({
+        id: `ortlieb:changed:model-${index}`,
+        manufacturer: "ORTLIEB",
+        productName: index ? `Model ${index}` : "Back-Roller",
+        type: index % 3 === 0 ? "added" : index % 3 === 1 ? "changed" : "missing",
+        sourceUrl: "https://www.ortlieb.com/",
+        fields: [{ field: "mountingOptions", before: ["Quick-Lock2.1"], after: ["Quick-Lock2.1", "Quick-Lock3.1"] }],
+        decision: index === 1 ? "approved" : "pending",
+      }));
+      document.querySelector("#catalogUpdatesContent").innerHTML = renderManufacturerCatalogReview({
+        scans: [{
+          id: "catalog-scan-20260830",
+          scannedAt: "2026-08-30T09:00:00.000Z",
+          summary: { products: 124 },
+          manufacturers: [
+            { id: "ortlieb", name: "ORTLIEB", productCount: 62, status: "complete" },
+            { id: "arkel", name: "Arkel", productCount: 62, status: "complete" },
+          ],
+          changes,
+        }],
+      });
+    </script>
+  </body>
+</html>

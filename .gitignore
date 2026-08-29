@@ -14,3 +14,7 @@ AGENTS.md
 
 # standalone backend repo
 bikepacking-api/
+
+# local manufacturer catalog scan artifacts
+manufacturer-catalog-scan.json
+manufacturer-catalog-scan.md

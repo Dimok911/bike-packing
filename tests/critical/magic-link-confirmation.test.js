@@ -40,11 +40,12 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /"magicLinkManualCodeDelivery"/);
   assert.match(appSource, /"slidingSessionRenewal"/);
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
-  assert.match(appSource, /2026-08-29\.experiment-cors-v1/);
+  assert.match(appSource, /2026-08-30\.catalog-review-v1/);
+  assert.match(appSource, /"manufacturerCatalogReview"/);
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1578"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1579"/);
 });
 
 test("production shell has no experimental banner and uses the production API", async () => {

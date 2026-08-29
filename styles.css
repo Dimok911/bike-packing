@@ -5774,6 +5774,7 @@ dialog {
 #historyDialog,
 #historyDetailDialog,
 #adminReportsDialog,
+#catalogUpdatesDialog,
 #backupDialog {
   width: min(760px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
@@ -6870,6 +6871,15 @@ button.touch-tooltip-open:active {
   padding-top: 10px;
   border-top: 1px solid var(--line);
   background: var(--panel);
+}
+
+.catalog-updates-dialog-card {
+  width: min(920px, calc(100vw - 24px));
+  height: min(820px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .manufacturer-comparison-filter-body {
@@ -10050,6 +10060,247 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   font-size: 13px;
 }
 
+.catalog-updates-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.catalog-review-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.catalog-review-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.catalog-review-summary strong {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.catalog-review-summary span,
+.catalog-review-manufacturer span,
+.catalog-review-manufacturer small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.catalog-review-manufacturers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-review-manufacturer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #5a9270;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.catalog-review-manufacturer.has-warning {
+  border-left-color: #b96f3c;
+}
+
+.catalog-review-manufacturer small {
+  grid-column: 1 / -1;
+}
+
+.catalog-review-safety-note {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.catalog-review-changes {
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-review-change {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #958f7e;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.catalog-review-change.type-added {
+  border-left-color: #4b9368;
+}
+
+.catalog-review-change.type-changed {
+  border-left-color: #b98539;
+}
+
+.catalog-review-change.type-missing {
+  border-left-color: #b85e55;
+}
+
+.catalog-review-change > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.catalog-review-change h4 {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+
+.catalog-review-change-type,
+.catalog-review-decision {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.catalog-review-change-type {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.catalog-review-decision {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #f0f1ee;
+  color: var(--muted);
+}
+
+.catalog-review-decision.decision-approved {
+  background: #e6f3e9;
+  color: #356c49;
+}
+
+.catalog-review-decision.decision-rejected {
+  background: #f7e7e4;
+  color: #914941;
+}
+
+.catalog-review-decision.decision-deferred {
+  background: #f6eddc;
+  color: #8a632c;
+}
+
+.catalog-review-fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.catalog-review-fields > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: #f7f8f5;
+}
+
+.catalog-review-fields dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.catalog-review-fields dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 7px;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.catalog-review-fields del {
+  color: #8d5650;
+}
+
+.catalog-review-fields ins {
+  color: #356c49;
+  text-decoration: none;
+}
+
+.catalog-review-change > a {
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.catalog-review-note {
+  display: grid;
+  gap: 5px;
+}
+
+.catalog-review-note span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.catalog-review-note textarea {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.catalog-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.catalog-review-actions button {
+  min-width: 110px;
+}
+
+.catalog-review-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.catalog-review-empty p {
+  margin: 5px 0 0;
+}
+
 .toast-region {
   position: fixed;
   right: 16px;
@@ -10315,6 +10566,10 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 }
 
 @media (max-width: 800px) {
+  .catalog-review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .admin-report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -10383,6 +10638,43 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 }
 
 @media (max-width: 520px) {
+  .catalog-updates-dialog-card {
+    width: calc(100vw - 12px);
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+  }
+
+  .catalog-review-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .catalog-review-change > header {
+    display: grid;
+  }
+
+  .catalog-review-decision {
+    width: fit-content;
+  }
+
+  .catalog-review-fields > div,
+  .catalog-review-fields dd {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .catalog-review-fields dd > span {
+    display: none;
+  }
+
+  .catalog-review-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .catalog-review-actions button {
+    min-width: 0;
+    padding-inline: 7px;
+  }
+
   .admin-report-grid {
     grid-template-columns: minmax(0, 1fr);
   }

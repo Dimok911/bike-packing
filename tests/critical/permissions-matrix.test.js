@@ -124,6 +124,26 @@ test("CRITICAL permissions: capability policy is deny-by-default and requires a 
   }), false);
 });
 
+test("CRITICAL permissions: catalog review requires its own confirmed server capability", () => {
+  const authorization = normalizeAuthAuthorization({
+    version: 1,
+    role: "admin",
+    capabilities: [FRONTEND_CAPABILITIES.CATALOG_REVIEW]
+  });
+  assert.equal(can(FRONTEND_PERMISSION_ACTIONS.CATALOG_REVIEW, {
+    authorization,
+    serverSessionConfirmed: true
+  }), true);
+  assert.equal(can(FRONTEND_PERMISSION_ACTIONS.CATALOG_REVIEW, {
+    authorization,
+    serverSessionConfirmed: false
+  }), false);
+  assert.equal(can(FRONTEND_PERMISSION_ACTIONS.CATALOG_REVIEW, {
+    authorization: { version: 1, role: "admin", capabilities: [FRONTEND_CAPABILITIES.TEMPLATES_WRITE] },
+    serverSessionConfirmed: true
+  }), false);
+});
+
 test("CRITICAL permissions: remembered server authorization grants only readonly admin catalog access", () => {
   const authorization = {
     version: 1,

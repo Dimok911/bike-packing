@@ -66,6 +66,13 @@ export function applyStaticTranslationsUi({
   setText(refs.sharedLayoutsBtn, t("menu.sharedLayouts"));
   setText(refs.shareListBtn, t("menu.shareList"));
   setText(refs.adminReportsBtn, t("menu.adminReports"));
+  setText(refs.catalogUpdatesBtn, t("menu.catalogUpdates"));
+  setText(refs.catalogUpdatesDialog?.querySelector("header h2"), uiLanguage === "en" ? "Catalog updates" : "Обновления каталога");
+  setText(refs.catalogUpdatesDialog?.querySelector(".dialog-note"), uiLanguage === "en"
+    ? "Manufacturer website scans and a review queue for detected changes."
+    : "Проверки сайтов производителей и очередь решений по найденным изменениям.");
+  setText(refs.catalogUpdatesDialog?.querySelector('footer button[value="cancel"]'), uiLanguage === "en" ? "Close" : "Закрыть");
+  setText(refs.catalogUpdatesRefreshBtn, uiLanguage === "en" ? "Refresh" : "Обновить");
   setText(refs.helpLimitsBtn, t("menu.help"));
   setText(refs.collectionMenuBtn, t("menu.collectionOff"));
   setText(refs.compareLayoutsMenuBtn, t("menu.compareLayouts"));

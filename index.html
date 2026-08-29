@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1578" />
+    <link rel="stylesheet" href="./styles.css?v=1579" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -46,6 +46,7 @@
               <button id="backupBtn" class="ghost menu-item auth-required" type="button">Бэкапы</button>
               <button id="helpLimitsBtn" class="ghost menu-item" type="button">Помощь</button>
               <button id="adminReportsBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Отчёты</button>
+              <button id="catalogUpdatesBtn" class="ghost menu-item auth-required admin-menu-item" type="button" hidden>Обновления каталога</button>
               <button id="exportBtn" class="ghost menu-item auth-required" type="button">Печать / PDF</button>
               <button id="visualStyleMenuBtn" class="ghost menu-item auth-required admin-menu-item" type="button">Варианты вида</button>
               <button id="signOutBtn" class="ghost menu-item danger" type="button" hidden>Выйти</button>
@@ -898,6 +899,22 @@
       </form>
     </dialog>
 
+    <dialog id="catalogUpdatesDialog">
+      <form method="dialog" class="dialog-card catalog-updates-dialog-card">
+        <header>
+          <h2>Обновления каталога</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p class="dialog-note">Проверки сайтов производителей и очередь решений по найденным изменениям.</p>
+        <p id="catalogUpdatesStatus" class="dialog-status" aria-live="polite"></p>
+        <div id="catalogUpdatesContent" class="catalog-updates-content"></div>
+        <footer>
+          <button value="cancel" class="ghost">Закрыть</button>
+          <button id="catalogUpdatesRefreshBtn" type="button">Обновить</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="backupDialog">
       <form method="dialog" class="dialog-card backup-dialog-card">
         <header>
@@ -961,6 +978,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1578" type="module"></script>
+    <script src="./app.js?v=1579" type="module"></script>
   </body>
 </html>
