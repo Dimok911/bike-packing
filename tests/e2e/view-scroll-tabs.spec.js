@@ -80,3 +80,27 @@ test("iPhone keeps an independent vertical position for every main tab", async (
   await selectViewWithoutAutoScroll(page, "settings");
   await expectViewportScrollNear(page, settingsTop);
 });
+
+test("a fast iPhone swipe cancels a pending tab viewport restore", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await setViewportScroll(page, 900);
+
+  await page.evaluate(() => {
+    document.querySelector('.tab[data-view="items"]').click();
+    const dispatchTouch = (type, clientY) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: [{ clientX: 180, clientY }]
+      });
+      document.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", 620);
+    dispatchTouch("touchmove", 470);
+    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+  });
+
+  await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(500);
+  await page.waitForTimeout(120);
+  expect(await viewportScrollTop(page)).toBeGreaterThan(500);
+});

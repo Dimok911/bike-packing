@@ -1076,7 +1076,10 @@ import {
   preventDoubleTapZoom,
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
-import { hasExplicitViewportScrollIntent } from "./src/ui/viewport-scroll-intent.js";
+import {
+  bindExplicitViewportScrollIntent,
+  hasExplicitViewportScrollIntent
+} from "./src/ui/viewport-scroll-intent.js";
 import { createDesktopInputLayoutController } from "./src/ui/desktop-input-layout.js";
 import { createMobileDialogFieldControls } from "./src/ui/mobile-dialog-field-controls.js";
 import {
@@ -2963,8 +2966,14 @@ async function init() {
   setupModalScrollLock();
   setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();
+  bindExplicitViewportScrollIntent({
+    documentRef: document,
+    onIntent: () => viewScrollMemory.cancelPendingRestore(),
+    windowRef: window
+  });
   window.addEventListener("pagehide", flushOpenEntityFormDrafts);
   document.addEventListener("pointerdown", (event) => {
+    viewScrollMemory.cancelPendingRestore();
     blurActiveEditableBeforeButtonAction(event, { ignoredButton: refs.saveRootContainerBtn });
   }, true);
 
@@ -10410,7 +10419,6 @@ function switchView(view) {
   refs.itemsView.classList.toggle("hidden", view !== "items");
   refs.bagsView.classList.toggle("hidden", view !== "bags");
   refs.settingsView.classList.toggle("hidden", view !== "settings");
-  renderFilters();
   renderSummary();
   updateViewScopedControls(view);
   updateFilterNavigationUi();
@@ -10572,7 +10580,10 @@ function preserveSearchBlurViewport() {
     updateSearchFocusState();
     return;
   }
-  const restore = () => restoreSearchBlurViewportLock(lock);
+  const restore = () => {
+    if (hasExplicitViewportScrollIntent()) return;
+    restoreSearchBlurViewportLock(lock);
+  };
   requestAnimationFrame(restore);
   window.setTimeout(restore, 80);
   window.setTimeout(restore, 180);

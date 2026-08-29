@@ -59,9 +59,34 @@ test("tab switching remembers the previous viewport before showing and restoring
   assert.match(switchViewSource, /const previousView = getCurrentView\(\);/);
   assert.match(switchViewSource, /viewScrollMemory\.remember\(previousView\);/);
   assert.match(switchViewSource, /viewScrollMemory\.restore\(view\);/);
+  const memorySetupSource = source.slice(
+    source.indexOf("const viewScrollMemory = createViewScrollMemory"),
+    source.indexOf("const locations =", source.indexOf("const viewScrollMemory = createViewScrollMemory"))
+  );
+  assert.match(
+    memorySetupSource,
+    /schedule: \(callback\) => window\.requestAnimationFrame\(callback\)/,
+    "tab scroll restoration must wait until the newly visible view has a measurable height"
+  );
+  assert.doesNotMatch(
+    switchViewSource,
+    /renderFilters\(\)/,
+    "switching views must not rebuild unchanged filter and category controls"
+  );
   assert.ok(
     switchViewSource.indexOf("viewScrollMemory.remember(previousView)")
       < switchViewSource.indexOf('refs.packingView.classList.toggle("hidden"'),
     "the outgoing view must be captured before its layout is hidden"
   );
+});
+
+test("every delayed search viewport restore yields to a later user scroll gesture", () => {
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const preserveSource = source.slice(
+    source.indexOf("function preserveSearchBlurViewport()"),
+    source.indexOf("function captureSearchBlurViewportLock()")
+  );
+
+  assert.match(preserveSource, /const restore = \(\) => \{\s*if \(hasExplicitViewportScrollIntent\(\)\) return;/);
+  assert.match(preserveSource, /window\.setTimeout\(restore, 360\);/);
 });
