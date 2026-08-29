@@ -6,6 +6,7 @@ import {
   magicLinkErrorI18nKey,
   magicLinkTokenFromInput
 } from "../../src/auth/magic-link-confirmation.js";
+import { adminApiWarningFromCapabilities } from "../../src/sync/admin-api-compat.js";
 
 test("magic link confirmation accepts a full link, pasted message, or raw code", () => {
   const token = "abcdefghijklmnopqrstuvwxyz_1234567890";
@@ -40,11 +41,32 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /"magicLinkManualCodeDelivery"/);
   assert.match(appSource, /"slidingSessionRenewal"/);
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
+  assert.match(appSource, /2026-08-30\.production-v1/);
   assert.match(appSource, /2026-08-29\.experiment-cors-v1/);
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1571"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1572"/);
+});
+
+test("admin compatibility bridge accepts the old and neutral production API versions", () => {
+  const options = {
+    appVersion: "v1572",
+    requiredVersion: "2026-08-30.production-v1",
+    compatibleVersions: ["2026-08-29.experiment-cors-v1"],
+    requiredCapabilities: [],
+    localText: (en) => en
+  };
+
+  assert.equal(adminApiWarningFromCapabilities({
+    apiCompatibilityVersion: "2026-08-29.experiment-cors-v1"
+  }, options), "");
+  assert.equal(adminApiWarningFromCapabilities({
+    apiCompatibilityVersion: "2026-08-30.production-v1"
+  }, options), "");
+  assert.match(adminApiWarningFromCapabilities({
+    apiCompatibilityVersion: "unrelated-version"
+  }, options), /requires API 2026-08-30\.production-v1/);
 });
 
 test("production shell has no experimental banner and uses the production API", async () => {

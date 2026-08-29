@@ -8,6 +8,7 @@ export function missingCapabilities(capabilities = [], requiredCapabilities = []
 export function adminApiWarningFromCapabilities(data, {
   appVersion = "",
   requiredVersion = "",
+  compatibleVersions = [],
   requiredCapabilities = [],
   localText = (_en, ru) => ru
 } = {}) {
@@ -19,7 +20,10 @@ export function adminApiWarningFromCapabilities(data, {
   if (!version) {
     return localText("Admin: the API did not return a compatibility version. Check the backend deployment before publishing templates.", "Админка: API не отдал версию совместимости. Проверьте деплой backend перед публикацией шаблонов.");
   }
-  if (version !== requiredVersion) {
+  const acceptedVersions = new Set([requiredVersion, ...(Array.isArray(compatibleVersions) ? compatibleVersions : [])]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean));
+  if (!acceptedVersions.has(version)) {
     return localText(`Admin: frontend ${appVersion} requires API ${requiredVersion}; the current version is ${version}.`, `Админка: фронт ${appVersion} ждёт API ${requiredVersion}, сейчас ${version}.`);
   }
   if (missing.length) {
