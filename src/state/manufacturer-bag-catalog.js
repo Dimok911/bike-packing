@@ -164,7 +164,7 @@ export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
   if (!selected) return { ...entry };
   const referenceWeight = Number(entry.weight || 0);
   const variantWeight = Number(selected.weight || 0);
-  const weightIsPlausible = variantWeight > 0 && (!referenceWeight
+  const weightIsPlausible = entry.variantWeightsAuthoritative !== false && variantWeight > 0 && (!referenceWeight
     || (variantWeight >= referenceWeight / 4 && variantWeight <= referenceWeight * 4));
   const volume = Number(selected.volume || entry.volume || 0);
   const mounting = String(selected.mounting || entry.mounting || "");
@@ -283,7 +283,7 @@ export function manufacturerBagContainerDraft(entry) {
   const volume = Number(volumeMetrics.total[0] || entry.volume || 0);
   const weight = Number(weightMetrics.total[0] || entry.weight || 0);
   const perBagVolume = Number(volumeMetrics.perBag[0] || 0);
-  const volumeSuffix = volume > 0
+  const volumeSuffix = volume > 0 && !entry.nameIncludesVolume
     ? ` ${volume} L${perBagVolume > 0 ? ` (${volumeMetrics.quantity} × ${perBagVolume} L)` : ""}`
     : "";
   const dimensions = entry.dimensions && typeof entry.dimensions === "object"

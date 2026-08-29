@@ -234,15 +234,27 @@ export function createManufacturerBagComparisonDialogController({
     if (!activeFilterAnchor || refs.bagCatalogCompareFilterPanel.hidden) return;
     const anchor = activeFilterAnchor.getBoundingClientRect();
     const panel = refs.bagCatalogCompareFilterPanel;
-    const panelWidth = Math.min(panel.offsetWidth || 340, Math.max(280, globalThis.innerWidth - 16));
+    const viewport = globalThis.visualViewport;
+    const viewportLeft = Number(viewport?.offsetLeft || 0);
+    const viewportTop = Number(viewport?.offsetTop || 0);
+    const viewportWidth = Number(viewport?.width || globalThis.innerWidth || 0);
+    const viewportHeight = Number(viewport?.height || globalThis.innerHeight || 0);
+    const panelWidth = Math.min(panel.offsetWidth || 340, Math.max(280, viewportWidth - 16));
     const panelHeight = panel.offsetHeight || 420;
-    const left = Math.max(8, Math.min(anchor.left, globalThis.innerWidth - panelWidth - 8));
+    const left = Math.max(viewportLeft + 8, Math.min(anchor.left, viewportLeft + viewportWidth - panelWidth - 8));
     const below = anchor.bottom + 6;
-    const top = below + panelHeight <= globalThis.innerHeight - 8
+    const top = below + panelHeight <= viewportTop + viewportHeight - 8
       ? below
-      : Math.max(8, anchor.top - panelHeight - 6);
+      : Math.max(viewportTop + 8, anchor.top - panelHeight - 6);
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
+    // A transformed mobile dialog becomes the containing block for fixed descendants.
+    // Correct the measured position so the panel still follows the visual viewport.
+    const positioned = panel.getBoundingClientRect();
+    const correctedLeft = left + (left - positioned.left);
+    const correctedTop = top + (top - positioned.top);
+    panel.style.left = `${Math.round(correctedLeft)}px`;
+    panel.style.top = `${Math.round(correctedTop)}px`;
   }
 
   function renderFilterPanel() {
@@ -465,6 +477,8 @@ export function createManufacturerBagComparisonDialogController({
     });
   });
   globalThis.addEventListener?.("resize", positionFilterPanel);
+  globalThis.visualViewport?.addEventListener?.("resize", positionFilterPanel);
+  globalThis.visualViewport?.addEventListener?.("scroll", positionFilterPanel);
 
   return { open, openDetail, render };
 }

@@ -153,7 +153,7 @@ export function manufacturerBagComparisonRows(catalog = [], category = "") {
     .filter((entry) => entry?.category === normalizedCategory)
     .map((entry) => {
       const referenceWeight = Number(entry?.weight || 0);
-      const plausibleVariantWeights = (Array.isArray(entry?.variants) ? entry.variants : [])
+      const plausibleVariantWeights = entry?.variantWeightsAuthoritative === false ? [] : (Array.isArray(entry?.variants) ? entry.variants : [])
         .map((variant) => Number(variant?.weight || 0))
         .filter((weight) => weight > 0 && (!referenceWeight
           || (weight >= referenceWeight / 4 && weight <= referenceWeight * 4)));

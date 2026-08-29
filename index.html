@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1577" />
+    <link rel="stylesheet" href="./styles.css?v=1578" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -446,24 +446,26 @@
             <strong id="bagCatalogCompareFilterTitle">Filter</strong>
             <button id="bagCatalogCompareFilterCloseBtn" class="icon-button" type="button" aria-label="Close">×</button>
           </header>
-          <div id="bagCatalogCompareSortActions" class="manufacturer-comparison-sort-actions">
-            <button id="bagCatalogCompareSortAscBtn" class="ghost" type="button">Sort ascending</button>
-            <button id="bagCatalogCompareSortDescBtn" class="ghost" type="button">Sort descending</button>
+          <div class="manufacturer-comparison-filter-body">
+            <div id="bagCatalogCompareSortActions" class="manufacturer-comparison-sort-actions">
+              <button id="bagCatalogCompareSortAscBtn" class="ghost" type="button">Sort ascending</button>
+              <button id="bagCatalogCompareSortDescBtn" class="ghost" type="button">Sort descending</button>
+            </div>
+            <div id="bagCatalogCompareRangeFields" class="manufacturer-comparison-range-fields" hidden>
+              <p id="bagCatalogCompareRangeHint"></p>
+              <label><span id="bagCatalogCompareRangeMinLabel">From</span><input id="bagCatalogCompareRangeMin" type="text" inputmode="decimal" /></label>
+              <label><span id="bagCatalogCompareRangeMaxLabel">To</span><input id="bagCatalogCompareRangeMax" type="text" inputmode="decimal" /></label>
+            </div>
+            <label class="manufacturer-comparison-filter-search">
+              <span id="bagCatalogCompareFilterSearchLabel" class="visually-hidden">Search values</span>
+              <input id="bagCatalogCompareFilterSearch" type="search" autocomplete="off" />
+            </label>
+            <div class="manufacturer-comparison-filter-selection-actions">
+              <button id="bagCatalogCompareFilterSelectAllBtn" class="ghost" type="button">Select all</button>
+              <button id="bagCatalogCompareFilterClearBtn" class="ghost" type="button">Clear all</button>
+            </div>
+            <div id="bagCatalogCompareFilterOptions" class="manufacturer-comparison-filter-options"></div>
           </div>
-          <div id="bagCatalogCompareRangeFields" class="manufacturer-comparison-range-fields" hidden>
-            <p id="bagCatalogCompareRangeHint"></p>
-            <label><span id="bagCatalogCompareRangeMinLabel">From</span><input id="bagCatalogCompareRangeMin" type="text" inputmode="decimal" /></label>
-            <label><span id="bagCatalogCompareRangeMaxLabel">To</span><input id="bagCatalogCompareRangeMax" type="text" inputmode="decimal" /></label>
-          </div>
-          <label class="manufacturer-comparison-filter-search">
-            <span id="bagCatalogCompareFilterSearchLabel" class="visually-hidden">Search values</span>
-            <input id="bagCatalogCompareFilterSearch" type="search" autocomplete="off" />
-          </label>
-          <div class="manufacturer-comparison-filter-selection-actions">
-            <button id="bagCatalogCompareFilterSelectAllBtn" class="ghost" type="button">Select all</button>
-            <button id="bagCatalogCompareFilterClearBtn" class="ghost" type="button">Clear all</button>
-          </div>
-          <div id="bagCatalogCompareFilterOptions" class="manufacturer-comparison-filter-options"></div>
           <footer>
             <button id="bagCatalogCompareFilterResetBtn" class="ghost" type="button">Reset filter</button>
             <button id="bagCatalogCompareFilterApplyBtn" type="button">Apply</button>
@@ -959,6 +961,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1577" type="module"></script>
+    <script src="./app.js?v=1578" type="module"></script>
   </body>
 </html>

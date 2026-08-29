@@ -8,6 +8,11 @@ import {
   MANUFACTURER_BAG_CATALOG_FAMILIES
 } from "../../src/data/manufacturer-bag-catalog.js";
 import {
+  assertManufacturerBagCatalogSkuModels,
+  manufacturerBagCatalogSkuModelGroups,
+  splitManufacturerBagCatalogSkuModels
+} from "../../src/data/manufacturer-bag-catalog-variants.js";
+import {
   filterManufacturerBagCatalog,
   manufacturerBagContainerDraft,
   manufacturerBagCatalogVariantChoices,
@@ -38,11 +43,11 @@ import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js"
 const root = resolve(import.meta.dirname, "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
-test("CRITICAL manufacturer catalog: complete ORTLIEB and Arkel model sets have bundled images", () => {
+test("CRITICAL manufacturer catalog: complete ORTLIEB and Arkel comparison rows have bundled images", () => {
   assert.deepEqual(MANUFACTURER_BAG_CATALOG_FAMILIES.map(({ id }) => id), ["bikepacking", "panniers", "carry"]);
-  assert.equal(MANUFACTURER_BAG_CATALOG.length, 87);
-  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 47);
-  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 40);
+  assert.equal(MANUFACTURER_BAG_CATALOG.length, 123);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 62);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 61);
   assert.equal(new Set(MANUFACTURER_BAG_CATALOG.map(({ id }) => id)).size, MANUFACTURER_BAG_CATALOG.length);
   assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ id }) => /quick-rack|organizer|bag-only/.test(id)));
   MANUFACTURER_BAG_CATALOG_CATEGORIES.forEach(({ id }) => {
@@ -62,11 +67,11 @@ test("CRITICAL manufacturer catalog: complete ORTLIEB and Arkel model sets have 
 test("CRITICAL manufacturer catalog: search covers SKU, Russian aliases and specifications", () => {
   assert.deepEqual(
     filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { query: "F9912" }).map(({ name }) => name),
-    ["Seat-Pack"]
+    ["Seat-Pack 11 L"]
   );
   const saddleMatches = filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { query: "подседельная" });
-  assert.ok(saddleMatches.some(({ id }) => id === "ortlieb-seat-pack"));
-  assert.ok(saddleMatches.some(({ id }) => id === "arkel-seatpacker-seat-bag-hanger-kit"));
+  assert.ok(saddleMatches.some(({ id }) => id === "ortlieb-seat-pack-11l"));
+  assert.ok(saddleMatches.some(({ id }) => id === "arkel-seatpacker-seat-bag-hanger-kit-9l"));
   assert.ok(filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { query: "Quick Lock3.1" })
     .some(({ name }) => name === "Gravel-Pack Single"));
   assert.ok(filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { query: "IP53" })
@@ -83,7 +88,7 @@ test("CRITICAL manufacturer catalog: bundled image becomes a normal uploadable p
       this.lastModified = options.lastModified;
     }
   }
-  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
+  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack-11l");
   const file = await fetchManufacturerBagCatalogImageFile(entry, {
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
@@ -101,7 +106,7 @@ test("CRITICAL manufacturer catalog: bundled image becomes a normal uploadable p
 });
 
 test("CRITICAL manufacturer catalog: selection prepares fields and a copied photo", async () => {
-  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
+  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack-11l");
   const photo = { id: "photo-catalog-copy", localId: "photo-catalog-copy", status: "pending" };
   const prepared = await prepareManufacturerBagCatalogImport(entry, {
     fetchImageFile: async () => ({ name: "f9912.jpg", type: "image/jpeg" }),
@@ -115,7 +120,7 @@ test("CRITICAL manufacturer catalog: selection prepares fields and a copied phot
 });
 
 test("CRITICAL manufacturer catalog: saved user bag owns the copied photo and source provenance", () => {
-  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-seatpacker-seat-bag-hanger-kit");
+  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-seatpacker-seat-bag-hanger-kit-9l");
   const draft = manufacturerBagContainerDraft(entry);
   const copiedPhoto = {
     id: "photo-catalog-copy",
@@ -156,7 +161,7 @@ test("CRITICAL manufacturer catalog: local admin override replaces only the edit
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value)
   };
-  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
+  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack-11l");
   writeManufacturerBagCatalogOverride({ id: entry.id, name: "First edit" }, storage);
   const rows = writeManufacturerBagCatalogOverride({ id: entry.id, name: "Second edit" }, storage);
   assert.equal(rows.length, 1);
@@ -174,7 +179,8 @@ test("CRITICAL manufacturer catalog: comparison never mixes bag types", () => {
   assert.ok(saddleRows.every(({ category }) => category === "saddle"));
   assert.ok(saddleRows.some(({ brand }) => brand === "ORTLIEB"));
   assert.ok(saddleRows.some(({ brand }) => brand === "Arkel"));
-  assert.deepEqual(saddleRows.find(({ id }) => id === "ortlieb-seat-pack").weightOptions, [346, 490]);
+  assert.deepEqual(saddleRows.find(({ id }) => id === "ortlieb-seat-pack-11l").weightOptions, [346]);
+  assert.deepEqual(saddleRows.find(({ id }) => id === "ortlieb-seat-pack-16-5l").weightOptions, [490]);
   assert.deepEqual(saddleRows.find(({ id }) => id === "arkel-saddle-bag").weightOptions, [55]);
   assert.equal(manufacturerBagComparisonRange([11, 16.5], "L"), "11–16.5 L");
   assert.deepEqual(manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, ""), []);
@@ -182,8 +188,8 @@ test("CRITICAL manufacturer catalog: comparison never mixes bag types", () => {
 
 test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges and combine manufacturers", () => {
   const saddleRows = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "saddle");
-  const seatPack = saddleRows.find(({ id }) => id === "ortlieb-seat-pack");
-  assert.deepEqual(manufacturerBagComparisonNumericBounds(seatPack, "volume"), { min: 11, max: 16.5 });
+  const seatPack = saddleRows.find(({ id }) => id === "ortlieb-seat-pack-16-5l");
+  assert.deepEqual(manufacturerBagComparisonNumericBounds(seatPack, "volume"), { min: 16.5, max: 16.5 });
   assert.equal(manufacturerBagComparisonFilterKey(seatPack, "manufacturer"), "ORTLIEB");
   assert.deepEqual(
     manufacturerBagComparisonFilterOptions(saddleRows, "manufacturer").map(({ key }) => key).sort(),
@@ -193,7 +199,7 @@ test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges
   const pointInsideRange = filterManufacturerBagComparisonRows(saddleRows, {
     volume: { min: 16.5, max: 16.5 }
   });
-  assert.ok(pointInsideRange.some(({ id }) => id === "ortlieb-seat-pack"));
+  assert.ok(pointInsideRange.some(({ id }) => id === "ortlieb-seat-pack-16-5l"));
 
   const filtered = filterManufacturerBagComparisonRows(saddleRows, {
     manufacturer: { selectedKeys: ["ORTLIEB"] },
@@ -201,7 +207,7 @@ test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges
   });
   assert.ok(filtered.length > 0);
   assert.ok(filtered.every(({ brand }) => brand === "ORTLIEB"));
-  assert.ok(filtered.some(({ id }) => id === "ortlieb-seat-pack"));
+  assert.ok(filtered.some(({ id }) => id === "ortlieb-seat-pack-16-5l"));
   assert.deepEqual(filterManufacturerBagComparisonRows(saddleRows, {
     manufacturer: { selectedKeys: [] }
   }), []);
@@ -293,23 +299,57 @@ test("CRITICAL manufacturer catalog: editing a per-bag value recalculates the pa
   assert.equal(edited.totalLoadKg, 20);
 });
 
-test("CRITICAL manufacturer catalog: meaningful size and mounting variants are selectable", () => {
-  const seatPack = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
-  const choices = manufacturerBagCatalogVariantChoices(seatPack);
-  assert.deepEqual(choices.map(({ volume }) => volume), [11, 16.5]);
-  const large = manufacturerBagCatalogVariantEntry(seatPack, "F9902");
-  assert.equal(large.sku, "F9902");
-  assert.equal(large.volume, 16.5);
-  assert.equal(large.weight, 490);
-  assert.deepEqual(large.dimensions, {});
+test("CRITICAL manufacturer catalog: SKU size models are rows while colors stay variants", () => {
+  const small = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-micro-bag-0-5l");
+  const large = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-micro-bag-0-8l");
+  assert.deepEqual(small.volumeOptions, [0.5]);
+  assert.deepEqual(large.volumeOptions, [0.8]);
+  assert.deepEqual(small.variants.map(({ sku }) => sku), ["F9664", "F9666", "F9665"]);
+  assert.deepEqual(large.variants.map(({ sku }) => sku), ["F9674", "F9675"]);
+  assert.equal(manufacturerBagCatalogVariantChoices(small).length, 1);
+  assert.equal(manufacturerBagContainerDraft(small).name, "ORTLIEB Micro-Bag 0.5 L");
+
+  MANUFACTURER_BAG_CATALOG.forEach((entry) => {
+    assert.equal(manufacturerBagCatalogSkuModelGroups(entry).length, 0, `${entry.id} still combines SKU models`);
+  });
 
   const arkelSaddle = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-saddle-bag");
   const corrected = manufacturerBagCatalogVariantEntry(arkelSaddle, "SB-RX30-BK");
   assert.equal(corrected.weight, 55, "bad upstream Shopify grams must not replace official technical weight");
 
-  const orca = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-orca-panniers");
-  const pair = manufacturerBagCatalogVariantEntry(orca, "ORCA2-25-R");
-  assert.equal(pair.soldAsSet, true);
+  const orcaPair = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-orca-panniers-12-5l-pair");
+  const orcaUnit = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-orca-panniers-12-5l-single");
+  assert.deepEqual(orcaPair.volumePerBagOptions, [12.5]);
+  assert.deepEqual(orcaPair.totalVolumeOptions, [25]);
+  assert.deepEqual(orcaPair.totalWeightOptions, [1400, 1550]);
+  assert.deepEqual(orcaUnit.volumeOptions, [12.5]);
+  assert.equal(orcaUnit.soldAsSet, false);
+});
+
+test("CRITICAL manufacturer catalog: true adjustable ranges are not split without distinct SKU values", () => {
+  const adjustable = {
+    id: "adjustable-seat-bag",
+    name: "Adjustable Seat Bag",
+    volume: 11,
+    volumeOptions: [11, 16.5],
+    variants: [
+      { sku: "BLACK", title: "black", volume: 0, mounting: "Straps", available: true },
+      { sku: "RED", title: "red", volume: 0, mounting: "Straps", available: true }
+    ]
+  };
+  const [normalized] = splitManufacturerBagCatalogSkuModels([adjustable]);
+  assert.equal(normalized.id, adjustable.id);
+  assert.deepEqual(normalized.volumeOptions, [11, 16.5]);
+  assert.deepEqual(normalized.variants.map(({ sku }) => sku), ["BLACK", "RED"]);
+  assert.doesNotThrow(() => assertManufacturerBagCatalogSkuModels([adjustable]));
+});
+
+test("CRITICAL manufacturer catalog: mounting systems stay in one row and preserve SKU provenance", () => {
+  const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l");
+  assert.deepEqual(backRoller.mountingOptions, ["Quick-Lock2.1", "Quick-Lock3.1"]);
+  assert.equal(backRoller.mounting, "Quick-Lock2.1 / Quick-Lock3.1");
+  assert.equal(backRoller.variants.find(({ sku }) => sku === "F5535").mounting, "Quick-Lock3.1");
+  assert.equal(manufacturerBagCatalogVariantChoices(backRoller).length, 2);
 });
 
 test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual copy", () => {
@@ -318,18 +358,24 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   const comparison = read("src/ui/manufacturer-bag-comparison-dialog.js");
   const appTail = read("src/app/app-tail-controllers.js");
   const i18n = read("src/data/i18n.js");
+  const styles = read("styles.css");
   assert.match(index, /id="openBagCatalogBtn"/);
   assert.match(index, /id="bagCatalogDialog"/);
   assert.match(index, /id="bagCatalogEditDialog"/);
   assert.match(index, /id="bagCatalogCompareDialog"/);
   assert.match(index, /id="bagCatalogCompareManufacturerBtn"/);
   assert.match(index, /id="bagCatalogCompareFilterPanel"/);
+  assert.match(index, /class="manufacturer-comparison-filter-body"/);
   assert.match(index, /id="bagCatalogProductDetailDialog"/);
   assert.match(controller, /await onSelect\(entry\)/);
   assert.match(controller, /data-bag-catalog-compare-category/);
   assert.match(comparison, /manufacturerBagComparisonRows/);
   assert.match(comparison, /manufacturerBagComparisonViewRows/);
   assert.match(comparison, /data-bag-comparison-detail/);
+  assert.match(comparison, /visualViewport/);
+  assert.match(styles, /grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(styles, /\.manufacturer-comparison-filter-body[\s\S]*overflow-y:\s*auto/);
+  assert.match(styles, /\.manufacturer-comparison-filter-panel > footer[\s\S]*border-top/);
   assert.match(appTail, /prepareManufacturerBagCatalogImport/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
   assert.equal((i18n.match(/"bagCatalog\.photoReady"/g) || []).length, 2);

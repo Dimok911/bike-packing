@@ -6839,9 +6839,12 @@ button.touch-tooltip-open:active {
   position: fixed;
   z-index: 30;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 10px;
   width: min(350px, calc(100vw - 16px));
-  max-height: min(560px, calc(100dvh - 16px));
+  height: min(560px, calc(100dvh - 16px));
+  max-height: calc(100dvh - 16px);
+  box-sizing: border-box;
   padding: 12px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -6864,6 +6867,18 @@ button.touch-tooltip-open:active {
 
 .manufacturer-comparison-filter-panel > footer {
   justify-content: flex-end;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.manufacturer-comparison-filter-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .manufacturer-comparison-sort-actions,
@@ -6924,9 +6939,20 @@ button.touch-tooltip-open:active {
   display: grid;
   gap: 3px;
   min-height: 60px;
-  max-height: 230px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+}
+
+@media (max-width: 600px) {
+  .manufacturer-comparison-filter-panel {
+    width: calc(100vw - 12px);
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+    padding: 10px;
+  }
+
+  .manufacturer-comparison-filter-panel > footer button {
+    flex: 1 1 0;
+  }
 }
 
 .manufacturer-comparison-filter-options label {

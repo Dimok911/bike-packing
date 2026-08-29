@@ -1,4 +1,8 @@
 import { MANUFACTURER_BAG_CATALOG_GENERATED } from "./manufacturer-bag-catalog.generated.js";
+import {
+  assertManufacturerBagCatalogSkuModels,
+  splitManufacturerBagCatalogSkuModels
+} from "./manufacturer-bag-catalog-variants.js";
 
 export const MANUFACTURER_BAG_CATALOG_FAMILIES = [
   {
@@ -99,4 +103,6 @@ export const MANUFACTURER_BAG_CATALOG_CATEGORIES = [
   }
 ];
 
-export const MANUFACTURER_BAG_CATALOG = MANUFACTURER_BAG_CATALOG_GENERATED;
+export const MANUFACTURER_BAG_CATALOG = assertManufacturerBagCatalogSkuModels(
+  splitManufacturerBagCatalogSkuModels(MANUFACTURER_BAG_CATALOG_GENERATED)
+);

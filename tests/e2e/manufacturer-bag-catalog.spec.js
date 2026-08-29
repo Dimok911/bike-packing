@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   createEmptyLayout,
   openApp,
+  prepareIsolatedEnglishGuest,
   prepareIsolatedRussianGuest,
 } from "./guest-test-helpers.js";
 
@@ -25,7 +26,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   const comparison = page.locator("#bagCatalogCompareDialog");
   await expect(comparison).toBeVisible();
-  await expect(comparison.locator("tbody tr")).toHaveCount(7);
+  await expect(comparison.locator("tbody tr")).toHaveCount(13);
   await expect(comparison).toContainText("ORTLIEB");
   await expect(comparison).toContainText("Arkel");
 
@@ -34,13 +35,13 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(filterPanel).toBeVisible();
   await filterPanel.locator("label", { hasText: "Arkel" }).locator('input[type="checkbox"]').uncheck();
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
-  await expect(comparison.locator("tbody tr")).toHaveCount(4);
+  await expect(comparison.locator("tbody tr")).toHaveCount(8);
   await expect(comparison.locator("tbody")).not.toContainText("Arkel");
 
-  await comparison.locator('[data-bag-comparison-detail="ortlieb-seat-pack"]').click();
+  await comparison.locator('[data-bag-comparison-detail="ortlieb-seat-pack-11l"]').click();
   const details = page.locator("#bagCatalogProductDetailDialog");
   await expect(details).toBeVisible();
-  await expect(details.locator("#bagCatalogProductDetailTitle")).toHaveText("ORTLIEB Seat-Pack");
+  await expect(details.locator("#bagCatalogProductDetailTitle")).toHaveText("ORTLIEB Seat-Pack 11 L");
   await expect(details).toContainText("Варианты производителя");
   await expect(details).toContainText("F9912");
   await details.locator('button[value="cancel"]').click();
@@ -58,9 +59,8 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await comparison.locator('button[value="cancel"]').click();
 
   await page.locator('[data-bag-catalog-category="saddle"]').click();
-  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(7);
-  await page.locator('[data-bag-catalog-variant-select="ortlieb-seat-pack"]').selectOption("F9902");
-  await page.locator('[data-bag-catalog-select="ortlieb-seat-pack"]').click();
+  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(13);
+  await page.locator('[data-bag-catalog-select="ortlieb-seat-pack-16-5l"]').click();
 
   await expect(page.locator("#bagCatalogDialog")).not.toBeVisible();
   await expect(page.locator("#rootContainerDialog")).toBeVisible();
@@ -69,6 +69,65 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#rootContainerVolume")).toHaveValue("16,5");
   await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1);
 });
+
+for (const scenario of [
+  { name: "desktop Russian", language: "ru", viewport: { width: 1280, height: 800 }, apply: "Применить", layoutName: "Проверка фильтров" },
+  { name: "mobile English", language: "en", viewport: { width: 390, height: 720 }, apply: "Apply", layoutName: "Filter panel" }
+]) {
+  test(`all comparison filters keep actions visible on ${scenario.name}`, async ({ page }) => {
+    if (scenario.language === "en") await prepareIsolatedEnglishGuest(page);
+    await page.setViewportSize(scenario.viewport);
+    await openApp(page);
+    await createEmptyLayout(page, scenario.layoutName);
+    await page.locator("[data-add-packing-root]").click();
+    await page.locator("#createRootForLayoutBtn").click();
+    await page.locator("#openBagCatalogBtn").click();
+    await page.locator('[data-bag-catalog-family="bikepacking"]').click();
+    await page.locator('[data-bag-catalog-compare-category="saddle"]').click();
+
+    const comparison = page.locator("#bagCatalogCompareDialog");
+    const panel = comparison.locator("#bagCatalogCompareFilterPanel");
+    const apply = panel.locator("#bagCatalogCompareFilterApplyBtn");
+    const columns = ["manufacturer", "model", "volume", "weight", "dimensions", "waterproof", "mounting", "set", "availability", "source"];
+
+    for (const column of columns) {
+      await comparison.locator(`[data-bag-comparison-filter="${column}"]`).click();
+      await expect(panel).toBeVisible();
+      await expect(apply).toBeVisible();
+      await expect(apply).toHaveText(scenario.apply);
+      const geometry = await panel.evaluate((element) => {
+        const panelRect = element.getBoundingClientRect();
+        const footerRect = element.querySelector("footer").getBoundingClientRect();
+        const viewport = window.visualViewport;
+        const top = viewport?.offsetTop || 0;
+        const bottom = top + (viewport?.height || window.innerHeight);
+        return {
+          panelTop: panelRect.top,
+          panelBottom: panelRect.bottom,
+          footerTop: footerRect.top,
+          footerBottom: footerRect.bottom,
+          viewportTop: top,
+          viewportBottom: bottom
+        };
+      });
+      expect(geometry.panelTop).toBeGreaterThanOrEqual(geometry.viewportTop - 1);
+      expect(geometry.panelBottom).toBeLessThanOrEqual(geometry.viewportBottom + 1);
+      expect(geometry.footerTop).toBeGreaterThanOrEqual(geometry.panelTop);
+      expect(geometry.footerBottom).toBeLessThanOrEqual(geometry.panelBottom + 1);
+      if (column === "volume" || column === "weight") {
+        await expect(panel.locator("#bagCatalogCompareRangeFields")).toBeVisible();
+      }
+      await panel.locator("#bagCatalogCompareFilterCloseBtn").click();
+    }
+
+    await comparison.locator('[data-bag-comparison-filter="model"]').click();
+    await panel.locator("#bagCatalogCompareSortAscBtn").click();
+    await expect(comparison.locator('[data-bag-comparison-heading="model"]')).toHaveAttribute("aria-sort", "ascending");
+    await comparison.locator('[data-bag-comparison-filter="weight"]').click();
+    await panel.locator("#bagCatalogCompareSortDescBtn").click();
+    await expect(comparison.locator('[data-bag-comparison-heading="weight"]')).toHaveAttribute("aria-sort", "descending");
+  });
+}
 
 test("ORTLIEB pair shows and imports the set total while preserving the per-bag value", async ({ page }) => {
   await openApp(page);
@@ -81,6 +140,8 @@ test("ORTLIEB pair shows and imports the set total while preserving the per-bag 
   await page.locator('[data-bag-catalog-compare-category="rear-pannier"]').click();
 
   const comparison = page.locator("#bagCatalogCompareDialog");
+  const singleBackRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l"]').locator("xpath=ancestor::tr");
+  await expect(singleBackRoller).toContainText("Quick-Lock2.1 / Quick-Lock3.1");
   const backRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l-pair"]').locator("xpath=ancestor::tr");
   await expect(backRoller).toContainText("40 л комплект (20 л × 2)");
 
