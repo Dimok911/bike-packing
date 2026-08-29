@@ -38,7 +38,7 @@ jobs:
         run: npm run build
 
       - name: Install browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Browser smoke
         run: npm run test:e2e
