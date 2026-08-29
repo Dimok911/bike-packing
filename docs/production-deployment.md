@@ -91,6 +91,26 @@ After both deployments:
 - do not report the production release as complete if either destination is
   unavailable or still serves the previous version.
 
+## Coupled API and frontend releases
+
+An API compatibility bump and the matching frontend expectation must be
+prepared and pushed before either side is deployed. Record both commit SHAs and
+check the two intermediate combinations: old frontend with new API, and new
+frontend with old API.
+
+If an intermediate combination would show the administrator compatibility
+warning, use a bridge rollout:
+
+1. publish a GitHub-checked frontend that accepts both the current and next API
+   contracts without requiring a next-only capability;
+2. deploy and externally verify the new API;
+3. publish the final frontend that requires only the new contract.
+
+Do not deploy the API first when that would knowingly leave the production
+frontend in a warning state. If such a mismatch is discovered after deployment,
+the release remains incomplete until the compatible frontend has passed GitHub
+and both production destinations have been updated and externally verified.
+
 FTP credentials and private keys must stay outside the repository,
 documentation, shell history, and build archives. Store them only in a secure
 local credential store or provide them temporarily for a deployment.
