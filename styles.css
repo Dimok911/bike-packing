@@ -5402,6 +5402,10 @@ mark {
     pointer-events: none;
   }
 
+  .items-list.with-photo-slots .item-card:has(.item-photo) .catalog-card-title-block > button.search-note-match-badge {
+    pointer-events: auto;
+  }
+
   .items-list.with-photo-slots:not(.with-meta-slots) .item-card .meta,
   .items-list.with-photo-slots .item-card small {
     display: none;
