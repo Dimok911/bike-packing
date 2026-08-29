@@ -1187,10 +1187,6 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "userDisplayName"
 ];
 const REQUIRED_ADMIN_API_VERSION = "2026-08-30.production-v1";
-const COMPATIBLE_ADMIN_API_VERSIONS = [
-  "2026-08-29.experiment-cors-v1",
-  REQUIRED_ADMIN_API_VERSION
-];
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
@@ -5801,7 +5797,6 @@ function adminApiWarningFromCapabilities(data) {
   return adminApiWarningFromCapabilitiesValue(data, {
     appVersion: APP_VERSION,
     requiredVersion: REQUIRED_ADMIN_API_VERSION,
-    compatibleVersions: COMPATIBLE_ADMIN_API_VERSIONS,
     requiredCapabilities: REQUIRED_ADMIN_API_CAPABILITIES,
     localText
   });

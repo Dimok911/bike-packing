@@ -42,30 +42,26 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /"slidingSessionRenewal"/);
   assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
   assert.match(appSource, /2026-08-30\.production-v1/);
-  assert.match(appSource, /2026-08-29\.experiment-cors-v1/);
+  assert.doesNotMatch(appSource, /COMPATIBLE_ADMIN_API_VERSIONS/);
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1572"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1573"/);
 });
 
-test("admin compatibility bridge accepts the old and neutral production API versions", () => {
+test("admin compatibility requires only the neutral production API version", () => {
   const options = {
-    appVersion: "v1572",
+    appVersion: "v1573",
     requiredVersion: "2026-08-30.production-v1",
-    compatibleVersions: ["2026-08-29.experiment-cors-v1"],
     requiredCapabilities: [],
     localText: (en) => en
   };
 
   assert.equal(adminApiWarningFromCapabilities({
-    apiCompatibilityVersion: "2026-08-29.experiment-cors-v1"
-  }, options), "");
-  assert.equal(adminApiWarningFromCapabilities({
     apiCompatibilityVersion: "2026-08-30.production-v1"
   }, options), "");
   assert.match(adminApiWarningFromCapabilities({
-    apiCompatibilityVersion: "unrelated-version"
+    apiCompatibilityVersion: "legacy-version"
   }, options), /requires API 2026-08-30\.production-v1/);
 });
 
