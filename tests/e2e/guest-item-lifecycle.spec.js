@@ -48,18 +48,19 @@ test("guest searches items and clears the search", async ({ page }) => {
   const { container } = await createGuestWorkspace(page, {
     layoutName: "Проверка поиска",
     containerName: "Сумка для поиска",
-    itemName: "Красный фонарь",
+    itemName: "Насос велосипедный электрический",
   });
   await createItemInContainer(page, container, "Синий насос");
 
-  await page.locator("#searchInput").fill("фонарь");
-  await expect(container.locator("[data-item-id]").filter({ hasText: "Красный фонарь" })).toBeVisible();
+  await page.locator("#searchInput").fill("насос электрический");
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" })).toBeVisible();
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" }).locator("mark")).toHaveCount(2);
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Синий насос" })).toHaveCount(0);
   await expect(page.locator("#clearSearchBtn")).toBeVisible();
 
   await page.locator("#clearSearchBtn").click();
   await expect(page.locator("#searchInput")).toHaveValue("");
-  await expect(container.locator("[data-item-id]").filter({ hasText: "Красный фонарь" })).toBeVisible();
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" })).toBeVisible();
   await expect(container.locator("[data-item-id]").filter({ hasText: "Синий насос" })).toBeVisible();
 });
 

@@ -12,6 +12,7 @@ import {
   renderSubcontainerSectionHtml
 } from "../../src/ui/packing-board-render.js";
 import { renderSearchNoteMatchBadge } from "../../src/ui/search-note-match.js";
+import { highlightSearchText } from "../../src/ui/search-highlight.js";
 import {
   createNoteSearchNavigator,
   findNoteSearchMatches
@@ -42,6 +43,22 @@ test("item search excludes fields handled by dedicated filters and placement UI"
 test("item search includes only the name and note", () => {
   assert.equal(matchesItemFieldsFilter(item, { ...options, query: "stove" }), true);
   assert.equal(matchesItemFieldsFilter(item, { ...options, query: "hot meals" }), true);
+});
+
+test("multi-word search requires every word without requiring an exact phrase", () => {
+  const electricPump = {
+    ...item,
+    name: "Насос велосипедный электрический",
+    note: "Зарядить перед поездкой"
+  };
+  assert.equal(matchesItemFieldsFilter(electricPump, { ...options, query: "насос электрический" }), true);
+  assert.equal(matchesItemFieldsFilter(electricPump, { ...options, query: "электрический насос" }), true);
+  assert.equal(matchesItemFieldsFilter(electricPump, { ...options, query: "насос ручной" }), false);
+  assert.equal(matchesItemFieldsFilter(electricPump, { ...options, query: "  НАСОС   электрический  " }), true);
+  assert.equal(
+    highlightSearchText(electricPump.name, "насос электрический"),
+    "<mark>Насос</mark> велосипедный <mark>электрический</mark>"
+  );
 });
 
 test("bag search includes only the name and note", () => {
@@ -164,6 +181,18 @@ test("note search navigation finds every full phrase without case sensitivity", 
     { start: 2, end: 4 }
   ]);
   assert.deepEqual(findNoteSearchMatches("text", ""), []);
+});
+
+test("note search navigation visits separate words when the full phrase is not contiguous", () => {
+  assert.deepEqual(findNoteSearchMatches(
+    "Электрический насос для велосипеда и запасной насос",
+    "насос электрический"
+  ), [
+    { start: 0, end: 13 },
+    { start: 14, end: 19 },
+    { start: 46, end: 51 }
+  ]);
+  assert.deepEqual(findNoteSearchMatches("Только электрический вариант", "насос электрический"), []);
 });
 
 test("note search navigation opens the first match and cycles through the rest", () => {

@@ -1,23 +1,38 @@
+import { searchQueryTerms } from "../state/catalog-search.js";
+
 function normalizedQuery(value) {
   return String(value || "").trim();
+}
+
+function termMatches(haystack, term) {
+  const matches = [];
+  let offset = 0;
+  while (offset <= haystack.length - term.length) {
+    const start = haystack.indexOf(term, offset);
+    if (start < 0) break;
+    matches.push({ start, end: start + term.length });
+    offset = start + Math.max(term.length, 1);
+  }
+  return matches;
 }
 
 export function findNoteSearchMatches(value, rawQuery) {
   const text = String(value || "");
   const query = normalizedQuery(rawQuery);
-  if (!text || !query) return [];
+  const terms = searchQueryTerms(query);
+  if (!text || !terms.length) return [];
 
   const haystack = text.toLocaleLowerCase();
-  const needle = query.toLocaleLowerCase();
-  const matches = [];
-  let offset = 0;
-  while (offset <= haystack.length - needle.length) {
-    const start = haystack.indexOf(needle, offset);
-    if (start < 0) break;
-    matches.push({ start, end: start + query.length });
-    offset = start + Math.max(needle.length, 1);
-  }
-  return matches;
+  if (!terms.every((term) => haystack.includes(term))) return [];
+
+  const phrase = terms.join(" ");
+  const phraseMatches = termMatches(haystack, phrase);
+  if (phraseMatches.length) return phraseMatches;
+
+  return terms
+    .flatMap((term) => termMatches(haystack, term))
+    .sort((a, b) => a.start - b.start || b.end - a.end)
+    .filter((match, index, matches) => index === 0 || match.start !== matches[index - 1].start || match.end !== matches[index - 1].end);
 }
 
 function copyTextareaStyle(source, target, windowRef) {
