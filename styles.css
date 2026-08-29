@@ -4458,6 +4458,7 @@ button.photo-gallery-slide.touch-feedback-active {
 button.search-note-match-badge {
   cursor: pointer;
   font-family: inherit;
+  pointer-events: auto;
 }
 
 button.search-note-match-badge:hover,
