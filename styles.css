@@ -1355,6 +1355,73 @@ button.filter-active.filter-no-results {
   color: var(--accent);
 }
 
+.note-search-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px 7px 11px;
+  border: 1px solid rgba(211, 94, 0, 0.38);
+  border-radius: 9px;
+  background: linear-gradient(90deg, rgba(255, 229, 124, 0.48), rgba(255, 248, 222, 0.92));
+  color: #6b3a00;
+  box-shadow: inset 3px 0 0 #ff8a00;
+}
+
+.note-search-copy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.note-search-status {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.note-search-query {
+  max-width: min(100%, 280px);
+  overflow: hidden;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #ffda73;
+  color: #3f2500;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-search-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.note-search-actions button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 32px;
+  padding: 0;
+  border-color: rgba(211, 94, 0, 0.32);
+  background: rgba(255, 255, 255, 0.74);
+  color: #7a4300;
+  font-size: 23px;
+  line-height: 1;
+}
+
+.note-search-navigation.single-match .note-search-actions {
+  display: none;
+}
+
+textarea.note-search-match-active {
+  border-color: rgba(211, 94, 0, 0.68);
+  box-shadow: 0 0 0 3px rgba(255, 138, 0, 0.13);
+}
+
 .add-item-search-field input {
   padding-right: 42px;
   -webkit-appearance: none;

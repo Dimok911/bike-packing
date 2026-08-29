@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1570" />
+    <link rel="stylesheet" href="./styles.css?v=1571" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -236,10 +236,20 @@
           </div>
           <input id="itemContainer" type="hidden" />
         </div>
-        <label>
-          Note
+        <div class="field-label note-field">
+          <label id="itemNoteLabel" for="itemNote">Note</label>
+          <div id="itemNoteSearchNav" class="note-search-navigation" hidden>
+            <span class="note-search-copy">
+              <span id="itemNoteSearchStatus" class="note-search-status" aria-live="polite"></span>
+              <mark id="itemNoteSearchQuery" class="note-search-query"></mark>
+            </span>
+            <span class="note-search-actions">
+              <button id="itemNoteSearchPrev" class="ghost" type="button" aria-label="Previous match" title="Previous match">‹</button>
+              <button id="itemNoteSearchNext" class="ghost" type="button" aria-label="Next match" title="Next match">›</button>
+            </span>
+          </div>
           <textarea id="itemNote" rows="3"></textarea>
-        </label>
+        </div>
         <div class="field-label item-photo-field">
           Photo
           <div id="itemPhotoPreview" class="item-photo-preview empty"></div>
@@ -340,10 +350,20 @@
             <button id="rootContainerDeleteForeverBtn" class="container-picker-button delete-forever-button" type="button" hidden>Удалить навсегда</button>
           </div>
         </div>
-        <label>
-          Notes
+        <div class="field-label note-field">
+          <label id="rootContainerNoteLabel" for="rootContainerNote">Notes</label>
+          <div id="rootContainerNoteSearchNav" class="note-search-navigation" hidden>
+            <span class="note-search-copy">
+              <span id="rootContainerNoteSearchStatus" class="note-search-status" aria-live="polite"></span>
+              <mark id="rootContainerNoteSearchQuery" class="note-search-query"></mark>
+            </span>
+            <span class="note-search-actions">
+              <button id="rootContainerNoteSearchPrev" class="ghost" type="button" aria-label="Previous match" title="Previous match">‹</button>
+              <button id="rootContainerNoteSearchNext" class="ghost" type="button" aria-label="Next match" title="Next match">›</button>
+            </span>
+          </div>
           <textarea id="rootContainerNote" rows="3"></textarea>
-        </label>
+        </div>
         <div class="field-label item-photo-field">
           Photo
           <div id="rootContainerPhotoPreview" class="item-photo-preview empty"></div>
@@ -939,6 +959,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1570" type="module"></script>
+    <script src="./app.js?v=1571" type="module"></script>
   </body>
 </html>

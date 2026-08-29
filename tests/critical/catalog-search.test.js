@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -11,6 +12,10 @@ import {
   renderSubcontainerSectionHtml
 } from "../../src/ui/packing-board-render.js";
 import { renderSearchNoteMatchBadge } from "../../src/ui/search-note-match.js";
+import {
+  createNoteSearchNavigator,
+  findNoteSearchMatches
+} from "../../src/ui/note-search-navigation.js";
 
 const item = {
   id: "item-1",
@@ -143,4 +148,90 @@ test("collapsed bags keep their own photo visible while hiding their contents", 
   assert.doesNotMatch(rootHtml, /data-test="root-contents"/);
   assert.match(nestedHtml, /data-test="own-photo"/);
   assert.match(nestedHtml, /class="subcontainer collapsed/);
+});
+
+test("note search navigation finds every full phrase without case sensitivity", () => {
+  assert.deepEqual(findNoteSearchMatches(
+    "MARKER first\nmarker second\nno match\nMarker third",
+    "  marker  "
+  ), [
+    { start: 0, end: 6 },
+    { start: 13, end: 19 },
+    { start: 36, end: 42 }
+  ]);
+  assert.deepEqual(findNoteSearchMatches("aaaa", "aa"), [
+    { start: 0, end: 2 },
+    { start: 2, end: 4 }
+  ]);
+  assert.deepEqual(findNoteSearchMatches("text", ""), []);
+});
+
+test("note search navigation opens the first match and cycles through the rest", () => {
+  const listeners = new Map();
+  const classes = new Set();
+  const classList = {
+    add(value) {
+      classes.add(value);
+    },
+    toggle(value, force) {
+      if (force) classes.add(value);
+      else classes.delete(value);
+    }
+  };
+  const button = () => ({
+    disabled: false,
+    addEventListener(type, listener) {
+      listeners.set(this === previousButton ? `previous:${type}` : `next:${type}`, listener);
+    }
+  });
+  const previousButton = button();
+  const nextButton = button();
+  const textarea = {
+    value: "marker at start\nand another marker later",
+    classList,
+    addEventListener(type, listener) {
+      listeners.set(`textarea:${type}`, listener);
+    }
+  };
+  const container = { hidden: true, classList };
+  const status = { textContent: "" };
+  const queryLabel = { textContent: "" };
+  const revealed = [];
+  const navigator = createNoteSearchNavigator({
+    container,
+    nextButton,
+    previousButton,
+    queryLabel,
+    requestAnimationFrame: (callback) => callback(),
+    revealMatch: (options) => revealed.push(options),
+    status,
+    t: (key, values) => key === "noteSearch.status" ? `${values.current} / ${values.total}` : key,
+    textarea
+  });
+
+  assert.equal(navigator.open("marker"), 2);
+  assert.equal(container.hidden, false);
+  assert.equal(status.textContent, "1 / 2");
+  assert.equal(queryLabel.textContent, "marker");
+  assert.deepEqual(revealed.at(-1), { textarea, start: 0, end: 6, scrollField: true });
+
+  listeners.get("next:click")({ preventDefault() {} });
+  assert.equal(status.textContent, "2 / 2");
+  assert.deepEqual(revealed.at(-1), { textarea, start: 28, end: 34, scrollField: false });
+
+  listeners.get("next:click")({ preventDefault() {} });
+  assert.equal(status.textContent, "1 / 2");
+  listeners.get("previous:click")({ preventDefault() {} });
+  assert.equal(status.textContent, "2 / 2");
+
+  textarea.value = "the phrase was removed";
+  listeners.get("textarea:input")();
+  assert.equal(container.hidden, true);
+  assert.equal(classes.has("note-search-match-active"), false);
+});
+
+test("item and bag dialogs activate note navigation only after they open", () => {
+  const sourceText = readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
+  assert.match(sourceText, /openModalDialog\(refs\.dialog\);[\s\S]{0,160}itemNoteSearchNavigator\.open\(refs\.searchInput\.value\)/);
+  assert.match(sourceText, /openModalDialog\(refs\.rootContainerDialog\);[\s\S]{0,160}rootContainerNoteSearchNavigator\.open\(refs\.searchInput\.value\)/);
 });

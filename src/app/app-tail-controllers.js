@@ -131,6 +131,7 @@ import {
   pickerListThumbnailHtml,
   syncPickerListPhotoToggle
 } from "../ui/picker-list-thumbnails.js";
+import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -417,6 +418,26 @@ export function createAppTailControllers(ctx) {
     userStorageScopeKey, visibleItemLayoutPlacementsForState, visibleSharedLayoutsForLanguage, withLayoutArrangementApplied,
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
+
+  const itemNoteSearchNavigator = createNoteSearchNavigator({
+    container: refs.itemNoteSearchNav,
+    nextButton: refs.itemNoteSearchNext,
+    previousButton: refs.itemNoteSearchPrev,
+    queryLabel: refs.itemNoteSearchQuery,
+    status: refs.itemNoteSearchStatus,
+    t,
+    textarea: refs.itemNote
+  });
+
+  const rootContainerNoteSearchNavigator = createNoteSearchNavigator({
+    container: refs.rootContainerNoteSearchNav,
+    nextButton: refs.rootContainerNoteSearchNext,
+    previousButton: refs.rootContainerNoteSearchPrev,
+    queryLabel: refs.rootContainerNoteSearchQuery,
+    status: refs.rootContainerNoteSearchStatus,
+    t,
+    textarea: refs.rootContainerNote
+  });
 
 const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
   MANUFACTURER_BAG_CATALOG,
@@ -5902,6 +5923,7 @@ function openRootContainerDialog(containerId = null, {
   updateRootContainerDialogSaveState();
   openModalDialog(refs.rootContainerDialog);
   resetDialogScrollPosition(refs.rootContainerDialog);
+  rootContainerNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function fillRootContainerLocationSelect(selected = "") {
@@ -5969,6 +5991,7 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   updateItemDialogSaveState();
   openModalDialog(refs.dialog);
   resetDialogScrollPosition(refs.dialog);
+  itemNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function sharedRecordContainerPath(sourceState, containerId) {
@@ -6058,6 +6081,7 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
   await updateItemDialogPhotoPreview(normalizeItemPhotos(item));
   setSharedReadonlyItemDialog(true);
   openModalDialog(refs.dialog);
+  itemNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function setSharedReadonlyItemDialog(readonly) {
@@ -6156,6 +6180,7 @@ async function openSharedReadonlyContainerDialog(sourceContainerId) {
   await updateRootContainerDialogPhotoPreview(normalizeItemPhotos(container));
   setSharedReadonlyRootContainerDialog(true);
   openModalDialog(refs.rootContainerDialog);
+  rootContainerNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function setSharedReadonlyRootContainerDialog(readonly) {

@@ -63,6 +63,51 @@ test("guest searches items and clears the search", async ({ page }) => {
   await expect(container.locator("[data-item-id]").filter({ hasText: "Синий насос" })).toBeVisible();
 });
 
+test("search opens an item at the matching note text and navigates repeated matches", async ({ page }) => {
+  const query = "контрольная метка";
+  const note = [
+    `${query} в начале заметки`,
+    ...Array.from({ length: 45 }, (_, index) => `Подробная строка ${index + 1} о подготовке к поездке.`),
+    `${query} в середине заметки`,
+    ...Array.from({ length: 35 }, (_, index) => `Дополнительная строка ${index + 1} со списком снаряжения.`),
+    `${query} в конце заметки`
+  ].join("\n");
+  const { item } = await createGuestWorkspace(page, {
+    layoutName: "Навигация по заметке",
+    containerName: "Сумка с подробностями",
+    itemName: "Предмет с длинной заметкой",
+  });
+
+  await item.locator(".item-title-hitarea").click();
+  await page.locator("#itemNote").fill(note);
+  await page.locator("#saveItemBtn").click();
+
+  await page.locator("#searchInput").fill(query);
+  const result = page.locator("#packingView [data-item-id]").filter({ hasText: "Предмет с длинной заметкой" });
+  await expect(result.locator(".search-note-match-badge")).toBeVisible();
+  await result.locator(".item-title-hitarea").click();
+
+  const navigation = page.locator("#itemNoteSearchNav");
+  const textarea = page.locator("#itemNote");
+  await expect(navigation).toBeVisible();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
+  await expect(page.locator("#itemNoteSearchQuery")).toHaveText(query);
+  await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query));
+  await expect(textarea).toHaveJSProperty("selectionEnd", note.indexOf(query) + query.length);
+
+  await page.locator("#itemNoteSearchNext").click();
+  const secondStart = note.indexOf(query, query.length);
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 2 из 3");
+  await expect(textarea).toHaveJSProperty("selectionStart", secondStart);
+  await expect(textarea).toHaveJSProperty("selectionEnd", secondStart + query.length);
+  await expect.poll(() => textarea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.locator("#itemNoteSearchNext").click();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 3 из 3");
+  await page.locator("#itemNoteSearchNext").click();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
+});
+
 test("guest filters packed items and unpacks everything with state kept after reload", async ({ page }) => {
   const itemName = "Собранная аптечка";
   const unpackedItemName = "Несобранная фляга";
