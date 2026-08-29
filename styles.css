@@ -5363,6 +5363,27 @@ mark {
     overflow: hidden;
   }
 
+  .items-list.with-photo-slots .item-card:has(.item-photo) {
+    position: relative;
+  }
+
+  .items-list.with-photo-slots .item-card:has(.item-photo) .item-card-top {
+    overflow: visible;
+  }
+
+  .items-list.with-photo-slots .item-card:has(.item-photo) .catalog-card-title-block > .search-note-match-badge {
+    position: absolute;
+    z-index: 4;
+    top: calc(var(--photo-top-row-height) + 76px);
+    left: 16px;
+    max-width: calc(100% - 32px);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
   .items-list.with-photo-slots:not(.with-meta-slots) .item-card .meta,
   .items-list.with-photo-slots .item-card small {
     display: none;

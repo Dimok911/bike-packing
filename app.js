@@ -1155,6 +1155,7 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "adminUsageReports",
   "authUserCapabilities",
   "inAppMagicLinkConfirmation",
+  "remotePhotoUrlImport",
   "magicLinkManualCodeDelivery",
   "collectionModeStateSync",
   "publicTemplateDetachedCatalogItems",

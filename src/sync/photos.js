@@ -609,25 +609,40 @@ export async function resolveUploadedPhotoByContentHash({
   return null;
 }
 
-export async function createItemPhotoFromFile(file) {
+export async function createItemPhotoFromFile(file, {
+  cachePhoto = putCachedPhoto,
+  dimensionsForFile = imageFileDimensions,
+  materializeFile = materializeSelectedPhotoFile,
+  now = nowIso,
+  resizeFile = resizeImageFile
+} = {}) {
   if (!file || (!file.type?.startsWith("image/") && !isSvgImageFile(file))) {
     throw new Error("Выберите файл изображения.");
   }
   const photoId = `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const source = await materializeSelectedPhotoFile(file);
-  const full = await resizeImageFile(source, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY, {
-    targetBytes: ITEM_PHOTO_TARGET_BYTES
-  });
-  const thumb = await resizeImageFile(source, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY, {
-    targetBytes: ITEM_PHOTO_THUMB_TARGET_BYTES
-  });
-  const createdAt = nowIso();
-  await putCachedPhoto({
+  const source = await materializeFile(file);
+  let full;
+  let thumbBlob = null;
+  if (isGifImageFile(source)) {
+    const dimensions = await dimensionsForFile(source);
+    full = { blob: source, width: dimensions.width, height: dimensions.height };
+  } else {
+    full = await resizeFile(source, ITEM_PHOTO_MAX_SIZE, ITEM_PHOTO_QUALITY, {
+      targetBytes: ITEM_PHOTO_TARGET_BYTES
+    });
+    const thumb = await resizeFile(source, ITEM_PHOTO_THUMB_SIZE, ITEM_PHOTO_QUALITY, {
+      targetBytes: ITEM_PHOTO_THUMB_TARGET_BYTES
+    });
+    thumbBlob = thumb.blob;
+  }
+  const createdAt = now();
+  const fileName = gifPhotoFileName(file.name || source.name || "", full.blob.type);
+  await cachePhoto({
     id: photoId,
     blob: full.blob,
-    thumbBlob: thumb.blob,
+    thumbBlob,
     fullBlobVerified: true,
-    fileName: file.name || "item-photo.jpg",
+    fileName: fileName || "item-photo.jpg",
     type: full.blob.type || "image/jpeg",
     size: full.blob.size,
     width: full.width,
@@ -641,7 +656,7 @@ export async function createItemPhotoFromFile(file) {
     status: "pending",
     url: "",
     thumbUrl: "",
-    fileName: file.name || "",
+    fileName,
     type: full.blob.type || "image/jpeg",
     size: full.blob.size,
     width: full.width,
@@ -650,6 +665,31 @@ export async function createItemPhotoFromFile(file) {
     updatedAt: createdAt,
     error: ""
   };
+}
+
+export function isGifImageFile(file) {
+  const type = String(file?.type || "").trim().toLowerCase();
+  const name = String(file?.name || "").trim().toLowerCase();
+  return type === "image/gif" || name.endsWith(".gif");
+}
+
+function gifPhotoFileName(name, type) {
+  const value = String(name || "").trim();
+  if (String(type || "").toLowerCase() !== "image/gif") return value;
+  if (/\.gif$/i.test(value)) return value;
+  return value ? `${value.replace(/\.[^.]+$/, "")}.gif` : "item-photo.gif";
+}
+
+export async function imageFileDimensions(file) {
+  const bitmap = await loadImageBitmap(file);
+  try {
+    return {
+      width: Math.max(1, Number(bitmap?.width || bitmap?.naturalWidth || 1)),
+      height: Math.max(1, Number(bitmap?.height || bitmap?.naturalHeight || 1))
+    };
+  } finally {
+    if (typeof bitmap?.close === "function") bitmap.close();
+  }
 }
 
 export async function materializeSelectedPhotoFile(file, {

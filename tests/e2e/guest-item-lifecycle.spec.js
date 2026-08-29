@@ -81,12 +81,36 @@ test("search opens an item at the matching note text and navigates repeated matc
 
   await item.locator(".item-title-hitarea").click();
   await page.locator("#itemNote").fill(note);
+  await page.locator("#itemPhotoInput").setInputFiles({
+    name: "note-match.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#d7e4df"/></svg>')
+  });
+  await expect(page.locator("#itemPhotoPreview img")).toBeVisible();
   await page.locator("#saveItemBtn").click();
 
+  await page.locator('.tab[data-view="items"]').click();
   await page.locator("#searchInput").fill(query);
-  const result = page.locator("#packingView [data-item-id]").filter({ hasText: "Предмет с длинной заметкой" });
+  const result = page.locator("#itemsView .items-list .item-card").filter({ hasText: "Предмет с длинной заметкой" });
   await expect(result.locator(".search-note-match-badge")).toBeVisible();
-  await result.locator(".item-title-hitarea").click();
+  await expect(result.locator(".item-photo")).toBeVisible();
+  const badgePlacement = await result.evaluate((card) => {
+    const badge = card.querySelector(".search-note-match-badge")?.getBoundingClientRect();
+    const photo = card.querySelector(".item-photo")?.getBoundingClientRect();
+    return badge && photo ? {
+      badgeBottom: badge.bottom,
+      badgeTop: badge.top,
+      cardBottom: card.getBoundingClientRect().bottom,
+      cardTop: card.getBoundingClientRect().top,
+      photoBottom: photo.bottom,
+      photoTop: photo.top
+    } : null;
+  });
+  expect(badgePlacement.badgeTop).toBeGreaterThanOrEqual(badgePlacement.cardTop);
+  expect(badgePlacement.badgeBottom).toBeLessThanOrEqual(badgePlacement.cardBottom);
+  expect(badgePlacement.badgeTop).toBeGreaterThanOrEqual(badgePlacement.photoTop);
+  expect(badgePlacement.badgeTop).toBeLessThan(badgePlacement.photoBottom);
+  await result.locator(".item-title").click();
 
   const navigation = page.locator("#itemNoteSearchNav");
   const textarea = page.locator("#itemNote");

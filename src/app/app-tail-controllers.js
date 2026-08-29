@@ -27,6 +27,7 @@ import {
   readClipboardImageFiles,
   readPhotoPasteEventImageFiles
 } from "../ui/photo-clipboard.js";
+import { fetchClipboardImageSource } from "../sync/remote-image-import.js";
 import {
   isContainerReplacementCandidateInLayoutState,
   isTemporaryContainerInLayoutState,
@@ -7975,9 +7976,10 @@ async function handleDialogPhotoPaste(event, kind = "item") {
   const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
   const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (directFiles.length) event.preventDefault();
-  const files = directFiles.length
-    ? directFiles
-    : await readPhotoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
+  const files = await readPhotoPasteEventImageFiles(event, {
+    directReadPending: Boolean(request),
+    fetchImpl: fetchClipboardImageSource
+  });
   if (!files.length) return;
   event.preventDefault();
   processDialogPhotoPasteFiles(files, kind, request);
@@ -7988,7 +7990,10 @@ function handleActivePhotoClipboardPaste(event) {
   if (!request) return;
   event.__bikePackingActivePhotoPaste = true;
   event.preventDefault();
-  request.pasteEventProcessing = readPhotoPasteEventImageFiles(event, { directReadPending: true })
+  request.pasteEventProcessing = readPhotoPasteEventImageFiles(event, {
+    directReadPending: true,
+    fetchImpl: fetchClipboardImageSource
+  })
     .then((files) => {
       if (!files.length) return null;
       return processDialogPhotoPasteFiles(files, request.kind, request);
@@ -8019,7 +8024,7 @@ async function handlePhotoPasteButtonClick(event, kind = "item") {
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
   try {
-    const files = await readClipboardImageFiles(navigator.clipboard);
+    const files = await readClipboardImageFiles(navigator.clipboard, { fetchImpl: fetchClipboardImageSource });
     if (request.handled) {
       await request.processing;
       return;

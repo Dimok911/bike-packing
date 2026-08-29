@@ -33,6 +33,12 @@ const options = {
   containerPath: () => "Rear rack bag / Cooking pouch"
 };
 
+test("note match badge overlays the desktop photo instead of being clipped from the title row", () => {
+  const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+  assert.match(styles, /\.items-list\.with-photo-slots \.item-card:has\(\.item-photo\) \.item-card-top \{[\s\S]*?overflow:\s*visible;/);
+  assert.match(styles, /\.item-card:has\(\.item-photo\) \.catalog-card-title-block > \.search-note-match-badge \{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*calc\(var\(--photo-top-row-height\) \+ 76px\);/);
+});
+
 test("item search excludes fields handled by dedicated filters and placement UI", () => {
   assert.equal(matchesItemFieldsFilter(item, { ...options, query: "rear rack" }), false);
   assert.equal(matchesItemFieldsFilter(item, { ...options, query: "cooking pouch" }), false);
