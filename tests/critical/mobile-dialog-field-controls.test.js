@@ -26,8 +26,8 @@ test("mobile edit dialogs expose touch controls while category swipes belong to 
 
   assert.match(html, /id="itemNoteResizeHandle"/);
   assert.match(html, /id="rootContainerNoteResizeHandle"/);
-  assert.match(html, /id="itemCategoryScroll"[^>]+type="range"/);
-  assert.match(html, /id="rootContainerCategoryScroll"[^>]+type="range"/);
+  assert.match(html, /id="itemCategoryScroll"[^>]+type="range"[^>]+data-modal-scroll-control/);
+  assert.match(html, /id="rootContainerCategoryScroll"[^>]+type="range"[^>]+data-modal-scroll-control/);
   assert.match(styles, /\.category-picker-shell\[data-scrollable\] \.category-picker\s*\{[^}]*overflow-y:\s*hidden;[^}]*touch-action:\s*pan-y;/s);
   assert.match(styles, /\.mobile-note-resize-handle\s*\{[^}]*touch-action:\s*none;/s);
 });

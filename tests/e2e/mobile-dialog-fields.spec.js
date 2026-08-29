@@ -30,6 +30,31 @@ test("iPhone resizes the note and scrolls categories only with the side control"
   await expect.poll(() => categoryScroll.evaluate((control) => Number(control.max))).toBeGreaterThan(100);
 
   const dialogCard = page.locator("#itemDialog .dialog-card");
+  await expect(dialogCard).toHaveJSProperty("scrollTop", 0);
+  const sliderTouchWasBlocked = await categoryScroll.evaluate((control) => {
+    const dispatchTouch = (type, clientY) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: [{ clientX: 360, clientY }]
+      });
+      control.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    dispatchTouch("touchstart", 300);
+    return dispatchTouch("touchmove", 360);
+  });
+  expect(sliderTouchWasBlocked).toBe(false);
+
+  await categoryScroll.evaluate((control) => {
+    control.value = String(Math.round(Number(control.max) * 0.65));
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect.poll(() => categoryList.evaluate((list) => list.scrollTop)).toBeGreaterThan(100);
+
+  await categoryScroll.evaluate((control) => {
+    control.value = "0";
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   const cardTopBefore = await dialogCard.evaluate((card) => card.scrollTop);
   await expect(categoryList).toHaveCSS("overflow-y", "hidden");
   await dialogCard.evaluate((card) => {
@@ -38,12 +63,6 @@ test("iPhone resizes the note and scrolls categories only with the side control"
   });
   await expect.poll(() => dialogCard.evaluate((card) => card.scrollTop)).toBeGreaterThan(cardTopBefore + 40);
   await expect(categoryList).toHaveJSProperty("scrollTop", 0);
-
-  await categoryScroll.evaluate((control) => {
-    control.value = String(Math.round(Number(control.max) * 0.65));
-    control.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await expect.poll(() => categoryList.evaluate((list) => list.scrollTop)).toBeGreaterThan(100);
 
   const note = page.locator("#itemNote");
   const resizeHandle = page.locator("#itemNoteResizeHandle");

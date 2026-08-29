@@ -115,6 +115,7 @@ export function createModalScrollLockController() {
     if (!modalScrollLock) return;
     const dialog = event.target.closest?.("dialog");
     if (dialog?.open) {
+      if (event.target.closest?.("[data-modal-scroll-control]")) return;
       // A gesture-owned dialog (for example the fullscreen photo gallery)
       // resolves horizontal swipes and zoom itself. When it is opened above
       // an edit dialog, the background lock must not cancel those events.
