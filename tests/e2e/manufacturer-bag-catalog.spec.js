@@ -69,3 +69,38 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#rootContainerVolume")).toHaveValue("16,5");
   await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1);
 });
+
+test("ORTLIEB pair shows and imports the set total while preserving the per-bag value", async ({ page }) => {
+  await openApp(page);
+  await createEmptyLayout(page, "Пара паниров");
+
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#openBagCatalogBtn").click();
+  await page.locator('[data-bag-catalog-family="panniers"]').click();
+  await page.locator('[data-bag-catalog-compare-category="rear-pannier"]').click();
+
+  const comparison = page.locator("#bagCatalogCompareDialog");
+  const backRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l-pair"]').locator("xpath=ancestor::tr");
+  await expect(backRoller).toContainText("40 л комплект (20 л × 2)");
+
+  await comparison.locator('[data-bag-comparison-filter="volume"]').click();
+  const filterPanel = comparison.locator("#bagCatalogCompareFilterPanel");
+  await filterPanel.locator("#bagCatalogCompareRangeMin").fill("40");
+  await filterPanel.locator("#bagCatalogCompareRangeMax").fill("40");
+  await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
+  await expect(comparison.locator("tbody")).toContainText("Back-Roller Pair");
+
+  await comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l-pair"]').click();
+  const details = page.locator("#bagCatalogProductDetailDialog");
+  await expect(details).toContainText("На сайте производителя — на одну сумку");
+  await expect(details).toContainText("40 л комплект (20 л × 2)");
+  await details.locator('button[value="cancel"]').click();
+  await comparison.locator('button[value="cancel"]').click();
+
+  await page.locator('[data-bag-catalog-category="rear-pannier"]').click();
+  await page.locator('[data-bag-catalog-select="ortlieb-back-roller-20l-pair"]').click();
+  await expect(page.locator("#rootContainerName")).toHaveValue("ORTLIEB Back-Roller Pair 40 L (2 × 20 L)");
+  await expect(page.locator("#rootContainerWeight")).toHaveValue("1900");
+  await expect(page.locator("#rootContainerVolume")).toHaveValue("40");
+});

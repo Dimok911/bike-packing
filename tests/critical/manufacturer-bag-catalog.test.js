@@ -231,6 +231,68 @@ test("CRITICAL manufacturer catalog: ORTLIEB Vario models are convertible pannie
   assert.ok(varioRows.every(({ description }) => /трансформер/i.test(description.ru)));
 });
 
+test("CRITICAL manufacturer catalog: ORTLIEB pair specifications keep per-bag values and explicit set totals", () => {
+  const expected = new Map([
+    ["ortlieb-back-roller-20l-pair", [20, 40]],
+    ["ortlieb-back-roller-35l-mesh-pocket-pair", [35, 70]],
+    ["ortlieb-bike-packer", [20, 40]],
+    ["ortlieb-bike-packer-plus", [21, 42]],
+    ["ortlieb-gravel-pack", [14.5, 29]],
+    ["ortlieb-sport-packer", [15, 30]],
+    ["ortlieb-sport-roller-pair", [14.5, 29]]
+  ]);
+  const rows = MANUFACTURER_BAG_CATALOG.filter(({ id }) => expected.has(id));
+  assert.equal(rows.length, expected.size);
+  rows.forEach((entry) => {
+    const [perBag, total] = expected.get(entry.id);
+    assert.equal(entry.soldAsSet, true);
+    assert.equal(entry.specificationBasis, "per-bag");
+    assert.equal(entry.setQuantity, 2);
+    assert.deepEqual(entry.volumePerBagOptions, [perBag]);
+    assert.deepEqual(entry.totalVolumeOptions, [total]);
+    assert.match(entry.description.ru, new RegExp(`${total} L за пару`));
+  });
+});
+
+test("CRITICAL manufacturer catalog: ORTLIEB pair comparison and import use set totals without losing per-bag provenance", () => {
+  const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l-pair");
+  const comparison = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier")
+    .find(({ id }) => id === backRoller.id);
+  assert.deepEqual(comparison.volumeOptions, [40]);
+  assert.deepEqual(comparison.volumePerBagOptions, [20]);
+  assert.deepEqual(manufacturerBagComparisonNumericBounds(comparison, "volume"), { min: 40, max: 40 });
+  assert.ok(filterManufacturerBagComparisonRows([comparison], { volume: { min: 40, max: 40 } }).length);
+  assert.deepEqual(filterManufacturerBagComparisonRows([comparison], { volume: { min: 20, max: 20 } }), []);
+
+  const draft = manufacturerBagContainerDraft(backRoller);
+  assert.equal(draft.name, "ORTLIEB Back-Roller Pair 40 L (2 × 20 L)");
+  assert.equal(draft.volume, 40);
+  assert.equal(draft.weight, 1900);
+  assert.equal(draft.manufacturerCatalogSource.volumePerBag, 20);
+  assert.equal(draft.manufacturerCatalogSource.totalVolume, 40);
+  assert.equal(draft.manufacturerCatalogSource.specificationBasis, "per-bag");
+
+  const backRollerXl = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier")
+    .find(({ id }) => id === "ortlieb-back-roller-35l-mesh-pocket-pair");
+  assert.deepEqual(backRollerXl.weightPerBagOptions, [1006, 1199]);
+  assert.deepEqual(backRollerXl.weightOptions, [2012, 2398]);
+});
+
+test("CRITICAL manufacturer catalog: editing a per-bag value recalculates the pair total", () => {
+  const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l-pair");
+  const [edited] = mergeManufacturerBagCatalogOverrides([backRoller], [{
+    id: backRoller.id,
+    volume: 22,
+    weight: 975,
+    loadKg: 10
+  }]);
+  assert.deepEqual(edited.volumePerBagOptions, [22]);
+  assert.deepEqual(edited.totalVolumeOptions, [44]);
+  assert.deepEqual(edited.weightPerBagOptions, [975]);
+  assert.deepEqual(edited.totalWeightOptions, [1950]);
+  assert.equal(edited.totalLoadKg, 20);
+});
+
 test("CRITICAL manufacturer catalog: meaningful size and mounting variants are selectable", () => {
   const seatPack = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
   const choices = manufacturerBagCatalogVariantChoices(seatPack);
@@ -276,5 +338,7 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.equal((i18n.match(/"bagCatalog\.compare\.filterManufacturers"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.rangeHint"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.openDetailsFor"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.setTotalWithPerBag"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.officialPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.variantPicker"/g) || []).length, 2);
 });

@@ -139,7 +139,7 @@ const FIXED_VOLUMES = {
   "ortlieb:back-roller-core": [20],
   "ortlieb:back-roller-plus": [23],
   "ortlieb:bike-packer": [20],
-  "ortlieb:bike-packer-plus": [20],
+  "ortlieb:bike-packer-plus": [21],
   "ortlieb:commuter-bag-urban": [20],
   "ortlieb:fuel-pack": [1],
   "ortlieb:gravel-pack": [14.5],
@@ -179,6 +179,18 @@ const SET_PRODUCT_HANDLES = new Set([
   "gt-54-classic-touring-panniers",
   "t-28-classic-touring-panniers",
   "t-42-classic-touring-panniers"
+]);
+
+// ORTLIEB labels the technical table on these official pair pages "Per bag".
+// Keep the source values intact and derive explicit totals for the sold pair.
+const ORTLIEB_PER_BAG_PAIR_HANDLES = new Set([
+  "back-roller-20l-pair",
+  "back-roller-35l-mesh-pocket-pair",
+  "bike-packer",
+  "bike-packer-plus",
+  "gravel-pack",
+  "sport-packer",
+  "sport-roller-pair"
 ]);
 
 function decodeHtml(value = "") {
@@ -424,7 +436,9 @@ async function normalizeProduct({ brandKey, product }) {
   const variantVolumes = uniqueNumbers(variants.map((variant) => variant.volume));
   const volumeOptions = variantVolumes.length
     ? variantVolumes
-    : uniqueNumbers([...specs.volumeOptions, ...fixedVolumes]);
+    : fixedVolumes.length
+      ? uniqueNumbers(fixedVolumes)
+      : uniqueNumbers(specs.volumeOptions);
   const technicalWeights = specs.weightOptions.filter((weight) => weight >= 20 && weight < 10_000);
   const variantWeights = uniqueNumbers(variants.map((variant) => variant.weight).filter((weight) => weight >= 20 && weight < 10_000));
   const weightOptions = technicalWeights.length ? technicalWeights : variantWeights;
@@ -435,11 +449,27 @@ async function normalizeProduct({ brandKey, product }) {
   const imageExtension = safeImageExtension(imageSource);
   const imageAssetPath = `assets/manufacturer-catalog/${brandKey}/${product.handle}${imageExtension}`;
   const sourceUrl = `${brandKey === "ortlieb" ? "https://us.ortlieb.com" : "https://arkel.ca"}/products/${product.handle}`;
+  const soldAsSet = SET_PRODUCT_HANDLES.has(product.handle);
+  const setQuantity = soldAsSet ? 2 : 1;
+  const specificationsPerBag = brandKey === "ortlieb" && ORTLIEB_PER_BAG_PAIR_HANDLES.has(product.handle);
+  const totalVolumeOptions = specificationsPerBag
+    ? uniqueNumbers(volumeOptions.map((value) => value * setQuantity))
+    : volumeOptions;
+  const totalWeightOptions = specificationsPerBag
+    ? uniqueNumbers(weightOptions.map((value) => value * setQuantity))
+    : weightOptions;
+  const totalLoadKg = specificationsPerBag && Number(specs.loadKg || 0) > 0
+    ? Math.round(Number(specs.loadKg) * setQuantity * 100) / 100
+    : Number(specs.loadKg || 0);
   const volumeSummary = summaryValues(volumeOptions, "L");
-  const setNote = SET_PRODUCT_HANDLES.has(product.handle) ? " · pair/set" : "";
+  const totalVolumeSummary = summaryValues(totalVolumeOptions, "L");
+  const catalogVolumeSummary = specificationsPerBag
+    ? `${totalVolumeSummary} pair (${volumeSummary} per bag)`
+    : volumeSummary;
+  const setNote = soldAsSet ? " · pair/set" : "";
   const description = {
-    en: `${brand} ${categoryMeta.en}${volumeSummary ? ` in ${volumeSummary}` : ""}. Technical data is normalized from the official product page.`,
-    ru: `${capitalizeSentence(categoryMeta.ru)} ${brand}${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`
+    en: `${brand} ${categoryMeta.en}${catalogVolumeSummary ? ` in ${catalogVolumeSummary}` : ""}. Technical data is normalized from the official product page.`,
+    ru: `${capitalizeSentence(categoryMeta.ru)} ${brand}${catalogVolumeSummary ? ` объёмом ${specificationsPerBag ? `${totalVolumeSummary} за пару (${volumeSummary} на одну сумку)` : catalogVolumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`
   };
   const dimensions = Object.fromEntries(Object.entries(specs.dimensions || {}).filter(([, value]) => Number(value) > 0));
   const availableVariants = variants.filter((variant) => variant.available);
@@ -455,12 +485,26 @@ async function normalizeProduct({ brandKey, product }) {
       .replace(/(?:\s+[-–]\s*|\s*[-–]\s+)/g, " – ")
       .replace(/\s+/g, " ")
       .trim(),
-    variant: `${volumeSummary || "Manufacturer model"}${setNote} · ${variants.length} SKU`.trim(),
+    variant: `${catalogVolumeSummary || "Manufacturer model"}${setNote} · ${variants.length} SKU`.trim(),
     sku: primaryVariant.sku || "",
     weight: weightOptions[0] || primaryVariant.weight || 0,
     weightOptions,
     volume: volumeOptions[0] || 0,
     volumeOptions,
+    ...(specificationsPerBag ? {
+      specificationBasis: "per-bag",
+      setQuantity,
+      volumePerBag: volumeOptions[0] || 0,
+      volumePerBagOptions: volumeOptions,
+      totalVolume: totalVolumeOptions[0] || 0,
+      totalVolumeOptions,
+      weightPerBag: weightOptions[0] || primaryVariant.weight || 0,
+      weightPerBagOptions: weightOptions,
+      totalWeight: totalWeightOptions[0] || 0,
+      totalWeightOptions,
+      loadPerBagKg: Number(specs.loadKg || 0),
+      totalLoadKg
+    } : {}),
     loadKg: Number(specs.loadKg || 0),
     dimensions,
     color: primaryVariant.color || "",
@@ -468,7 +512,7 @@ async function normalizeProduct({ brandKey, product }) {
     material: productMaterial(brandKey, product, primaryVariant, specs),
     mounting: mountingOptions.join(" / "),
     mountingOptions,
-    soldAsSet: SET_PRODUCT_HANDLES.has(product.handle),
+    soldAsSet,
     available: availableVariants.length > 0,
     variantCount: variants.length,
     availableVariantCount: availableVariants.length,

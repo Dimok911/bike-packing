@@ -544,7 +544,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "rear-pannier",
     "name": "Back-Roller Pair",
-    "variant": "20 L · pair/set · 12 SKU",
+    "variant": "40 L pair (20 L per bag) · pair/set · 12 SKU",
     "sku": "F5302",
     "weight": 950,
     "weightOptions": [
@@ -554,6 +554,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       20
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 20,
+    "volumePerBagOptions": [
+      20
+    ],
+    "totalVolume": 40,
+    "totalVolumeOptions": [
+      40
+    ],
+    "weightPerBag": 950,
+    "weightPerBagOptions": [
+      950
+    ],
+    "totalWeight": 1900,
+    "totalWeightOptions": [
+      1900
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 32,
@@ -686,8 +706,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/back-roller-20l-pair",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 20 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 20 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB rear pannier in 40 L pair (20 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Задний панир ORTLIEB объёмом 40 L за пару (20 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "rear pannier",
@@ -817,7 +837,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "rear-pannier",
     "name": "Back-Roller XL",
-    "variant": "35 L · pair/set · 6 SKU",
+    "variant": "70 L pair (35 L per bag) · pair/set · 6 SKU",
     "sku": "F5352",
     "weight": 1199,
     "weightOptions": [
@@ -827,6 +847,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       35
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 35,
+    "volumePerBagOptions": [
+      35
+    ],
+    "totalVolume": 70,
+    "totalVolumeOptions": [
+      70
+    ],
+    "weightPerBag": 1199,
+    "weightPerBagOptions": [
+      1199
+    ],
+    "totalWeight": 2398,
+    "totalWeightOptions": [
+      2398
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 35.8,
@@ -906,8 +946,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/back-roller-35l-mesh-pocket-pair",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 35 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 35 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB rear pannier in 70 L pair (35 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Задний панир ORTLIEB объёмом 70 L за пару (35 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "rear pannier",
@@ -931,7 +971,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "rear-pannier",
     "name": "Bike-Packer",
-    "variant": "20 L · pair/set · 3 SKU",
+    "variant": "40 L pair (20 L per bag) · pair/set · 3 SKU",
     "sku": "F2601",
     "weight": 1040,
     "weightOptions": [
@@ -941,6 +981,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       20
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 20,
+    "volumePerBagOptions": [
+      20
+    ],
+    "totalVolume": 40,
+    "totalVolumeOptions": [
+      40
+    ],
+    "weightPerBag": 1040,
+    "weightPerBagOptions": [
+      1040
+    ],
+    "totalWeight": 2080,
+    "totalWeightOptions": [
+      2080
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 32,
@@ -992,8 +1052,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/bike-packer",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 20 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 20 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB rear pannier in 40 L pair (20 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Задний панир ORTLIEB объёмом 40 L за пару (20 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "rear pannier",
@@ -1017,17 +1077,36 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "rear-pannier",
     "name": "Bike-Packer Plus",
-    "variant": "20 / 21 L · pair/set · 2 SKU",
+    "variant": "42 L pair (21 L per bag) · pair/set · 2 SKU",
     "sku": "F2704",
     "weight": 1100,
     "weightOptions": [
       1100
     ],
-    "volume": 20,
+    "volume": 21,
     "volumeOptions": [
-      20,
       21
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 21,
+    "volumePerBagOptions": [
+      21
+    ],
+    "totalVolume": 42,
+    "totalVolumeOptions": [
+      42
+    ],
+    "weightPerBag": 1100,
+    "weightPerBagOptions": [
+      1100
+    ],
+    "totalWeight": 2200,
+    "totalWeightOptions": [
+      2200
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 32,
@@ -1070,8 +1149,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/bike-packer-plus",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 20 / 21 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 20 / 21 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB rear pannier in 42 L pair (21 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Задний панир ORTLIEB объёмом 42 L за пару (21 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "rear pannier",
@@ -1854,7 +1933,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "rear-pannier",
     "name": "Gravel-Pack",
-    "variant": "14.5 L · pair/set · 3 SKU",
+    "variant": "29 L pair (14.5 L per bag) · pair/set · 3 SKU",
     "sku": "F9997",
     "weight": 641,
     "weightOptions": [
@@ -1864,6 +1943,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       14.5
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 14.5,
+    "volumePerBagOptions": [
+      14.5
+    ],
+    "totalVolume": 29,
+    "totalVolumeOptions": [
+      29
+    ],
+    "weightPerBag": 641,
+    "weightPerBagOptions": [
+      641
+    ],
+    "totalWeight": 1282,
+    "totalWeightOptions": [
+      1282
+    ],
+    "loadPerBagKg": 12.5,
+    "totalLoadKg": 25,
     "loadKg": 12.5,
     "dimensions": {
       "width": 25.9,
@@ -1916,8 +2015,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/gravel-pack",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 14.5 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 14.5 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB rear pannier in 29 L pair (14.5 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Задний панир ORTLIEB объёмом 29 L за пару (14.5 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "rear pannier",
@@ -3130,7 +3229,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "front-pannier",
     "name": "Sport-Packer",
-    "variant": "15 L · pair/set · 5 SKU",
+    "variant": "30 L pair (15 L per bag) · pair/set · 5 SKU",
     "sku": "F4801",
     "weight": 873,
     "weightOptions": [
@@ -3140,6 +3239,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       15
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 15,
+    "volumePerBagOptions": [
+      15
+    ],
+    "totalVolume": 30,
+    "totalVolumeOptions": [
+      30
+    ],
+    "weightPerBag": 873,
+    "weightPerBagOptions": [
+      873
+    ],
+    "totalWeight": 1746,
+    "totalWeightOptions": [
+      1746
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 24.9,
@@ -3209,8 +3328,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/sport-packer",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB front pannier in 15 L. Technical data is normalized from the official product page.",
-      "ru": "Передний панир ORTLIEB объёмом 15 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB front pannier in 30 L pair (15 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Передний панир ORTLIEB объёмом 30 L за пару (15 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "front pannier",
@@ -3440,7 +3559,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "family": "panniers",
     "category": "front-pannier",
     "name": "Sport-Roller Pair",
-    "variant": "14.5 L · pair/set · 8 SKU",
+    "variant": "29 L pair (14.5 L per bag) · pair/set · 8 SKU",
     "sku": "F6302",
     "weight": 794,
     "weightOptions": [
@@ -3450,6 +3569,26 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "volumeOptions": [
       14.5
     ],
+    "specificationBasis": "per-bag",
+    "setQuantity": 2,
+    "volumePerBag": 14.5,
+    "volumePerBagOptions": [
+      14.5
+    ],
+    "totalVolume": 29,
+    "totalVolumeOptions": [
+      29
+    ],
+    "weightPerBag": 794,
+    "weightPerBagOptions": [
+      794
+    ],
+    "totalWeight": 1588,
+    "totalWeightOptions": [
+      1588
+    ],
+    "loadPerBagKg": 9,
+    "totalLoadKg": 18,
     "loadKg": 9,
     "dimensions": {
       "width": 25.9,
@@ -3546,8 +3685,8 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/sport-roller-pair",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB front pannier in 14.5 L. Technical data is normalized from the official product page.",
-      "ru": "Передний панир ORTLIEB объёмом 14.5 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB front pannier in 29 L pair (14.5 L per bag). Technical data is normalized from the official product page.",
+      "ru": "Передний панир ORTLIEB объёмом 29 L за пару (14.5 L на одну сумку). Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
       "front pannier",

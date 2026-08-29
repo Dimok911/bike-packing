@@ -1,3 +1,8 @@
+import {
+  manufacturerBagCatalogVolumeMetrics,
+  manufacturerBagCatalogWeightMetrics
+} from "./manufacturer-bag-catalog.js";
+
 function numericValues(values, fallback = 0) {
   const rows = (Array.isArray(values) ? values : [fallback])
     .map(Number)
@@ -152,10 +157,20 @@ export function manufacturerBagComparisonRows(catalog = [], category = "") {
         .map((variant) => Number(variant?.weight || 0))
         .filter((weight) => weight > 0 && (!referenceWeight
           || (weight >= referenceWeight / 4 && weight <= referenceWeight * 4)));
+      const volumeMetrics = manufacturerBagCatalogVolumeMetrics(entry);
+      const weightMetrics = manufacturerBagCatalogWeightMetrics(entry);
+      const sourceWeightOptions = numericValues([...(entry?.weightOptions || []), ...plausibleVariantWeights], entry?.weight);
+      const perBagWeightOptions = weightMetrics.perBag.length
+        ? numericValues([...weightMetrics.perBag, ...sourceWeightOptions])
+        : [];
       return {
         ...entry,
-        volumeOptions: numericValues(entry?.volumeOptions, entry?.volume),
-        weightOptions: numericValues([...(entry?.weightOptions || []), ...plausibleVariantWeights], entry?.weight),
+        volumeOptions: volumeMetrics.total,
+        volumePerBagOptions: volumeMetrics.perBag,
+        weightOptions: perBagWeightOptions.length
+          ? perBagWeightOptions.map((value) => value * weightMetrics.quantity)
+          : sourceWeightOptions,
+        weightPerBagOptions: perBagWeightOptions,
         mountingOptions: [...new Set((Array.isArray(entry?.mountingOptions)
           ? entry.mountingOptions
           : [entry?.mounting]).map((value) => String(value || "").trim()).filter(Boolean))]

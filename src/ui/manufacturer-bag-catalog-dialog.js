@@ -2,9 +2,28 @@ import {
   filterManufacturerBagCatalog,
   manufacturerBagCatalogCount,
   manufacturerBagCatalogEntry,
+  manufacturerBagCatalogVolumeMetrics,
+  manufacturerBagCatalogWeightMetrics,
   manufacturerBagCatalogVariantChoices,
   manufacturerBagCatalogVariantEntry
 } from "../state/manufacturer-bag-catalog.js";
+
+function metricRange(values = []) {
+  const normalized = [...new Set((Array.isArray(values) ? values : [])
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0))].sort((left, right) => left - right);
+  if (!normalized.length) return "";
+  return normalized.length === 1 ? String(normalized[0]) : `${normalized[0]}–${normalized.at(-1)}`;
+}
+
+function catalogMetricText(metrics, unit, t) {
+  const total = metricRange(metrics.total);
+  if (!total) return "";
+  const perBag = metricRange(metrics.perBag);
+  return perBag
+    ? t("bagCatalog.setTotalWithPerBag", { total, perBag, quantity: metrics.quantity, unit })
+    : `${total} ${unit}`;
+}
 
 function localizedDescription(entry, language = "en") {
   if (!entry?.description || typeof entry.description !== "object") return "";
@@ -158,6 +177,16 @@ export function createManufacturerBagCatalogDialogController({
   function renderProductCard(entry) {
     const variantChoices = manufacturerBagCatalogVariantChoices(entry);
     const selectedEntry = manufacturerBagCatalogVariantEntry(entry, selectedVariantSkuByEntry.get(entry.id));
+    const volumeText = catalogMetricText(manufacturerBagCatalogVolumeMetrics(selectedEntry), t("bagCatalog.liters"), t);
+    const weightText = catalogMetricText(manufacturerBagCatalogWeightMetrics(selectedEntry), t("bagCatalog.grams"), t);
+    const loadText = selectedEntry.totalLoadKg && selectedEntry.loadPerBagKg
+      ? t("bagCatalog.setTotalWithPerBag", {
+          total: selectedEntry.totalLoadKg,
+          perBag: selectedEntry.loadPerBagKg,
+          quantity: selectedEntry.setQuantity,
+          unit: t("bagCatalog.kilograms")
+        })
+      : selectedEntry.loadKg ? t("bagCatalog.load", { value: selectedEntry.loadKg }) : "";
     const dimensions = dimensionText(selectedEntry.dimensions);
     const locale = language() === "ru" ? "ru" : "en";
     const sourceUrl = safeCatalogUrl(entry.sourceUrl);
@@ -184,7 +213,9 @@ export function createManufacturerBagCatalogDialogController({
               <select data-bag-catalog-variant-select="${escapeHtml(entry.id)}">
                 ${variantChoices.map((variant) => {
                   const labelParts = [
-                    variant.volume ? `${variant.volume} ${t("bagCatalog.liters")}` : "",
+                    variant.volume
+                      ? catalogMetricText(manufacturerBagCatalogVolumeMetrics({ ...selectedEntry, volume: variant.volume }), t("bagCatalog.liters"), t)
+                      : volumeText,
                     variant.mounting || "",
                     variant.setKind === "pair" ? t("bagCatalog.compare.pair") : "",
                     variant.available ? "" : t("bagCatalog.compare.unavailable")
@@ -195,10 +226,10 @@ export function createManufacturerBagCatalogDialogController({
             </label>
           ` : ""}
           <div class="manufacturer-catalog-specs">
-            ${selectedEntry.weight ? `<span>${escapeHtml(selectedEntry.weight)} ${escapeHtml(t("bagCatalog.grams"))}</span>` : ""}
-            ${selectedEntry.volume ? `<span>${escapeHtml(selectedEntry.volume)} ${escapeHtml(t("bagCatalog.liters"))}</span>` : ""}
-            ${dimensions ? `<span>${escapeHtml(dimensions)} ${escapeHtml(t("bagCatalog.centimeters"))}</span>` : ""}
-            ${selectedEntry.loadKg ? `<span>${escapeHtml(t("bagCatalog.load", { value: selectedEntry.loadKg }))}</span>` : ""}
+            ${weightText ? `<span>${escapeHtml(weightText)}</span>` : ""}
+            ${volumeText ? `<span>${escapeHtml(volumeText)}</span>` : ""}
+            ${dimensions ? `<span>${escapeHtml(dimensions)} ${escapeHtml(t("bagCatalog.centimeters"))}${selectedEntry.specificationBasis === "per-bag" ? ` · ${escapeHtml(t("bagCatalog.perBag"))}` : ""}</span>` : ""}
+            ${loadText ? `<span>${escapeHtml(loadText)}</span>` : ""}
             ${selectedEntry.waterproof ? `<span>${escapeHtml(selectedEntry.waterproof)}</span>` : ""}
             ${selectedEntry.mounting ? `<span>${escapeHtml(selectedEntry.mounting)}</span>` : ""}
           </div>

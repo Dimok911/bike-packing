@@ -6,6 +6,10 @@ import {
   manufacturerBagComparisonRows,
   manufacturerBagComparisonViewRows
 } from "../state/manufacturer-bag-comparison.js";
+import {
+  manufacturerBagCatalogVolumeMetrics,
+  manufacturerBagCatalogWeightMetrics
+} from "../state/manufacturer-bag-catalog.js";
 
 const TABLE_COLUMNS = [
   "model",
@@ -52,6 +56,15 @@ function parseDecimal(value) {
   if (!normalized) return null;
   const number = Number(normalized);
   return Number.isFinite(number) ? number : null;
+}
+
+function comparisonMetricText(totalValues, perBagValues, quantity, unit, t) {
+  const total = manufacturerBagComparisonRange(totalValues, "");
+  if (!total) return "";
+  const perBag = manufacturerBagComparisonRange(perBagValues, "");
+  return perBag
+    ? t("bagCatalog.setTotalWithPerBag", { total, perBag, quantity, unit })
+    : `${total} ${unit}`;
 }
 
 export function createManufacturerBagComparisonDialogController({
@@ -117,8 +130,8 @@ export function createManufacturerBagComparisonDialogController({
     }
     if (column === "model") return entry.name || "";
     if (column === "manufacturer") return entry.brand || "";
-    if (column === "volume") return manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"));
-    if (column === "weight") return manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"));
+    if (column === "volume") return comparisonMetricText(entry.volumeOptions, entry.volumePerBagOptions, entry.setQuantity, t("bagCatalog.liters"), t);
+    if (column === "weight") return comparisonMetricText(entry.weightOptions, entry.weightPerBagOptions, entry.setQuantity, t("bagCatalog.grams"), t);
     if (column === "dimensions") {
       const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
       return dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}` : "";
@@ -134,8 +147,8 @@ export function createManufacturerBagComparisonDialogController({
   function renderRow(entry) {
     const sourceUrl = safeHttpsUrl(entry.sourceUrl);
     const imageUrl = safeLocalImageUrl(entry.imageUrl);
-    const volume = manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"));
-    const weight = manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"));
+    const volume = comparisonMetricText(entry.volumeOptions, entry.volumePerBagOptions, entry.setQuantity, t("bagCatalog.liters"), t);
+    const weight = comparisonMetricText(entry.weightOptions, entry.weightPerBagOptions, entry.setQuantity, t("bagCatalog.grams"), t);
     const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
     return `
       <tr>
@@ -341,16 +354,29 @@ export function createManufacturerBagComparisonDialogController({
     const sourceUrl = safeHttpsUrl(entry.sourceUrl);
     const locale = language() === "ru" ? "ru" : "en";
     const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
+    const volumeMetrics = manufacturerBagCatalogVolumeMetrics(entry);
+    const weightMetrics = manufacturerBagCatalogWeightMetrics(entry);
+    const volumeText = comparisonMetricText(volumeMetrics.total, volumeMetrics.perBag, volumeMetrics.quantity, t("bagCatalog.liters"), t);
+    const weightText = comparisonMetricText(weightMetrics.total, weightMetrics.perBag, weightMetrics.quantity, t("bagCatalog.grams"), t);
+    const loadText = entry.totalLoadKg && entry.loadPerBagKg
+      ? t("bagCatalog.setTotalWithPerBag", {
+          total: entry.totalLoadKg,
+          perBag: entry.loadPerBagKg,
+          quantity: entry.setQuantity,
+          unit: t("bagCatalog.kilograms")
+        })
+      : entry.loadKg ? `${entry.loadKg} ${t("bagCatalog.kilograms")}` : "";
     const detailRows = [
       [t("bagCatalog.compare.manufacturer"), entry.brand],
-      [t("bagCatalog.field.volume"), manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"))],
-      [t("bagCatalog.field.weight"), manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"))],
-      [t("bagCatalog.compare.dimensions"), dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}` : ""],
-      [t("bagCatalog.field.load"), entry.loadKg ? `${entry.loadKg} ${t("bagCatalog.kilograms")}` : ""],
+      [t("bagCatalog.field.volume"), volumeText],
+      [t("bagCatalog.field.weight"), weightText],
+      [t("bagCatalog.compare.dimensions"), dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}${entry.specificationBasis === "per-bag" ? ` · ${t("bagCatalog.perBag")}` : ""}` : ""],
+      [t("bagCatalog.field.load"), loadText],
       [t("bagCatalog.field.waterproof"), entry.waterproof],
       [t("bagCatalog.field.material"), entry.material],
       [t("bagCatalog.field.mounting"), (entry.mountingOptions || []).join(" / ") || entry.mounting],
       [t("bagCatalog.compare.set"), entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single")],
+      [t("bagCatalog.compare.specificationBasis"), entry.specificationBasis === "per-bag" ? t("bagCatalog.compare.officialPerBag") : ""],
       [t("bagCatalog.compare.availability"), availabilityText(entry)]
     ].filter(([, value]) => value);
     const variants = Array.isArray(entry.variants) ? entry.variants : [];
@@ -380,8 +406,8 @@ export function createManufacturerBagComparisonDialogController({
               <tr>
                 <td>${valueOrUnknown(variant.sku)}</td>
                 <td>${valueOrUnknown(variant.color || variant.title)}</td>
-                <td>${valueOrUnknown((variant.volume || entry.volume) ? `${variant.volume || entry.volume} ${t("bagCatalog.liters")}` : "")}</td>
-                <td>${valueOrUnknown((variant.weight || entry.weight) ? `${variant.weight || entry.weight} ${t("bagCatalog.grams")}` : "")}</td>
+                <td>${valueOrUnknown((variant.volume || entry.volume) ? `${variant.volume || entry.volume} ${t("bagCatalog.liters")}${entry.specificationBasis === "per-bag" ? ` · ${t("bagCatalog.perBag")}` : ""}` : "")}</td>
+                <td>${valueOrUnknown((variant.weight || entry.weight) ? `${variant.weight || entry.weight} ${t("bagCatalog.grams")}${entry.specificationBasis === "per-bag" ? ` · ${t("bagCatalog.perBag")}` : ""}` : "")}</td>
                 <td>${valueOrUnknown(variant.mounting || entry.mounting)}</td>
                 <td>${escapeHtml(variant.available ? t("bagCatalog.compare.skuAvailable") : t("bagCatalog.compare.skuUnavailable"))}</td>
               </tr>

@@ -33,6 +33,12 @@ export function manufacturerBagCatalogSearchText(entry) {
     weightOptions: entry?.weightOptions,
     volume: entry?.volume,
     volumeOptions: entry?.volumeOptions,
+    volumePerBag: entry?.volumePerBag,
+    volumePerBagOptions: entry?.volumePerBagOptions,
+    totalVolume: entry?.totalVolume,
+    totalVolumeOptions: entry?.totalVolumeOptions,
+    specificationBasis: entry?.specificationBasis,
+    setQuantity: entry?.setQuantity,
     variants: entry?.variants,
     loadKg: entry?.loadKg
   }));
@@ -67,6 +73,51 @@ export function manufacturerBagCatalogCount(catalog = [], {
 export function manufacturerBagCatalogEntry(catalog = [], id = "") {
   const normalized = String(id || "");
   return (Array.isArray(catalog) ? catalog : []).find((entry) => entry?.id === normalized) || null;
+}
+
+function positiveCatalogNumbers(values = [], fallback = 0) {
+  const normalized = (Array.isArray(values) ? values : [fallback])
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return [...new Set(normalized)].sort((left, right) => left - right);
+}
+
+export function manufacturerBagCatalogSetQuantity(entry) {
+  if (!entry?.soldAsSet) return 1;
+  const quantity = Math.floor(Number(entry?.setQuantity || 2));
+  return quantity > 1 ? quantity : 2;
+}
+
+export function manufacturerBagCatalogPerBagSpecifications(entry) {
+  return entry?.specificationBasis === "per-bag" && manufacturerBagCatalogSetQuantity(entry) > 1;
+}
+
+export function manufacturerBagCatalogVolumeMetrics(entry) {
+  const quantity = manufacturerBagCatalogSetQuantity(entry);
+  const perBag = positiveCatalogNumbers(entry?.volumePerBagOptions, entry?.volumePerBag || entry?.volume);
+  const total = positiveCatalogNumbers(
+    entry?.totalVolumeOptions,
+    entry?.totalVolume || (manufacturerBagCatalogPerBagSpecifications(entry) ? perBag[0] * quantity : entry?.volume)
+  );
+  return {
+    quantity,
+    perBag: manufacturerBagCatalogPerBagSpecifications(entry) ? perBag : [],
+    total: total.length ? total : positiveCatalogNumbers(entry?.volumeOptions, entry?.volume)
+  };
+}
+
+export function manufacturerBagCatalogWeightMetrics(entry) {
+  const quantity = manufacturerBagCatalogSetQuantity(entry);
+  const perBag = positiveCatalogNumbers(entry?.weightPerBagOptions, entry?.weightPerBag || entry?.weight);
+  const total = positiveCatalogNumbers(
+    entry?.totalWeightOptions,
+    entry?.totalWeight || (manufacturerBagCatalogPerBagSpecifications(entry) ? perBag[0] * quantity : entry?.weight)
+  );
+  return {
+    quantity,
+    perBag: manufacturerBagCatalogPerBagSpecifications(entry) ? perBag : [],
+    total: total.length ? total : positiveCatalogNumbers(entry?.weightOptions, entry?.weight)
+  };
 }
 
 function manufacturerBagCatalogVariantSetKind(entry, variant = {}) {
@@ -118,18 +169,33 @@ export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
   const volume = Number(selected.volume || entry.volume || 0);
   const mounting = String(selected.mounting || entry.mounting || "");
   const samePrimarySize = !volume || volume === Number(entry.volume || 0);
+  const setQuantity = manufacturerBagCatalogSetQuantity({ ...entry, soldAsSet: selected.setKind === "pair" });
+  const specificationsPerBag = manufacturerBagCatalogPerBagSpecifications(entry) && selected.setKind === "pair";
+  const selectedWeight = weightIsPlausible ? variantWeight : referenceWeight;
   return {
     ...entry,
     sku: String(selected.sku || entry.sku || ""),
     variant: String(selected.title || entry.variant || ""),
-    weight: weightIsPlausible ? variantWeight : referenceWeight,
-    weightOptions: [weightIsPlausible ? variantWeight : referenceWeight].filter((value) => value > 0),
+    weight: selectedWeight,
+    weightOptions: [selectedWeight].filter((value) => value > 0),
     volume,
     volumeOptions: [volume].filter((value) => value > 0),
     color: String(selected.color || entry.color || ""),
     mounting,
     mountingOptions: mounting ? [mounting] : [],
     soldAsSet: selected.setKind === "pair",
+    ...(specificationsPerBag ? {
+      specificationBasis: "per-bag",
+      setQuantity,
+      volumePerBag: volume,
+      volumePerBagOptions: [volume].filter((value) => value > 0),
+      totalVolume: volume * setQuantity,
+      totalVolumeOptions: [volume * setQuantity].filter((value) => value > 0),
+      weightPerBag: selectedWeight,
+      weightPerBagOptions: [selectedWeight].filter((value) => value > 0),
+      totalWeight: selectedWeight * setQuantity,
+      totalWeightOptions: [selectedWeight * setQuantity].filter((value) => value > 0)
+    } : {}),
     available: selected.available !== false,
     dimensions: samePrimarySize ? entry.dimensions : {}
   };
@@ -182,18 +248,44 @@ export function mergeManufacturerBagCatalogOverrides(catalog = [], overrides = [
   return (Array.isArray(catalog) ? catalog : []).map((entry) => {
     const override = overrideById.get(entry?.id);
     if (!override) return { ...entry };
-    return {
+    const merged = {
       ...entry,
       ...override,
       dimensions: override.dimensions ? { ...(entry.dimensions || {}), ...override.dimensions } : entry.dimensions,
       description: override.description ? { ...(entry.description || {}), ...override.description } : entry.description
     };
+    if (!manufacturerBagCatalogPerBagSpecifications(merged)) return merged;
+    const quantity = manufacturerBagCatalogSetQuantity(merged);
+    if (override.volume !== undefined) {
+      merged.volumePerBag = override.volume;
+      merged.volumePerBagOptions = [override.volume].filter((value) => value > 0);
+      merged.totalVolume = override.volume * quantity;
+      merged.totalVolumeOptions = [merged.totalVolume].filter((value) => value > 0);
+    }
+    if (override.weight !== undefined) {
+      merged.weightPerBag = override.weight;
+      merged.weightPerBagOptions = [override.weight].filter((value) => value > 0);
+      merged.totalWeight = override.weight * quantity;
+      merged.totalWeightOptions = [merged.totalWeight].filter((value) => value > 0);
+    }
+    if (override.loadKg !== undefined) {
+      merged.loadPerBagKg = override.loadKg;
+      merged.totalLoadKg = override.loadKg * quantity;
+    }
+    return merged;
   });
 }
 
 export function manufacturerBagContainerDraft(entry) {
   if (!entry || typeof entry !== "object") return null;
-  const volumeSuffix = Number(entry.volume || 0) > 0 ? ` ${entry.volume} L` : "";
+  const volumeMetrics = manufacturerBagCatalogVolumeMetrics(entry);
+  const weightMetrics = manufacturerBagCatalogWeightMetrics(entry);
+  const volume = Number(volumeMetrics.total[0] || entry.volume || 0);
+  const weight = Number(weightMetrics.total[0] || entry.weight || 0);
+  const perBagVolume = Number(volumeMetrics.perBag[0] || 0);
+  const volumeSuffix = volume > 0
+    ? ` ${volume} L${perBagVolume > 0 ? ` (${volumeMetrics.quantity} × ${perBagVolume} L)` : ""}`
+    : "";
   const dimensions = entry.dimensions && typeof entry.dimensions === "object"
     ? {
         width: Number(entry.dimensions.width || 0),
@@ -203,8 +295,8 @@ export function manufacturerBagContainerDraft(entry) {
     : {};
   return {
     name: `${entry.brand || ""} ${entry.name || ""}${volumeSuffix}`.trim(),
-    weight: Math.max(0, Math.round(Number(entry.weight || 0))),
-    volume: Math.max(0, Number(entry.volume || 0)),
+    weight: Math.max(0, Math.round(weight)),
+    volume: Math.max(0, volume),
     color: String(entry.color || ""),
     dimensions,
     manufacturerCatalogSource: {
@@ -214,7 +306,11 @@ export function manufacturerBagContainerDraft(entry) {
       brand: String(entry.brand || ""),
       sku: String(entry.sku || ""),
       sourceUrl: String(entry.sourceUrl || ""),
-      sourceImageUrl: String(entry.sourceImageUrl || "")
+      sourceImageUrl: String(entry.sourceImageUrl || ""),
+      setQuantity: manufacturerBagCatalogSetQuantity(entry),
+      specificationBasis: String(entry.specificationBasis || "product"),
+      volumePerBag: perBagVolume,
+      totalVolume: volume
     }
   };
 }
