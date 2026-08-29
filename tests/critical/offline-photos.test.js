@@ -17,7 +17,9 @@ import {
   applySyncedPhotoUploadResult,
   clonePhotoUploadBlob,
   copyRecordPhotosForLocalDuplicate,
+  createItemPhotoFromFile,
   inspectRecordRemotePhotoSources,
+  isGifImageFile,
   materializeSelectedPhotoFile,
   paintImageOnJpegCanvas,
   photoRecordIdMatchesRemoteSource,
@@ -104,6 +106,33 @@ function setNavigatorOnline(value) {
     configurable: true
   });
 }
+
+test("CRITICAL offline-photos: animated GIF uploads keep their original bytes and MIME type", async () => {
+  const source = new Blob(["GIF89a animated bytes"], { type: "image/gif" });
+  Object.defineProperty(source, "name", { value: "animation.gif" });
+  let cached = null;
+  let resizeCalls = 0;
+  const photo = await createItemPhotoFromFile(source, {
+    cachePhoto: async (record) => { cached = record; },
+    dimensionsForFile: async () => ({ width: 320, height: 180 }),
+    materializeFile: async (file) => file,
+    now: () => "2026-08-29T12:00:00.000Z",
+    resizeFile: async () => {
+      resizeCalls += 1;
+      throw new Error("GIF must not be flattened through canvas");
+    }
+  });
+
+  assert.equal(isGifImageFile(source), true);
+  assert.equal(resizeCalls, 0);
+  assert.equal(cached.blob, source);
+  assert.equal(cached.thumbBlob, null);
+  assert.equal(cached.type, "image/gif");
+  assert.equal(cached.fileName, "animation.gif");
+  assert.equal(photo.type, "image/gif");
+  assert.equal(photo.width, 320);
+  assert.equal(photo.height, 180);
+});
 
 test("CRITICAL offline-photos: remote personal photos are persisted without changing synced state", async () => {
   const state = {

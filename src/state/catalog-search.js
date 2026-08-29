@@ -38,14 +38,20 @@ export function matchesRootContainerFieldsFilter(container, {
 }
 
 export function searchTextMatchesQuery(value, query) {
-  const normalizedQuery = normalizeSearchQuery(query);
-  return Boolean(normalizedQuery && String(value || "").toLowerCase().includes(normalizedQuery));
+  const terms = searchQueryTerms(query);
+  if (!terms.length) return false;
+  const text = String(value || "").toLocaleLowerCase();
+  return terms.every((term) => text.includes(term));
 }
 
 export function recordNoteMatchesQuery(record, query) {
   return searchTextMatchesQuery(record?.note, query);
 }
 
+export function searchQueryTerms(query) {
+  return [...new Set(normalizeSearchQuery(query).split(/\s+/).filter(Boolean))];
+}
+
 function normalizeSearchQuery(query) {
-  return String(query || "").trim().toLowerCase();
+  return String(query || "").trim().toLocaleLowerCase();
 }

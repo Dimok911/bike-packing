@@ -10,6 +10,26 @@ import {
   shouldSuppressClickAfterDragAttempt,
   suppressNextClickAfterDrag
 } from "../../src/ui/drag-click-suppression.js";
+import { updateNestedPackingDisclosure } from "../../src/ui/packing-disclosure.js";
+
+function classList(initial = []) {
+  const values = new Set(initial);
+  return {
+    add(value) {
+      values.add(value);
+    },
+    contains(value) {
+      return values.has(value);
+    },
+    remove(value) {
+      values.delete(value);
+    },
+    toggle(value, force) {
+      if (force) values.add(value);
+      else values.delete(value);
+    }
+  };
+}
 
 function clickEvent({
   button = 0,
@@ -244,4 +264,73 @@ test("CRITICAL packing disclosure arrows point right when collapsed and down whe
   assert.match(packingRenderSource, /rootCollapsed \? "chevron-right" : "chevron-down"/);
   assert.match(packingRenderSource, /collapsed \? "chevron-right" : "chevron-down"/);
   assert.match(stylesSource, /\.chevron-right\s*\{[^}]*rotate\(-45deg\)/s);
+});
+
+test("CRITICAL nested packing disclosure updates immediately without replacing the board", () => {
+  const animationListeners = new Map();
+  const sectionClasses = classList(["subcontainer", "collapsed"]);
+  const iconClasses = classList(["chevron-icon", "chevron-right"]);
+  const dropzone = {
+    addEventListener(type, listener) {
+      animationListeners.set(type, listener);
+    }
+  };
+  const section = {
+    dataset: { subcontainerId: "bag-1" },
+    classList: sectionClasses,
+    querySelector(selector) {
+      assert.equal(selector, ":scope > .dropzone");
+      return dropzone;
+    }
+  };
+  const attributes = new Map();
+  const button = {
+    dataset: {
+      toggleContainer: "bag-1",
+      expandLabel: "Expand",
+      collapseLabel: "Collapse"
+    },
+    closest(selector) {
+      assert.equal(selector, ".subcontainer[data-subcontainer-id]");
+      return section;
+    },
+    querySelector(selector) {
+      assert.equal(selector, ".chevron-icon");
+      return { classList: iconClasses };
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    }
+  };
+
+  assert.equal(updateNestedPackingDisclosure(button, false), true);
+  assert.equal(sectionClasses.contains("collapsed"), false);
+  assert.equal(sectionClasses.contains("native-disclosure-opening"), true);
+  assert.equal(iconClasses.contains("chevron-right"), false);
+  assert.equal(iconClasses.contains("chevron-down"), true);
+  assert.equal(attributes.get("aria-expanded"), "true");
+  assert.equal(attributes.get("aria-label"), "Collapse");
+  assert.equal(attributes.get("title"), "Collapse");
+
+  animationListeners.get("animationend")();
+  assert.equal(sectionClasses.contains("native-disclosure-opening"), false);
+
+  assert.equal(updateNestedPackingDisclosure(button, true), true);
+  assert.equal(sectionClasses.contains("collapsed"), true);
+  assert.equal(iconClasses.contains("chevron-right"), true);
+  assert.equal(iconClasses.contains("chevron-down"), false);
+  assert.equal(attributes.get("aria-expanded"), "false");
+  assert.equal(attributes.get("aria-label"), "Expand");
+});
+
+test("CRITICAL root disclosure keeps the full-render fallback", () => {
+  const rootButton = {
+    dataset: { toggleContainer: "root-1" },
+    closest() {
+      return null;
+    }
+  };
+  const packingSource = readFileSync(new URL("../../src/ui/packing-events.js", import.meta.url), "utf8");
+  assert.equal(updateNestedPackingDisclosure(rootButton, true), false);
+  assert.match(packingSource, /if \(!updatedWithoutRender\) render\(\)/);
 });

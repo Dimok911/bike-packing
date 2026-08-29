@@ -28,7 +28,7 @@ export async function readClipboardImageFiles(clipboard, {
   const files = [];
   const clipboardItems = await clipboard.read();
   for (const item of clipboardItems || []) {
-    const itemFileCountStart = files.length;
+    let directFile = null;
     const imageTypes = [...(item?.types || [])].filter((type) =>
       String(type || "").toLowerCase().startsWith("image/")
     );
@@ -38,7 +38,7 @@ export async function readClipboardImageFiles(clipboard, {
         try {
           const file = normalizeClipboardImageBlob(await item.getType(imageType), imageType);
           if (!file) continue;
-          files.push(file);
+          directFile = file;
           break;
         } catch {
           // Some WebKit clipboard items expose an image representation that cannot
@@ -46,40 +46,39 @@ export async function readClipboardImageFiles(clipboard, {
         }
       }
     }
-    if (files.length > itemFileCountStart) continue;
-    const htmlType = clipboardItemType(item, "text/html");
-    if (htmlType) {
-      try {
-        const html = await readClipboardBlobText(await item.getType(htmlType));
-        const file = await firstFetchableClipboardImage(
-          clipboardImageSourcesFromHtml(html),
-          { fetchImpl }
-        );
-        if (file) {
-          files.push(file);
-          continue;
-        }
-      } catch {
-        // Fall through to the URI representation when WebKit cannot expose the
-        // HTML image blob outside the native paste event.
-      }
+    if (isGifClipboardImage(directFile)) {
+      files.push(directFile);
+      continue;
     }
-    const uriType = clipboardItemType(item, "text/uri-list");
-    if (uriType) {
-      try {
-        const uriList = await readClipboardBlobText(await item.getType(uriType));
-        const file = await firstFetchableClipboardImage(
-          clipboardImageSourcesFromUriList(uriList),
-          { fetchImpl }
-        );
-        if (file) files.push(file);
-      } catch {
-        // A copied cross-origin image URL may be unavailable to fetch because
-        // of CORS. In that case the clipboard correctly remains image-empty.
-      }
-    }
+    const sourceFile = await clipboardItemSourceImage(item, {
+      fetchImpl,
+      gifOnly: Boolean(directFile)
+    });
+    if (sourceFile && (!directFile || isGifClipboardImage(sourceFile))) files.push(sourceFile);
+    else if (directFile) files.push(directFile);
   }
   return files;
+}
+
+async function clipboardItemSourceImage(item, { fetchImpl, gifOnly = false }) {
+  const representations = [
+    ["text/html", clipboardImageSourcesFromHtml],
+    ["text/uri-list", clipboardImageSourcesFromUriList],
+    ["text/plain", clipboardImageSourcesFromPlainText]
+  ];
+  for (const [expectedType, sourceParser] of representations) {
+    const type = clipboardItemType(item, expectedType);
+    if (!type) continue;
+    try {
+      const value = await readClipboardBlobText(await item.getType(type));
+      const sources = sourceParser(value).filter((source) => !gifOnly || clipboardSourceLikelyGif(source));
+      const file = await firstFetchableClipboardImage(sources, { fetchImpl });
+      if (file) return file;
+    } catch {
+      // Try the next URL representation when this clipboard flavor cannot be read.
+    }
+  }
+  return null;
 }
 
 function clipboardItemType(item, expectedType) {
@@ -119,6 +118,13 @@ export function clipboardImageSourcesFromUriList(uriList) {
     .filter((value) => value && !value.startsWith("#") && supportedClipboardImageSource(value));
 }
 
+export function clipboardImageSourcesFromPlainText(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter((value) => supportedClipboardImageSource(value));
+}
+
 function decodeClipboardHtmlAttribute(value) {
   return String(value || "")
     .replace(/&amp;/gi, "&")
@@ -140,13 +146,64 @@ async function firstFetchableClipboardImage(sources, { fetchImpl = globalThis.fe
       if (!response?.ok && response?.status !== 0) continue;
       const declaredType = clipboardImageTypeFromSource(source);
       const blob = normalizeClipboardImageBlob(await response.blob(), declaredType);
-      if (blob) return blob;
+      if (blob) return nameClipboardImageBlob(blob, source, response);
     } catch {
       // Try the next representation. Cross-origin URLs commonly fail here,
       // while WebKit-generated blob: and data: URLs remain readable.
     }
   }
   return null;
+}
+
+function nameClipboardImageBlob(blob, source, response) {
+  const headerName = decodeClipboardFileName(response?.headers?.get?.("X-File-Name") || "");
+  const sourceName = clipboardImageNameFromSource(source, blob.type);
+  const name = headerName || sourceName;
+  if (!name || blob?.name) return blob;
+  if (typeof File === "function") {
+    return new File([blob], name, { type: blob.type, lastModified: Date.now() });
+  }
+  try {
+    Object.defineProperty(blob, "name", { value: name, configurable: true });
+  } catch {
+    // Blob metadata is optional; the bytes and MIME type are sufficient.
+  }
+  return blob;
+}
+
+function decodeClipboardFileName(value) {
+  try {
+    return decodeURIComponent(String(value || "")).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").slice(0, 180);
+  } catch {
+    return "";
+  }
+}
+
+function clipboardImageNameFromSource(source, type) {
+  const extensions = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic"
+  };
+  try {
+    if (/^https?:\/\//i.test(String(source || ""))) {
+      const name = decodeURIComponent(new URL(source).pathname.split("/").pop() || "");
+      if (name) return name;
+    }
+  } catch {
+    // Use a MIME-based fallback below.
+  }
+  return `clipboard-image.${extensions[String(type || "").toLowerCase()] || "img"}`;
+}
+
+function isGifClipboardImage(file) {
+  return String(file?.type || "").toLowerCase() === "image/gif" || /\.gif$/i.test(String(file?.name || ""));
+}
+
+function clipboardSourceLikelyGif(source) {
+  return /^data:image\/gif[;,]/i.test(String(source || "")) || /\.gif(?:$|[?#])/i.test(String(source || ""));
 }
 
 function clipboardImageTypeFromSource(source) {
@@ -183,30 +240,25 @@ export async function readPhotoPasteEventImageFiles(event, {
   fetchImpl = globalThis.fetch
 } = {}) {
   const directFiles = photoPasteEventImageFiles(event, { directReadPending });
-  if (directFiles.length) return directFiles;
   if (!directReadPending && !shouldHandlePhotoPasteTarget(event?.target)) return [];
   const items = [...(event?.clipboardData?.items || [])];
-  const htmlItem = items.find((item) =>
-    item?.kind === "string" && String(item.type || "").toLowerCase() === "text/html"
-  );
-  if (htmlItem) {
-    const html = await readDataTransferItemText(htmlItem);
-    const file = await firstFetchableClipboardImage(
-      clipboardImageSourcesFromHtml(html),
-      { fetchImpl }
+  if (directFiles.some(isGifClipboardImage)) return directFiles;
+  const representations = [
+    ["text/html", clipboardImageSourcesFromHtml],
+    ["text/uri-list", clipboardImageSourcesFromUriList],
+    ["text/plain", clipboardImageSourcesFromPlainText]
+  ];
+  for (const [expectedType, sourceParser] of representations) {
+    const item = items.find((entry) =>
+      entry?.kind === "string" && String(entry.type || "").toLowerCase() === expectedType
     );
-    if (file) return [file];
+    if (!item) continue;
+    const value = await readDataTransferItemText(item);
+    const sources = sourceParser(value).filter((source) => !directFiles.length || clipboardSourceLikelyGif(source));
+    const file = await firstFetchableClipboardImage(sources, { fetchImpl });
+    if (file && (!directFiles.length || isGifClipboardImage(file))) return [file];
   }
-  const uriItem = items.find((item) =>
-    item?.kind === "string" && String(item.type || "").toLowerCase() === "text/uri-list"
-  );
-  if (!uriItem) return [];
-  const uriList = await readDataTransferItemText(uriItem);
-  const file = await firstFetchableClipboardImage(
-    clipboardImageSourcesFromUriList(uriList),
-    { fetchImpl }
-  );
-  return file ? [file] : [];
+  return directFiles;
 }
 
 function readDataTransferItemText(item) {

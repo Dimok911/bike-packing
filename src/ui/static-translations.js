@@ -171,7 +171,11 @@ export function applyStaticTranslationsUi({
   setText(refs.itemCopyToContainerBtn, t("forms.copyToLayout"));
   setText(refs.itemRemoveFromLayoutBtn, t("forms.removeFromLayout"));
   setText(refs.itemDeleteForeverBtn, t("buttons.deleteForever"));
-  setFirstText(refs.dialog?.querySelector("label:has(#itemNote)"), t("forms.note"));
+  setText(refs.itemNoteLabel, t("forms.note"));
+  setAttr(refs.itemNoteSearchPrev, "aria-label", t("noteSearch.previous"));
+  setAttr(refs.itemNoteSearchPrev, "title", t("noteSearch.previous"));
+  setAttr(refs.itemNoteSearchNext, "aria-label", t("noteSearch.next"));
+  setAttr(refs.itemNoteSearchNext, "title", t("noteSearch.next"));
   setFirstText(refs.dialog?.querySelector(".field-label:has(#itemPhotoPreview)"), t("forms.photo"));
   const itemPhotoPick = refs.itemPhotoInput?.closest(".item-photo-pick");
   setText(itemPhotoPick, t("buttons.choosePhoto"));
@@ -207,7 +211,11 @@ export function applyStaticTranslationsUi({
   setText(refs.rootContainerCopyToContainerBtn, t("forms.copyToLayout"));
   setText(refs.rootContainerRemoveFromLayoutBtn, t("forms.removeFromLayout"));
   setText(refs.rootContainerDeleteForeverBtn, t("buttons.deleteForever"));
-  setFirstText(refs.rootContainerDialog?.querySelector("label:has(#rootContainerNote)"), t("forms.notes"));
+  setText(refs.rootContainerNoteLabel, t("forms.notes"));
+  setAttr(refs.rootContainerNoteSearchPrev, "aria-label", t("noteSearch.previous"));
+  setAttr(refs.rootContainerNoteSearchPrev, "title", t("noteSearch.previous"));
+  setAttr(refs.rootContainerNoteSearchNext, "aria-label", t("noteSearch.next"));
+  setAttr(refs.rootContainerNoteSearchNext, "title", t("noteSearch.next"));
   setFirstText(refs.rootContainerDialog?.querySelector(".field-label:has(#rootContainerPhotoPreview)"), t("forms.photo"));
   const rootPhotoPick = refs.rootContainerPhotoInput?.closest(".item-photo-pick");
   setText(rootPhotoPick, t("buttons.choosePhoto"));

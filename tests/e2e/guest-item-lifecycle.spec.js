@@ -48,19 +48,89 @@ test("guest searches items and clears the search", async ({ page }) => {
   const { container } = await createGuestWorkspace(page, {
     layoutName: "Проверка поиска",
     containerName: "Сумка для поиска",
-    itemName: "Красный фонарь",
+    itemName: "Насос велосипедный электрический",
   });
   await createItemInContainer(page, container, "Синий насос");
 
-  await page.locator("#searchInput").fill("фонарь");
-  await expect(container.locator("[data-item-id]").filter({ hasText: "Красный фонарь" })).toBeVisible();
+  await page.locator("#searchInput").fill("насос электрический");
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" })).toBeVisible();
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" }).locator("mark")).toHaveCount(2);
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Синий насос" })).toHaveCount(0);
   await expect(page.locator("#clearSearchBtn")).toBeVisible();
 
   await page.locator("#clearSearchBtn").click();
   await expect(page.locator("#searchInput")).toHaveValue("");
-  await expect(container.locator("[data-item-id]").filter({ hasText: "Красный фонарь" })).toBeVisible();
+  await expect(container.locator("[data-item-id]").filter({ hasText: "Насос велосипедный электрический" })).toBeVisible();
   await expect(container.locator("[data-item-id]").filter({ hasText: "Синий насос" })).toBeVisible();
+});
+
+test("search opens an item at the matching note text and navigates repeated matches", async ({ page }) => {
+  const query = "контрольная метка";
+  const note = [
+    `${query} в начале заметки`,
+    ...Array.from({ length: 45 }, (_, index) => `Подробная строка ${index + 1} о подготовке к поездке.`),
+    `${query} в середине заметки`,
+    ...Array.from({ length: 35 }, (_, index) => `Дополнительная строка ${index + 1} со списком снаряжения.`),
+    `${query} в конце заметки`
+  ].join("\n");
+  const { item } = await createGuestWorkspace(page, {
+    layoutName: "Навигация по заметке",
+    containerName: "Сумка с подробностями",
+    itemName: "Предмет с длинной заметкой",
+  });
+
+  await item.locator(".item-title-hitarea").click();
+  await page.locator("#itemNote").fill(note);
+  await page.locator("#itemPhotoInput").setInputFiles({
+    name: "note-match.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#d7e4df"/></svg>')
+  });
+  await expect(page.locator("#itemPhotoPreview img")).toBeVisible();
+  await page.locator("#saveItemBtn").click();
+
+  await page.locator('.tab[data-view="items"]').click();
+  await page.locator("#searchInput").fill(query);
+  const result = page.locator("#itemsView .items-list .item-card").filter({ hasText: "Предмет с длинной заметкой" });
+  await expect(result.locator(".search-note-match-badge")).toBeVisible();
+  await expect(result.locator(".item-photo")).toBeVisible();
+  const badgePlacement = await result.evaluate((card) => {
+    const badge = card.querySelector(".search-note-match-badge")?.getBoundingClientRect();
+    const photo = card.querySelector(".item-photo")?.getBoundingClientRect();
+    return badge && photo ? {
+      badgeBottom: badge.bottom,
+      badgeTop: badge.top,
+      cardBottom: card.getBoundingClientRect().bottom,
+      cardTop: card.getBoundingClientRect().top,
+      photoBottom: photo.bottom,
+      photoTop: photo.top
+    } : null;
+  });
+  expect(badgePlacement.badgeTop).toBeGreaterThanOrEqual(badgePlacement.cardTop);
+  expect(badgePlacement.badgeBottom).toBeLessThanOrEqual(badgePlacement.cardBottom);
+  expect(badgePlacement.badgeTop).toBeGreaterThanOrEqual(badgePlacement.photoTop);
+  expect(badgePlacement.badgeTop).toBeLessThan(badgePlacement.photoBottom);
+  await result.locator(".item-title").click();
+
+  const navigation = page.locator("#itemNoteSearchNav");
+  const textarea = page.locator("#itemNote");
+  await expect(navigation).toBeVisible();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
+  await expect(page.locator("#itemNoteSearchQuery")).toHaveText(query);
+  await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query));
+  await expect(textarea).toHaveJSProperty("selectionEnd", note.indexOf(query) + query.length);
+
+  await page.locator("#itemNoteSearchNext").click();
+  const secondStart = note.indexOf(query, query.length);
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 2 из 3");
+  await expect(textarea).toHaveJSProperty("selectionStart", secondStart);
+  await expect(textarea).toHaveJSProperty("selectionEnd", secondStart + query.length);
+  await expect.poll(() => textarea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.locator("#itemNoteSearchNext").click();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 3 из 3");
+  await page.locator("#itemNoteSearchNext").click();
+  await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
 });
 
 test("guest filters packed items and unpacks everything with state kept after reload", async ({ page }) => {

@@ -14,7 +14,7 @@ function rootCollapseButtonHtml({ container, readonly, readonlyTemplate, rootCol
   const rootIconClass = rootCollapsed ? "chevron-right" : "chevron-down";
   const label = rootCollapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
   return `
-    <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+    <button class="collapse-button" data-toggle-container="${container.id}" aria-expanded="${String(!rootCollapsed)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
       <span class="chevron-icon ${rootIconClass}" aria-hidden="true"></span>
     </button>
   `;
@@ -166,13 +166,15 @@ export function renderSubcontainerSectionHtml({
 }) {
   const iconClass = collapsed ? "chevron-right" : "chevron-down";
   const collapseLabel = collapsed ? tr(t, "tooltips.expand", "Развернуть") : tr(t, "tooltips.collapse", "Свернуть");
+  const expandLabel = tr(t, "tooltips.expand", "Развернуть");
+  const collapsedLabel = tr(t, "tooltips.collapse", "Свернуть");
   const addItemLabel = tr(t, "tooltips.addItem", "Добавить вещь");
   const nestContainerLabel = tr(t, "drag.nestContainer", "Вложить в пакет");
   return `
     <section class="subcontainer ${collapsed ? "collapsed" : ""} ${packed ? "packed-container" : ""} ${filterMatch ? "filter-match" : ""} ${justAdded ? "just-added" : ""}" data-subcontainer-id="${container.id}" ${filterMatch ? `data-filter-match-id="bag-${container.id}"` : ""}>
       <div class="subcontainer-title">
         <div class="subcontainer-title-main">
-          <button class="collapse-button" data-toggle-container="${container.id}" aria-label="${escapeHtml(collapseLabel)}" title="${escapeHtml(collapseLabel)}">
+          <button class="collapse-button" data-toggle-container="${container.id}" aria-expanded="${String(!collapsed)}" aria-controls="packing-container-contents-${escapeHtml(container.id)}" data-expand-label="${escapeHtml(expandLabel)}" data-collapse-label="${escapeHtml(collapsedLabel)}" aria-label="${escapeHtml(collapseLabel)}" title="${escapeHtml(collapseLabel)}">
             <span class="chevron-icon ${iconClass}" aria-hidden="true"></span>
           </button>
           ${titleHtml}
@@ -185,7 +187,7 @@ export function renderSubcontainerSectionHtml({
       </div>
       ${renderSearchNoteMatchBadge(container, searchQuery, t)}
       ${photoHtml}
-      <div class="dropzone" data-container-id="${container.id}">
+      <div class="dropzone" id="packing-container-contents-${escapeHtml(container.id)}" data-container-id="${container.id}">
         ${contentsHtml}
       </div>
     </section>

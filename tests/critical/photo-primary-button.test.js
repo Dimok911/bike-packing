@@ -7,6 +7,7 @@ import {
 import { moveOrderedPhoto } from "../../src/ui/photo-order-dialog.js";
 import {
   clipboardImageSourcesFromHtml,
+  clipboardImageSourcesFromPlainText,
   clipboardImageSourcesFromUriList,
   clipboardImageFiles,
   normalizeClipboardImageBlob,
@@ -15,6 +16,7 @@ import {
   readPhotoPasteEventImageFiles,
   shouldHandlePhotoPasteTarget
 } from "../../src/ui/photo-clipboard.js";
+import { fetchClipboardImageSource } from "../../src/sync/remote-image-import.js";
 
 test("CRITICAL photos: clipboard paste accepts images without hijacking text fields", () => {
   const image = { name: "paste.png", type: "image/png", size: 12, lastModified: 1 };
@@ -86,6 +88,50 @@ test("CRITICAL photos: clipboard HTML and URI parsing keeps only supported image
   assert.deepEqual(clipboardImageSourcesFromUriList(
     "# copied image\nhttps://example.com/a.png\njavascript:alert(1)"
   ), ["https://example.com/a.png"]);
+  assert.deepEqual(clipboardImageSourcesFromPlainText(
+    "https://example.com/animated.gif\nnot a URL"
+  ), ["https://example.com/animated.gif"]);
+});
+
+test("CRITICAL photos: an original GIF URL wins over a static clipboard preview", async () => {
+  const staticPreview = new Blob(["static frame"], { type: "image/png" });
+  const files = await readClipboardImageFiles({
+    read: async () => [{
+      types: ["image/png", "text/html"],
+      getType: async (type) => type === "image/png"
+        ? staticPreview
+        : new Blob(['<img src="https://example.com/animated.gif">'], { type })
+    }]
+  }, {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => "animated.gif" },
+      blob: async () => new Blob(["GIF89a animation bytes"], { type: "image/gif" })
+    })
+  });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].type, "image/gif");
+  assert.equal(files[0].name, "animated.gif");
+  assert.equal(await files[0].text(), "GIF89a animation bytes");
+});
+
+test("CRITICAL photos: a plain copied image URL is downloaded through the authenticated API", async () => {
+  const requests = [];
+  const response = { ok: true, status: 200 };
+  const result = await fetchClipboardImageSource("https://images.example.com/bag.gif", {
+    apiBase: "https://api.example.test/base",
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return response;
+    },
+    timeoutMs: 0
+  });
+  assert.equal(result, response);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://api.example.test/base/bike-packing/image-source");
+  assert.equal(requests[0].options.credentials, "include");
+  assert.deepEqual(JSON.parse(requests[0].options.body), { url: "https://images.example.com/bag.gif" });
 });
 
 test("CRITICAL photos: a clipboard blob with a missing MIME type inherits its declared image type", async () => {
@@ -121,6 +167,29 @@ test("CRITICAL photos: iOS paste event recovers a copied web image from HTML", a
   assert.equal(files.length, 1);
   assert.equal(files[0].type, "image/png");
   assert.equal(await files[0].text(), "image bytes");
+});
+
+test("CRITICAL photos: paste event accepts a plain-text image URL", async () => {
+  const event = {
+    target: { closest: () => ({}) },
+    clipboardData: {
+      items: [{
+        kind: "string",
+        type: "text/plain",
+        getAsString: (callback) => callback("https://example.com/photo.webp")
+      }]
+    }
+  };
+  const files = await readPhotoPasteEventImageFiles(event, {
+    directReadPending: true,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(["webp bytes"], { type: "image/webp" })
+    })
+  });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].type, "image/webp");
 });
 
 test("CRITICAL photos: unsupported direct clipboard read keeps Ctrl+V fallback available", async () => {

@@ -27,6 +27,7 @@ import {
   readClipboardImageFiles,
   readPhotoPasteEventImageFiles
 } from "../ui/photo-clipboard.js";
+import { fetchClipboardImageSource } from "../sync/remote-image-import.js";
 import {
   isContainerReplacementCandidateInLayoutState,
   isTemporaryContainerInLayoutState,
@@ -115,6 +116,7 @@ import {
   pickerListThumbnailHtml,
   syncPickerListPhotoToggle
 } from "../ui/picker-list-thumbnails.js";
+import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const runtime = ctx.runtime;
@@ -400,6 +402,25 @@ export function createAppTailControllers(ctx) {
     withLayoutArrangementAppliedAsync, withoutPhotoReferences, writeContainerTreeToLayoutArrangement, writeLargeScopedLocalValue
   } = ctx;
 
+  const itemNoteSearchNavigator = createNoteSearchNavigator({
+    container: refs.itemNoteSearchNav,
+    nextButton: refs.itemNoteSearchNext,
+    previousButton: refs.itemNoteSearchPrev,
+    queryLabel: refs.itemNoteSearchQuery,
+    status: refs.itemNoteSearchStatus,
+    t,
+    textarea: refs.itemNote
+  });
+
+  const rootContainerNoteSearchNavigator = createNoteSearchNavigator({
+    container: refs.rootContainerNoteSearchNav,
+    nextButton: refs.rootContainerNoteSearchNext,
+    previousButton: refs.rootContainerNoteSearchPrev,
+    queryLabel: refs.rootContainerNoteSearchQuery,
+    status: refs.rootContainerNoteSearchStatus,
+    t,
+    textarea: refs.rootContainerNote
+  });
 function isEnglishUi() {
   return normalizeUiLanguage(uiLanguage) === "en";
 }
@@ -5803,6 +5824,7 @@ function openRootContainerDialog(containerId = null, {
   updateRootContainerDialogSaveState();
   openModalDialog(refs.rootContainerDialog);
   resetDialogScrollPosition(refs.rootContainerDialog);
+  rootContainerNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function fillRootContainerLocationSelect(selected = "") {
@@ -5870,6 +5892,7 @@ function openItemDialog(itemId = null, { targetContainerId = "", targetLayoutId 
   updateItemDialogSaveState();
   openModalDialog(refs.dialog);
   resetDialogScrollPosition(refs.dialog);
+  itemNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function sharedRecordContainerPath(sourceState, containerId) {
@@ -5959,6 +5982,7 @@ async function openSharedReadonlyItemDialog(sourceItemId) {
   await updateItemDialogPhotoPreview(normalizeItemPhotos(item));
   setSharedReadonlyItemDialog(true);
   openModalDialog(refs.dialog);
+  itemNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function setSharedReadonlyItemDialog(readonly) {
@@ -6057,6 +6081,7 @@ async function openSharedReadonlyContainerDialog(sourceContainerId) {
   await updateRootContainerDialogPhotoPreview(normalizeItemPhotos(container));
   setSharedReadonlyRootContainerDialog(true);
   openModalDialog(refs.rootContainerDialog);
+  rootContainerNoteSearchNavigator.open(refs.searchInput.value);
 }
 
 function setSharedReadonlyRootContainerDialog(readonly) {
@@ -7851,9 +7876,10 @@ async function handleDialogPhotoPaste(event, kind = "item") {
   const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
   const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (directFiles.length) event.preventDefault();
-  const files = directFiles.length
-    ? directFiles
-    : await readPhotoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
+  const files = await readPhotoPasteEventImageFiles(event, {
+    directReadPending: Boolean(request),
+    fetchImpl: fetchClipboardImageSource
+  });
   if (!files.length) return;
   event.preventDefault();
   processDialogPhotoPasteFiles(files, kind, request);
@@ -7864,7 +7890,10 @@ function handleActivePhotoClipboardPaste(event) {
   if (!request) return;
   event.__bikePackingActivePhotoPaste = true;
   event.preventDefault();
-  request.pasteEventProcessing = readPhotoPasteEventImageFiles(event, { directReadPending: true })
+  request.pasteEventProcessing = readPhotoPasteEventImageFiles(event, {
+    directReadPending: true,
+    fetchImpl: fetchClipboardImageSource
+  })
     .then((files) => {
       if (!files.length) return null;
       return processDialogPhotoPasteFiles(files, request.kind, request);
@@ -7895,7 +7924,7 @@ async function handlePhotoPasteButtonClick(event, kind = "item") {
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
   try {
-    const files = await readClipboardImageFiles(navigator.clipboard);
+    const files = await readClipboardImageFiles(navigator.clipboard, { fetchImpl: fetchClipboardImageSource });
     if (request.handled) {
       await request.processing;
       return;

@@ -1,5 +1,6 @@
 import { bindPackingEmptyStateActions } from "./empty-state.js";
 import { bindCardEditorClicks } from "./card-edit-click.js";
+import { updateNestedPackingDisclosure } from "./packing-disclosure.js";
 
 export function bindPackingEvents(root, {
   bindPointerPackingDrag,
@@ -319,9 +320,11 @@ export function bindPackingEvents(root, {
         render();
         return;
       }
-      state.collapsedContainers[containerId] = !state.collapsedContainers[containerId];
+      const collapsed = !state.collapsedContainers[containerId];
+      state.collapsedContainers[containerId] = collapsed;
+      const updatedWithoutRender = updateNestedPackingDisclosure(button, collapsed);
       saveLocalUiState();
-      render();
+      if (!updatedWithoutRender) render();
     });
   });
 
