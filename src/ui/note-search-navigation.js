@@ -94,6 +94,7 @@ function matchOffsetTop(textarea, start, end, windowRef) {
 
 export function revealNoteSearchMatch({ textarea, start, end, scrollField = false } = {}) {
   if (!textarea || !Number.isFinite(start) || !Number.isFinite(end)) return false;
+  textarea.focus?.({ preventScroll: true });
   textarea.setSelectionRange?.(start, end);
   textarea.classList?.add("note-search-match-active");
   const windowRef = textarea.ownerDocument?.defaultView || globalThis.window;

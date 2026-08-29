@@ -178,7 +178,7 @@ export function renderListItemHtml({
       highlightText(item.location)
     ], { hidden: !showLabels }),
     statusHtml: highlightText(placementText),
-    badgeHtml: renderSearchNoteMatchBadge(item, searchQuery, t),
+    badgeHtml: renderSearchNoteMatchBadge(item, searchQuery, t, { editAttribute: "data-note-match-open" }),
     photoHtml,
     actionsHtml: `
       <button class="copy-item-button" data-copy-item="${item.id}" aria-label="${copyLabel}" title="${copyLabel}">

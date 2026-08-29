@@ -37,6 +37,7 @@ test("note match badge overlays the desktop photo instead of being clipped from 
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
   assert.match(styles, /\.items-list\.with-photo-slots \.item-card:has\(\.item-photo\) \.item-card-top \{[\s\S]*?overflow:\s*visible;/);
   assert.match(styles, /\.item-card:has\(\.item-photo\) \.catalog-card-title-block > \.search-note-match-badge \{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*calc\(var\(--photo-top-row-height\) \+ 76px\);/);
+  assert.match(styles, /textarea\.note-search-match-active::selection \{[\s\S]*?background:\s*#ffb52e;/);
 });
 
 test("item search excludes fields handled by dedicated filters and placement UI", () => {
@@ -109,6 +110,10 @@ test("note match badge is visible only when the note contains the search text", 
   const t = (key) => key === "filters.noteMatch" ? "Match in note" : key;
   assert.match(renderSearchNoteMatchBadge(item, "hot meals", t), /search-note-match-badge/);
   assert.match(renderSearchNoteMatchBadge(item, "hot meals", t), />Match in note</);
+  assert.match(
+    renderSearchNoteMatchBadge(item, "hot meals", t, { editAttribute: "data-note-match-open" }),
+    /<button[^>]*data-note-match-open="item-1"[^>]*>Match in note<\/button>/
+  );
   assert.equal(renderSearchNoteMatchBadge(item, "stove", t), "");
 });
 

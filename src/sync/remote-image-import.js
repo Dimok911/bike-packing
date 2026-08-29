@@ -10,7 +10,7 @@ function isRemoteHttpSource(value) {
 export async function fetchClipboardImageSource(source, {
   apiBase = API_BASE,
   fetchImpl = globalThis.fetch,
-  timeoutMs = Math.max(API_TIMEOUT_MS, 20000)
+  timeoutMs = Math.max(API_TIMEOUT_MS, 60000)
 } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Image download is unavailable.");
   const normalizedSource = String(source || "").trim();

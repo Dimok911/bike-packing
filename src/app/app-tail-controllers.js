@@ -8021,8 +8021,11 @@ async function handlePhotoPasteButtonClick(event, kind = "item") {
   const button = event.currentTarget;
   if (!button || button.disabled || button.getAttribute("aria-busy") === "true") return;
   const request = { kind, handled: false, processing: null, pasteEventProcessing: null };
+  const idleText = button.textContent;
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");
+  button.textContent = t("photo.importing");
+  button.disabled = true;
   try {
     const files = await readClipboardImageFiles(navigator.clipboard, { fetchImpl: fetchClipboardImageSource });
     if (request.handled) {
@@ -8053,6 +8056,8 @@ async function handlePhotoPasteButtonClick(event, kind = "item") {
   } finally {
     if (activePhotoClipboardRequest === request) activePhotoClipboardRequest = null;
     button.removeAttribute("aria-busy");
+    button.disabled = false;
+    button.textContent = idleText;
   }
 }
 

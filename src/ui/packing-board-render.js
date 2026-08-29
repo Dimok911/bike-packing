@@ -84,7 +84,7 @@ export function renderRootContainerColumnHtml({
         </div>
         ${rootContainerToolsHtml({ allNestedCollapsed, container, hasNestedContainers, readonlyTemplate, t, totalWeightHtml })}
       </header>
-      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
+      ${renderSearchNoteMatchBadge(container, searchQuery, t, { editAttribute: "data-note-match-open" })}
       ${photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
@@ -117,7 +117,7 @@ export function renderFilteredRootContainerColumnHtml({
         </div>
         ${rootContainerToolsHtml({ container, readonlyTemplate, t, totalWeightHtml })}
       </header>
-      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
+      ${renderSearchNoteMatchBadge(container, searchQuery, t, { editAttribute: "data-note-match-open" })}
       ${photoHtml}
       <div class="dropzone" data-container-id="${container.id}">
         ${rootCollapsed ? "" : contentsHtml}
@@ -185,7 +185,7 @@ export function renderSubcontainerSectionHtml({
           ${weightHtml}
         </div>
       </div>
-      ${renderSearchNoteMatchBadge(container, searchQuery, t)}
+      ${renderSearchNoteMatchBadge(container, searchQuery, t, { editAttribute: "data-note-match-open" })}
       ${photoHtml}
       <div class="dropzone" id="packing-container-contents-${escapeHtml(container.id)}" data-container-id="${container.id}">
         ${contentsHtml}
@@ -237,7 +237,7 @@ export function renderPackingItemCardHtml({
         </button>
         ${availabilityBadge}
       </div>
-      ${renderSearchNoteMatchBadge(item, searchQuery, t)}
+      ${renderSearchNoteMatchBadge(item, searchQuery, t, { editAttribute: "data-note-match-open" })}
       <div class="meta ${labelsVisible ? "" : "meta-hidden"}">
         <span class="pill">${weightHtml}</span>
         ${categoriesHtml}
