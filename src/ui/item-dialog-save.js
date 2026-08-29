@@ -26,6 +26,7 @@ export function saveRootContainerDialogAction({
   changedAt = "",
   closeDialogWithoutRestoringFocus = () => {},
   currentCreateMeta = () => ({}),
+  rootContainerSourceMeta = () => ({}),
   createRootContainerId = () => `container-${Date.now()}`,
   defaultRootContainerLocation = () => "",
   editingRootContainerId = "",
@@ -74,6 +75,7 @@ export function saveRootContainerDialogAction({
       note: refs.rootContainerNote.value.trim(),
       nestable: Boolean(refs.rootContainerNestable?.checked),
       photos: rootContainerDialogPhotoDraft?.photos ? [...rootContainerDialogPhotoDraft.photos] : [],
+      ...rootContainerSourceMeta(),
       ...currentCreateMeta(changedAt)
     };
     markRecordActivePublicCatalog(state.containers[id]);

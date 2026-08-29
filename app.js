@@ -1170,12 +1170,13 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "historyLayoutScopedRestore",
   "historyPhotoTrashRetention",
   "historyRestoreProvenance",
+  "experimentFrontendCorsOrigin",
   "sharedListSnapshots",
   "sharedListOptionalAuthor",
   "entityShareLinks",
   "userDisplayName"
 ];
-const REQUIRED_ADMIN_API_VERSION = "2026-08-15.history-quantity-scope-v1";
+const REQUIRED_ADMIN_API_VERSION = "2026-08-29.experiment-cors-v1";
 const {
   forget: forgetDeletedSharedLayoutId,
   has: isDeletedSharedLayoutId,
