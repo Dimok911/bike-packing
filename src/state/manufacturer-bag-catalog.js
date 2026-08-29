@@ -26,10 +26,14 @@ export function manufacturerBagCatalogSearchText(entry) {
     waterproof: entry?.waterproof,
     material: entry?.material,
     mounting: entry?.mounting,
+    mountingOptions: entry?.mountingOptions,
     description: entry?.description,
     aliases: entry?.aliases,
     weight: entry?.weight,
+    weightOptions: entry?.weightOptions,
     volume: entry?.volume,
+    volumeOptions: entry?.volumeOptions,
+    variants: entry?.variants,
     loadKg: entry?.loadKg
   }));
 }
@@ -63,6 +67,72 @@ export function manufacturerBagCatalogCount(catalog = [], {
 export function manufacturerBagCatalogEntry(catalog = [], id = "") {
   const normalized = String(id || "");
   return (Array.isArray(catalog) ? catalog : []).find((entry) => entry?.id === normalized) || null;
+}
+
+function manufacturerBagCatalogVariantSetKind(entry, variant = {}) {
+  const title = String(variant?.title || "");
+  if (/\bpair\b/i.test(title)) return "pair";
+  if (/\bunit\b/i.test(title)) return "single";
+  return entry?.soldAsSet ? "pair" : "single";
+}
+
+export function manufacturerBagCatalogVariantChoices(entry) {
+  const variants = Array.isArray(entry?.variants) ? entry.variants : [];
+  const choices = new Map();
+  variants.forEach((variant) => {
+    const volume = Number(variant?.volume || entry?.volume || 0);
+    const mounting = String(variant?.mounting || entry?.mounting || "").trim();
+    const setKind = manufacturerBagCatalogVariantSetKind(entry, variant);
+    const key = `${volume}|${mounting}|${setKind}`;
+    const current = choices.get(key);
+    if (!current || (!current.available && variant?.available)) {
+      choices.set(key, { ...variant, volume, mounting, setKind });
+    }
+  });
+  if (!choices.size && entry) {
+    choices.set("default", {
+      sku: String(entry.sku || ""),
+      title: String(entry.variant || ""),
+      color: String(entry.color || ""),
+      volume: Number(entry.volume || 0),
+      weight: Number(entry.weight || 0),
+      mounting: String(entry.mounting || ""),
+      setKind: entry.soldAsSet ? "pair" : "single",
+      available: entry.available !== false
+    });
+  }
+  return [...choices.values()].sort((left, right) => Number(left.volume || 0) - Number(right.volume || 0)
+    || String(left.mounting || "").localeCompare(String(right.mounting || ""))
+    || String(left.setKind || "").localeCompare(String(right.setKind || "")));
+}
+
+export function manufacturerBagCatalogVariantEntry(entry, sku = "") {
+  if (!entry || typeof entry !== "object") return null;
+  const choices = manufacturerBagCatalogVariantChoices(entry);
+  const selected = choices.find((variant) => variant.sku === String(sku || "")) || choices[0];
+  if (!selected) return { ...entry };
+  const referenceWeight = Number(entry.weight || 0);
+  const variantWeight = Number(selected.weight || 0);
+  const weightIsPlausible = variantWeight > 0 && (!referenceWeight
+    || (variantWeight >= referenceWeight / 4 && variantWeight <= referenceWeight * 4));
+  const volume = Number(selected.volume || entry.volume || 0);
+  const mounting = String(selected.mounting || entry.mounting || "");
+  const samePrimarySize = !volume || volume === Number(entry.volume || 0);
+  return {
+    ...entry,
+    sku: String(selected.sku || entry.sku || ""),
+    variant: String(selected.title || entry.variant || ""),
+    weight: weightIsPlausible ? variantWeight : referenceWeight,
+    weightOptions: [weightIsPlausible ? variantWeight : referenceWeight].filter((value) => value > 0),
+    volume,
+    volumeOptions: [volume].filter((value) => value > 0),
+    color: String(selected.color || entry.color || ""),
+    mounting,
+    mountingOptions: mounting ? [mounting] : [],
+    soldAsSet: selected.setKind === "pair",
+    available: selected.available !== false,
+    dimensions: samePrimarySize ? entry.dimensions : {}
+  };
 }
 
 export function normalizeManufacturerBagCatalogOverride(value) {
@@ -139,7 +209,7 @@ export function manufacturerBagContainerDraft(entry) {
     dimensions,
     manufacturerCatalogSource: {
       kind: "manufacturer-bag",
-      provider: "ortlieb.com",
+      provider: String(entry.provider || "manufacturer-catalog"),
       catalogId: String(entry.id || ""),
       brand: String(entry.brand || ""),
       sku: String(entry.sku || ""),

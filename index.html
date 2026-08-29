@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1566" />
+    <link rel="stylesheet" href="./styles.css?v=1567" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -386,6 +386,34 @@
           <p id="bagCatalogAdminNotice" class="manufacturer-catalog-admin-notice" hidden></p>
         </div>
         <div id="bagCatalogResults" class="manufacturer-catalog-results"></div>
+      </form>
+    </dialog>
+
+    <dialog id="bagCatalogCompareDialog">
+      <form method="dialog" class="dialog-card manufacturer-bag-comparison-dialog-card">
+        <header>
+          <h2 id="bagCatalogCompareTitle">Compare bags</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <p id="bagCatalogCompareSummary" class="dialog-subtitle"></p>
+        <div class="manufacturer-comparison-scroll">
+          <table class="manufacturer-comparison-table">
+            <thead>
+              <tr>
+                <th id="bagCatalogCompareModelHeading" scope="col">Model</th>
+                <th id="bagCatalogCompareVolumeHeading" scope="col">Volume</th>
+                <th id="bagCatalogCompareWeightHeading" scope="col">Weight</th>
+                <th id="bagCatalogCompareDimensionsHeading" scope="col">Dimensions</th>
+                <th id="bagCatalogCompareWaterproofHeading" scope="col">Waterproof</th>
+                <th id="bagCatalogCompareMountingHeading" scope="col">Mounting</th>
+                <th id="bagCatalogCompareSetHeading" scope="col">Set</th>
+                <th id="bagCatalogCompareAvailabilityHeading" scope="col">Availability</th>
+                <th id="bagCatalogCompareSourceHeading" scope="col">Source</th>
+              </tr>
+            </thead>
+            <tbody id="bagCatalogCompareBody"></tbody>
+          </table>
+        </div>
       </form>
     </dialog>
 
@@ -866,6 +894,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1566" type="module"></script>
+    <script src="./app.js?v=1567" type="module"></script>
   </body>
 </html>

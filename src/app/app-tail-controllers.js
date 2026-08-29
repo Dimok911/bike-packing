@@ -93,6 +93,7 @@ import {
 } from "../storage/manufacturer-bag-catalog-overrides.js";
 import { prepareManufacturerBagCatalogImport } from "../public/manufacturer-bag-catalog-import.js";
 import { createManufacturerBagCatalogDialogController } from "../ui/manufacturer-bag-catalog-dialog.js";
+import { createManufacturerBagComparisonDialogController } from "../ui/manufacturer-bag-comparison-dialog.js";
 import {
   createNewEntityFormDraft,
   entityFormDraftStorageKey,
@@ -422,6 +423,15 @@ const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
   manufacturerBagCatalogOverrides
 );
 
+const manufacturerBagComparisonDialogController = createManufacturerBagComparisonDialogController({
+  catalog: manufacturerBagCatalogRows,
+  categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
+  escapeHtml,
+  openModalDialog,
+  refs,
+  t
+});
+
 const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialogController({
   canEdit: () => isAdminUser(),
   catalog: manufacturerBagCatalogRows,
@@ -429,6 +439,7 @@ const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialo
   escapeHtml,
   families: MANUFACTURER_BAG_CATALOG_FAMILIES,
   language: () => isEnglishUi() ? "en" : "ru",
+  onCompareCategory: (categoryId) => manufacturerBagComparisonDialogController.open(categoryId),
   onSelect: applyManufacturerBagCatalogSelection,
   onSelectError: () => {
     setRootContainerDialogPhotoStatus(t("bagCatalog.photoError"));

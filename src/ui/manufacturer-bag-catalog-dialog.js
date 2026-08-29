@@ -1,7 +1,9 @@
 import {
   filterManufacturerBagCatalog,
   manufacturerBagCatalogCount,
-  manufacturerBagCatalogEntry
+  manufacturerBagCatalogEntry,
+  manufacturerBagCatalogVariantChoices,
+  manufacturerBagCatalogVariantEntry
 } from "../state/manufacturer-bag-catalog.js";
 
 function localizedDescription(entry, language = "en") {
@@ -33,6 +35,7 @@ export function createManufacturerBagCatalogDialogController({
   escapeHtml = (value) => String(value || ""),
   families = [],
   language = () => "en",
+  onCompareCategory = () => {},
   onSelect = async () => {},
   onSelectError = () => {},
   onUpdate = () => {},
@@ -45,6 +48,7 @@ export function createManufacturerBagCatalogDialogController({
   let query = "";
   let editingId = "";
   let selectingId = "";
+  const selectedVariantSkuByEntry = new Map();
 
   function catalogRows() {
     const rows = typeof catalog === "function" ? catalog() : catalog;
@@ -87,11 +91,9 @@ export function createManufacturerBagCatalogDialogController({
       ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { query }))
       : category
         ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { category, family }))
-        : family === "bikepacking"
+        : family
           ? renderCategoryList()
-          : family === "panniers"
-            ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { family }))
-            : renderFamilyList();
+          : renderFamilyList();
   }
 
   function currentPath(hasQuery = false) {
@@ -127,11 +129,14 @@ export function createManufacturerBagCatalogDialogController({
         ${rows.map((entry) => {
           const count = manufacturerBagCatalogCount(catalogRows(), { family, category: entry.id });
           return `
-            <button class="manufacturer-catalog-section" type="button" data-bag-catalog-category="${escapeHtml(entry.id)}">
-              <span class="manufacturer-catalog-section-title">${escapeHtml(t(entry.labelKey))}</span>
-              <span class="manufacturer-catalog-section-count">${escapeHtml(t("bagCatalog.models", { count }))}</span>
-              <span class="manufacturer-catalog-section-description">${escapeHtml(t(entry.descriptionKey))}</span>
-            </button>
+            <article class="manufacturer-catalog-section manufacturer-catalog-category-section">
+              <button class="manufacturer-catalog-category-open" type="button" data-bag-catalog-category="${escapeHtml(entry.id)}">
+                <span class="manufacturer-catalog-section-title">${escapeHtml(t(entry.labelKey))}</span>
+                <span class="manufacturer-catalog-section-count">${escapeHtml(t("bagCatalog.models", { count }))}</span>
+                <span class="manufacturer-catalog-section-description">${escapeHtml(t(entry.descriptionKey))}</span>
+              </button>
+              <button class="ghost manufacturer-catalog-compare-button" type="button" data-bag-catalog-compare-category="${escapeHtml(entry.id)}" ${count < 2 ? "disabled" : ""}>${escapeHtml(t("bagCatalog.compare.open"))}</button>
+            </article>
           `;
         }).join("")}
       </div>
@@ -151,7 +156,9 @@ export function createManufacturerBagCatalogDialogController({
   }
 
   function renderProductCard(entry) {
-    const dimensions = dimensionText(entry.dimensions);
+    const variantChoices = manufacturerBagCatalogVariantChoices(entry);
+    const selectedEntry = manufacturerBagCatalogVariantEntry(entry, selectedVariantSkuByEntry.get(entry.id));
+    const dimensions = dimensionText(selectedEntry.dimensions);
     const locale = language() === "ru" ? "ru" : "en";
     const sourceUrl = safeCatalogUrl(entry.sourceUrl);
     const imageUrl = safeCatalogUrl(entry.imageUrl, { localAsset: true });
@@ -167,17 +174,33 @@ export function createManufacturerBagCatalogDialogController({
               <span class="manufacturer-catalog-brand">${escapeHtml(entry.brand)}</span>
               <h3>${escapeHtml(entry.name)}</h3>
             </div>
-            <span class="manufacturer-catalog-sku">${escapeHtml(entry.sku)}</span>
+            ${selectedEntry.sku ? `<span class="manufacturer-catalog-sku">${escapeHtml(selectedEntry.sku)}</span>` : ""}
           </div>
           <p class="manufacturer-catalog-variant">${escapeHtml(entry.variant)}</p>
           <p class="manufacturer-catalog-description">${escapeHtml(localizedDescription(entry, locale))}</p>
+          ${variantChoices.length > 1 ? `
+            <label class="manufacturer-catalog-variant-picker">
+              <span>${escapeHtml(t("bagCatalog.variantPicker"))}</span>
+              <select data-bag-catalog-variant-select="${escapeHtml(entry.id)}">
+                ${variantChoices.map((variant) => {
+                  const labelParts = [
+                    variant.volume ? `${variant.volume} ${t("bagCatalog.liters")}` : "",
+                    variant.mounting || "",
+                    variant.setKind === "pair" ? t("bagCatalog.compare.pair") : "",
+                    variant.available ? "" : t("bagCatalog.compare.unavailable")
+                  ].filter(Boolean);
+                  return `<option value="${escapeHtml(variant.sku)}" ${variant.sku === selectedEntry.sku ? "selected" : ""}>${escapeHtml(labelParts.join(" · ") || variant.title || variant.sku)}</option>`;
+                }).join("")}
+              </select>
+            </label>
+          ` : ""}
           <div class="manufacturer-catalog-specs">
-            <span>${escapeHtml(entry.weight)} ${escapeHtml(t("bagCatalog.grams"))}</span>
-            <span>${escapeHtml(entry.volume)} ${escapeHtml(t("bagCatalog.liters"))}</span>
+            ${selectedEntry.weight ? `<span>${escapeHtml(selectedEntry.weight)} ${escapeHtml(t("bagCatalog.grams"))}</span>` : ""}
+            ${selectedEntry.volume ? `<span>${escapeHtml(selectedEntry.volume)} ${escapeHtml(t("bagCatalog.liters"))}</span>` : ""}
             ${dimensions ? `<span>${escapeHtml(dimensions)} ${escapeHtml(t("bagCatalog.centimeters"))}</span>` : ""}
-            ${entry.loadKg ? `<span>${escapeHtml(t("bagCatalog.load", { value: entry.loadKg }))}</span>` : ""}
-            ${entry.waterproof ? `<span>${escapeHtml(entry.waterproof)}</span>` : ""}
-            ${entry.mounting ? `<span>${escapeHtml(entry.mounting)}</span>` : ""}
+            ${selectedEntry.loadKg ? `<span>${escapeHtml(t("bagCatalog.load", { value: selectedEntry.loadKg }))}</span>` : ""}
+            ${selectedEntry.waterproof ? `<span>${escapeHtml(selectedEntry.waterproof)}</span>` : ""}
+            ${selectedEntry.mounting ? `<span>${escapeHtml(selectedEntry.mounting)}</span>` : ""}
           </div>
           <div class="manufacturer-catalog-product-actions">
             ${sourceUrl ? `<a class="ghost manufacturer-catalog-source-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("bagCatalog.source"))}</a>` : ""}
@@ -210,6 +233,11 @@ export function createManufacturerBagCatalogDialogController({
       render();
       return;
     }
+    const compareButton = event.target.closest("[data-bag-catalog-compare-category]");
+    if (compareButton) {
+      onCompareCategory(compareButton.dataset.bagCatalogCompareCategory || "");
+      return;
+    }
     const editButton = event.target.closest("[data-bag-catalog-edit]");
     if (editButton && canEdit() && !selectingId) {
       openEditor(editButton.dataset.bagCatalogEdit);
@@ -217,8 +245,9 @@ export function createManufacturerBagCatalogDialogController({
     }
     const selectButton = event.target.closest("[data-bag-catalog-select]");
     if (!selectButton || selectingId) return;
-    const entry = manufacturerBagCatalogEntry(catalogRows(), selectButton.dataset.bagCatalogSelect);
-    if (!entry) return;
+    const catalogEntry = manufacturerBagCatalogEntry(catalogRows(), selectButton.dataset.bagCatalogSelect);
+    if (!catalogEntry) return;
+    const entry = manufacturerBagCatalogVariantEntry(catalogEntry, selectedVariantSkuByEntry.get(catalogEntry.id));
     selectingId = entry.id;
     render();
     try {
@@ -323,6 +352,12 @@ export function createManufacturerBagCatalogDialogController({
   refs?.bagCatalogBackBtn?.addEventListener("click", navigateBack);
   refs?.bagCatalogSearch?.addEventListener("input", () => {
     query = refs.bagCatalogSearch.value || "";
+    render();
+  });
+  refs?.bagCatalogResults?.addEventListener("change", (event) => {
+    const select = event.target.closest("[data-bag-catalog-variant-select]");
+    if (!select || selectingId) return;
+    selectedVariantSkuByEntry.set(select.dataset.bagCatalogVariantSelect || "", select.value || "");
     render();
   });
   refs?.bagCatalogResults?.addEventListener("click", handleResultsClick);

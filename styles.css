@@ -6294,6 +6294,31 @@ button.touch-tooltip-open:active {
   border-color: hsl(var(--interface-hue) 42% 58% / 0.7);
 }
 
+.manufacturer-catalog-category-section {
+  grid-template-rows: 1fr auto;
+}
+
+.manufacturer-catalog-category-open {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.manufacturer-catalog-category-open:hover {
+  background: transparent;
+}
+
+.manufacturer-catalog-compare-button {
+  justify-self: start;
+  min-height: 34px;
+}
+
 .manufacturer-catalog-section-title {
   font-size: 20px;
   font-weight: 700;
@@ -6409,6 +6434,112 @@ button.touch-tooltip-open:active {
   text-align: center;
 }
 
+.manufacturer-catalog-variant-picker {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manufacturer-catalog-variant-picker select {
+  min-width: 0;
+}
+
+#bagCatalogCompareDialog {
+  width: min(1180px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+}
+
+.manufacturer-bag-comparison-dialog-card {
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100dvh - 24px);
+  box-sizing: border-box;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.manufacturer-bag-comparison-dialog-card .dialog-subtitle {
+  margin: 0;
+}
+
+.manufacturer-comparison-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.manufacturer-comparison-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.manufacturer-comparison-table th,
+.manufacturer-comparison-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  text-align: left;
+}
+
+.manufacturer-comparison-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: hsl(var(--interface-hue) 24% 94%);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.manufacturer-comparison-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.manufacturer-comparison-table tbody tr:hover td {
+  background: hsl(var(--interface-hue) 30% 97%);
+}
+
+.manufacturer-comparison-model {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 58px minmax(130px, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-width: 230px;
+  background: var(--panel);
+}
+
+.manufacturer-comparison-model img {
+  width: 58px;
+  height: 58px;
+  border-radius: 7px;
+  object-fit: contain;
+  background: #f4f5f3;
+}
+
+.manufacturer-comparison-model span,
+.manufacturer-comparison-model small {
+  display: block;
+}
+
+.manufacturer-comparison-model small,
+.manufacturer-comparison-unknown {
+  color: var(--muted);
+}
+
 #bagCatalogEditDialog {
   width: min(780px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
@@ -6455,6 +6586,10 @@ button.touch-tooltip-open:active {
   .manufacturer-catalog-product-image {
     min-height: 180px;
     max-height: 230px;
+  }
+
+  .manufacturer-catalog-variant-picker {
+    grid-template-columns: 1fr;
   }
 
   .manufacturer-catalog-edit-wide {
