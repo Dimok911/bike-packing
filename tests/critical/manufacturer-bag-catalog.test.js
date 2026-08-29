@@ -16,8 +16,13 @@ import {
   mergeManufacturerBagCatalogOverrides
 } from "../../src/state/manufacturer-bag-catalog.js";
 import {
+  filterManufacturerBagComparisonRows,
+  manufacturerBagComparisonFilterKey,
+  manufacturerBagComparisonFilterOptions,
+  manufacturerBagComparisonNumericBounds,
   manufacturerBagComparisonRange,
-  manufacturerBagComparisonRows
+  manufacturerBagComparisonRows,
+  sortManufacturerBagComparisonRows
 } from "../../src/state/manufacturer-bag-comparison.js";
 import {
   fetchManufacturerBagCatalogImageFile,
@@ -175,6 +180,57 @@ test("CRITICAL manufacturer catalog: comparison never mixes bag types", () => {
   assert.deepEqual(manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, ""), []);
 });
 
+test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges and combine manufacturers", () => {
+  const saddleRows = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "saddle");
+  const seatPack = saddleRows.find(({ id }) => id === "ortlieb-seat-pack");
+  assert.deepEqual(manufacturerBagComparisonNumericBounds(seatPack, "volume"), { min: 11, max: 16.5 });
+  assert.equal(manufacturerBagComparisonFilterKey(seatPack, "manufacturer"), "ORTLIEB");
+  assert.deepEqual(
+    manufacturerBagComparisonFilterOptions(saddleRows, "manufacturer").map(({ key }) => key).sort(),
+    ["Arkel", "ORTLIEB"]
+  );
+
+  const pointInsideRange = filterManufacturerBagComparisonRows(saddleRows, {
+    volume: { min: 16.5, max: 16.5 }
+  });
+  assert.ok(pointInsideRange.some(({ id }) => id === "ortlieb-seat-pack"));
+
+  const filtered = filterManufacturerBagComparisonRows(saddleRows, {
+    manufacturer: { selectedKeys: ["ORTLIEB"] },
+    volume: { min: 16.5, max: 16.5 }
+  });
+  assert.ok(filtered.length > 0);
+  assert.ok(filtered.every(({ brand }) => brand === "ORTLIEB"));
+  assert.ok(filtered.some(({ id }) => id === "ortlieb-seat-pack"));
+  assert.deepEqual(filterManufacturerBagComparisonRows(saddleRows, {
+    manufacturer: { selectedKeys: [] }
+  }), []);
+});
+
+test("CRITICAL manufacturer catalog: comparison sorts range columns by the visible boundary", () => {
+  const rows = [
+    { id: "wide", brand: "A", name: "Wide", volumeOptions: [20, 30] },
+    { id: "middle", brand: "B", name: "Middle", volumeOptions: [21, 22] },
+    { id: "small", brand: "C", name: "Small", volumeOptions: [10] },
+    { id: "unknown", brand: "D", name: "Unknown", volumeOptions: [] }
+  ];
+  assert.deepEqual(
+    sortManufacturerBagComparisonRows(rows, { column: "volume", direction: "asc" }).map(({ id }) => id),
+    ["small", "wide", "middle", "unknown"]
+  );
+  assert.deepEqual(
+    sortManufacturerBagComparisonRows(rows, { column: "volume", direction: "desc" }).map(({ id }) => id),
+    ["wide", "middle", "small", "unknown"]
+  );
+});
+
+test("CRITICAL manufacturer catalog: ORTLIEB Vario models are convertible panniers", () => {
+  const varioRows = MANUFACTURER_BAG_CATALOG.filter(({ id }) => /^ortlieb-vario-(?:20l|26l|lite)$/.test(id));
+  assert.equal(varioRows.length, 3);
+  assert.ok(varioRows.every(({ category }) => category === "hybrid-pannier"));
+  assert.ok(varioRows.every(({ description }) => /трансформер/i.test(description.ru)));
+});
+
 test("CRITICAL manufacturer catalog: meaningful size and mounting variants are selectable", () => {
   const seatPack = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack");
   const choices = manufacturerBagCatalogVariantChoices(seatPack);
@@ -204,13 +260,21 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(index, /id="bagCatalogDialog"/);
   assert.match(index, /id="bagCatalogEditDialog"/);
   assert.match(index, /id="bagCatalogCompareDialog"/);
+  assert.match(index, /id="bagCatalogCompareManufacturerBtn"/);
+  assert.match(index, /id="bagCatalogCompareFilterPanel"/);
+  assert.match(index, /id="bagCatalogProductDetailDialog"/);
   assert.match(controller, /await onSelect\(entry\)/);
   assert.match(controller, /data-bag-catalog-compare-category/);
   assert.match(comparison, /manufacturerBagComparisonRows/);
+  assert.match(comparison, /manufacturerBagComparisonViewRows/);
+  assert.match(comparison, /data-bag-comparison-detail/);
   assert.match(appTail, /prepareManufacturerBagCatalogImport/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
   assert.equal((i18n.match(/"bagCatalog\.photoReady"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.open"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.open"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.filterManufacturers"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.rangeHint"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.compare\.openDetailsFor"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.variantPicker"/g) || []).length, 2);
 });

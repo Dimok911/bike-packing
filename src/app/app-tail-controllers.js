@@ -427,6 +427,7 @@ const manufacturerBagComparisonDialogController = createManufacturerBagCompariso
   catalog: manufacturerBagCatalogRows,
   categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
   escapeHtml,
+  language: () => isEnglishUi() ? "en" : "ru",
   openModalDialog,
   refs,
   t

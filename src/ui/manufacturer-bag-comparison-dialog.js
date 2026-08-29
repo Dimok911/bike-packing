@@ -1,31 +1,81 @@
 import {
   manufacturerBagComparisonDimensions,
+  manufacturerBagComparisonFilterKey,
+  manufacturerBagComparisonFilterOptions,
   manufacturerBagComparisonRange,
-  manufacturerBagComparisonRows
+  manufacturerBagComparisonRows,
+  manufacturerBagComparisonViewRows
 } from "../state/manufacturer-bag-comparison.js";
+
+const TABLE_COLUMNS = [
+  "model",
+  "volume",
+  "weight",
+  "dimensions",
+  "waterproof",
+  "mounting",
+  "set",
+  "availability",
+  "source"
+];
+
+const NUMERIC_RANGE_COLUMNS = new Set(["volume", "weight"]);
 
 function safeHttpsUrl(value = "") {
   try {
-    const url = new URL(String(value || ""));
+    const url = new URL(String(value || ""), globalThis.location?.href);
     return url.protocol === "https:" ? url.toString() : "";
   } catch {
     return "";
   }
 }
 
+function safeLocalImageUrl(value = "") {
+  const normalized = String(value || "").trim();
+  if (/^(?:\.\/|\/)[^\s]+$/.test(normalized)) return normalized;
+  try {
+    const url = new URL(normalized, globalThis.location?.href);
+    if (globalThis.location?.origin && url.origin === globalThis.location.origin) return url.toString();
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function localizedDescription(entry, language = "en") {
+  if (!entry?.description || typeof entry.description !== "object") return "";
+  return entry.description[language] || entry.description.en || entry.description.ru || "";
+}
+
+function parseDecimal(value) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!normalized) return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function createManufacturerBagComparisonDialogController({
   catalog = [],
   categories = [],
   escapeHtml = (value) => String(value || ""),
+  language = () => "en",
   openModalDialog = (dialog) => dialog?.showModal?.(),
   refs,
   t = (key) => key
 } = {}) {
   let category = "";
+  let filters = {};
+  let sort = { column: "model", direction: "asc" };
+  let activeFilterColumn = "";
+  let activeFilterAnchor = null;
 
   function catalogRows() {
     const rows = typeof catalog === "function" ? catalog() : catalog;
     return Array.isArray(rows) ? rows : [];
+  }
+
+  function comparisonRows() {
+    return manufacturerBagComparisonRows(catalogRows(), category);
   }
 
   function categoryEntry() {
@@ -33,22 +83,67 @@ export function createManufacturerBagComparisonDialogController({
   }
 
   function valueOrUnknown(value) {
-    return value ? escapeHtml(value) : `<span class="manufacturer-comparison-unknown">${escapeHtml(t("bagCatalog.compare.unknown"))}</span>`;
+    return value
+      ? escapeHtml(value)
+      : `<span class="manufacturer-comparison-unknown">${escapeHtml(t("bagCatalog.compare.unknown"))}</span>`;
+  }
+
+  function availabilityText(entry) {
+    if (!entry.available) return t("bagCatalog.compare.unavailable");
+    const count = Math.max(0, Number(entry.availableVariantCount || 0));
+    return count
+      ? t("bagCatalog.compare.availableSku", { count })
+      : t("bagCatalog.compare.noAvailableSku");
+  }
+
+  function columnLabel(column) {
+    return t({
+      model: "bagCatalog.compare.model",
+      manufacturer: "bagCatalog.compare.manufacturer",
+      volume: "bagCatalog.compare.volume",
+      weight: "bagCatalog.compare.weight",
+      dimensions: "bagCatalog.compare.dimensions",
+      waterproof: "bagCatalog.compare.waterproof",
+      mounting: "bagCatalog.compare.mounting",
+      set: "bagCatalog.compare.set",
+      availability: "bagCatalog.compare.availability",
+      source: "bagCatalog.compare.source"
+    }[column] || "");
+  }
+
+  function filterOptionLabel(entry, column) {
+    if (manufacturerBagComparisonFilterKey(entry, column) === "__unknown__") {
+      return t("bagCatalog.compare.unknown");
+    }
+    if (column === "model") return entry.name || "";
+    if (column === "manufacturer") return entry.brand || "";
+    if (column === "volume") return manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"));
+    if (column === "weight") return manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"));
+    if (column === "dimensions") {
+      const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
+      return dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}` : "";
+    }
+    if (column === "waterproof") return entry.waterproof || "";
+    if (column === "mounting") return (entry.mountingOptions || []).join(" / ") || entry.mounting || "";
+    if (column === "set") return entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single");
+    if (column === "availability") return availabilityText(entry);
+    if (column === "source") return entry.provider || entry.brand || "";
+    return "";
   }
 
   function renderRow(entry) {
     const sourceUrl = safeHttpsUrl(entry.sourceUrl);
+    const imageUrl = safeLocalImageUrl(entry.imageUrl);
     const volume = manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"));
     const weight = manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"));
     const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
-    const availability = entry.available
-      ? t("bagCatalog.compare.available", { count: entry.availableVariantCount || 0 })
-      : t("bagCatalog.compare.unavailable");
     return `
       <tr>
         <td class="manufacturer-comparison-model">
-          ${entry.imageUrl ? `<img src="${escapeHtml(entry.imageUrl)}" alt="" loading="lazy" />` : ""}
-          <span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.brand)}</small></span>
+          <button type="button" data-bag-comparison-detail="${escapeHtml(entry.id)}" aria-label="${escapeHtml(t("bagCatalog.compare.openDetailsFor", { name: entry.name }))}">
+            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ""}
+            <span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.brand)}</small></span>
+          </button>
         </td>
         <td>${valueOrUnknown(volume)}</td>
         <td>${valueOrUnknown(weight)}</td>
@@ -56,38 +151,294 @@ export function createManufacturerBagComparisonDialogController({
         <td>${valueOrUnknown(entry.waterproof)}</td>
         <td>${valueOrUnknown((entry.mountingOptions || []).join(" / ") || entry.mounting)}</td>
         <td>${escapeHtml(entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single"))}</td>
-        <td>${escapeHtml(availability)}</td>
+        <td>${escapeHtml(availabilityText(entry))}</td>
         <td>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("bagCatalog.compare.openSource"))}</a>` : ""}</td>
       </tr>
     `;
   }
 
+  function renderHeadings() {
+    const refsByColumn = {
+      model: refs.bagCatalogCompareModelHeading,
+      volume: refs.bagCatalogCompareVolumeHeading,
+      weight: refs.bagCatalogCompareWeightHeading,
+      dimensions: refs.bagCatalogCompareDimensionsHeading,
+      waterproof: refs.bagCatalogCompareWaterproofHeading,
+      mounting: refs.bagCatalogCompareMountingHeading,
+      set: refs.bagCatalogCompareSetHeading,
+      availability: refs.bagCatalogCompareAvailabilityHeading,
+      source: refs.bagCatalogCompareSourceHeading
+    };
+    TABLE_COLUMNS.forEach((column) => {
+      if (refsByColumn[column]) refsByColumn[column].textContent = columnLabel(column);
+      const heading = refs.bagCatalogCompareDialog.querySelector(`[data-bag-comparison-heading="${column}"]`);
+      const button = heading?.querySelector("button");
+      button?.classList.toggle("is-filtered", Boolean(filters[column]));
+      button?.classList.toggle("is-sorted", sort.column === column);
+      button?.setAttribute("aria-label", t("bagCatalog.compare.filterColumn", { column: columnLabel(column) }));
+      heading?.setAttribute("aria-sort", sort.column === column
+        ? (sort.direction === "desc" ? "descending" : "ascending")
+        : "none");
+    });
+  }
+
+  function renderManufacturerControl(rows) {
+    const allBrands = manufacturerBagComparisonFilterOptions(rows, "manufacturer");
+    const selected = filters.manufacturer?.selectedKeys;
+    refs.bagCatalogCompareManufacturerLabel.textContent = t("bagCatalog.compare.manufacturers");
+    refs.bagCatalogCompareManufacturerBtn.classList.toggle("is-filtered", Boolean(filters.manufacturer));
+    refs.bagCatalogCompareManufacturerBtn.setAttribute("aria-label", t("bagCatalog.compare.filterManufacturers"));
+    refs.bagCatalogCompareManufacturerValue.textContent = selected
+      ? t("bagCatalog.compare.manufacturersSelected", { selected: selected.length, total: allBrands.length })
+      : t("bagCatalog.compare.allManufacturers", { count: allBrands.length });
+  }
+
   function render() {
     if (!refs?.bagCatalogCompareBody) return;
     const type = categoryEntry();
-    const rows = manufacturerBagComparisonRows(catalogRows(), category);
-    refs.bagCatalogCompareTitle.textContent = t("bagCatalog.compare.title", {
-      type: t(type?.labelKey || "")
+    const allRows = comparisonRows();
+    const rows = manufacturerBagComparisonViewRows(allRows, { filters, sort });
+    refs.bagCatalogCompareTitle.textContent = t("bagCatalog.compare.title", { type: t(type?.labelKey || "") });
+    refs.bagCatalogCompareSummary.textContent = rows.length === allRows.length
+      ? t("bagCatalog.compare.summary", { count: rows.length })
+      : t("bagCatalog.compare.summaryFiltered", { count: rows.length, total: allRows.length });
+    renderHeadings();
+    renderManufacturerControl(allRows);
+    refs.bagCatalogCompareBody.innerHTML = rows.length
+      ? rows.map(renderRow).join("")
+      : `<tr><td class="manufacturer-comparison-empty" colspan="9">${escapeHtml(t("bagCatalog.compare.noMatches"))}</td></tr>`;
+  }
+
+  function closeFilterPanel() {
+    if (!refs?.bagCatalogCompareFilterPanel) return;
+    refs.bagCatalogCompareFilterPanel.hidden = true;
+    activeFilterAnchor?.setAttribute("aria-expanded", "false");
+    activeFilterColumn = "";
+    activeFilterAnchor = null;
+  }
+
+  function positionFilterPanel() {
+    if (!activeFilterAnchor || refs.bagCatalogCompareFilterPanel.hidden) return;
+    const anchor = activeFilterAnchor.getBoundingClientRect();
+    const panel = refs.bagCatalogCompareFilterPanel;
+    const panelWidth = Math.min(panel.offsetWidth || 340, Math.max(280, globalThis.innerWidth - 16));
+    const panelHeight = panel.offsetHeight || 420;
+    const left = Math.max(8, Math.min(anchor.left, globalThis.innerWidth - panelWidth - 8));
+    const below = anchor.bottom + 6;
+    const top = below + panelHeight <= globalThis.innerHeight - 8
+      ? below
+      : Math.max(8, anchor.top - panelHeight - 6);
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+  }
+
+  function renderFilterPanel() {
+    const column = activeFilterColumn;
+    if (!column) return;
+    const rows = comparisonRows();
+    const current = filters[column] || {};
+    const selectedKeys = Array.isArray(current.selectedKeys) ? new Set(current.selectedKeys) : null;
+    const options = manufacturerBagComparisonFilterOptions(rows, column)
+      .map((option) => ({ ...option, label: filterOptionLabel(option.entry, column) }))
+      .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+    refs.bagCatalogCompareFilterTitle.textContent = t("bagCatalog.compare.filterTitle", { column: columnLabel(column) });
+    refs.bagCatalogCompareFilterCloseBtn.setAttribute("aria-label", t("bagCatalog.compare.filterClose"));
+    refs.bagCatalogCompareSortActions.hidden = column === "manufacturer";
+    refs.bagCatalogCompareSortAscBtn.textContent = t("bagCatalog.compare.sortAscending");
+    refs.bagCatalogCompareSortDescBtn.textContent = t("bagCatalog.compare.sortDescending");
+    refs.bagCatalogCompareSortAscBtn.classList.toggle("is-active", sort.column === column && sort.direction === "asc");
+    refs.bagCatalogCompareSortDescBtn.classList.toggle("is-active", sort.column === column && sort.direction === "desc");
+    const hasNumericRange = NUMERIC_RANGE_COLUMNS.has(column);
+    refs.bagCatalogCompareRangeFields.hidden = !hasNumericRange;
+    refs.bagCatalogCompareRangeHint.textContent = t("bagCatalog.compare.rangeHint");
+    refs.bagCatalogCompareRangeMinLabel.textContent = t("bagCatalog.compare.rangeFrom");
+    refs.bagCatalogCompareRangeMaxLabel.textContent = t("bagCatalog.compare.rangeTo");
+    refs.bagCatalogCompareRangeMin.value = current.min ?? "";
+    refs.bagCatalogCompareRangeMax.value = current.max ?? "";
+    refs.bagCatalogCompareFilterSearchLabel.textContent = t("bagCatalog.compare.searchValues");
+    refs.bagCatalogCompareFilterSearch.placeholder = t("bagCatalog.compare.searchValues");
+    refs.bagCatalogCompareFilterSearch.value = "";
+    refs.bagCatalogCompareFilterSelectAllBtn.textContent = t("bagCatalog.compare.selectAll");
+    refs.bagCatalogCompareFilterClearBtn.textContent = t("bagCatalog.compare.clearAll");
+    refs.bagCatalogCompareFilterResetBtn.textContent = t("bagCatalog.compare.resetFilter");
+    refs.bagCatalogCompareFilterApplyBtn.textContent = t("bagCatalog.compare.applyFilter");
+    refs.bagCatalogCompareFilterOptions.innerHTML = options.length
+      ? options.map((option) => `
+          <label data-bag-comparison-option-search="${escapeHtml(option.label.toLocaleLowerCase())}">
+            <input type="checkbox" data-bag-comparison-option-key="${escapeHtml(option.key)}" ${!selectedKeys || selectedKeys.has(option.key) ? "checked" : ""} />
+            <span>${escapeHtml(option.label)}</span>
+            <small>${escapeHtml(option.count)}</small>
+          </label>
+        `).join("")
+      : `<p class="manufacturer-comparison-unknown">${escapeHtml(t("bagCatalog.compare.noValues"))}</p>`;
+  }
+
+  function openFilterPanel(column, anchor) {
+    if (!column || !refs?.bagCatalogCompareFilterPanel) return;
+    activeFilterAnchor?.setAttribute("aria-expanded", "false");
+    activeFilterColumn = column;
+    activeFilterAnchor = anchor;
+    activeFilterAnchor?.setAttribute("aria-expanded", "true");
+    renderFilterPanel();
+    refs.bagCatalogCompareFilterPanel.hidden = false;
+    globalThis.requestAnimationFrame?.(() => {
+      positionFilterPanel();
+      refs.bagCatalogCompareFilterSearch?.focus();
     });
-    refs.bagCatalogCompareSummary.textContent = t("bagCatalog.compare.summary", { count: rows.length });
-    refs.bagCatalogCompareModelHeading.textContent = t("bagCatalog.compare.model");
-    refs.bagCatalogCompareVolumeHeading.textContent = t("bagCatalog.compare.volume");
-    refs.bagCatalogCompareWeightHeading.textContent = t("bagCatalog.compare.weight");
-    refs.bagCatalogCompareDimensionsHeading.textContent = t("bagCatalog.compare.dimensions");
-    refs.bagCatalogCompareWaterproofHeading.textContent = t("bagCatalog.compare.waterproof");
-    refs.bagCatalogCompareMountingHeading.textContent = t("bagCatalog.compare.mounting");
-    refs.bagCatalogCompareSetHeading.textContent = t("bagCatalog.compare.set");
-    refs.bagCatalogCompareAvailabilityHeading.textContent = t("bagCatalog.compare.availability");
-    refs.bagCatalogCompareSourceHeading.textContent = t("bagCatalog.compare.source");
-    refs.bagCatalogCompareBody.innerHTML = rows.map(renderRow).join("");
+  }
+
+  function setSort(direction) {
+    if (!activeFilterColumn || activeFilterColumn === "manufacturer") return;
+    sort = { column: activeFilterColumn, direction };
+    render();
+    closeFilterPanel();
+  }
+
+  function setAllVisibleOptions(checked) {
+    refs.bagCatalogCompareFilterOptions
+      ?.querySelectorAll('label:not([hidden]) input[type="checkbox"]')
+      .forEach((input) => { input.checked = checked; });
+  }
+
+  function applyFilter() {
+    const column = activeFilterColumn;
+    if (!column) return;
+    const checkboxes = [...refs.bagCatalogCompareFilterOptions.querySelectorAll('input[type="checkbox"]')];
+    const selectedKeys = checkboxes.filter((input) => input.checked)
+      .map((input) => input.dataset.bagComparisonOptionKey || "");
+    const filter = {};
+    if (selectedKeys.length !== checkboxes.length) filter.selectedKeys = selectedKeys;
+    if (NUMERIC_RANGE_COLUMNS.has(column)) {
+      const min = parseDecimal(refs.bagCatalogCompareRangeMin.value);
+      const max = parseDecimal(refs.bagCatalogCompareRangeMax.value);
+      if (min !== null && max !== null) {
+        filter.min = Math.min(min, max);
+        filter.max = Math.max(min, max);
+      } else {
+        if (min !== null) filter.min = min;
+        if (max !== null) filter.max = max;
+      }
+    }
+    if (Object.keys(filter).length) filters = { ...filters, [column]: filter };
+    else {
+      const { [column]: omitted, ...remaining } = filters;
+      filters = remaining;
+    }
+    render();
+    closeFilterPanel();
+  }
+
+  function resetActiveFilter() {
+    if (!activeFilterColumn) return;
+    const { [activeFilterColumn]: omitted, ...remaining } = filters;
+    filters = remaining;
+    render();
+    closeFilterPanel();
+  }
+
+  function renderDetail(entry) {
+    const imageUrl = safeLocalImageUrl(entry.imageUrl);
+    const sourceUrl = safeHttpsUrl(entry.sourceUrl);
+    const locale = language() === "ru" ? "ru" : "en";
+    const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
+    const detailRows = [
+      [t("bagCatalog.compare.manufacturer"), entry.brand],
+      [t("bagCatalog.field.volume"), manufacturerBagComparisonRange(entry.volumeOptions, t("bagCatalog.liters"))],
+      [t("bagCatalog.field.weight"), manufacturerBagComparisonRange(entry.weightOptions, t("bagCatalog.grams"))],
+      [t("bagCatalog.compare.dimensions"), dimensions ? `${dimensions} ${t("bagCatalog.centimeters")}` : ""],
+      [t("bagCatalog.field.load"), entry.loadKg ? `${entry.loadKg} ${t("bagCatalog.kilograms")}` : ""],
+      [t("bagCatalog.field.waterproof"), entry.waterproof],
+      [t("bagCatalog.field.material"), entry.material],
+      [t("bagCatalog.field.mounting"), (entry.mountingOptions || []).join(" / ") || entry.mounting],
+      [t("bagCatalog.compare.set"), entry.soldAsSet ? t("bagCatalog.compare.pair") : t("bagCatalog.compare.single")],
+      [t("bagCatalog.compare.availability"), availabilityText(entry)]
+    ].filter(([, value]) => value);
+    const variants = Array.isArray(entry.variants) ? entry.variants : [];
+    refs.bagCatalogProductDetailTitle.textContent = `${entry.brand} ${entry.name}`;
+    refs.bagCatalogProductDetailBody.innerHTML = `
+      <div class="manufacturer-product-detail-overview">
+        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(`${entry.brand} ${entry.name}`)}" />` : ""}
+        <div>
+          <p class="manufacturer-product-detail-description">${escapeHtml(localizedDescription(entry, locale))}</p>
+          <dl>${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
+          ${sourceUrl ? `<a class="ghost manufacturer-catalog-source-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("bagCatalog.source"))}</a>` : ""}
+        </div>
+      </div>
+      <section class="manufacturer-product-detail-variants">
+        <h3>${escapeHtml(t("bagCatalog.compare.skuVariants", { count: variants.length }))}</h3>
+        <div class="manufacturer-product-detail-variants-scroll">
+          <table>
+            <thead><tr>
+              <th>${escapeHtml(t("bagCatalog.field.sku"))}</th>
+              <th>${escapeHtml(t("bagCatalog.field.color"))}</th>
+              <th>${escapeHtml(t("bagCatalog.compare.volume"))}</th>
+              <th>${escapeHtml(t("bagCatalog.compare.weight"))}</th>
+              <th>${escapeHtml(t("bagCatalog.compare.mounting"))}</th>
+              <th>${escapeHtml(t("bagCatalog.compare.status"))}</th>
+            </tr></thead>
+            <tbody>${variants.map((variant) => `
+              <tr>
+                <td>${valueOrUnknown(variant.sku)}</td>
+                <td>${valueOrUnknown(variant.color || variant.title)}</td>
+                <td>${valueOrUnknown((variant.volume || entry.volume) ? `${variant.volume || entry.volume} ${t("bagCatalog.liters")}` : "")}</td>
+                <td>${valueOrUnknown((variant.weight || entry.weight) ? `${variant.weight || entry.weight} ${t("bagCatalog.grams")}` : "")}</td>
+                <td>${valueOrUnknown(variant.mounting || entry.mounting)}</td>
+                <td>${escapeHtml(variant.available ? t("bagCatalog.compare.skuAvailable") : t("bagCatalog.compare.skuUnavailable"))}</td>
+              </tr>
+            `).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  function openDetail(id) {
+    const entry = catalogRows().find((row) => row.id === id);
+    if (!entry || !refs?.bagCatalogProductDetailDialog) return;
+    closeFilterPanel();
+    renderDetail(entry);
+    openModalDialog(refs.bagCatalogProductDetailDialog);
   }
 
   function open(categoryId) {
     category = String(categoryId || "");
     if (!categoryEntry() || !refs?.bagCatalogCompareDialog) return;
+    filters = {};
+    sort = { column: "model", direction: "asc" };
+    closeFilterPanel();
     render();
     openModalDialog(refs.bagCatalogCompareDialog);
   }
 
-  return { open, render };
+  refs?.bagCatalogCompareDialog?.addEventListener("click", (event) => {
+    const filterButton = event.target.closest("[data-bag-comparison-filter]");
+    if (filterButton) {
+      openFilterPanel(filterButton.dataset.bagComparisonFilter || "", filterButton);
+      return;
+    }
+    const detailButton = event.target.closest("[data-bag-comparison-detail]");
+    if (detailButton) {
+      openDetail(detailButton.dataset.bagComparisonDetail || "");
+      return;
+    }
+    if (!refs.bagCatalogCompareFilterPanel.hidden
+      && !refs.bagCatalogCompareFilterPanel.contains(event.target)) closeFilterPanel();
+  });
+  refs?.bagCatalogCompareDialog?.addEventListener("close", closeFilterPanel);
+  refs?.bagCatalogCompareFilterCloseBtn?.addEventListener("click", closeFilterPanel);
+  refs?.bagCatalogCompareSortAscBtn?.addEventListener("click", () => setSort("asc"));
+  refs?.bagCatalogCompareSortDescBtn?.addEventListener("click", () => setSort("desc"));
+  refs?.bagCatalogCompareFilterSelectAllBtn?.addEventListener("click", () => setAllVisibleOptions(true));
+  refs?.bagCatalogCompareFilterClearBtn?.addEventListener("click", () => setAllVisibleOptions(false));
+  refs?.bagCatalogCompareFilterApplyBtn?.addEventListener("click", applyFilter);
+  refs?.bagCatalogCompareFilterResetBtn?.addEventListener("click", resetActiveFilter);
+  refs?.bagCatalogCompareFilterSearch?.addEventListener("input", () => {
+    const query = String(refs.bagCatalogCompareFilterSearch.value || "").trim().toLocaleLowerCase();
+    refs.bagCatalogCompareFilterOptions.querySelectorAll("[data-bag-comparison-option-search]").forEach((option) => {
+      option.hidden = Boolean(query) && !String(option.dataset.bagComparisonOptionSearch || "").includes(query);
+    });
+  });
+  globalThis.addEventListener?.("resize", positionFilterPanel);
+
+  return { open, openDetail, render };
 }

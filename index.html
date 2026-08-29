@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1567" />
+    <link rel="stylesheet" href="./styles.css?v=1568" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -396,24 +396,69 @@
           <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
         </header>
         <p id="bagCatalogCompareSummary" class="dialog-subtitle"></p>
+        <div class="manufacturer-comparison-toolbar">
+          <span id="bagCatalogCompareManufacturerLabel">Manufacturers</span>
+          <button id="bagCatalogCompareManufacturerBtn" class="ghost manufacturer-comparison-manufacturer-button" type="button" data-bag-comparison-filter="manufacturer" aria-haspopup="true" aria-expanded="false" aria-controls="bagCatalogCompareFilterPanel">
+            <span id="bagCatalogCompareManufacturerValue">All manufacturers</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+        </div>
         <div class="manufacturer-comparison-scroll">
           <table class="manufacturer-comparison-table">
             <thead>
               <tr>
-                <th id="bagCatalogCompareModelHeading" scope="col">Model</th>
-                <th id="bagCatalogCompareVolumeHeading" scope="col">Volume</th>
-                <th id="bagCatalogCompareWeightHeading" scope="col">Weight</th>
-                <th id="bagCatalogCompareDimensionsHeading" scope="col">Dimensions</th>
-                <th id="bagCatalogCompareWaterproofHeading" scope="col">Waterproof</th>
-                <th id="bagCatalogCompareMountingHeading" scope="col">Mounting</th>
-                <th id="bagCatalogCompareSetHeading" scope="col">Set</th>
-                <th id="bagCatalogCompareAvailabilityHeading" scope="col">Availability</th>
-                <th id="bagCatalogCompareSourceHeading" scope="col">Source</th>
+                <th scope="col" data-bag-comparison-heading="model"><button type="button" data-bag-comparison-filter="model" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareModelHeading">Model</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="volume"><button type="button" data-bag-comparison-filter="volume" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareVolumeHeading">Volume</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="weight"><button type="button" data-bag-comparison-filter="weight" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareWeightHeading">Weight</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="dimensions"><button type="button" data-bag-comparison-filter="dimensions" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareDimensionsHeading">Dimensions</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="waterproof"><button type="button" data-bag-comparison-filter="waterproof" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareWaterproofHeading">Waterproof</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="mounting"><button type="button" data-bag-comparison-filter="mounting" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareMountingHeading">Mounting</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="set"><button type="button" data-bag-comparison-filter="set" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareSetHeading">Set</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="availability"><button type="button" data-bag-comparison-filter="availability" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareAvailabilityHeading">Availability</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
+                <th scope="col" data-bag-comparison-heading="source"><button type="button" data-bag-comparison-filter="source" aria-haspopup="true" aria-controls="bagCatalogCompareFilterPanel"><span id="bagCatalogCompareSourceHeading">Source</span><span class="manufacturer-comparison-filter-icon" aria-hidden="true">⇅</span></button></th>
               </tr>
             </thead>
             <tbody id="bagCatalogCompareBody"></tbody>
           </table>
         </div>
+        <section id="bagCatalogCompareFilterPanel" class="manufacturer-comparison-filter-panel" hidden>
+          <header>
+            <strong id="bagCatalogCompareFilterTitle">Filter</strong>
+            <button id="bagCatalogCompareFilterCloseBtn" class="icon-button" type="button" aria-label="Close">×</button>
+          </header>
+          <div id="bagCatalogCompareSortActions" class="manufacturer-comparison-sort-actions">
+            <button id="bagCatalogCompareSortAscBtn" class="ghost" type="button">Sort ascending</button>
+            <button id="bagCatalogCompareSortDescBtn" class="ghost" type="button">Sort descending</button>
+          </div>
+          <div id="bagCatalogCompareRangeFields" class="manufacturer-comparison-range-fields" hidden>
+            <p id="bagCatalogCompareRangeHint"></p>
+            <label><span id="bagCatalogCompareRangeMinLabel">From</span><input id="bagCatalogCompareRangeMin" type="text" inputmode="decimal" /></label>
+            <label><span id="bagCatalogCompareRangeMaxLabel">To</span><input id="bagCatalogCompareRangeMax" type="text" inputmode="decimal" /></label>
+          </div>
+          <label class="manufacturer-comparison-filter-search">
+            <span id="bagCatalogCompareFilterSearchLabel" class="visually-hidden">Search values</span>
+            <input id="bagCatalogCompareFilterSearch" type="search" autocomplete="off" />
+          </label>
+          <div class="manufacturer-comparison-filter-selection-actions">
+            <button id="bagCatalogCompareFilterSelectAllBtn" class="ghost" type="button">Select all</button>
+            <button id="bagCatalogCompareFilterClearBtn" class="ghost" type="button">Clear all</button>
+          </div>
+          <div id="bagCatalogCompareFilterOptions" class="manufacturer-comparison-filter-options"></div>
+          <footer>
+            <button id="bagCatalogCompareFilterResetBtn" class="ghost" type="button">Reset filter</button>
+            <button id="bagCatalogCompareFilterApplyBtn" type="button">Apply</button>
+          </footer>
+        </section>
+      </form>
+    </dialog>
+
+    <dialog id="bagCatalogProductDetailDialog">
+      <form method="dialog" class="dialog-card manufacturer-bag-product-detail-card">
+        <header>
+          <h2 id="bagCatalogProductDetailTitle">Bag details</h2>
+          <button value="cancel" class="icon-button" aria-label="Закрыть">×</button>
+        </header>
+        <div id="bagCatalogProductDetailBody" class="manufacturer-bag-product-detail-body"></div>
       </form>
     </dialog>
 
@@ -894,6 +939,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1567" type="module"></script>
+    <script src="./app.js?v=1568" type="module"></script>
   </body>
 </html>

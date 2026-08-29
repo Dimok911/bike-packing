@@ -4257,7 +4257,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "brand": "ORTLIEB",
     "provider": "ortlieb.com",
     "family": "panniers",
-    "category": "rear-pannier",
+    "category": "hybrid-pannier",
     "name": "Vario 20L",
     "variant": "20 L · 6 SKU",
     "sku": "F7717",
@@ -4347,13 +4347,14 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/vario-20l",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 20 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 20 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB convertible pannier in 20 L. Technical data is normalized from the official product page.",
+      "ru": "Панир-трансформер ORTLIEB объёмом 20 L. Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
-      "rear pannier",
-      "задний панир",
-      "задний багажник",
+      "pannier backpack",
+      "convertible pannier",
+      "панир рюкзак",
+      "трансформер",
       "C: Bike_Bike Backpacks",
       "C: Bike_Panniers & Bike Bags",
       "C: Everyday_2-in-1 Bike Backpacks",
@@ -4378,7 +4379,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "brand": "ORTLIEB",
     "provider": "ortlieb.com",
     "family": "panniers",
-    "category": "rear-pannier",
+    "category": "hybrid-pannier",
     "name": "Vario 26L",
     "variant": "26 L · 10 SKU",
     "sku": "F7713",
@@ -4504,13 +4505,14 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/vario-26l",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 26 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 26 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB convertible pannier in 26 L. Technical data is normalized from the official product page.",
+      "ru": "Панир-трансформер ORTLIEB объёмом 26 L. Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
-      "rear pannier",
-      "задний панир",
-      "задний багажник",
+      "pannier backpack",
+      "convertible pannier",
+      "панир рюкзак",
+      "трансформер",
       "C: Bike_Bike Backpacks",
       "C: Bike_Panniers & Bike Bags",
       "C: Everyday_2-in-1 Bike Backpacks",
@@ -4535,7 +4537,7 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "brand": "ORTLIEB",
     "provider": "ortlieb.com",
     "family": "panniers",
-    "category": "rear-pannier",
+    "category": "hybrid-pannier",
     "name": "Vario Lite",
     "variant": "22 / 26 L · 4 SKU",
     "sku": "F7761",
@@ -4608,13 +4610,14 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     "sourceUrl": "https://us.ortlieb.com/products/vario-lite",
     "sourceCheckedAt": "2026-08-29",
     "description": {
-      "en": "ORTLIEB rear pannier in 22 / 26 L. Technical data is normalized from the official product page.",
-      "ru": "Задний панир ORTLIEB объёмом 22 / 26 L. Характеристики нормализованы по официальной карточке товара."
+      "en": "ORTLIEB convertible pannier in 22 / 26 L. Technical data is normalized from the official product page.",
+      "ru": "Панир-трансформер ORTLIEB объёмом 22 / 26 L. Характеристики нормализованы по официальной карточке товара."
     },
     "aliases": [
-      "rear pannier",
-      "задний панир",
-      "задний багажник",
+      "pannier backpack",
+      "convertible pannier",
+      "панир рюкзак",
+      "трансформер",
       "C: Bike_Bike Backpacks",
       "C: Bike_Panniers & Bike Bags",
       "C: Everyday_2-in-1 Bike Backpacks",
