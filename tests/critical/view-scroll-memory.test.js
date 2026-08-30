@@ -71,11 +71,17 @@ test("CRITICAL view scroll memory: document anchoring and coarse duplicate heade
 
 test("CRITICAL view scroll memory: a delayed packing restore cannot overwrite another tab", () => {
   const source = fs.readFileSync(new URL("../../src/app/app-tail-controllers.js", import.meta.url), "utf8");
-  const start = source.indexOf("function restorePendingPackingScroll(board)");
+  const appSource = fs.readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const start = source.indexOf("function restorePendingPackingScroll(board,");
   const end = source.indexOf("\nfunction ", start + 1);
   const restoreSource = source.slice(start, end);
   assert.match(
     restoreSource,
     /requestAnimationFrame\(\(\)\s*=>\s*\{\s*if \(refs\.packingView\.classList\.contains\("hidden"\)\) return;/s
   );
+  assert.match(
+    appSource,
+    /const restoredViewPosition = viewChanged \? viewScrollMemory\.restore\(view\) : null;[\s\S]*?restorePendingPackingScroll\(getPackingScrollHost\(\), restoredViewPosition\)/
+  );
+  assert.match(restoreSource, /restoredViewPosition\?\.y[\s\S]*?top: restoredWindowY/);
 });

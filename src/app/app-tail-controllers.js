@@ -3705,19 +3705,30 @@ function keepAnchorContainersOpen(anchor) {
   saveLocalUiState();
 }
 
-function restorePendingPackingScroll(board) {
+function restorePendingPackingScroll(board, restoredViewPosition = null) {
   if (!runtime.pendingPackingScroll || !board) return;
   if (refs.packingView.classList.contains("hidden")) return;
   const { boardLeft, windowX, windowY, bike3dDetail = null } = runtime.pendingPackingScroll;
+  const restoredWindowX = Number.isFinite(Number(restoredViewPosition?.x))
+    ? Math.max(0, Number(restoredViewPosition.x))
+    : windowX;
+  const restoredWindowY = Number.isFinite(Number(restoredViewPosition?.y))
+    ? Math.max(0, Number(restoredViewPosition.y))
+    : windowY;
   runtime.pendingPackingScroll = null;
-  runtime.lastPackingScrollSnapshot = { boardLeft, windowX, windowY, bike3dDetail };
+  runtime.lastPackingScrollSnapshot = {
+    boardLeft,
+    windowX: restoredWindowX,
+    windowY: restoredWindowY,
+    bike3dDetail
+  };
   board.scrollLeft = boardLeft;
-  scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
+  scrollViewportTo({ left: restoredWindowX, top: restoredWindowY, behavior: "auto" });
   restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
   requestAnimationFrame(() => {
     if (refs.packingView.classList.contains("hidden")) return;
     board.scrollLeft = boardLeft;
-    scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
+    scrollViewportTo({ left: restoredWindowX, top: restoredWindowY, behavior: "auto" });
     restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
     syncFixedScrollbarVisibility();
   });

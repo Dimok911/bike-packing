@@ -104,6 +104,34 @@ test("rapid Items and Bags gestures are not overwritten by a queued restore", as
   expect(geometry.scrollTop).toBeGreaterThan(400);
 });
 
+test("iPhone document scrolling restores the long packing tab after rapid Items and Bags gestures", async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    const app = document.querySelector("[data-viewport-scroll-host]");
+    app?.removeAttribute("data-viewport-scroll-host");
+    app?.removeAttribute("data-viewport-scroll-host-no-banner");
+    document.documentElement.classList.remove("isolated-viewport-scroll");
+    document.body.classList.remove("isolated-viewport-scroll");
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  });
+  await addLongViewFixtures(page);
+
+  const packingTop = await setViewportScroll(page, 900);
+  await selectView(page, "items");
+  const itemsTop = await setViewportScroll(page, 620);
+  await selectView(page, "bags");
+  const bagsTop = await setViewportScroll(page, 480);
+
+  await selectView(page, "items");
+  await selectView(page, "bags");
+  await selectView(page, "items");
+  await expectViewportScrollNear(page, itemsTop);
+  await selectView(page, "bags");
+  await expectViewportScrollNear(page, bagsTop);
+  await selectView(page, "packing");
+  await expectViewportScrollNear(page, packingTop);
+});
+
 test("iPhone document scrolling paints no duplicated packing root header", async ({ page }) => {
   await openApp(page);
   await page.evaluate(() => {

@@ -10445,9 +10445,9 @@ function switchView(view) {
   renderSummary();
   updateViewScopedControls(view);
   updateFilterNavigationUi();
-  if (viewChanged) viewScrollMemory.restore(view);
+  const restoredViewPosition = viewChanged ? viewScrollMemory.restore(view) : null;
   if (view === "packing") {
-    requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost()));
+    requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost(), restoredViewPosition));
   }
   syncFixedScrollbarVisibility();
 }
