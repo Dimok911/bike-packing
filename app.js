@@ -1096,10 +1096,18 @@ import {
   viewportScrollLeft,
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
-import { createViewScrollMemory } from "./src/ui/view-scroll-memory.js";
+import {
+  createReachableViewScrollRestore,
+  createViewScrollMemory
+} from "./src/ui/view-scroll-memory.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
 const viewScrollMemory = createViewScrollMemory({
+  readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
+  writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
+});
+const reachableViewScrollRestore = createReachableViewScrollRestore({
+  readCurrentView: () => getCurrentView(),
   readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
   writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
 });
@@ -10430,6 +10438,7 @@ async function publishPublicHistoryRecord(record, payload, {
 function switchView(view) {
   const previousView = getCurrentView();
   const viewChanged = previousView !== view;
+  reachableViewScrollRestore.cancel();
   if (viewChanged) viewScrollMemory.remember(previousView);
   if (previousView === "packing" && viewChanged) {
     capturePackingScroll();
@@ -10446,6 +10455,16 @@ function switchView(view) {
   updateViewScopedControls(view);
   updateFilterNavigationUi();
   const restoredViewPosition = viewChanged ? viewScrollMemory.restore(view) : null;
+  if (viewChanged && restoredViewPosition) {
+    const restoredView = view === "packing"
+      ? refs.packingView
+      : view === "items"
+        ? refs.itemsView
+        : view === "bags"
+          ? refs.bagsView
+          : refs.settingsView;
+    reachableViewScrollRestore.restore(view, restoredViewPosition, restoredView);
+  }
   if (view === "packing") {
     requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost(), restoredViewPosition));
   }

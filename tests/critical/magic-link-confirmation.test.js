@@ -46,7 +46,7 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(appSource, /adminTemplateDraftSync/);
   assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1583"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1584"/);
 });
 
 test("production shell has no experimental banner and only the experiment host selects its isolated API", async () => {

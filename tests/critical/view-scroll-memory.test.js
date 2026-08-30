@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { createViewScrollMemory } from "../../src/ui/view-scroll-memory.js";
+import {
+  createReachableViewScrollRestore,
+  createViewScrollMemory
+} from "../../src/ui/view-scroll-memory.js";
 
 test("CRITICAL view scroll memory: every tab restores its own document position synchronously", () => {
   let current = { x: 0, y: 940 };
@@ -39,6 +42,58 @@ test("CRITICAL view scroll memory: rapid tab changes leave no delayed restore be
 
   assert.equal(scheduled, false);
   assert.deepEqual(writes, [{ x: 0, y: 120 }, { x: 0, y: 0 }]);
+});
+
+test("CRITICAL view scroll memory: a temporarily short document restores when the active view grows", () => {
+  let current = { x: 0, y: 0 };
+  let reachable = false;
+  let observerCallback = null;
+  let disconnected = false;
+  const controller = createReachableViewScrollRestore({
+    createObserver: (callback) => {
+      observerCallback = callback;
+      return {
+        disconnect: () => { disconnected = true; },
+        observe: () => {}
+      };
+    },
+    readCurrentView: () => "packing",
+    readPosition: () => current,
+    scheduleTimer: () => 1,
+    clearTimer: () => {},
+    writePosition: (position) => {
+      current = reachable ? position : { x: 0, y: 0 };
+    }
+  });
+
+  assert.equal(controller.restore("packing", { x: 0, y: 900 }, {}), true);
+  assert.deepEqual(current, { x: 0, y: 0 });
+  reachable = true;
+  observerCallback();
+  assert.deepEqual(current, { x: 0, y: 900 });
+  assert.equal(disconnected, true);
+});
+
+test("CRITICAL view scroll memory: a stale resize restore is cancelled on the next tab", () => {
+  let currentView = "items";
+  let observerCallback = null;
+  const writes = [];
+  const controller = createReachableViewScrollRestore({
+    createObserver: (callback) => {
+      observerCallback = callback;
+      return { disconnect: () => {}, observe: () => {} };
+    },
+    readCurrentView: () => currentView,
+    readPosition: () => ({ x: 0, y: 0 }),
+    scheduleTimer: () => 1,
+    clearTimer: () => {},
+    writePosition: (position) => writes.push(position)
+  });
+
+  controller.restore("items", { x: 0, y: 620 }, {});
+  currentView = "bags";
+  observerCallback();
+  assert.deepEqual(writes, [{ x: 0, y: 620 }]);
 });
 
 test("CRITICAL view scroll memory: catalog redraw stays before synchronous tab restoration", () => {

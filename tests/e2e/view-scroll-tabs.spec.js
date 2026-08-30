@@ -132,6 +132,29 @@ test("iPhone document scrolling restores the long packing tab after rapid Items 
   await expectViewportScrollNear(page, packingTop);
 });
 
+test("iPhone document scrolling retries the packing position after delayed content growth", async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    const app = document.querySelector("[data-viewport-scroll-host]");
+    app?.removeAttribute("data-viewport-scroll-host");
+    app?.removeAttribute("data-viewport-scroll-host-no-banner");
+    document.documentElement.classList.remove("isolated-viewport-scroll");
+    document.body.classList.remove("isolated-viewport-scroll");
+  });
+  await addLongViewFixtures(page);
+
+  const packingTop = await setViewportScroll(page, 900);
+  await selectView(page, "items");
+  await page.locator("#packingView [data-e2e-scroll-spacer]").evaluate((spacer) => {
+    spacer.style.display = "none";
+  });
+  await selectView(page, "packing");
+  await page.locator("#packingView [data-e2e-scroll-spacer]").evaluate((spacer) => {
+    spacer.style.display = "block";
+  });
+  await expectViewportScrollNear(page, packingTop);
+});
+
 test("iPhone document scrolling paints no duplicated packing root header", async ({ page }) => {
   await openApp(page);
   await page.evaluate(() => {
