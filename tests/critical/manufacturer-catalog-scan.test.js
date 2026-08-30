@@ -14,6 +14,7 @@ import {
   apiduraCatalogTargets,
   buildApiduraCatalogEntry,
 } from "../../scripts/manufacturer-catalog/apidura-adapter.mjs";
+import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 
 const bag = (id, brand, extra = {}) => ({
   id,
@@ -135,6 +136,32 @@ test("CRITICAL catalog scan: Apidura anti-bot HTML fails closed instead of repor
   assert.throws(
     () => apiduraCatalogTargets('<meta http-equiv="refresh" content="0;/.well-known/sgcaptcha/?r=sitemap">'),
     /anti-bot challenge/
+  );
+});
+
+test("CRITICAL catalog scan: checked imports accept only complete official manufacturer evidence", () => {
+  const report = {
+    schemaVersion: 1,
+    id: "catalog-scan-checked",
+    scannedAt: "2026-08-30T18:55:40.000Z",
+    status: "complete",
+    manufacturers: [{ id: "apidura", name: "Apidura", status: "complete", errors: [] }],
+    summary: { products: 1, added: 1, changed: 0, missing: 0, errors: 0 },
+    changes: [{
+      id: "apidura:added:apidura-racing-frame-pack",
+      manufacturerId: "apidura",
+      type: "added",
+      sourceUrl: "https://www.apidura.com/shop/racing-frame-pack/",
+    }],
+  };
+  assert.equal(validateManufacturerCatalogImport(report).changes, 1);
+  assert.throws(
+    () => validateManufacturerCatalogImport({ ...report, changes: [{ ...report.changes[0], sourceUrl: "https://example.test/frame-pack/" }] }),
+    /does not match apidura/
+  );
+  assert.throws(
+    () => validateManufacturerCatalogImport({ ...report, status: "partial" }),
+    /must be complete/
   );
 });
 

@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 5 1 * *"
   workflow_dispatch:
+    inputs:
+      review_report_path:
+        description: "Committed checked report to import instead of running a live scan"
+        required: false
+        type: string
   push:
     branches:
       - codex/experiment-auth-photo-scroll-v1582
@@ -30,14 +35,23 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Scan official manufacturer catalogs
+        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
         run: node scripts/scan-manufacturer-catalog.mjs --output manufacturer-catalog-scan.json --markdown manufacturer-catalog-scan.md --work-dir manufacturer-catalog-scan-work
       - name: Download official image snapshot
+        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
         run: node scripts/download-manufacturer-catalog-images.mjs --manifest manufacturer-catalog-scan-work/manufacturer-catalog-images.json --root manufacturer-catalog-scan-snapshot
+      - name: Validate checked review report
+        if: github.event_name == 'workflow_dispatch' && inputs.review_report_path != ''
+        env:
+          REVIEW_REPORT_PATH: ${{ inputs.review_report_path }}
+        run: |
+          node scripts/validate-manufacturer-catalog-import.mjs "$REVIEW_REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
+          cp "$REVIEW_REPORT_PATH" manufacturer-catalog-scan.json
       - name: Add scan summary
-        if: always()
+        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
         run: test -f manufacturer-catalog-scan.md && cat manufacturer-catalog-scan.md >> "$GITHUB_STEP_SUMMARY" || true
       - name: Store review artifact
-        if: always()
+        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
         uses: actions/upload-artifact@v4
         with:
           name: manufacturer-catalog-scan
@@ -51,6 +65,14 @@ jobs:
             manufacturer-catalog-scan-work/apidura-product-sitemap.xml
             manufacturer-catalog-scan-work/.catalog-pages/apidura
             manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
+          if-no-files-found: error
+          retention-days: 90
+      - name: Store checked import artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.review_report_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: manufacturer-catalog-checked-import
+          path: manufacturer-catalog-scan.json
           if-no-files-found: error
           retention-days: 90
       - name: Send report to catalog review API
