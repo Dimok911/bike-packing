@@ -10,6 +10,7 @@ import {
   manufacturerBagCatalogVolumeMetrics,
   manufacturerBagCatalogWeightMetrics
 } from "../state/manufacturer-bag-catalog.js";
+import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
 
 const TABLE_COLUMNS = [
   "model",
@@ -80,6 +81,7 @@ function comparisonVolumeText(perBagValues, totalValues, quantity, unit, t) {
 }
 
 export function createManufacturerBagComparisonDialogController({
+  bindGalleries = () => null,
   catalog = [],
   categories = [],
   escapeHtml = (value) => String(value || ""),
@@ -93,6 +95,7 @@ export function createManufacturerBagComparisonDialogController({
   let sort = { column: "model", direction: "asc" };
   let activeFilterColumn = "";
   let activeFilterAnchor = null;
+  let detailPhotoGalleryBinding = null;
 
   function catalogRows() {
     const rows = typeof catalog === "function" ? catalog() : catalog;
@@ -382,7 +385,6 @@ export function createManufacturerBagComparisonDialogController({
   }
 
   function renderDetail(entry) {
-    const imageUrl = safeLocalImageUrl(entry.imageUrl);
     const sourceUrl = safeHttpsUrl(entry.sourceUrl);
     const locale = language() === "ru" ? "ru" : "en";
     const dimensions = manufacturerBagComparisonDimensions(entry.dimensions);
@@ -415,7 +417,12 @@ export function createManufacturerBagComparisonDialogController({
     refs.bagCatalogProductDetailTitle.textContent = `${entry.brand} ${entry.name}`;
     refs.bagCatalogProductDetailBody.innerHTML = `
       <div class="manufacturer-product-detail-overview">
-        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(`${entry.brand} ${entry.name}`)}" />` : ""}
+        ${renderManufacturerCatalogPhotoGallery(entry, {
+          className: "manufacturer-product-detail-gallery",
+          escapeHtml,
+          safeImageUrl: safeLocalImageUrl,
+          t
+        })}
         <div>
           <p class="manufacturer-product-detail-description">${escapeHtml(localizedDescription(entry, locale))}</p>
           <dl>${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
@@ -448,6 +455,8 @@ export function createManufacturerBagComparisonDialogController({
         </div>
       </section>
     `;
+    detailPhotoGalleryBinding?.destroy?.();
+    detailPhotoGalleryBinding = bindGalleries(refs.bagCatalogProductDetailBody);
   }
 
   function openDetail(id) {

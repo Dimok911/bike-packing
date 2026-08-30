@@ -7,6 +7,7 @@ import {
   manufacturerBagCatalogVariantChoices,
   manufacturerBagCatalogVariantEntry
 } from "../state/manufacturer-bag-catalog.js";
+import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
 
 function metricRange(values = []) {
   const normalized = [...new Set((Array.isArray(values) ? values : [])
@@ -48,6 +49,7 @@ function safeCatalogUrl(value, { localAsset = false } = {}) {
 }
 
 export function createManufacturerBagCatalogDialogController({
+  bindGalleries = () => null,
   canEdit = () => false,
   catalog = [],
   categories = [],
@@ -67,6 +69,7 @@ export function createManufacturerBagCatalogDialogController({
   let query = "";
   let editingId = "";
   let selectingId = "";
+  let photoGalleryBinding = null;
   const selectedVariantSkuByEntry = new Map();
 
   function catalogRows() {
@@ -113,6 +116,8 @@ export function createManufacturerBagCatalogDialogController({
         : family
           ? renderCategoryList()
           : renderFamilyList();
+    photoGalleryBinding?.destroy?.();
+    photoGalleryBinding = bindGalleries(refs.bagCatalogResults);
   }
 
   function currentPath(hasQuery = false) {
@@ -190,13 +195,15 @@ export function createManufacturerBagCatalogDialogController({
     const dimensions = dimensionText(selectedEntry.dimensions);
     const locale = language() === "ru" ? "ru" : "en";
     const sourceUrl = safeCatalogUrl(entry.sourceUrl);
-    const imageUrl = safeCatalogUrl(entry.imageUrl, { localAsset: true });
     const selecting = selectingId === entry.id;
     return `
       <article class="manufacturer-catalog-product">
-        ${sourceUrl
-          ? `<a class="manufacturer-catalog-product-image" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(`${entry.brand} ${entry.name}`)}" loading="lazy" />` : ""}</a>`
-          : `<div class="manufacturer-catalog-product-image">${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(`${entry.brand} ${entry.name}`)}" loading="lazy" />` : ""}</div>`}
+        ${renderManufacturerCatalogPhotoGallery(entry, {
+          className: "manufacturer-catalog-product-image",
+          escapeHtml,
+          safeImageUrl: (value) => safeCatalogUrl(value, { localAsset: true }),
+          t
+        })}
         <div class="manufacturer-catalog-product-body">
           <div class="manufacturer-catalog-product-heading">
             <div>
@@ -236,7 +243,7 @@ export function createManufacturerBagCatalogDialogController({
           <div class="manufacturer-catalog-product-actions">
             ${sourceUrl ? `<a class="ghost manufacturer-catalog-source-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("bagCatalog.source"))}</a>` : ""}
             ${canEdit() ? `<button class="ghost" type="button" data-bag-catalog-edit="${escapeHtml(entry.id)}" ${selectingId ? "disabled" : ""}>${escapeHtml(t("bagCatalog.edit"))}</button>` : ""}
-            <button type="button" data-bag-catalog-select="${escapeHtml(entry.id)}" ${selectingId ? "disabled" : ""}>${escapeHtml(selecting ? t("bagCatalog.copying") : t("bagCatalog.use"))}</button>
+            <button type="button" data-bag-catalog-select="${escapeHtml(entry.id)}" title="${escapeHtml(t("bagCatalog.useHelp"))}" aria-label="${escapeHtml(t("bagCatalog.useHelp"))}" ${selectingId ? "disabled" : ""}>${escapeHtml(selecting ? t("bagCatalog.copying") : t("bagCatalog.use"))}</button>
           </div>
         </div>
       </article>

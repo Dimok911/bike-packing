@@ -20,7 +20,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Scan official manufacturer catalogs
-        run: npm run catalog:scan
+        run: node scripts/scan-manufacturer-catalog.mjs --output manufacturer-catalog-scan.json --markdown manufacturer-catalog-scan.md --work-dir manufacturer-catalog-scan-work
+      - name: Download official image snapshot
+        run: node scripts/download-manufacturer-catalog-images.mjs --manifest manufacturer-catalog-scan-work/manufacturer-catalog-images.json --root manufacturer-catalog-scan-snapshot
       - name: Add scan summary
         if: always()
         run: test -f manufacturer-catalog-scan.md && cat manufacturer-catalog-scan.md >> "$GITHUB_STEP_SUMMARY" || true
@@ -32,6 +34,9 @@ jobs:
           path: |
             manufacturer-catalog-scan.json
             manufacturer-catalog-scan.md
+            manufacturer-catalog-scan-work/manufacturer-bag-catalog.generated.mjs
+            manufacturer-catalog-scan-work/manufacturer-catalog-images.json
+            manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
           if-no-files-found: error
           retention-days: 90
       - name: Send report to catalog review API

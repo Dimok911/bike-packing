@@ -14,6 +14,8 @@ import {
 } from "../../src/data/manufacturer-bag-catalog-variants.js";
 import {
   filterManufacturerBagCatalog,
+  manufacturerBagCatalogImageUrls,
+  manufacturerBagCatalogNote,
   manufacturerBagContainerDraft,
   manufacturerBagCatalogVariantChoices,
   manufacturerBagCatalogVariantEntry,
@@ -31,6 +33,7 @@ import {
 } from "../../src/state/manufacturer-bag-comparison.js";
 import {
   fetchManufacturerBagCatalogImageFile,
+  fetchManufacturerBagCatalogImageFiles,
   prepareManufacturerBagCatalogImport
 } from "../../src/public/manufacturer-bag-catalog-import.js";
 import {
@@ -58,6 +61,15 @@ test("CRITICAL manufacturer catalog: complete ORTLIEB and Arkel comparison rows 
     assert.match(entry.sourceImageUrl, /^https:\/\/cdn\.shopify\.com\//);
     assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca)\//);
     assert.ok(statSync(resolve(root, entry.imageAssetPath)).size > 5_000);
+    assert.ok(Array.isArray(entry.imageAssetPaths));
+    assert.ok(Array.isArray(entry.sourceImageUrls));
+    assert.ok(Array.isArray(entry.imageUrls));
+    assert.equal(entry.imageAssetPaths.length, entry.sourceImageUrls.length);
+    assert.equal(entry.imageAssetPaths.length, entry.imageUrls.length);
+    entry.imageAssetPaths.forEach((imageAssetPath) => {
+      assert.match(imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
+      assert.ok(statSync(resolve(root, imageAssetPath)).size > 1_000);
+    });
     assert.ok(entry.variantCount > 0);
     assert.ok(Array.isArray(entry.variants));
     assert.equal(entry.sourceCheckedAt, "2026-08-29");
@@ -117,6 +129,54 @@ test("CRITICAL manufacturer catalog: selection prepares fields and a copied phot
   });
   assert.equal(prepared.draft.name, "ORTLIEB Seat-Pack 11 L");
   assert.equal(prepared.photo, photo);
+  assert.deepEqual(prepared.photos, [photo]);
+});
+
+test("CRITICAL manufacturer catalog: every bundled image is prepared for the user bag", async () => {
+  const entry = {
+    ...MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-seat-pack-11l"),
+    imageUrl: "/assets/catalog/seat-pack.jpg",
+    imageUrls: [
+      "/assets/catalog/seat-pack.jpg",
+      "/assets/catalog/seat-pack-side.jpg",
+      "/assets/catalog/seat-pack-bike.jpg"
+    ]
+  };
+  const calls = [];
+  class TestFile {
+    constructor(parts, name, options) {
+      this.parts = parts;
+      this.name = name;
+      this.type = options.type;
+    }
+  }
+  const files = await fetchManufacturerBagCatalogImageFiles(entry, {
+    fetchImpl: async (url) => {
+      calls.push(url);
+      return { ok: true, blob: async () => new Blob([url], { type: "image/jpeg" }) };
+    },
+    FileCtor: TestFile
+  });
+  assert.deepEqual(calls, manufacturerBagCatalogImageUrls(entry));
+  assert.deepEqual(files.map(({ name }) => name), ["f9912.jpg", "f9912-2.jpg", "f9912-3.jpg"]);
+  const prepared = await prepareManufacturerBagCatalogImport(entry, {
+    fetchImageFiles: async () => files,
+    createPhotoFromFile: async (file) => ({ id: file.name })
+  });
+  assert.deepEqual(prepared.photos.map(({ id }) => id), ["f9912.jpg", "f9912-2.jpg", "f9912-3.jpg"]);
+});
+
+test("CRITICAL manufacturer catalog: unmapped manufacturer details and source are copied into the note", () => {
+  const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l-pair");
+  const note = manufacturerBagCatalogNote(entry, { language: "ru" });
+  assert.match(note, /Характеристики производителя/);
+  assert.match(note, /Артикул \(SKU\):/);
+  assert.match(note, /Материал:/);
+  assert.match(note, /Крепление:/);
+  assert.match(note, /Формат продажи: комплект, 2 шт\./);
+  assert.match(note, /Объём одной сумки: 20 л/);
+  assert.match(note, /Официальная страница: https:\/\/us\.ortlieb\.com/);
+  assert.match(note, /Проверено: 2026-08-29/);
 });
 
 test("CRITICAL manufacturer catalog: saved user bag owns the copied photo and source provenance", () => {
@@ -137,7 +197,7 @@ test("CRITICAL manufacturer catalog: saved user bag owns the copied photo and so
     rootContainerVolume: { value: String(draft.volume) },
     rootContainerColor: { value: draft.color },
     rootContainerLocation: { value: "home" },
-    rootContainerNote: { value: "" },
+    rootContainerNote: { value: draft.note },
     rootContainerNestable: { checked: false },
     rootContainerDialog: { open: true }
   };
@@ -153,6 +213,7 @@ test("CRITICAL manufacturer catalog: saved user bag owns the copied photo and so
   assert.equal(state.containers["catalog-bag"].manufacturerCatalogSource.sku, "SP9-RX30-BK");
   assert.equal(state.containers["catalog-bag"].manufacturerCatalogSource.provider, "arkel.ca");
   assert.equal(state.containers["catalog-bag"].manufacturerCatalogSource.catalogId, entry.id);
+  assert.match(state.containers["catalog-bag"].note, /Official page: https:\/\/arkel\.ca/);
 });
 
 test("CRITICAL manufacturer catalog: local admin override replaces only the edited model", () => {
@@ -422,15 +483,19 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(index, /id="bagCatalogProductDetailDialog"/);
   assert.match(controller, /await onSelect\(entry\)/);
   assert.match(controller, /data-bag-catalog-compare-category/);
+  assert.match(controller, /bagCatalog\.useHelp/);
+  assert.match(controller, /renderManufacturerCatalogPhotoGallery/);
   assert.match(comparison, /manufacturerBagComparisonRows/);
   assert.match(comparison, /manufacturerBagComparisonViewRows/);
   assert.match(comparison, /comparisonVolumeText\(entry\.volumeOptions, entry\.volumeTotalOptions/);
   assert.match(comparison, /data-bag-comparison-detail/);
+  assert.match(comparison, /renderManufacturerCatalogPhotoGallery/);
   assert.match(comparison, /visualViewport/);
   assert.match(styles, /grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
   assert.match(styles, /\.manufacturer-comparison-filter-body[\s\S]*overflow-y:\s*auto/);
   assert.match(styles, /\.manufacturer-comparison-filter-panel > footer[\s\S]*border-top/);
   assert.match(appTail, /prepareManufacturerBagCatalogImport/);
+  assert.match(appTail, /refs\.rootContainerNote\.value = draft\.note/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
   assert.equal((i18n.match(/"bagCatalog\.photoReady"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.open"/g) || []).length, 2);

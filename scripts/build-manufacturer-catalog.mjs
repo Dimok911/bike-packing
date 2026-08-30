@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   assertManufacturerBagCatalogSkuModels,
   manufacturerBagCatalogFixedVolumes,
@@ -16,6 +17,9 @@ const pagesDir = resolve(args.get("--pages-dir") || join(sourceDir, ".catalog-pa
 const outputPath = resolve(args.get("--output") || "src/data/manufacturer-bag-catalog.generated.js");
 const imageManifestPath = resolve(args.get("--image-manifest") || "manufacturer-catalog-images.json");
 const checkedAt = args.get("--checked-at") || new Date().toISOString().slice(0, 10);
+const approvedCatalogPath = args.get("--approved-catalog")
+  ? resolve(args.get("--approved-catalog"))
+  : "";
 
 const ORTLIEB_COLLECTION_FILES = [
   "ortlieb-bikepacking.json",
@@ -367,6 +371,17 @@ function resizedShopifyImage(url = "") {
   return parsed.toString();
 }
 
+function productImageRecords(brandKey, product) {
+  const sources = [...new Set([
+    ...(Array.isArray(product.images) ? product.images.map((image) => image?.src) : []),
+    product.image?.src
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
+  return sources.map((source, index) => ({
+    output: `assets/manufacturer-catalog/${brandKey}/${product.handle}${index ? `-${index + 1}` : ""}${safeImageExtension(source)}`,
+    url: resizedShopifyImage(source)
+  }));
+}
+
 function compactVariant(variant, product) {
   const mounting = variantMounting(variant, product.tags);
   return {
@@ -414,10 +429,10 @@ async function normalizeProduct({ brandKey, product }) {
   const weightOptions = technicalWeights.length ? technicalWeights : variantWeights;
   const mountingOptions = [...new Set(variants.map((variant) => variant.mounting).filter(Boolean))];
   if (!mountingOptions.length) mountingOptions.push(genericMounting(brand, category, product.tags || []));
-  const imageSource = product.images?.[0]?.src || product.image?.src || "";
-  if (!imageSource) throw new Error(`Missing image for ${brandKey}:${product.handle}`);
-  const imageExtension = safeImageExtension(imageSource);
-  const imageAssetPath = `assets/manufacturer-catalog/${brandKey}/${product.handle}${imageExtension}`;
+  const imageRecords = productImageRecords(brandKey, product);
+  if (!imageRecords.length) throw new Error(`Missing image for ${brandKey}:${product.handle}`);
+  const imageAssetPaths = imageRecords.map(({ output }) => output);
+  const sourceImageUrls = imageRecords.map(({ url }) => url);
   const sourceUrl = `${brandKey === "ortlieb" ? "https://us.ortlieb.com" : "https://arkel.ca"}/products/${product.handle}`;
   const soldAsSet = SET_PRODUCT_HANDLES.has(product.handle);
   const setQuantity = soldAsSet ? 2 : 1;
@@ -487,8 +502,10 @@ async function normalizeProduct({ brandKey, product }) {
     variantCount: variants.length,
     availableVariantCount: availableVariants.length,
     variants,
-    imageAssetPath,
-    sourceImageUrl: resizedShopifyImage(imageSource),
+    imageAssetPath: imageAssetPaths[0],
+    imageAssetPaths,
+    sourceImageUrl: sourceImageUrls[0],
+    sourceImageUrls,
     sourceUrl,
     sourceCheckedAt: checkedAt,
     description,
@@ -523,33 +540,74 @@ for (const product of arkelProducts.sort((left, right) => left.title.localeCompa
 }
 
 const normalizedEntries = assertManufacturerBagCatalogSkuModels(splitManufacturerBagCatalogSkuModels(entries));
+let outputEntries = normalizedEntries;
+let catalogCheckedAt = checkedAt;
+if (approvedCatalogPath) {
+  const approvedModule = await import(`${pathToFileURL(approvedCatalogPath).href}?approved=${Date.now()}`);
+  const approvedEntries = approvedModule.MANUFACTURER_BAG_CATALOG
+    || approvedModule.MANUFACTURER_BAG_CATALOG_GENERATED
+    || [];
+  const freshById = new Map(normalizedEntries.map((entry) => [entry.id, entry]));
+  outputEntries = approvedEntries.map((approvedEntry) => {
+    const freshEntry = freshById.get(approvedEntry.id);
+    if (!freshEntry) throw new Error(`Approved catalog entry is missing from current manufacturer source: ${approvedEntry.id}`);
+    const { imageUrl, imageUrls, ...approvedData } = approvedEntry;
+    return {
+      ...approvedData,
+      imageAssetPath: freshEntry.imageAssetPath,
+      imageAssetPaths: [...freshEntry.imageAssetPaths],
+      sourceImageUrl: freshEntry.sourceImageUrl,
+      sourceImageUrls: [...freshEntry.sourceImageUrls],
+      imagesCheckedAt: checkedAt
+    };
+  });
+  catalogCheckedAt = String(outputEntries[0]?.sourceCheckedAt || "previous approved snapshot");
+}
 
-const imageManifest = [...new Map(normalizedEntries.map((entry) => [entry.imageAssetPath, {
-  id: entry.id,
-  output: entry.imageAssetPath,
-  url: entry.sourceImageUrl
-}])).values()];
+const imageManifest = [...new Map(outputEntries.flatMap((entry) => {
+  const outputs = Array.isArray(entry.imageAssetPaths) ? entry.imageAssetPaths : [entry.imageAssetPath];
+  const urls = Array.isArray(entry.sourceImageUrls) ? entry.sourceImageUrls : [entry.sourceImageUrl];
+  return outputs.map((output, index) => [output, {
+    id: entry.id,
+    output,
+    url: urls[index]
+  }]);
+}).filter(([output, item]) => output && item.url)).values()];
 
-const imageDeclarations = normalizedEntries.map((entry) =>
-  `  ${JSON.stringify(entry.id)}: new URL(${JSON.stringify(`../../${entry.imageAssetPath}`)}, import.meta.url).href`
-).join(",\n");
+const imageDeclarations = outputEntries.map((entry) => {
+  const imageAssetPaths = Array.isArray(entry.imageAssetPaths) && entry.imageAssetPaths.length
+    ? entry.imageAssetPaths
+    : [entry.imageAssetPath].filter(Boolean);
+  const declarations = imageAssetPaths.map((imageAssetPath) =>
+    `new URL(${JSON.stringify(`../../${imageAssetPath}`)}, import.meta.url).href`
+  ).join(", ");
+  return `  ${JSON.stringify(entry.id)}: [${declarations}]`;
+}).join(",\n");
 
-const runtimeEntries = normalizedEntries.map((entry) => ({
+const runtimeEntries = outputEntries.map((entry) => ({
   ...entry,
+  imageUrls: `__IMAGE_URLS__${entry.id}`,
   imageUrl: `__IMAGE_URL__${entry.id}`
 }));
 
 const serializedEntries = JSON.stringify(runtimeEntries, null, 2)
+  .replace(/"__IMAGE_URLS__([^\"]+)"/g, (_, id) => `MANUFACTURER_BAG_IMAGE_URLS[${JSON.stringify(id)}]`)
   .replace(/"__IMAGE_URL__([^\"]+)"/g, (_, id) => `MANUFACTURER_BAG_IMAGE_URLS[${JSON.stringify(id)}]`);
 
 const output = `// Generated by scripts/build-manufacturer-catalog.mjs from official Shopify catalogs.\n`
-  + `// Source snapshot checked: ${checkedAt}. Do not edit by hand.\n\n`
+  + `// Catalog data checked: ${catalogCheckedAt}. Image gallery checked: ${checkedAt}. Do not edit by hand.\n\n`
   + `const MANUFACTURER_BAG_IMAGE_URLS = {\n${imageDeclarations}\n};\n\n`
-  + `export const MANUFACTURER_BAG_CATALOG_GENERATED = ${serializedEntries};\n`;
+  + `export const MANUFACTURER_BAG_CATALOG_GENERATED = ${serializedEntries.replace(
+    /MANUFACTURER_BAG_IMAGE_URLS\[("[^"]+")\](?=,?\n\s+"imageUrl")/g,
+    "MANUFACTURER_BAG_IMAGE_URLS[$1]"
+  ).replace(
+    /"imageUrl": MANUFACTURER_BAG_IMAGE_URLS\[("[^"]+")\]/g,
+    '"imageUrl": MANUFACTURER_BAG_IMAGE_URLS[$1][0] || ""'
+  )};\n`;
 
 await writeFile(outputPath, output, "utf8");
 await writeFile(imageManifestPath, `${JSON.stringify(imageManifest, null, 2)}\n`, "utf8");
 
-const counts = Object.fromEntries([...new Set(normalizedEntries.map((entry) => entry.brand))]
-  .map((brand) => [brand, normalizedEntries.filter((entry) => entry.brand === brand).length]));
-process.stdout.write(`${JSON.stringify({ output: basename(outputPath), entries: normalizedEntries.length, counts, imageManifest: basename(imageManifestPath) })}\n`);
+const counts = Object.fromEntries([...new Set(outputEntries.map((entry) => entry.brand))]
+  .map((brand) => [brand, outputEntries.filter((entry) => entry.brand === brand).length]));
+process.stdout.write(`${JSON.stringify({ output: basename(outputPath), entries: outputEntries.length, images: imageManifest.length, counts, imageManifest: basename(imageManifestPath) })}\n`);

@@ -11,6 +11,12 @@ const TYPE_TEXT = Object.freeze({
   missing: ["Missing from source", "Не найдена у производителя"],
 });
 
+const TYPE_EXPLANATION = Object.freeze({
+  added: ["Not in the public catalog yet.", "Новой карточки в публичном каталоге ещё нет."],
+  changed: ["The approved card remains public; only the fields below await review.", "Утверждённая карточка уже опубликована; проверки ожидают только поля ниже."],
+  missing: ["The approved card remains public until this absence is reviewed.", "Утверждённая карточка остаётся в каталоге до проверки её отсутствия у производителя."]
+});
+
 const DECISION_TEXT = Object.freeze({
   pending: ["Awaiting review", "Ожидает проверки"],
   approved: ["Approved", "Подтверждено"],
@@ -39,7 +45,8 @@ const FIELD_TEXT = Object.freeze({
   soldAsSet: ["Sold as a set", "Продаётся комплектом"],
   available: ["Availability", "Доступность"],
   variants: ["Variants", "Варианты"],
-  sourceImageUrl: ["Image", "Изображение"],
+  sourceImageUrl: ["Main image", "Основное изображение"],
+  sourceImageUrls: ["Image gallery", "Галерея изображений"],
 });
 
 const formatDateTime = (value) => {
@@ -61,6 +68,59 @@ const formatValue = (value) => {
   return String(value);
 };
 
+const diffTokens = (value) => {
+  if (Array.isArray(value) && value.every((item) => /^https?:\/\//i.test(String(item || "")))) {
+    return value.flatMap((item, index) => index < value.length - 1 ? [String(item), "\n"] : [String(item)]);
+  }
+  return String(formatValue(value) || "").match(/\s+|[\p{L}\p{N}_.-]+|[^\s\p{L}\p{N}_.-]+/gu) || [];
+};
+
+export const manufacturerCatalogInlineDiffParts = (before, after) => {
+  const left = diffTokens(before);
+  const right = diffTokens(after);
+  const common = Array.from({ length: left.length + 1 }, () => new Uint32Array(right.length + 1));
+  for (let leftIndex = left.length - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = right.length - 1; rightIndex >= 0; rightIndex -= 1) {
+      common[leftIndex][rightIndex] = left[leftIndex] === right[rightIndex]
+        ? common[leftIndex + 1][rightIndex + 1] + 1
+        : Math.max(common[leftIndex + 1][rightIndex], common[leftIndex][rightIndex + 1]);
+    }
+  }
+  const parts = [];
+  const append = (type, value) => {
+    if (!value) return;
+    const previous = parts.at(-1);
+    if (previous?.type === type) previous.value += value;
+    else parts.push({ type, value });
+  };
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex] === right[rightIndex]) {
+      append("equal", left[leftIndex]);
+      leftIndex += 1;
+      rightIndex += 1;
+    } else if (common[leftIndex + 1][rightIndex] >= common[leftIndex][rightIndex + 1]) {
+      append("removed", left[leftIndex]);
+      leftIndex += 1;
+    } else {
+      append("added", right[rightIndex]);
+      rightIndex += 1;
+    }
+  }
+  while (leftIndex < left.length) append("removed", left[leftIndex++]);
+  while (rightIndex < right.length) append("added", right[rightIndex++]);
+  return parts;
+};
+
+const renderInlineDiff = (before, after) => manufacturerCatalogInlineDiffParts(before, after)
+  .map(({ type, value }) => type === "removed"
+    ? `<del>${escapeHtml(value)}</del>`
+    : type === "added"
+      ? `<ins>${escapeHtml(value)}</ins>`
+      : escapeHtml(value))
+  .join("");
+
 const fieldLabel = (field) => {
   const pair = FIELD_TEXT[field];
   return pair ? localText(pair[0], pair[1]) : field;
@@ -80,7 +140,7 @@ const renderFieldChanges = (fields = []) => {
   return `<dl class="catalog-review-fields">${fields.map((item) => `
     <div>
       <dt>${escapeHtml(fieldLabel(item.field))}</dt>
-      <dd><del>${escapeHtml(formatValue(item.before))}</del><span aria-hidden="true">→</span><ins>${escapeHtml(formatValue(item.after))}</ins></dd>
+      <dd>${renderInlineDiff(item.before, item.after)}</dd>
     </div>
   `).join("")}</dl>`;
 };
@@ -102,6 +162,7 @@ const renderDecisionButton = (change, decision, label) => `
 
 const renderChange = (change = {}, scanId = "") => {
   const typePair = TYPE_TEXT[change.type] || [change.type, change.type];
+  const explanationPair = TYPE_EXPLANATION[change.type] || ["", ""];
   const decisionPair = DECISION_TEXT[change.decision] || DECISION_TEXT.pending;
   const sourceUrl = safeExternalUrl(change.sourceUrl);
   return `<article class="catalog-review-change type-${escapeHtml(change.type || "changed")}" data-scan-id="${escapeHtml(scanId)}" data-change-id="${escapeHtml(change.id || "")}">
@@ -112,6 +173,7 @@ const renderChange = (change = {}, scanId = "") => {
       </div>
       <span class="catalog-review-decision decision-${escapeHtml(change.decision || "pending")}">${escapeHtml(localText(decisionPair[0], decisionPair[1]))}</span>
     </header>
+    ${explanationPair[0] ? `<p class="catalog-review-publication-state">${escapeHtml(localText(explanationPair[0], explanationPair[1]))}</p>` : ""}
     ${renderFieldChanges(change.fields)}
     ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(localText("Open manufacturer source", "Открыть источник производителя"))}</a>` : ""}
     <label class="catalog-review-note">

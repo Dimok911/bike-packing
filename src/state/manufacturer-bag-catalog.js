@@ -75,6 +75,13 @@ export function manufacturerBagCatalogEntry(catalog = [], id = "") {
   return (Array.isArray(catalog) ? catalog : []).find((entry) => entry?.id === normalized) || null;
 }
 
+export function manufacturerBagCatalogImageUrls(entry) {
+  return [...new Set([
+    String(entry?.imageUrl || "").trim(),
+    ...(Array.isArray(entry?.imageUrls) ? entry.imageUrls : []).map((value) => String(value || "").trim())
+  ].filter(Boolean))];
+}
+
 function positiveCatalogNumbers(values = [], fallback = 0) {
   const normalized = (Array.isArray(values) ? values : [fallback])
     .map(Number)
@@ -283,7 +290,74 @@ export function mergeManufacturerBagCatalogOverrides(catalog = [], overrides = [
   });
 }
 
-export function manufacturerBagContainerDraft(entry) {
+function manufacturerCatalogNoteNumber(value, language = "en") {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return number.toLocaleString(language === "ru" ? "ru-RU" : "en-US", {
+    maximumFractionDigits: 2,
+    useGrouping: false
+  });
+}
+
+export function manufacturerBagCatalogNote(entry, { language = "en" } = {}) {
+  if (!entry || typeof entry !== "object") return "";
+  const locale = language === "ru" ? "ru" : "en";
+  const ru = locale === "ru";
+  const volumeMetrics = manufacturerBagCatalogVolumeMetrics(entry);
+  const weightMetrics = manufacturerBagCatalogWeightMetrics(entry);
+  const quantity = manufacturerBagCatalogSetQuantity(entry);
+  const description = String(entry.description?.[locale] || entry.description?.en || entry.description?.ru || "").trim();
+  const rows = [];
+  const add = (label, value) => {
+    const normalized = String(value || "").trim();
+    if (normalized) rows.push(`${label}: ${normalized}`);
+  };
+  add(ru ? "Вариант" : "Variant", entry.variant);
+  add(ru ? "Артикул (SKU)" : "SKU", entry.sku);
+  add(ru ? "Материал" : "Material", entry.material);
+  add(ru ? "Водозащита" : "Waterproofing", entry.waterproof);
+  add(ru ? "Крепление" : "Mounting", entry.mountingOptions?.join(" / ") || entry.mounting);
+  if (Number(entry.loadKg || 0) > 0) {
+    add(
+      ru ? "Допустимая нагрузка" : "Maximum load",
+      `${manufacturerCatalogNoteNumber(entry.loadKg, locale)} ${ru ? "кг" : "kg"}`
+    );
+  }
+  if (entry.soldAsSet) {
+    add(ru ? "Формат продажи" : "Sold as", ru ? `комплект, ${quantity} шт.` : `set of ${quantity}`);
+  }
+  if (volumeMetrics.perBag[0]) {
+    add(
+      ru ? "Объём одной сумки" : "Volume per bag",
+      `${manufacturerCatalogNoteNumber(volumeMetrics.perBag[0], locale)} ${ru ? "л" : "L"}`
+    );
+  }
+  if (weightMetrics.perBag[0]) {
+    add(
+      ru ? "Вес одной сумки" : "Weight per bag",
+      `${manufacturerCatalogNoteNumber(weightMetrics.perBag[0], locale)} ${ru ? "г" : "g"}`
+    );
+  }
+  add(
+    ru ? "Статус на сайте" : "Website status",
+    entry.available === false ? (ru ? "сейчас недоступно" : "currently unavailable") : (ru ? "доступно" : "available")
+  );
+
+  const sections = [
+    [ru ? "Характеристики производителя" : "Manufacturer details", rows.join("\n")],
+    [ru ? "Описание производителя" : "Manufacturer description", description],
+    ["", [
+      entry.sourceUrl ? `${ru ? "Официальная страница" : "Official page"}: ${entry.sourceUrl}` : "",
+      entry.sourceCheckedAt ? `${ru ? "Проверено" : "Checked"}: ${entry.sourceCheckedAt}` : ""
+    ].filter(Boolean).join("\n")]
+  ];
+  return sections
+    .filter(([, value]) => value)
+    .map(([heading, value]) => heading ? `${heading}\n${value}` : value)
+    .join("\n\n");
+}
+
+export function manufacturerBagContainerDraft(entry, options = {}) {
   if (!entry || typeof entry !== "object") return null;
   const volumeMetrics = manufacturerBagCatalogVolumeMetrics(entry);
   const weightMetrics = manufacturerBagCatalogWeightMetrics(entry);
@@ -306,6 +380,7 @@ export function manufacturerBagContainerDraft(entry) {
     volume: Math.max(0, volume),
     color: String(entry.color || ""),
     dimensions,
+    note: manufacturerBagCatalogNote(entry, options),
     manufacturerCatalogSource: {
       kind: "manufacturer-bag",
       provider: String(entry.provider || "manufacturer-catalog"),

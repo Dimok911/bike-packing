@@ -448,6 +448,7 @@ const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
 );
 
 const manufacturerBagComparisonDialogController = createManufacturerBagComparisonDialogController({
+  bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
   catalog: manufacturerBagCatalogRows,
   categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
   escapeHtml,
@@ -458,6 +459,7 @@ const manufacturerBagComparisonDialogController = createManufacturerBagCompariso
 });
 
 const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialogController({
+  bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
   canEdit: () => isAdminUser(),
   catalog: manufacturerBagCatalogRows,
   categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
@@ -482,18 +484,28 @@ const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialo
 async function applyManufacturerBagCatalogSelection(entry) {
   if (runtime.editingRootContainerId) return;
   setRootContainerDialogPhotoStatus(t("bagCatalog.photoPreparing"));
-  const prepared = await prepareManufacturerBagCatalogImport(entry, { createPhotoFromFile: createItemPhotoFromFile });
-  const draft = prepared?.draft;
-  const photo = prepared?.photo;
-  if (!draft || !photo) throw new Error("manufacturer-catalog-photo-unavailable");
-
   const source = { photos: [] };
   const photoDraft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
   const limit = usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit());
-  const result = addPhotosToDraft(photoDraft, photo, limit);
+  const freePhotoSlots = Math.max(0, limit - photoDraft.photos.length);
+  if (!freePhotoSlots) throw new Error("manufacturer-catalog-photo-limit");
+  const prepared = await prepareManufacturerBagCatalogImport(entry, {
+    createPhotoFromFile: createItemPhotoFromFile,
+    language: isEnglishUi() ? "en" : "ru",
+    maxPhotos: freePhotoSlots
+  });
+  const draft = prepared?.draft;
+  const photos = Array.isArray(prepared?.photos) ? prepared.photos : [prepared?.photo].filter(Boolean);
+  if (!draft || !photos.length) throw new Error("manufacturer-catalog-photo-unavailable");
+
+  const result = addPhotosToDraft(photoDraft, photos, limit);
   if (!result.accepted.length) {
-    deleteCachedDraftPhotos(photo);
+    deleteCachedDraftPhotos(photos);
     throw new Error("manufacturer-catalog-photo-limit");
+  }
+  if (result.rejected.length) {
+    deleteCachedDraftPhotos(result.rejected);
+    showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
   }
 
   rootContainerCatalogSelection = entry;
@@ -501,6 +513,7 @@ async function applyManufacturerBagCatalogSelection(entry) {
   refs.rootContainerWeight.value = draft.weight || 0;
   refs.rootContainerVolume.value = draft.volume ? String(draft.volume).replace(".", ",") : "";
   if (refs.rootContainerColor) refs.rootContainerColor.value = draft.color || "";
+  if (refs.rootContainerNote) refs.rootContainerNote.value = draft.note || "";
   if (refs.rootContainerWidth) refs.rootContainerWidth.value = draft.dimensions?.width
     ? String(draft.dimensions.width).replace(".", ",")
     : "";
@@ -512,11 +525,11 @@ async function applyManufacturerBagCatalogSelection(entry) {
     : "";
 
   runtime.rootContainerDialogPhotoDraft = result.draft;
-  runtime.rootContainerDialogPhotoActiveIndex = Math.max(0, result.draft.photos.length - 1);
+  runtime.rootContainerDialogPhotoActiveIndex = Math.max(0, result.draft.photos.length - result.accepted.length);
   markPhotoUploadBatch(result.accepted);
   await updateRootContainerDialogPhotoPreview(result.draft.photos);
   uploadRootContainerDialogDraftPhotos(result.accepted).catch(() => null);
-  setRootContainerDialogPhotoStatus(t("bagCatalog.photoReady"));
+  setRootContainerDialogPhotoStatus(t("bagCatalog.photoReady", { count: result.accepted.length }));
   updateRootContainerDialogSaveState();
   refs.rootContainerName.focus();
 }

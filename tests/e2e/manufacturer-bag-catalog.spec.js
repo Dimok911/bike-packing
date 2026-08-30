@@ -44,6 +44,11 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(details.locator("#bagCatalogProductDetailTitle")).toHaveText("ORTLIEB Seat-Pack 11 L");
   await expect(details).toContainText("Варианты производителя");
   await expect(details).toContainText("F9912");
+  await expect.poll(() => details.locator(".manufacturer-product-detail-gallery [data-photo-open]").count()).toBeGreaterThan(1);
+  await details.locator(".manufacturer-product-detail-gallery [data-photo-open]").first().click();
+  await expect(page.locator("dialog.photo-lightbox")).toBeVisible();
+  await expect.poll(() => page.locator("dialog.photo-lightbox .photo-lightbox-dot").count()).toBeGreaterThan(1);
+  await page.locator("dialog.photo-lightbox .photo-lightbox-close").click();
   await details.locator('button[value="cancel"]').click();
 
   await comparison.locator('[data-bag-comparison-filter="volume"]').click();
@@ -60,6 +65,11 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   await page.locator('[data-bag-catalog-category="saddle"]').click();
   await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(13);
+  const seatPackCard = page.locator('.manufacturer-catalog-product:has([data-bag-catalog-select="ortlieb-seat-pack-16-5l"])');
+  await expect.poll(() => seatPackCard.locator(".manufacturer-catalog-photo-gallery .photo-gallery-dot").count()).toBeGreaterThan(1);
+  await seatPackCard.locator("[data-photo-open]").first().click();
+  await expect(page.locator("dialog.photo-lightbox")).toBeVisible();
+  await page.locator("dialog.photo-lightbox .photo-lightbox-close").click();
   await page.locator('[data-bag-catalog-select="ortlieb-seat-pack-16-5l"]').click();
 
   await expect(page.locator("#bagCatalogDialog")).not.toBeVisible();
@@ -67,7 +77,9 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#rootContainerName")).toHaveValue("ORTLIEB Seat-Pack 16.5 L");
   await expect(page.locator("#rootContainerWeight")).toHaveValue("490");
   await expect(page.locator("#rootContainerVolume")).toHaveValue("16,5");
-  await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(1);
+  await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(3);
+  await expect(page.locator("#rootContainerNote")).toHaveValue(/Артикул \(SKU\):/);
+  await expect(page.locator("#rootContainerNote")).toHaveValue(/Официальная страница: https:\/\/us\.ortlieb\.com/);
 });
 
 for (const scenario of [

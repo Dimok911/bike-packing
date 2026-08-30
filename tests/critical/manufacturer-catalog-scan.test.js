@@ -75,3 +75,14 @@ test("CRITICAL catalog scan: a future manufacturer is not folded into an existin
   assert.equal(report.manufacturers[0].productCount, 1);
   assert.equal(report.changes[0].manufacturerId, "new-brand");
 });
+
+test("CRITICAL catalog scan: all official image URLs are reviewable and the Action stores the image snapshot", () => {
+  const before = bag("ortlieb-gallery", "ORTLIEB", {
+    sourceImageUrls: ["https://cdn.shopify.com/front.jpg"]
+  });
+  const after = bag("ortlieb-gallery", "ORTLIEB", {
+    sourceImageUrls: ["https://cdn.shopify.com/front.jpg", "https://cdn.shopify.com/side.jpg"]
+  });
+  const result = compareManufacturerCatalogSnapshots([before], [after]);
+  assert.deepEqual(result.changes[0].fields.map(({ field }) => field), ["sourceImageUrls"]);
+});

@@ -31,6 +31,7 @@ const CATALOG_COMPARE_FIELDS = Object.freeze([
   "available",
   "variants",
   "sourceImageUrl",
+  "sourceImageUrls",
 ]);
 
 const cloneJson = (value) => value == null ? null : JSON.parse(JSON.stringify(value));

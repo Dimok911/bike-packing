@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { renderManufacturerCatalogReview } from "../../src/ui/manufacturer-catalog-review-dialog.js";
+import {
+  manufacturerCatalogInlineDiffParts,
+  renderManufacturerCatalogReview
+} from "../../src/ui/manufacturer-catalog-review-dialog.js";
 import {
   fetchManufacturerCatalogScans,
   saveManufacturerCatalogDecision,
@@ -57,12 +60,42 @@ test("CRITICAL catalog review: API calls use admin review routes and encoded ids
   assert.deepEqual(JSON.parse(calls[1].options.body), { decision: "approved", note: "checked" });
 });
 
+test("CRITICAL catalog review: unchanged text stays plain while only removed and added tokens are marked", () => {
+  const parts = manufacturerCatalogInlineDiffParts(
+    "sku: F5305; mounting: Quick-Lock2.1; available: Yes",
+    "sku: F5305; mounting: Quick-Lock2.2; available: Yes"
+  );
+  assert.deepEqual(parts.filter(({ type }) => type !== "equal"), [
+    { type: "removed", value: "Quick-Lock2.1" },
+    { type: "added", value: "Quick-Lock2.2" }
+  ]);
+  const html = renderManufacturerCatalogReview({
+    scans: [{
+      id: "scan",
+      scannedAt: "2026-08-30T09:00:00.000Z",
+      summary: { products: 1 },
+      manufacturers: [],
+      changes: [{
+        id: "change",
+        type: "changed",
+        productName: "Back-Roller",
+        fields: [{ field: "mounting", before: "Quick-Lock2.1", after: "Quick-Lock2.2" }]
+      }]
+    }]
+  });
+  assert.match(html, /<del>Quick-Lock2\.1<\/del><ins>Quick-Lock2\.2<\/ins>/);
+  assert.doesNotMatch(html, /<del>sku:/);
+});
+
 test("CRITICAL catalog review: dialog is admin-only and wired into synchronized visibility", () => {
   const indexSource = readFileSync(resolve(projectRoot, "index.html"), "utf8");
   const appSource = readFileSync(resolve(projectRoot, "app.js"), "utf8");
   const syncUiSource = readFileSync(resolve(projectRoot, "src/ui/sync-ui.js"), "utf8");
+  const stylesSource = readFileSync(resolve(projectRoot, "styles.css"), "utf8");
   assert.match(indexSource, /id="catalogUpdatesBtn"[^>]*admin-menu-item[^>]*hidden/);
   assert.match(indexSource, /id="catalogUpdatesDialog"/);
   assert.match(appSource, /FRONTEND_PERMISSION_ACTIONS\.CATALOG_REVIEW/);
   assert.match(syncUiSource, /manufacturerCatalogReviewDialogController\?\.syncVisibility\?\.\(\)/);
+  assert.match(stylesSource, /#catalogUpdatesDialog\s*\{[^}]*width:\s*min\(1500px, calc\(100vw - 24px\)\)/s);
+  assert.match(stylesSource, /\.catalog-updates-dialog-card\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%/s);
 });
