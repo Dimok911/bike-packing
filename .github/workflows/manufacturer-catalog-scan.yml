@@ -46,6 +46,8 @@ jobs:
             manufacturer-catalog-scan.md
             manufacturer-catalog-scan-work/manufacturer-bag-catalog.generated.mjs
             manufacturer-catalog-scan-work/manufacturer-catalog-images.json
+            manufacturer-catalog-scan-work/tailfin-shop.html
+            manufacturer-catalog-scan-work/.catalog-pages/tailfin
             manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
           if-no-files-found: error
           retention-days: 90

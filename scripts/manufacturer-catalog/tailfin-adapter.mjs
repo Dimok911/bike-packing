@@ -153,35 +153,72 @@ function mainHtml(html = "") {
   return main || String(html || "");
 }
 
-function specificationsHtml(html = "") {
-  const source = mainHtml(html);
+function specificationsStart(source = "") {
+  const exact = String(source || "").match(/<[^>]+\bid\s*=\s*["']specifications?["'][^>]*>/i);
+  if (exact) return exact.index || 0;
+  const dataSection = String(source || "").match(/<[^>]+\bdata-(?:section|tab|anchor)\s*=\s*["']specifications?["'][^>]*>/i);
+  if (dataSection) return dataSection.index || 0;
   const markers = [...source.matchAll(/Specifications?/gi)];
-  if (!markers.length) return source.slice(0, 60_000);
+  if (!markers.length) return -1;
   const candidate = markers.map(({ index = 0 }) => {
     const fragment = source.slice(index, index + 80_000);
     const text = plainText(fragment);
     const score = (text.match(/\b(?:weight|volume|construction|dimensions?|waterproof)\b/gi) || []).length
       + (text.match(/\d+(?:[.,]\d+)?\s*(?:g|kg|L|lit(?:er|re)s?)\b/gi) || []).length;
-    return { fragment, score };
+    return { index, score };
   }).sort((left, right) => right.score - left.score)[0];
-  const remainder = candidate.fragment;
-  const end = remainder.search(/(?:Media Reviews|Other riders|Product Videos|Spares\s*&\s*Accessories|Frequently Asked Questions|<footer\b)/i);
-  return end > 0 ? remainder.slice(0, end) : remainder;
+  return candidate.index;
+}
+
+function specificationsHtml(html = "") {
+  const source = mainHtml(html);
+  const start = specificationsStart(source);
+  if (start < 0) return source.slice(0, 60_000);
+  const remainder = source.slice(start, start + 80_000);
+  const end = remainder.slice(200).search(/(?:\bid\s*=\s*["'](?:faq|reviews?|spares|accessories)["']|Media Reviews|Other riders|Product Videos|Spares\s*&\s*Accessories|Frequently Asked Questions|<footer\b)/i);
+  return end > 0 ? remainder.slice(0, end + 200) : remainder;
 }
 
 function volumeValues(value = "") {
-  return uniqueNumbers([...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*(?:L\b|lit(?:er|re)s?\b)/gi)]
-    .map((match) => Number(match[1].replace(",", ".")))
-    .filter((value) => value <= 80));
+  const source = String(value || "");
+  const values = [];
+  for (const match of source.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:L\b|lit(?:er|re)s?\b)/gi)) {
+    const before = source.slice(Math.max(0, match.index - 12), match.index);
+    const after = source.slice((match.index || 0) + match[0].length, (match.index || 0) + match[0].length + 30);
+    if (/\+\s*(?:\(?\s*)?$/.test(before) || /^\s*(?:mesh\s+)?pockets?\b/i.test(after)) continue;
+    const number = Number(match[1].replace(",", "."));
+    if (number <= 80) values.push(number);
+  }
+  return uniqueNumbers(values);
 }
 
 function weightValues(value = "") {
-  return uniqueNumbers([
-    ...[...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*g\b/gi)]
-      .map((match) => Number(match[1].replace(",", "."))),
-    ...[...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*kg\b/gi)]
-      .map((match) => Number(match[1].replace(",", ".")) * 1000),
-  ].filter((value) => value >= 20 && value < 10_000));
+  return uniqueNumbers([...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*g\b/gi)]
+    .map((match) => Number(match[1].replace(",", ".")))
+    .filter((number) => number >= 20 && number < 10_000));
+}
+
+function productVolumeValues(handle, value = "") {
+  if (handle === "bar-bag-system") {
+    const maximums = [...String(value || "").matchAll(/\bVolume\s+(?:\d+(?:[.,]\d+)?\s*L\s*[–—-]\s*)?(\d+(?:[.,]\d+)?)\s*L\b/gi)]
+      .map((match) => Number(match[1].replace(",", ".")));
+    if (maximums.length) return uniqueNumbers(maximums);
+  }
+  return volumeValues(value);
+}
+
+function productWeightValues(handle, volumes, value = "") {
+  const raw = weightValues(value);
+  if (handle === "bar-bag-system") {
+    const totals = [...String(value || "").matchAll(/\bWeight\s+(\d+(?:[.,]\d+)?)\s*g[\s\S]{0,100}?(\d+(?:[.,]\d+)?)\s*g\s+Bar Clamp Hardware/gi)]
+      .map((match) => Number(match[1].replace(",", ".")) + Number(match[2].replace(",", ".")));
+    if (totals.length === volumes.length) return totals;
+  }
+  if (volumes.length > 1 && raw.length > volumes.length && raw.length % volumes.length === 0) {
+    const groupSize = raw.length / volumes.length;
+    return volumes.map((_, index) => Math.max(...raw.slice(index * groupSize, (index + 1) * groupSize)));
+  }
+  return raw;
 }
 
 function maximumLoadKg(value = "") {
@@ -252,7 +289,6 @@ function normalizedImageUrl(rawUrl, pageUrl) {
     if (/(?:logo|favicon|icon|avatar|payment|flag|trustpilot|youtube|placeholder|sprite|review[-_ ]?logo|stars?)[^/]*\.(?:jpe?g|png|webp)$/i.test(url.pathname)) return null;
     url.hash = "";
     url.search = "";
-    url.pathname = url.pathname.replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp)$)/i, "");
     return url;
   } catch {
     return null;
@@ -260,7 +296,9 @@ function normalizedImageUrl(rawUrl, pageUrl) {
 }
 
 function productImages(html = "", pageUrl, schema = {}) {
-  const source = mainHtml(html);
+  const fullMain = mainHtml(html);
+  const specificationsIndex = specificationsStart(fullMain);
+  const source = specificationsIndex > 0 ? fullMain.slice(0, specificationsIndex) : fullMain;
   const raw = [...schemaImages(schema)];
   const attributePattern = /\b(?:data-large_image|data-large-image|data-src|src|href)\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
   for (const match of source.matchAll(attributePattern)) raw.push(match[1] || match[2]);
@@ -272,9 +310,14 @@ function productImages(html = "", pageUrl, schema = {}) {
   const images = new Map();
   raw.forEach((candidate) => {
     const url = normalizedImageUrl(candidate, pageUrl);
-    if (url) images.set(url.toString().toLowerCase(), url.toString());
+    if (!url) return;
+    const key = url.pathname.replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp)$)/i, "").toLowerCase();
+    const size = url.pathname.match(/-(\d{2,4})x(\d{2,4})(?=\.(?:jpe?g|png|webp)$)/i);
+    const score = size ? Number(size[1]) * Number(size[2]) : Number.MAX_SAFE_INTEGER;
+    const current = images.get(key);
+    if (!current || score > current.score) images.set(key, { score, url: url.toString() });
   });
-  return [...images.values()];
+  return [...images.values()].map((item) => item.url);
 }
 
 function safeImageExtension(url = "") {
@@ -311,8 +354,8 @@ export function buildTailfinCatalogEntry({ html = "", sourceUrl = "", checkedAt 
   if (!name) throw new Error(`Missing Tailfin product name: ${url}`);
   const specsHtml = specificationsHtml(html);
   const specsText = plainText(specsHtml);
-  const volumes = volumeValues(specsText || name);
-  const weights = weightValues(specsText);
+  const volumes = productVolumeValues(handle, specsText || name);
+  const weights = productWeightValues(handle, volumes, specsText);
   const category = tailfinCategory(url, handle);
   const meta = CATEGORY_META[category];
   const images = productImages(html, url, schema);

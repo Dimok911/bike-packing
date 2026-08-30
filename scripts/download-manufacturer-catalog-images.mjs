@@ -9,14 +9,18 @@ const outputRoot = resolve(args.get("--root") || ".");
 const concurrency = Math.max(1, Math.min(12, Number(args.get("--concurrency")) || 6));
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
-async function fetchImage(url, attempts = 3) {
+async function fetchImage(url, { referer = "" } = {}, attempts = 3) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
       const response = await fetch(url, {
-        headers: { "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)" },
+        headers: {
+          "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)",
+          "accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          ...(referer ? { referer } : {})
+        },
         signal: controller.signal
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -31,7 +35,7 @@ async function fetchImage(url, attempts = 3) {
       clearTimeout(timeout);
     }
   }
-  throw new Error(String(lastError?.message || lastError || "image request failed"));
+  throw new Error(`${String(lastError?.message || lastError || "image request failed")}: ${url}`);
 }
 
 async function writeImage(item) {
@@ -43,7 +47,7 @@ async function writeImage(item) {
   if (!outputPath.startsWith(`${outputRoot}\\`) && !outputPath.startsWith(`${outputRoot}/`)) {
     throw new Error(`Catalog image output escapes the target root: ${relativePath}`);
   }
-  const bytes = await fetchImage(String(item?.url || ""));
+  const bytes = await fetchImage(String(item?.url || ""), { referer: String(item?.referer || "") });
   await mkdir(dirname(outputPath), { recursive: true });
   const temporaryPath = `${outputPath}.download`;
   await writeFile(temporaryPath, bytes);

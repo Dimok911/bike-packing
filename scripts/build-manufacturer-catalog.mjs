@@ -583,7 +583,8 @@ const imageManifest = [...new Map(outputEntries.flatMap((entry) => {
   return outputs.map((output, index) => [output, {
     id: entry.id,
     output,
-    url: urls[index]
+    url: urls[index],
+    referer: entry.sourceUrl
   }]);
 }).filter(([output, item]) => output && item.url)).values()];
 

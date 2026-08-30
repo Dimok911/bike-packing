@@ -120,12 +120,12 @@ test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details,
         <h1>Half Frame Bag</h1>
         <img data-large_image="https://media.tailfin.cc/app/uploads/2026/08/half-frame-side.jpg">
         <img src="https://media.tailfin.cc/app/uploads/2026/08/tailfin-logo.png">
-        <section><h2>Specifications</h2>
+        <section id="specifications"><h2>Specifications</h2>
           <h3>2.3 Litres</h3><p>Weight 248g including Straps</p>
           <h3>3.0 Litres</h3><p>Weight 290g including Straps</p>
           <p>Construction 210D Hypalon &amp; 210D Diamond RipStop</p>
           <p>100% Waterproof</p>
-        </section><h2>Media Reviews</h2>
+        </section><h2>Media Reviews</h2><img src="https://media.tailfin.cc/app/uploads/2026/08/unrelated-review.jpg">
       </main></body></html>
     `,
   });
@@ -140,4 +140,25 @@ test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details,
   assert.match(entry.manufacturerDetails, /Specifications/);
   assert.equal(entry.sourceImageUrls.length, 2);
   assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/tailfin\//.test(path)));
+});
+
+test("CRITICAL catalog scan: Tailfin adapter excludes pocket capacity and load kilograms from product size and weight", () => {
+  const entry = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/cargopack/",
+    checkedAt: "2026-08-30",
+    html: `
+      <html><head><script type="application/ld+json">{
+        "@type":"Product","name":"CargoPack","image":"https://media.tailfin.cc/app/uploads/2026/08/cargopack-1200x800.jpg"
+      }</script></head><body><main><h1>CargoPack</h1>
+        <section id="specifications"><h2>Specifications</h2>
+          <p>Weight 922g</p><p>Volume 18L (+3.0L Pockets)</p><p>Maximum Load 27kg</p>
+          <p>Construction 210D Hypalon</p>
+        </section>
+      </main></body></html>
+    `,
+  });
+  assert.deepEqual(entry.volumeOptions, [18]);
+  assert.deepEqual(entry.weightOptions, [922]);
+  assert.equal(entry.loadKg, 27);
+  assert.equal(entry.sourceImageUrl, "https://media.tailfin.cc/app/uploads/2026/08/cargopack-1200x800.jpg");
 });
