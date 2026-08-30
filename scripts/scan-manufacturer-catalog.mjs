@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.js";
 import { MANUFACTURER_CATALOG_SOURCES } from "../src/data/manufacturer-catalog-sources.js";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
+import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
 import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
@@ -62,6 +63,10 @@ async function downloadManufacturer(source) {
       if (source.adapter === "tailfin-html") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         tailfinCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "apidura-store-api") {
+        const parsed = JSON.parse(fetched);
+        await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
+        apiduraCatalogTargets(parsed).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -71,7 +76,9 @@ async function downloadManufacturer(source) {
       }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" ? "" : "{\"products\":[]}\n", "utf8");
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html"
+        ? ""
+        : source.adapter === "apidura-store-api" ? "[]\n" : "{\"products\":[]}\n", "utf8");
     }
   }
   await mapConcurrent([...products.values()], 6, async (product) => {

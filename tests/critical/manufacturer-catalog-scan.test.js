@@ -10,6 +10,10 @@ import {
   buildTailfinCatalogEntry,
   tailfinCatalogTargets,
 } from "../../scripts/manufacturer-catalog/tailfin-adapter.mjs";
+import {
+  apiduraCatalogTargets,
+  buildApiduraCatalogEntry,
+} from "../../scripts/manufacturer-catalog/apidura-adapter.mjs";
 
 const bag = (id, brand, extra = {}) => ({
   id,
@@ -63,10 +67,11 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 3);
+  assert.equal(report.manufacturers.length, 4);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "apidura").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 
@@ -102,6 +107,53 @@ test("CRITICAL catalog scan: Tailfin adapter discovers only official bag product
   `);
   assert.deepEqual(targets.map(({ handle }) => handle), ["cargopack", "fork-packs", "half-frame-bag"]);
   assert.ok(targets.every(({ url }) => url.startsWith("https://www.tailfin.cc/us/")));
+});
+
+test("CRITICAL catalog scan: Apidura adapter discovers bags and excludes accessories and on-body products", () => {
+  const targets = apiduraCatalogTargets([
+    { slug: "expedition-saddle-pack", name: "Expedition Saddle Pack", permalink: "https://www.apidura.com/shop/expedition-saddle-pack/", categories: [{ name: "Saddle Bags" }] },
+    { slug: "aero-frame-module", name: "Aero Frame Module", permalink: "https://www.apidura.com/shop/aero-frame-module/", categories: [{ name: "Frame Bags" }] },
+    { slug: "hydration-vest", name: "Racing Hydration Vest", permalink: "https://www.apidura.com/shop/hydration-vest/", categories: [{ name: "On Body" }] },
+    { slug: "frame-pack-strap", name: "Frame Pack Replacement Strap", permalink: "https://www.apidura.com/shop/frame-pack-strap/", categories: [{ name: "Spares & Accessories" }] },
+    { slug: "foreign", name: "Frame Pack", permalink: "https://example.test/shop/foreign/", categories: [{ name: "Frame Bags" }] },
+  ]);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["aero-frame-module", "expedition-saddle-pack"]);
+  assert.ok(targets.every(({ url }) => url.startsWith("https://www.apidura.com/shop/")));
+});
+
+test("CRITICAL catalog scan: Apidura adapter keeps size weights, technical details, and the full product gallery", () => {
+  const entry = buildApiduraCatalogEntry({
+    checkedAt: "2026-08-30",
+    sourceUrl: "https://www.apidura.com/shop/expedition-saddle-pack/",
+    product: {
+      slug: "expedition-saddle-pack",
+      name: "Expedition Saddle Pack",
+      sku: "PE0-0000-000",
+      is_in_stock: true,
+      short_description: "Stable, spacious storage for multi-day bikepacking trips.",
+      images: [
+        { src: "https://medias.apidura.com/2026/08/expedition-saddle-front.jpg" },
+        { src: "https://medias.apidura.com/2026/08/expedition-saddle-side.jpg" },
+      ],
+    },
+    html: `<main><h1>Expedition Saddle Pack</h1>
+      <img src="https://medias.apidura.com/2026/08/expedition-saddle-riding.jpg">
+      <img src="https://medias.apidura.com/2026/08/expedition-grade-fabric-icon.png">
+      <h3>Materials &amp; Technology</h3><p>Expedition Grade Fabric</p><p>100% waterproof and ultra durable construction.</p>
+      <h3>Product Information</h3><p>Weight</p><p>– 9L: 379g<br>– 13L: 439g<br>– 16L: 462g</p>
+      <p>Attachment System – saddle rails and seatpost</p><p>Waterproofing – Seam Welded</p>
+      <h3>Care &amp; Maintenance</h3>
+    </main>`,
+  });
+  assert.equal(entry.id, "apidura-expedition-saddle-pack");
+  assert.equal(entry.category, "saddle");
+  assert.deepEqual(entry.volumeOptions, [9, 13, 16]);
+  assert.deepEqual(entry.weightOptions, [379, 439, 462]);
+  assert.deepEqual(entry.variants.map(({ weight }) => weight), [379, 439, 462]);
+  assert.equal(entry.waterproof, "Waterproof");
+  assert.match(entry.manufacturerDetails, /Attachment System/);
+  assert.equal(entry.sourceImageUrls.length, 3);
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/apidura\//.test(path)));
 });
 
 test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details, and every product image", () => {

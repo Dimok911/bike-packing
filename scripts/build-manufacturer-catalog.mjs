@@ -10,6 +10,10 @@ import {
   buildTailfinCatalogEntry,
   tailfinCatalogTargets,
 } from "./manufacturer-catalog/tailfin-adapter.mjs";
+import {
+  apiduraCatalogTargets,
+  buildApiduraCatalogEntry,
+} from "./manufacturer-catalog/apidura-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -536,6 +540,7 @@ const arkelProducts = (await readProducts("arkel-products.json"))
   .filter((product) => !ARKEL_EXCLUDED.has(product.handle));
 
 const tailfinTargets = tailfinCatalogTargets(await readFile(join(sourceDir, "tailfin-shop.html"), "utf8"));
+const apiduraTargets = apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-products.json"), "utf8"));
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -547,6 +552,14 @@ for (const product of arkelProducts.sort((left, right) => left.title.localeCompa
 for (const target of tailfinTargets) {
   entries.push(buildTailfinCatalogEntry({
     html: await readFile(join(pagesDir, "tailfin", `${target.handle}.html`), "utf8"),
+    sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of apiduraTargets) {
+  entries.push(buildApiduraCatalogEntry({
+    product: target,
+    html: await readFile(join(pagesDir, "apidura", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
   }));
