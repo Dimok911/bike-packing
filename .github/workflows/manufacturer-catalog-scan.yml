@@ -4,6 +4,16 @@ on:
   schedule:
     - cron: "17 5 1 * *"
   workflow_dispatch:
+  push:
+    branches:
+      - codex/experiment-auth-photo-scroll-v1582
+    paths:
+      - ".github/workflows/manufacturer-catalog-scan.yml"
+      - "scripts/build-manufacturer-catalog.mjs"
+      - "scripts/scan-manufacturer-catalog.mjs"
+      - "scripts/manufacturer-catalog/**"
+      - "src/data/manufacturer-catalog-scan.js"
+      - "src/data/manufacturer-catalog-sources.js"
 
 permissions:
   contents: read
