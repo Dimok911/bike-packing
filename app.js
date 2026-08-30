@@ -1183,7 +1183,6 @@ const REQUIRED_ADMIN_API_CAPABILITIES = [
   "historyLayoutScopedRestore",
   "historyPhotoTrashRetention",
   "historyRestoreProvenance",
-  "experimentFrontendCorsOrigin",
   "sharedListSnapshots",
   "sharedListOptionalAuthor",
   "entityShareLinks",

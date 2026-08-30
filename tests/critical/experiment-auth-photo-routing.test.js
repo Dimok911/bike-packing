@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   EXPERIMENT_API_BASE,
@@ -8,6 +11,9 @@ import {
 } from "../../src/config/constants.js";
 import { ensureExperimentSharedAuthSession } from "../../src/sync/experiment-shared-auth.js";
 import { bikePackingPhotoAssetUrl } from "../../src/sync/photos.js";
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const appSource = readFileSync(resolve(projectRoot, "app.js"), "utf8");
 
 test("CRITICAL experiment auth: existing shared session is picked up without changing the app API", async () => {
   const requests = [];
@@ -33,4 +39,10 @@ test("CRITICAL experiment photos: private photo routes stay on the experiment AP
   const url = bikePackingPhotoAssetUrl("list-one", "photo-one", "thumb", EXPERIMENT_API_BASE);
   assert.match(url, /^https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/lists\//);
   assert.doesNotMatch(url, /^https:\/\/api\.vniipo-help\.ru\//);
+});
+
+test("CRITICAL experiment admin: same-origin API does not require obsolete CORS capability", () => {
+  const requiredCapabilities = appSource.match(/const REQUIRED_ADMIN_API_CAPABILITIES = \[([\s\S]*?)\n\];/)?.[1] || "";
+  assert.doesNotMatch(requiredCapabilities, /experimentFrontendCorsOrigin/);
+  assert.match(requiredCapabilities, /manufacturerCatalogReview/);
 });
