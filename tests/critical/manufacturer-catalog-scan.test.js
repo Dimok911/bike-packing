@@ -110,13 +110,13 @@ test("CRITICAL catalog scan: Tailfin adapter discovers only official bag product
 });
 
 test("CRITICAL catalog scan: Apidura adapter discovers bags and excludes accessories and on-body products", () => {
-  const targets = apiduraCatalogTargets([
-    { slug: "expedition-saddle-pack", name: "Expedition Saddle Pack", permalink: "https://www.apidura.com/shop/expedition-saddle-pack/", categories: [{ name: "Saddle Bags" }] },
-    { slug: "aero-frame-module", name: "Aero Frame Module", permalink: "https://www.apidura.com/shop/aero-frame-module/", categories: [{ name: "Frame Bags" }] },
-    { slug: "hydration-vest", name: "Racing Hydration Vest", permalink: "https://www.apidura.com/shop/hydration-vest/", categories: [{ name: "On Body" }] },
-    { slug: "frame-pack-strap", name: "Frame Pack Replacement Strap", permalink: "https://www.apidura.com/shop/frame-pack-strap/", categories: [{ name: "Spares & Accessories" }] },
-    { slug: "foreign", name: "Frame Pack", permalink: "https://example.test/shop/foreign/", categories: [{ name: "Frame Bags" }] },
-  ]);
+  const targets = apiduraCatalogTargets(`<urlset>
+    <url><loc>https://www.apidura.com/shop/expedition-saddle-pack/</loc></url>
+    <url><loc>https://www.apidura.com/shop/aero-frame-module/</loc></url>
+    <url><loc>https://www.apidura.com/shop/hydration-vest/</loc></url>
+    <url><loc>https://www.apidura.com/shop/frame-pack-replacement-strap/</loc></url>
+    <url><loc>https://example.test/shop/foreign-frame-pack/</loc></url>
+  </urlset>`);
   assert.deepEqual(targets.map(({ handle }) => handle), ["aero-frame-module", "expedition-saddle-pack"]);
   assert.ok(targets.every(({ url }) => url.startsWith("https://www.apidura.com/shop/")));
 });

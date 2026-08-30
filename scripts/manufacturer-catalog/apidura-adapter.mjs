@@ -66,6 +66,13 @@ function normalizedProductUrl(rawUrl, baseUrl = "https://www.apidura.com/shop/")
 }
 
 function productRecords(payload = "") {
+  if (typeof payload === "string" && /<urlset\b/i.test(payload)) {
+    return [...payload.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)].map((match) => {
+      const url = normalizedProductUrl(match[1]);
+      const slug = url?.pathname.split("/").filter(Boolean).at(-1) || "";
+      return { slug, permalink: url?.toString() || "", name: slug.replaceAll("-", " ") };
+    });
+  }
   try {
     const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
     if (Array.isArray(parsed)) return parsed;
@@ -106,6 +113,23 @@ function mainHtml(html = "") {
 
 function pageText(html = "") {
   return plainText(mainHtml(html));
+}
+
+function pageHeading(html = "") {
+  return plainText(String(html || "").match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || "");
+}
+
+function metaContent(html = "", name = "") {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<meta\\b[^>]*(?:property|name)\\s*=\\s*["']${escaped}["'][^>]*content\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"),
+    new RegExp(`<meta\\b[^>]*content\\s*=\\s*(?:"([^"]*)"|'([^']*)')[^>]*(?:property|name)\\s*=\\s*["']${escaped}["']`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = String(html || "").match(pattern);
+    if (match) return decodeHtml(match[1] || match[2] || "").trim();
+  }
+  return "";
 }
 
 function productInformationText(html = "") {
@@ -158,7 +182,7 @@ function productMetrics(product = {}, html = "") {
     const volumes = uniqueNumbers([...pairs.keys()]);
     return { volumes, weights: volumes.map((volume) => pairs.get(volume)) };
   }
-  const volumes = uniqueNumbers([...recordVolumeValues(product), ...volumeValues(information)]);
+  const volumes = uniqueNumbers([...recordVolumeValues(product), ...volumeValues(pageHeading(html)), ...volumeValues(information)]);
   const weights = weightValues(information);
   if (volumes.length && weights.length === volumes.length) return { volumes, weights };
   if (volumes.length === 1 && weights.length) return { volumes, weights: [weights[0]] };
@@ -225,6 +249,20 @@ function productDescription(product = {}, html = "") {
   return decodeHtml(match?.[1] || match?.[2] || "").trim().slice(0, 1200);
 }
 
+function productName(product = {}, html = "") {
+  const fallback = metaContent(html, "og:title").replace(/\s*[|–-]\s*Apidura\s*$/i, "").trim();
+  const recordName = plainText(product.name || "");
+  return recordName && recordName !== String(product.slug || "").replaceAll("-", " ")
+    ? recordName
+    : fallback || pageHeading(html);
+}
+
+function productSku(product = {}, html = "") {
+  const recordSku = String(product.sku || "").trim();
+  if (recordSku) return recordSku;
+  return pageText(html).match(/\b[A-Z]{2,5}\d?-\d{4}-\d{3}\b/)?.[0] || "";
+}
+
 function variantRows(volumes, weights, sku, mounting, available) {
   const normalizedVolumes = volumes.length ? volumes : [0];
   const alignedWeights = weights.length === normalizedVolumes.length ? weights : [];
@@ -243,7 +281,7 @@ export function buildApiduraCatalogEntry({ product = {}, html = "", sourceUrl = 
   const url = normalizedProductUrl(sourceUrl || product.permalink || `/shop/${product.slug || ""}/`);
   if (!url) throw new Error(`Unsupported Apidura product URL: ${sourceUrl || product.permalink || "missing"}`);
   const handle = String(product.slug || url.pathname.split("/").filter(Boolean).at(-1) || "").trim().toLowerCase();
-  const name = plainText(product.name || String(html).match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || "");
+  const name = productName(product, html);
   if (!name) throw new Error(`Missing Apidura product name: ${url}`);
   const category = categoryForProduct({ ...product, name, slug: handle });
   const meta = CATEGORY_META[category];
@@ -253,7 +291,7 @@ export function buildApiduraCatalogEntry({ product = {}, html = "", sourceUrl = 
   const imageAssetPaths = images.map((imageUrl, index) =>
     `assets/manufacturer-catalog/apidura/${handle}${index ? `-${index + 1}` : ""}${safeImageExtension(imageUrl)}`
   );
-  const sku = String(product.sku || "").trim();
+  const sku = productSku(product, html);
   const available = product.is_in_stock !== false;
   const variants = variantRows(volumes, weights, sku, meta.mounting, available);
   const volumeSummary = volumes.length ? `${volumes.join(" / ")} L` : "";

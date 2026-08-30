@@ -32,10 +32,10 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
   Object.freeze({
     id: "apidura",
     name: "Apidura",
-    adapter: "apidura-store-api",
+    adapter: "apidura-sitemap",
     productBaseUrl: "https://www.apidura.com/shop/",
     collections: Object.freeze([
-      ["apidura-products.json", "https://www.apidura.com/wp-json/wc/store/v1/products?per_page=100"],
+      ["apidura-product-sitemap.xml", "https://www.apidura.com/product-sitemap.xml"],
     ]),
   }),
 ]);

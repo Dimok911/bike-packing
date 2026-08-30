@@ -540,7 +540,7 @@ const arkelProducts = (await readProducts("arkel-products.json"))
   .filter((product) => !ARKEL_EXCLUDED.has(product.handle));
 
 const tailfinTargets = tailfinCatalogTargets(await readFile(join(sourceDir, "tailfin-shop.html"), "utf8"));
-const apiduraTargets = apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-products.json"), "utf8"));
+const apiduraTargets = apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-product-sitemap.xml"), "utf8"));
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {

@@ -63,10 +63,9 @@ async function downloadManufacturer(source) {
       if (source.adapter === "tailfin-html") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         tailfinCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
-      } else if (source.adapter === "apidura-store-api") {
-        const parsed = JSON.parse(fetched);
-        await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
-        apiduraCatalogTargets(parsed).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "apidura-sitemap") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        apiduraCatalogTargets(fetched).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -78,7 +77,7 @@ async function downloadManufacturer(source) {
       errors[source.id].push(String(error?.message || error));
       await writeFile(join(workDir, fileName), source.adapter === "tailfin-html"
         ? ""
-        : source.adapter === "apidura-store-api" ? "[]\n" : "{\"products\":[]}\n", "utf8");
+        : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
   await mapConcurrent([...products.values()], 6, async (product) => {

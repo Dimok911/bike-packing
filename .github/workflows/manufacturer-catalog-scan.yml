@@ -48,7 +48,7 @@ jobs:
             manufacturer-catalog-scan-work/manufacturer-catalog-images.json
             manufacturer-catalog-scan-work/tailfin-shop.html
             manufacturer-catalog-scan-work/.catalog-pages/tailfin
-            manufacturer-catalog-scan-work/apidura-products.json
+            manufacturer-catalog-scan-work/apidura-product-sitemap.xml
             manufacturer-catalog-scan-work/.catalog-pages/apidura
             manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
           if-no-files-found: error
