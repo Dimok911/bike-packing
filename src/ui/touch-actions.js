@@ -1,21 +1,5 @@
 import { markExplicitViewportScrollIntent } from "./viewport-scroll-intent.js";
 
-export function preventDoubleTapZoom() {
-  let lastTouchEnd = 0;
-  document.addEventListener("touchend", (event) => {
-    if (document.body.classList.contains("dragging-ui") || document.body.classList.contains("drag-pending-ui")) return;
-    const now = Date.now();
-    if (now - lastTouchEnd <= 320) {
-      event.preventDefault();
-    }
-    lastTouchEnd = now;
-  }, { passive: false, capture: true });
-
-  document.addEventListener("dblclick", (event) => {
-    event.preventDefault();
-  }, { capture: true });
-}
-
 export function blurActiveEditableBeforeButtonAction(event, { ignoredButton = null } = {}) {
   const button = event.target.closest?.("button");
   if (!button || button.disabled) return;

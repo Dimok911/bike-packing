@@ -16,6 +16,16 @@ export default defineConfig({
     serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    ...devices["Desktop Chrome"],
   },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] }
+    },
+    {
+      name: "mobile-webkit",
+      testMatch: "**/view-scroll-tabs.spec.js",
+      use: { ...devices["iPhone 15"] }
+    }
+  ]
 });

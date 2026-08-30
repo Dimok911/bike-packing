@@ -316,7 +316,7 @@ export function createAppTailControllers(ctx) {
     photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
-    pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
+    pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport,
     primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     containerPlacementSnapshotChanged, publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,

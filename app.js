@@ -1073,7 +1073,6 @@ import {
 import {
   blurActiveEditableBeforeButtonAction,
   isEditableElement,
-  preventDoubleTapZoom,
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
 import {
@@ -1814,7 +1813,7 @@ const appTailControllerDeps = {
   personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
-  preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
+  preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, primaryItemPhoto,
   printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   containerPlacementSnapshotChanged, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
@@ -2970,7 +2969,6 @@ async function init() {
   setupPackingVisualStyleQuickControl();
   applyPackingVisualStyle();
   applyStaticTranslations();
-  preventDoubleTapZoom();
   setupModalScrollLock();
   setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();

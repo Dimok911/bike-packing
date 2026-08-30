@@ -28,6 +28,7 @@ async function expectViewportScrollNear(page, top) {
 async function addScrollableViewFixtures(page) {
   await page.locator("#packingView, #itemsView, #bagsView, #settingsView").evaluateAll((views) => {
     views.forEach((view) => {
+      if (view.querySelector("[data-e2e-scroll-spacer]")) return;
       const spacer = document.createElement("div");
       spacer.dataset.e2eScrollSpacer = "";
       spacer.style.height = "2600px";
@@ -36,6 +37,70 @@ async function addScrollableViewFixtures(page) {
     });
   });
 }
+
+test("iPhone accepts consecutive first taps on different main tabs", async ({ page }) => {
+  await openApp(page);
+
+  const itemsTab = page.locator('.tab[data-view="items"]');
+  const bagsTab = page.locator('.tab[data-view="bags"]');
+  const [itemsBox, bagsBox] = await Promise.all([
+    itemsTab.boundingBox(),
+    bagsTab.boundingBox()
+  ]);
+  expect(itemsBox).not.toBeNull();
+  expect(bagsBox).not.toBeNull();
+
+  await page.touchscreen.tap(
+    itemsBox.x + itemsBox.width / 2,
+    itemsBox.y + itemsBox.height / 2
+  );
+  await page.touchscreen.tap(
+    bagsBox.x + bagsBox.width / 2,
+    bagsBox.y + bagsBox.height / 2
+  );
+
+  await expect(bagsTab).toHaveClass(/\bactive\b/);
+  await expect(itemsTab).not.toHaveClass(/\bactive\b/);
+});
+
+test("iPhone keeps the first fast scroll gesture native after a tab tap", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await page.locator('.tab[data-view="items"]').tap();
+
+  const gesture = await page.evaluate(async () => {
+    const target = document.querySelector("#itemsView");
+    const marker = target.querySelector("[data-e2e-scroll-spacer]");
+    const dispatchTouch = (type, clientY, touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: touches ? [{ clientX: 180, clientY }] : []
+      });
+      Object.defineProperty(event, "changedTouches", {
+        value: [{ clientX: 180, clientY }]
+      });
+      return target.dispatchEvent(event);
+    };
+
+    dispatchTouch("touchstart", 620, true);
+    dispatchTouch("touchmove", 410, true);
+    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+    const beforeEnd = marker.getBoundingClientRect().top;
+    const nativeEnd = dispatchTouch("touchend", 410, false);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const afterFrame = marker.getBoundingClientRect().top;
+    return {
+      afterFrame,
+      beforeEnd,
+      nativeEnd,
+      scrollTop: document.scrollingElement?.scrollTop || window.scrollY || 0
+    };
+  });
+
+  expect(gesture.nativeEnd).toBe(true);
+  expect(Math.abs(gesture.afterFrame - gesture.beforeEnd)).toBeLessThanOrEqual(4);
+  expect(gesture.scrollTop).toBeGreaterThan(500);
+});
 
 test("iPhone keeps repeated native scroll advances in items, bags and settings", async ({ page }) => {
   await openApp(page);
@@ -187,6 +252,9 @@ test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ p
 
   for (const view of ["items", "bags", "packing"]) {
     await selectViewWithoutAutoScroll(page, view);
+    // Late startup work can rerender a view and replace test-only children.
+    // Reattach the geometry fixture immediately before measuring this view.
+    await addScrollableViewFixtures(page);
     await page.waitForTimeout(50);
     await expect.poll(async () => (await stickySnapshot()).compact).toBe(true);
     const baseline = await stickySnapshot();
