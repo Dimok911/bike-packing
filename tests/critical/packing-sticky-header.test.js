@@ -481,7 +481,15 @@ test("CRITICAL fixed scrollbar: the thumb follows the finger while board content
   harness.advanceNow(16);
   harness.surface.dispatch("touchmove", {
     cancelable: true,
-    touches: [{ clientX: 140, clientY: 21, identifier: 9 }],
+    touches: [{ clientX: 120, clientY: 20, identifier: 9 }],
+    preventDefault() {
+      prevented = true;
+    }
+  });
+  harness.advanceNow(16);
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 155, clientY: 21, identifier: 9 }],
     preventDefault() {
       prevented = true;
     }
@@ -513,7 +521,13 @@ test("CRITICAL fixed scrollbar: a swipe beside the thumb keeps soft 1:1 board di
   harness.advanceNow(16);
   harness.surface.dispatch("touchmove", {
     cancelable: true,
-    touches: [{ clientX: 290, clientY: 21, identifier: 10 }],
+    touches: [{ clientX: 270, clientY: 20, identifier: 10 }],
+    preventDefault() {}
+  });
+  harness.advanceNow(16);
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 305, clientY: 21, identifier: 10 }],
     preventDefault() {}
   });
 
@@ -538,7 +552,13 @@ test("CRITICAL fixed scrollbar: release momentum is one native smooth scroll wit
   harness.advanceNow(16);
   harness.surface.dispatch("touchmove", {
     cancelable: true,
-    touches: [{ clientX: 140, clientY: 21, identifier: 11 }],
+    touches: [{ clientX: 120, clientY: 20, identifier: 11 }],
+    preventDefault() {}
+  });
+  harness.advanceNow(16);
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 155, clientY: 21, identifier: 11 }],
     preventDefault() {}
   });
   harness.surface.dispatch("touchend", { touches: [] });
@@ -547,6 +567,38 @@ test("CRITICAL fixed scrollbar: release momentum is one native smooth scroll wit
   assert.equal(harness.scrollCalls[0].behavior, "smooth");
   assert.ok(harness.scrollCalls[0].left > 365);
   assert.equal(harness.frames.length, 0);
+});
+
+test("CRITICAL fixed scrollbar: an iPhone vertical pan survives initial horizontal wobble", () => {
+  const harness = createFixedScrollbarHarness();
+  harness.bind();
+  let prevented = false;
+  const preventDefault = () => {
+    prevented = true;
+  };
+
+  harness.surface.dispatch("touchstart", {
+    touches: [{ clientX: 200, clientY: 40, identifier: 12 }]
+  });
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 194, clientY: 36, identifier: 12 }],
+    preventDefault
+  });
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 192, clientY: 22, identifier: 12 }],
+    preventDefault
+  });
+  harness.surface.dispatch("touchmove", {
+    cancelable: true,
+    touches: [{ clientX: 170, clientY: 0, identifier: 12 }],
+    preventDefault
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(harness.board.scrollLeft, 260);
+  assert.equal(harness.boardClasses.has("fixed-bar-scroll-preview"), false);
 });
 
 test("CRITICAL fixed scrollbar: the 44px touch surface preserves vertical page panning", () => {

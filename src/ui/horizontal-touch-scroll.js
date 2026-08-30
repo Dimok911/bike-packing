@@ -1,16 +1,25 @@
-const HORIZONTAL_AXIS_LOCK_DISTANCE = 4;
-const VERTICAL_AXIS_LOCK_DISTANCE = 12;
-const VERTICAL_AXIS_DOMINANCE = 1.4;
+// A vertical page pan must win over the small sideways wobble that is common
+// at the beginning of an iPhone gesture. Horizontal controls can afford a
+// little more touch slop; capturing them too early prevents the parent scroll
+// host from ever receiving the vertical pan.
+const HORIZONTAL_AXIS_LOCK_DISTANCE = 10;
+const VERTICAL_AXIS_LOCK_DISTANCE = 7;
+const HORIZONTAL_AXIS_DOMINANCE = 1.2;
+const VERTICAL_AXIS_DOMINANCE = 1.1;
 const boardControllers = new WeakMap();
 
 export function classifyTouchScrollAxis(dx, dy, {
   horizontalDistance = HORIZONTAL_AXIS_LOCK_DISTANCE,
   verticalDistance = VERTICAL_AXIS_LOCK_DISTANCE,
+  horizontalDominance = HORIZONTAL_AXIS_DOMINANCE,
   verticalDominance = VERTICAL_AXIS_DOMINANCE
 } = {}) {
   const distanceX = Math.abs(Number(dx) || 0);
   const distanceY = Math.abs(Number(dy) || 0);
-  if (distanceX >= Math.max(0, Number(horizontalDistance) || 0) && distanceX > distanceY) {
+  if (
+    distanceX >= Math.max(0, Number(horizontalDistance) || 0) &&
+    distanceX > distanceY * Math.max(1, Number(horizontalDominance) || 1)
+  ) {
     return "horizontal";
   }
   if (

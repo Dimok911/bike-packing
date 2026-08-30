@@ -7,6 +7,7 @@ import {
 export function createModalScrollLockController() {
   let modalScrollLock = null;
   let modalTouchStartY = 0;
+  let modalStateObserver = null;
 
   function setupModalScrollLock() {
     document.querySelectorAll("dialog").forEach((dialog) => {
@@ -16,6 +17,16 @@ export function createModalScrollLockController() {
     document.addEventListener("touchstart", captureModalTouchStart, { passive: true, capture: true });
     document.addEventListener("touchmove", preventBackgroundModalScroll, { passive: false, capture: true });
     document.addEventListener("wheel", preventBackgroundModalWheel, { passive: false, capture: true });
+    const MutationObserverCtor = window.MutationObserver || globalThis.MutationObserver;
+    if (typeof MutationObserverCtor === "function" && document.documentElement) {
+      modalStateObserver?.disconnect?.();
+      modalStateObserver = new MutationObserverCtor(updateModalScrollLock);
+      modalStateObserver.observe(document.documentElement, {
+        attributeFilter: ["open"],
+        attributes: true,
+        subtree: true
+      });
+    }
   }
 
   function openModalDialog(dialog) {
@@ -108,6 +119,12 @@ export function createModalScrollLockController() {
   }
 
   function captureModalTouchStart(event) {
+    // Reconcile before every new finger gesture as a final safeguard. WebKit
+    // can occasionally omit/delay a dialog close event while replacing modal
+    // content; leaving overflow:hidden on the isolated .app host makes the
+    // packing page appear vertically frozen while its horizontal board still
+    // scrolls.
+    updateModalScrollLock();
     modalTouchStartY = event.touches?.[0]?.clientY || 0;
   }
 

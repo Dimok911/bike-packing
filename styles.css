@@ -1423,9 +1423,37 @@ textarea.note-search-match-active {
   box-shadow: 0 0 0 3px rgba(255, 138, 0, 0.13);
 }
 
-textarea.note-search-match-active::selection {
-  background: #ffb52e;
-  color: #241400;
+.note-search-match-highlight {
+  position: absolute;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: 8px;
+  color: transparent;
+  pointer-events: none;
+}
+
+.note-search-match-highlight[hidden] {
+  display: none;
+}
+
+.note-search-match-highlight-content {
+  min-height: 100%;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  color: transparent;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.note-search-match-marker {
+  margin: 0 -1px;
+  padding: 0 1px;
+  border-radius: 3px;
+  background: rgba(255, 181, 46, 0.72);
+  color: transparent;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .add-item-search-field input {

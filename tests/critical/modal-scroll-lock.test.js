@@ -64,6 +64,57 @@ test("CRITICAL modal scroll lock keeps sticky layout tabs in their native stacki
   }
 });
 
+test("CRITICAL a new packing touch heals a stale soft modal lock", () => {
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  const listeners = new Map();
+  const bodyClasses = testClassList();
+  const bodyStyle = { position: "", top: "", left: "", right: "", width: "", overflow: "" };
+  const scrollHostStyle = { overflow: "auto" };
+  const scrollHost = { hasAttribute: () => false, style: scrollHostStyle };
+  const dialog = {
+    addEventListener: () => {},
+    open: true
+  };
+
+  globalThis.document = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    body: { classList: bodyClasses, style: bodyStyle },
+    scrollingElement: scrollHost,
+    querySelectorAll: (selector) => selector === "dialog" ? [dialog] : []
+  };
+  globalThis.window = {
+    getComputedStyle: () => ({ position: "static" }),
+    innerHeight: 844,
+    innerWidth: 390,
+    matchMedia: () => ({ matches: true }),
+    scrollTo: () => {},
+    scrollX: 0,
+    scrollY: 0
+  };
+
+  try {
+    const controller = createModalScrollLockController();
+    controller.setupModalScrollLock();
+    controller.updateModalScrollLock();
+    assert.equal(scrollHostStyle.overflow, "hidden");
+
+    // Model a WebKit close path where the open state changes before (or
+    // without) the close callback reaching the application.
+    dialog.open = false;
+    listeners.get("touchstart")({
+      target: {},
+      touches: [{ clientX: 180, clientY: 600 }]
+    });
+
+    assert.equal(scrollHostStyle.overflow, "auto");
+    assert.equal(bodyClasses.contains("modal-scroll-locked"), false);
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test("CRITICAL modal scroll lock blocks wheel events retargeted from the backdrop to the dialog", () => {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;

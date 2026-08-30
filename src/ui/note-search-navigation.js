@@ -1,4 +1,8 @@
 import { searchQueryTerms } from "../state/catalog-search.js";
+import {
+  clearNoteMatchHighlight,
+  renderNoteMatchHighlight
+} from "./note-match-highlight.js";
 
 function normalizedQuery(value) {
   return String(value || "").trim();
@@ -115,8 +119,8 @@ export function centerNoteFieldInDialog(textarea) {
 
 export function revealNoteSearchMatch({ textarea, start, end, scrollField = false } = {}) {
   if (!textarea || !Number.isFinite(start) || !Number.isFinite(end)) return false;
-  textarea.focus?.({ preventScroll: true });
-  textarea.setSelectionRange?.(start, end);
+  textarea.blur?.();
+  textarea.setSelectionRange?.(end, end);
   textarea.classList?.add("note-search-match-active");
   const windowRef = textarea.ownerDocument?.defaultView || globalThis.window;
   const top = matchOffsetTop(textarea, start, end, windowRef);
@@ -125,6 +129,7 @@ export function revealNoteSearchMatch({ textarea, start, end, scrollField = fals
     const lineHeight = Number.parseFloat(computed?.lineHeight) || (Number.parseFloat(computed?.fontSize) || 16) * 1.35;
     textarea.scrollTop = Math.max(0, top - (textarea.clientHeight || 0) / 2 + lineHeight);
   }
+  renderNoteMatchHighlight(textarea, start, end, { windowRef });
   if (scrollField) {
     centerNoteFieldInDialog(textarea);
     windowRef?.requestAnimationFrame?.(() => centerNoteFieldInDialog(textarea));
@@ -154,7 +159,10 @@ export function createNoteSearchNavigator({
       container.classList?.toggle("single-match", matches.length === 1);
     }
     textarea?.classList?.toggle("note-search-match-active", visible);
-    if (!visible) return;
+    if (!visible) {
+      clearNoteMatchHighlight(textarea);
+      return;
+    }
     if (status) status.textContent = t("noteSearch.status", {
       current: currentIndex + 1,
       total: matches.length
