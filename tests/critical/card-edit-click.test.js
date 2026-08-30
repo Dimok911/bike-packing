@@ -72,7 +72,7 @@ test("CRITICAL card editing: action buttons and photo controls keep their own cl
   }), false);
 });
 
-test("CRITICAL card editing: the note-match badge opens the card editor above a photo", () => {
+test("CRITICAL card editing: the note-match button opens the editor above a photo", () => {
   const card = { dataset: {} };
   assert.equal(shouldOpenCardEditor(clickEvent({
     card,

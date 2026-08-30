@@ -136,6 +136,7 @@ function touchEvent(x, y) {
 }
 
 function createHarness({ scrollY = 900 } = {}) {
+  let nowMs = 1000;
   const button = eventTarget({ hidden: true });
   const layer = eventTarget({ hidden: true });
   const scrollingElement = { scrollTop: scrollY };
@@ -159,9 +160,11 @@ function createHarness({ scrollY = 900 } = {}) {
     documentRef,
     layer,
     mutationObserverFactory: null,
+    now: () => nowMs,
     windowRef
   });
   return {
+    advanceTime(milliseconds) { nowMs += milliseconds; },
     body,
     button,
     controller,
@@ -197,15 +200,15 @@ test("catalog back-to-top mouse click scrolls smoothly from the stable portal", 
   assert.deepEqual(harness.scrollCalls, [{ top: 0, left: 0, behavior: "smooth" }]);
 });
 
-test("first touch during momentum activates without any preliminary scroll event", () => {
+test("first touch during momentum reaches top before touchend without a painted stop frame", () => {
   const harness = createHarness();
   const anchor = catalogAnchor();
   harness.controller.register(catalogRoot(anchor), anchor, { label: "Back to top" });
   const start = touchEvent(30, 190);
   const end = touchEvent(30, 190);
 
+  harness.windowRef.dispatch("scroll");
   harness.button.dispatch("touchstart", start);
-  harness.button.dispatch("touchend", end);
 
   assert.equal(harness.windowRef.listenerCount("scroll"), 1, "one stable controller owns the scroll listener");
   assert.deepEqual(harness.scrollCalls, [
@@ -216,7 +219,21 @@ test("first touch during momentum activates without any preliminary scroll event
   assert.equal(harness.documentElement.scrollTop, 0);
   assert.equal(harness.body.scrollTop, 0);
   assert.equal(start.prevented, true);
+
+  harness.button.dispatch("touchend", end);
+  assert.equal(harness.scrollCalls.length, 2, "touchend does not schedule a second jump");
   assert.equal(end.stopped, true);
+});
+
+test("stationary touch waits for touchend when no momentum is active", () => {
+  const harness = createHarness();
+  const anchor = catalogAnchor();
+  harness.controller.register(catalogRoot(anchor), anchor);
+
+  harness.button.dispatch("touchstart", touchEvent(30, 190));
+  assert.deepEqual(harness.scrollCalls, []);
+  harness.button.dispatch("touchend", touchEvent(30, 190));
+  assert.deepEqual(harness.scrollCalls, [{ top: 0, left: 0, behavior: "auto" }]);
 });
 
 test("synthetic click after the first touch does not start a second scroll", () => {
@@ -224,6 +241,7 @@ test("synthetic click after the first touch does not start a second scroll", () 
   const anchor = catalogAnchor();
   harness.controller.register(catalogRoot(anchor), anchor);
 
+  harness.windowRef.dispatch("scroll");
   harness.button.dispatch("touchstart", touchEvent(30, 190));
   harness.button.dispatch("touchend", touchEvent(30, 190));
   harness.button.dispatch("click", touchEvent(30, 190));
@@ -240,7 +258,7 @@ test("vertical swipe beginning on the portal button is not treated as activation
   harness.button.dispatch("touchmove", touchEvent(30, 210));
   harness.button.dispatch("touchend", touchEvent(30, 210));
 
-  assert.deepEqual(harness.scrollCalls, [{ top: 900, left: 0, behavior: "auto" }]);
+  assert.deepEqual(harness.scrollCalls, []);
 });
 
 test("panel rerender replaces only the anchor and keeps one live portal handler", () => {
@@ -260,7 +278,7 @@ test("panel rerender replaces only the anchor and keeps one live portal handler"
   assert.equal(harness.button.style.top, "196px");
   harness.button.dispatch("touchstart", touchEvent(30, 200));
   harness.button.dispatch("touchend", touchEvent(30, 200));
-  assert.equal(harness.scrollCalls.length, 2);
+  assert.equal(harness.scrollCalls.length, 1);
 });
 
 test("one portal follows the visible items and bags catalog anchors", () => {

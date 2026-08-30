@@ -16,6 +16,46 @@ export function packingBoardZoomControllerFor(board) {
     : null;
 }
 
+export function packingBoardHorizontalGeometry(board, {
+  basePaddingRight
+} = {}) {
+  const clientWidth = Math.max(0, Number(board?.clientWidth) || 0);
+  const rawContentWidth = Math.max(clientWidth, Number(board?.scrollWidth) || 0);
+  const rawMaxScroll = Math.max(0, rawContentWidth - clientWidth);
+  if (!board?.classList?.contains?.("packing-board-zoom-active")) {
+    return { clientWidth, contentWidth: rawContentWidth, maxScroll: rawMaxScroll };
+  }
+
+  const zoom = Number(board?.dataset?.packingBoardZoom);
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    return { clientWidth, contentWidth: rawContentWidth, maxScroll: rawMaxScroll };
+  }
+
+  const targets = [...(board?.children || [])].filter((child) => (
+    child?.classList?.contains?.("container-card") ||
+    child?.classList?.contains?.("packing-add-root-card") ||
+    child?.classList?.contains?.("comparison-root")
+  ));
+  const visualRight = targets.reduce((right, target) => {
+    const offsetLeft = Number(target?.offsetLeft);
+    const offsetWidth = Number(target?.offsetWidth);
+    if (!Number.isFinite(offsetLeft) || !Number.isFinite(offsetWidth) || offsetWidth <= 0) return right;
+    return Math.max(right, offsetLeft + offsetWidth * zoom);
+  }, 0);
+  if (!visualRight) {
+    return { clientWidth, contentWidth: rawContentWidth, maxScroll: rawMaxScroll };
+  }
+
+  const configuredPadding = Number(basePaddingRight ?? board?.dataset?.packingBoardBasePaddingRight);
+  const safePaddingRight = Number.isFinite(configuredPadding) ? Math.max(0, configuredPadding) : 0;
+  const contentWidth = Math.max(clientWidth, visualRight + safePaddingRight);
+  return {
+    clientWidth,
+    contentWidth,
+    maxScroll: Math.max(0, contentWidth - clientWidth)
+  };
+}
+
 export function clampPackingBoardZoom(value, {
   max = PACKING_BOARD_ZOOM_MAX,
   min = PACKING_BOARD_ZOOM_MIN
@@ -401,6 +441,7 @@ export function bindPackingBoardZoom(board, {
   const computedBoardStyle = windowRef?.getComputedStyle?.(board);
   const baseGap = Math.max(0, Number.parseFloat(computedBoardStyle?.columnGap || computedBoardStyle?.gap) || 12);
   const basePaddingRight = Math.max(0, Number.parseFloat(computedBoardStyle?.paddingRight) || 0);
+  board.dataset.packingBoardBasePaddingRight = String(basePaddingRight);
   const boardPaddingTop = Math.max(0, Number.parseFloat(computedBoardStyle?.paddingTop) || 0);
   const boardPaddingBottom = Math.max(0, Number.parseFloat(computedBoardStyle?.paddingBottom) || 0);
   const headerRow = board.previousElementSibling?.classList?.contains("packing-root-header-row")
@@ -463,10 +504,16 @@ export function bindPackingBoardZoom(board, {
 
   const frameNow = () => Number(windowRef?.performance?.now?.()) || Date.now();
 
+  const naturalHorizontalMaximum = () => packingBoardHorizontalGeometry(board, {
+    basePaddingRight
+  }).maxScroll;
+
+  const horizontalMaximum = () => naturalHorizontalMaximum() + horizontalAnchorGutter;
+
   const clampBoardScrollLeft = (value) => Math.max(
     0,
     Math.min(
-      Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth)),
+      horizontalMaximum(),
       Number(value) || 0
     )
   );
@@ -544,7 +591,7 @@ export function bindPackingBoardZoom(board, {
     const step = (time) => {
       const elapsed = Math.min(32, Math.max(1, Number(time) - previousTime));
       previousTime = Number(time) || frameNow();
-      const maximum = Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth));
+      const maximum = horizontalMaximum();
       const current = Number(board.scrollLeft) || 0;
       const next = packingBoardMomentumScrollLeft({
         currentScrollLeft: current,
@@ -701,6 +748,14 @@ export function bindPackingBoardZoom(board, {
 
   const settleBoardGeometry = () => {
     stopGeometrySettle();
+    if (horizontalAnchorGutter) {
+      horizontalAnchorGutter = 0;
+      board.style.removeProperty("padding-right");
+    }
+    const maxScrollLeft = naturalHorizontalMaximum();
+    if ((Number(board.scrollLeft) || 0) > maxScrollLeft + 0.5) {
+      board.scrollLeft = maxScrollLeft;
+    }
     const requestFrame = windowRef?.requestAnimationFrame;
     const clampVerticalScroll = () => {
       syncBoardHeight();
@@ -782,7 +837,7 @@ export function bindPackingBoardZoom(board, {
     requestBoardHeightSync();
     if (anchor?.preserveScrollProgress) {
       board.scrollLeft = packingBoardProportionalScrollLeft({
-        nextMaxScrollLeft: Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth)),
+        nextMaxScrollLeft: naturalHorizontalMaximum(),
         startMaxScrollLeft: anchor.startMaxScrollLeft,
         startScrollLeft: anchor.startScrollLeft
       });
@@ -799,7 +854,7 @@ export function bindPackingBoardZoom(board, {
         maxScrollLeft: Number.POSITIVE_INFINITY,
         zoom: normalized
       });
-      const naturalMaxScrollLeft = Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth));
+      const naturalMaxScrollLeft = naturalHorizontalMaximum();
       horizontalAnchorGutter = Math.max(0, desiredScrollLeft - naturalMaxScrollLeft);
       if (horizontalAnchorGutter > 0.5) {
         board.style.paddingRight = `${basePaddingRight + horizontalAnchorGutter}px`;
@@ -808,9 +863,12 @@ export function bindPackingBoardZoom(board, {
         anchorClientX: anchor.anchorClientX,
         anchorContentX: anchor.anchorContentX,
         boardClientLeft: anchor.boardClientLeft,
-        maxScrollLeft: Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth)),
+        maxScrollLeft: horizontalMaximum(),
         zoom: normalized
       });
+    }
+    if (!anchor?.preserveHorizontalPoint && !anchor?.preserveScrollProgress) {
+      board.scrollLeft = clampBoardScrollLeft(board.scrollLeft);
     }
     if (anchor?.preserveVerticalPoint && verticalScrollHost) {
       const nextScrollTop = packingBoardAnchoredPageScrollTop({
@@ -1307,7 +1365,7 @@ export function bindPackingBoardZoom(board, {
     stopGeometrySettle();
     zoomNeedsSettle = false;
     const startScrollLeft = Number(board.scrollLeft) || 0;
-    const startMaxScrollLeft = Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth));
+    const startMaxScrollLeft = naturalHorizontalMaximum();
     applyZoom(1, {
       preserveScrollProgress: true,
       startMaxScrollLeft,
@@ -1386,7 +1444,7 @@ export function bindPackingBoardZoom(board, {
           const boardCenterX = Number(currentBoardRect.left) + Number(board.clientWidth) / 2;
           board.scrollLeft = packingBoardCenteredScrollPosition({
             currentScroll: board.scrollLeft,
-            maxScroll: Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth)),
+            maxScroll: naturalHorizontalMaximum(),
             targetClientCenter: elementCenterX,
             viewportClientCenter: boardCenterX
           });
@@ -1473,6 +1531,7 @@ export function bindPackingBoardZoom(board, {
     board.classList.remove("packing-board-page-panning");
     horizontalAnchorGutter = 0;
     board.style.removeProperty("padding-right");
+    delete board.dataset.packingBoardBasePaddingRight;
     postPinchPanning = false;
     postPinchPanActivated = false;
     postPinchStartedAt = 0;

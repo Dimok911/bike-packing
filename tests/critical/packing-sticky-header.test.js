@@ -18,6 +18,7 @@ import {
   packingBoardAnchoredPageScrollTop,
   packingBoardAnchoredScrollLeft,
   packingBoardFitMaxZoom,
+  packingBoardHorizontalGeometry,
   packingBoardGestureTargetsFixedScrollbar,
   packingBoardGestureTargetsOpenDialog,
   packingBoardPinchZoom,
@@ -739,6 +740,39 @@ test("CRITICAL packing zoom: pinch scale is bounded and keeps the touched conten
     paddingBottom: 18,
     zoom: 0.2
   }) - 230) < 0.001);
+});
+
+test("CRITICAL packing zoom: horizontal range follows transformed card edges instead of raw overflow", () => {
+  const zoomedClasses = new Set(["packing-board-zoom-active"]);
+  const target = (offsetLeft) => ({
+    classList: { contains: (name) => name === "container-card" },
+    offsetLeft,
+    offsetWidth: 360
+  });
+  const board = {
+    children: [target(0), target(74.4), target(148.8), target(223.2)],
+    classList: { contains: (name) => zoomedClasses.has(name) },
+    clientWidth: 360,
+    dataset: {
+      packingBoardBasePaddingRight: "12",
+      packingBoardZoom: "0.2"
+    },
+    scrollWidth: 584
+  };
+
+  assert.deepEqual(packingBoardHorizontalGeometry(board), {
+    clientWidth: 360,
+    contentWidth: 360,
+    maxScroll: 0
+  });
+  board.children.push(target(372));
+  assert.deepEqual(packingBoardHorizontalGeometry(board), {
+    clientWidth: 360,
+    contentWidth: 456,
+    maxScroll: 96
+  });
+  zoomedClasses.clear();
+  assert.equal(packingBoardHorizontalGeometry(board).maxScroll, 224);
 });
 
 test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is continuous", () => {

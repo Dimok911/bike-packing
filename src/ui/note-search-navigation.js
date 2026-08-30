@@ -92,6 +92,27 @@ function matchOffsetTop(textarea, start, end, windowRef) {
   return Number.isFinite(top) ? top : null;
 }
 
+export function centerNoteFieldInDialog(textarea) {
+  const field = textarea?.closest?.(".note-field");
+  const dialog = textarea?.closest?.("dialog");
+  const dialogCard = textarea?.closest?.(".dialog-card");
+  const scrollHost = Number(dialogCard?.scrollHeight) > Number(dialogCard?.clientHeight) + 1
+    ? dialogCard
+    : dialog;
+  const fieldRect = field?.getBoundingClientRect?.();
+  const hostRect = scrollHost?.getBoundingClientRect?.();
+  if (!fieldRect || !hostRect || !Number(scrollHost?.clientHeight)) {
+    field?.scrollIntoView?.({ block: "center", behavior: "auto" });
+    return Boolean(field);
+  }
+  const fieldCenter = Number(fieldRect.top) + Number(fieldRect.height) / 2;
+  const hostCenter = Number(hostRect.top) + Number(scrollHost.clientHeight) / 2;
+  const maximum = Math.max(0, Number(scrollHost.scrollHeight) - Number(scrollHost.clientHeight));
+  const top = Math.max(0, Math.min(maximum, (Number(scrollHost.scrollTop) || 0) + fieldCenter - hostCenter));
+  scrollHost.scrollTop = top;
+  return true;
+}
+
 export function revealNoteSearchMatch({ textarea, start, end, scrollField = false } = {}) {
   if (!textarea || !Number.isFinite(start) || !Number.isFinite(end)) return false;
   textarea.focus?.({ preventScroll: true });
@@ -105,7 +126,8 @@ export function revealNoteSearchMatch({ textarea, start, end, scrollField = fals
     textarea.scrollTop = Math.max(0, top - (textarea.clientHeight || 0) / 2 + lineHeight);
   }
   if (scrollField) {
-    textarea.closest?.(".note-field")?.scrollIntoView?.({ block: "center", behavior: "auto" });
+    centerNoteFieldInDialog(textarea);
+    windowRef?.requestAnimationFrame?.(() => centerNoteFieldInDialog(textarea));
   }
   return true;
 }
