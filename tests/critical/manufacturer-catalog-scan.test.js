@@ -151,14 +151,86 @@ test("CRITICAL catalog scan: Tailfin adapter excludes pocket capacity and load k
         "@type":"Product","name":"CargoPack","image":"https://media.tailfin.cc/app/uploads/2026/08/cargopack-1200x800.jpg"
       }</script></head><body><main><h1>CargoPack</h1>
         <section id="specifications"><h2>Specifications</h2>
-          <p>Weight 922g</p><p>Volume 18L (+3.0L Pockets)</p><p>Maximum Load 27kg</p>
+          <p>Weight 922g (1000g with pannier mounts)</p><p>Volume 18L (+3.0L Pockets)</p>
+          <p>Maximum Load 27kg</p><p>Max. Capacity with Panniers: 62L</p>
           <p>Construction 210D Hypalon</p>
         </section>
       </main></body></html>
     `,
   });
   assert.deepEqual(entry.volumeOptions, [18]);
-  assert.deepEqual(entry.weightOptions, [922]);
+  assert.deepEqual(entry.weightOptions, [1000]);
   assert.equal(entry.loadKg, 27);
   assert.equal(entry.sourceImageUrl, "https://media.tailfin.cc/app/uploads/2026/08/cargopack-1200x800.jpg");
+});
+
+test("CRITICAL catalog scan: Tailfin Bar Bag weights stay attached to the matching volume", () => {
+  const entry = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/bar-bag-system/",
+    html: `<main><h1>Bar Bag System</h1><img src="https://media.tailfin.cc/bar-bag.jpg">
+      <section id="specifications">Specifications
+        Drop Small Weight 552g 181g Bar Clamp Hardware Volume 4.0L – 9.1L
+        Drop Large Weight 636g 181g Bar Clamp Hardware Volume 6.7L – 12.5L
+        Flat Small Weight 604g 181g Bar Clamp Hardware Volume 5.8L – 14.7L
+        Flat Large Weight 679g 181g Bar Clamp Hardware Volume 8.7L – 18.9L
+      </section></main>`,
+  });
+  assert.deepEqual(entry.volumeOptions, [9.1, 12.5, 14.7, 18.9]);
+  assert.deepEqual(entry.weightOptions, [733, 817, 785, 860]);
+});
+
+test("CRITICAL catalog scan: Tailfin Bar Cage and Top Tube variants include their complete fitted weight", () => {
+  const barCage = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/product/bar-systems/bar-cage/",
+    html: `<main><h1>Bar Cage (+ Bag)</h1><img src="https://media.tailfin.cc/bar-cage.jpg">
+      <section id="specifications">Specifications
+        Bar Cage Weight 277g Material Alloy
+        Bar Cage Bag Specifications
+        Bar Cage Bag – Small\nWeight 222g\nVolume 8 Litre
+        Bar Cage Bag – Medium\nWeight 255g\nVolume 11 Litre
+        Bar Cage Bag – Large\nWeight 285g\nVolume 15 Litre
+      </section></main>`,
+  });
+  assert.deepEqual(barCage.volumeOptions, [8, 11, 15]);
+  assert.deepEqual(barCage.weightOptions, [499, 532, 562]);
+
+  const topTube = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/product/top-tube-cockpit/top-tube-bag/",
+    html: `<main><h1>Top Tube Bag</h1><img src="https://media.tailfin.cc/top-tube.jpg">
+      <section id="specifications">Specifications
+        0.8 Litre Zip\nWeight\n138g – Direct mount\n150g Strap mount
+        1.1 Litre Zip + Flip\nWeight Zip\n154g – Direct mount\n166g Strap mount\nWeight Flip\n168g – Direct mount\n180g Strap mount
+        1.5 Litre Zip + Flip\nWeight Zip\n178g – Direct mount\n190g Strap mount\nWeight Flip\n187g – Direct mount\n199g Strap mount
+        What's in the box
+      </section></main>`,
+  });
+  assert.deepEqual(topTube.volumeOptions, [0.8, 1.1, 1.5]);
+  assert.deepEqual(topTube.weightOptions, [150, 180, 199]);
+});
+
+test("CRITICAL catalog scan: Tailfin installed weights preserve manufacturer size order", () => {
+  const entry = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/product/frame-bags/half-frame-bag/",
+    html: `<main><h1>Half Frame Bag</h1><img src="https://media.tailfin.cc/half-frame.jpg">
+      <section id="specifications">Specifications
+        2.3 Litres\nWeight\n200g\n248g including Straps
+        3.0 Litres\nWeight\n242g\n290g including Straps
+        3.8 Litres\nWeight\n284g\n332g including Straps
+      </section></main>`,
+  });
+  assert.deepEqual(entry.volumeOptions, [2.3, 3, 3.8]);
+  assert.deepEqual(entry.weightOptions, [248, 290, 332]);
+});
+
+test("CRITICAL catalog scan: Tailfin Rear Top Tube weights follow the named geometry", () => {
+  const entry = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/product/top-tube-cockpit/rear-top-tube-bag/",
+    html: `<main><h1>Rear Top Tube Bag</h1><img src="https://media.tailfin.cc/rear-top-tube.jpg">
+      <section id="specifications">Specifications
+        Road/Gravel Rear Top Tube Bag – 0.9L\nWeight\n109g – Mounted with 2 Straps\n118g – Mounted with 3 Straps\nVolume\n0.9L
+        MTB Rear Top Tube Bag – 0.8L\nWeight\n112g – Mounted with 2 Straps\n121g – Mounted with 3 Straps\nVolume\n0.9L (MTB Geometry)
+      </section></main>`,
+  });
+  assert.deepEqual(entry.volumeOptions, [0.8, 0.9]);
+  assert.deepEqual(entry.weightOptions, [121, 118]);
 });

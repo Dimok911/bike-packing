@@ -65,6 +65,13 @@ function uniqueNumbers(values = []) {
     .sort((left, right) => left - right);
 }
 
+function orderedUniqueNumbers(values = []) {
+  return [...new Set(values
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .map((value) => Math.round(value * 100) / 100))];
+}
+
 function normalizedProductUrl(rawUrl, baseUrl = "https://www.tailfin.cc/us/shop/") {
   try {
     const url = new URL(decodeHtml(rawUrl), baseUrl);
@@ -193,12 +200,17 @@ function volumeValues(value = "") {
 }
 
 function weightValues(value = "") {
-  return uniqueNumbers([...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*g\b/gi)]
+  return orderedUniqueNumbers([...String(value || "").matchAll(/(\d+(?:[.,]\d+)?)\s*g\b/gi)]
     .map((match) => Number(match[1].replace(",", ".")))
     .filter((number) => number >= 20 && number < 10_000));
 }
 
 function productVolumeValues(handle, value = "") {
+  if (["cargopack", "speedpack"].includes(handle)) {
+    const productVolumes = [...String(value || "").matchAll(/(?:^|\n)\s*Volume\s+(\d+(?:[.,]\d+)?)\s*L\b/gi)]
+      .map((match) => Number(match[1].replace(",", ".")));
+    if (productVolumes.length) return uniqueNumbers(productVolumes);
+  }
   if (handle === "bar-bag-system") {
     const maximums = [...String(value || "").matchAll(/\bVolume\s+(?:\d+(?:[.,]\d+)?\s*L\s*[–—-]\s*)?(\d+(?:[.,]\d+)?)\s*L\b/gi)]
       .map((match) => Number(match[1].replace(",", ".")));
@@ -208,11 +220,57 @@ function productVolumeValues(handle, value = "") {
 }
 
 function productWeightValues(handle, volumes, value = "") {
+  const source = String(value || "");
   const raw = weightValues(value);
   if (handle === "bar-bag-system") {
-    const totals = [...String(value || "").matchAll(/\bWeight\s+(\d+(?:[.,]\d+)?)\s*g[\s\S]{0,100}?(\d+(?:[.,]\d+)?)\s*g\s+Bar Clamp Hardware/gi)]
-      .map((match) => Number(match[1].replace(",", ".")) + Number(match[2].replace(",", ".")));
-    if (totals.length === volumes.length) return totals;
+    const totalsByVolume = new Map();
+    for (const match of source.matchAll(/\bWeight\s+(\d+(?:[.,]\d+)?)\s*g[\s\S]{0,100}?(\d+(?:[.,]\d+)?)\s*g\s+Bar Clamp Hardware[\s\S]{0,140}?\bVolume\s+(?:\d+(?:[.,]\d+)?\s*L\s*[–—-]\s*)?(\d+(?:[.,]\d+)?)\s*L\b/gi)) {
+      const volume = Number(match[3].replace(",", "."));
+      totalsByVolume.set(volume, Number(match[1].replace(",", ".")) + Number(match[2].replace(",", ".")));
+    }
+    if (volumes.every((volume) => totalsByVolume.has(volume))) {
+      return volumes.map((volume) => totalsByVolume.get(volume));
+    }
+  }
+  if (handle === "bar-cage") {
+    const cageSection = source.split(/Bar Cage Bag Specifications/i)[0];
+    const cageWeight = weightValues(cageSection)[0] || 0;
+    const bagWeightsByVolume = new Map();
+    for (const match of source.matchAll(/Bar Cage Bag\s*[–—-]\s*[^\n]+[\s\S]{0,100}?\bWeight\s+(\d+(?:[.,]\d+)?)\s*g[\s\S]{0,100}?\bVolume\s+(\d+(?:[.,]\d+)?)\s*Lit(?:er|re)s?\b/gi)) {
+      bagWeightsByVolume.set(Number(match[2].replace(",", ".")), Number(match[1].replace(",", ".")));
+    }
+    if (cageWeight && volumes.every((volume) => bagWeightsByVolume.has(volume))) {
+      return volumes.map((volume) => cageWeight + bagWeightsByVolume.get(volume));
+    }
+  }
+  if (handle === "top-tube-bag") {
+    const weightsByVolume = new Map();
+    for (const match of source.matchAll(/(?:^|\n)(\d+(?:[.,]\d+)?)\s*Litre\b[\s\S]*?(?=(?:\n\d+(?:[.,]\d+)?\s*Litre\b)|\nWhat's in the box|$)/gi)) {
+      const sectionWeights = weightValues(match[0]);
+      if (sectionWeights.length) {
+        weightsByVolume.set(Number(match[1].replace(",", ".")), Math.max(...sectionWeights));
+      }
+    }
+    if (volumes.every((volume) => weightsByVolume.has(volume))) {
+      return volumes.map((volume) => weightsByVolume.get(volume));
+    }
+  }
+  if (handle === "rear-top-tube-bag") {
+    const weightsByVolume = new Map();
+    for (const match of source.matchAll(/(?:Road\/Gravel|MTB)\s+Rear Top Tube Bag\s*[–—-]\s*(\d+(?:[.,]\d+)?)\s*L\b[\s\S]{0,80}?\bWeight\s+([\s\S]{0,100}?)\bVolume\b/gi)) {
+      const sectionWeights = weightValues(match[2]);
+      if (sectionWeights.length) {
+        weightsByVolume.set(Number(match[1].replace(",", ".")), Math.max(...sectionWeights));
+      }
+    }
+    if (volumes.every((volume) => weightsByVolume.has(volume))) {
+      return volumes.map((volume) => weightsByVolume.get(volume));
+    }
+  }
+  if (["cargopack", "speedpack"].includes(handle)) {
+    const primaryConstruction = source.split(new RegExp(`\\b${handle === "cargopack" ? "CargoPack" : "SpeedPack"}\\s*[–—-]\\s*Alloy\\b`, "i"))[0];
+    const primaryWeights = weightValues(primaryConstruction);
+    if (volumes.length === 1 && primaryWeights.length) return [Math.max(...primaryWeights)];
   }
   if (volumes.length > 1 && raw.length > volumes.length && raw.length % volumes.length === 0) {
     const groupSize = raw.length / volumes.length;
