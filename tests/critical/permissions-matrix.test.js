@@ -13,6 +13,7 @@ import {
   FRONTEND_CAPABILITIES,
   FRONTEND_PERMISSION_ACTIONS,
   can,
+  loadBikePackingAuthorization,
   normalizeAuthAuthorization
 } from "../../src/auth/permissions.js";
 import { isAdminPublicEditScope, isReadOnlyScope } from "../../src/public/scope.js";
@@ -144,6 +145,46 @@ test("CRITICAL permissions: catalog review requires its own confirmed server cap
   }), false);
 });
 
+test("CRITICAL permissions: Bike authorization is loaded separately from shared identity", async () => {
+  const calls = [];
+  const authorization = await loadBikePackingAuthorization(async (path, options) => {
+    calls.push({ path, options });
+    return {
+      ok: true,
+      authorization: {
+        version: 1,
+        role: "admin",
+        capabilities: [FRONTEND_CAPABILITIES.TEMPLATES_WRITE, FRONTEND_CAPABILITIES.CATALOG_REVIEW]
+      }
+    };
+  });
+
+  assert.deepEqual(calls, [{
+    path: "/bike-packing/authorization",
+    options: { silentErrors: true }
+  }]);
+  assert.equal(authorization.role, "admin");
+  assert.deepEqual(authorization.capabilities, [
+    FRONTEND_CAPABILITIES.TEMPLATES_WRITE,
+    FRONTEND_CAPABILITIES.CATALOG_REVIEW
+  ]);
+});
+
+test("CRITICAL permissions: production may fall back to its legacy auth response during cutover", async () => {
+  const authorization = await loadBikePackingAuthorization(async () => {
+    const error = new Error("not found");
+    error.status = 404;
+    throw error;
+  }, {
+    version: 1,
+    role: "admin",
+    capabilities: [FRONTEND_CAPABILITIES.TEMPLATES_WRITE]
+  });
+
+  assert.equal(authorization.role, "admin");
+  assert.deepEqual(authorization.capabilities, [FRONTEND_CAPABILITIES.TEMPLATES_WRITE]);
+});
+
 test("CRITICAL permissions: remembered server authorization grants only readonly admin catalog access", () => {
   const authorization = {
     version: 1,
@@ -160,7 +201,7 @@ test("CRITICAL permissions: remembered server authorization grants only readonly
   }), false);
 
   const authFlowSource = readFileSync(resolve(projectRoot, "src/sync/auth-load-flow.js"), "utf8");
-  assert.match(authFlowSource, /runtime\.currentAuthorization = normalizeAuthAuthorization\(authData\.authorization\)/);
+  assert.match(authFlowSource, /await loadBikePackingAuthorization\(apiFetch, authData\.authorization\)/);
   assert.doesNotMatch(authFlowSource, /legacyAdmin|permissionComparison|onPermissionShadowMismatch/);
 });
 
@@ -188,5 +229,5 @@ test("CRITICAL permissions: confirmed server capability is the only source of on
   assert.match(appSource, /"authUserCapabilities"/);
 
   const appTailSource = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
-  assert.match(appTailSource, /runtime\.currentAuthorization = normalizeAuthAuthorization\(authData\.authorization\)/);
+  assert.match(appTailSource, /await loadBikePackingAuthorization\(apiFetch, authData\.authorization\)/);
 });

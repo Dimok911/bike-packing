@@ -1,5 +1,5 @@
 import { currentDocumentLanguage } from "../utils/language.js";
-import { normalizeAuthAuthorization } from "../auth/permissions.js";
+import { loadBikePackingAuthorization, normalizeAuthAuthorization } from "../auth/permissions.js";
 import { ensureExperimentSharedAuthSession } from "./experiment-shared-auth.js";
 
 function localText(en, ru) {
@@ -97,7 +97,9 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
 
   runtime.currentUser = authData.user || authData.me || authData.account || null;
   if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
-  runtime.currentAuthorization = normalizeAuthAuthorization(authData.authorization);
+  runtime.currentAuthorization = runtime.currentUser
+    ? await loadBikePackingAuthorization(apiFetch, authData.authorization)
+    : normalizeAuthAuthorization(null);
   if (!runtime.currentUser) {
     if (activateOfflineRememberedSession(localText(
       "Sign-in is not confirmed · local copy of personal layouts is open",
