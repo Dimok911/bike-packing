@@ -15,6 +15,7 @@ import {
   buildApiduraCatalogEntry,
 } from "../../scripts/manufacturer-catalog/apidura-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
+import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
 const bag = (id, brand, extra = {}) => ({
   id,
@@ -165,6 +166,28 @@ test("CRITICAL catalog scan: checked imports accept only complete official manuf
   );
 });
 
+test("CRITICAL catalog scan: first manufacturer snapshot becomes baseline without accepting unrelated changes", () => {
+  const existing = [
+    { id: "ortlieb-existing", brand: "ORTLIEB", imageAssetPaths: ["assets/manufacturer-catalog/ortlieb/existing.jpg"] },
+    { id: "tailfin-stale", brand: "Tailfin", imageAssetPaths: ["assets/manufacturer-catalog/tailfin/stale.jpg"] },
+  ];
+  const report = {
+    changes: [
+      { type: "added", manufacturerId: "tailfin", after: { id: "tailfin-new", brand: "Tailfin", sourceUrl: "https://www.tailfin.cc/us/new/", sourceImageUrls: ["https://media.tailfin.cc/new.jpeg"], variants: [{ sku: "TF-NEW" }] } },
+      { type: "added", manufacturerId: "apidura", after: { id: "apidura-new", brand: "Apidura", sourceUrl: "https://www.apidura.com/shop/new/", sourceImageUrls: ["https://medias.apidura.com/new.webp"], variants: [{ sku: "AP-NEW" }] } },
+      { type: "changed", manufacturerId: "ortlieb", after: { id: "ortlieb-existing", brand: "ORTLIEB", name: "Unexpected source change" } },
+      { type: "added", manufacturerId: "arkel", after: { id: "arkel-pending", brand: "Arkel", imageAssetPaths: ["assets/manufacturer-catalog/arkel/pending.jpg"] } },
+    ],
+  };
+  const promoted = manufacturerCatalogBaselineEntries(existing, report, ["tailfin", "apidura"]);
+  assert.deepEqual(promoted.map(({ id }) => id), ["ortlieb-existing", "apidura-new", "tailfin-new"]);
+  assert.equal(promoted[0].name, undefined);
+  assert.deepEqual(promoted[1].imageAssetPaths, ["assets/manufacturer-catalog/apidura/new.webp"]);
+  assert.deepEqual(promoted[2].imageAssetPaths, ["assets/manufacturer-catalog/tailfin/new.jpg"]);
+  assert.equal(promoted[1].variantCount, 1);
+  assert.equal(promoted[2].variantCount, 1);
+});
+
 test("CRITICAL catalog scan: Apidura adapter keeps size weights, technical details, and the full product gallery", () => {
   const entry = buildApiduraCatalogEntry({
     checkedAt: "2026-08-30",
@@ -219,6 +242,20 @@ test("CRITICAL catalog scan: Apidura named sizes pair capacity with the product-
   assert.deepEqual(entry.weightOptions, [169, 205, 235]);
   assert.deepEqual(entry.variants.map(({ weight }) => weight), [169, 205, 235]);
   assert.equal(entry.variantWeightsAuthoritative, true);
+});
+
+test("CRITICAL catalog scan: Apidura names use the collection and heading instead of SEO suffixes", () => {
+  const entry = buildApiduraCatalogEntry({
+    checkedAt: "2026-08-30",
+    sourceUrl: "https://www.apidura.com/shop/backcountry-food-pouch/",
+    product: { slug: "backcountry-food-pouch", name: "backcountry food pouch" },
+    html: `<html><head><meta property="og:title" content="Backcountry Food Pouch | Bike Feed Bag"></head>
+      <body><main><h1>Food Pouch (0.8L)</h1>
+      <img src="https://medias.apidura.com/2026/08/backcountry-food-pouch.jpg">
+      <h3>Product Information</h3><p>Weight – 55g</p><h3>Care &amp; Maintenance</h3>
+      </main></body></html>`,
+  });
+  assert.equal(entry.name, "Backcountry Food Pouch (0.8L)");
 });
 
 test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details, and every product image", () => {

@@ -281,11 +281,17 @@ function productDescription(product = {}, html = "") {
 }
 
 function productName(product = {}, html = "") {
-  const fallback = metaContent(html, "og:title").replace(/\s*[|–-]\s*Apidura\s*$/i, "").trim();
+  const heading = pageHeading(html);
+  const handle = String(product.slug || "").trim().toLowerCase();
+  const series = handle.match(/^(aero|expedition|racing|backcountry|city)-/)?.[1] || "";
+  const headingWithSeries = heading && series && !heading.toLowerCase().startsWith(`${series} `)
+    ? `${series[0].toUpperCase()}${series.slice(1)} ${heading}`
+    : heading;
+  const fallback = metaContent(html, "og:title").split("|")[0].replace(/\s*[–-]\s*Apidura\s*$/i, "").trim();
   const recordName = plainText(product.name || "");
   return recordName && recordName !== String(product.slug || "").replaceAll("-", " ")
     ? recordName
-    : fallback || pageHeading(html);
+    : headingWithSeries || fallback;
 }
 
 function productSku(product = {}, html = "") {

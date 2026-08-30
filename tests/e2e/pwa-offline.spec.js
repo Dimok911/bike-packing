@@ -6,7 +6,8 @@ import {
 
 test.use({ serviceWorkers: "allow" });
 
-test("[pwa:offline] installed app shell opens the saved workspace without a network", { timeout: 60_000 }, async ({ context, page }) => {
+test("[pwa:offline] installed app shell opens the saved workspace without a network", async ({ context, page }) => {
+  test.setTimeout(60_000);
   await context.addInitScript(() => {
     localStorage.setItem("bike-packing-language-v1", "ru");
     const nativeFetch = window.fetch.bind(window);
