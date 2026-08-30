@@ -95,6 +95,9 @@ function isBagProduct(product = {}) {
 }
 
 export function apiduraCatalogTargets(payload = "") {
+  if (typeof payload === "string" && /\.well-known\/sgcaptcha|sgcaptcha/i.test(payload)) {
+    throw new Error("Apidura catalog returned an anti-bot challenge instead of the official sitemap");
+  }
   const targets = new Map();
   for (const product of productRecords(payload)) {
     if (!isBagProduct(product)) continue;

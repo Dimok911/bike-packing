@@ -121,6 +121,13 @@ test("CRITICAL catalog scan: Apidura adapter discovers bags and excludes accesso
   assert.ok(targets.every(({ url }) => url.startsWith("https://www.apidura.com/shop/")));
 });
 
+test("CRITICAL catalog scan: Apidura anti-bot HTML fails closed instead of reporting an empty catalog", () => {
+  assert.throws(
+    () => apiduraCatalogTargets('<meta http-equiv="refresh" content="0;/.well-known/sgcaptcha/?r=sitemap">'),
+    /anti-bot challenge/
+  );
+});
+
 test("CRITICAL catalog scan: Apidura adapter keeps size weights, technical details, and the full product gallery", () => {
   const entry = buildApiduraCatalogEntry({
     checkedAt: "2026-08-30",
