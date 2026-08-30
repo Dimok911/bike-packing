@@ -137,12 +137,18 @@ function touchEvent(x, y) {
 
 function createHarness({ scrollY = 900 } = {}) {
   let nowMs = 1000;
-  const button = eventTarget({ hidden: true });
+  let buttonHovered = false;
+  const button = eventTarget({
+    hidden: true,
+    contains: (target) => target === button,
+    getBoundingClientRect: () => ({ bottom: 214, left: 10, right: 54, top: 170 }),
+    matches: (selector) => selector === ":hover" && buttonHovered
+  });
   const layer = eventTarget({ hidden: true });
   const scrollingElement = { scrollTop: scrollY };
   const documentElement = { scrollTop: scrollY };
   const body = { scrollTop: scrollY };
-  const documentRef = { body, documentElement, scrollingElement };
+  const documentRef = eventTarget({ body, documentElement, scrollingElement });
   const scrollCalls = [];
   const windowRef = eventTarget({
     scrollY,
@@ -168,10 +174,12 @@ function createHarness({ scrollY = 900 } = {}) {
     body,
     button,
     controller,
+    documentRef,
     documentElement,
     layer,
     scrollCalls,
     scrollingElement,
+    setButtonHovered(value) { buttonHovered = Boolean(value); },
     windowRef
   };
 }
@@ -223,6 +231,76 @@ test("first touch during momentum reaches top before touchend without a painted 
   harness.button.dispatch("touchend", end);
   assert.equal(harness.scrollCalls.length, 2, "touchend does not schedule a second jump");
   assert.equal(end.stopped, true);
+});
+
+test("ignored iPhone momentum tap is recovered from hover at scrollend", () => {
+  const harness = createHarness();
+  const anchor = catalogAnchor();
+  harness.controller.register(catalogRoot(anchor), anchor, { label: "Back to top" });
+  const surface = {};
+  harness.documentRef.dispatch("touchstart", {
+    target: surface,
+    touches: [{ clientX: 120, clientY: 440 }]
+  });
+  harness.documentRef.dispatch("touchmove", {
+    target: surface,
+    touches: [{ clientX: 122, clientY: 300 }]
+  });
+  harness.documentRef.dispatch("touchend", {
+    target: surface,
+    touches: [],
+    changedTouches: [{ clientX: 122, clientY: 300 }]
+  });
+  harness.windowRef.dispatch("scroll");
+  harness.setButtonHovered(true);
+
+  // WebKit consumes the interrupting tap itself: no touch or click is
+  // dispatched to the button. The changed hit-test state plus scrollend is
+  // the only non-destructive signal available to the page.
+  harness.windowRef.dispatch("scrollend");
+  assert.deepEqual(harness.scrollCalls, [{ top: 0, left: 0, behavior: "auto" }]);
+});
+
+test("natural momentum completion never activates the hover fallback", () => {
+  const harness = createHarness();
+  const anchor = catalogAnchor();
+  harness.controller.register(catalogRoot(anchor), anchor);
+  const surface = {};
+  harness.documentRef.dispatch("touchstart", {
+    target: surface,
+    touches: [{ clientX: 120, clientY: 440 }]
+  });
+  harness.documentRef.dispatch("touchmove", {
+    target: surface,
+    touches: [{ clientX: 122, clientY: 300 }]
+  });
+  harness.documentRef.dispatch("touchend", { target: surface, touches: [] });
+  harness.windowRef.dispatch("scroll");
+  harness.windowRef.dispatch("scrollend");
+  assert.deepEqual(harness.scrollCalls, []);
+});
+
+test("a fling ending over the button is not mistaken for a second tap", () => {
+  const harness = createHarness();
+  const anchor = catalogAnchor();
+  harness.controller.register(catalogRoot(anchor), anchor);
+  const surface = {};
+  harness.documentRef.dispatch("touchstart", {
+    target: surface,
+    touches: [{ clientX: 120, clientY: 440 }]
+  });
+  harness.documentRef.dispatch("touchmove", {
+    target: surface,
+    touches: [{ clientX: 122, clientY: 300 }]
+  });
+  harness.setButtonHovered(true);
+  harness.documentRef.dispatch("touchend", {
+    target: surface,
+    touches: [],
+    changedTouches: [{ clientX: 30, clientY: 190 }]
+  });
+  harness.windowRef.dispatch("scrollend");
+  assert.deepEqual(harness.scrollCalls, []);
 });
 
 test("stationary touch waits for touchend when no momentum is active", () => {

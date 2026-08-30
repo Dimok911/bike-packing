@@ -41,12 +41,13 @@ function createBoard() {
   };
 }
 
-test("touch scroll axis locks after a short intentional movement", () => {
-  assert.equal(classifyTouchScrollAxis(3, 0), "");
-  assert.equal(classifyTouchScrollAxis(-4, 1), "horizontal");
-  assert.equal(classifyTouchScrollAxis(1, -4), "");
-  assert.equal(classifyTouchScrollAxis(4, 4), "");
-  assert.equal(classifyTouchScrollAxis(1, -12), "vertical");
+test("touch scroll axis favors the vertical page through initial finger wobble", () => {
+  assert.equal(classifyTouchScrollAxis(9, 1), "");
+  assert.equal(classifyTouchScrollAxis(-10, 1), "horizontal");
+  assert.equal(classifyTouchScrollAxis(1, -6), "");
+  assert.equal(classifyTouchScrollAxis(10, 9), "");
+  assert.equal(classifyTouchScrollAxis(7, -7), "");
+  assert.equal(classifyTouchScrollAxis(5, -7), "vertical");
 });
 
 test("zoomed packing boards reserve the gesture for their diagonal pan controller", () => {
@@ -74,7 +75,7 @@ test("horizontal swipe scrolls the board and suppresses the following click", ()
 
   let movePrevented = false;
   board.dispatch("touchmove", {
-    touches: [{ clientX: 195, clientY: 99 }],
+    touches: [{ clientX: 180, clientY: 98 }],
     cancelable: true,
     preventDefault() {
       movePrevented = true;
@@ -82,7 +83,7 @@ test("horizontal swipe scrolls the board and suppresses the following click", ()
   });
 
   assert.equal(movePrevented, true);
-  assert.equal(board.scrollLeft, 105);
+  assert.equal(board.scrollLeft, 120);
 
   let clickPrevented = false;
   let clickPropagationStopped = false;
@@ -98,7 +99,7 @@ test("horizontal swipe scrolls the board and suppresses the following click", ()
   assert.equal(clickPropagationStopped, true);
 });
 
-test("a small initial vertical wobble can still become a horizontal swipe", () => {
+test("an undecided diagonal wobble can still become an intentional horizontal swipe", () => {
   const board = createBoard();
   bindHorizontalTouchScroll(board, { pointerEventsSupported: false });
   board.dispatch("touchstart", { touches: [{ clientX: 200, clientY: 100 }] });
@@ -108,7 +109,7 @@ test("a small initial vertical wobble can still become a horizontal swipe", () =
     prevented = true;
   };
   board.dispatch("touchmove", {
-    touches: [{ clientX: 198, clientY: 95 }],
+    touches: [{ clientX: 194, clientY: 96 }],
     cancelable: true,
     preventDefault
   });
@@ -122,17 +123,17 @@ test("a small initial vertical wobble can still become a horizontal swipe", () =
   assert.equal(board.scrollLeft, 120);
 });
 
-test("a clearly vertical gesture never switches to horizontal scrolling", () => {
+test("a vertical gesture with an initial horizontal wobble never switches axes", () => {
   const board = createBoard();
   bindHorizontalTouchScroll(board, { pointerEventsSupported: false });
   board.dispatch("touchstart", { touches: [{ clientX: 200, clientY: 100 }] });
   board.dispatch("touchmove", {
-    touches: [{ clientX: 198, clientY: 87 }],
+    touches: [{ clientX: 194, clientY: 96 }],
     cancelable: true,
     preventDefault() {}
   });
   board.dispatch("touchmove", {
-    touches: [{ clientX: 180, clientY: 86 }],
+    touches: [{ clientX: 192, clientY: 82 }],
     cancelable: true,
     preventDefault() {}
   });
@@ -160,8 +161,8 @@ test("pointer scrolling captures the whole board and a new picker opening resets
     board.dispatch("pointermove", {
       pointerType: "touch",
       pointerId: 7,
-      clientX: 198,
-      clientY: 95
+      clientX: 194,
+      clientY: 96
     });
     board.dispatch("pointermove", {
       pointerType: "touch",

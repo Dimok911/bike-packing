@@ -1,5 +1,9 @@
 import { devices, expect, test } from "@playwright/test";
-import { openApp, prepareIsolatedRussianGuest } from "./guest-test-helpers.js";
+import {
+  createEmptyLayout,
+  openApp,
+  prepareIsolatedRussianGuest
+} from "./guest-test-helpers.js";
 
 test.use({ ...devices["iPhone 15"] });
 
@@ -135,6 +139,50 @@ test("iPhone keeps packing isolated and ordinary views on document momentum", as
   }
 });
 
+test("iPhone packing keeps a wobbly vertical gesture native", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+
+  const gesture = await page.evaluate(() => {
+    const surface = document.querySelector(".kanban-board-touch-surface");
+    const board = document.querySelector("#packingView .board");
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    if (!surface || !board || !host) return null;
+    const dispatchTouch = (type, x, y, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const point = { clientX: x, clientY: y, identifier: 81 };
+      Object.defineProperty(event, "touches", { value: active ? [point] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [point] });
+      return surface.dispatchEvent(event);
+    };
+    const initialLeft = board.scrollLeft;
+    const startNative = dispatchTouch("touchstart", 200, 700, true);
+    const wobbleNative = dispatchTouch("touchmove", 194, 696, true);
+    const verticalNative = dispatchTouch("touchmove", 192, 520, true);
+    host.scrollTop = 420;
+    const endNative = dispatchTouch("touchend", 192, 520, false);
+    return {
+      boardLeft: board.scrollLeft,
+      endNative,
+      hostOverflow: getComputedStyle(host).overflowY,
+      initialLeft,
+      scrollTop: host.scrollTop,
+      startNative,
+      verticalNative,
+      wobbleNative
+    };
+  });
+
+  expect(gesture).not.toBeNull();
+  expect(gesture.startNative).toBe(true);
+  expect(gesture.wobbleNative).toBe(true);
+  expect(gesture.verticalNative).toBe(true);
+  expect(gesture.endNative).toBe(true);
+  expect(gesture.boardLeft).toBe(gesture.initialLeft);
+  expect(gesture.hostOverflow).not.toBe("hidden");
+  expect(gesture.scrollTop).toBeGreaterThan(300);
+});
+
 test("iPhone ordinary views accept a browser-routed vertical scroll gesture", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
@@ -222,6 +270,100 @@ test("iPhone back-to-top reaches zero on touchstart while document momentum is a
   expect(activation.writesAtTouchStart).toEqual([900, 0]);
   expect(activation.topAtTouchStart).toBe(0);
   expect(activation.totalWrites).toBe(2);
+});
+
+test("iPhone back-to-top recovers a platform-consumed momentum tap", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await selectViewWithoutAutoScroll(page, "items");
+  await setViewportScroll(page, 900);
+
+  const button = page.locator("[data-catalog-back-to-top]");
+  await expect(button).toBeVisible();
+  await page.locator("#itemsView").evaluate((surface) => {
+    const dispatchTouch = (type, x, y, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const point = { clientX: x, clientY: y };
+      Object.defineProperty(event, "touches", { value: active ? [point] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [point] });
+      surface.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", 180, 620, true);
+    dispatchTouch("touchmove", 182, 380, true);
+    dispatchTouch("touchend", 182, 380, false);
+    window.dispatchEvent(new Event("scroll"));
+  });
+
+  await button.evaluate((target) => {
+    const nativeMatches = target.matches.bind(target);
+    target.matches = (selector) => selector === ":hover"
+      ? Boolean(window.__e2eBackToTopHovered)
+      : nativeMatches(selector);
+    window.__e2eBackToTopHovered = true;
+    window.dispatchEvent(new Event("scrollend"));
+  });
+  await expect.poll(() => viewportScrollTop(page)).toBe(0);
+});
+
+test("iPhone note match opens a centered marker without native selection", async ({ page }) => {
+  const query = "запасные перчатки";
+  const note = [
+    ...Array.from({ length: 18 }, (_, index) => `Строка подготовки ${index + 1}.`),
+    `${query} лежат в боковом кармане`,
+    ...Array.from({ length: 12 }, (_, index) => `Строка маршрута ${index + 1}.`)
+  ].join("\n");
+  await openApp(page);
+  await createEmptyLayout(page, "Маркер заметки");
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#rootContainerName").fill("Тестовая сумка");
+  await page.locator("#saveRootContainerBtn").evaluate((button) => button.click());
+  await expect(page.locator("#rootContainerDialog")).not.toBeVisible();
+  const container = page.locator("#packingView [data-root-container-id]").filter({ hasText: "Тестовая сумка" });
+  await expect(container).toHaveCount(1);
+  await container.locator("[data-add-to-container]").click();
+  await page.locator("#createItemForContainerBtn").click();
+  await page.locator("#itemName").fill("Вещь с заметкой");
+  await page.locator("#saveItemBtn").evaluate((button) => button.click());
+  await expect(page.locator("#itemDialog")).not.toBeVisible();
+  const item = container.locator("[data-item-id]").filter({ hasText: "Вещь с заметкой" });
+  await expect(item).toHaveCount(1);
+
+  await item.locator(".item-title-hitarea").tap();
+  await page.locator("#itemNote").fill(note);
+  await page.locator("#saveItemBtn").evaluate((button) => button.click());
+  await expect(page.locator("#itemDialog")).not.toBeVisible();
+  await page.locator('.tab[data-view="items"]').tap();
+  await page.locator("#searchInput").fill(query);
+  await page.locator("#itemsView .search-note-match-badge").tap();
+
+  const textarea = page.locator("#itemNote");
+  const marker = page.locator("#itemDialog .note-search-match-marker");
+  await expect(page.locator("#itemDialog")).toBeVisible();
+  await expect(textarea).not.toBeFocused();
+  await expect(marker).toBeVisible();
+  await expect(marker).toHaveText(query);
+  await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query) + query.length);
+  await expect(textarea).toHaveJSProperty("selectionEnd", note.indexOf(query) + query.length);
+  const geometry = await textarea.evaluate((element) => {
+    const fieldRect = element.closest(".note-field").getBoundingClientRect();
+    const dialogRect = element.closest("dialog").getBoundingClientRect();
+    const markerRect = element.closest(".note-field")
+      .querySelector(".note-search-match-marker")
+      .getBoundingClientRect();
+    const textareaRect = element.getBoundingClientRect();
+    return {
+      centerDelta: Math.abs((fieldRect.top + fieldRect.bottom - dialogRect.top - dialogRect.bottom) / 2),
+      dialogHeight: dialogRect.height,
+      markerBottom: markerRect.bottom,
+      markerTop: markerRect.top,
+      textareaBottom: textareaRect.bottom,
+      textareaTop: textareaRect.top
+    };
+  });
+  expect(geometry.centerDelta).toBeLessThan(geometry.dialogHeight * 0.25);
+  expect(geometry.markerTop).toBeGreaterThanOrEqual(geometry.textareaTop - 1);
+  expect(geometry.markerBottom).toBeLessThanOrEqual(geometry.textareaBottom + 1);
 });
 
 test("switching iPhone tabs does not write a programmatic viewport position", async ({ page }) => {

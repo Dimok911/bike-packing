@@ -114,13 +114,32 @@ test("search opens an item at the matching note text and navigates repeated matc
 
   const navigation = page.locator("#itemNoteSearchNav");
   const textarea = page.locator("#itemNote");
+  const marker = page.locator("#itemDialog .note-search-match-marker");
   await expect(page.locator("#itemDialog")).toBeVisible();
   await expect(navigation).toBeVisible();
-  await expect(textarea).toBeFocused();
+  await expect(textarea).not.toBeFocused();
+  await expect(marker).toBeVisible();
+  await expect(marker).toHaveText(query);
   await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
   await expect(page.locator("#itemNoteSearchQuery")).toHaveText(query);
-  await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query));
+  await expect(textarea).toHaveAttribute("data-note-search-match-start", String(note.indexOf(query)));
+  await expect(textarea).toHaveAttribute("data-note-search-match-end", String(note.indexOf(query) + query.length));
+  await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query) + query.length);
   await expect(textarea).toHaveJSProperty("selectionEnd", note.indexOf(query) + query.length);
+  const markerGeometry = await marker.evaluate((element) => {
+    const markerRect = element.getBoundingClientRect();
+    const textareaRect = document.querySelector("#itemNote").getBoundingClientRect();
+    return {
+      background: getComputedStyle(element).backgroundColor,
+      markerBottom: markerRect.bottom,
+      markerTop: markerRect.top,
+      textareaBottom: textareaRect.bottom,
+      textareaTop: textareaRect.top
+    };
+  });
+  expect(markerGeometry.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(markerGeometry.markerTop).toBeGreaterThanOrEqual(markerGeometry.textareaTop - 1);
+  expect(markerGeometry.markerBottom).toBeLessThanOrEqual(markerGeometry.textareaBottom + 1);
   const centeredNote = await textarea.evaluate((element) => {
     const fieldRect = element.closest(".note-field").getBoundingClientRect();
     const dialog = element.closest("dialog");
@@ -146,8 +165,11 @@ test("search opens an item at the matching note text and navigates repeated matc
   await page.locator("#itemNoteSearchNext").click();
   const secondStart = note.indexOf(query, query.length);
   await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 2 из 3");
-  await expect(textarea).toHaveJSProperty("selectionStart", secondStart);
+  await expect(textarea).toHaveAttribute("data-note-search-match-start", String(secondStart));
+  await expect(textarea).toHaveAttribute("data-note-search-match-end", String(secondStart + query.length));
+  await expect(textarea).toHaveJSProperty("selectionStart", secondStart + query.length);
   await expect(textarea).toHaveJSProperty("selectionEnd", secondStart + query.length);
+  await expect(marker).toHaveText(query);
   await expect.poll(() => textarea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 
   await page.locator("#itemNoteSearchNext").click();

@@ -10,6 +10,7 @@ export const CATALOG_BACK_TO_TOP_THRESHOLD_PX = 360;
 const TOUCH_ACTIVATION_MOVE_LIMIT_PX = 10;
 const SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
 const MOMENTUM_TOUCH_ACTIVATION_WINDOW_MS = 260;
+const MOMENTUM_HOVER_SETTLE_MS = 110;
 
 const activeBindings = new WeakMap();
 const documentControllers = new WeakMap();
@@ -91,10 +92,20 @@ export function createCatalogBackToTopController({
   let gestureMoved = false;
   let gestureActivatedOnStart = false;
   let lastViewportScrollAt = Number.NEGATIVE_INFINITY;
+  let momentumHoverProbeArmed = false;
+  let momentumHoverWasClear = false;
+  let momentumSettleTimer = 0;
   let suppressClickUntil = 0;
+  let touchProbeActive = false;
+  let touchProbeMovedVertically = false;
+  let touchProbeStartX = 0;
+  let touchProbeStartY = 0;
+  let boundScrollHost = null;
 
   const requestFrame = windowRef?.requestAnimationFrame?.bind(windowRef);
   const cancelFrame = windowRef?.cancelAnimationFrame?.bind(windowRef);
+  const scheduleTimeout = windowRef?.setTimeout?.bind(windowRef) || globalThis.setTimeout;
+  const cancelTimeout = windowRef?.clearTimeout?.bind(windowRef) || globalThis.clearTimeout;
   const mutationFactory = mutationObserverFactory
     || (typeof MutationObserver === "function"
       ? (callback) => new MutationObserver(callback)
@@ -102,6 +113,16 @@ export function createCatalogBackToTopController({
 
   const pageScrollY = () => viewportScrollTop({ documentRef, windowRef });
   const currentTime = () => Number(now?.()) || 0;
+  const buttonIsHovered = () => Boolean(button?.matches?.(":hover"));
+  const eventPointHitsButton = (event) => {
+    const rect = button?.getBoundingClientRect?.();
+    if (!rect) return false;
+    const point = eventPoint(event);
+    return point.x >= Number(rect.left)
+      && point.x <= Number(rect.right)
+      && point.y >= Number(rect.top)
+      && point.y <= Number(rect.bottom);
+  };
   const activeRegistration = () => [...registrations.values()].find(({ anchor, root }) =>
     rootIsVisible(root)
     && anchor
@@ -119,8 +140,23 @@ export function createCatalogBackToTopController({
     return true;
   };
 
+  function syncScrollHostBinding() {
+    const nextHost = viewportScrollHost({ documentRef });
+    if (nextHost === boundScrollHost) return;
+    if (boundScrollHost && boundScrollHost !== documentRef?.scrollingElement) {
+      boundScrollHost.removeEventListener?.("scroll", onViewportScroll);
+      boundScrollHost.removeEventListener?.("scrollend", onViewportScrollEnd);
+    }
+    boundScrollHost = nextHost;
+    if (boundScrollHost && boundScrollHost !== documentRef?.scrollingElement) {
+      boundScrollHost.addEventListener?.("scroll", onViewportScroll, { passive: true });
+      boundScrollHost.addEventListener?.("scrollend", onViewportScrollEnd, { passive: true });
+    }
+  }
+
   const update = () => {
     updateFrame = 0;
+    syncScrollHostBinding();
     const registration = activeRegistration();
     const visible = shouldShowCatalogBackToTop({
       rootVisible: Boolean(registration),
@@ -151,10 +187,45 @@ export function createCatalogBackToTopController({
     if (!updateFrame) update();
   };
 
-  const onViewportScroll = () => {
+  const clearMomentumSettleTimer = () => {
+    if (!momentumSettleTimer) return;
+    cancelTimeout?.(momentumSettleTimer);
+    momentumSettleTimer = 0;
+  };
+
+  const disarmMomentumHoverProbe = () => {
+    clearMomentumSettleTimer();
+    momentumHoverProbeArmed = false;
+    momentumHoverWasClear = false;
+  };
+
+  const finishMomentumHoverProbe = () => {
+    clearMomentumSettleTimer();
+    if (!momentumHoverProbeArmed) return;
+    const activate = momentumHoverWasClear
+      && buttonIsHovered()
+      && !button?.hidden
+      && pageScrollY() > threshold;
+    momentumHoverProbeArmed = false;
+    momentumHoverWasClear = false;
+    if (activate) scrollToTop();
+  };
+
+  const scheduleMomentumHoverProbe = () => {
+    if (!momentumHoverProbeArmed || typeof scheduleTimeout !== "function") return;
+    clearMomentumSettleTimer();
+    momentumSettleTimer = scheduleTimeout(finishMomentumHoverProbe, MOMENTUM_HOVER_SETTLE_MS);
+  };
+
+  function onViewportScroll() {
     lastViewportScrollAt = currentTime();
     scheduleUpdate();
-  };
+    scheduleMomentumHoverProbe();
+  }
+
+  function onViewportScrollEnd() {
+    finishMomentumHoverProbe();
+  }
 
   const stopEvent = (event) => {
     event?.preventDefault?.();
@@ -162,6 +233,7 @@ export function createCatalogBackToTopController({
   };
 
   const scrollToTop = ({ smooth = false } = {}) => {
+    disarmMomentumHoverProbe();
     markExplicitViewportScrollIntent();
     scrollViewportTo({
       top: 0,
@@ -188,6 +260,7 @@ export function createCatalogBackToTopController({
     gestureStartY = point.y;
     gestureMoved = false;
     gestureActivatedOnStart = false;
+    disarmMomentumHoverProbe();
     stopEvent(event);
     if (currentTime() - lastViewportScrollAt <= MOMENTUM_TOUCH_ACTIVATION_WINDOW_MS) {
       // Safari may ignore a new target until native momentum is interrupted.
@@ -244,6 +317,50 @@ export function createCatalogBackToTopController({
   const onPointerUp = (event) => finishGesture("pointer", event);
   const onPointerCancel = () => cancelGesture("pointer");
 
+  const onDocumentTouchStart = (event) => {
+    if (button === event?.target || button?.contains?.(event?.target)) {
+      touchProbeActive = false;
+      disarmMomentumHoverProbe();
+      return;
+    }
+    if (event?.touches?.length !== 1) {
+      touchProbeActive = false;
+      return;
+    }
+    const point = eventPoint(event);
+    touchProbeActive = true;
+    touchProbeMovedVertically = false;
+    touchProbeStartX = point.x;
+    touchProbeStartY = point.y;
+    disarmMomentumHoverProbe();
+    momentumHoverWasClear = !buttonIsHovered();
+  };
+
+  const onDocumentTouchMove = (event) => {
+    if (!touchProbeActive || event?.touches?.length !== 1) return;
+    const point = eventPoint(event);
+    const deltaX = Math.abs(point.x - touchProbeStartX);
+    const deltaY = Math.abs(point.y - touchProbeStartY);
+    if (deltaY > TOUCH_ACTIVATION_MOVE_LIMIT_PX && deltaY > deltaX) {
+      touchProbeMovedVertically = true;
+    }
+    if (!buttonIsHovered()) momentumHoverWasClear = true;
+  };
+
+  const finishDocumentTouch = (event) => {
+    const shouldArm = touchProbeActive
+      && touchProbeMovedVertically
+      && momentumHoverWasClear
+      && !eventPointHitsButton(event)
+      && !button?.hidden
+      && pageScrollY() > threshold;
+    touchProbeActive = false;
+    touchProbeMovedVertically = false;
+    momentumHoverProbeArmed = shouldArm;
+    if (!shouldArm) momentumHoverWasClear = false;
+    else scheduleMomentumHoverProbe();
+  };
+
   button?.addEventListener?.("click", onClick);
   button?.addEventListener?.("touchstart", onTouchStart, { passive: false });
   button?.addEventListener?.("touchmove", onTouchMove, { passive: false });
@@ -253,12 +370,14 @@ export function createCatalogBackToTopController({
   button?.addEventListener?.("pointermove", onPointerMove, { passive: false });
   button?.addEventListener?.("pointerup", onPointerUp, { passive: false });
   button?.addEventListener?.("pointercancel", onPointerCancel, { passive: true });
+  documentRef?.addEventListener?.("touchstart", onDocumentTouchStart, { capture: true, passive: true });
+  documentRef?.addEventListener?.("touchmove", onDocumentTouchMove, { capture: true, passive: true });
+  documentRef?.addEventListener?.("touchend", finishDocumentTouch, { capture: true, passive: true });
+  documentRef?.addEventListener?.("touchcancel", finishDocumentTouch, { capture: true, passive: true });
   windowRef?.addEventListener?.("scroll", onViewportScroll, { passive: true });
+  windowRef?.addEventListener?.("scrollend", onViewportScrollEnd, { passive: true });
   windowRef?.addEventListener?.("resize", scheduleUpdate, { passive: true });
-  const scrollHost = viewportScrollHost({ documentRef });
-  if (scrollHost && scrollHost !== documentRef?.scrollingElement) {
-    scrollHost.addEventListener?.("scroll", onViewportScroll, { passive: true });
-  }
+  syncScrollHostBinding();
   windowRef?.visualViewport?.addEventListener?.("resize", scheduleUpdate, { passive: true });
   windowRef?.visualViewport?.addEventListener?.("scroll", onViewportScroll, { passive: true });
 
@@ -300,11 +419,18 @@ export function createCatalogBackToTopController({
     button?.removeEventListener?.("pointermove", onPointerMove);
     button?.removeEventListener?.("pointerup", onPointerUp);
     button?.removeEventListener?.("pointercancel", onPointerCancel);
+    documentRef?.removeEventListener?.("touchstart", onDocumentTouchStart, true);
+    documentRef?.removeEventListener?.("touchmove", onDocumentTouchMove, true);
+    documentRef?.removeEventListener?.("touchend", finishDocumentTouch, true);
+    documentRef?.removeEventListener?.("touchcancel", finishDocumentTouch, true);
     windowRef?.removeEventListener?.("scroll", onViewportScroll);
+    windowRef?.removeEventListener?.("scrollend", onViewportScrollEnd);
     windowRef?.removeEventListener?.("resize", scheduleUpdate);
-    if (scrollHost && scrollHost !== documentRef?.scrollingElement) {
-      scrollHost.removeEventListener?.("scroll", onViewportScroll);
+    if (boundScrollHost && boundScrollHost !== documentRef?.scrollingElement) {
+      boundScrollHost.removeEventListener?.("scroll", onViewportScroll);
+      boundScrollHost.removeEventListener?.("scrollend", onViewportScrollEnd);
     }
+    disarmMomentumHoverProbe();
     windowRef?.visualViewport?.removeEventListener?.("resize", scheduleUpdate);
     windowRef?.visualViewport?.removeEventListener?.("scroll", onViewportScroll);
     layer?.remove?.();
