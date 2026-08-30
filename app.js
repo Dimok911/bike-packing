@@ -1094,14 +1094,9 @@ import {
   viewportScrollLeft,
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
-import { createViewScrollMemory } from "./src/ui/view-scroll-memory.js";
 import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
-const viewScrollMemory = createViewScrollMemory({
-  readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
-  writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
-});
 const locations = [];
 const categories = [];
 let serverConfirmedDemoTemplates = [];
@@ -10411,7 +10406,6 @@ async function publishPublicHistoryRecord(record, payload, {
 function switchView(view) {
   const previousView = getCurrentView();
   const viewChanged = previousView !== view;
-  if (viewChanged) viewScrollMemory.remember(previousView);
   if (previousView === "packing" && viewChanged) {
     capturePackingScroll();
   }
@@ -10425,7 +10419,6 @@ function switchView(view) {
   renderSummary();
   updateViewScopedControls(view);
   updateFilterNavigationUi();
-  if (viewChanged) viewScrollMemory.restore(view);
   if (view === "packing") {
     requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost()));
   }

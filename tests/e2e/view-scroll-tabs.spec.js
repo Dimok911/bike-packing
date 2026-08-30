@@ -123,27 +123,21 @@ test("iPhone keeps repeated native scroll advances in items, bags and settings",
   }
 });
 
-test("iPhone keeps an independent vertical position for every main tab", async ({ page }) => {
+test("switching iPhone tabs does not write a programmatic viewport position", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
+  await setViewportScroll(page, 620);
 
-  const packingTop = await setViewportScroll(page, 900);
-  await selectViewWithoutAutoScroll(page, "items");
-  await expectViewportScrollNear(page, 0);
+  const calls = await page.evaluate(() => {
+    const originalScrollTo = window.scrollTo;
+    const writes = [];
+    window.scrollTo = (...args) => writes.push(args);
+    document.querySelector('.tab[data-view="items"]').click();
+    window.scrollTo = originalScrollTo;
+    return writes;
+  });
 
-  const itemsTop = await setViewportScroll(page, 620);
-  await selectViewWithoutAutoScroll(page, "settings");
-  await expectViewportScrollNear(page, 0);
-
-  const settingsTop = await setViewportScroll(page, 280);
-  await selectViewWithoutAutoScroll(page, "packing");
-  await expectViewportScrollNear(page, packingTop);
-
-  await selectViewWithoutAutoScroll(page, "items");
-  await expectViewportScrollNear(page, itemsTop);
-
-  await selectViewWithoutAutoScroll(page, "settings");
-  await expectViewportScrollNear(page, settingsTop);
+  expect(calls).toEqual([]);
 });
 
 test("a fast iPhone swipe keeps its compositor position after a tab switch", async ({ page }) => {
@@ -170,38 +164,48 @@ test("a fast iPhone swipe keeps its compositor position after a tab switch", asy
   expect(await viewportScrollTop(page)).toBeGreaterThan(500);
 });
 
-test("iPhone touchstart cannot be overwritten by a queued tab restore", async ({ page }) => {
+test("one iPhone tap switches the main view without a hover-only intermediate state", async ({ page }) => {
   await openApp(page);
-  await addScrollableViewFixtures(page);
-  await setViewportScroll(page, 900);
+  const itemsTab = page.locator('.tab[data-view="items"]');
 
-  const geometry = await page.evaluate(() => {
-    const queuedFrames = [];
-    const originalRequestAnimationFrame = window.requestAnimationFrame;
-    window.requestAnimationFrame = (callback) => {
-      queuedFrames.push(callback);
-      return queuedFrames.length;
-    };
+  await itemsTab.tap();
 
-    document.querySelector('.tab[data-view="items"]').click();
-    const touchStart = new Event("touchstart", { bubbles: true, cancelable: true });
-    Object.defineProperty(touchStart, "touches", {
-      value: [{ clientX: 180, clientY: 620 }]
-    });
-    document.dispatchEvent(touchStart);
-    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+  await expect(itemsTab).toHaveClass(/active/);
+  await expect(page.locator("#itemsView")).toBeVisible();
+  await expect(page.locator("#packingView")).toBeHidden();
+});
 
-    const marker = document.querySelector('#itemsView [data-e2e-scroll-spacer]');
-    const beforeFrame = marker.getBoundingClientRect().top;
-    queuedFrames.splice(0).forEach((callback) => callback(performance.now()));
-    const afterFrame = marker.getBoundingClientRect().top;
-    const scrollTop = document.scrollingElement?.scrollTop || window.scrollY || 0;
-    window.requestAnimationFrame = originalRequestAnimationFrame;
-    return { afterFrame, beforeFrame, scrollTop };
+test("vertical iPhone gestures over a catalog photo never recenter its horizontal track", async ({ page }) => {
+  await openApp(page);
+  await selectViewWithoutAutoScroll(page, "items");
+  await page.locator("#itemsView").evaluate((itemsView) => {
+    const fixture = document.createElement("div");
+    fixture.dataset.e2eCatalogPhotoTrack = "";
+    fixture.className = "photo-gallery-track";
+    itemsView.append(fixture);
   });
 
-  expect(Math.abs(geometry.afterFrame - geometry.beforeFrame)).toBeLessThanOrEqual(1);
-  expect(geometry.scrollTop).toBeGreaterThan(500);
+  const gesture = await page.locator("[data-e2e-catalog-photo-track]").evaluate((track) => {
+    const horizontalWrites = [];
+    track.scrollTo = (...args) => horizontalWrites.push(args);
+    const dispatchTouch = (type, x, y, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: active ? [{ clientX: x, clientY: y }] : []
+      });
+      Object.defineProperty(event, "changedTouches", {
+        value: [{ clientX: x, clientY: y }]
+      });
+      return track.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", 180, 620, true);
+    dispatchTouch("touchmove", 184, 410, true);
+    const nativeEnd = dispatchTouch("touchend", 185, 300, false);
+    return { horizontalWrites, nativeEnd };
+  });
+
+  expect(gesture.nativeEnd).toBe(true);
+  expect(gesture.horizontalWrites).toEqual([]);
 });
 
 test("iPhone document momentum has only one painted packing root header layer", async ({ page }) => {

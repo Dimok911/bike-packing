@@ -25,6 +25,7 @@ import {
   updatePhotoLightboxAutoSize
 } from "./photo-lightbox-sizing.js";
 import { resolvePhotoLightboxPinchPan } from "./photo-lightbox-zoom.js";
+import { bindNativePhotoGalleryVerticalScroll } from "./photo-gallery-native-scroll.js";
 import {
   bindSharedPhotoGalleries,
   createSharedFullscreenSourceController,
@@ -640,6 +641,7 @@ export function bindPhotoGalleries(root = document, {
   prepareFullscreenSource = async () => null,
   openLightbox = openPhotoLightbox
 } = {}) {
+  const nativeVerticalScroll = bindNativePhotoGalleryVerticalScroll(root);
   const boardGesturePassThrough = bindPackingBoardPhotoGesturePassThrough(root);
   let compactControls = null;
   const sharedController = bindSharedPhotoGalleries(root, {
@@ -661,6 +663,7 @@ export function bindPhotoGalleries(root = document, {
       compactControls.refresh();
     },
     destroy() {
+      nativeVerticalScroll.destroy();
       boardGesturePassThrough.destroy();
       compactControls.destroy();
       sharedController?.destroy?.();

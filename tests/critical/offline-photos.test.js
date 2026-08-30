@@ -70,6 +70,7 @@ import {
   renderPhotoDots,
   renderPhotoSlide
 } from "../../src/ui/photo-gallery.js";
+import { bindNativePhotoGalleryVerticalScroll } from "../../src/ui/photo-gallery-native-scroll.js";
 import { createPhotoObjectUrlRegistry } from "../../src/ui/photo-object-url-registry.js";
 import {
   PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS,
@@ -2345,6 +2346,33 @@ test("CRITICAL offline-photos: board photos pass one-finger swipes to board and 
   assert.match(styles, /\.board\.packing-board-zoom-active \.item-photo \.photo-gallery-track\s*\{\s*touch-action:\s*none;/);
 });
 
+test("CRITICAL offline-photos: catalog galleries do not recenter on vertical touch completion", () => {
+  const listeners = new Map();
+  const track = {
+    closest: (selector) => selector === ".photo-gallery-track, .vpg-track" ? track : null
+  };
+  const root = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type, listener) => {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    }
+  };
+  const controller = bindNativePhotoGalleryVerticalScroll(root);
+  const state = { stopped: false };
+
+  listeners.get("touchstart")({ target: track, touches: [{ clientX: 180, clientY: 620 }] });
+  listeners.get("touchmove")({ target: track, touches: [{ clientX: 184, clientY: 420 }] });
+  listeners.get("touchend")({
+    changedTouches: [{ clientX: 185, clientY: 300 }],
+    stopImmediatePropagation: () => { state.stopped = true; },
+    target: track
+  });
+
+  assert.equal(state.stopped, true);
+  controller.destroy();
+  assert.equal(listeners.size, 0);
+});
+
 function photoGalleryTouchHarness() {
   const trackListeners = new Map();
   const buttonListeners = new Map();
@@ -2419,13 +2447,13 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.7 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.1.8 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.7");
+  assert.equal(manifest.version, "2.1.8");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "eb44491093909c14c1bb1d225eeef88c151d5b7ff8450937347bb5c71778f3e0");
+  assert.equal(manifest.sha256, "af2aee51f0a1917101db4c86cbd415d20a08bb0a7843c9861029b2aa267cc426");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2667,7 +2695,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.7"/);
+  assert.match(fallbackSource, /const VERSION = "2\.1\.8"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
@@ -2711,8 +2739,8 @@ test("CRITICAL offline-photos: shared thumbnails contain and interrupted edge sw
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const styles = readProjectFile("styles.css");
   assert.match(fallbackSource, /\.vpg-slide>img,\.vpg-slide img\{[^}]*object-fit:contain;[^}]*background:var\(--vpg-image-background,#fff\)/);
-  assert.match(fallbackSource, /if \(gesture\.moved\) \{[\s\S]{0,160}scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
-  assert.match(fallbackSource, /listen\(track, "touchcancel",[\s\S]{0,180}scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
+  assert.match(fallbackSource, /if \(gesture\.moved\) \{[\s\S]{0,180}if \(!gesture\.vertical\) scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
+  assert.match(fallbackSource, /listen\(track, "touchcancel",[\s\S]{0,500}if \(!gesture\.vertical\) scrollToIndex\(resolveActiveIndex\(track, slides\)\)/);
   assert.match(styles, /\.item-photo img,[\s\S]{0,180}object-fit:\s*contain;/);
   assert.doesNotMatch(styles, /\.vpg-slide[^}]*object-fit:\s*cover/);
 });
@@ -2726,6 +2754,8 @@ test("CRITICAL offline-photos: inline and fullscreen edges share rubber-band wit
   assert.match(fallbackSource, /vpg-edge-rubber-band-returning/);
   assert.doesNotMatch(fallbackSource, /\[180, 420\]/);
   assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 1/);
+  assert.match(sharedSource, /controller: fallbackRuntime\?\.bindInlineGalleries\(root, options\)/);
+  assert.doesNotMatch(sharedSource, /rebindAll|binding\.controller = api\.bindInlineGalleries/);
 });
 
 test("CRITICAL offline-photos: lightbox backdrop closes without stealing side navigation clicks", () => {

@@ -1675,10 +1675,16 @@ textarea.note-search-match-active {
   white-space: nowrap;
 }
 
-.tab:hover,
 .tab:focus-visible {
   background: hsl(calc(var(--interface-hue) - 7.5deg) 29.63% 89.41% / 0.78);
   color: var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    background: hsl(calc(var(--interface-hue) - 7.5deg) 29.63% 89.41% / 0.78);
+    color: var(--accent);
+  }
 }
 
 .tab.active {

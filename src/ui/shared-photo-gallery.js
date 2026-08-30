@@ -2,7 +2,6 @@ import "../vendor/vniipo-photo-gallery-fallback.js";
 
 const CONTRACT_VERSION = 2;
 const STABLE_URL = "https://vniipo-help.ru/shared-ui/photo-gallery/stable.js";
-const bindings = new Set();
 let stableLoadStarted = false;
 
 const runtime = () => globalThis.VniipoPhotoGallery;
@@ -14,16 +13,6 @@ const updateRuntimeLabel = () => {
   document.documentElement.dataset.photoGalleryVersion = api.version || "unknown";
 };
 
-const rebindAll = () => {
-  const api = runtime();
-  if (!api || api.contractVersion !== CONTRACT_VERSION) return;
-  for (const binding of bindings) {
-    binding.controller?.destroy();
-    binding.controller = api.bindInlineGalleries(binding.root, binding.options);
-  }
-  updateRuntimeLabel();
-};
-
 export function loadSharedPhotoGallery() {
   if (stableLoadStarted || typeof document === "undefined") return;
   stableLoadStarted = true;
@@ -32,9 +21,7 @@ export function loadSharedPhotoGallery() {
   script.async = true;
   script.src = `${STABLE_URL}?contract=${CONTRACT_VERSION}&window=${bucket}`;
   script.dataset.sharedPhotoGallery = "stable";
-  script.addEventListener("load", () => {
-    if (runtime()?.contractVersion === CONTRACT_VERSION) rebindAll();
-  }, { once: true });
+  script.addEventListener("load", updateRuntimeLabel, { once: true });
   script.addEventListener("error", updateRuntimeLabel, { once: true });
   document.head.appendChild(script);
 }
@@ -43,9 +30,11 @@ export function bindSharedPhotoGalleries(root, options = {}) {
   const binding = {
     root,
     options,
-    controller: runtime()?.bindInlineGalleries(root, options)
+    // Keep the inline controller stable for the lifetime of the rendered
+    // cards. Rebinding every gallery when the remote runtime arrives causes a
+    // large mobile compositor rebuild while the user can already be panning.
+    controller: fallbackRuntime?.bindInlineGalleries(root, options)
   };
-  bindings.add(binding);
   loadSharedPhotoGallery();
   return {
     refresh() {
@@ -59,7 +48,6 @@ export function bindSharedPhotoGalleries(root, options = {}) {
     },
     destroy() {
       binding.controller?.destroy();
-      bindings.delete(binding);
     }
   };
 }
