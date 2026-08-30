@@ -7,11 +7,9 @@ function normalizePosition(position = {}) {
 
 export function createViewScrollMemory({
   readPosition = () => ({ x: 0, y: 0 }),
-  schedule = (callback) => callback(),
   writePosition = () => {}
 } = {}) {
   const positions = new Map();
-  let restoreToken = 0;
 
   const remember = (view) => {
     const key = String(view || "");
@@ -24,20 +22,14 @@ export function createViewScrollMemory({
   const restore = (view, { defaultPosition = { x: 0, y: 0 } } = {}) => {
     const key = String(view || "");
     const position = normalizePosition(positions.get(key) || defaultPosition);
-    const token = ++restoreToken;
-    schedule(() => {
-      if (token !== restoreToken) return;
-      writePosition({ ...position });
-    });
+    // The target view is already visible when restore is called. Apply its
+    // position in the same task, before Safari can begin a touch gesture or
+    // paint an intermediate document position.
+    writePosition({ ...position });
     return { ...position };
   };
 
-  const cancelPendingRestore = () => {
-    restoreToken += 1;
-  };
-
   return {
-    cancelPendingRestore,
     remember,
     restore
   };

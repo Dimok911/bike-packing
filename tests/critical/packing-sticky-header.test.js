@@ -5,6 +5,7 @@ import {
   bindBoardScroll,
   bindFixedScrollbar,
   bindStickyRootHeaderRow,
+  shouldDisableDuplicatedPackingRootHeader,
   shouldStartBoardPointerDrag
 } from "../../src/ui/packing-scroll.js";
 import {
@@ -48,6 +49,16 @@ function createStyle() {
     }
   };
 }
+
+test("CRITICAL packing sticky header: native coarse scrolling never paints the duplicated fixed header", () => {
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ coarsePointer: true }), true);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ coarsePointer: false }), false);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ mobileViewport: true }), true);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({
+    coarsePointer: true,
+    isolatedViewportScroll: true
+  }), false);
+});
 
 test("CRITICAL packing scroll: touch pointers never start desktop board dragging", () => {
   assert.equal(shouldStartBoardPointerDrag({

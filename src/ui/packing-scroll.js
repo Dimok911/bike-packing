@@ -2,6 +2,7 @@ import { classifyTouchScrollAxis } from "./horizontal-touch-scroll.js";
 
 const fixedScrollbarControllers = new WeakMap();
 const boardMomentumTakeoverControllers = new WeakMap();
+let activeStickyRootHeaderController = null;
 const BOARD_PHOTO_PASS_THROUGH_SETTLE_MS = 140;
 const LEGACY_MOMENTUM_DECAY_PER_FRAME = 0.94;
 const LEGACY_MOMENTUM_STOP_VELOCITY = 0.015;
@@ -85,14 +86,45 @@ export function bindBoardMomentumTakeover(board, {
   return controller;
 }
 
+export function shouldDisableDuplicatedPackingRootHeader({
+  coarsePointer = false,
+  isolatedViewportScroll = false,
+  mobileViewport = false
+} = {}) {
+  return Boolean((coarsePointer || mobileViewport) && !isolatedViewportScroll);
+}
+
 export function bindStickyRootHeaderRow(board, {
   ScrollTimelineCtor = globalThis.ScrollTimeline
 } = {}) {
+  activeStickyRootHeaderController?.destroy?.();
+  activeStickyRootHeaderController = null;
   const headerRow = board?.previousElementSibling?.classList?.contains("packing-root-header-row")
     ? board.previousElementSibling
     : null;
   const track = headerRow?.querySelector(".packing-root-header-track");
   if (!board || !headerRow || !track) return null;
+
+  const eventWindow = globalThis.window || globalThis;
+  const coarsePointer = Boolean(eventWindow.matchMedia?.("(hover: none), (pointer: coarse)")?.matches);
+  const mobileViewport = Boolean(eventWindow.matchMedia?.("(max-width: 560px)")?.matches);
+  const isolatedViewportScroll = Boolean(
+    globalThis.document?.documentElement?.classList?.contains?.("isolated-viewport-scroll")
+  );
+  if (shouldDisableDuplicatedPackingRootHeader({ coarsePointer, isolatedViewportScroll, mobileViewport })) {
+    headerRow.hidden = true;
+    headerRow.classList.toggle("is-visible", false);
+    const disabledController = {
+      destroy() {},
+      disabled: true,
+      syncGeometry() {},
+      syncPosition() {},
+      usesScrollTimeline: () => false
+    };
+    activeStickyRootHeaderController = disabledController;
+    return disabledController;
+  }
+  headerRow.hidden = false;
 
   let geometryFrame = null;
   let positionAnimation = null;
@@ -192,20 +224,36 @@ export function bindStickyRootHeaderRow(board, {
     requestGeometrySync();
   };
 
+  const destroy = () => {
+    if (geometryFrame !== null) eventWindow.cancelAnimationFrame?.(geometryFrame);
+    geometryFrame = null;
+    cancelPositionTimeline();
+    board.removeEventListener?.("scroll", syncPosition);
+    board.removeEventListener?.("packing-board-pinch-start", onPinchStart);
+    board.removeEventListener?.("packing-board-pinch-end", onPinchEnd);
+    eventWindow.removeEventListener?.("scroll", requestGeometrySync);
+    eventWindow.removeEventListener?.("resize", requestGeometrySync);
+    if (activeStickyRootHeaderController?.destroy === destroy) activeStickyRootHeaderController = null;
+  };
+
   board.addEventListener("scroll", syncPosition, { passive: true });
   board.addEventListener("packing-board-pinch-start", onPinchStart);
   board.addEventListener("packing-board-pinch-end", onPinchEnd);
-  window.addEventListener("scroll", requestGeometrySync, { passive: true });
-  window.addEventListener("resize", requestGeometrySync, { passive: true });
+  eventWindow.addEventListener("scroll", requestGeometrySync, { passive: true });
+  eventWindow.addEventListener("resize", requestGeometrySync, { passive: true });
   // Initialize before the browser can paint the freshly rendered header row.
   // Deferring the first visibility update by one frame makes sticky headers flash off.
   syncGeometry();
   requestAnimationFrame(syncGeometry);
-  return {
+  const controller = {
+    destroy,
+    disabled: false,
     syncGeometry: requestGeometrySync,
     syncPosition,
     usesScrollTimeline: () => usesScrollTimeline
   };
+  activeStickyRootHeaderController = controller;
+  return controller;
 }
 
 function bindPrimaryFixedScrollbar(board, {

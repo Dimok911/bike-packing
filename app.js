@@ -1101,7 +1101,6 @@ import { createStickyFilterControlsController } from "./src/ui/sticky-filter-con
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
 const viewScrollMemory = createViewScrollMemory({
   readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
-  schedule: (callback) => window.requestAnimationFrame(callback),
   writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
 });
 const locations = [];
@@ -2977,12 +2976,10 @@ async function init() {
   setupTouchActionButtonFeedback();
   bindExplicitViewportScrollIntent({
     documentRef: document,
-    onIntent: () => viewScrollMemory.cancelPendingRestore(),
     windowRef: window
   });
   window.addEventListener("pagehide", flushOpenEntityFormDrafts);
   document.addEventListener("pointerdown", (event) => {
-    viewScrollMemory.cancelPendingRestore();
     blurActiveEditableBeforeButtonAction(event, { ignoredButton: refs.saveRootContainerBtn });
   }, true);
 

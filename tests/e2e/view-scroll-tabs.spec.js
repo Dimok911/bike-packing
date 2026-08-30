@@ -81,7 +81,7 @@ test("iPhone keeps an independent vertical position for every main tab", async (
   await expectViewportScrollNear(page, settingsTop);
 });
 
-test("a fast iPhone swipe cancels a pending tab viewport restore", async ({ page }) => {
+test("a fast iPhone swipe keeps its compositor position after a tab switch", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
   await setViewportScroll(page, 900);
@@ -103,6 +103,65 @@ test("a fast iPhone swipe cancels a pending tab viewport restore", async ({ page
   await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(500);
   await page.waitForTimeout(120);
   expect(await viewportScrollTop(page)).toBeGreaterThan(500);
+});
+
+test("iPhone touchstart cannot be overwritten by a queued tab restore", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await setViewportScroll(page, 900);
+
+  const geometry = await page.evaluate(() => {
+    const queuedFrames = [];
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    };
+
+    document.querySelector('.tab[data-view="items"]').click();
+    const touchStart = new Event("touchstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(touchStart, "touches", {
+      value: [{ clientX: 180, clientY: 620 }]
+    });
+    document.dispatchEvent(touchStart);
+    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+
+    const marker = document.querySelector('#itemsView [data-e2e-scroll-spacer]');
+    const beforeFrame = marker.getBoundingClientRect().top;
+    queuedFrames.splice(0).forEach((callback) => callback(performance.now()));
+    const afterFrame = marker.getBoundingClientRect().top;
+    const scrollTop = document.scrollingElement?.scrollTop || window.scrollY || 0;
+    window.requestAnimationFrame = originalRequestAnimationFrame;
+    return { afterFrame, beforeFrame, scrollTop };
+  });
+
+  expect(Math.abs(geometry.afterFrame - geometry.beforeFrame)).toBeLessThanOrEqual(1);
+  expect(geometry.scrollTop).toBeGreaterThan(500);
+});
+
+test("iPhone document momentum has only one painted packing root header layer", async ({ page }) => {
+  await openApp(page);
+  await page.locator("#packingView").evaluate((packingView) => {
+    const fixture = document.createElement("section");
+    fixture.dataset.e2ePackingHeaderFixture = "";
+    fixture.innerHTML = `
+      <div class="packing-root-header-row is-visible">
+        <div class="packing-root-header-track">
+          <div class="packing-root-header-cell" data-sticky-root-container-id="bag-a">Сумка</div>
+        </div>
+      </div>
+      <div class="board" style="width: 360px; min-height: 1200px; overflow: auto;">
+        <article class="container-card" data-root-container-id="bag-a" style="width: 320px; min-height: 900px;">
+          <header class="container-header">Сумка</header>
+        </article>
+      </div>
+    `;
+    packingView.append(fixture);
+  });
+  await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
+  const duplicateHeader = page.locator("[data-e2e-packing-header-fixture] .packing-root-header-row");
+  await expect(duplicateHeader).toHaveCount(1);
+  await expect(duplicateHeader).toBeHidden();
 });
 
 test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ page }) => {
