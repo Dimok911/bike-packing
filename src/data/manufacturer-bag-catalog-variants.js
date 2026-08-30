@@ -148,7 +148,7 @@ function groupWeightOptions(entry, group, groups) {
   if (official) return [...official];
   const technical = positiveNumbers(entry.weightOptions);
   const volumes = [...new Set(groups.map(({ volume }) => volume))].sort((left, right) => left - right);
-  if (entry.brand === "ORTLIEB") {
+  if (entry.brand === "ORTLIEB" || entry.variantWeightsAuthoritative === true) {
     const variantWeights = positiveNumbers(group.variants.map(({ weight }) => weight));
     if (variantWeights.length) return variantWeights;
   }
@@ -213,7 +213,7 @@ function splitEntry(entry, group, groups) {
     sku: String(primaryVariant.sku || ""),
     weight: weightOptions[0] || 0,
     weightOptions,
-    variantWeightsAuthoritative: entry.brand === "ORTLIEB",
+    variantWeightsAuthoritative: entry.brand === "ORTLIEB" || entry.variantWeightsAuthoritative === true,
     volume,
     volumeOptions: [volume],
     color: String(primaryVariant.color || ""),

@@ -471,6 +471,31 @@ test("CRITICAL manufacturer catalog: true adjustable ranges are not split withou
   assert.doesNotThrow(() => assertManufacturerBagCatalogSkuModels([adjustable]));
 });
 
+test("CRITICAL manufacturer catalog: adapter-authoritative weights stay paired with their size rows", () => {
+  const rows = splitManufacturerBagCatalogSkuModels([{
+    id: "tailfin-order-contract",
+    brand: "Tailfin",
+    name: "Tailfin Order Contract",
+    volume: 9.1,
+    volumeOptions: [9.1, 12.5, 14.7],
+    weight: 733,
+    weightOptions: [733, 817, 785],
+    variantWeightsAuthoritative: true,
+    variants: [
+      { sku: "9.1L", title: "9.1 L", volume: 9.1, weight: 733, available: true },
+      { sku: "12.5L", title: "12.5 L", volume: 12.5, weight: 817, available: true },
+      { sku: "14.7L", title: "14.7 L", volume: 14.7, weight: 785, available: true }
+    ],
+    description: { en: "9.1 / 12.5 / 14.7 L", ru: "9.1 / 12.5 / 14.7 L" }
+  }]);
+  assert.deepEqual(rows.map(({ volume, weight }) => [volume, weight]), [
+    [9.1, 733],
+    [12.5, 817],
+    [14.7, 785]
+  ]);
+  assert.ok(rows.every(({ variantWeightsAuthoritative }) => variantWeightsAuthoritative));
+});
+
 test("CRITICAL manufacturer catalog: mounting systems stay in one row and preserve SKU provenance", () => {
   const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l");
   assert.deepEqual(backRoller.mountingOptions, ["Quick-Lock2.1", "Quick-Lock3.1"]);

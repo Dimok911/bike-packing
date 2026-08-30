@@ -454,6 +454,7 @@ export function buildTailfinCatalogEntry({ html = "", sourceUrl = "", checkedAt 
     available,
     variantCount: variants.length,
     availableVariantCount: variants.filter((variant) => variant.available).length,
+    variantWeightsAuthoritative: true,
     variants,
     imageAssetPath: imageAssetPaths[0],
     imageAssetPaths,
