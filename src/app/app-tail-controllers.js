@@ -111,7 +111,10 @@ import {
   clearLayoutComparisonMoveLink,
   toggleLayoutComparisonMoveLink
 } from "../ui/layout-comparison-link.js";
-import { bindPackingBoardZoom } from "../ui/packing-board-zoom.js";
+import {
+  bindPackingBoardZoom,
+  packingBoardHorizontalGeometry
+} from "../ui/packing-board-zoom.js";
 import {
   pickerListThumbnailHtml,
   syncPickerListPhotoToggle
@@ -4206,7 +4209,7 @@ function syncFixedScrollbarVisibility() {
   const bar = document.querySelector("#kanbanScrollbar");
   const board = getPackingScrollHost();
   const isPacking = !refs.packingView.classList.contains("hidden");
-  const needsScroll = board && board.scrollWidth > board.clientWidth + 1;
+  const needsScroll = board && packingBoardHorizontalGeometry(board).maxScroll > 1;
   const show = Boolean(isPacking && needsScroll);
   bar?.classList.toggle("hidden", !show);
   document.body.classList.toggle("has-fixed-kanban-scroll", show);
@@ -4217,10 +4220,10 @@ function updateFixedScrollbarThumb(board = getPackingScrollHost()) {
   const track = document.querySelector("#kanbanScrollTrack");
   const thumb = document.querySelector("#kanbanScrollThumb");
   if (!board || !track || !thumb) return;
-  const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+  const { contentWidth, maxScroll } = packingBoardHorizontalGeometry(board);
   const trackWidth = track.clientWidth;
   if (!trackWidth) return;
-  const ratio = board.scrollWidth ? board.clientWidth / board.scrollWidth : 1;
+  const ratio = contentWidth ? board.clientWidth / contentWidth : 1;
   const thumbWidth = Math.max(48, Math.min(trackWidth, trackWidth * ratio));
   const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
   const progress = maxScroll ? board.scrollLeft / maxScroll : 0;

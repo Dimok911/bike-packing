@@ -9,6 +9,7 @@ import {
 export const CATALOG_BACK_TO_TOP_THRESHOLD_PX = 360;
 const TOUCH_ACTIVATION_MOVE_LIMIT_PX = 10;
 const SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
+const MOMENTUM_TOUCH_ACTIVATION_WINDOW_MS = 260;
 
 const activeBindings = new WeakMap();
 const documentControllers = new WeakMap();
@@ -78,6 +79,7 @@ export function createCatalogBackToTopController({
   documentRef,
   layer,
   mutationObserverFactory,
+  now = () => Date.now(),
   threshold = CATALOG_BACK_TO_TOP_THRESHOLD_PX,
   windowRef
 } = {}) {
@@ -87,6 +89,8 @@ export function createCatalogBackToTopController({
   let gestureStartX = 0;
   let gestureStartY = 0;
   let gestureMoved = false;
+  let gestureActivatedOnStart = false;
+  let lastViewportScrollAt = Number.NEGATIVE_INFINITY;
   let suppressClickUntil = 0;
 
   const requestFrame = windowRef?.requestAnimationFrame?.bind(windowRef);
@@ -97,6 +101,7 @@ export function createCatalogBackToTopController({
       : null);
 
   const pageScrollY = () => viewportScrollTop({ documentRef, windowRef });
+  const currentTime = () => Number(now?.()) || 0;
   const activeRegistration = () => [...registrations.values()].find(({ anchor, root }) =>
     rootIsVisible(root)
     && anchor
@@ -146,6 +151,11 @@ export function createCatalogBackToTopController({
     if (!updateFrame) update();
   };
 
+  const onViewportScroll = () => {
+    lastViewportScrollAt = currentTime();
+    scheduleUpdate();
+  };
+
   const stopEvent = (event) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -177,11 +187,17 @@ export function createCatalogBackToTopController({
     gestureStartX = point.x;
     gestureStartY = point.y;
     gestureMoved = false;
+    gestureActivatedOnStart = false;
     stopEvent(event);
-    // Safari 27 beta may ignore a new scroll target while native momentum is
-    // still active. Re-applying the current position ends momentum without
-    // moving the viewport, so touchend can perform the requested jump.
-    interruptMomentum();
+    if (currentTime() - lastViewportScrollAt <= MOMENTUM_TOUCH_ACTIVATION_WINDOW_MS) {
+      // Safari may ignore a new target until native momentum is interrupted.
+      // Apply both writes in the same input task so WebKit paints only the
+      // final top position instead of a stopped intermediate frame.
+      interruptMomentum();
+      scrollToTop();
+      gestureActivatedOnStart = true;
+      suppressClickUntil = currentTime() + SYNTHETIC_CLICK_SUPPRESSION_MS;
+    }
   };
 
   const moveGesture = (input, event) => {
@@ -195,12 +211,13 @@ export function createCatalogBackToTopController({
 
   const finishGesture = (input, event) => {
     if (activeInput !== input) return;
-    const shouldActivate = !gestureMoved;
+    const shouldActivate = !gestureMoved && !gestureActivatedOnStart;
     activeInput = "";
     gestureMoved = false;
+    gestureActivatedOnStart = false;
     stopEvent(event);
     if (!shouldActivate) return;
-    suppressClickUntil = Date.now() + SYNTHETIC_CLICK_SUPPRESSION_MS;
+    suppressClickUntil = currentTime() + SYNTHETIC_CLICK_SUPPRESSION_MS;
     scrollToTop();
   };
 
@@ -208,10 +225,11 @@ export function createCatalogBackToTopController({
     if (activeInput !== input) return;
     activeInput = "";
     gestureMoved = false;
+    gestureActivatedOnStart = false;
   };
 
   const onClick = (event) => {
-    if (Date.now() < suppressClickUntil) {
+    if (currentTime() < suppressClickUntil) {
       stopEvent(event);
       return;
     }
@@ -235,14 +253,14 @@ export function createCatalogBackToTopController({
   button?.addEventListener?.("pointermove", onPointerMove, { passive: false });
   button?.addEventListener?.("pointerup", onPointerUp, { passive: false });
   button?.addEventListener?.("pointercancel", onPointerCancel, { passive: true });
-  windowRef?.addEventListener?.("scroll", scheduleUpdate, { passive: true });
+  windowRef?.addEventListener?.("scroll", onViewportScroll, { passive: true });
   windowRef?.addEventListener?.("resize", scheduleUpdate, { passive: true });
   const scrollHost = viewportScrollHost({ documentRef });
   if (scrollHost && scrollHost !== documentRef?.scrollingElement) {
-    scrollHost.addEventListener?.("scroll", scheduleUpdate, { passive: true });
+    scrollHost.addEventListener?.("scroll", onViewportScroll, { passive: true });
   }
   windowRef?.visualViewport?.addEventListener?.("resize", scheduleUpdate, { passive: true });
-  windowRef?.visualViewport?.addEventListener?.("scroll", scheduleUpdate, { passive: true });
+  windowRef?.visualViewport?.addEventListener?.("scroll", onViewportScroll, { passive: true });
 
   const register = (root, anchor, { label = "" } = {}) => {
     const previous = registrations.get(root);
@@ -282,13 +300,13 @@ export function createCatalogBackToTopController({
     button?.removeEventListener?.("pointermove", onPointerMove);
     button?.removeEventListener?.("pointerup", onPointerUp);
     button?.removeEventListener?.("pointercancel", onPointerCancel);
-    windowRef?.removeEventListener?.("scroll", scheduleUpdate);
+    windowRef?.removeEventListener?.("scroll", onViewportScroll);
     windowRef?.removeEventListener?.("resize", scheduleUpdate);
     if (scrollHost && scrollHost !== documentRef?.scrollingElement) {
-      scrollHost.removeEventListener?.("scroll", scheduleUpdate);
+      scrollHost.removeEventListener?.("scroll", onViewportScroll);
     }
     windowRef?.visualViewport?.removeEventListener?.("resize", scheduleUpdate);
-    windowRef?.visualViewport?.removeEventListener?.("scroll", scheduleUpdate);
+    windowRef?.visualViewport?.removeEventListener?.("scroll", onViewportScroll);
     layer?.remove?.();
   };
 

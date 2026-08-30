@@ -10,6 +10,8 @@ export const CARD_EDIT_INTERACTIVE_SELECTOR = [
   "[data-photo-open]"
 ].join(", ");
 
+export const CARD_NOTE_MATCH_SELECTOR = "[data-note-match-open]";
+
 export function shouldOpenCardEditor(event, {
   card = null,
   closestCardSelector = ""
@@ -20,6 +22,7 @@ export function shouldOpenCardEditor(event, {
   if (card.dataset?.justDragged === "true") return false;
   const target = event.target;
   if (typeof target?.closest !== "function") return false;
+  if (target.closest(CARD_NOTE_MATCH_SELECTOR)) return true;
   if (target.closest(CARD_EDIT_INTERACTIVE_SELECTOR)) return false;
   if (closestCardSelector && target.closest(closestCardSelector) !== card) return false;
   return true;

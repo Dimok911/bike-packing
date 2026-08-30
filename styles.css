@@ -1423,6 +1423,11 @@ textarea.note-search-match-active {
   box-shadow: 0 0 0 3px rgba(255, 138, 0, 0.13);
 }
 
+textarea.note-search-match-active::selection {
+  background: #ffb52e;
+  color: #241400;
+}
+
 .add-item-search-field input {
   padding-right: 42px;
   -webkit-appearance: none;
@@ -4463,6 +4468,19 @@ button.photo-gallery-slide.touch-feedback-active {
   box-shadow: 0 2px 7px rgba(123, 53, 0, 0.14);
 }
 
+button.search-note-match-badge {
+  cursor: pointer;
+  font-family: inherit;
+  pointer-events: auto;
+}
+
+button.search-note-match-badge:hover,
+button.search-note-match-badge:focus-visible {
+  border-color: #c55b00;
+  background: #ffdf83;
+  box-shadow: 0 0 0 3px rgba(255, 138, 0, 0.18), 0 3px 9px rgba(123, 53, 0, 0.16);
+}
+
 .catalog-card-title-block > .search-note-match-badge {
   margin: 4px 0 0;
 }
@@ -5395,6 +5413,10 @@ mark {
     text-overflow: ellipsis;
     white-space: nowrap;
     pointer-events: none;
+  }
+
+  .items-list.with-photo-slots .item-card:has(.item-photo) .catalog-card-title-block > button.search-note-match-badge {
+    pointer-events: auto;
   }
 
   .items-list.with-photo-slots:not(.with-meta-slots) .item-card .meta,

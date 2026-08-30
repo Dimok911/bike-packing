@@ -178,6 +178,52 @@ test("iPhone ordinary views accept a browser-routed vertical scroll gesture", as
   }
 });
 
+test("iPhone back-to-top reaches zero on touchstart while document momentum is active", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await selectViewWithoutAutoScroll(page, "items");
+  await setViewportScroll(page, 900);
+
+  const button = page.locator("[data-catalog-back-to-top]");
+  await expect(button).toBeVisible();
+  const activation = await button.evaluate((target) => {
+    const originalScrollTo = window.scrollTo;
+    const writes = [];
+    window.scrollTo = (...args) => {
+      writes.push(args[0]);
+      return originalScrollTo.apply(window, args);
+    };
+    const dispatchTouch = (type, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const point = { clientX: 24, clientY: 180 };
+      Object.defineProperty(event, "touches", { value: active ? [point] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [point] });
+      return target.dispatchEvent(event);
+    };
+
+    try {
+      window.dispatchEvent(new Event("scroll"));
+      const touchStartWasNative = dispatchTouch("touchstart", true);
+      const writesAtTouchStart = writes.map((entry) => Number(entry?.top));
+      const topAtTouchStart = document.scrollingElement?.scrollTop || window.scrollY || 0;
+      dispatchTouch("touchend", false);
+      return {
+        topAtTouchStart,
+        totalWrites: writes.length,
+        touchStartWasNative,
+        writesAtTouchStart
+      };
+    } finally {
+      window.scrollTo = originalScrollTo;
+    }
+  });
+
+  expect(activation.touchStartWasNative).toBe(false);
+  expect(activation.writesAtTouchStart).toEqual([900, 0]);
+  expect(activation.topAtTouchStart).toBe(0);
+  expect(activation.totalWrites).toBe(2);
+});
+
 test("switching iPhone tabs does not write a programmatic viewport position", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
@@ -304,6 +350,48 @@ test("iPhone isolated momentum has only one painted packing root header layer", 
   const duplicateHeader = page.locator("[data-e2e-packing-header-fixture] .packing-root-header-row");
   await expect(duplicateHeader).toHaveCount(1);
   await expect(duplicateHeader).toBeHidden();
+});
+
+test("iPhone 20% packing zoom removes the invisible horizontal tail", async ({ page }) => {
+  await openApp(page);
+
+  const geometry = await page.evaluate(async () => {
+    const packingView = document.querySelector("#packingView");
+    packingView.innerHTML = `<div class="board">${Array.from({ length: 4 }, (_, index) => (
+      `<article class="container-card" data-root-container-id="zoom-${index}" style="width: 360px"><header>Сумка ${index + 1}</header></article>`
+    )).join("")}</div>`;
+    const board = packingView.querySelector(".board");
+    const selector = ":scope > .container-card, :scope > .packing-add-root-card, :scope > .comparison-root";
+    board.dataset.packingBoardZoom = "0.2";
+    board.dataset.packingBoardBasePaddingRight = "12";
+    board.style.setProperty("--packing-board-zoom", "0.2");
+    board.style.setProperty("--packing-board-base-column-width", "360px");
+    board.style.gridAutoColumns = "72px";
+    board.style.gap = "2.4px";
+    board.classList.add("packing-board-zoom-active");
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => setTimeout(resolve, 180));
+
+    const boardRect = board.getBoundingClientRect();
+    const visualRight = Math.max(...[...board.querySelectorAll(selector)]
+      .map((target) => target.getBoundingClientRect().right));
+    const rawMaxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+    return {
+      barHidden: document.querySelector("#kanbanScrollbar").classList.contains("hidden"),
+      bodyClaimsScrollbar: document.body.classList.contains("has-fixed-kanban-scroll"),
+      clientRight: boardRect.right,
+      logicalMaxScroll: Math.max(0, visualRight - boardRect.left + 12 - board.clientWidth),
+      rawMaxScroll,
+      visualRight
+    };
+  });
+
+  expect(geometry.rawMaxScroll).toBeGreaterThan(40);
+  expect(geometry.logicalMaxScroll).toBe(0);
+  expect(geometry.visualRight).toBeLessThanOrEqual(geometry.clientRight + 1);
+  expect(geometry.barHidden).toBe(true);
+  expect(geometry.bodyClaimsScrollbar).toBe(false);
 });
 
 test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ page }) => {

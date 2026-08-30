@@ -14,8 +14,10 @@ import {
 import { renderSearchNoteMatchBadge } from "../../src/ui/search-note-match.js";
 import { highlightSearchText } from "../../src/ui/search-highlight.js";
 import {
+  centerNoteFieldInDialog,
   createNoteSearchNavigator,
-  findNoteSearchMatches
+  findNoteSearchMatches,
+  revealNoteSearchMatch
 } from "../../src/ui/note-search-navigation.js";
 
 const item = {
@@ -37,6 +39,8 @@ test("note match badge overlays the desktop photo instead of being clipped from 
   const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
   assert.match(styles, /\.items-list\.with-photo-slots \.item-card:has\(\.item-photo\) \.item-card-top \{[\s\S]*?overflow:\s*visible;/);
   assert.match(styles, /\.item-card:has\(\.item-photo\) \.catalog-card-title-block > \.search-note-match-badge \{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*calc\(var\(--photo-top-row-height\) \+ 76px\);/);
+  assert.match(styles, /textarea\.note-search-match-active::selection \{[\s\S]*?background:\s*#ffb52e;/);
+  assert.match(styles, /> button\.search-note-match-badge \{\s*pointer-events:\s*auto;/);
 });
 
 test("item search excludes fields handled by dedicated filters and placement UI", () => {
@@ -109,7 +113,45 @@ test("note match badge is visible only when the note contains the search text", 
   const t = (key) => key === "filters.noteMatch" ? "Match in note" : key;
   assert.match(renderSearchNoteMatchBadge(item, "hot meals", t), /search-note-match-badge/);
   assert.match(renderSearchNoteMatchBadge(item, "hot meals", t), />Match in note</);
+  assert.match(
+    renderSearchNoteMatchBadge(item, "hot meals", t, { editAttribute: "data-note-match-open" }),
+    /<button[^>]*data-note-match-open="item-1"[^>]*>Match in note<\/button>/
+  );
   assert.equal(renderSearchNoteMatchBadge(item, "stove", t), "");
+});
+
+test("note match reveal focuses, selects, and centers its field", () => {
+  const calls = [];
+  const field = {
+    getBoundingClientRect: () => ({ height: 120, top: 760 })
+  };
+  const dialog = {
+    clientHeight: 600,
+    getBoundingClientRect: () => ({ top: 20 }),
+    scrollHeight: 1400,
+    scrollLeft: 0,
+    _scrollTop: 40,
+    get scrollTop() {
+      return this._scrollTop;
+    },
+    set scrollTop(value) {
+      this._scrollTop = value;
+      calls.push(["scroll", value]);
+    }
+  };
+  const textarea = {
+    classList: { add: (name) => calls.push(["class", name]) },
+    closest: (selector) => selector === ".note-field" ? field : selector === "dialog" ? dialog : null,
+    focus: (options) => calls.push(["focus", options]),
+    ownerDocument: {},
+    setSelectionRange: (start, end) => calls.push(["selection", start, end])
+  };
+
+  assert.equal(revealNoteSearchMatch({ textarea, start: 4, end: 10, scrollField: true }), true);
+  assert.deepEqual(calls[0], ["focus", { preventScroll: true }]);
+  assert.deepEqual(calls[1], ["selection", 4, 10]);
+  assert.deepEqual(calls.at(-1), ["scroll", 540]);
+  assert.equal(centerNoteFieldInDialog(null), false);
 });
 
 test("matching root and nested bags participate in packing search navigation", () => {

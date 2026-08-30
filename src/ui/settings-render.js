@@ -154,7 +154,7 @@ export function renderRootContainerCardHtml({
     },
     metaHtml: renderCatalogPills(metaTags, { hidden: !showLabels }),
     statusHtml: placementText,
-    badgeHtml: renderSearchNoteMatchBadge(container, searchQuery, t),
+    badgeHtml: renderSearchNoteMatchBadge(container, searchQuery, t, { editAttribute: "data-note-match-open" }),
     photoHtml,
     actionsHtml: `
       <button class="copy-item-button" data-copy-root="${container.id}" aria-label="${tr(t, "buttons.copy", "Скопировать")}" title="${tr(t, "buttons.copy", "Скопировать")}">

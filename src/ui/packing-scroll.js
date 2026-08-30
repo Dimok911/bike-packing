@@ -1,4 +1,5 @@
 import { classifyTouchScrollAxis } from "./horizontal-touch-scroll.js";
+import { packingBoardHorizontalGeometry } from "./packing-board-zoom.js";
 
 const fixedScrollbarControllers = new WeakMap();
 const boardMomentumTakeoverControllers = new WeakMap();
@@ -147,7 +148,7 @@ export function bindStickyRootHeaderRow(board, {
   const syncPositionTimeline = () => {
     if (pinchActive) return false;
     if (typeof ScrollTimelineCtor !== "function" || typeof track.animate !== "function") return false;
-    const maxScroll = Math.max(0, Number(board.scrollWidth) - Number(board.clientWidth));
+    const maxScroll = packingBoardHorizontalGeometry(board).maxScroll;
     if (usesScrollTimeline && animatedMaxScroll === maxScroll) return true;
     try {
       cancelPositionTimeline();
@@ -185,7 +186,7 @@ export function bindStickyRootHeaderRow(board, {
     headerRow.classList.toggle("is-visible", visible);
     headerRow.style.setProperty("--packing-root-header-left", `${Math.max(0, rect.left)}px`);
     headerRow.style.setProperty("--packing-root-header-width", `${Math.max(0, rect.width)}px`);
-    track.style.width = `${board.scrollWidth}px`;
+    track.style.width = `${packingBoardHorizontalGeometry(board).contentWidth}px`;
     syncPositionTimeline();
     syncPosition();
     const cardById = new Map([...board.querySelectorAll("[data-root-container-id]")]
@@ -286,9 +287,9 @@ function bindPrimaryFixedScrollbar(board, {
     : null;
 
   const getGeometry = () => {
-    const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+    const { contentWidth, maxScroll } = packingBoardHorizontalGeometry(board);
     const trackWidth = track.clientWidth;
-    const ratio = board.scrollWidth ? board.clientWidth / board.scrollWidth : 1;
+    const ratio = contentWidth ? board.clientWidth / contentWidth : 1;
     const thumbWidth = Math.max(48, Math.min(trackWidth, trackWidth * ratio));
     const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
     return { maxScroll, trackWidth, thumbWidth, maxThumbLeft };
@@ -636,14 +637,14 @@ export function bindFixedScrollbar(board, {
   let momentumFrame = null;
 
   const clampScrollLeft = (value) => {
-    const max = Math.max(0, board.scrollWidth - board.clientWidth);
+    const max = packingBoardHorizontalGeometry(board).maxScroll;
     return Math.max(0, Math.min(max, value));
   };
 
   const getGeometry = () => {
-    const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+    const { contentWidth, maxScroll } = packingBoardHorizontalGeometry(board);
     const trackWidth = track.clientWidth;
-    const ratio = board.scrollWidth ? board.clientWidth / board.scrollWidth : 1;
+    const ratio = contentWidth ? board.clientWidth / contentWidth : 1;
     const thumbWidth = Math.max(48, Math.min(trackWidth, trackWidth * ratio));
     const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
     return { maxScroll, trackWidth, thumbWidth, maxThumbLeft };
@@ -716,7 +717,7 @@ export function bindFixedScrollbar(board, {
       const elapsed = Math.min(32, Math.max(1, time - previousTime));
       previousTime = time;
       const nextLeft = clampScrollLeft(board.scrollLeft + velocity * elapsed);
-      const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+      const maxScroll = packingBoardHorizontalGeometry(board).maxScroll;
       const hitEdge = nextLeft === 0 || nextLeft >= maxScroll;
       board.scrollLeft = nextLeft;
       requestThumbUpdate();

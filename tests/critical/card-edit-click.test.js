@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   CARD_EDIT_INTERACTIVE_SELECTOR,
+  CARD_NOTE_MATCH_SELECTOR,
   shouldOpenCardEditor
 } from "../../src/ui/card-edit-click.js";
 import {
@@ -35,6 +36,7 @@ function clickEvent({
   button = 0,
   card,
   closestInteractive = null,
+  closestNoteMatch = null,
   closestCard = card,
   defaultPrevented = false,
   ...modifiers
@@ -44,6 +46,7 @@ function clickEvent({
     defaultPrevented,
     target: {
       closest(selector) {
+        if (selector === CARD_NOTE_MATCH_SELECTOR) return closestNoteMatch;
         if (selector === CARD_EDIT_INTERACTIVE_SELECTOR) return closestInteractive;
         return closestCard;
       }
@@ -67,6 +70,18 @@ test("CRITICAL card editing: action buttons and photo controls keep their own cl
     card,
     closestCardSelector: ".editable-card"
   }), false);
+});
+
+test("CRITICAL card editing: the note-match button opens the editor above a photo", () => {
+  const card = { dataset: {} };
+  assert.equal(shouldOpenCardEditor(clickEvent({
+    card,
+    closestInteractive: {},
+    closestNoteMatch: {}
+  }), {
+    card,
+    closestCardSelector: ".editable-card"
+  }), true);
 });
 
 test("CRITICAL card editing: nested cards, drag completion, and catalog modifiers do not open another editor", () => {

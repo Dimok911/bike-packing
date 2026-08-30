@@ -110,15 +110,38 @@ test("search opens an item at the matching note text and navigates repeated matc
   expect(badgePlacement.badgeBottom).toBeLessThanOrEqual(badgePlacement.cardBottom);
   expect(badgePlacement.badgeTop).toBeGreaterThanOrEqual(badgePlacement.photoTop);
   expect(badgePlacement.badgeTop).toBeLessThan(badgePlacement.photoBottom);
-  await result.locator(".item-title").click();
+  await result.locator(".search-note-match-badge").click();
 
   const navigation = page.locator("#itemNoteSearchNav");
   const textarea = page.locator("#itemNote");
+  await expect(page.locator("#itemDialog")).toBeVisible();
   await expect(navigation).toBeVisible();
+  await expect(textarea).toBeFocused();
   await expect(page.locator("#itemNoteSearchStatus")).toHaveText("Совпадение 1 из 3");
   await expect(page.locator("#itemNoteSearchQuery")).toHaveText(query);
   await expect(textarea).toHaveJSProperty("selectionStart", note.indexOf(query));
   await expect(textarea).toHaveJSProperty("selectionEnd", note.indexOf(query) + query.length);
+  const centeredNote = await textarea.evaluate((element) => {
+    const fieldRect = element.closest(".note-field").getBoundingClientRect();
+    const dialog = element.closest("dialog");
+    const dialogCard = element.closest(".dialog-card");
+    const dialogRect = dialog.getBoundingClientRect();
+    const fieldCenter = (fieldRect.top + fieldRect.bottom) / 2;
+    const dialogCenter = (dialogRect.top + dialogRect.bottom) / 2;
+    return {
+      cardClientHeight: dialogCard.clientHeight,
+      cardScrollHeight: dialogCard.scrollHeight,
+      cardScrollTop: dialogCard.scrollTop,
+      centerDelta: Math.abs(fieldCenter - dialogCenter),
+      dialogClientHeight: dialog.clientHeight,
+      dialogHeight: dialogRect.height,
+      dialogScrollHeight: dialog.scrollHeight,
+      dialogScrollTop: dialog.scrollTop,
+      fieldBottom: fieldRect.bottom,
+      fieldTop: fieldRect.top
+    };
+  });
+  expect(centeredNote.centerDelta, JSON.stringify(centeredNote)).toBeLessThan(centeredNote.dialogHeight * 0.25);
 
   await page.locator("#itemNoteSearchNext").click();
   const secondStart = note.indexOf(query, query.length);
