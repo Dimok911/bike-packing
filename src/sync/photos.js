@@ -482,9 +482,9 @@ export function isPhotoStoredForList(photo, listId) {
   return Boolean(photo?.listId && String(photo.listId) === normalizedListId);
 }
 
-export function bikePackingPhotoAssetUrl(listId, photoId, variant) {
+export function bikePackingPhotoAssetUrl(listId, photoId, variant, apiBase = API_BASE) {
   if (!listId || !photoId) return "";
-  return `${API_BASE}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoId)}/${variant}`;
+  return `${apiBase}/bike-packing/lists/${encodeURIComponent(listId)}/photos/${encodeURIComponent(photoId)}/${variant}`;
 }
 
 export function photoCopyApiPath({ uploadPath = "", listId = "" } = {}) {

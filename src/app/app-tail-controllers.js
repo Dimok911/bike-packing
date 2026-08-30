@@ -3715,6 +3715,7 @@ function restorePendingPackingScroll(board) {
   scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
   restoreBike3dDetailViewport(refs.packingView, bike3dDetail);
   requestAnimationFrame(() => {
+    if (refs.packingView.classList.contains("hidden")) return;
     board.scrollLeft = boardLeft;
     scrollViewportTo({ left: windowX, top: windowY, behavior: "auto" });
     restoreBike3dDetailViewport(refs.packingView, bike3dDetail);

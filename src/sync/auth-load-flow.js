@@ -1,5 +1,6 @@
 import { currentDocumentLanguage } from "../utils/language.js";
 import { normalizeAuthAuthorization } from "../auth/permissions.js";
+import { ensureExperimentSharedAuthSession } from "./experiment-shared-auth.js";
 
 function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
@@ -58,6 +59,10 @@ export async function checkAuthAndLoadFlow({ runtime, dependencies }, { syncDirt
     setLayoutLoadStatus("loading", () => localText("Checking sign-in and personal layouts...", "Проверяем вход и личные укладки..."));
     updateSyncUi(localText("Checking sign-in...", "Проверяем вход..."));
     authData = await apiFetch("/auth/me");
+    if (!authData?.user && !authData?.me && !authData?.account) {
+      const shared = await ensureExperimentSharedAuthSession();
+      if (shared.handled) authData = await apiFetch("/auth/me");
+    }
   } catch (error) {
     runtime.currentUser = null;
     if (isAuthCheckUnavailableError(error, isNetworkError)) {

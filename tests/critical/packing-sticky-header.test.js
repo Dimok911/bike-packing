@@ -5,6 +5,7 @@ import {
   bindBoardScroll,
   bindFixedScrollbar,
   bindStickyRootHeaderRow,
+  shouldDisableDuplicatedPackingRootHeader,
   shouldStartBoardPointerDrag
 } from "../../src/ui/packing-scroll.js";
 import {
@@ -48,6 +49,16 @@ function createStyle() {
     }
   };
 }
+
+test("CRITICAL packing sticky header: native coarse scrolling never paints the duplicated fixed header", () => {
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ coarsePointer: true }), true);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ coarsePointer: false }), false);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({ mobileViewport: true }), true);
+  assert.equal(shouldDisableDuplicatedPackingRootHeader({
+    coarsePointer: true,
+    isolatedViewportScroll: true
+  }), false);
+});
 
 test("CRITICAL packing scroll: touch pointers never start desktop board dragging", () => {
   assert.equal(shouldStartBoardPointerDrag({
@@ -139,6 +150,8 @@ test("CRITICAL packing sticky header: visibility is restored before the first an
     window: globalThis.window
   };
   const frames = [];
+  const boardEvents = createEventTarget();
+  const windowEvents = createEventTarget();
   const headerClasses = new Set(["packing-root-header-row"]);
   const boardClasses = new Set();
   let boardRect = { bottom: 700, left: 12, top: 20, width: 360 };
@@ -175,7 +188,7 @@ test("CRITICAL packing sticky header: visibility is restored before the first an
     style: createStyle()
   };
   const board = {
-    addEventListener() {},
+    ...boardEvents,
     classList: {
       contains: (name) => boardClasses.has(name)
     },
@@ -197,7 +210,8 @@ test("CRITICAL packing sticky header: visibility is restored before the first an
       return frames.length;
     };
     globalThis.window = {
-      addEventListener() {},
+      ...windowEvents,
+      cancelAnimationFrame() {},
       clearTimeout() {},
       requestAnimationFrame: globalThis.requestAnimationFrame,
       setTimeout() {}
@@ -220,6 +234,8 @@ test("CRITICAL packing sticky header: visibility is restored before the first an
     assert.equal(animationCall.keyframes[1].transform, "translate3d(-360px, 0, 0)");
     assert.equal(animationCall.options.timeline instanceof FakeScrollTimeline, true);
     assert.equal(frames.length, 1);
+    assert.equal(board.listenerCount("scroll"), 1);
+    assert.equal(windowEvents.listenerCount("scroll"), 1);
 
     frames.shift()();
     boardClasses.add("packing-board-page-panning");
@@ -232,6 +248,13 @@ test("CRITICAL packing sticky header: visibility is restored before the first an
     controller.syncGeometry();
     frames.shift()();
     assert.equal(headerClasses.has("is-visible"), false);
+
+    const replacementController = bindStickyRootHeaderRow(board, { ScrollTimelineCtor: FakeScrollTimeline });
+    assert.equal(board.listenerCount("scroll"), 1, "rerender must replace the board listener");
+    assert.equal(windowEvents.listenerCount("scroll"), 1, "rerender must replace the window listener");
+    replacementController.destroy();
+    assert.equal(board.listenerCount("scroll"), 0);
+    assert.equal(windowEvents.listenerCount("scroll"), 0);
   } finally {
     for (const [name, value] of Object.entries(originalGlobals)) {
       if (value === undefined) delete globalThis[name];

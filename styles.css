@@ -490,6 +490,7 @@ button.button-loading::before {
   width: min(var(--app-max), calc(100% - var(--page-gutter) - var(--page-gutter)));
   margin: 0 auto;
   padding: 18px;
+  overflow-anchor: none;
 }
 
 .experiment-banner {
@@ -2030,6 +2031,12 @@ button.ghost.context-toggle.active:focus-visible {
 
 .packing-root-header-row.is-visible {
   display: block;
+}
+
+@media (max-width: 560px), (hover: none), (pointer: coarse) {
+  html:not(.isolated-viewport-scroll) .packing-root-header-row {
+    display: none !important;
+  }
 }
 
 .packing-root-header-track {
