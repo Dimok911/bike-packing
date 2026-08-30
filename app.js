@@ -1091,11 +1091,11 @@ import {
   normalizeInterfaceColorTheme
 } from "./src/ui/interface-color-theme.js";
 import {
-  enableIsolatedViewportScrollHost,
   scrollViewportTo,
   viewportScrollLeft,
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
+import { syncMainViewScrollHost } from "./src/ui/main-view-scroll-host.js";
 import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
@@ -2958,7 +2958,7 @@ function applyStaticTranslations() {
 }
 
 async function init() {
-  enableIsolatedViewportScrollHost({
+  syncMainViewScrollHost(getCurrentView(), {
     documentRef: document,
     navigatorRef: navigator,
     windowRef: window
@@ -10415,6 +10415,13 @@ function switchView(view) {
   refs.itemsView.classList.toggle("hidden", view !== "items");
   refs.bagsView.classList.toggle("hidden", view !== "bags");
   refs.settingsView.classList.toggle("hidden", view !== "settings");
+  if (viewChanged) {
+    syncMainViewScrollHost(view, {
+      documentRef: document,
+      navigatorRef: navigator,
+      windowRef: window
+    });
+  }
   renderSummary();
   updateViewScopedControls(view);
   updateFilterNavigationUi();

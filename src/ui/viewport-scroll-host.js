@@ -80,6 +80,7 @@ export function enableIsolatedViewportScrollHost({
   documentRef = document,
   force = false,
   navigatorRef = navigator,
+  transferPosition = true,
   windowRef = window
 } = {}) {
   const app = documentRef?.querySelector?.(".app");
@@ -100,13 +101,20 @@ export function enableIsolatedViewportScrollHost({
   documentRef.documentElement?.classList?.add?.(VIEWPORT_SCROLL_HOST_CLASS);
   documentRef.body?.classList?.add?.(VIEWPORT_SCROLL_HOST_CLASS);
 
-  if (initialX || initialY) {
+  if (transferPosition && (initialX || initialY)) {
     if (typeof app.scrollTo === "function") {
       app.scrollTo({ left: initialX, top: initialY, behavior: "auto" });
     } else {
       app.scrollLeft = initialX;
       app.scrollTop = initialY;
     }
+    if (documentRef.scrollingElement && documentRef.scrollingElement !== app) {
+      documentRef.scrollingElement.scrollLeft = 0;
+      documentRef.scrollingElement.scrollTop = 0;
+    }
+  } else if (!transferPosition) {
+    app.scrollLeft = 0;
+    app.scrollTop = 0;
     if (documentRef.scrollingElement && documentRef.scrollingElement !== app) {
       documentRef.scrollingElement.scrollLeft = 0;
       documentRef.scrollingElement.scrollTop = 0;
@@ -124,6 +132,7 @@ export function enableIsolatedViewportScrollHost({
 
 export function disableIsolatedViewportScrollHost({
   documentRef = document,
+  transferPosition = true,
   windowRef = window
 } = {}) {
   const app = documentRef?.querySelector?.(`[${VIEWPORT_SCROLL_HOST_ATTRIBUTE}]`);
@@ -139,6 +148,8 @@ export function disableIsolatedViewportScrollHost({
   app.removeAttribute?.(VIEWPORT_SCROLL_HOST_NO_BANNER_ATTRIBUTE);
   documentRef.documentElement?.classList?.remove?.(VIEWPORT_SCROLL_HOST_CLASS);
   documentRef.body?.classList?.remove?.(VIEWPORT_SCROLL_HOST_CLASS);
-  windowRef?.scrollTo?.({ left: position.x, top: position.y, behavior: "auto" });
+  if (transferPosition) {
+    windowRef?.scrollTo?.({ left: position.x, top: position.y, behavior: "auto" });
+  }
   return true;
 }

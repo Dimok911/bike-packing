@@ -109,7 +109,7 @@ test("iPhone keeps the first fast scroll gesture native after a tab tap", async 
   expect(gesture.scrollTop).toBeGreaterThan(500);
 });
 
-test("iPhone keeps repeated native scroll advances in items, bags and settings", async ({ page }) => {
+test("iPhone keeps packing isolated and ordinary views on document momentum", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
   await expect(page.locator("html")).toHaveClass(/isolated-viewport-scroll/);
@@ -117,6 +117,8 @@ test("iPhone keeps repeated native scroll advances in items, bags and settings",
 
   for (const view of ["items", "bags", "settings"]) {
     await selectViewWithoutAutoScroll(page, view);
+    await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
+    await expect(page.locator(".app[data-viewport-scroll-host]")).toHaveCount(0);
     await setViewportScroll(page, 0);
     let previousTop = 0;
     for (let index = 0; index < 3; index += 1) {
@@ -130,6 +132,49 @@ test("iPhone keeps repeated native scroll advances in items, bags and settings",
       expect(await viewportScrollTop(page)).toBeGreaterThan(previousTop - 8);
     }
     expect(previousTop).toBeGreaterThan(240);
+  }
+});
+
+test("iPhone ordinary views accept a browser-routed vertical scroll gesture", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+
+  for (const view of ["items", "bags", "settings"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    await setViewportScroll(page, 0);
+    const geometry = await page.evaluate(() => ({
+      appIsHost: document.querySelector(".app")?.hasAttribute("data-viewport-scroll-host"),
+      clientHeight: document.scrollingElement?.clientHeight || 0,
+      overflowY: getComputedStyle(document.documentElement).overflowY,
+      scrollHeight: document.scrollingElement?.scrollHeight || 0
+    }));
+    expect(geometry.appIsHost).toBe(false);
+    expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight + 1000);
+    expect(geometry.overflowY).not.toBe("hidden");
+
+    const viewBox = await page.locator(`#${view}View`).boundingBox();
+    expect(viewBox).not.toBeNull();
+    await page.evaluate(() => {
+      window.__e2eDocumentScrollSamples = [];
+      let remainingFrames = 90;
+      const captureFrame = () => {
+        window.__e2eDocumentScrollSamples.push(
+          document.scrollingElement?.scrollTop || window.scrollY || 0
+        );
+        remainingFrames -= 1;
+        if (remainingFrames > 0) requestAnimationFrame(captureFrame);
+      };
+      requestAnimationFrame(captureFrame);
+    });
+    await page.mouse.move(viewBox.x + Math.min(80, viewBox.width / 2), Math.min(700, viewBox.y + 300));
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(120);
+    await page.waitForTimeout(120);
+    const samples = await page.evaluate(() => window.__e2eDocumentScrollSamples || []);
+    expect(samples.length).toBeGreaterThan(0);
+    for (let index = 1; index < samples.length; index += 1) {
+      expect(samples[index]).toBeGreaterThanOrEqual(samples[index - 1] - 2);
+    }
   }
 });
 
