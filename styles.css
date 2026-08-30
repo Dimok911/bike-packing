@@ -2035,7 +2035,7 @@ button.ghost.context-toggle.active:focus-visible {
 }
 
 @media (max-width: 560px), (hover: none), (pointer: coarse) {
-  html:not(.isolated-viewport-scroll) .packing-root-header-row {
+  .packing-root-header-row {
     display: none !important;
   }
 }

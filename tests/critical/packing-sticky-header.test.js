@@ -57,7 +57,7 @@ test("CRITICAL packing sticky header: native coarse scrolling never paints the d
   assert.equal(shouldDisableDuplicatedPackingRootHeader({
     coarsePointer: true,
     isolatedViewportScroll: true
-  }), false);
+  }), true);
 });
 
 test("CRITICAL packing scroll: touch pointers never start desktop board dragging", () => {

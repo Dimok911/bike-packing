@@ -12,11 +12,17 @@ async function selectViewWithoutAutoScroll(page, view) {
 }
 
 async function viewportScrollTop(page) {
-  return page.evaluate(() => document.scrollingElement?.scrollTop || window.scrollY || 0);
+  return page.evaluate(() => {
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    return host?.scrollTop || document.scrollingElement?.scrollTop || window.scrollY || 0;
+  });
 }
 
 async function setViewportScroll(page, top) {
-  await page.evaluate((nextTop) => window.scrollTo({ top: nextTop, left: 0, behavior: "auto" }), top);
+  await page.evaluate((nextTop) => {
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: nextTop, left: 0, behavior: "auto" });
+  }, top);
   await expectViewportScrollNear(page, top);
   return viewportScrollTop(page);
 }
@@ -84,7 +90,8 @@ test("iPhone keeps the first fast scroll gesture native after a tab tap", async 
 
     dispatchTouch("touchstart", 620, true);
     dispatchTouch("touchmove", 410, true);
-    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: 620, left: 0, behavior: "auto" });
     const beforeEnd = marker.getBoundingClientRect().top;
     const nativeEnd = dispatchTouch("touchend", 410, false);
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -93,7 +100,7 @@ test("iPhone keeps the first fast scroll gesture native after a tab tap", async 
       afterFrame,
       beforeEnd,
       nativeEnd,
-      scrollTop: document.scrollingElement?.scrollTop || window.scrollY || 0
+      scrollTop: host?.scrollTop || document.scrollingElement?.scrollTop || window.scrollY || 0
     };
   });
 
@@ -105,15 +112,18 @@ test("iPhone keeps the first fast scroll gesture native after a tab tap", async 
 test("iPhone keeps repeated native scroll advances in items, bags and settings", async ({ page }) => {
   await openApp(page);
   await addScrollableViewFixtures(page);
-  await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
-  await expect(page.locator(".app[data-viewport-scroll-host]")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveClass(/isolated-viewport-scroll/);
+  await expect(page.locator(".app[data-viewport-scroll-host]")).toHaveCount(1);
 
   for (const view of ["items", "bags", "settings"]) {
     await selectViewWithoutAutoScroll(page, view);
     await setViewportScroll(page, 0);
     let previousTop = 0;
     for (let index = 0; index < 3; index += 1) {
-      await page.evaluate(() => window.scrollBy({ top: 420, left: 0, behavior: "auto" }));
+      await page.evaluate(() => {
+        const host = document.querySelector(".app[data-viewport-scroll-host]");
+        (host || window).scrollBy({ top: 420, left: 0, behavior: "auto" });
+      });
       await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(previousTop + 80);
       previousTop = await viewportScrollTop(page);
       await page.waitForTimeout(120);
@@ -130,10 +140,14 @@ test("switching iPhone tabs does not write a programmatic viewport position", as
 
   const calls = await page.evaluate(() => {
     const originalScrollTo = window.scrollTo;
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    const originalHostScrollTo = host?.scrollTo;
     const writes = [];
     window.scrollTo = (...args) => writes.push(args);
+    if (host) host.scrollTo = (...args) => writes.push(args);
     document.querySelector('.tab[data-view="items"]').click();
     window.scrollTo = originalScrollTo;
+    if (host) host.scrollTo = originalHostScrollTo;
     return writes;
   });
 
@@ -156,7 +170,8 @@ test("a fast iPhone swipe keeps its compositor position after a tab switch", asy
     };
     dispatchTouch("touchstart", 620);
     dispatchTouch("touchmove", 470);
-    window.scrollTo({ top: 620, left: 0, behavior: "auto" });
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: 620, left: 0, behavior: "auto" });
   });
 
   await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(500);
@@ -168,9 +183,22 @@ test("one iPhone tap switches the main view without a hover-only intermediate st
   await openApp(page);
   const itemsTab = page.locator('.tab[data-view="items"]');
 
-  await itemsTab.tap();
+  const touchEndWasNative = await itemsTab.evaluate((tab) => {
+    const dispatchTouch = (type, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const point = { clientX: 120, clientY: 120 };
+      Object.defineProperty(event, "touches", { value: active ? [point] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [point] });
+      return tab.dispatchEvent(event);
+    };
+    tab.focus();
+    dispatchTouch("touchstart", true);
+    return dispatchTouch("touchend", false);
+  });
 
+  expect(touchEndWasNative).toBe(false);
   await expect(itemsTab).toHaveClass(/active/);
+  await expect(itemsTab).not.toBeFocused();
   await expect(page.locator("#itemsView")).toBeVisible();
   await expect(page.locator("#packingView")).toBeHidden();
 });
@@ -208,7 +236,7 @@ test("vertical iPhone gestures over a catalog photo never recenter its horizonta
   expect(gesture.horizontalWrites).toEqual([]);
 });
 
-test("iPhone document momentum has only one painted packing root header layer", async ({ page }) => {
+test("iPhone isolated momentum has only one painted packing root header layer", async ({ page }) => {
   await openApp(page);
   await page.locator("#packingView").evaluate((packingView) => {
     const fixture = document.createElement("section");
@@ -227,7 +255,7 @@ test("iPhone document momentum has only one painted packing root header layer", 
     `;
     packingView.append(fixture);
   });
-  await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
+  await expect(page.locator("html")).toHaveClass(/isolated-viewport-scroll/);
   const duplicateHeader = page.locator("[data-e2e-packing-header-fixture] .packing-root-header-row");
   await expect(duplicateHeader).toHaveCount(1);
   await expect(duplicateHeader).toBeHidden();
