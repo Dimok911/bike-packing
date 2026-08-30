@@ -10087,14 +10087,23 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
     position: sticky;
     top: var(--sticky-banner-offset, 0px);
     z-index: 57;
-    background: rgba(248, 247, 243, 0.94);
-    backdrop-filter: blur(8px);
+    background: #f8f7f3;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     border-bottom: 1px solid hsl(var(--interface-hue) 56.34% 27.84% / 0.08);
     padding-bottom: 6px;
   }
 
   body.filter-sticky-controls .tabs-row {
     top: calc(var(--sticky-banner-offset, 0px) + var(--sticky-controls-height, 0px));
+  }
+
+  .controls,
+  body.filter-sticky-controls .controls,
+  .catalog-toolbar-sticky {
+    background: #f6f4ee;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .root-container-row {

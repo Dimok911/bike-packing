@@ -7,6 +7,7 @@ import {
   scrollElementBelowStickyHeader,
   stickyHeaderOffsetForTarget
 } from "../../src/ui/sticky-scroll.js";
+import { shouldUseCompactStickyControls } from "../../src/ui/sticky-filter-controls.js";
 
 function fixture({ bannerHeight = 60, packing = false, packingHeaderVisible = true } = {}) {
   const toolbar = {
@@ -177,6 +178,30 @@ test("tab row keeps horizontal scrolling without a native vertical scrollbar", (
   assert.match(
     styles,
     /\.tabs\s*\{[\s\S]*?overflow-x:\s*auto;[\s\S]*?overflow-y:\s*hidden;/
+  );
+});
+
+test("mobile sticky filter height no longer changes at a scroll threshold", () => {
+  assert.equal(shouldUseCompactStickyControls({ sticky: true, mobile: true, searchEditing: false }), true);
+  assert.equal(shouldUseCompactStickyControls({ sticky: true, mobile: true, searchEditing: true }), false);
+  assert.equal(shouldUseCompactStickyControls({ sticky: true, mobile: false, searchEditing: false }), false);
+
+  const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
+  const scrollBinding = appSource.slice(
+    appSource.indexOf('window.addEventListener("scroll"'),
+    appSource.indexOf('document.querySelector("#exportBtn")', appSource.indexOf('window.addEventListener("scroll"'))
+  );
+  assert.doesNotMatch(scrollBinding, /updateCompactStickyControls|updateStickyControlsHeight/);
+});
+
+test("mobile sticky layers avoid Safari backdrop compositing during scroll", () => {
+  const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+  const mobileStyles = styles.slice(styles.lastIndexOf("@media (max-width: 520px)"));
+
+  assert.match(mobileStyles, /\.tabs-row\s*\{[^}]*background:\s*#f8f7f3;[^}]*backdrop-filter:\s*none;/s);
+  assert.match(
+    mobileStyles,
+    /\.controls,\s*body\.filter-sticky-controls \.controls,\s*\.catalog-toolbar-sticky\s*\{[^}]*background:\s*#f6f4ee;[^}]*backdrop-filter:\s*none;/s
   );
 });
 

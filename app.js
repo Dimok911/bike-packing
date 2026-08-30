@@ -1096,6 +1096,7 @@ import {
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
 import { createViewScrollMemory } from "./src/ui/view-scroll-memory.js";
+import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
 const viewScrollMemory = createViewScrollMemory({
@@ -1370,6 +1371,14 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const stickyFilterControlsController = createStickyFilterControlsController({
+  documentRef: document,
+  isSearchEditing: () => isSearchInputEditing(),
+  refs,
+  shouldKeepStable: () => shouldKeepScopedControlsStable(),
+  shouldUseSticky: () => shouldUseStickyFilterControls(),
+  windowRef: window
+});
 const desktopInputLayoutController = createDesktopInputLayoutController({
   documentRef: document,
   getLanguage: () => uiLanguage,
@@ -3368,7 +3377,6 @@ async function init() {
     syncHistoryActionButtonTooltips(refs.historyDetailDialog);
   }, { passive: true });
   window.addEventListener("scroll", () => {
-    updateCompactStickyControls();
     scheduleFilterNavigationRefresh();
   }, { passive: true });
   document.querySelector("#exportBtn")?.addEventListener("click", exportData);
@@ -10513,48 +10521,11 @@ function shouldKeepScopedControlsStable() {
 }
 
 function updateStickyControlsHeight() {
-  const experimentBanner = document.querySelector(".experiment-banner");
-  const bannerHeight = experimentBanner
-    && experimentBanner.offsetParent !== null
-    && window.getComputedStyle(experimentBanner).position === "sticky"
-    ? Math.ceil(experimentBanner.getBoundingClientRect().height)
-    : 0;
-  const bannerOffset = bannerHeight
-    ? Math.max(bannerHeight, Math.ceil(experimentBanner.getBoundingClientRect().bottom))
-    : 0;
-  const controlsHeight = shouldUseStickyFilterControls() && refs.controls && !refs.controls.hidden
-    ? Math.ceil(refs.controls.getBoundingClientRect().height)
-    : 0;
-  const tabsRow = document.querySelector(".tabs-row");
-  const tabsHeight = tabsRow && tabsRow.offsetParent !== null
-    ? Math.ceil(tabsRow.getBoundingClientRect().height)
-    : 0;
-  document.documentElement.style.setProperty("--sticky-banner-height", `${bannerHeight}px`);
-  document.documentElement.style.setProperty("--sticky-banner-offset", `${bannerOffset}px`);
-  document.documentElement.style.setProperty("--sticky-controls-height", `${controlsHeight}px`);
-  document.documentElement.style.setProperty("--sticky-tabs-height", `${tabsHeight}px`);
+  stickyFilterControlsController.updateHeights();
 }
 
 function updateCompactStickyControls() {
-  const searchEditing = shouldKeepScopedControlsStable() && isSearchInputEditing();
-  const sticky = shouldUseStickyFilterControls();
-  const experimentBanner = document.querySelector(".experiment-banner");
-  const stickyTop = experimentBanner
-    && experimentBanner.offsetParent !== null
-    && window.getComputedStyle(experimentBanner).position === "sticky"
-    ? experimentBanner.getBoundingClientRect().bottom
-    : 0;
-  const compact = sticky
-    && refs.controls
-    && !refs.controls.hidden
-    && !searchEditing
-    && shouldKeepScopedControlsStable()
-    && viewportScrollTop() > 0
-    && refs.controls.getBoundingClientRect().top <= stickyTop + 1;
-  document.body.classList.toggle("filter-sticky-controls", Boolean(sticky));
-  document.body.classList.toggle("compact-sticky-controls", Boolean(compact));
-  document.body.classList.toggle("search-input-focused", Boolean(searchEditing));
-  updateStickyControlsHeight();
+  stickyFilterControlsController.update();
 }
 
 function shouldUseStickyFilterControls() {

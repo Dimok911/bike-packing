@@ -104,3 +104,37 @@ test("a fast iPhone swipe cancels a pending tab viewport restore", async ({ page
   await page.waitForTimeout(120);
   expect(await viewportScrollTop(page)).toBeGreaterThan(500);
 });
+
+test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ page }) => {
+  await openApp(page);
+  await page.locator("#searchInput").evaluate((input) => {
+    input.value = "а";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    input.blur();
+  });
+  await page.waitForTimeout(700);
+  await addScrollableViewFixtures(page);
+
+  const stickySnapshot = () => page.evaluate(() => {
+    const controls = document.querySelector(".controls");
+    const rootStyles = getComputedStyle(document.documentElement);
+    return {
+      compact: document.body.classList.contains("compact-sticky-controls"),
+      controlsHeight: Math.round(controls.getBoundingClientRect().height),
+      controlsVariable: rootStyles.getPropertyValue("--sticky-controls-height").trim(),
+      tabsVariable: rootStyles.getPropertyValue("--sticky-tabs-height").trim()
+    };
+  });
+
+  for (const view of ["items", "bags", "packing"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    await page.waitForTimeout(50);
+    await expect.poll(async () => (await stickySnapshot()).compact).toBe(true);
+    const baseline = await stickySnapshot();
+    await setViewportScroll(page, 900);
+    for (const top of [720, 520, 320, 120]) {
+      await setViewportScroll(page, top);
+      expect(await stickySnapshot()).toEqual(baseline);
+    }
+  }
+});
