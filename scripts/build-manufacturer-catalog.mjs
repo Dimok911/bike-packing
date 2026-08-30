@@ -28,6 +28,11 @@ const checkedAt = args.get("--checked-at") || new Date().toISOString().slice(0, 
 const approvedCatalogPath = args.get("--approved-catalog")
   ? resolve(args.get("--approved-catalog"))
   : "";
+const requestedManufacturers = new Set(String(args.get("--manufacturers") || "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean));
+const manufacturerRequested = (id) => !requestedManufacturers.size || requestedManufacturers.has(id);
 
 const ORTLIEB_COLLECTION_FILES = [
   "ortlieb-bikepacking.json",
@@ -530,17 +535,24 @@ async function readProducts(fileName) {
 }
 
 const ortliebByHandle = new Map();
-for (const fileName of ORTLIEB_COLLECTION_FILES) {
-  for (const product of await readProducts(fileName)) {
-    if (!ORTLIEB_EXCLUDED.has(product.handle)) ortliebByHandle.set(product.handle, product);
+if (manufacturerRequested("ortlieb")) {
+  for (const fileName of ORTLIEB_COLLECTION_FILES) {
+    for (const product of await readProducts(fileName)) {
+      if (!ORTLIEB_EXCLUDED.has(product.handle)) ortliebByHandle.set(product.handle, product);
+    }
   }
 }
 
-const arkelProducts = (await readProducts("arkel-products.json"))
-  .filter((product) => !ARKEL_EXCLUDED.has(product.handle));
+const arkelProducts = manufacturerRequested("arkel")
+  ? (await readProducts("arkel-products.json")).filter((product) => !ARKEL_EXCLUDED.has(product.handle))
+  : [];
 
-const tailfinTargets = tailfinCatalogTargets(await readFile(join(sourceDir, "tailfin-shop.html"), "utf8"));
-const apiduraTargets = apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-product-sitemap.xml"), "utf8"));
+const tailfinTargets = manufacturerRequested("tailfin")
+  ? tailfinCatalogTargets(await readFile(join(sourceDir, "tailfin-shop.html"), "utf8"))
+  : [];
+const apiduraTargets = manufacturerRequested("apidura")
+  ? apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-product-sitemap.xml"), "utf8"))
+  : [];
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -573,21 +585,42 @@ if (approvedCatalogPath) {
   const approvedEntries = approvedModule.MANUFACTURER_BAG_CATALOG
     || approvedModule.MANUFACTURER_BAG_CATALOG_GENERATED
     || [];
-  const freshById = new Map(normalizedEntries.map((entry) => [entry.id, entry]));
-  outputEntries = approvedEntries.map((approvedEntry) => {
-    const freshEntry = freshById.get(approvedEntry.id);
-    if (!freshEntry) throw new Error(`Approved catalog entry is missing from current manufacturer source: ${approvedEntry.id}`);
-    const { imageUrl, imageUrls, ...approvedData } = approvedEntry;
-    return {
-      ...approvedData,
-      imageAssetPath: freshEntry.imageAssetPath,
-      imageAssetPaths: [...freshEntry.imageAssetPaths],
-      sourceImageUrl: freshEntry.sourceImageUrl,
-      sourceImageUrls: [...freshEntry.sourceImageUrls],
-      imagesCheckedAt: checkedAt
-    };
-  });
-  catalogCheckedAt = String(outputEntries[0]?.sourceCheckedAt || "previous approved snapshot");
+  if (requestedManufacturers.size) {
+    const brandId = (entry) => String(entry?.brand || "").trim().toLowerCase();
+    const approvedBrandOrder = [...new Set(approvedEntries.map(brandId).filter(Boolean))];
+    const freshBrands = new Set(normalizedEntries.map(brandId).filter(Boolean));
+    outputEntries = approvedBrandOrder.flatMap((id) => {
+      if (!requestedManufacturers.has(id)) return approvedEntries.filter((entry) => brandId(entry) === id);
+      freshBrands.delete(id);
+      return normalizedEntries
+        .filter((entry) => brandId(entry) === id)
+        .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""))
+          || String(left.id || "").localeCompare(String(right.id || "")));
+    });
+    for (const id of freshBrands) {
+      outputEntries.push(...normalizedEntries.filter((entry) => brandId(entry) === id));
+    }
+    outputEntries = assertManufacturerBagCatalogSkuModels(outputEntries);
+    catalogCheckedAt = checkedAt;
+  } else {
+    const freshById = new Map(normalizedEntries.map((entry) => [entry.id, entry]));
+    outputEntries = approvedEntries.map((approvedEntry) => {
+      const freshEntry = freshById.get(approvedEntry.id);
+      if (!freshEntry) throw new Error(`Approved catalog entry is missing from current manufacturer source: ${approvedEntry.id}`);
+      const { imageUrl, imageUrls, ...approvedData } = approvedEntry;
+      return {
+        ...approvedData,
+        imageAssetPath: freshEntry.imageAssetPath,
+        imageAssetPaths: [...freshEntry.imageAssetPaths],
+        sourceImageUrl: freshEntry.sourceImageUrl,
+        sourceImageUrls: [...freshEntry.sourceImageUrls],
+        imagesCheckedAt: checkedAt
+      };
+    });
+  }
+  if (!requestedManufacturers.size) {
+    catalogCheckedAt = String(outputEntries[0]?.sourceCheckedAt || "previous approved snapshot");
+  }
 }
 
 const imageManifest = [...new Map(outputEntries.flatMap((entry) => {

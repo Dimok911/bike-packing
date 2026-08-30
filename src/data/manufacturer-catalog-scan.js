@@ -45,11 +45,15 @@ const cloneJson = (value) => value == null ? null : JSON.parse(JSON.stringify(va
 
 const stableValue = (value) => {
   if (Array.isArray(value)) return value.map(stableValue);
+  if (typeof value === "string") return value.replace(/[ \t\u00a0\u202f]+/g, " ");
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
 };
 
-const sameValue = (left, right) => JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+const sameValue = (left, right) => {
+  if (left == null && right == null) return true;
+  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+};
 
 export const manufacturerIdForEntry = (entry) => String(entry?.manufacturerId || entry?.brand || "")
   .trim()

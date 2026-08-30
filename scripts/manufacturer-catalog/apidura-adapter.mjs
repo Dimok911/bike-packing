@@ -12,6 +12,7 @@ const CATEGORY_META = Object.freeze({
 
 function decodeHtml(value = "") {
   return String(value)
+    .replace(/[\u00a0\u202f]/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&quot;|&#34;/gi, "\"")
     .replace(/&apos;|&#39;/gi, "'")
@@ -146,7 +147,7 @@ function productInformationText(html = "") {
 
 function technicalDetailsText(html = "") {
   const text = pageText(html);
-  const start = text.search(/\b(?:Materials\s*&\s*Technology|Product Information)\b/i);
+  const start = text.search(/\b(?:Materials\s*&\s*Technology|Product Information|Description)\b/i);
   const source = start >= 0 ? text.slice(start) : text;
   const end = source.slice(300).search(/\b(?:Climate Footprint|Adventur(?:e|ed) Tested|FAQs?)\b/i);
   return (end >= 0 ? source.slice(0, end + 300) : source.slice(0, 5000)).trim();

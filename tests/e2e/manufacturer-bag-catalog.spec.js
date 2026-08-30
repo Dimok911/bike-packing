@@ -26,7 +26,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   const comparison = page.locator("#bagCatalogCompareDialog");
   await expect(comparison).toBeVisible();
-  await expect(comparison.locator("tbody tr")).toHaveCount(24);
+  await expect(comparison.locator("tbody tr")).toHaveCount(25);
   await expect(comparison).toContainText("Apidura");
   await expect(comparison).toContainText("ORTLIEB");
   await expect(comparison).toContainText("Arkel");
@@ -36,7 +36,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(filterPanel).toBeVisible();
   await filterPanel.locator("label", { hasText: "Arkel" }).locator('input[type="checkbox"]').uncheck();
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
-  await expect(comparison.locator("tbody tr")).toHaveCount(19);
+  await expect(comparison.locator("tbody tr")).toHaveCount(20);
   await expect(comparison.locator("tbody")).not.toContainText("Arkel");
 
   await comparison.locator('[data-bag-comparison-detail="ortlieb-seat-pack-11l"]').click();
@@ -65,7 +65,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await comparison.locator('button[value="cancel"]').click();
 
   await page.locator('[data-bag-catalog-category="saddle"]').click();
-  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(24);
+  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(25);
   const seatPackCard = page.locator('.manufacturer-catalog-product:has([data-bag-catalog-select="ortlieb-seat-pack-16-5l"])');
   await expect.poll(() => seatPackCard.locator(".manufacturer-catalog-photo-gallery .photo-gallery-dot").count()).toBeGreaterThan(1);
   await seatPackCard.locator("[data-photo-open]").first().click();

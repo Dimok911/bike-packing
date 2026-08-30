@@ -88,6 +88,30 @@ test("CRITICAL catalog scan: a future manufacturer is not folded into an existin
   assert.equal(report.changes[0].manufacturerId, "new-brand");
 });
 
+test("CRITICAL catalog scan: absent optional values and explicit nulls are equivalent", () => {
+  const before = bag("tailfin-new", "Tailfin", {
+    volumePerBag: null,
+    weightMin: null,
+    waterproofRating: null,
+  });
+  const after = bag("tailfin-new", "Tailfin");
+  const result = compareManufacturerCatalogSnapshots([before], [after]);
+  assert.equal(result.unchanged, 1);
+  assert.deepEqual(result.changes, []);
+});
+
+test("CRITICAL catalog scan: non-breaking spaces do not create review noise", () => {
+  const before = bag("apidura-existing", "Apidura", {
+    manufacturerDetails: "Hexalon developed for Apidura. PFAs and PFC-free.",
+  });
+  const after = bag("apidura-existing", "Apidura", {
+    manufacturerDetails: "Hexalon developed for\u00a0Apidura. PFAs and PFC-free.",
+  });
+  const result = compareManufacturerCatalogSnapshots([before], [after]);
+  assert.equal(result.unchanged, 1);
+  assert.deepEqual(result.changes, []);
+});
+
 test("CRITICAL catalog scan: all official image URLs are reviewable and the Action stores the image snapshot", () => {
   const before = bag("ortlieb-gallery", "ORTLIEB", {
     sourceImageUrls: ["https://cdn.shopify.com/front.jpg"]
@@ -256,6 +280,21 @@ test("CRITICAL catalog scan: Apidura names use the collection and heading instea
       </main></body></html>`,
   });
   assert.equal(entry.name, "Backcountry Food Pouch (0.8L)");
+});
+
+test("CRITICAL catalog scan: Apidura notes exclude locale-specific storefront controls", () => {
+  const entry = buildApiduraCatalogEntry({
+    sourceUrl: "https://www.apidura.com/shop/apidura-x-canyon-frame-pack/",
+    product: { slug: "apidura-x-canyon-frame-pack", name: "Apidura x Canyon Frame Pack" },
+    html: `<main><h1>Apidura x Canyon Frame Pack</h1>
+      <p>$ 160.00</p><p>Limit reached 0</p><p>Add To Cart</p>
+      <img src="https://medias.apidura.com/2026/08/canyon-frame-pack.jpg">
+      <h2>Description</h2><p>A durable lightweight frame bag.</p>
+      <h2>Technical</h2><p>Hexalon&nbsp;waterproof laminate.</p></main>`,
+  });
+  assert.match(entry.manufacturerDetails, /^Description\b/);
+  assert.match(entry.manufacturerDetails, /Hexalon waterproof laminate/);
+  assert.doesNotMatch(entry.manufacturerDetails, /\$ 160|Add To Cart|Limit reached/);
 });
 
 test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details, and every product image", () => {

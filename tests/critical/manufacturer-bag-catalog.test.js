@@ -48,11 +48,11 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundled images", () => {
   assert.deepEqual(MANUFACTURER_BAG_CATALOG_FAMILIES.map(({ id }) => id), ["bikepacking", "panniers", "carry"]);
-  assert.equal(MANUFACTURER_BAG_CATALOG.length, 234);
+  assert.equal(MANUFACTURER_BAG_CATALOG.length, 236);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 62);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 61);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Tailfin").length, 42);
-  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Apidura").length, 69);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Apidura").length, 71);
   assert.equal(new Set(MANUFACTURER_BAG_CATALOG.map(({ id }) => id)).size, MANUFACTURER_BAG_CATALOG.length);
   assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ id }) => /quick-rack|organizer|bag-only/.test(id)));
   MANUFACTURER_BAG_CATALOG_CATEGORIES.forEach(({ id }) => {
