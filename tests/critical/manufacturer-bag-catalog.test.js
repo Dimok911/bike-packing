@@ -308,6 +308,14 @@ test("CRITICAL manufacturer catalog: Arkel pair totals are normalized for one-ba
   assert.deepEqual(t28.volumeTotalOptions, [28]);
   assert.equal(manufacturerBagComparisonNumericBounds(gt54, "volume"), null);
   assert.deepEqual(filterManufacturerBagComparisonRows([gt54], { volume: { min: 27, max: 27 } }), []);
+  assert.equal(
+    sortManufacturerBagComparisonRows(rows, { column: "volume", direction: "desc" })[0].id,
+    gt54.id
+  );
+  assert.ok(
+    sortManufacturerBagComparisonRows(rows, { column: "volume", direction: "asc" })
+      .findIndex(({ id }) => id === gt54.id) > 0
+  );
   assert.ok(filterManufacturerBagComparisonRows([dryLites28, dryLites36], { volume: { min: 18, max: 18 } })
     .some(({ id }) => id === dryLites36.id));
   assert.deepEqual(filterManufacturerBagComparisonRows([dryLites36], { volume: { min: 36, max: 36 } }), []);
@@ -317,6 +325,16 @@ test("CRITICAL manufacturer catalog: Arkel pair totals are normalized for one-ba
   assert.equal(draft.manufacturerCatalogSource.volumePerBag, 18);
   assert.equal(draft.manufacturerCatalogSource.totalVolume, 36);
   assert.equal(draft.manufacturerCatalogSource.specificationBasis, "set-total");
+});
+
+test("CRITICAL manufacturer catalog: SKU is explained in cards and comparison details", () => {
+  const translations = read("src/data/i18n.js");
+  const catalogDialog = read("src/ui/manufacturer-bag-catalog-dialog.js");
+  const comparisonDialog = read("src/ui/manufacturer-bag-comparison-dialog.js");
+  assert.match(translations, /SKU \(Stock Keeping Unit\).*артикул конкретного варианта товара/);
+  assert.match(translations, /SKU \(Stock Keeping Unit\) identifies a specific product variant/);
+  assert.match(catalogDialog, /title=.*bagCatalog\.field\.skuHelp/);
+  assert.match(comparisonDialog, /<abbr class="manufacturer-catalog-sku-term" title=.*bagCatalog\.field\.skuHelp/);
 });
 
 test("CRITICAL manufacturer catalog: editing a per-bag value recalculates the pair total", () => {

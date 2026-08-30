@@ -110,7 +110,10 @@ export function filterManufacturerBagComparisonRows(rows = [], filters = {}) {
 
 function comparisonSortValue(entry, column, direction) {
   if (column === "volume" || column === "weight") {
-    const bounds = manufacturerBagComparisonNumericBounds(entry, column);
+    const comparableBounds = manufacturerBagComparisonNumericBounds(entry, column);
+    const bounds = comparableBounds || (column === "volume" && entry?.volumeSetBasis === "composite-set"
+      ? numericBounds(entry?.volumeTotalOptions)
+      : null);
     return bounds ? (direction === "desc" ? bounds.max : bounds.min) : null;
   }
   if (column === "availability") {

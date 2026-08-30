@@ -427,7 +427,7 @@ export function createManufacturerBagComparisonDialogController({
         <div class="manufacturer-product-detail-variants-scroll">
           <table>
             <thead><tr>
-              <th>${escapeHtml(t("bagCatalog.field.sku"))}</th>
+              <th><abbr class="manufacturer-catalog-sku-term" title="${escapeHtml(t("bagCatalog.field.skuHelp"))}">${escapeHtml(t("bagCatalog.field.sku"))}</abbr></th>
               <th>${escapeHtml(t("bagCatalog.field.color"))}</th>
               <th>${escapeHtml(t("bagCatalog.compare.volume"))}</th>
               <th>${escapeHtml(t("bagCatalog.compare.weight"))}</th>

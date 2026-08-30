@@ -150,6 +150,18 @@ test("ORTLIEB pair shows and imports the set total while preserving the per-bag 
 
   await comparison.locator('[data-bag-comparison-filter="volume"]').click();
   const filterPanel = comparison.locator("#bagCatalogCompareFilterPanel");
+  await expect(filterPanel).toContainText("При сортировке неделимый комплект учитывается по полному объёму");
+  await filterPanel.locator("#bagCatalogCompareSortDescBtn").click();
+  await expect(comparison.locator("tbody tr").first()
+    .locator('[data-bag-comparison-detail="arkel-gt-54-classic-touring-panniers"]')).toHaveCount(1);
+
+  await compositeSet.locator('[data-bag-comparison-detail="arkel-gt-54-classic-touring-panniers"]').click();
+  const skuTerm = page.locator("#bagCatalogProductDetailDialog .manufacturer-catalog-sku-term");
+  await expect(skuTerm).toHaveText("Артикул (SKU)");
+  await expect(skuTerm).toHaveAttribute("title", /SKU \(Stock Keeping Unit\).*цвета/);
+  await page.locator('#bagCatalogProductDetailDialog button[value="cancel"]').click();
+
+  await comparison.locator('[data-bag-comparison-filter="volume"]').click();
   await filterPanel.locator("#bagCatalogCompareRangeMin").fill("20");
   await filterPanel.locator("#bagCatalogCompareRangeMax").fill("20");
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();

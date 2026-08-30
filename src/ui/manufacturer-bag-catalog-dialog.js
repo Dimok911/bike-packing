@@ -203,7 +203,7 @@ export function createManufacturerBagCatalogDialogController({
               <span class="manufacturer-catalog-brand">${escapeHtml(entry.brand)}</span>
               <h3>${escapeHtml(entry.name)}</h3>
             </div>
-            ${selectedEntry.sku ? `<span class="manufacturer-catalog-sku">${escapeHtml(selectedEntry.sku)}</span>` : ""}
+            ${selectedEntry.sku ? `<span class="manufacturer-catalog-sku" title="${escapeHtml(t("bagCatalog.field.skuHelp"))}" aria-label="${escapeHtml(`${t("bagCatalog.field.skuHelp")} ${selectedEntry.sku}`)}">${escapeHtml(selectedEntry.sku)}</span>` : ""}
           </div>
           <p class="manufacturer-catalog-variant">${escapeHtml(entry.variant)}</p>
           <p class="manufacturer-catalog-description">${escapeHtml(localizedDescription(entry, locale))}</p>

@@ -6610,6 +6610,15 @@ button.touch-tooltip-open:active {
 
 .manufacturer-catalog-sku {
   flex: 0 0 auto;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.manufacturer-catalog-sku-term {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
 .manufacturer-catalog-specs,
