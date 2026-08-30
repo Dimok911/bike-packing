@@ -113,11 +113,21 @@ test("CRITICAL catalog scan: Apidura adapter discovers bags and excludes accesso
   const targets = apiduraCatalogTargets(`<urlset>
     <url><loc>https://www.apidura.com/shop/expedition-saddle-pack/</loc></url>
     <url><loc>https://www.apidura.com/shop/aero-frame-module/</loc></url>
+    <url><loc>https://www.apidura.com/shop/expedition-stem-pack/</loc></url>
+    <url><loc>https://www.apidura.com/shop/backcountry-food-pouch/</loc></url>
+    <url><loc>https://www.apidura.com/shop/expedition-front-rack-pack/</loc></url>
     <url><loc>https://www.apidura.com/shop/hydration-vest/</loc></url>
+    <url><loc>https://www.apidura.com/shop/frame-pack-hydration-bladder/</loc></url>
     <url><loc>https://www.apidura.com/shop/frame-pack-replacement-strap/</loc></url>
     <url><loc>https://example.test/shop/foreign-frame-pack/</loc></url>
   </urlset>`);
-  assert.deepEqual(targets.map(({ handle }) => handle), ["aero-frame-module", "expedition-saddle-pack"]);
+  assert.deepEqual(targets.map(({ handle }) => handle), [
+    "aero-frame-module",
+    "backcountry-food-pouch",
+    "expedition-front-rack-pack",
+    "expedition-saddle-pack",
+    "expedition-stem-pack",
+  ]);
   assert.ok(targets.every(({ url }) => url.startsWith("https://www.apidura.com/shop/")));
 });
 
@@ -150,6 +160,7 @@ test("CRITICAL catalog scan: Apidura adapter keeps size weights, technical detai
       <h3>Product Information</h3><p>Weight</p><p>– 9L: 379g<br>– 13L: 439g<br>– 16L: 462g</p>
       <p>Attachment System – saddle rails and seatpost</p><p>Waterproofing – Seam Welded</p>
       <h3>Care &amp; Maintenance</h3>
+      <section class="related-posts"><img src="https://medias.apidura.com/2026/08/unrelated-frame-pack.jpg"></section>
     </main>`,
   });
   assert.equal(entry.id, "apidura-expedition-saddle-pack");
@@ -161,6 +172,26 @@ test("CRITICAL catalog scan: Apidura adapter keeps size weights, technical detai
   assert.match(entry.manufacturerDetails, /Attachment System/);
   assert.equal(entry.sourceImageUrls.length, 3);
   assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/apidura\//.test(path)));
+});
+
+test("CRITICAL catalog scan: Apidura named sizes pair capacity with the product-only weight", () => {
+  const entry = buildApiduraCatalogEntry({
+    checkedAt: "2026-08-30",
+    sourceUrl: "https://www.apidura.com/shop/aero-frame-module/",
+    product: { slug: "aero-frame-module", name: "Aero Frame Module" },
+    html: `<main><h1>Aero Frame Module</h1>
+      <img src="https://medias.apidura.com/2026/08/aero-frame-module.jpg">
+      <h3>Product Information</h3><p>Weight<br>
+      – Frame module (Small) – 169g<br>– Frame module (Medium) – 205g<br>– Frame module (Large) – 235g</p>
+      <p>Total System Weight<br>– Aero System (Small) – 269g<br>– Aero System (Medium) – 305g<br>– Aero System (Large) – 335g</p>
+      <p>Capacity<br>– Frame module (Small) – 1.1L<br>– Frame module (Medium) – 1.5L<br>– Frame module (Large) – 2.8L</p>
+      <h3>Care &amp; Maintenance</h3>
+    </main>`,
+  });
+  assert.deepEqual(entry.volumeOptions, [1.1, 1.5, 2.8]);
+  assert.deepEqual(entry.weightOptions, [169, 205, 235]);
+  assert.deepEqual(entry.variants.map(({ weight }) => weight), [169, 205, 235]);
+  assert.equal(entry.variantWeightsAuthoritative, true);
 });
 
 test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details, and every product image", () => {

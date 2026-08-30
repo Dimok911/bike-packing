@@ -7,6 +7,7 @@ const CATEGORY_META = Object.freeze({
   handlebar: { family: "bikepacking", en: "handlebar bag", ru: "рулевая сумка", mounting: "Handlebar straps / Apidura handlebar system" },
   fork: { family: "bikepacking", en: "fork or cargo-cage bag", ru: "сумка на вилку или грузовую клетку", mounting: "Cargo cage / straps" },
   "rear-pannier": { family: "panniers", en: "rear pannier", ru: "задний панир", mounting: "Rear rack" },
+  "rack-top": { family: "panniers", en: "rack-top bag", ru: "сумка на багажник", mounting: "Front or rear rack" },
 });
 
 function decodeHtml(value = "") {
@@ -89,8 +90,8 @@ function isBagProduct(product = {}) {
     .map((category) => `${category?.name || ""} ${category?.slug || ""}`)
     .join(" ");
   const categoryMatch = /(?:saddle|frame|handlebar|top[ -]?tube)\s+(?:bags?|packs?)/i.test(categories);
-  const productMatch = /\b(?:saddle|frame|handlebar|top[ -]?tube|down[ -]?tube|fork|cargo|pannier)\b[\s\S]*\b(?:bag|pack|module|pannier)s?\b/i.test(`${name} ${slug.replaceAll("-", " ")}`);
-  const excluded = /\b(?:adapter|bracket|strap|replacement|spare|repair|hydration vest|bottle|flask|cap|wallet|musette|backpack|back pack)\b/i.test(name);
+  const productMatch = /\b(?:saddle|frame|handlebar|top[ -]?tube|down[ -]?tube|fork|cargo|pannier|aerobar|stem|front rack|tool|charger|accessory|food)\b[\s\S]*\b(?:bag|pack|module|pannier|pocket|pouch)s?\b/i.test(`${name} ${slug.replaceAll("-", " ")}`);
+  const excluded = /\b(?:adapter|bracket|strap|replacement|spare|repair|hydration (?:vest|bladder)|bottle|flask|cap|wallet|musette|backpack|back pack|waist belt|hip pack|messenger|gift ?card)\b/i.test(`${name} ${slug.replaceAll("-", " ")}`);
   return (categoryMatch || productMatch) && !excluded;
 }
 
@@ -178,12 +179,37 @@ function pairedVolumeWeights(value = "") {
   return pairs;
 }
 
+function namedMetricValues(value = "", unit = "") {
+  const normalizedUnit = unit === "g" ? "g" : "L";
+  const pattern = new RegExp(`(?:^|\\n)\\s*[–—-]\\s*([^\\n]{1,100}?)\\s*[–—:]\\s*(\\d+(?:[.,]\\d+)?)\\s*${normalizedUnit}\\b`, "gim");
+  const values = new Map();
+  for (const match of String(value || "").matchAll(pattern)) {
+    const rawLabel = String(match[1] || "").trim();
+    const label = (rawLabel.match(/\(([^)]+)\)\s*$/)?.[1] || rawLabel)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    const number = Number(String(match[2] || "").replace(",", "."));
+    if (label && Number.isFinite(number) && number > 0 && !values.has(label)) values.set(label, number);
+  }
+  return values;
+}
+
 function productMetrics(product = {}, html = "") {
   const information = productInformationText(html);
   const pairs = pairedVolumeWeights(information);
   if (pairs.size) {
     const volumes = uniqueNumbers([...pairs.keys()]);
     return { volumes, weights: volumes.map((volume) => pairs.get(volume)) };
+  }
+  const namedVolumes = namedMetricValues(information, "L");
+  const namedWeights = namedMetricValues(information, "g");
+  const sharedLabels = [...namedVolumes.keys()].filter((label) => namedWeights.has(label));
+  if (sharedLabels.length) {
+    return {
+      volumes: sharedLabels.map((label) => namedVolumes.get(label)),
+      weights: sharedLabels.map((label) => namedWeights.get(label)),
+    };
   }
   const volumes = uniqueNumbers([...recordVolumeValues(product), ...volumeValues(pageHeading(html)), ...volumeValues(information)]);
   const weights = weightValues(information);
@@ -195,10 +221,12 @@ function productMetrics(product = {}, html = "") {
 function categoryForProduct(product = {}) {
   const value = `${product.name || ""} ${product.slug || ""}`.toLowerCase().replaceAll("-", " ");
   if (/top\s*tube/.test(value)) return "top-tube";
-  if (/handlebar|bar\s*bag/.test(value)) return "handlebar";
+  if (/front\s*rack/.test(value)) return "rack-top";
+  if (/handlebar|aerobar|bar\s*bag|stem\s*pack|front\s*accessory|accessory\s*pocket|food\s*pouch/.test(value)) return "handlebar";
   if (/saddle|seat\s*pack/.test(value)) return "saddle";
   if (/pannier/.test(value)) return "rear-pannier";
   if (/fork|cargo|down\s*tube/.test(value)) return "fork";
+  if (/tool\s*pack/.test(value)) return "saddle";
   return "frame";
 }
 
@@ -207,7 +235,7 @@ function normalizedImageUrl(rawUrl, pageUrl) {
     const url = new URL(decodeHtml(rawUrl).trim(), pageUrl);
     if (!/(^|\.)apidura\.com$/i.test(url.hostname)) return null;
     if (!/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(url.href)) return null;
-    if (/(?:logo|favicon|icon|avatar|payment|flag|placeholder|sprite|newsletter|journal|banner|fabric|ultrastretch|handwash|size[-_ ]?guide|diagram)[^/]*\.(?:jpe?g|png|webp)$/i.test(url.pathname)) return null;
+    if (/(?:logo|favicon|icon|avatar|payment|flag|placeholder|sprite|newsletter|journal|banner|fabric|reinforcement|co2e|carbon[-_ ]?footprint|chart|ultrastretch|handwash|size[-_ ]?guide|diagram)[^/]*\.(?:jpe?g|png|webp)$/i.test(url.pathname)) return null;
     url.hash = "";
     url.search = "";
     return url;
@@ -220,7 +248,7 @@ function productImages(product = {}, html = "", pageUrl) {
   const raw = (Array.isArray(product.images) ? product.images : [])
     .flatMap((image) => [image?.src, image?.thumbnail])
     .filter(Boolean);
-  const source = mainHtml(html);
+  const source = mainHtml(html).split(/<section\b[^>]*class\s*=\s*["'][^"']*(?:featured-journal-posts|related-posts)/i)[0];
   const attributePattern = /\b(?:data-large_image|data-large-image|data-src|src|href)\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
   for (const match of source.matchAll(attributePattern)) raw.push(match[1] || match[2]);
   const srcsetPattern = /\bsrcset\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
@@ -327,7 +355,7 @@ export function buildApiduraCatalogEntry({ product = {}, html = "", sourceUrl = 
     available,
     variantCount: variants.length,
     availableVariantCount: available ? variants.length : 0,
-    variantWeightsAuthoritative: true,
+    variantWeightsAuthoritative: variants.every(({ weight }) => Number(weight) > 0),
     variants,
     imageAssetPath: imageAssetPaths[0],
     imageAssetPaths,
