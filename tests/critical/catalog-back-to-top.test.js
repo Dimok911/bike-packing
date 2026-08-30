@@ -9,6 +9,7 @@ import {
   shouldShowCatalogBackToTop
 } from "../../src/ui/catalog-back-to-top.js";
 import {
+  bindExplicitViewportScrollIntent,
   hasExplicitViewportScrollIntent,
   markExplicitViewportScrollIntent,
   resetExplicitViewportScrollIntent
@@ -44,6 +45,43 @@ test("explicit back-to-top intent temporarily overrides search viewport restorat
   markExplicitViewportScrollIntent({ now: 1000, durationMs: 700 });
   assert.equal(hasExplicitViewportScrollIntent(1699), true);
   assert.equal(hasExplicitViewportScrollIntent(1701), false);
+});
+
+test("a fast vertical touch gesture cancels pending viewport restoration once", () => {
+  resetExplicitViewportScrollIntent();
+  const documentTarget = eventTarget();
+  const windowTarget = eventTarget();
+  let cancellations = 0;
+  const cleanup = bindExplicitViewportScrollIntent({
+    documentRef: documentTarget,
+    onIntent: () => { cancellations += 1; },
+    windowRef: windowTarget
+  });
+
+  documentTarget.dispatch("touchstart", { touches: [{ clientX: 120, clientY: 420 }] });
+  documentTarget.dispatch("touchmove", { touches: [{ clientX: 122, clientY: 405 }] });
+  documentTarget.dispatch("touchmove", { touches: [{ clientX: 123, clientY: 340 }] });
+
+  assert.equal(cancellations, 1);
+  assert.equal(hasExplicitViewportScrollIntent(), true);
+  cleanup();
+  assert.equal(documentTarget.listenerCount("touchmove"), 0);
+});
+
+test("a horizontal touch gesture does not cancel vertical viewport restoration", () => {
+  resetExplicitViewportScrollIntent();
+  const documentTarget = eventTarget();
+  const windowTarget = eventTarget();
+  let cancellations = 0;
+  bindExplicitViewportScrollIntent({
+    documentRef: documentTarget,
+    onIntent: () => { cancellations += 1; },
+    windowRef: windowTarget
+  });
+
+  documentTarget.dispatch("touchstart", { touches: [{ clientX: 120, clientY: 420 }] });
+  documentTarget.dispatch("touchmove", { touches: [{ clientX: 210, clientY: 414 }] });
+  assert.equal(cancellations, 0);
 });
 
 function eventTarget(extra = {}) {

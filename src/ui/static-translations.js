@@ -179,6 +179,9 @@ export function applyStaticTranslationsUi({
   setText(refs.itemRemoveFromLayoutBtn, t("forms.removeFromLayout"));
   setText(refs.itemDeleteForeverBtn, t("buttons.deleteForever"));
   setText(refs.itemNoteLabel, t("forms.note"));
+  setAttr(refs.itemNoteResizeHandle, "aria-label", t("forms.resizeNote"));
+  setAttr(refs.itemNoteResizeHandle, "title", t("forms.resizeNote"));
+  setAttr(refs.itemCategoryScroll, "aria-label", t("categories.scrollLabel"));
   setAttr(refs.itemNoteSearchPrev, "aria-label", t("noteSearch.previous"));
   setAttr(refs.itemNoteSearchPrev, "title", t("noteSearch.previous"));
   setAttr(refs.itemNoteSearchNext, "aria-label", t("noteSearch.next"));
@@ -219,6 +222,9 @@ export function applyStaticTranslationsUi({
   setText(refs.rootContainerRemoveFromLayoutBtn, t("forms.removeFromLayout"));
   setText(refs.rootContainerDeleteForeverBtn, t("buttons.deleteForever"));
   setText(refs.rootContainerNoteLabel, t("forms.notes"));
+  setAttr(refs.rootContainerNoteResizeHandle, "aria-label", t("forms.resizeNote"));
+  setAttr(refs.rootContainerNoteResizeHandle, "title", t("forms.resizeNote"));
+  setAttr(refs.rootContainerCategoryScroll, "aria-label", t("categories.scrollLabel"));
   setAttr(refs.rootContainerNoteSearchPrev, "aria-label", t("noteSearch.previous"));
   setAttr(refs.rootContainerNoteSearchPrev, "title", t("noteSearch.previous"));
   setAttr(refs.rootContainerNoteSearchNext, "aria-label", t("noteSearch.next"));

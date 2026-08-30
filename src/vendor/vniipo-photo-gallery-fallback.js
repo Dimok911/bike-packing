@@ -1,7 +1,7 @@
 (function installVniipoPhotoGallery(global) {
   "use strict";
 
-  const VERSION = "2.1.7";
+  const VERSION = "2.1.8";
   const CONTRACT_VERSION = 2;
   const bindings = new WeakMap();
   const styleId = "vniipo-photo-gallery-v2-styles";
@@ -1037,14 +1037,23 @@
       }
       if (gesture.moved) {
         suppressClickUntil = Date.now() + 600;
-        scrollToIndex(resolveActiveIndex(track, slides));
+        if (!gesture.vertical) scrollToIndex(resolveActiveIndex(track, slides));
       }
     }, { passive: false });
 
     listen(track, "touchcancel", () => {
+      const canceled = touch;
       touch = null;
       suppressClickUntil = Date.now() + 300;
-      scrollToIndex(resolveActiveIndex(track, slides));
+      if (!canceled) return;
+      const gesture = resolveSwipe(
+        canceled.x,
+        canceled.y,
+        canceled.lastX,
+        canceled.lastY,
+        options.swipeThreshold,
+      );
+      if (!gesture.vertical) scrollToIndex(resolveActiveIndex(track, slides));
     }, { passive: true });
 
     dots.forEach((dot) => {

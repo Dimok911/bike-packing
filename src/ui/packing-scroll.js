@@ -88,10 +88,9 @@ export function bindBoardMomentumTakeover(board, {
 
 export function shouldDisableDuplicatedPackingRootHeader({
   coarsePointer = false,
-  isolatedViewportScroll = false,
   mobileViewport = false
 } = {}) {
-  return Boolean((coarsePointer || mobileViewport) && !isolatedViewportScroll);
+  return Boolean(coarsePointer || mobileViewport);
 }
 
 export function bindStickyRootHeaderRow(board, {
@@ -108,10 +107,7 @@ export function bindStickyRootHeaderRow(board, {
   const eventWindow = globalThis.window || globalThis;
   const coarsePointer = Boolean(eventWindow.matchMedia?.("(hover: none), (pointer: coarse)")?.matches);
   const mobileViewport = Boolean(eventWindow.matchMedia?.("(max-width: 560px)")?.matches);
-  const isolatedViewportScroll = Boolean(
-    globalThis.document?.documentElement?.classList?.contains?.("isolated-viewport-scroll")
-  );
-  if (shouldDisableDuplicatedPackingRootHeader({ coarsePointer, isolatedViewportScroll, mobileViewport })) {
+  if (shouldDisableDuplicatedPackingRootHeader({ coarsePointer, mobileViewport })) {
     headerRow.hidden = true;
     headerRow.classList.toggle("is-visible", false);
     const disabledController = {

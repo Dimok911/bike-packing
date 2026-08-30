@@ -7,33 +7,34 @@ test.beforeEach(async ({ page }) => {
   await prepareIsolatedRussianGuest(page);
 });
 
-async function selectView(page, view) {
+async function selectViewWithoutAutoScroll(page, view) {
   await page.locator(`.tab[data-view="${view}"]`).evaluate((tab) => tab.click());
 }
 
 async function viewportScrollTop(page) {
   return page.evaluate(() => {
-    const host = document.querySelector("[data-viewport-scroll-host]");
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
     return host?.scrollTop || document.scrollingElement?.scrollTop || window.scrollY || 0;
   });
 }
 
-async function expectViewportScrollNear(page, top) {
-  await expect.poll(async () => Math.abs((await viewportScrollTop(page)) - top)).toBeLessThanOrEqual(8);
-}
-
 async function setViewportScroll(page, top) {
   await page.evaluate((nextTop) => {
-    const host = document.querySelector("[data-viewport-scroll-host]");
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
     (host || window).scrollTo({ top: nextTop, left: 0, behavior: "auto" });
   }, top);
   await expectViewportScrollNear(page, top);
   return viewportScrollTop(page);
 }
 
-async function addLongViewFixtures(page) {
-  await page.locator("#packingView, #itemsView, #bagsView").evaluateAll((views) => {
+async function expectViewportScrollNear(page, top) {
+  await expect.poll(async () => Math.abs((await viewportScrollTop(page)) - top)).toBeLessThanOrEqual(8);
+}
+
+async function addScrollableViewFixtures(page) {
+  await page.locator("#packingView, #itemsView, #bagsView, #settingsView").evaluateAll((views) => {
     views.forEach((view) => {
+      if (view.querySelector("[data-e2e-scroll-spacer]")) return;
       const spacer = document.createElement("div");
       spacer.dataset.e2eScrollSpacer = "";
       spacer.style.height = "2600px";
@@ -43,128 +44,245 @@ async function addLongViewFixtures(page) {
   });
 }
 
-test("iPhone keeps independent positions for long packing, items and bags", async ({ page }) => {
+test("iPhone accepts consecutive first taps on different main tabs", async ({ page }) => {
   await openApp(page);
-  await addLongViewFixtures(page);
+
+  const itemsTab = page.locator('.tab[data-view="items"]');
+  const bagsTab = page.locator('.tab[data-view="bags"]');
+  const [itemsBox, bagsBox] = await Promise.all([
+    itemsTab.boundingBox(),
+    bagsTab.boundingBox()
+  ]);
+  expect(itemsBox).not.toBeNull();
+  expect(bagsBox).not.toBeNull();
+
+  await page.touchscreen.tap(
+    itemsBox.x + itemsBox.width / 2,
+    itemsBox.y + itemsBox.height / 2
+  );
+  await page.touchscreen.tap(
+    bagsBox.x + bagsBox.width / 2,
+    bagsBox.y + bagsBox.height / 2
+  );
+
+  await expect(bagsTab).toHaveClass(/\bactive\b/);
+  await expect(itemsTab).not.toHaveClass(/\bactive\b/);
+});
+
+test("iPhone keeps the first fast scroll gesture native after a tab tap", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await page.locator('.tab[data-view="items"]').tap();
+
+  const gesture = await page.evaluate(async () => {
+    const target = document.querySelector("#itemsView");
+    const marker = target.querySelector("[data-e2e-scroll-spacer]");
+    const dispatchTouch = (type, clientY, touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: touches ? [{ clientX: 180, clientY }] : []
+      });
+      Object.defineProperty(event, "changedTouches", {
+        value: [{ clientX: 180, clientY }]
+      });
+      return target.dispatchEvent(event);
+    };
+
+    dispatchTouch("touchstart", 620, true);
+    dispatchTouch("touchmove", 410, true);
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: 620, left: 0, behavior: "auto" });
+    const beforeEnd = marker.getBoundingClientRect().top;
+    const nativeEnd = dispatchTouch("touchend", 410, false);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const afterFrame = marker.getBoundingClientRect().top;
+    return {
+      afterFrame,
+      beforeEnd,
+      nativeEnd,
+      scrollTop: host?.scrollTop || document.scrollingElement?.scrollTop || window.scrollY || 0
+    };
+  });
+
+  expect(gesture.nativeEnd).toBe(true);
+  expect(Math.abs(gesture.afterFrame - gesture.beforeEnd)).toBeLessThanOrEqual(4);
+  expect(gesture.scrollTop).toBeGreaterThan(500);
+});
+
+test("iPhone keeps packing isolated and ordinary views on document momentum", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
   await expect(page.locator("html")).toHaveClass(/isolated-viewport-scroll/);
   await expect(page.locator(".app[data-viewport-scroll-host]")).toHaveCount(1);
 
-  const packingTop = await setViewportScroll(page, 900);
-  await selectView(page, "items");
-  await expectViewportScrollNear(page, 0);
-  const itemsTop = await setViewportScroll(page, 620);
-
-  await selectView(page, "bags");
-  await expectViewportScrollNear(page, 0);
-  const bagsTop = await setViewportScroll(page, 340);
-
-  await selectView(page, "packing");
-  await expectViewportScrollNear(page, packingTop);
-  await selectView(page, "items");
-  await expectViewportScrollNear(page, itemsTop);
-  await selectView(page, "bags");
-  await expectViewportScrollNear(page, bagsTop);
+  for (const view of ["items", "bags", "settings"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
+    await expect(page.locator(".app[data-viewport-scroll-host]")).toHaveCount(0);
+    await setViewportScroll(page, 0);
+    let previousTop = 0;
+    for (let index = 0; index < 3; index += 1) {
+      await page.evaluate(() => {
+        const host = document.querySelector(".app[data-viewport-scroll-host]");
+        (host || window).scrollBy({ top: 420, left: 0, behavior: "auto" });
+      });
+      await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(previousTop + 80);
+      previousTop = await viewportScrollTop(page);
+      await page.waitForTimeout(120);
+      expect(await viewportScrollTop(page)).toBeGreaterThan(previousTop - 8);
+    }
+    expect(previousTop).toBeGreaterThan(240);
+  }
 });
 
-test("rapid Items and Bags gestures are not overwritten by a queued restore", async ({ page }) => {
+test("iPhone ordinary views accept a browser-routed vertical scroll gesture", async ({ page }) => {
   await openApp(page);
-  await addLongViewFixtures(page);
+  await addScrollableViewFixtures(page);
+
+  for (const view of ["items", "bags", "settings"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    await setViewportScroll(page, 0);
+    const geometry = await page.evaluate(() => ({
+      appIsHost: document.querySelector(".app")?.hasAttribute("data-viewport-scroll-host"),
+      clientHeight: document.scrollingElement?.clientHeight || 0,
+      overflowY: getComputedStyle(document.documentElement).overflowY,
+      scrollHeight: document.scrollingElement?.scrollHeight || 0
+    }));
+    expect(geometry.appIsHost).toBe(false);
+    expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight + 1000);
+    expect(geometry.overflowY).not.toBe("hidden");
+
+    const viewBox = await page.locator(`#${view}View`).boundingBox();
+    expect(viewBox).not.toBeNull();
+    await page.evaluate(() => {
+      window.__e2eDocumentScrollSamples = [];
+      let remainingFrames = 90;
+      const captureFrame = () => {
+        window.__e2eDocumentScrollSamples.push(
+          document.scrollingElement?.scrollTop || window.scrollY || 0
+        );
+        remainingFrames -= 1;
+        if (remainingFrames > 0) requestAnimationFrame(captureFrame);
+      };
+      requestAnimationFrame(captureFrame);
+    });
+    await page.mouse.move(viewBox.x + Math.min(80, viewBox.width / 2), Math.min(700, viewBox.y + 300));
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(120);
+    await page.waitForTimeout(120);
+    const samples = await page.evaluate(() => window.__e2eDocumentScrollSamples || []);
+    expect(samples.length).toBeGreaterThan(0);
+    for (let index = 1; index < samples.length; index += 1) {
+      expect(samples[index]).toBeGreaterThanOrEqual(samples[index - 1] - 2);
+    }
+  }
+});
+
+test("switching iPhone tabs does not write a programmatic viewport position", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
+  await setViewportScroll(page, 620);
+
+  const calls = await page.evaluate(() => {
+    const originalScrollTo = window.scrollTo;
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    const originalHostScrollTo = host?.scrollTo;
+    const writes = [];
+    window.scrollTo = (...args) => writes.push(args);
+    if (host) host.scrollTo = (...args) => writes.push(args);
+    document.querySelector('.tab[data-view="items"]').click();
+    window.scrollTo = originalScrollTo;
+    if (host) host.scrollTo = originalHostScrollTo;
+    return writes;
+  });
+
+  expect(calls).toEqual([]);
+});
+
+test("a fast iPhone swipe keeps its compositor position after a tab switch", async ({ page }) => {
+  await openApp(page);
+  await addScrollableViewFixtures(page);
   await setViewportScroll(page, 900);
 
-  const geometry = await page.evaluate(() => {
-    const queuedFrames = [];
-    const originalRequestAnimationFrame = window.requestAnimationFrame;
-    window.requestAnimationFrame = (callback) => {
-      queuedFrames.push(callback);
-      return queuedFrames.length;
-    };
-
-    const scrollHost = document.querySelector("[data-viewport-scroll-host]") || window;
+  await page.evaluate(() => {
     document.querySelector('.tab[data-view="items"]').click();
-    scrollHost.scrollTo({ top: 620, left: 0, behavior: "auto" });
-    document.querySelector('.tab[data-view="bags"]').click();
-    scrollHost.scrollTo({ top: 480, left: 0, behavior: "auto" });
-
-    const touchStart = new Event("touchstart", { bubbles: true, cancelable: true });
-    Object.defineProperty(touchStart, "touches", {
-      value: [{ clientX: 180, clientY: 620 }]
-    });
-    document.dispatchEvent(touchStart);
-
-    const marker = document.querySelector("#bagsView [data-e2e-scroll-spacer]");
-    const beforeFrame = marker.getBoundingClientRect().top;
-    queuedFrames.splice(0).forEach((callback) => callback(performance.now()));
-    const afterFrame = marker.getBoundingClientRect().top;
-    const scrollTop = scrollHost.scrollTop || 0;
-    window.requestAnimationFrame = originalRequestAnimationFrame;
-    return { afterFrame, beforeFrame, scrollTop };
+    const dispatchTouch = (type, clientY) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: [{ clientX: 180, clientY }]
+      });
+      document.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", 620);
+    dispatchTouch("touchmove", 470);
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: 620, left: 0, behavior: "auto" });
   });
 
-  expect(Math.abs(geometry.afterFrame - geometry.beforeFrame)).toBeLessThanOrEqual(1);
-  expect(geometry.scrollTop).toBeGreaterThan(400);
+  await expect.poll(() => viewportScrollTop(page)).toBeGreaterThan(500);
+  await page.waitForTimeout(120);
+  expect(await viewportScrollTop(page)).toBeGreaterThan(500);
 });
 
-test("iPhone document scrolling restores the long packing tab after rapid Items and Bags gestures", async ({ page }) => {
+test("one iPhone tap switches the main view without a hover-only intermediate state", async ({ page }) => {
   await openApp(page);
-  await page.evaluate(() => {
-    const app = document.querySelector("[data-viewport-scroll-host]");
-    app?.removeAttribute("data-viewport-scroll-host");
-    app?.removeAttribute("data-viewport-scroll-host-no-banner");
-    document.documentElement.classList.remove("isolated-viewport-scroll");
-    document.body.classList.remove("isolated-viewport-scroll");
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  const itemsTab = page.locator('.tab[data-view="items"]');
+
+  const touchEndWasNative = await itemsTab.evaluate((tab) => {
+    const dispatchTouch = (type, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const point = { clientX: 120, clientY: 120 };
+      Object.defineProperty(event, "touches", { value: active ? [point] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [point] });
+      return tab.dispatchEvent(event);
+    };
+    tab.focus();
+    dispatchTouch("touchstart", true);
+    return dispatchTouch("touchend", false);
   });
-  await addLongViewFixtures(page);
 
-  const packingTop = await setViewportScroll(page, 900);
-  await selectView(page, "items");
-  const itemsTop = await setViewportScroll(page, 620);
-  await selectView(page, "bags");
-  const bagsTop = await setViewportScroll(page, 480);
-
-  await selectView(page, "items");
-  await selectView(page, "bags");
-  await selectView(page, "items");
-  await expectViewportScrollNear(page, itemsTop);
-  await selectView(page, "bags");
-  await expectViewportScrollNear(page, bagsTop);
-  await selectView(page, "packing");
-  await expectViewportScrollNear(page, packingTop);
+  expect(touchEndWasNative).toBe(false);
+  await expect(itemsTab).toHaveClass(/active/);
+  await expect(itemsTab).not.toBeFocused();
+  await expect(page.locator("#itemsView")).toBeVisible();
+  await expect(page.locator("#packingView")).toBeHidden();
 });
 
-test("iPhone document scrolling retries the packing position after delayed content growth", async ({ page }) => {
+test("vertical iPhone gestures over a catalog photo never recenter its horizontal track", async ({ page }) => {
   await openApp(page);
-  await page.evaluate(() => {
-    const app = document.querySelector("[data-viewport-scroll-host]");
-    app?.removeAttribute("data-viewport-scroll-host");
-    app?.removeAttribute("data-viewport-scroll-host-no-banner");
-    document.documentElement.classList.remove("isolated-viewport-scroll");
-    document.body.classList.remove("isolated-viewport-scroll");
+  await selectViewWithoutAutoScroll(page, "items");
+  await page.locator("#itemsView").evaluate((itemsView) => {
+    const fixture = document.createElement("div");
+    fixture.dataset.e2eCatalogPhotoTrack = "";
+    fixture.className = "photo-gallery-track";
+    itemsView.append(fixture);
   });
-  await addLongViewFixtures(page);
 
-  const packingTop = await setViewportScroll(page, 900);
-  await selectView(page, "items");
-  await page.locator("#packingView [data-e2e-scroll-spacer]").evaluate((spacer) => {
-    spacer.style.display = "none";
+  const gesture = await page.locator("[data-e2e-catalog-photo-track]").evaluate((track) => {
+    const horizontalWrites = [];
+    track.scrollTo = (...args) => horizontalWrites.push(args);
+    const dispatchTouch = (type, x, y, active) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", {
+        value: active ? [{ clientX: x, clientY: y }] : []
+      });
+      Object.defineProperty(event, "changedTouches", {
+        value: [{ clientX: x, clientY: y }]
+      });
+      return track.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", 180, 620, true);
+    dispatchTouch("touchmove", 184, 410, true);
+    const nativeEnd = dispatchTouch("touchend", 185, 300, false);
+    return { horizontalWrites, nativeEnd };
   });
-  await selectView(page, "packing");
-  await page.locator("#packingView [data-e2e-scroll-spacer]").evaluate((spacer) => {
-    spacer.style.display = "block";
-  });
-  await expectViewportScrollNear(page, packingTop);
+
+  expect(gesture.nativeEnd).toBe(true);
+  expect(gesture.horizontalWrites).toEqual([]);
 });
 
-test("iPhone document scrolling paints no duplicated packing root header", async ({ page }) => {
+test("iPhone isolated momentum has only one painted packing root header layer", async ({ page }) => {
   await openApp(page);
-  await page.evaluate(() => {
-    const app = document.querySelector("[data-viewport-scroll-host]");
-    app?.removeAttribute("data-viewport-scroll-host");
-    app?.removeAttribute("data-viewport-scroll-host-no-banner");
-    document.documentElement.classList.remove("isolated-viewport-scroll");
-    document.body.classList.remove("isolated-viewport-scroll");
-  });
-  await expect(page.locator("html")).not.toHaveClass(/isolated-viewport-scroll/);
   await page.locator("#packingView").evaluate((packingView) => {
     const fixture = document.createElement("section");
     fixture.dataset.e2ePackingHeaderFixture = "";
@@ -182,8 +300,45 @@ test("iPhone document scrolling paints no duplicated packing root header", async
     `;
     packingView.append(fixture);
   });
-
+  await expect(page.locator("html")).toHaveClass(/isolated-viewport-scroll/);
   const duplicateHeader = page.locator("[data-e2e-packing-header-fixture] .packing-root-header-row");
   await expect(duplicateHeader).toHaveCount(1);
   await expect(duplicateHeader).toBeHidden();
+});
+
+test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ page }) => {
+  await openApp(page);
+  await page.locator("#searchInput").evaluate((input) => {
+    input.value = "а";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    input.blur();
+  });
+  await page.waitForTimeout(700);
+  await addScrollableViewFixtures(page);
+
+  const stickySnapshot = () => page.evaluate(() => {
+    const controls = document.querySelector(".controls");
+    const rootStyles = getComputedStyle(document.documentElement);
+    return {
+      compact: document.body.classList.contains("compact-sticky-controls"),
+      controlsHeight: Math.round(controls.getBoundingClientRect().height),
+      controlsVariable: rootStyles.getPropertyValue("--sticky-controls-height").trim(),
+      tabsVariable: rootStyles.getPropertyValue("--sticky-tabs-height").trim()
+    };
+  });
+
+  for (const view of ["items", "bags", "packing"]) {
+    await selectViewWithoutAutoScroll(page, view);
+    // Late startup work can rerender a view and replace test-only children.
+    // Reattach the geometry fixture immediately before measuring this view.
+    await addScrollableViewFixtures(page);
+    await page.waitForTimeout(50);
+    await expect.poll(async () => (await stickySnapshot()).compact).toBe(true);
+    const baseline = await stickySnapshot();
+    await setViewportScroll(page, 900);
+    for (const top of [720, 520, 320, 120]) {
+      await setViewportScroll(page, top);
+      expect(await stickySnapshot()).toEqual(baseline);
+    }
+  }
 });

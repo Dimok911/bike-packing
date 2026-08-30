@@ -1078,11 +1078,15 @@ import {
 import {
   blurActiveEditableBeforeButtonAction,
   isEditableElement,
-  preventDoubleTapZoom,
   setupTouchActionButtonFeedback
 } from "./src/ui/touch-actions.js";
-import { hasExplicitViewportScrollIntent } from "./src/ui/viewport-scroll-intent.js";
+import { bindMainTabTouchNavigation } from "./src/ui/main-tab-touch-navigation.js";
+import {
+  bindExplicitViewportScrollIntent,
+  hasExplicitViewportScrollIntent
+} from "./src/ui/viewport-scroll-intent.js";
 import { createDesktopInputLayoutController } from "./src/ui/desktop-input-layout.js";
+import { createMobileDialogFieldControls } from "./src/ui/mobile-dialog-field-controls.js";
 import {
   DEFAULT_INTERFACE_COLOR_BRIGHTNESS,
   DEFAULT_INTERFACE_COLOR_THEME,
@@ -1096,21 +1100,10 @@ import {
   viewportScrollLeft,
   viewportScrollTop
 } from "./src/ui/viewport-scroll-host.js";
-import {
-  createReachableViewScrollRestore,
-  createViewScrollMemory
-} from "./src/ui/view-scroll-memory.js";
+import { syncMainViewScrollHost } from "./src/ui/main-view-scroll-host.js";
+import { createStickyFilterControlsController } from "./src/ui/sticky-filter-controls.js";
 
 const sharedLayoutsByLanguage = createSharedLayoutsByLanguage([], { languages: SUPPORTED_LANGUAGES });
-const viewScrollMemory = createViewScrollMemory({
-  readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
-  writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
-});
-const reachableViewScrollRestore = createReachableViewScrollRestore({
-  readCurrentView: () => getCurrentView(),
-  readPosition: () => ({ x: viewportScrollLeft(), y: viewportScrollTop() }),
-  writePosition: ({ x, y }) => scrollViewportTo({ left: x, top: y, behavior: "auto" })
-});
 const locations = [];
 const categories = [];
 let serverConfirmedDemoTemplates = [];
@@ -1282,8 +1275,6 @@ let pendingPackingScroll = null;
 let lastPackingScrollSnapshot = null;
 let lastItemTitleTap = { id: "", time: 0 };
 let lastRootContainerTitleTap = { id: "", time: 0 };
-let lastPackingTabTapTime = 0;
-let lastPackingTouchToggleAt = 0;
 let syncMeta = startupSyncMeta;
 let syncDevice = loadSyncDevice();
 const conflictFormatter = createConflictValueFormatter({
@@ -1381,12 +1372,21 @@ let currentPackingListMeta = null;
 let explicitLayoutChoice = { id: "", at: 0 };
 
 const refs = createRefs();
+const stickyFilterControlsController = createStickyFilterControlsController({
+  documentRef: document,
+  isSearchEditing: () => isSearchInputEditing(),
+  refs,
+  shouldKeepStable: () => shouldKeepScopedControlsStable(),
+  shouldUseSticky: () => shouldUseStickyFilterControls(),
+  windowRef: window
+});
 const desktopInputLayoutController = createDesktopInputLayoutController({
   documentRef: document,
   getLanguage: () => uiLanguage,
   translate: t,
   windowRef: window
 });
+createMobileDialogFieldControls({ refs, windowRef: window });
 const connectionStatusController = createConnectionStatusController({
   getElement: () => refs.connectionStatus,
   getMessage: (kind) => t(kind === "timeout" ? "sync.serverTimeoutLocal" : "sync.noConnectionLocal"),
@@ -1748,7 +1748,7 @@ const appTailControllerDeps = {
   getTemplateCopyRootSnapshots, getTemplateCopySourceScore, getUnsyncedPhotoEntries, getUnsyncedPhotoEntriesForSync, getUploadablePhotoEntries,
   getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, guestCandidateLayouts,
   guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction, guestLayoutHasUserContentEdits,
-  hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton, handlePackingTabTouchEnd,
+  hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton,
   handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn, hasContainerDimensions,
   hasGeneratedPublicArtifacts, hasGuestDemoCopyLayoutRecord, hasLegacyPayloadChanges, hasLegacyPayloadChangesForSync, hasListFreshnessSignal,
   hasLocalSavedState, hasLocalSyncChanges, hasPrivateSyncBlockedPublicOrigin, hasPublicOriginMarker, hasRemotePhotoUrl, inspectRecordRemotePhotoSources,
@@ -1778,7 +1778,7 @@ const appTailControllerDeps = {
   itemDeleteConfirm, itemDisplayMode, itemDisplayModeFromFlags, itemDisplayModeLabel, itemEntitySyncUnavailable,
   itemPhotoSignature, getLayoutItemQuantityForState, itemQuantityForState, itemSortMode, itemTotalWeightForState, itemUsageCountsForCatalog, itemWithLayoutQuantityForState,
   itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel, languageOptionLabelValue,
-  lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap, lastToastAt,
+  lastItemTitleTap, lastRootContainerTitleTap, lastToastAt,
   lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState, layoutCreateModeState,
     layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus, layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, changedPersonalLayoutOrderIds,
   layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys, legacyComparableTopLevelDiffKeysForSync,
@@ -1816,7 +1816,7 @@ const appTailControllerDeps = {
   personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
-  preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom, primaryItemPhoto,
+  preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, primaryItemPhoto,
   printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName, pruneAdminPublishedDraftsForSync,
   containerPlacementSnapshotChanged, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries, publicCopyComparableText,
   publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot, publicCopySourceIdFromRecord,
@@ -2980,32 +2980,34 @@ function applyStaticTranslations() {
 }
 
 async function init() {
+  syncMainViewScrollHost(getCurrentView(), {
+    documentRef: document,
+    navigatorRef: navigator,
+    windowRef: window
+  });
   registerAppServiceWorker({ isLocalDevOrigin });
   if (refs.appVersion) refs.appVersion.textContent = APP_VERSION;
   if (refs.languageSelect) refs.languageSelect.value = uiLanguage;
   setupPackingVisualStyleQuickControl();
   applyPackingVisualStyle();
   applyStaticTranslations();
-  preventDoubleTapZoom();
   setupModalScrollLock();
   setupDialogKeyboardScrollGuard([refs.dialog, refs.rootContainerDialog]);
   setupTouchActionButtonFeedback();
+  bindExplicitViewportScrollIntent({
+    documentRef: document,
+    windowRef: window
+  });
   window.addEventListener("pagehide", flushOpenEntityFormDrafts);
   document.addEventListener("pointerdown", (event) => {
     blurActiveEditableBeforeButtonAction(event, { ignoredButton: refs.saveRootContainerBtn });
   }, true);
 
-  document.querySelectorAll(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => switchView(tab.dataset.view));
-    if (tab.dataset.view === "packing") {
-      tab.addEventListener("dblclick", (event) => {
-        if (Date.now() - lastPackingTouchToggleAt < 900) return;
-        event.preventDefault();
-        switchView("packing");
-        togglePackingViewMode();
-      });
-      tab.addEventListener("touchend", handlePackingTabTouchEnd, { passive: false });
-    }
+  bindMainTabTouchNavigation(document.querySelectorAll(".tab"), {
+    documentRef: document,
+    onPackingDoubleTap: togglePackingViewMode,
+    onSelect: switchView,
+    requestFrame: window.requestAnimationFrame.bind(window)
   });
 
   refs.layoutSelect.addEventListener("change", async (event) => {
@@ -3387,7 +3389,6 @@ async function init() {
     syncHistoryActionButtonTooltips(refs.historyDetailDialog);
   }, { passive: true });
   window.addEventListener("scroll", () => {
-    updateCompactStickyControls();
     scheduleFilterNavigationRefresh();
   }, { passive: true });
   document.querySelector("#exportBtn")?.addEventListener("click", exportData);
@@ -10438,8 +10439,6 @@ async function publishPublicHistoryRecord(record, payload, {
 function switchView(view) {
   const previousView = getCurrentView();
   const viewChanged = previousView !== view;
-  reachableViewScrollRestore.cancel();
-  if (viewChanged) viewScrollMemory.remember(previousView);
   if (previousView === "packing" && viewChanged) {
     capturePackingScroll();
   }
@@ -10450,44 +10449,20 @@ function switchView(view) {
   refs.itemsView.classList.toggle("hidden", view !== "items");
   refs.bagsView.classList.toggle("hidden", view !== "bags");
   refs.settingsView.classList.toggle("hidden", view !== "settings");
-  renderFilters();
+  if (viewChanged) {
+    syncMainViewScrollHost(view, {
+      documentRef: document,
+      navigatorRef: navigator,
+      windowRef: window
+    });
+  }
   renderSummary();
   updateViewScopedControls(view);
   updateFilterNavigationUi();
-  const restoredViewPosition = viewChanged ? viewScrollMemory.restore(view) : null;
-  if (viewChanged && restoredViewPosition) {
-    const restoredView = view === "packing"
-      ? refs.packingView
-      : view === "items"
-        ? refs.itemsView
-        : view === "bags"
-          ? refs.bagsView
-          : refs.settingsView;
-    reachableViewScrollRestore.restore(view, restoredViewPosition, restoredView);
-  }
   if (view === "packing") {
-    requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost(), restoredViewPosition));
+    requestAnimationFrame(() => restorePendingPackingScroll(getPackingScrollHost()));
   }
   syncFixedScrollbarVisibility();
-}
-
-function handlePackingTabTouchEnd(event) {
-  const now = Date.now();
-  if (now - lastPackingTouchToggleAt < 700) {
-    event.preventDefault();
-    event.stopPropagation();
-    return;
-  }
-  if (now - lastPackingTabTapTime <= 360) {
-    event.preventDefault();
-    event.stopPropagation();
-    lastPackingTabTapTime = 0;
-    lastPackingTouchToggleAt = now;
-    switchView("packing");
-    togglePackingViewMode();
-    return;
-  }
-  lastPackingTabTapTime = now;
 }
 
 function render() {
@@ -10555,48 +10530,11 @@ function shouldKeepScopedControlsStable() {
 }
 
 function updateStickyControlsHeight() {
-  const experimentBanner = document.querySelector(".experiment-banner");
-  const bannerHeight = experimentBanner
-    && experimentBanner.offsetParent !== null
-    && window.getComputedStyle(experimentBanner).position === "sticky"
-    ? Math.ceil(experimentBanner.getBoundingClientRect().height)
-    : 0;
-  const bannerOffset = bannerHeight
-    ? Math.max(bannerHeight, Math.ceil(experimentBanner.getBoundingClientRect().bottom))
-    : 0;
-  const controlsHeight = shouldUseStickyFilterControls() && refs.controls && !refs.controls.hidden
-    ? Math.ceil(refs.controls.getBoundingClientRect().height)
-    : 0;
-  const tabsRow = document.querySelector(".tabs-row");
-  const tabsHeight = tabsRow && tabsRow.offsetParent !== null
-    ? Math.ceil(tabsRow.getBoundingClientRect().height)
-    : 0;
-  document.documentElement.style.setProperty("--sticky-banner-height", `${bannerHeight}px`);
-  document.documentElement.style.setProperty("--sticky-banner-offset", `${bannerOffset}px`);
-  document.documentElement.style.setProperty("--sticky-controls-height", `${controlsHeight}px`);
-  document.documentElement.style.setProperty("--sticky-tabs-height", `${tabsHeight}px`);
+  stickyFilterControlsController.updateHeights();
 }
 
 function updateCompactStickyControls() {
-  const searchEditing = shouldKeepScopedControlsStable() && isSearchInputEditing();
-  const sticky = shouldUseStickyFilterControls();
-  const experimentBanner = document.querySelector(".experiment-banner");
-  const stickyTop = experimentBanner
-    && experimentBanner.offsetParent !== null
-    && window.getComputedStyle(experimentBanner).position === "sticky"
-    ? experimentBanner.getBoundingClientRect().bottom
-    : 0;
-  const compact = sticky
-    && refs.controls
-    && !refs.controls.hidden
-    && !searchEditing
-    && shouldKeepScopedControlsStable()
-    && viewportScrollTop() > 0
-    && refs.controls.getBoundingClientRect().top <= stickyTop + 1;
-  document.body.classList.toggle("filter-sticky-controls", Boolean(sticky));
-  document.body.classList.toggle("compact-sticky-controls", Boolean(compact));
-  document.body.classList.toggle("search-input-focused", Boolean(searchEditing));
-  updateStickyControlsHeight();
+  stickyFilterControlsController.update();
 }
 
 function shouldUseStickyFilterControls() {
@@ -10622,7 +10560,10 @@ function preserveSearchBlurViewport() {
     updateSearchFocusState();
     return;
   }
-  const restore = () => restoreSearchBlurViewportLock(lock);
+  const restore = () => {
+    if (hasExplicitViewportScrollIntent()) return;
+    restoreSearchBlurViewportLock(lock);
+  };
   requestAnimationFrame(restore);
   window.setTimeout(restore, 80);
   window.setTimeout(restore, 180);

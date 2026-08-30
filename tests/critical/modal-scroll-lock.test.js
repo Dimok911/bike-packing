@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import "./mobile-dialog-field-controls.test.js";
 import { createModalScrollLockController } from "../../src/ui/modal-scroll-lock.js";
 
 function testClassList(initial = []) {
@@ -251,6 +252,70 @@ test("CRITICAL modal scroll lock hands a category edge swipe to the dialog card"
       stopImmediatePropagation: () => {}
     });
     assert.equal(prevented, true, "the background stays locked after every modal scroller reaches its edge");
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test("CRITICAL modal scroll lock never blocks the category slider at the top edge", () => {
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  const listeners = new Map();
+  const bodyClasses = testClassList();
+  const bodyStyle = { position: "", top: "", left: "", right: "", width: "", overflow: "" };
+  const dialog = {
+    addEventListener: () => {},
+    hasAttribute: () => false,
+    open: true,
+    parentElement: null
+  };
+  const dialogCard = {
+    clientHeight: 500,
+    parentElement: dialog,
+    scrollHeight: 1000,
+    scrollTop: 0
+  };
+  const slider = {
+    closest: (selector) => {
+      if (selector === "dialog") return dialog;
+      if (selector === "[data-modal-scroll-control]") return slider;
+      return null;
+    },
+    parentElement: dialogCard
+  };
+
+  globalThis.document = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    body: { classList: bodyClasses, style: bodyStyle },
+    querySelectorAll: (selector) => selector === "dialog" ? [dialog] : []
+  };
+  globalThis.window = {
+    getComputedStyle: () => ({ overflowY: "auto", position: "static" }),
+    innerHeight: 844,
+    innerWidth: 390,
+    matchMedia: () => ({ matches: true }),
+    scrollTo: () => {},
+    scrollX: 0,
+    scrollY: 0
+  };
+
+  try {
+    const controller = createModalScrollLockController();
+    controller.setupModalScrollLock();
+    controller.updateModalScrollLock();
+    let prevented = false;
+    listeners.get("touchstart")({
+      target: slider,
+      touches: [{ clientX: 360, clientY: 300 }]
+    });
+    listeners.get("touchmove")({
+      target: slider,
+      touches: [{ clientX: 360, clientY: 360 }],
+      preventDefault: () => { prevented = true; },
+      stopImmediatePropagation: () => {}
+    });
+    assert.equal(prevented, false, "the slider must own its gesture even while the modal card is at scrollTop 0");
   } finally {
     globalThis.document = originalDocument;
     globalThis.window = originalWindow;

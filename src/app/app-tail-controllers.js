@@ -266,7 +266,7 @@ export function createAppTailControllers(ctx) {
     getUploadablePhotoEntries, getUploadablePhotoEntriesForSync, getVisibleLayoutRootIdsForState, groupHistoryRecords, groupHistoryRecordsForSync,
     guestCandidateLayouts, guestDemoCopyCleanupPlan, guestDemoCopyLayoutNameValue, guestDemoCopyRecordWasEdited, guestDemoStartupAction,
     guestLayoutHasUserContentEdits, hadAuthoritativeLocalStateAtStartup, hadLocalStateAtStartup, hadRemoteBaselineAtStartup, handleAuthButton,
-    handlePackingTabTouchEnd, handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn,
+    handleRemoteSaveConflict, handleRemoteSaveConflictFlow, handleSearchInput, handleWindowReturn,
     hasContainerDimensions, hasGeneratedPublicArtifacts, hasGuestDemoCopyLayoutRecord, hasLegacyPayloadChanges, hasLegacyPayloadChangesForSync,
     hasListFreshnessSignal, hasLocalSavedState, hasLocalSyncChanges, hasPrivateSyncBlockedPublicOrigin, hasPublicOriginMarker,
     hasRemotePhotoUrl, inspectRecordRemotePhotoSources, hasStateIntegrityMeta, hasStoredLocalValue, highlight, highlightSearchText,
@@ -297,7 +297,7 @@ export function createAppTailControllers(ctx) {
     itemCreatedTimeForState, itemDeleteConfirm, itemDisplayMode, itemDisplayModeFromFlags, itemDisplayModeLabel,
     itemEntitySyncUnavailable, itemPhotoSignature, getLayoutItemQuantityForState, itemQuantityForState, itemSortMode, itemTotalWeightForState, itemWithLayoutQuantityForState,
     itemUsageCountsForCatalog, itemsForActiveCatalogForState, itemsForItemsViewForState, keepRemoteOnlyPhotoReference, languageOptionLabel,
-    languageOptionLabelValue, lastItemTitleTap, lastPackingTabTapTime, lastPackingTouchToggleAt, lastRootContainerTitleTap,
+    languageOptionLabelValue, lastItemTitleTap, lastRootContainerTitleTap,
     lastToastAt, lastToastSignature, layoutArrangementContentScore, layoutContainerPathForState, layoutContainersOwnWeightForState,
     layoutCreateModeState, layoutDictionaryValues, layoutEditTitle, layoutEntitySyncUnavailable, layoutLoadStatus,
     layoutManageLanguage, layoutOrderIdsFromSections, layoutOrderSectionsFromSources, applyLayoutOrderToSources, changedPersonalLayoutOrderIds, layoutSourceNameFromOptionLabel, legacyComparableStateForSync, legacyComparableStateForSyncPayload, legacyComparableTopLevelDiffKeys,
@@ -334,7 +334,7 @@ export function createAppTailControllers(ctx) {
     photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
-    pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, preventDoubleTapZoom,
+    pluralRu, preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport,
     primaryItemPhoto, printHtmlDocument, copyCrossesPublicNamespaceBoundary, itemCopyNamespacePolicy, privateContainerTreeCopyRoute, photoDuplicateOptionsForLayoutCopy, shouldCopyPhotosToCurrentListForLayoutCopy, privateLayoutCount, privateLayoutDeleteConfirm, privateMojibakeLayoutFallbackName,
     pruneAdminPublishedDraftsForSync, pruneAdminPublishedDraftsForSyncValue, pruneRuntimeSharedLayouts, pruneUneditedGuestDemoCopies, pruneUnusedLayoutCustomDictionaries,
     containerPlacementSnapshotChanged, publicCopyComparableText, publicCopyDuplicateSummaryForSnapshot, publicCopyMissingItemPlanForSnapshot, publicCopyRecordContentHash, publicCopySnapshotFromSourceSnapshot,
@@ -439,7 +439,6 @@ export function createAppTailControllers(ctx) {
     t,
     textarea: refs.rootContainerNote
   });
-
 const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
   MANUFACTURER_BAG_CATALOG,
   manufacturerBagCatalogOverrides
