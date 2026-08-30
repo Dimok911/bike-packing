@@ -345,6 +345,7 @@ export function manufacturerBagCatalogNote(entry, { language = "en" } = {}) {
 
   const sections = [
     [ru ? "Характеристики производителя" : "Manufacturer details", rows.join("\n")],
+    [ru ? "Дополнительные данные производителя" : "Additional manufacturer data", String(entry.manufacturerDetails || "").trim()],
     [ru ? "Описание производителя" : "Manufacturer description", description],
     ["", [
       entry.sourceUrl ? `${ru ? "Официальная страница" : "Official page"}: ${entry.sourceUrl}` : "",

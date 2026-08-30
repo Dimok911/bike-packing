@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.js";
 import { MANUFACTURER_CATALOG_SOURCES } from "../src/data/manufacturer-catalog-sources.js";
+import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
@@ -57,20 +58,28 @@ async function downloadManufacturer(source) {
   const products = new Map();
   for (const [fileName, url] of source.collections) {
     try {
-      const parsed = JSON.parse(await fetchText(url));
-      await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
-      (Array.isArray(parsed.products) ? parsed.products : []).forEach((product) => {
-        if (product?.handle) products.set(product.handle, product);
-      });
+      const fetched = await fetchText(url);
+      if (source.adapter === "tailfin-html") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        tailfinCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
+      } else {
+        const parsed = JSON.parse(fetched);
+        await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
+        (Array.isArray(parsed.products) ? parsed.products : []).forEach((product) => {
+          if (product?.handle) products.set(product.handle, product);
+        });
+      }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), "{\"products\":[]}\n", "utf8");
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
-  await mapConcurrent([...products.keys()], 6, async (handle) => {
+  await mapConcurrent([...products.values()], 6, async (product) => {
+    const handle = product.handle;
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
     try {
-      await writeFile(pagePath, await fetchText(`${source.productBaseUrl}${encodeURIComponent(handle)}`), "utf8");
+      const pageUrl = product.url || `${source.productBaseUrl}${encodeURIComponent(handle)}`;
+      await writeFile(pagePath, await fetchText(pageUrl), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
       await writeFile(pagePath, "", "utf8");

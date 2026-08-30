@@ -6,6 +6,10 @@ import {
   compareManufacturerCatalogSnapshots,
 } from "../../src/data/manufacturer-catalog-scan.js";
 import { MANUFACTURER_CATALOG_SOURCES } from "../../src/data/manufacturer-catalog-sources.js";
+import {
+  buildTailfinCatalogEntry,
+  tailfinCatalogTargets,
+} from "../../scripts/manufacturer-catalog/tailfin-adapter.mjs";
 
 const bag = (id, brand, extra = {}) => ({
   id,
@@ -59,9 +63,10 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 2);
+  assert.equal(report.manufacturers.length, 3);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 
@@ -85,4 +90,54 @@ test("CRITICAL catalog scan: all official image URLs are reviewable and the Acti
   });
   const result = compareManufacturerCatalogSnapshots([before], [after]);
   assert.deepEqual(result.changes[0].fields.map(({ field }) => field), ["sourceImageUrls"]);
+});
+
+test("CRITICAL catalog scan: Tailfin adapter discovers only official bag product pages", () => {
+  const targets = tailfinCatalogTargets(`
+    <a href="/us/cargopack/">CargoPack</a>
+    <a href="https://www.tailfin.cc/us/product/frame-bags/half-frame-bag/">Half Frame Bag</a>
+    <a href="/us/product/pannier-rack-top-bags/fork-packs/fork-packs/">Fork Packs</a>
+    <a href="/us/product/accessories/bar-bag-accessories/">Accessory</a>
+    <a href="https://example.test/us/product/frame-bags/not-official/">Other host</a>
+  `);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["cargopack", "fork-packs", "half-frame-bag"]);
+  assert.ok(targets.every(({ url }) => url.startsWith("https://www.tailfin.cc/us/")));
+});
+
+test("CRITICAL catalog scan: Tailfin adapter preserves sizes, technical details, and every product image", () => {
+  const entry = buildTailfinCatalogEntry({
+    sourceUrl: "https://www.tailfin.cc/us/product/frame-bags/half-frame-bag/",
+    checkedAt: "2026-08-30",
+    html: `
+      <html><head>
+        <meta name="description" content="Waterproof frame storage for long rides.">
+        <script type="application/ld+json">{
+          "@type":"Product","name":"Half Frame Bag","sku":"TF-HFB",
+          "image":["https://media.tailfin.cc/app/uploads/2026/08/half-frame-front.jpg"],
+          "offers":{"availability":"https://schema.org/InStock"}
+        }</script>
+      </head><body><main>
+        <h1>Half Frame Bag</h1>
+        <img data-large_image="https://media.tailfin.cc/app/uploads/2026/08/half-frame-side.jpg">
+        <img src="https://media.tailfin.cc/app/uploads/2026/08/tailfin-logo.png">
+        <section><h2>Specifications</h2>
+          <h3>2.3 Litres</h3><p>Weight 248g including Straps</p>
+          <h3>3.0 Litres</h3><p>Weight 290g including Straps</p>
+          <p>Construction 210D Hypalon &amp; 210D Diamond RipStop</p>
+          <p>100% Waterproof</p>
+        </section><h2>Media Reviews</h2>
+      </main></body></html>
+    `,
+  });
+  assert.equal(entry.id, "tailfin-half-frame-bag");
+  assert.equal(entry.brand, "Tailfin");
+  assert.equal(entry.category, "frame");
+  assert.deepEqual(entry.volumeOptions, [2.3, 3]);
+  assert.deepEqual(entry.weightOptions, [248, 290]);
+  assert.equal(entry.variants.length, 2);
+  assert.equal(entry.waterproof, "Waterproof");
+  assert.match(entry.material, /210D Hypalon/);
+  assert.match(entry.manufacturerDetails, /Specifications/);
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/tailfin\//.test(path)));
 });

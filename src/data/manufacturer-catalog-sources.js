@@ -20,6 +20,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["arkel-products.json", "https://arkel.ca/collections/all-bags-and-panniers/products.json?limit=250"],
     ]),
   }),
+  Object.freeze({
+    id: "tailfin",
+    name: "Tailfin",
+    adapter: "tailfin-html",
+    productBaseUrl: "https://www.tailfin.cc/us/",
+    collections: Object.freeze([
+      ["tailfin-shop.html", "https://www.tailfin.cc/us/shop/"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

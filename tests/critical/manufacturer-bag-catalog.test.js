@@ -179,6 +179,19 @@ test("CRITICAL manufacturer catalog: unmapped manufacturer details and source ar
   assert.match(note, /Проверено: 2026-08-29/);
 });
 
+test("CRITICAL manufacturer catalog: adapter-specific technical data is copied into the note", () => {
+  const note = manufacturerBagCatalogNote({
+    brand: "Tailfin",
+    name: "Half Frame Bag",
+    manufacturerDetails: "Construction: 210D Hypalon\nIncluded: four Cargo Straps",
+    sourceUrl: "https://www.tailfin.cc/us/product/frame-bags/half-frame-bag/",
+    sourceCheckedAt: "2026-08-30",
+  }, { language: "ru" });
+  assert.match(note, /Дополнительные данные производителя/);
+  assert.match(note, /210D Hypalon/);
+  assert.match(note, /four Cargo Straps/);
+});
+
 test("CRITICAL manufacturer catalog: saved user bag owns the copied photo and source provenance", () => {
   const entry = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "arkel-seatpacker-seat-bag-hanger-kit-9l");
   const draft = manufacturerBagContainerDraft(entry);
