@@ -760,6 +760,10 @@ import {
   createOfflinePhotoCacheController,
   createOfflinePhotoRenderCoordinator
 } from "./src/sync/offline-photo-cache.js";
+import {
+  createPhotoDownloadCoordinator,
+  PHOTO_DOWNLOAD_PRIORITY
+} from "./src/sync/photo-download-coordinator.js";
 import { acquirePhotoUploadSlot } from "./src/sync/photo-upload-lock.js";
 import {
   cacheLayoutRemotePhotosForUploadFallback,
@@ -959,6 +963,7 @@ import { createRefs } from "./src/ui/refs.js";
 import { highlightSearchText } from "./src/ui/search-highlight.js";
 import {
   bindPhotoGalleries,
+  createDemandDrivenPhotoPreviewLoader,
   hydrateItemPhotos,
   photoDialogStatusText,
   photoStatusText,
@@ -1349,6 +1354,17 @@ let sharedPickerSourceContainerId = "";
 const photoObjectUrls = createPhotoObjectUrlRegistry();
 setPhotoCacheScope(localStorageScopeKey);
 photoObjectUrls.activateScope(localStorageScopeKey);
+const photoDownloadCoordinator = createPhotoDownloadCoordinator();
+const photoPreviewLoader = createDemandDrivenPhotoPreviewLoader({
+  photoObjectUrls,
+  downloadCoordinator: photoDownloadCoordinator,
+  getCachedPhotoForPreview: (id, scopeKey) => getCachedPhoto(id, scopeKey),
+  putCachedPhotoForPreview: (record, scopeKey) => putCachedPhoto(record, scopeKey),
+  getScopeKey: () => isReadOnlyStateScope()
+    ? `${localStorageScopeKey}|readonly:${activeReadOnlyLayoutId()}:${uiLanguage}`
+    : localStorageScopeKey,
+  activateScope: (scopeKey) => offlinePhotoRenderCoordinator.activateScope(scopeKey)
+});
 let photoUploadInFlight = false;
 let photoUploadProgressRenderFrame = null;
 let adminApiCompatibility = {
@@ -1412,6 +1428,10 @@ const offlinePhotoCacheController = createOfflinePhotoCacheController({
       getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
       putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
       getMemoryRecord: (task) => photoObjectUrls.getRecord(task),
+      concurrency: 1,
+      downloadCoordinator: photoDownloadCoordinator,
+      downloadPriority: PHOTO_DOWNLOAD_PRIORITY.OFFLINE,
+      background: true,
       onRecord: (task, record) => {
         if (scopeKey !== localStorageScopeKey) return;
         photoObjectUrls.setRecord(task, record);
@@ -1805,7 +1825,7 @@ const appTailControllerDeps = {
   openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog, openSharedListFromLink,
   orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible, parseContainerDimensionInput,
   parseVolumeInput, parseWeightInput, persistActiveLayoutSelection, persistStateSnapshot,
-  personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
+  personalListApiUnavailable, photoDialogStatusText, photoDraftChanged, photoDownloadCoordinator, photoObjectUrls, photoPreviewLoader, offlinePhotoRenderCoordinator, photoRecordIdMatchesRemoteSource, photoRemoteSrc,
   photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame, pickRicherRemoteListRecord,
   placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
   preferredCurrentLayoutRef, prepareBackupPhotosForStateValue, preserveSearchBlurViewport, primaryItemPhoto,
@@ -3333,7 +3353,6 @@ async function init() {
         updateSyncUi();
         return;
       }
-      offlinePhotoCacheController.schedule({ force: true }).catch(() => null);
       if (currentUser) {
         uploadPendingPhotos({ markDirty: true }).catch(() => null);
         syncNow();
@@ -3414,7 +3433,6 @@ async function init() {
     }
   } finally {
     applyStaticTranslations();
-    await offlinePhotoRenderCoordinator.prepare().catch(() => null);
     renderBeforeFinishingAppStartup({ documentRef: document, render });
   }
 }
@@ -6928,7 +6946,6 @@ async function openSharedListFromLink(listId, layoutId = "") {
     setActiveReadOnlyScope(linkedSharedListLayout.id);
     switchView("packing");
     applyStaticTranslations();
-    await offlinePhotoRenderCoordinator.prepare().catch(() => null);
     renderBeforeFinishingAppStartup({
       documentRef: document,
       render: () => {
@@ -6942,7 +6959,6 @@ async function openSharedListFromLink(listId, layoutId = "") {
     await hydrateAuthForSharedLink();
     setActivePrivateScope();
     applyStaticTranslations();
-    await offlinePhotoRenderCoordinator.prepare().catch(() => null);
     renderBeforeFinishingAppStartup({ documentRef: document, render });
     updateSyncUi(localText(`Could not open the shared list: ${error.message}`, `Не удалось открыть shared-список: ${error.message}`));
     return false;
@@ -8400,6 +8416,7 @@ function renderSharedLayouts() {
     showPhotos: shouldShowItemPhotos(),
     weightLabel: t("shared.weightLabel")
   });
+  photoPreviewLoader.observe(refs.sharedLayoutsList);
   refs.sharedLayoutsList.querySelectorAll("[data-copy-shared-root]").forEach((button) => {
     button.addEventListener("click", () => openSharedContainerCopyPicker(button.dataset.copySharedRoot));
   });
@@ -10433,12 +10450,6 @@ function switchView(view) {
 
 function render() {
   ensureGuestPublicScope();
-  if (!offlinePhotoRenderCoordinator.isReady()) {
-    offlinePhotoRenderCoordinator.prepare()
-      .then(() => render())
-      .catch(() => render());
-    return;
-  }
   capturePackingScroll();
   document.body.classList.toggle("shared-layout-view", isSharedLayoutView());
   renderFilters();
@@ -10468,8 +10479,7 @@ function render() {
   updateViewScopedControls();
   updateFilterNavigationUi();
   scheduleFixedScrollbarRefresh();
-  hydrateItemPhotos(document, { photoObjectUrls }).finally(() => bindPhotoGalleries(document, photoGalleryBindingOptions()));
-  offlinePhotoCacheController.schedule().catch(() => null);
+  bindPhotoGalleries(document, photoGalleryBindingOptions());
 }
 
 function getCurrentView() {
@@ -10607,7 +10617,6 @@ async function renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice = 
   if (!initialRemoteLoadPending || !currentUser || !hasLocalSavedState() || !isMeaningfulPackingState(state)) return false;
   setActivePrivateScope();
   if (restoreLayoutChoice) await restoreSavedLayoutChoice({ privateOnly: true });
-  await offlinePhotoRenderCoordinator.prepare().catch(() => null);
   renderPreservingPackingScroll();
   const count = privateLayoutCount();
   setLayoutLoadStatus(

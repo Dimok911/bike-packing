@@ -5,6 +5,7 @@ import {
   hydrateNormalizedPhotoTasks,
   reconcileNormalizedPhotoTasks
 } from "./photo-cache-engine.js";
+import { PHOTO_DOWNLOAD_PRIORITY } from "./photo-download-coordinator.js";
 
 const OFFLINE_REMOTE_PHOTO_NAMESPACE = "offline-remote";
 
@@ -126,8 +127,11 @@ export async function cacheRemotePhotosForOffline(targetState, {
   getCachedPhoto = async () => null,
   putCachedPhoto = async () => {},
   getMemoryRecord,
-  concurrency = 2,
+  concurrency = 1,
   timeoutMs = 30000,
+  downloadCoordinator = null,
+  downloadPriority = PHOTO_DOWNLOAD_PRIORITY.OFFLINE,
+  background = true,
   onPending = () => {},
   onRecord = () => {}
 } = {}) {
@@ -135,8 +139,34 @@ export async function cacheRemotePhotosForOffline(targetState, {
     ...task,
     fullUrl: task.hasFullSource ? task.fullUrl : ""
   }));
+  const coordinatedFetch = downloadCoordinator
+    ? async (url, requestInit = {}) => {
+      const blob = await downloadCoordinator.download(url, {
+        key: url,
+        priority: downloadPriority,
+        background,
+        fetchImpl,
+        requestInit,
+        timeoutMs,
+        signal: requestInit.signal
+      });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const normalized = String(name || "").toLowerCase();
+            if (normalized === "content-type") return blob.type || "application/octet-stream";
+            if (normalized === "content-length") return String(blob.size);
+            return null;
+          }
+        },
+        blob: async () => blob
+      };
+    }
+    : fetchImpl;
   return cacheNormalizedPhotoTasks(tasks, {
-    fetchImpl,
+    fetchImpl: coordinatedFetch,
     getCachedPhoto,
     putCachedPhoto,
     getMemoryRecord,

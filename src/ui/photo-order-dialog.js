@@ -1,4 +1,6 @@
 import { escapeHtml } from "../utils/html.js";
+import { photoCacheSourceSignature } from "../sync/photo-cache-quality.js";
+import { normalizeRemotePhotoUrl, versionedPhotoUrl } from "../sync/photos.js";
 
 export function photoOrderIdentity(photo) {
   return String(photo?.id || photo?.localId || "").trim();
@@ -23,12 +25,19 @@ export function renderPhotoOrderRows(photos, {
   const list = Array.isArray(photos) ? photos : [];
   const renderRow = (photo, index) => {
     const id = photoOrderIdentity(photo);
-    const src = previewSources.get(id) || photo?.thumbUrl || photo?.url || "";
+    const src = previewSources.get(id) || "";
+    const remoteFullUrl = normalizeRemotePhotoUrl(photo?.url || photo?.thumbUrl || "");
+    const remoteThumbUrl = normalizeRemotePhotoUrl(photo?.thumbUrl || photo?.url || "");
+    const sourceSignature = remoteFullUrl
+      ? photoCacheSourceSignature(remoteFullUrl, remoteThumbUrl, photo?.updatedAt || "")
+      : "";
+    const remoteFullSrc = remoteFullUrl ? versionedPhotoUrl(remoteFullUrl, photo?.updatedAt || photo?.id || "") : "";
+    const remoteThumbSrc = remoteThumbUrl ? versionedPhotoUrl(remoteThumbUrl, photo?.updatedAt || photo?.id || "") : remoteFullSrc;
     const primary = index === 0;
     return `
       <div class="photo-order-row layout-order-row ${primary ? "photo-order-primary" : ""}" data-photo-order-index="${index}" ${primary ? "" : `data-layout-order-id="${escapeHtml(id)}" data-layout-order-section="photos"`}>
         <button type="button" class="photo-order-handle layout-order-handle" ${primary ? "disabled" : ""} aria-label="${en ? "Drag to reorder" : "Перетащить для сортировки"}">↕</button>
-        <span class="photo-order-thumb">${src ? `<img src="${escapeHtml(src)}" alt="">` : `<span>${index + 1}</span>`}</span>
+        <span class="photo-order-thumb">${id ? `<img${src ? ` src="${escapeHtml(src)}"` : ""} data-photo-local-id="${escapeHtml(id)}" data-photo-local-source-id="${escapeHtml(id)}"${sourceSignature ? ` data-photo-source-signature="${escapeHtml(sourceSignature)}"` : ""}${remoteThumbSrc ? ` data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : ""}${remoteFullSrc ? ` data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : ""} alt=""><span class="photo-preview-status" data-photo-preview-status></span>` : `<span>${index + 1}</span>`}</span>
         <span class="photo-order-label"><strong>${en ? `Photo ${index + 1}` : `Фото ${index + 1}`}</strong>${primary ? `<small>${en ? "Primary photo" : "Главное фото"}</small>` : ""}</span>
         <span class="photo-order-buttons layout-order-row-actions">
           <button type="button" class="ghost" data-photo-order-up="${index}" ${index <= 1 ? "disabled" : ""} aria-label="${en ? "Move up" : "Переместить выше"}">↑</button>

@@ -1,4 +1,5 @@
 import { escapeHtml } from "../utils/html.js";
+import { photoCacheSourceSignature } from "../sync/photo-cache-quality.js";
 import { formatVolume, formatWeight } from "../utils/weight.js";
 
 export function renderSharedLayoutsHtml(layouts, {
@@ -99,9 +100,14 @@ export function renderSharedItemCardHtml(layout, root, item, {
 function renderSharedGearPhotoHtml(bag, { showPhotos = true } = {}) {
   if (!showPhotos) return "";
   if (bag.imageUrl) {
+    const photoId = `shared-preview-${bag.id}`;
+    const sourceSignature = photoCacheSourceSignature(bag.imageUrl, bag.imageUrl, "");
     return `
       <div class="shared-gear-photo">
-        <img src="${escapeHtml(bag.imageUrl)}" alt="${escapeHtml(bag.name)}" loading="lazy" />
+        <img data-photo-local-id="${escapeHtml(photoId)}" data-photo-local-source-id="${escapeHtml(photoId)}"
+          data-photo-source-signature="${escapeHtml(sourceSignature)}" data-photo-remote-thumb-src="${escapeHtml(bag.imageUrl)}"
+          data-photo-remote-full-src="${escapeHtml(bag.imageUrl)}" alt="${escapeHtml(bag.name)}" loading="lazy" />
+        <span class="photo-preview-status" data-photo-preview-status role="status" aria-live="polite"></span>
       </div>
     `;
   }
