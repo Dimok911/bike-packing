@@ -11,6 +11,7 @@ import {
   manufacturerBagCatalogWeightMetrics
 } from "../state/manufacturer-bag-catalog.js";
 import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
+import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
 const TABLE_COLUMNS = [
   "model",
@@ -82,6 +83,7 @@ function comparisonVolumeText(perBagValues, totalValues, quantity, unit, t) {
 
 export function createManufacturerBagComparisonDialogController({
   bindGalleries = () => null,
+  brands = [],
   catalog = [],
   categories = [],
   escapeHtml = (value) => String(value || ""),
@@ -178,7 +180,7 @@ export function createManufacturerBagComparisonDialogController({
         <td class="manufacturer-comparison-model">
           <button type="button" data-bag-comparison-detail="${escapeHtml(entry.id)}" aria-label="${escapeHtml(t("bagCatalog.compare.openDetailsFor", { name: entry.name }))}">
             ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />` : ""}
-            <span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.brand)}</small></span>
+            <span><strong>${escapeHtml(entry.name)}</strong>${renderManufacturerBrandMark({ brand: entry.brand, brands, className: "manufacturer-comparison-brand", escapeHtml })}</span>
           </button>
         </td>
         <td>${valueOrUnknown(volume)}</td>
@@ -314,7 +316,9 @@ export function createManufacturerBagComparisonDialogController({
       ? options.map((option) => `
           <label data-bag-comparison-option-search="${escapeHtml(option.label.toLocaleLowerCase())}">
             <input type="checkbox" data-bag-comparison-option-key="${escapeHtml(option.key)}" ${!selectedKeys || selectedKeys.has(option.key) ? "checked" : ""} />
-            <span>${escapeHtml(option.label)}</span>
+            ${column === "manufacturer"
+              ? renderManufacturerBrandMark({ brand: option.label, brands, className: "manufacturer-comparison-filter-brand", escapeHtml })
+              : `<span>${escapeHtml(option.label)}</span>`}
             <small>${escapeHtml(option.count)}</small>
           </label>
         `).join("")

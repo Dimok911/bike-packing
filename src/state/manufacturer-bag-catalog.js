@@ -52,11 +52,13 @@ export function matchesManufacturerBagCatalogQuery(entry, query = "") {
 }
 
 export function filterManufacturerBagCatalog(catalog = [], {
+  brand = "",
   category = "",
   family = "",
   query = ""
 } = {}) {
   return (Array.isArray(catalog) ? catalog : []).filter((entry) => {
+    if (brand && entry?.brand !== brand) return false;
     if (family && entry?.family !== family) return false;
     if (category && entry?.category !== category) return false;
     return matchesManufacturerBagCatalogQuery(entry, query);
@@ -64,10 +66,11 @@ export function filterManufacturerBagCatalog(catalog = [], {
 }
 
 export function manufacturerBagCatalogCount(catalog = [], {
+  brand = "",
   category = "",
   family = ""
 } = {}) {
-  return filterManufacturerBagCatalog(catalog, { category, family }).length;
+  return filterManufacturerBagCatalog(catalog, { brand, category, family }).length;
 }
 
 export function manufacturerBagCatalogEntry(catalog = [], id = "") {

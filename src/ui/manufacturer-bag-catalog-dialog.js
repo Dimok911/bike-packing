@@ -8,6 +8,7 @@ import {
   manufacturerBagCatalogVariantEntry
 } from "../state/manufacturer-bag-catalog.js";
 import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
+import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
 function metricRange(values = []) {
   const normalized = [...new Set((Array.isArray(values) ? values : [])
@@ -52,6 +53,7 @@ export function createManufacturerBagCatalogDialogController({
   bindGalleries = () => null,
   canEdit = () => false,
   catalog = [],
+  brands = [],
   categories = [],
   escapeHtml = (value) => String(value || ""),
   families = [],
@@ -66,6 +68,7 @@ export function createManufacturerBagCatalogDialogController({
 } = {}) {
   let family = "";
   let category = "";
+  let manufacturer = "";
   let query = "";
   let editingId = "";
   let selectingId = "";
@@ -86,6 +89,7 @@ export function createManufacturerBagCatalogDialogController({
   function resetNavigation() {
     family = "";
     category = "";
+    manufacturer = "";
     query = "";
     selectingId = "";
     if (refs?.bagCatalogSearch) refs.bagCatalogSearch.value = "";
@@ -107,12 +111,13 @@ export function createManufacturerBagCatalogDialogController({
     refs.bagCatalogBackBtn.textContent = t("bagCatalog.back");
     refs.bagCatalogAdminNotice.hidden = !canEdit();
     refs.bagCatalogAdminNotice.textContent = t("bagCatalog.adminLocalNotice");
-    refs.bagCatalogBackBtn.hidden = hasQuery || (!family && !category);
+    refs.bagCatalogBackBtn.hidden = hasQuery || (!manufacturer && !family && !category);
     refs.bagCatalogPath.textContent = currentPath(hasQuery);
+    renderBrandPicker();
     refs.bagCatalogResults.innerHTML = hasQuery
-      ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { query }))
+      ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { brand: manufacturer, query }))
       : category
-        ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { category, family }))
+        ? renderProductList(filterManufacturerBagCatalog(catalogRows(), { brand: manufacturer, category, family }))
         : family
           ? renderCategoryList()
           : renderFamilyList();
@@ -121,19 +126,50 @@ export function createManufacturerBagCatalogDialogController({
   }
 
   function currentPath(hasQuery = false) {
-    if (hasQuery) return t("bagCatalog.searchResults");
+    const brandPrefix = manufacturer ? `${manufacturer} / ` : "";
+    if (hasQuery) return `${brandPrefix}${t("bagCatalog.searchResults")}`;
     const familyEntry = families.find((entry) => entry.id === family);
     const categoryEntry = categories.find((entry) => entry.id === category);
-    if (categoryEntry) return `${t(familyEntry?.labelKey || "")} / ${t(categoryEntry.labelKey)}`;
-    if (familyEntry) return t(familyEntry.labelKey);
+    if (categoryEntry) return `${brandPrefix}${t(familyEntry?.labelKey || "")} / ${t(categoryEntry.labelKey)}`;
+    if (familyEntry) return `${brandPrefix}${t(familyEntry.labelKey)}`;
+    if (manufacturer) return manufacturer;
     return t("bagCatalog.chooseSection");
+  }
+
+  function renderBrandPicker() {
+    if (!refs?.bagCatalogBrands) return;
+    const activeBrands = brands.filter((entry) => entry.status === "active");
+    const plannedBrands = brands.filter((entry) => entry.status === "planned");
+    refs.bagCatalogBrands.setAttribute("aria-label", t("bagCatalog.brands.label"));
+    refs.bagCatalogBrands.innerHTML = `
+      <button class="manufacturer-brand-choice manufacturer-brand-choice-all ${manufacturer ? "" : "is-selected"}" type="button" data-bag-catalog-brand="all" aria-pressed="${manufacturer ? "false" : "true"}">
+        <span>${escapeHtml(t("bagCatalog.brands.all"))}</span>
+      </button>
+      ${activeBrands.map((entry) => {
+        const count = manufacturerBagCatalogCount(catalogRows(), { brand: entry.catalogBrand });
+        const selected = manufacturer === entry.catalogBrand;
+        return `
+          <button class="manufacturer-brand-choice ${selected ? "is-selected" : ""}" type="button" data-bag-catalog-brand="${escapeHtml(entry.id)}" aria-pressed="${selected ? "true" : "false"}" aria-label="${escapeHtml(t("bagCatalog.brands.filter", { brand: entry.name, count }))}">
+            ${renderManufacturerBrandMark({ brand: entry.catalogBrand, brands, escapeHtml })}
+            <small>${escapeHtml(t("bagCatalog.models", { count }))}</small>
+          </button>
+        `;
+      }).join("")}
+      ${plannedBrands.map((entry) => `
+        <span class="manufacturer-brand-choice is-planned" aria-label="${escapeHtml(t("bagCatalog.brands.plannedHelp", { brand: entry.name }))}">
+          ${renderManufacturerBrandMark({ brand: entry.name, brands, escapeHtml })}
+          <small>${escapeHtml(t("bagCatalog.brands.planned"))}</small>
+        </span>
+      `).join("")}
+    `;
   }
 
   function renderFamilyList() {
     return `
       <div class="manufacturer-catalog-sections">
         ${families.map((entry) => {
-          const count = manufacturerBagCatalogCount(catalogRows(), { family: entry.id });
+          const count = manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family: entry.id });
+          if (!count) return "";
           return `
             <button class="manufacturer-catalog-section" type="button" data-bag-catalog-family="${escapeHtml(entry.id)}">
               <span class="manufacturer-catalog-section-title">${escapeHtml(t(entry.labelKey))}</span>
@@ -147,11 +183,13 @@ export function createManufacturerBagCatalogDialogController({
   }
 
   function renderCategoryList() {
-    const rows = categories.filter((entry) => entry.family === family);
+    const rows = categories.filter((entry) => entry.family === family
+      && manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family, category: entry.id }));
     return `
       <div class="manufacturer-catalog-sections manufacturer-catalog-categories">
         ${rows.map((entry) => {
-          const count = manufacturerBagCatalogCount(catalogRows(), { family, category: entry.id });
+          const count = manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family, category: entry.id });
+          const comparisonCount = manufacturerBagCatalogCount(catalogRows(), { family, category: entry.id });
           return `
             <article class="manufacturer-catalog-section manufacturer-catalog-category-section">
               <button class="manufacturer-catalog-category-open" type="button" data-bag-catalog-category="${escapeHtml(entry.id)}">
@@ -159,7 +197,7 @@ export function createManufacturerBagCatalogDialogController({
                 <span class="manufacturer-catalog-section-count">${escapeHtml(t("bagCatalog.models", { count }))}</span>
                 <span class="manufacturer-catalog-section-description">${escapeHtml(t(entry.descriptionKey))}</span>
               </button>
-              <button class="ghost manufacturer-catalog-compare-button" type="button" data-bag-catalog-compare-category="${escapeHtml(entry.id)}" ${count < 2 ? "disabled" : ""}>${escapeHtml(t("bagCatalog.compare.open"))}</button>
+              <button class="ghost manufacturer-catalog-compare-button" type="button" data-bag-catalog-compare-category="${escapeHtml(entry.id)}" ${comparisonCount < 2 ? "disabled" : ""}>${escapeHtml(t("bagCatalog.compare.open"))}</button>
             </article>
           `;
         }).join("")}
@@ -207,7 +245,7 @@ export function createManufacturerBagCatalogDialogController({
         <div class="manufacturer-catalog-product-body">
           <div class="manufacturer-catalog-product-heading">
             <div>
-              <span class="manufacturer-catalog-brand">${escapeHtml(entry.brand)}</span>
+              ${renderManufacturerBrandMark({ brand: entry.brand, brands, className: "manufacturer-catalog-brand", escapeHtml })}
               <h3>${escapeHtml(entry.name)}</h3>
             </div>
             ${selectedEntry.sku ? `<span class="manufacturer-catalog-sku" title="${escapeHtml(t("bagCatalog.field.skuHelp"))}" aria-label="${escapeHtml(`${t("bagCatalog.field.skuHelp")} ${selectedEntry.sku}`)}">${escapeHtml(selectedEntry.sku)}</span>` : ""}
@@ -254,6 +292,7 @@ export function createManufacturerBagCatalogDialogController({
     if (selectingId) return;
     if (category) category = "";
     else family = "";
+    if (!family && !category && manufacturer) manufacturer = "";
     render();
   }
 
@@ -297,6 +336,21 @@ export function createManufacturerBagCatalogDialogController({
       selectingId = "";
       if (refs.bagCatalogDialog.open) render();
     }
+  }
+
+  function handleBrandClick(event) {
+    const button = event.target.closest("[data-bag-catalog-brand]");
+    if (!button || selectingId) return;
+    const requested = button.dataset.bagCatalogBrand || "all";
+    const definition = brands.find((entry) => entry.id === requested && entry.status === "active");
+    manufacturer = requested === "all" || manufacturer === definition?.catalogBrand
+      ? ""
+      : String(definition?.catalogBrand || "");
+    family = "";
+    category = "";
+    query = "";
+    if (refs?.bagCatalogSearch) refs.bagCatalogSearch.value = "";
+    render();
   }
 
   function openEditor(id) {
@@ -399,6 +453,7 @@ export function createManufacturerBagCatalogDialogController({
     render();
   });
   refs?.bagCatalogResults?.addEventListener("click", handleResultsClick);
+  refs?.bagCatalogBrands?.addEventListener("click", handleBrandClick);
   refs?.bagCatalogEditForm?.addEventListener("submit", saveEditor);
 
   return { open, render, resetNavigation, setImportAvailable };

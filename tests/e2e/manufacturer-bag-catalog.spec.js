@@ -21,24 +21,33 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await page.locator("#openBagCatalogBtn").click();
 
   await expect(page.locator("#bagCatalogDialog")).toBeVisible();
+  const brandPicker = page.locator("#bagCatalogBrands");
+  await expect(brandPicker.locator('button[data-bag-catalog-brand]:not([data-bag-catalog-brand="all"])')).toHaveCount(5);
+  await expect(brandPicker.locator(".manufacturer-brand-choice.is-planned")).toHaveCount(5);
+  await expect(brandPicker.locator('img[alt="Apidura"]')).toBeVisible();
+  await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
+  await expect(page.locator("#bagCatalogPath")).toHaveText("Apidura");
+  await expect(page.locator('[data-bag-catalog-family="bikepacking"]')).toBeVisible();
+  await expect(page.locator('[data-bag-catalog-family="carry"]')).toHaveCount(0);
+  await brandPicker.locator('[data-bag-catalog-brand="all"]').click();
   await page.locator('[data-bag-catalog-family="bikepacking"]').click();
   await page.locator('[data-bag-catalog-compare-category="saddle"]').click();
 
   const comparison = page.locator("#bagCatalogCompareDialog");
   await expect(comparison).toBeVisible();
   await expect(comparison.locator("tbody tr")).toHaveCount(32);
-  await expect(comparison).toContainText("Apidura");
-  await expect(comparison).toContainText("ORTLIEB");
-  await expect(comparison).toContainText("Arkel");
-  await expect(comparison).toContainText("Restrap");
+  await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Apidura"]')).toHaveCount(12);
+  await expect(comparison.locator('.manufacturer-comparison-brand img[alt="ORTLIEB"]')).toHaveCount(8);
+  await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Arkel"]')).toHaveCount(5);
+  await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Restrap"]')).toHaveCount(7);
 
   await comparison.locator("#bagCatalogCompareManufacturerBtn").click();
   const filterPanel = comparison.locator("#bagCatalogCompareFilterPanel");
   await expect(filterPanel).toBeVisible();
-  await filterPanel.locator("label", { hasText: "Arkel" }).locator('input[type="checkbox"]').uncheck();
+  await filterPanel.locator('label:has(img[alt="Arkel"]) input[type="checkbox"]').uncheck();
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
   await expect(comparison.locator("tbody tr")).toHaveCount(27);
-  await expect(comparison.locator("tbody")).not.toContainText("Arkel");
+  await expect(comparison.locator('tbody .manufacturer-comparison-brand img[alt="Arkel"]')).toHaveCount(0);
 
   await comparison.locator('[data-bag-comparison-detail="ortlieb-seat-pack-11l"]').click();
   const details = page.locator("#bagCatalogProductDetailDialog");

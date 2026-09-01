@@ -4,6 +4,27 @@ import {
   splitManufacturerBagCatalogSkuModels
 } from "./manufacturer-bag-catalog-variants.js";
 
+const MANUFACTURER_BRAND_LOGOS = {
+  apidura: new URL("../../assets/manufacturer-brands/apidura.svg", import.meta.url).href,
+  arkel: new URL("../../assets/manufacturer-brands/arkel.png", import.meta.url).href,
+  ortlieb: new URL("../../assets/manufacturer-brands/ortlieb.png", import.meta.url).href,
+  restrap: new URL("../../assets/manufacturer-brands/restrap.svg", import.meta.url).href,
+  tailfin: new URL("../../assets/manufacturer-brands/tailfin.svg", import.meta.url).href
+};
+
+export const MANUFACTURER_BAG_CATALOG_BRANDS = [
+  { id: "ortlieb", name: "ORTLIEB", catalogBrand: "ORTLIEB", logoUrl: MANUFACTURER_BRAND_LOGOS.ortlieb, status: "active" },
+  { id: "apidura", name: "Apidura", catalogBrand: "Apidura", logoUrl: MANUFACTURER_BRAND_LOGOS.apidura, status: "active" },
+  { id: "restrap", name: "Restrap", catalogBrand: "Restrap", logoUrl: MANUFACTURER_BRAND_LOGOS.restrap, status: "active" },
+  { id: "tailfin", name: "Tailfin", catalogBrand: "Tailfin", logoUrl: MANUFACTURER_BRAND_LOGOS.tailfin, status: "active" },
+  { id: "arkel", name: "Arkel", catalogBrand: "Arkel", logoUrl: MANUFACTURER_BRAND_LOGOS.arkel, status: "active" },
+  { id: "revelate-designs", name: "Revelate Designs", status: "planned" },
+  { id: "miss-grape", name: "Miss Grape", status: "planned" },
+  { id: "cyclite", name: "CYCLITE", status: "planned" },
+  { id: "blackburn", name: "Blackburn", status: "planned" },
+  { id: "topeak", name: "Topeak", status: "planned" }
+];
+
 export const MANUFACTURER_BAG_CATALOG_FAMILIES = [
   {
     id: "bikepacking",

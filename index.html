@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f3a36" />
     <title>Bikepacking List</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=1594" />
+    <link rel="stylesheet" href="./styles.css?v=1595" />
   </head>
   <body class="app-starting auth-gated">
     <main class="app">
@@ -416,9 +416,10 @@
             <input id="bagCatalogSearch" type="search" autocomplete="off" />
           </label>
           <p id="bagCatalogPath" class="manufacturer-catalog-path"></p>
-          <p id="bagCatalogAdminNotice" class="manufacturer-catalog-admin-notice" hidden></p>
-        </div>
-        <div id="bagCatalogResults" class="manufacturer-catalog-results"></div>
+            <p id="bagCatalogAdminNotice" class="manufacturer-catalog-admin-notice" hidden></p>
+          </div>
+          <div id="bagCatalogBrands" class="manufacturer-brand-picker" role="group" aria-label="Manufacturers"></div>
+          <div id="bagCatalogResults" class="manufacturer-catalog-results"></div>
       </form>
     </dialog>
 
@@ -990,6 +991,6 @@
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" aria-atomic="true" popover="manual"></div>
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./app.js?v=1594" type="module"></script>
+    <script src="./app.js?v=1595" type="module"></script>
   </body>
 </html>

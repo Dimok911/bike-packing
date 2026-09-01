@@ -6503,7 +6503,7 @@ button.touch-tooltip-open:active {
   min-width: 0;
   max-height: calc(100dvh - 24px);
   box-sizing: border-box;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -6545,6 +6545,97 @@ button.touch-tooltip-open:active {
 
 .manufacturer-catalog-toolbar .manufacturer-catalog-admin-notice {
   grid-column: 1 / -1;
+}
+
+.manufacturer-brand-picker {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 2px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.manufacturer-brand-choice {
+  position: relative;
+  display: grid;
+  flex: 0 0 118px;
+  grid-template-rows: minmax(28px, 1fr) auto;
+  gap: 5px;
+  place-items: center;
+  min-height: 62px;
+  padding: 8px 9px 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  box-shadow: none;
+}
+
+button.manufacturer-brand-choice:hover {
+  border-color: hsl(var(--interface-hue) 42% 58% / 0.72);
+  background: hsl(var(--interface-hue) 30% 97%);
+}
+
+.manufacturer-brand-choice.is-selected {
+  border-color: var(--accent);
+  background: hsl(var(--interface-hue) 38% 93%);
+  box-shadow: inset 0 0 0 1px hsl(var(--interface-hue) 42% 58% / 0.28);
+}
+
+.manufacturer-brand-choice small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.manufacturer-brand-choice-all span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.manufacturer-brand-choice.is-planned {
+  border-style: dashed;
+  background: hsl(0 0% 96%);
+  filter: grayscale(1);
+  opacity: 0.48;
+  cursor: default;
+}
+
+.manufacturer-brand-mark {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.manufacturer-brand-mark img {
+  display: block;
+  width: auto;
+  max-width: 94px;
+  height: auto;
+  max-height: 28px;
+  object-fit: contain;
+}
+
+.manufacturer-brand-choice .manufacturer-brand-mark {
+  width: 94px;
+  height: 28px;
+}
+
+.manufacturer-brand-choice .manufacturer-brand-mark img {
+  width: 100%;
+  height: 100%;
+}
+
+.manufacturer-brand-mark-text {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .manufacturer-catalog-results {
@@ -6688,6 +6779,20 @@ button.touch-tooltip-open:active {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.manufacturer-catalog-brand {
+  justify-content: flex-start;
+  width: 92px;
+  height: 20px;
+  min-height: 20px;
+}
+
+.manufacturer-catalog-brand img {
+  width: 100%;
+  height: 100%;
+  max-width: 92px;
+  max-height: 20px;
 }
 
 .manufacturer-catalog-sku {
@@ -6926,6 +7031,28 @@ button.touch-tooltip-open:active {
 .manufacturer-comparison-model small,
 .manufacturer-comparison-unknown {
   color: var(--muted);
+}
+
+.manufacturer-comparison-brand {
+  justify-content: flex-start;
+  width: 76px;
+  height: 17px;
+  min-height: 18px;
+  margin-top: 3px;
+}
+
+.manufacturer-comparison-brand img,
+.manufacturer-comparison-filter-brand img {
+  width: 100%;
+  height: 100%;
+  max-width: 76px;
+  max-height: 17px;
+}
+
+.manufacturer-comparison-filter-brand {
+  justify-content: flex-start;
+  width: 76px;
+  height: 17px;
 }
 
 .manufacturer-comparison-empty {
@@ -7226,6 +7353,16 @@ button.touch-tooltip-open:active {
 
   .manufacturer-catalog-back {
     justify-self: start;
+  }
+
+  .manufacturer-brand-choice {
+    flex-basis: 102px;
+    min-height: 56px;
+  }
+
+  .manufacturer-brand-mark img {
+    max-width: 80px;
+    max-height: 24px;
   }
 
   .manufacturer-catalog-product {

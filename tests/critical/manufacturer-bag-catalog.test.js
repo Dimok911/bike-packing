@@ -4,6 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   MANUFACTURER_BAG_CATALOG,
+  MANUFACTURER_BAG_CATALOG_BRANDS,
   MANUFACTURER_BAG_CATALOG_CATEGORIES,
   MANUFACTURER_BAG_CATALOG_FAMILIES
 } from "../../src/data/manufacturer-bag-catalog.js";
@@ -42,6 +43,23 @@ import {
   writeManufacturerBagCatalogOverride
 } from "../../src/storage/manufacturer-bag-catalog-overrides.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
+
+test("CRITICAL manufacturer catalog: active and planned brand marks stay explicit", () => {
+  const active = MANUFACTURER_BAG_CATALOG_BRANDS.filter(({ status }) => status === "active");
+  const planned = MANUFACTURER_BAG_CATALOG_BRANDS.filter(({ status }) => status === "planned");
+  assert.deepEqual(active.map(({ catalogBrand }) => catalogBrand), ["ORTLIEB", "Apidura", "Restrap", "Tailfin", "Arkel"]);
+  assert.ok(active.every(({ logoUrl }) => /manufacturer-brands\/(?:ortlieb|apidura|restrap|tailfin|arkel)\.(?:png|svg)/.test(logoUrl)));
+  assert.deepEqual(planned.map(({ name }) => name), ["Revelate Designs", "Miss Grape", "CYCLITE", "Blackburn", "Topeak"]);
+  assert.ok(planned.every(({ catalogBrand, logoUrl }) => !catalogBrand && !logoUrl));
+});
+
+test("CRITICAL manufacturer catalog: brand filtering keeps only that manufacturer's available structure", () => {
+  const apidura = filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { brand: "Apidura" });
+  assert.ok(apidura.length > 0);
+  assert.ok(apidura.every(({ brand }) => brand === "Apidura"));
+  assert.ok(filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { brand: "Apidura", family: "bikepacking" }).length > 0);
+  assert.equal(filterManufacturerBagCatalog(MANUFACTURER_BAG_CATALOG, { brand: "Apidura", family: "carry" }).length, 0);
+});
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");

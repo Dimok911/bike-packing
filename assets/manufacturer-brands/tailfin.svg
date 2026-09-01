@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 104" role="img" aria-labelledby="title">
+  <title id="title">Tailfin</title>
+  <g fill="#161817">
+    <path d="M15 18h72v17H62v51H42V35H15z"/>
+    <path d="M86 41h20l24 45h-22l-4-9H84l-4 9H58zm2 22h11l-5-13z"/>
+    <path d="M138 41h20v45h-20zM138 20h20v15h-20z"/>
+    <path d="M169 18h20v68h-20z"/>
+    <path d="M207 41h14V29c0-14 8-20 23-20 7 0 12 1 16 3v16c-3-1-6-2-9-2-7 0-10 2-10 8v7h19v16h-19v29h-20V57h-14z"/>
+    <path d="M270 41h20v45h-20zM270 20h20v15h-20z"/>
+    <path d="M301 41h20v7c5-6 11-9 20-9 16 0 25 10 25 27v20h-20V69c0-9-4-13-12-13-8 0-13 5-13 15v15h-20z"/>
+  </g>
+</svg>

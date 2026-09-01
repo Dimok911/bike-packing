@@ -81,6 +81,7 @@ import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.
 import { focusRecentlyAddedPackingCard } from "../ui/packing-created-focus.js";
 import {
   MANUFACTURER_BAG_CATALOG,
+  MANUFACTURER_BAG_CATALOG_BRANDS,
   MANUFACTURER_BAG_CATALOG_CATEGORIES,
   MANUFACTURER_BAG_CATALOG_FAMILIES
 } from "../data/manufacturer-bag-catalog.js";
@@ -449,6 +450,7 @@ const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
 
 const manufacturerBagComparisonDialogController = createManufacturerBagComparisonDialogController({
   bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+  brands: MANUFACTURER_BAG_CATALOG_BRANDS,
   catalog: manufacturerBagCatalogRows,
   categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
   escapeHtml,
@@ -460,6 +462,7 @@ const manufacturerBagComparisonDialogController = createManufacturerBagCompariso
 
 const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialogController({
   bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+  brands: MANUFACTURER_BAG_CATALOG_BRANDS,
   canEdit: () => isAdminUser(),
   catalog: manufacturerBagCatalogRows,
   categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,

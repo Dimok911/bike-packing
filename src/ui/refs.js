@@ -161,6 +161,7 @@ export function createRefs(root = document) {
     bagCatalogSearch: root.querySelector("#bagCatalogSearch"),
     bagCatalogPath: root.querySelector("#bagCatalogPath"),
     bagCatalogAdminNotice: root.querySelector("#bagCatalogAdminNotice"),
+    bagCatalogBrands: root.querySelector("#bagCatalogBrands"),
     bagCatalogResults: root.querySelector("#bagCatalogResults"),
       bagCatalogCompareDialog: root.querySelector("#bagCatalogCompareDialog"),
       bagCatalogCompareTitle: root.querySelector("#bagCatalogCompareTitle"),
