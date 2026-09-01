@@ -14,6 +14,10 @@ import {
   registerVerifiedPhotoRecord
 } from "../sync/photo-cache-engine.js";
 import {
+  createPhotoDownloadCoordinator,
+  PHOTO_DOWNLOAD_PRIORITY
+} from "../sync/photo-download-coordinator.js";
+import {
   normalizeItemPhotos,
   photoUploadBatchInfo,
   photoUploadBatchSummary
@@ -55,6 +59,189 @@ export const PHOTO_GALLERY_COMPACT_DOT_WINDOW = 5;
 const decodedPhotoLightboxSources = new Set();
 const compactPhotoGalleryBindings = new WeakMap();
 const packingBoardPhotoGestureBindings = new WeakMap();
+
+function photoPreviewStateText(state) {
+  if (state === "loading") return localText("Loading preview…", "Загружается предпросмотр…");
+  if (state === "error") return localText("Preview unavailable", "Предпросмотр недоступен");
+  return "";
+}
+
+function photoPreviewHost(image) {
+  return image?.closest?.(".photo-gallery-slide, .picker-list-thumbnail") || image?.parentElement || null;
+}
+
+function setPhotoPreviewState(image, state) {
+  if (!image) return;
+  image.dataset.photoLoadState = state;
+  image.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+  const host = photoPreviewHost(image);
+  host?.classList?.toggle("photo-preview-loading", state === "loading");
+  host?.classList?.toggle("photo-preview-error", state === "error");
+  host?.classList?.toggle("photo-preview-ready", state === "ready");
+  const status = host?.querySelector?.("[data-photo-preview-status]");
+  if (status) {
+    status.hidden = state === "ready";
+    status.textContent = photoPreviewStateText(state);
+  }
+}
+
+function photoPreviewTaskFromImage(image) {
+  const key = String(image?.dataset?.photoLocalId || "").trim();
+  if (!key) return null;
+  return {
+    key,
+    sourceSignature: String(image.dataset.photoSourceSignature || "").trim(),
+    remoteThumbSrc: String(image.dataset.photoRemoteThumbSrc || "").trim(),
+    remoteFullSrc: String(image.dataset.photoRemoteFullSrc || "").trim(),
+    namespace: "offline-remote",
+    cachePurpose: "offline-remote"
+  };
+}
+
+export function createDemandDrivenPhotoPreviewLoader({
+  photoObjectUrls = new Map(),
+  downloadCoordinator = createPhotoDownloadCoordinator(),
+  getCachedPhotoForPreview = getCachedPhoto,
+  putCachedPhotoForPreview = putCachedPhoto,
+  getScopeKey = () => "",
+  activateScope = (scopeKey) => photoObjectUrls?.activateScope?.(scopeKey),
+  intersectionObserverFactory = typeof globalThis.IntersectionObserver === "function"
+    ? (callback, options) => new globalThis.IntersectionObserver(callback, options)
+    : null
+} = {}) {
+  const pending = new Map();
+  let observer = null;
+
+  const registerRecord = (task, record) => {
+    if (typeof photoObjectUrls?.setRecord === "function") {
+      photoObjectUrls.setRecord(task, record);
+      return photoObjectUrls.sources?.(task.key, task.sourceSignature)?.preview
+        || photoObjectUrls.get?.(task.key, task.sourceSignature)
+        || "";
+    }
+    const blob = cachedPhotoPreview(record, task);
+    return blob ? getPhotoObjectUrl(task.key, task.sourceSignature, blob, photoObjectUrls) : "";
+  };
+
+  const resolvePreview = async (task) => {
+    const existing = photoObjectUrls?.sources?.(task.key, task.sourceSignature)?.preview
+      || photoObjectUrls?.get?.(task.key, task.sourceSignature)
+      || "";
+    if (existing) return existing;
+
+    const cached = await (task.scopeKey
+      ? getCachedPhotoForPreview(task.key, task.scopeKey)
+      : getCachedPhotoForPreview(task.key)).catch(() => null);
+    if (task.scopeKey !== String(getScopeKey() || "")) throw new Error("photo-preview-scope-changed");
+    const matching = cachedPhotoMatchesTask(cached, task);
+    const cachedBlob = matching ? cachedPhotoPreview(cached, task) : null;
+    if (cachedBlob) return registerRecord(task, cached);
+    if (!task.remoteThumbSrc) throw new Error("photo-preview-unavailable");
+
+    const blob = await downloadCoordinator.download(task.remoteThumbSrc, {
+      key: task.remoteThumbSrc,
+      priority: PHOTO_DOWNLOAD_PRIORITY.VISIBLE_PREVIEW,
+      background: false,
+      requestInit: { credentials: "include", cache: "no-store" }
+    });
+    if (task.scopeKey !== String(getScopeKey() || "")) throw new Error("photo-preview-scope-changed");
+    const savedAt = new Date().toISOString();
+    const record = {
+      ...(matching ? cached : {}),
+      id: task.key,
+      namespace: task.namespace,
+      cachePurpose: task.cachePurpose,
+      sourceSignature: task.sourceSignature,
+      blob: matching && cached?.fullBlobVerified === true ? cached.blob : null,
+      thumbBlob: blob,
+      fullBlobVerified: Boolean(matching && cached?.fullBlobVerified === true && cached?.blob),
+      fullBlobDistinct: Boolean(matching && cached?.fullBlobDistinct),
+      type: blob.type || cached?.type || "image/jpeg",
+      createdAt: matching && cached?.createdAt ? cached.createdAt : savedAt,
+      updatedAt: savedAt
+    };
+    await (task.scopeKey
+      ? putCachedPhotoForPreview(record, task.scopeKey)
+      : putCachedPhotoForPreview(record)).catch(() => null);
+    return registerRecord(task, record);
+  };
+
+  const load = async (image) => {
+    const task = photoPreviewTaskFromImage(image);
+    if (!task) return false;
+    task.scopeKey = String(image.dataset.photoCacheScope || getScopeKey() || "");
+    if (task.scopeKey !== String(getScopeKey() || "")) return false;
+    const current = photoObjectUrls?.sources?.(task.key, task.sourceSignature)?.preview
+      || photoObjectUrls?.get?.(task.key, task.sourceSignature)
+      || "";
+    if (current) {
+      image.src = current;
+      setPhotoPreviewState(image, "ready");
+      return true;
+    }
+    setPhotoPreviewState(image, "loading");
+    const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}`;
+    let request = pending.get(identity);
+    if (!request) {
+      request = resolvePreview(task).finally(() => pending.delete(identity));
+      pending.set(identity, request);
+    }
+    try {
+      const src = await request;
+      if (!image.isConnected || !src) return false;
+      image.src = src;
+      setPhotoPreviewState(image, "ready");
+      return true;
+    } catch {
+      if (image.isConnected) setPhotoPreviewState(image, "error");
+      return false;
+    }
+  };
+
+  const isInViewport = (image) => {
+    const rect = image?.getBoundingClientRect?.();
+    if (!rect) return true;
+    const width = Number(globalThis.innerWidth) || Number(globalThis.document?.documentElement?.clientWidth) || 0;
+    const height = Number(globalThis.innerHeight) || Number(globalThis.document?.documentElement?.clientHeight) || 0;
+    return rect.bottom > 0 && rect.right > 0 && (!height || rect.top < height) && (!width || rect.left < width);
+  };
+
+  const observe = (root = globalThis.document) => {
+    const scopeKey = String(getScopeKey() || "");
+    if (scopeKey && photoObjectUrls?.currentScope?.() !== scopeKey) activateScope(scopeKey);
+    const images = [...(root?.querySelectorAll?.("img[data-photo-local-id]") || [])];
+    if (!images.length) return Promise.resolve({ observed: 0 });
+    if (intersectionObserverFactory) {
+      if (!observer) {
+        observer = intersectionObserverFactory((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            observer?.unobserve?.(entry.target);
+            load(entry.target);
+          });
+        }, { rootMargin: "0px", threshold: 0.01 });
+      }
+      images.forEach((image) => {
+        image.dataset.photoCacheScope = scopeKey;
+        if (image.src) setPhotoPreviewState(image, "ready");
+        else observer.observe(image);
+      });
+      return Promise.resolve({ observed: images.length });
+    }
+    images.forEach((image) => { image.dataset.photoCacheScope = scopeKey; });
+    return Promise.all(images.filter(isInViewport).map(load)).then(() => ({ observed: images.length }));
+  };
+
+  return {
+    load,
+    observe,
+    disconnect: () => {
+      observer?.disconnect?.();
+      observer = null;
+    },
+    pendingCount: () => pending.size
+  };
+}
 
 function localText(en, ru) {
   return typeof document !== "undefined" && currentDocumentLanguage() === "en" ? en : ru;
@@ -112,10 +299,7 @@ export function renderPhotoSlide(photo, {
     : null;
   const localSrc = localSources?.preview || (localId ? photoObjectUrls.get(localId, sourceSignature) : "");
   const localFullSrc = localSources?.full || "";
-  const remoteSourcesReady = typeof photoObjectUrls?.isReady === "function"
-    ? photoObjectUrls.isReady()
-    : true;
-  const src = localSrc || (remoteSourcesReady ? remoteSrc : "") || "";
+  const src = localSrc || "";
   const fullSrc = localFullSrc || remoteFullSrc;
   const localHydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : "";
   const fullAttr = fullSrc ? ` data-photo-full-src="${escapeHtml(fullSrc)}"` : "";
@@ -142,6 +326,7 @@ export function renderPhotoSlide(photo, {
         alt=""
         loading="lazy"
       />
+      <span class="photo-preview-status" data-photo-preview-status role="status" aria-live="polite"${src ? " hidden" : ""}>${escapeHtml(photoPreviewStateText("waiting"))}</span>
       ${renderPhotoUploadProgress(uploadState || {})}
     </button>
   `;
@@ -304,24 +489,11 @@ export async function renderPhotoGalleryHtml(photos, {
 }
 
 async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = null } = {}) {
-  const cached = await getCachedPhoto(photo.localId || photo.id);
   const remoteFullUrl = photo.url ? normalizeRemotePhotoUrl(photo.url) : "";
   const remoteThumbUrl = photo.thumbUrl ? normalizeRemotePhotoUrl(photo.thumbUrl) : remoteFullUrl;
   const sourceSignature = remoteFullUrl
     ? photoCacheSourceSignature(remoteFullUrl, remoteThumbUrl, photo.updatedAt || "")
     : "";
-  const cachedSourceMatches = !remoteFullUrl || Boolean(
-    sourceSignature && cached?.sourceSignature === sourceSignature
-  );
-  const blob = cachedSourceMatches ? (cached?.thumbBlob || cached?.blob) : null;
-  const fullBlob = cached?.blob && (
-    (cached.fullBlobVerified === true && cachedSourceMatches)
-    || (cached.fullBlobVerified !== false && !remoteFullUrl)
-  ) ? cached.blob : null;
-  const localSrc = blob ? URL.createObjectURL(blob) : "";
-  const fullLocalSrc = fullBlob && fullBlob !== blob ? URL.createObjectURL(fullBlob) : localSrc;
-  if (localSrc) objectUrls.push(localSrc);
-  if (fullLocalSrc && fullLocalSrc !== localSrc) objectUrls.push(fullLocalSrc);
   const remoteSrc = photoRemoteSrc(photo);
   const remoteFullSrc = remoteFullUrl
     ? versionedPhotoUrl(remoteFullUrl, photo.updatedAt || photo.id || "")
@@ -329,21 +501,19 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
   const remoteThumbSrc = remoteThumbUrl
     ? versionedPhotoUrl(remoteThumbUrl, photo.updatedAt || photo.id || "")
     : remoteSrc;
-  const fullSrc = fullLocalSrc || remoteFullSrc;
-  const src = localSrc || remoteSrc || "";
+  const fullSrc = remoteFullSrc;
   const localId = photo.localId || photo.id || "";
   return `
     <button class="photo-gallery-slide vpg-slide" type="button" data-photo-open>
       <img
-        ${src ? `src="${escapeHtml(src)}"` : ""}
         ${fullSrc ? `data-photo-full-src="${escapeHtml(fullSrc)}"` : ""}
-        ${fullLocalSrc ? `data-photo-verified-full-src="${escapeHtml(fullLocalSrc)}"` : ""}
         ${remoteFullSrc ? `data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : ""}
         ${remoteThumbSrc ? `data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : ""}
         ${sourceSignature ? `data-photo-source-signature="${escapeHtml(sourceSignature)}"` : ""}
-        ${localId ? `data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
+        ${localId ? `data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
         alt=""
       />
+      <span class="photo-preview-status" data-photo-preview-status role="status" aria-live="polite"></span>
       ${renderPhotoUploadProgress(uploadState || {})}
     </button>
   `;
@@ -543,36 +713,12 @@ export function updatePhotoGalleryUploadProgress(root, photos, {
   return true;
 }
 
-export async function hydrateItemPhotos(root = document, { photoObjectUrls = new Map() } = {}) {
-  const images = [...root.querySelectorAll("img[data-photo-local-id]")];
-  await Promise.all(images.map(async (image) => {
-    const localId = image.dataset.photoLocalId;
-    const sourceSignature = image.dataset.photoSourceSignature || "";
-    const existingUrl = photoObjectUrls.get(localId, sourceSignature);
-    if (existingUrl) {
-      image.src = existingUrl;
-      image.removeAttribute("data-photo-local-id");
-      return;
-    }
-    const cached = await getCachedPhoto(localId);
-    const task = { sourceSignature };
-    const matches = cachedPhotoMatchesTask(cached, task);
-    const blob = matches ? cachedPhotoPreview(cached, task) : null;
-    if (!blob) return;
-    if (matches && typeof photoObjectUrls?.setRecord === "function") {
-      photoObjectUrls.setRecord({ key: localId, sourceSignature }, cached);
-      const localSources = photoObjectUrls.sources(localId, sourceSignature);
-      image.src = localSources.preview;
-      const verifiedFullBlob = cachedPhotoVerifiedFull(cached, task);
-      if (verifiedFullBlob && localSources.full) {
-        image.dataset.photoVerifiedFullSrc = localSources.full;
-        image.dataset.photoFullSrc = localSources.full;
-      }
-    } else {
-      image.src = getPhotoObjectUrl(localId, sourceSignature, blob, photoObjectUrls);
-    }
-    image.removeAttribute("data-photo-local-id");
-  }));
+export async function hydrateItemPhotos(root = document, {
+  photoObjectUrls = new Map(),
+  photoPreviewLoader = null
+} = {}) {
+  const loader = photoPreviewLoader || createDemandDrivenPhotoPreviewLoader({ photoObjectUrls });
+  return loader.observe(root);
 }
 
 function getPhotoObjectUrl(id, sourceSignature, blob, photoObjectUrls) {
@@ -638,15 +784,25 @@ export function bindPhotoGalleries(root = document, {
   onItemPreviewActive = () => {},
   onRootContainerPreviewActive = () => {},
   photoObjectUrls = null,
+  photoPreviewLoader = null,
+  downloadCoordinator = null,
   prepareFullscreenSource = async () => null,
   openLightbox = openPhotoLightbox
 } = {}) {
+  photoPreviewLoader?.observe?.(root);
   const nativeVerticalScroll = bindNativePhotoGalleryVerticalScroll(root);
   const boardGesturePassThrough = bindPackingBoardPhotoGesturePassThrough(root);
   let compactControls = null;
   const sharedController = bindSharedPhotoGalleries(root, {
     openLightbox: ({ image, gallery, index }) => {
-      if (image) openLightbox(image, { gallery, index, photoObjectUrls, prepareFullscreenSource });
+      if (image) openLightbox(image, {
+        gallery,
+        index,
+        photoObjectUrls,
+        photoPreviewLoader,
+        downloadCoordinator,
+        prepareFullscreenSource
+      });
     },
     onActiveIndexChange: ({ gallery, index }) => {
       compactControls?.sync?.(gallery, index);
@@ -753,6 +909,8 @@ export async function openPhotoLightbox(sourceImage, {
   gallery = null,
   index = -1,
   photoObjectUrls = null,
+  photoPreviewLoader = null,
+  downloadCoordinator = null,
   prepareFullscreenSource = async () => null
 } = {}) {
   const openRequestId = ++lightboxOpenRequestId;
@@ -765,14 +923,6 @@ export async function openPhotoLightbox(sourceImage, {
     });
   }
   const initialEntry = entries[initialIndex];
-  if (initialEntry?.localId && !initialEntry.verifiedFullSrc) {
-    const preparedSources = await prepareFullscreenSource(initialEntry).catch(() => null);
-    if (openRequestId !== lightboxOpenRequestId) return;
-    if (preparedSources?.full) initialEntry.verifiedFullSrc = preparedSources.full;
-    if (preparedSources?.preview) initialEntry.previewSrc = preparedSources.preview;
-    if (preparedSources?.width) initialEntry.width = preparedSources.width;
-    if (preparedSources?.height) initialEntry.height = preparedSources.height;
-  }
   if (openRequestId !== lightboxOpenRequestId) return;
   closePhotoLightbox({ preserveOpenRequest: true });
   const initialPreviewSrc = initialEntry?.verifiedFullSrc || initialEntry?.previewSrc || initialEntry?.fullSrc || "";
@@ -790,7 +940,7 @@ export async function openPhotoLightbox(sourceImage, {
     const directFullSrc = entryIndex === initialIndex
       ? (entry?.verifiedFullSrc || entry?.resolvedFullSrc || "")
       : "";
-    const initialSrc = directFullSrc || previewSrc;
+    const initialSrc = entryIndex === initialIndex ? (directFullSrc || previewSrc) : "";
     const viewportWidth = Math.max(0, Number(window.visualViewport?.width || window.innerWidth) - 18);
     const viewportHeight = Math.max(0, Number(window.visualViewport?.height || window.innerHeight) - 18);
     const sizing = photoLightboxSizingPresentation({
@@ -805,7 +955,7 @@ export async function openPhotoLightbox(sourceImage, {
       : "";
     return `
       <div class="photo-lightbox-slide" data-photo-lightbox-index="${entryIndex}">
-        <img class="photo-lightbox-image${sizingClass}"${sizingStyle} src="${escapeHtml(initialSrc)}" alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" ${entryIndex === initialIndex ? "" : 'loading="lazy"'} />
+        <img class="photo-lightbox-image${sizingClass}"${sizingStyle}${initialSrc ? ` src="${escapeHtml(initialSrc)}"` : ""} alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" />
       </div>
     `;
   }).join("");
@@ -1163,15 +1313,25 @@ export async function openPhotoLightbox(sourceImage, {
     getVerifiedFullSource: (entry) => entry?.verifiedFullSrc || entry?.resolvedFullSrc || "",
     resolveFullSource: async (entry, _entryIndex, { signal }) => {
       entry.lifecycleFallback = null;
-      const next = await resolvePhotoLightboxSource(entry, {
-        signal,
-        onCachedRecord: (record) => {
-          if (!entry.localId || !photoObjectUrls?.setRecord) return "";
-          const task = { key: entry.localId, sourceSignature: entry.sourceSignature };
-          photoObjectUrls.setRecord(task, record);
-          return photoObjectUrls.get(entry.localId, entry.sourceSignature, "full");
-        }
-      });
+      const preparedSources = entry.localId
+        ? await prepareFullscreenSource(entry).catch(() => null)
+        : null;
+      if (preparedSources?.full) entry.verifiedFullSrc = preparedSources.full;
+      if (preparedSources?.preview) entry.previewSrc = preparedSources.preview;
+      if (preparedSources?.width) entry.width = preparedSources.width;
+      if (preparedSources?.height) entry.height = preparedSources.height;
+      const next = entry.verifiedFullSrc
+        ? { src: entry.verifiedFullSrc, objectUrl: "", isFull: true }
+        : await resolvePhotoLightboxSource(entry, {
+          signal,
+          downloadCoordinator,
+          onCachedRecord: (record) => {
+            if (!entry.localId || !photoObjectUrls?.setRecord) return "";
+            const task = { key: entry.localId, sourceSignature: entry.sourceSignature };
+            photoObjectUrls.setRecord(task, record);
+            return photoObjectUrls.get(entry.localId, entry.sourceSignature, "full");
+          }
+        });
       if (signal?.aborted) {
         if (next.objectUrl) URL.revokeObjectURL(next.objectUrl);
         return null;
@@ -1187,7 +1347,8 @@ export async function openPhotoLightbox(sourceImage, {
       };
     },
     decodeSource: decodeLifecycleSource,
-    commitSource: commitLifecycleSource
+    commitSource: commitLifecycleSource,
+    prefetchAdjacent: false
   });
   lightboxSourceLifecycleCleanup = () => {
     sourceController?.destroy();
@@ -1635,7 +1796,7 @@ export async function openPhotoLightbox(sourceImage, {
 }
 
 function photoLightboxEntry(image) {
-  const previewSrc = image.currentSrc || image.src || "";
+  const previewSrc = image.currentSrc || image.src || image.dataset.photoRemoteThumbSrc || "";
   const fullSrc = image.dataset.photoFullSrc || previewSrc;
   const verifiedFullSrc = image.dataset.photoVerifiedFullSrc || "";
   return {
@@ -1675,6 +1836,7 @@ export async function resolvePhotoLightboxSource(entry, {
   getCachedPhotoForLightbox = getCachedPhoto,
   putCachedPhotoForLightbox = putCachedPhoto,
   fetchImpl = globalThis.fetch,
+  downloadCoordinator = null,
   createObjectUrl = (blob) => URL.createObjectURL(blob),
   onCachedRecord = () => "",
   onDownloadProgress = () => {},
@@ -1716,17 +1878,26 @@ export async function resolvePhotoLightboxSource(entry, {
   if (fullFetchSrc && (hasRemoteFullSource || hasSeparateFullSource) && typeof fetchImpl === "function") {
     const previewFetchSrc = remoteThumbSrc
       || (isRemotePhotoLightboxSource(previewSrc) ? previewSrc : "");
+    const download = (src, variant) => downloadCoordinator
+      ? downloadCoordinator.download(src, {
+        key: src,
+        priority: PHOTO_DOWNLOAD_PRIORITY.OPEN_PHOTO,
+        background: false,
+        signal,
+        fetchImpl,
+        requestInit: { credentials: "include", cache: "no-store" },
+        onProgress: (progress) => onDownloadProgress({ variant, ...progress })
+      })
+      : fetchPhotoLightboxBlob(src, fetchImpl, signal, (progress) => {
+        onDownloadProgress({ variant, ...progress });
+      });
     const previewBlobPromise = cachedSourceMatches && cached?.thumbBlob
       ? Promise.resolve(cached.thumbBlob)
       : previewFetchSrc && previewFetchSrc !== fullFetchSrc
-        ? fetchPhotoLightboxBlob(previewFetchSrc, fetchImpl, signal, (progress) => {
-          onDownloadProgress({ variant: "preview", ...progress });
-        })
+        ? download(previewFetchSrc, "preview")
         : Promise.resolve(null);
     try {
-      const fullBlob = await fetchPhotoLightboxBlob(fullFetchSrc, fetchImpl, signal, (progress) => {
-        onDownloadProgress({ variant: "full", ...progress });
-      });
+      const fullBlob = await download(fullFetchSrc, "full");
       if (!fullBlob?.size) throw new Error("full-photo-empty");
       const comparisonThumbBlob = await previewBlobPromise;
       const fullBlobDistinct = await photoBlobsAreDistinct(fullBlob, comparisonThumbBlob);
