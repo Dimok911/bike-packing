@@ -48,12 +48,29 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundled images", () => {
   assert.deepEqual(MANUFACTURER_BAG_CATALOG_FAMILIES.map(({ id }) => id), ["bikepacking", "panniers", "carry"]);
+  assert.deepEqual(
+    MANUFACTURER_BAG_CATALOG_CATEGORIES.filter(({ family }) => family === "panniers").map(({ id }) => id),
+    ["pannier", "hybrid-pannier", "rack-top"]
+  );
+  assert.deepEqual(
+    MANUFACTURER_BAG_CATALOG_CATEGORIES.filter(({ family }) => family === "carry").map(({ id }) => id),
+    ["backpack", "shoulder-waist"]
+  );
   assert.equal(MANUFACTURER_BAG_CATALOG.length, 282);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 62);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 61);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Tailfin").length, 42);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Apidura").length, 71);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Restrap").length, 46);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ category }) => category === "pannier").length, 50);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ category }) => category === "shoulder-waist").length, 7);
+  assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ category }) => [
+    "rear-pannier",
+    "front-pannier",
+    "universal-pannier",
+    "messenger",
+    "tote-sling"
+  ].includes(category)));
   assert.equal(new Set(MANUFACTURER_BAG_CATALOG.map(({ id }) => id)).size, MANUFACTURER_BAG_CATALOG.length);
   assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ id }) => /quick-rack|organizer|bag-only/.test(id)));
   MANUFACTURER_BAG_CATALOG_CATEGORIES.forEach(({ id }) => {
@@ -345,7 +362,7 @@ test("CRITICAL manufacturer catalog: ORTLIEB pair specifications keep per-bag va
 
 test("CRITICAL manufacturer catalog: pair comparison filters by one bag and import keeps set totals", () => {
   const backRoller = MANUFACTURER_BAG_CATALOG.find(({ id }) => id === "ortlieb-back-roller-20l-pair");
-  const comparison = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier")
+  const comparison = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "pannier")
     .find(({ id }) => id === backRoller.id);
   assert.deepEqual(comparison.volumeOptions, [20]);
   assert.deepEqual(comparison.volumePerBagOptions, [20]);
@@ -362,19 +379,19 @@ test("CRITICAL manufacturer catalog: pair comparison filters by one bag and impo
   assert.equal(draft.manufacturerCatalogSource.totalVolume, 40);
   assert.equal(draft.manufacturerCatalogSource.specificationBasis, "per-bag");
 
-  const backRollerXl = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier")
+  const backRollerXl = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "pannier")
     .find(({ id }) => id === "ortlieb-back-roller-35l-mesh-pocket-pair");
   assert.deepEqual(backRollerXl.weightPerBagOptions, [1006, 1199]);
   assert.deepEqual(backRollerXl.weightOptions, [2012, 2398]);
 });
 
 test("CRITICAL manufacturer catalog: Arkel pair totals are normalized for one-bag comparison", () => {
-  const rows = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "rear-pannier");
+  const rows = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "pannier");
   const dryLites28 = rows.find(({ id }) => id === "arkel-dry-lites-saddle-bags-28l");
   const dryLites36 = rows.find(({ id }) => id === "arkel-dry-lites-saddle-bags-36l");
   const gt54 = rows.find(({ id }) => id === "arkel-gt-54-classic-touring-panniers");
   const t42 = rows.find(({ id }) => id === "arkel-t-42-classic-touring-panniers");
-  const t28 = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "universal-pannier")
+  const t28 = manufacturerBagComparisonRows(MANUFACTURER_BAG_CATALOG, "pannier")
     .find(({ id }) => id === "arkel-t-28-classic-touring-panniers");
 
   assert.deepEqual(dryLites28.volumeOptions, [14]);

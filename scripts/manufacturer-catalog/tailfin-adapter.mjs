@@ -27,7 +27,7 @@ const CATEGORY_META = Object.freeze({
   "top-tube": { family: "bikepacking", en: "top-tube bag", ru: "сумка на верхнюю трубу", mounting: "Tailfin V-Mount straps / bolt-on" },
   handlebar: { family: "bikepacking", en: "handlebar bag", ru: "рулевая сумка", mounting: "Tailfin handlebar mount" },
   fork: { family: "bikepacking", en: "fork or cargo-cage bag", ru: "сумка на вилку или грузовую клетку", mounting: "Tailfin Cargo Cage / straps" },
-  "rear-pannier": { family: "panniers", en: "rear pannier", ru: "задний панир", mounting: "Tailfin X-Clamp" },
+  pannier: { family: "panniers", en: "pannier", ru: "панир", mounting: "Tailfin X-Clamp" },
   "rack-top": { family: "panniers", en: "rack-top bag", ru: "сумка на багажник", mounting: "Tailfin rack / integrated rear system" },
 });
 
@@ -321,7 +321,7 @@ function tailfinCategory(url, handle) {
   const path = url.pathname.toLowerCase();
   if (path.includes("/frame-bags/") && handle !== "downtube-packs") return "frame";
   if (path.includes("/top-tube-cockpit/")) return "top-tube";
-  if (path.includes("/rear-pannier-bags/")) return "rear-pannier";
+  if (path.includes("/rear-pannier-bags/")) return "pannier";
   if (path.includes("/rack-top-bags/") || ROOT_PRODUCT_PATHS.has(path) && handle !== "bar-bag-system") return "rack-top";
   if (path.includes("/fork-packs/") || path.includes("/cage-packs/") || handle === "downtube-packs") return "fork";
   return "handlebar";

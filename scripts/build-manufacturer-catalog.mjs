@@ -98,10 +98,10 @@ const ORTLIEB_CATEGORY = {
   "vario-20l": "hybrid-pannier",
   "vario-26l": "hybrid-pannier",
   "vario-lite": "hybrid-pannier",
-  "sport-roller-pair": "front-pannier",
-  "sport-roller-14-5l": "front-pannier",
-  "sport-roller-core": "front-pannier",
-  "sport-packer": "front-pannier"
+  "sport-roller-pair": "pannier",
+  "sport-roller-14-5l": "pannier",
+  "sport-roller-core": "pannier",
+  "sport-packer": "pannier"
 };
 
 const ARKEL_CATEGORY = {
@@ -125,15 +125,15 @@ const ARKEL_CATEGORY = {
   "bug-2-0-pannier-backpack": "hybrid-pannier",
   "gt-18bp-convertible-backpack-pannier": "hybrid-pannier",
   "orca-city-backpack-pannier": "hybrid-pannier",
-  "dolphin-16l-waterproof-pannier": "universal-pannier",
-  "orca-panniers": "universal-pannier",
-  "t-28-classic-touring-panniers": "universal-pannier",
-  "gt-18-classic-touring-pannier": "universal-pannier",
+  "dolphin-16l-waterproof-pannier": "pannier",
+  "orca-panniers": "pannier",
+  "t-28-classic-touring-panniers": "pannier",
+  "gt-18-classic-touring-pannier": "pannier",
   "signature-d-rolltop-backpack": "backpack",
   "metropolitan-waterproof-rolltop-backpack": "backpack",
-  "wellington-messenger-bag": "messenger",
-  "mont-royal-sling-bag": "tote-sling",
-  "heavy-duty-tote-bag": "tote-sling"
+  "wellington-messenger-bag": "shoulder-waist",
+  "mont-royal-sling-bag": "shoulder-waist",
+  "heavy-duty-tote-bag": "shoulder-waist"
 };
 
 const CATEGORY_META = {
@@ -142,14 +142,11 @@ const CATEGORY_META = {
   frame: { family: "bikepacking", en: "frame bag", ru: "нарамная сумка", aliases: ["frame bag", "нарамная", "в раму", "рамная"] },
   "top-tube": { family: "bikepacking", en: "top-tube bag", ru: "сумка на верхнюю трубу", aliases: ["top tube", "toptube", "на верхнюю трубу", "бензобак"] },
   fork: { family: "bikepacking", en: "fork bag", ru: "сумка на вилку", aliases: ["fork bag", "cargo cage", "на вилку", "вилочная"] },
-  "rear-pannier": { family: "panniers", en: "rear pannier", ru: "задний панир", aliases: ["rear pannier", "задний панир", "задний багажник"] },
-  "front-pannier": { family: "panniers", en: "front pannier", ru: "передний панир", aliases: ["front pannier", "передний панир", "передний багажник"] },
-  "universal-pannier": { family: "panniers", en: "front/rear pannier", ru: "универсальный панир", aliases: ["pannier", "front rear pannier", "универсальный панир"] },
+  pannier: { family: "panniers", en: "pannier", ru: "панир", aliases: ["pannier", "front pannier", "rear pannier", "панир", "передний панир", "задний панир"] },
   "hybrid-pannier": { family: "panniers", en: "convertible pannier", ru: "панир-трансформер", aliases: ["pannier backpack", "convertible pannier", "панир рюкзак", "трансформер"] },
   "rack-top": { family: "panniers", en: "rack-top bag", ru: "сумка на багажник", aliases: ["rack top", "trunk bag", "сумка на багажник", "багажная сумка"] },
   backpack: { family: "carry", en: "backpack", ru: "рюкзак", aliases: ["backpack", "rucksack", "рюкзак"] },
-  messenger: { family: "carry", en: "messenger bag", ru: "курьерская сумка", aliases: ["messenger bag", "shoulder bag", "курьерская", "наплечная"] },
-  "tote-sling": { family: "carry", en: "tote or sling bag", ru: "переносная сумка", aliases: ["tote", "sling", "shopping bag", "тоут", "слинг"] }
+  "shoulder-waist": { family: "carry", en: "shoulder or waist bag", ru: "наплечная или поясная сумка", aliases: ["messenger bag", "shoulder bag", "waist bag", "hip pack", "tote", "sling", "курьерская", "наплечная", "поясная", "тоут", "слинг"] }
 };
 
 const ARKEL_REAR_PANNIERS = new Set([
@@ -352,22 +349,19 @@ function genericMounting(brand, category, tags = []) {
     frame: "Frame straps",
     "top-tube": "Top-tube straps / direct mount",
     fork: brand === "Arkel" ? "Fork cage" : "Quick-LockS",
-    "rear-pannier": brand === "Arkel" ? "Cam-Lock" : "Quick-Lock",
-    "front-pannier": brand === "Arkel" ? "Cam-Lock" : "Quick-Lock",
-    "universal-pannier": "Cam-Lock",
+    pannier: brand === "Arkel" ? "Cam-Lock" : "Quick-Lock",
     "hybrid-pannier": brand === "Arkel" ? "Cam-Lock" : "Quick-Lock",
     "rack-top": "Rack straps / adapter",
     backpack: "Shoulder straps",
-    messenger: "Shoulder strap",
-    "tote-sling": "Carry handles / strap"
+    "shoulder-waist": "Shoulder / waist strap or carry handles"
   }[category] || "";
 }
 
 function productCategory(brandKey, product) {
-  if (brandKey === "ortlieb") return ORTLIEB_CATEGORY[product.handle] || "rear-pannier";
+  if (brandKey === "ortlieb") return ORTLIEB_CATEGORY[product.handle] || "pannier";
   if (ARKEL_CATEGORY[product.handle]) return ARKEL_CATEGORY[product.handle];
-  if (ARKEL_REAR_PANNIERS.has(product.handle) || product.tags?.includes("Panniers")) return "rear-pannier";
-  return "tote-sling";
+  if (ARKEL_REAR_PANNIERS.has(product.handle) || product.tags?.includes("Panniers")) return "pannier";
+  return "shoulder-waist";
 }
 
 function productMaterial(brandKey, product, primaryVariant, specs) {

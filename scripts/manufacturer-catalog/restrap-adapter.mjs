@@ -41,19 +41,12 @@ const CATEGORY_META = Object.freeze({
     mounting: "Fork cage straps",
     aliases: ["fork bag", "cargo cage", "на вилку", "вилочная"],
   },
-  "rear-pannier": {
+  pannier: {
     family: "panniers",
-    en: "rear pannier",
-    ru: "задний панир",
+    en: "pannier",
+    ru: "панир",
     mounting: "Rack hooks",
-    aliases: ["rear pannier", "pannier", "задний панир", "задний багажник"],
-  },
-  "universal-pannier": {
-    family: "panniers",
-    en: "front/rear pannier",
-    ru: "универсальный панир",
-    mounting: "Restrap Switch Multi-Mount",
-    aliases: ["pannier", "front rear pannier", "универсальный панир"],
+    aliases: ["pannier", "front pannier", "rear pannier", "панир", "передний панир", "задний панир"],
   },
   "rack-top": {
     family: "panniers",
@@ -69,12 +62,12 @@ const CATEGORY_META = Object.freeze({
     mounting: "Shoulder straps",
     aliases: ["backpack", "hydration vest", "rucksack", "рюкзак"],
   },
-  "tote-sling": {
+  "shoulder-waist": {
     family: "carry",
-    en: "tote or sling bag",
-    ru: "переносная сумка",
+    en: "shoulder or waist bag",
+    ru: "наплечная или поясная сумка",
     mounting: "Carry strap / handlebar straps",
-    aliases: ["musette", "hip pack", "sling", "переносная сумка", "слинг"],
+    aliases: ["messenger", "musette", "hip pack", "waist bag", "tote", "sling", "наплечная", "поясная", "слинг"],
   },
 });
 
@@ -150,12 +143,12 @@ function categoryForProduct(product = {}) {
   const type = String(product.product_type || product.type || "").toLowerCase();
   if (/top-tube/.test(handle)) return "top-tube";
   if (/frame-bag/.test(handle)) return "frame";
-  if (/switch-pannier/.test(handle)) return "universal-pannier";
+  if (/switch-pannier/.test(handle)) return "pannier";
   if (/switch-top-bag/.test(handle)) return "rack-top";
   if (/fork-bag/.test(handle)) return "fork";
-  if (/pannier/.test(handle) || type === "pannier") return "rear-pannier";
+  if (/pannier/.test(handle) || type === "pannier") return "pannier";
   if (/rolltop-backpack|hydration-vest/.test(handle)) return "backpack";
-  if (/musette|utility-hip-pack/.test(handle)) return "tote-sling";
+  if (/musette|utility-hip-pack/.test(handle)) return "shoulder-waist";
   if (/saddle|tool-pouch/.test(handle) || type === "saddle bags") return "saddle";
   if (/bar-bag|bar-pack|canister-bag|stem-bag/.test(handle) || type === "bar bags") return "handlebar";
   return "";

@@ -54,22 +54,10 @@ export const MANUFACTURER_BAG_CATALOG_CATEGORIES = [
     descriptionKey: "bagCatalog.category.forkDescription"
   },
   {
-    id: "rear-pannier",
+    id: "pannier",
     family: "panniers",
-    labelKey: "bagCatalog.category.rearPannier",
-    descriptionKey: "bagCatalog.category.rearPannierDescription"
-  },
-  {
-    id: "front-pannier",
-    family: "panniers",
-    labelKey: "bagCatalog.category.frontPannier",
-    descriptionKey: "bagCatalog.category.frontPannierDescription"
-  },
-  {
-    id: "universal-pannier",
-    family: "panniers",
-    labelKey: "bagCatalog.category.universalPannier",
-    descriptionKey: "bagCatalog.category.universalPannierDescription"
+    labelKey: "bagCatalog.category.pannier",
+    descriptionKey: "bagCatalog.category.pannierDescription"
   },
   {
     id: "hybrid-pannier",
@@ -90,16 +78,10 @@ export const MANUFACTURER_BAG_CATALOG_CATEGORIES = [
     descriptionKey: "bagCatalog.category.backpackDescription"
   },
   {
-    id: "messenger",
+    id: "shoulder-waist",
     family: "carry",
-    labelKey: "bagCatalog.category.messenger",
-    descriptionKey: "bagCatalog.category.messengerDescription"
-  },
-  {
-    id: "tote-sling",
-    family: "carry",
-    labelKey: "bagCatalog.category.toteSling",
-    descriptionKey: "bagCatalog.category.toteSlingDescription"
+    labelKey: "bagCatalog.category.shoulderWaist",
+    descriptionKey: "bagCatalog.category.shoulderWaistDescription"
   }
 ];
 

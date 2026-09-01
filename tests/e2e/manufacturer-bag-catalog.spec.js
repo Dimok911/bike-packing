@@ -151,7 +151,9 @@ test("ORTLIEB pair shows and imports the set total while preserving the per-bag 
   await page.locator("#createRootForLayoutBtn").click();
   await page.locator("#openBagCatalogBtn").click();
   await page.locator('[data-bag-catalog-family="panniers"]').click();
-  await page.locator('[data-bag-catalog-compare-category="rear-pannier"]').click();
+  await expect(page.locator('[data-bag-catalog-category="pannier"]')).toContainText("Паниры");
+  await expect(page.locator('[data-bag-catalog-category="rear-pannier"]')).toHaveCount(0);
+  await page.locator('[data-bag-catalog-compare-category="pannier"]').click();
 
   const comparison = page.locator("#bagCatalogCompareDialog");
   const singleBackRoller = comparison.locator('[data-bag-comparison-detail="ortlieb-back-roller-20l"]').locator("xpath=ancestor::tr");
@@ -188,8 +190,12 @@ test("ORTLIEB pair shows and imports the set total while preserving the per-bag 
   await details.locator('button[value="cancel"]').click();
   await comparison.locator('button[value="cancel"]').click();
 
-  await page.locator('[data-bag-catalog-category="rear-pannier"]').click();
-  await page.locator('[data-bag-catalog-select="ortlieb-back-roller-20l-pair"]').click();
+  const catalog = page.locator("#bagCatalogDialog");
+  await catalog.locator('[data-bag-catalog-category="pannier"]').click();
+  const pairSelect = catalog.locator('[data-bag-catalog-select="ortlieb-back-roller-20l-pair"]');
+  await expect(pairSelect).toBeVisible();
+  await pairSelect.click();
+  await expect(catalog).not.toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#rootContainerName")).toHaveValue("ORTLIEB Back-Roller Pair 40 L (2 × 20 L)");
   await expect(page.locator("#rootContainerWeight")).toHaveValue("1900");
   await expect(page.locator("#rootContainerVolume")).toHaveValue("40");

@@ -6,7 +6,7 @@ const CATEGORY_META = Object.freeze({
   "top-tube": { family: "bikepacking", en: "top-tube bag", ru: "сумка на верхнюю трубу", mounting: "Top-tube straps / bolt-on" },
   handlebar: { family: "bikepacking", en: "handlebar bag", ru: "рулевая сумка", mounting: "Handlebar straps / Apidura handlebar system" },
   fork: { family: "bikepacking", en: "fork or cargo-cage bag", ru: "сумка на вилку или грузовую клетку", mounting: "Cargo cage / straps" },
-  "rear-pannier": { family: "panniers", en: "rear pannier", ru: "задний панир", mounting: "Rear rack" },
+  pannier: { family: "panniers", en: "pannier", ru: "панир", mounting: "Rack" },
   "rack-top": { family: "panniers", en: "rack-top bag", ru: "сумка на багажник", mounting: "Front or rear rack" },
 });
 
@@ -225,7 +225,7 @@ function categoryForProduct(product = {}) {
   if (/front\s*rack/.test(value)) return "rack-top";
   if (/handlebar|aerobar|bar\s*bag|stem\s*pack|front\s*accessory|accessory\s*pocket|food\s*pouch/.test(value)) return "handlebar";
   if (/saddle|seat\s*pack/.test(value)) return "saddle";
-  if (/pannier/.test(value)) return "rear-pannier";
+  if (/pannier/.test(value)) return "pannier";
   if (/fork|cargo|down\s*tube/.test(value)) return "fork";
   if (/tool\s*pack/.test(value)) return "saddle";
   return "frame";
