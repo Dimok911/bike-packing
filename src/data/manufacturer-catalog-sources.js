@@ -38,6 +38,21 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["apidura-product-sitemap.xml", "https://www.apidura.com/product-sitemap.xml"],
     ]),
   }),
+  Object.freeze({
+    id: "restrap",
+    name: "Restrap",
+    adapter: "restrap-shopify",
+    productBaseUrl: "https://restrap.com/products/",
+    collections: Object.freeze([
+      ["restrap-cockpit.json", "https://restrap.com/collections/cockpit-bags/products.json?limit=250"],
+      ["restrap-frame.json", "https://restrap.com/collections/frame-bags/products.json?limit=250"],
+      ["restrap-bar.json", "https://restrap.com/collections/bar-bags/products.json?limit=250"],
+      ["restrap-panniers-fork.json", "https://restrap.com/collections/panniers-fork-bags/products.json?limit=250"],
+      ["restrap-rack.json", "https://restrap.com/collections/rack-and-basket-bags/products.json?limit=250"],
+      ["restrap-saddle.json", "https://restrap.com/collections/saddle-bags/products.json?limit=250"],
+      ["restrap-on-body.json", "https://restrap.com/collections/on-body-bags/products.json?limit=250"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

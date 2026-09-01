@@ -14,6 +14,10 @@ import {
   apiduraCatalogTargets,
   buildApiduraCatalogEntry,
 } from "../../scripts/manufacturer-catalog/apidura-adapter.mjs";
+import {
+  buildRestrapCatalogEntry,
+  restrapCatalogTargets,
+} from "../../scripts/manufacturer-catalog/restrap-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -69,11 +73,12 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 4);
+  assert.equal(report.manufacturers.length, 5);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "apidura").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "restrap").sourceCount, 7);
   assert.equal(report.summary.added, 1);
 });
 
@@ -162,6 +167,52 @@ test("CRITICAL catalog scan: Apidura anti-bot HTML fails closed instead of repor
     () => apiduraCatalogTargets('<meta http-equiv="refresh" content="0;/.well-known/sgcaptcha/?r=sitemap">'),
     /anti-bot challenge/
   );
+});
+
+test("CRITICAL catalog scan: Restrap adapter keeps bags and excludes ordering aids and duplicate charity editions", () => {
+  const targets = restrapCatalogTargets([
+    { handle: "saddle-pack-4-5l", title: "Saddle Pack (4.5 Litres)", vendor: "Restrap", product_type: "Saddle Bags" },
+    { handle: "switch-pannier-5-litres", title: "Switch Pannier (5 Litres)", vendor: "Restrap", product_type: "All" },
+    { handle: "race-musette", title: "Race Musette (3 Litres)", vendor: "Restrap", product_type: "Accessories" },
+    { handle: "custom-frame-bag-design-kit", title: "Custom Frame Bag Design Kit", vendor: "Restrap", product_type: "Frame Bags" },
+    { handle: "yorkshire-dales-charity-musette", title: "Yorkshire Dales Charity Musette", vendor: "Restrap", product_type: "All" },
+    { handle: "foreign-saddle-bag", title: "Foreign Saddle Bag", vendor: "Another", product_type: "Saddle Bags" },
+  ]);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["race-musette", "saddle-pack-4-5l", "switch-pannier-5-litres"]);
+});
+
+test("CRITICAL catalog scan: Restrap adapter normalizes official metrics, variants, ratings, and gallery", () => {
+  const entry = buildRestrapCatalogEntry({
+    checkedAt: "2026-09-02",
+    sourceUrl: "https://restrap.com/products/saddle-pack-4-5l",
+    product: {
+      handle: "saddle-pack-4-5l",
+      title: "Saddle Pack (4.5 Litres)",
+      vendor: "Restrap",
+      product_type: "Saddle Bags",
+      tags: ["4.5L", "IP6K6", "waterproof"],
+      body_html: "<p>1000D textured nylon and TPU-coated nylon.</p><p>Product Weight - 280g</p><p>Capacity - 4.5L</p>",
+      variants: [
+        { title: "Black", sku: "RS_SPK_45L_BLK", grams: 331, available: true },
+        { title: "Olive", sku: "RS_SPK_45L_OLV", grams: 331, available: true },
+      ],
+      images: [
+        { src: "https://cdn.shopify.com/s/files/1/restrap-front.jpg?v=1" },
+        { src: "https://cdn.shopify.com/s/files/1/restrap-side.jpg?v=1" },
+      ],
+    },
+  });
+  assert.equal(entry.id, "restrap-saddle-pack-4-5l");
+  assert.equal(entry.category, "saddle");
+  assert.deepEqual(entry.volumeOptions, [4.5]);
+  assert.deepEqual(entry.weightOptions, [280]);
+  assert.ok(entry.variants.every(({ weight }) => weight === 280));
+  assert.equal(entry.waterproof, "IP6K6");
+  assert.equal(entry.waterproofRating, "IP6K6");
+  assert.match(entry.material, /1000D nylon/);
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.sourceImageUrls.every((url) => /width=700/.test(url)));
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/restrap\//.test(path)));
 });
 
 test("CRITICAL catalog scan: checked imports accept only complete official manufacturer evidence", () => {

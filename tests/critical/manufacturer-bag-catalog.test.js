@@ -48,20 +48,21 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundled images", () => {
   assert.deepEqual(MANUFACTURER_BAG_CATALOG_FAMILIES.map(({ id }) => id), ["bikepacking", "panniers", "carry"]);
-  assert.equal(MANUFACTURER_BAG_CATALOG.length, 236);
+  assert.equal(MANUFACTURER_BAG_CATALOG.length, 282);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 62);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 61);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Tailfin").length, 42);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Apidura").length, 71);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Restrap").length, 46);
   assert.equal(new Set(MANUFACTURER_BAG_CATALOG.map(({ id }) => id)).size, MANUFACTURER_BAG_CATALOG.length);
   assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ id }) => /quick-rack|organizer|bag-only/.test(id)));
   MANUFACTURER_BAG_CATALOG_CATEGORIES.forEach(({ id }) => {
     assert.ok(MANUFACTURER_BAG_CATALOG.some(({ category }) => category === id));
   });
   MANUFACTURER_BAG_CATALOG.forEach((entry) => {
-    assert.match(entry.imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
+    assert.match(entry.imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
     assert.match(entry.sourceImageUrl, /^https:\/\/(?:cdn\.shopify\.com|media\.tailfin\.cc|medias\.apidura\.com)\//);
-    assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca|www\.tailfin\.cc|www\.apidura\.com)\//);
+    assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca|www\.tailfin\.cc|www\.apidura\.com|restrap\.com)\//);
     assert.ok(statSync(resolve(root, entry.imageAssetPath)).size > 5_000);
     assert.ok(Array.isArray(entry.imageAssetPaths));
     assert.ok(Array.isArray(entry.sourceImageUrls));
@@ -69,12 +70,18 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
     assert.equal(entry.imageAssetPaths.length, entry.sourceImageUrls.length);
     assert.equal(entry.imageAssetPaths.length, entry.imageUrls.length);
     entry.imageAssetPaths.forEach((imageAssetPath) => {
-      assert.match(imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
+      assert.match(imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
       assert.ok(statSync(resolve(root, imageAssetPath)).size > 1_000);
     });
     assert.ok(entry.variantCount > 0);
     assert.ok(Array.isArray(entry.variants));
-    assert.equal(entry.sourceCheckedAt, ["ORTLIEB", "Arkel"].includes(entry.brand) ? "2026-08-29" : "2026-08-30");
+    assert.equal(entry.sourceCheckedAt, {
+      ORTLIEB: "2026-08-29",
+      Arkel: "2026-08-29",
+      Tailfin: "2026-08-30",
+      Apidura: "2026-08-30",
+      Restrap: "2026-09-01",
+    }[entry.brand]);
   });
 });
 
@@ -269,7 +276,7 @@ test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges
   assert.equal(manufacturerBagComparisonFilterKey(seatPack, "manufacturer"), "ORTLIEB");
   assert.deepEqual(
     manufacturerBagComparisonFilterOptions(saddleRows, "manufacturer").map(({ key }) => key).sort(),
-    ["Apidura", "Arkel", "ORTLIEB"]
+    ["Apidura", "Arkel", "ORTLIEB", "Restrap"]
   );
 
   const pointInsideRange = filterManufacturerBagComparisonRows(saddleRows, {

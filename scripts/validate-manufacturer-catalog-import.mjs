@@ -8,6 +8,7 @@ const MANUFACTURER_HOSTS = Object.freeze({
   arkel: ["arkel.ca"],
   tailfin: ["tailfin.cc"],
   apidura: ["apidura.com"],
+  restrap: ["restrap.com"],
 });
 const CHANGE_TYPES = new Set(["added", "changed", "missing"]);
 

@@ -14,6 +14,10 @@ import {
   apiduraCatalogTargets,
   buildApiduraCatalogEntry,
 } from "./manufacturer-catalog/apidura-adapter.mjs";
+import {
+  buildRestrapCatalogEntry,
+  restrapCatalogTargets,
+} from "./manufacturer-catalog/restrap-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -41,6 +45,16 @@ const ORTLIEB_COLLECTION_FILES = [
   "ortlieb-panniers.json",
   "ortlieb-rack-top-bags.json",
   "ortlieb-saddle-bags.json"
+];
+
+const RESTRAP_COLLECTION_FILES = [
+  "restrap-cockpit.json",
+  "restrap-frame.json",
+  "restrap-bar.json",
+  "restrap-panniers-fork.json",
+  "restrap-rack.json",
+  "restrap-saddle.json",
+  "restrap-on-body.json",
 ];
 
 const ORTLIEB_EXCLUDED = new Set([
@@ -553,6 +567,13 @@ const tailfinTargets = manufacturerRequested("tailfin")
 const apiduraTargets = manufacturerRequested("apidura")
   ? apiduraCatalogTargets(await readFile(join(sourceDir, "apidura-product-sitemap.xml"), "utf8"))
   : [];
+const restrapByHandle = new Map();
+if (manufacturerRequested("restrap")) {
+  for (const fileName of RESTRAP_COLLECTION_FILES) {
+    for (const product of await readProducts(fileName)) restrapByHandle.set(product.handle, product);
+  }
+}
+const restrapTargets = restrapCatalogTargets([...restrapByHandle.values()]);
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -572,6 +593,14 @@ for (const target of apiduraTargets) {
   entries.push(buildApiduraCatalogEntry({
     product: target,
     html: await readFile(join(pagesDir, "apidura", `${target.handle}.html`), "utf8"),
+    sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of restrapTargets) {
+  entries.push(buildRestrapCatalogEntry({
+    product: target,
+    html: await readFile(join(pagesDir, "restrap", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
   }));

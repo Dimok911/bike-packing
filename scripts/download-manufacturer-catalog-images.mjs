@@ -7,7 +7,18 @@ for (let index = 2; index < process.argv.length; index += 2) args.set(process.ar
 const manifestPath = resolve(args.get("--manifest") || "manufacturer-catalog-images.json");
 const outputRoot = resolve(args.get("--root") || ".");
 const concurrency = Math.max(1, Math.min(12, Number(args.get("--concurrency")) || 6));
-const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+const requestedManufacturers = new Set(String(args.get("--manufacturers") || "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean));
+const manifest = JSON.parse(await readFile(manifestPath, "utf8")).filter((item) => {
+  if (!requestedManufacturers.size) return true;
+  const manufacturerId = String(item?.output || "").replaceAll("\\", "/").split("/")[2]?.toLowerCase() || "";
+  return requestedManufacturers.has(manufacturerId);
+});
+if (requestedManufacturers.size && !manifest.length) {
+  throw new Error(`No catalog images found for: ${[...requestedManufacturers].join(", ")}`);
+}
 
 async function fetchImage(url, { referer = "" } = {}, attempts = 3) {
   let lastError = null;

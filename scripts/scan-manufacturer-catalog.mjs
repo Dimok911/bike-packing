@@ -18,13 +18,25 @@ for (let index = 2; index < process.argv.length; index += 2) args.set(process.ar
 const outputPath = resolve(args.get("--output") || "manufacturer-catalog-scan.json");
 const markdownPath = resolve(args.get("--markdown") || "manufacturer-catalog-scan.md");
 const requestedWorkDir = args.get("--work-dir");
+const requestedManufacturers = new Set(String(args.get("--manufacturers") || "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean));
+const activeSources = requestedManufacturers.size
+  ? MANUFACTURER_CATALOG_SOURCES.filter((source) => requestedManufacturers.has(source.id))
+  : MANUFACTURER_CATALOG_SOURCES;
+if (requestedManufacturers.size !== activeSources.length) {
+  const known = new Set(activeSources.map(({ id }) => id));
+  const unknown = [...requestedManufacturers].filter((id) => !known.has(id));
+  throw new Error(`Unknown manufacturer id: ${unknown.join(", ")}`);
+}
 const workDir = requestedWorkDir ? resolve(requestedWorkDir) : await mkdtemp(join(tmpdir(), "bike-packing-catalog-scan-"));
 const pagesDir = join(workDir, ".catalog-pages");
 const generatedPath = join(workDir, "manufacturer-bag-catalog.generated.mjs");
 const imageManifestPath = join(workDir, "manufacturer-catalog-images.json");
 const scannedAt = new Date().toISOString();
 const checkedAt = scannedAt.slice(0, 10);
-const errors = Object.fromEntries(MANUFACTURER_CATALOG_SOURCES.map((source) => [source.id, []]));
+const errors = Object.fromEntries(activeSources.map((source) => [source.id, []]));
 
 async function fetchText(url, attempts = 3) {
   let lastError;
@@ -95,14 +107,21 @@ async function downloadManufacturer(source) {
 
 async function runBuilder() {
   await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [
+    const builderArgs = [
       resolve("scripts/build-manufacturer-catalog.mjs"),
       "--source-dir", workDir,
       "--pages-dir", pagesDir,
       "--output", generatedPath,
       "--image-manifest", imageManifestPath,
       "--checked-at", checkedAt,
-    ], { stdio: "inherit" });
+    ];
+    if (requestedManufacturers.size) {
+      builderArgs.push(
+        "--manufacturers", [...requestedManufacturers].join(","),
+        "--approved-catalog", resolve("src/data/manufacturer-bag-catalog.generated.js"),
+      );
+    }
+    const child = spawn(process.execPath, builderArgs, { stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", (code) => code === 0 ? resolvePromise() : reject(new Error(`Catalog builder exited with ${code}`)));
   });
@@ -110,11 +129,11 @@ async function runBuilder() {
 
 try {
   await mkdir(workDir, { recursive: true });
-  await Promise.all(MANUFACTURER_CATALOG_SOURCES.map(downloadManufacturer));
+  await Promise.all(activeSources.map(downloadManufacturer));
   await runBuilder();
   const generatedModule = await import(`${pathToFileURL(generatedPath).href}?scan=${Date.now()}`);
   const generatedEntries = generatedModule.MANUFACTURER_BAG_CATALOG_GENERATED || [];
-  const failedIds = new Set(MANUFACTURER_CATALOG_SOURCES.filter((source) => errors[source.id].length).map((source) => source.id));
+  const failedIds = new Set(activeSources.filter((source) => errors[source.id].length).map((source) => source.id));
   const scannedEntries = [
     ...generatedEntries.filter((entry) => !failedIds.has(manufacturerIdForEntry(entry))),
     ...MANUFACTURER_BAG_CATALOG.filter((entry) => failedIds.has(manufacturerIdForEntry(entry))),
@@ -122,7 +141,7 @@ try {
   const report = buildManufacturerCatalogScanReport({
     approvedEntries: MANUFACTURER_BAG_CATALOG,
     scannedEntries,
-    manufacturers: MANUFACTURER_CATALOG_SOURCES,
+    manufacturers: activeSources,
     scannedAt,
     errors,
   });
