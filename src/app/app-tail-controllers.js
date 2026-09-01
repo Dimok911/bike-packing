@@ -333,7 +333,7 @@ export function createAppTailControllers(ctx) {
     openModalDialog, openPrivateLayout, openSharedLayoutForAdmin, openSharedLayoutViewer, openSharedLayoutsDialog,
     openSharedListFromLink, orderAdminPublicDraftsLikeMainSelect, packingVisualStyle, packingVisualStyleButtonLabel, packingVisualStylePanelVisible,
     parseContainerDimensionInput, parseVolumeInput, parseWeightInput, persistActiveLayoutSelection,
-    persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoObjectUrls, offlinePhotoRenderCoordinator,
+    persistStateSnapshot, personalListApiUnavailable, photoDraftChanged, photoDownloadCoordinator, photoObjectUrls, photoPreviewLoader, offlinePhotoRenderCoordinator,
     photoDialogStatusText, photoRemoteSrc, photoShouldBeCopiedToCurrentList, photoStatusText, photoUploadInFlight, photoUploadProgressRenderFrame,
     updatePhotoGalleryUploadProgress,
     pickRicherRemoteListRecord, placeDuplicatedContainerSnapshotInLayoutState, placeExistingContainerInLayoutInState, placeExistingItemInLayoutInState, planLayoutTreeMissingItems, planPublicCopyMissingItems,
@@ -746,7 +746,7 @@ function renderAddToContainerResults() {
     `;
   }).join("") || `<div class="empty">${escapeHtml(t("empty.notFound"))}</div>`;
 
-  if (showPhotos) hydrateItemPhotos(refs.addToContainerResults, { photoObjectUrls }).catch(() => null);
+  if (showPhotos) hydrateItemPhotos(refs.addToContainerResults, { photoObjectUrls, photoPreviewLoader }).catch(() => null);
 
   refs.addToContainerResults.querySelectorAll("[data-add-existing-item]").forEach((button) => {
     button.addEventListener("click", () => addExistingItemToContainer(button.dataset.addExistingItem));
@@ -867,7 +867,7 @@ function renderLayoutRootResults() {
     { filtered: Boolean(query) }
   );
 
-  if (showPhotos) hydrateItemPhotos(refs.layoutRootResults, { photoObjectUrls }).catch(() => null);
+  if (showPhotos) hydrateItemPhotos(refs.layoutRootResults, { photoObjectUrls, photoPreviewLoader }).catch(() => null);
 
   refs.layoutRootResults.querySelectorAll("[data-add-layout-root]").forEach((button) => {
     button.addEventListener("click", () => selectRootContainerFromPicker(button.dataset.addLayoutRoot));
@@ -4124,7 +4124,9 @@ function renderItemPhoto(item, { force = false } = {}) {
 
 function photoGalleryBindingOptions() {
   return {
+    downloadCoordinator: photoDownloadCoordinator,
     photoObjectUrls,
+    photoPreviewLoader,
     prepareFullscreenSource: (entry) => offlinePhotoRenderCoordinator.prepareFullscreenSource(entry),
     onItemPreviewActive(index) {
       runtime.itemDialogPhotoActiveIndex = index;
@@ -8123,6 +8125,7 @@ function renderPhotoOrderDialog() {
     language: uiLanguage,
     previewSources: photoOrderContext.previewSources
   });
+  photoPreviewLoader.observe(refs.photoOrderList);
   updatePhotoOrderSaveState();
 }
 

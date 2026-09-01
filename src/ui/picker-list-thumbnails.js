@@ -1,5 +1,5 @@
 import { photoCacheSourceSignature } from "../sync/photo-cache-quality.js";
-import { normalizeRemotePhotoUrl, photoRemoteSrc } from "../sync/photos.js";
+import { normalizeRemotePhotoUrl, versionedPhotoUrl } from "../sync/photos.js";
 import { escapeHtml } from "../utils/html.js";
 
 export function pickerListPhotosEnabled(value) {
@@ -23,13 +23,21 @@ export function pickerListThumbnailHtml(record, {
   const localSources = localId && typeof photoObjectUrls?.sources === "function"
     ? photoObjectUrls.sources(localId, sourceSignature)
     : null;
-  const src = localSources?.preview || photoRemoteSrc(photo) || "";
+  const src = localSources?.preview || "";
   const hydrateAttr = localId ? ` data-photo-local-id="${escapeHtml(localId)}"` : "";
   const signatureAttr = sourceSignature ? ` data-photo-source-signature="${escapeHtml(sourceSignature)}"` : "";
+  const remoteThumbSrc = remoteThumbUrl
+    ? versionedPhotoUrl(remoteThumbUrl, photo.updatedAt || photo.id || "")
+    : "";
+  const remoteFullSrc = remoteFullUrl
+    ? versionedPhotoUrl(remoteFullUrl, photo.updatedAt || photo.id || "")
+    : remoteThumbSrc;
+  const remoteAttrs = `${remoteThumbSrc ? ` data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : ""}${remoteFullSrc ? ` data-photo-remote-full-src="${escapeHtml(remoteFullSrc)}"` : ""}`;
 
   return `
     <span class="picker-list-thumbnail" aria-hidden="true">
-      <img${src ? ` src="${escapeHtml(src)}"` : ""}${hydrateAttr}${signatureAttr} alt="" loading="lazy" />
+      <img${src ? ` src="${escapeHtml(src)}"` : ""}${hydrateAttr}${signatureAttr}${remoteAttrs} alt="" loading="lazy" />
+      <span class="photo-preview-status" data-photo-preview-status${src ? " hidden" : ""}></span>
     </span>
   `;
 }

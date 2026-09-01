@@ -4144,6 +4144,42 @@ button.photo-gallery-slide.touch-feedback-active {
   pointer-events: none;
 }
 
+.photo-preview-status {
+  display: none;
+}
+
+.photo-preview-loading .photo-preview-status,
+.photo-preview-error .photo-preview-status {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 20px);
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(24, 31, 29, 0.76);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.photo-preview-loading .photo-preview-status::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .photo-gallery-dots {
   position: absolute;
   left: 50%;
@@ -8058,7 +8094,7 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
 .photo-order-primary { background: var(--accent-soft); }
 .photo-order-handle { display: grid; place-items: center; width: 32px; height: 44px; color: var(--muted); font-size: 20px; cursor: grab; user-select: none; }
 .photo-order-primary .photo-order-handle { opacity: 0.3; cursor: default; }
-.photo-order-thumb { display: grid; place-items: center; width: 72px; height: 58px; overflow: hidden; border-radius: 7px; background: #eef1ed; color: var(--muted); font-weight: 800; }
+.photo-order-thumb { position: relative; display: grid; place-items: center; width: 72px; height: 58px; overflow: hidden; border-radius: 7px; background: #eef1ed; color: var(--muted); font-weight: 800; }
 .photo-order-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .photo-order-label { display: grid; gap: 3px; min-width: 0; }
 .photo-order-label small { color: var(--accent); }
@@ -9626,6 +9662,7 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 }
 
 .picker-list-thumbnail {
+  position: relative;
   display: grid;
   place-items: center;
   width: 58px;
@@ -9640,6 +9677,13 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.picker-list-thumbnail.photo-preview-loading .photo-preview-status,
+.picker-list-thumbnail.photo-preview-error .photo-preview-status {
+  max-width: none;
+  padding: 6px;
+  font-size: 0;
 }
 
 .picker-list-thumbnail.empty::before {

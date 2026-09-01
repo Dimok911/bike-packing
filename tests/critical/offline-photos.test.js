@@ -2542,14 +2542,15 @@ test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remot
   assert.equal("thumbBlob" in task, false);
 });
 
-test("CRITICAL offline-photos: fullscreen waits for adapter hydration before creating the dialog", () => {
+test("CRITICAL offline-photos: fullscreen opens on the preview before adapter hydration", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
-  const awaitIndex = source.indexOf("await prepareFullscreenSource(initialEntry)");
+  const awaitIndex = source.indexOf("await prepareFullscreenSource(entry)");
   const dialogIndex = source.indexOf('document.createElement("dialog")');
   assert.ok(awaitIndex >= 0);
-  assert.ok(dialogIndex > awaitIndex);
+  assert.ok(dialogIndex >= 0 && dialogIndex < awaitIndex);
   assert.match(source, /if \(openRequestId !== lightboxOpenRequestId\) return;/);
   assert.match(source, /closePhotoLightbox\(\{ preserveOpenRequest: true \}\)/);
+  assert.match(source, /prefetchAdjacent:\s*false/);
 });
 
 test("CRITICAL offline-photos: first stationary touch opens a packing photo during iOS momentum", () => {
@@ -2841,7 +2842,7 @@ test("CRITICAL offline-photos: fullscreen pinch keeps its scale while the viewpo
 test("CRITICAL offline-photos: lightbox keeps the preview visible until the full-size photo is decoded", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
   const styles = readProjectFile("styles.css");
-  assert.match(source, /const previewSrc = image\.currentSrc \|\| image\.src \|\| "";/);
+  assert.match(source, /const previewSrc = image\.currentSrc \|\| image\.src \|\| image\.dataset\.photoRemoteThumbSrc \|\| "";/);
   assert.match(source, /const fullSrc = image\.dataset\.photoFullSrc \|\| previewSrc;/);
   assert.match(source, /Loading full-size photo…/);
   assert.match(source, /Загружается полная версия фото…/);
