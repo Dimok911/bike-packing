@@ -2134,7 +2134,7 @@ button.ghost.context-toggle.active:focus-visible {
   backdrop-filter: blur(8px);
 }
 
-body:not(:has(#packingView:not(.hidden) .board.packing-board-zoom-active)) .packing-board-zoom-reset {
+body:not(:has(#packingView:not(.hidden) .board)) .packing-board-zoom-reset {
   display: none;
 }
 

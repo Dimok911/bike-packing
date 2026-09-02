@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import {
+  createEmptyLayout,
   createGuestWorkspace,
+  createRootContainer,
+  openApp,
   prepareIsolatedRussianGuest,
   waitForApp,
 } from "./guest-test-helpers.js";
@@ -11,6 +14,19 @@ const TEST_ITEM_NAME = "Тестовый насос";
 
 test.beforeEach(async ({ page }) => {
   await prepareIsolatedRussianGuest(page);
+});
+
+test("clean guest starts the packing board at 100% and sees the zoom indicator", async ({ page }) => {
+  await openApp(page);
+  await createEmptyLayout(page, "Масштаб 100%");
+  await createRootContainer(page, "Сумка для проверки масштаба");
+
+  await expect(page.locator("#packingView .board")).toHaveAttribute("data-packing-board-zoom", "1");
+  await expect(page.locator("#packingBoardZoomReset")).toBeVisible();
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("100%");
+  await expect.poll(() => page.evaluate(() => (
+    localStorage.getItem("bike-packing-board-zoom-v1")
+  ))).toBeNull();
 });
 
 test("guest creates a layout, bag and item and keeps them after reload", async ({ page }) => {
