@@ -20,6 +20,32 @@ GitHub-first порядок. Сервер не должен получать с�
    статические assets и доступность API через целевой поддомен.
 8. Сверить SHA-256 ключевых публичных файлов со сборкой проверенного commit.
 
+## Инкрементальная публикация статического каталога
+
+Для VPS используется `scripts/deploy-experiment-vps.ps1`. Сценарий строит
+manifest of actual SHA-256 для всей сборки и сравнивает его с текущим live.
+Каталог `assets/manufacturer-catalog` хранится в persistent shared directory
+`/var/www/experiment-shared/manufacturer-catalog`, а release-каталог содержит
+только symlink на него. Поэтому frontend backup не архивирует фотографии.
+Catalog stage заполняется через hard links из shared-каталога, затем hard links
+изменившихся путей удаляются перед распаковкой. Передаются only new or changed
+files; совпадение по имени без совпадения фактического SHA-256 не считается
+повторным использованием. Старый catalog stage существует только до внешнего
+smoke/rollback gate и удаляется после успешного релиза.
+
+Перед atomic directory rename сценарий выполняет full file-count, byte-count,
+and SHA-256 verification stage, а после активации сверяет ключевые HTTPS-файлы и
+образцы повторно использованных/новых фотографий. При несовпадении публичной
+проверки предыдущий каталог автоматически возвращается на место. FTPS и хост
+`88.212.206.188` для Experiment не используются.
+
+Пример после успешного workflow `Frontend quality` для точного SHA:
+
+```powershell
+npm.cmd run build
+pwsh -File scripts/deploy-experiment-vps.ps1 -ExpectedCommit <40-char-sha> -ExpectedVersion vNNN
+```
+
 ## Изоляция API
 
 Frontend на `experiment.vniipo-help.ru` выбирает одноимённый API origin и через
