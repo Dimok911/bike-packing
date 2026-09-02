@@ -29,7 +29,7 @@ $tarPath = (Get-Command tar -ErrorAction Stop).Source
 $curlPath = "C:\Windows\System32\curl.exe"
 $server = "root@90.156.128.115"
 $livePath = "/var/www/experiment"
-$catalogPrefix = "assets/manufacturer-catalog/"
+$sharedPrefix = "assets/"
 $sshOptions = @("-i", $IdentityFile, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes")
 
 function Invoke-NativeChecked {
@@ -108,9 +108,9 @@ try {
       FullName = $_.FullName
     }
   } | Sort-Object Path)
-  $catalogEntries = @($entries | Where-Object Path -like "$catalogPrefix*")
-  $frontendEntries = @($entries | Where-Object Path -notlike "$catalogPrefix*")
-  if ($catalogEntries.Count -eq 0) { throw "Manufacturer catalog assets are missing from the build." }
+  $sharedEntries = @($entries | Where-Object Path -like "$sharedPrefix*")
+  $frontendEntries = @($entries | Where-Object Path -notlike "$sharedPrefix*")
+  if ($sharedEntries.Count -eq 0) { throw "Static build assets are missing from the build." }
 
   $remoteLines = @(& $sshPath @sshOptions $server "cd '$livePath' && find -L . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum")
   if ($LASTEXITCODE -ne 0) { throw "Could not read the current Experiment manifest." }
@@ -121,20 +121,20 @@ try {
   }
   $changedEntries = @($entries | Where-Object { -not $remoteHashes.ContainsKey($_.Path) -or $remoteHashes[$_.Path] -ne $_.Hash })
   $reusedEntries = @($entries | Where-Object { $remoteHashes.ContainsKey($_.Path) -and $remoteHashes[$_.Path] -eq $_.Hash })
-  $changedFrontend = @($changedEntries | Where-Object Path -notlike "$catalogPrefix*")
-  $changedCatalog = @($changedEntries | Where-Object Path -like "$catalogPrefix*")
+  $changedFrontend = @($changedEntries | Where-Object Path -notlike "$sharedPrefix*")
+  $changedShared = @($changedEntries | Where-Object Path -like "$sharedPrefix*")
 
   Write-Utf8Lines (Join-Path $temporaryRoot "all.sha256") @($entries | ForEach-Object { "$($_.Hash)  $($_.Path)" })
   Write-Utf8Lines (Join-Path $temporaryRoot "all.paths") @($entries.Path)
   Write-Utf8Lines (Join-Path $temporaryRoot "frontend.sha256") @($frontendEntries | ForEach-Object { "$($_.Hash)  $($_.Path)" })
   Write-Utf8Lines (Join-Path $temporaryRoot "frontend.paths") @($frontendEntries.Path)
-  Write-Utf8Lines (Join-Path $temporaryRoot "catalog.sha256") @($catalogEntries | ForEach-Object { "$($_.Hash)  $($_.Path.Substring($catalogPrefix.Length))" })
-  Write-Utf8Lines (Join-Path $temporaryRoot "catalog.paths") @($catalogEntries | ForEach-Object { $_.Path.Substring($catalogPrefix.Length) })
+  Write-Utf8Lines (Join-Path $temporaryRoot "assets.sha256") @($sharedEntries | ForEach-Object { "$($_.Hash)  $($_.Path.Substring($sharedPrefix.Length))" })
+  Write-Utf8Lines (Join-Path $temporaryRoot "assets.paths") @($sharedEntries | ForEach-Object { $_.Path.Substring($sharedPrefix.Length) })
   Write-Utf8Lines (Join-Path $temporaryRoot "frontend.changed") @($changedFrontend.Path)
-  Write-Utf8Lines (Join-Path $temporaryRoot "catalog.changed") @($changedCatalog | ForEach-Object { $_.Path.Substring($catalogPrefix.Length) })
+  Write-Utf8Lines (Join-Path $temporaryRoot "assets.changed") @($changedShared | ForEach-Object { $_.Path.Substring($sharedPrefix.Length) })
 
   Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "frontend.tar"), "-C", $ArtifactRoot, "-T", (Join-Path $temporaryRoot "frontend.changed")) "Could not create frontend delta."
-  Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "catalog.tar"), "-C", (Join-Path $ArtifactRoot "assets\manufacturer-catalog"), "-T", (Join-Path $temporaryRoot "catalog.changed")) "Could not create catalog delta."
+  Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "assets.tar"), "-C", (Join-Path $ArtifactRoot "assets"), "-T", (Join-Path $temporaryRoot "assets.changed")) "Could not create static asset delta."
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot "deploy-experiment-vps-remote.sh") -Destination (Join-Path $temporaryRoot "deploy-remote.sh")
 
   $uploadPath = "/var/www/.experiment-upload-$releaseId"
@@ -143,19 +143,19 @@ try {
   Invoke-NativeChecked $scpPath ($sshOptions + $uploadFiles + @("${server}:$uploadPath/")) "Could not upload the Experiment delta."
 
   $frontendBytes = ($frontendEntries | Measure-Object Size -Sum).Sum
-  $catalogBytes = ($catalogEntries | Measure-Object Size -Sum).Sum
+  $sharedBytes = ($sharedEntries | Measure-Object Size -Sum).Sum
   $allBytes = ($entries | Measure-Object Size -Sum).Sum
-  Invoke-SshChecked @("stage", $releaseId, "$($frontendEntries.Count)", "$frontendBytes", "$($catalogEntries.Count)", "$catalogBytes")
+  Invoke-SshChecked @("stage", $releaseId, "$($frontendEntries.Count)", "$frontendBytes", "$($sharedEntries.Count)", "$sharedBytes")
   Invoke-SshChecked @("activate", $releaseId, "$($entries.Count)", "$allBytes")
   $activated = $true
 
   $publicDir = Join-Path $temporaryRoot "https"
   New-Item -Path $publicDir -ItemType Directory | Out-Null
   $publicPaths = @("index.html", "app.js", "styles.css", "sw.js")
-  $reusedCatalog = $reusedEntries | Where-Object Path -like "$catalogPrefix*" | Select-Object -First 1
-  $changedCatalogSample = $changedCatalog | Select-Object -First 1
-  if ($null -ne $reusedCatalog) { $publicPaths += $reusedCatalog.Path }
-  if ($null -ne $changedCatalogSample) { $publicPaths += $changedCatalogSample.Path }
+  $reusedStatic = $reusedEntries | Where-Object Path -like "$sharedPrefix*" | Select-Object -First 1
+  $changedStaticSample = $changedShared | Select-Object -First 1
+  if ($null -ne $reusedStatic) { $publicPaths += $reusedStatic.Path }
+  if ($null -ne $changedStaticSample) { $publicPaths += $changedStaticSample.Path }
   foreach ($relative in $publicPaths | Select-Object -Unique) {
     $name = ([Convert]::ToHexString([Text.Encoding]::UTF8.GetBytes($relative))).Substring(0, 16) + ".bin"
     $download = Join-Path $publicDir $name
@@ -204,7 +204,7 @@ finally {
   TotalBytes = $allBytes
   ReusedFiles = $reusedEntries.Count
   UploadedFiles = $changedEntries.Count
-  PersistentCatalog = "/var/www/experiment-shared/manufacturer-catalog"
+  PersistentAssets = "/var/www/experiment-shared/assets"
   FrontendBackup = "/var/www/experiment-backup-before-$releaseId"
   FullSha256 = "verified"
   PublicHttps = "verified"

@@ -24,10 +24,11 @@ GitHub-first порядок. Сервер не должен получать с�
 
 Для VPS используется `scripts/deploy-experiment-vps.ps1`. Сценарий строит
 manifest of actual SHA-256 для всей сборки и сравнивает его с текущим live.
-Каталог `assets/manufacturer-catalog` хранится в persistent shared directory
-`/var/www/experiment-shared/manufacturer-catalog`, а release-каталог содержит
-только symlink на него. Поэтому frontend backup не архивирует фотографии.
-Catalog stage заполняется через hard links из shared-каталога, затем hard links
+Vite публикует изображения глобального каталога как content-hashed файлы в
+`assets/`. Весь build-каталог `assets/` хранится в persistent shared directory
+`/var/www/experiment-shared/assets`, а release-каталог содержит только symlink
+на него. Пользовательские фото API/БД в build не входят. Поэтому frontend backup
+не архивирует фотографии. Assets stage заполняется через hard links, затем links
 изменившихся путей удаляются перед распаковкой. Передаются only new or changed
 files; совпадение по имени без совпадения фактического SHA-256 не считается
 повторным использованием. Старый catalog stage существует только до внешнего
