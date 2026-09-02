@@ -36,6 +36,13 @@ import {
   createOfflinePhotoCacheController,
   createOfflinePhotoRenderCoordinator
 } from "../../src/sync/offline-photo-cache.js";
+import {
+  offlinePhotoStateForLayouts,
+  pruneOfflineRemotePhotoCache,
+  readOfflineLayoutIds,
+  writeOfflineLayoutIds
+} from "../../src/sync/offline-layout-selection.js";
+import { getLayoutContainerIdSet, getLayoutItemIdSet } from "../../src/state/layout-ops.js";
 import { photoBlobsAreDistinct } from "../../src/sync/photo-cache-quality.js";
 import {
   PHOTO_CACHE_ENGINE_CONTRACT_VERSION,
@@ -3244,4 +3251,76 @@ test("CRITICAL offline-photos: discarded edit drafts keep existing local photos"
   const cleanup = draftPhotosToCleanup(draft, source);
 
   assert.deepEqual(cleanup.map((photo) => photo.id), ["photo-new"]);
+});
+
+test("CRITICAL offline layouts: defaults to no bulk download and persists an explicit selection", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, value)
+  };
+  const state = { activeLayoutId: "layout-a", layouts: { "layout-a": {}, "layout-b": {} } };
+
+  assert.deepEqual(readOfflineLayoutIds(storage, "offline", state), []);
+  writeOfflineLayoutIds(storage, "offline", ["layout-a"], state);
+  assert.deepEqual(readOfflineLayoutIds(storage, "offline", state), ["layout-a"]);
+});
+
+test("CRITICAL offline layouts: photo cache scope contains only entities used by selected layouts", () => {
+  const state = {
+    layouts: {
+      "layout-a": {
+        id: "layout-a",
+        rootContainerIds: ["bag-a"],
+        arrangement: {
+          rootContainerIds: ["bag-a"],
+          containers: { "bag-a": { itemIds: ["item-a"], childIds: [], order: [{ type: "item", id: "item-a" }] } },
+          items: { "item-a": "bag-a" }
+        }
+      },
+      "layout-b": {
+        id: "layout-b",
+        rootContainerIds: ["bag-b"],
+        arrangement: {
+          rootContainerIds: ["bag-b"],
+          containers: { "bag-b": { itemIds: ["item-b"], childIds: [], order: [{ type: "item", id: "item-b" }] } },
+          items: { "item-b": "bag-b" }
+        }
+      }
+    },
+    containers: {
+      "bag-a": { id: "bag-a", photos: [{ id: "photo-bag-a", url: "/a.jpg" }] },
+      "bag-b": { id: "bag-b", photos: [{ id: "photo-bag-b", url: "/b.jpg" }] }
+    },
+    items: {
+      "item-a": { id: "item-a", photos: [{ id: "photo-item-a", url: "/ia.jpg" }] },
+      "item-b": { id: "item-b", photos: [{ id: "photo-item-b", url: "/ib.jpg" }] }
+    }
+  };
+  const selected = offlinePhotoStateForLayouts(state, ["layout-a"], {
+    getLayoutContainerIdSet,
+    getLayoutItemIdSet
+  });
+
+  assert.deepEqual(Object.keys(selected.containers), ["bag-a"]);
+  assert.deepEqual(Object.keys(selected.items), ["item-a"]);
+  assert.deepEqual(collectOfflinePhotoCacheTasks(selected).map((task) => task.key).sort(), ["photo-bag-a", "photo-item-a"]);
+});
+
+test("CRITICAL offline layouts: pruning removes only unselected offline-remote records", async () => {
+  const removed = [];
+  const result = await pruneOfflineRemotePhotoCache({
+    items: { selected: { photos: [{ id: "keep", url: "/keep.jpg" }] } },
+    containers: {}
+  }, {
+    listCachedPhotos: async () => [
+      { id: "keep", cachePurpose: "offline-remote" },
+      { id: "remove", cachePurpose: "offline-remote" },
+      { id: "pending-local", cachePurpose: "upload-draft" }
+    ],
+    deleteCachedPhoto: async (id) => removed.push(id)
+  });
+
+  assert.deepEqual(removed, ["remove"]);
+  assert.deepEqual(result, { removed: 1, kept: 1 });
 });

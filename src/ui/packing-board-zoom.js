@@ -381,16 +381,38 @@ function scrollHostForBoard(board, documentRef) {
   return documentRef?.scrollingElement || documentRef?.documentElement || null;
 }
 
-function ensureZoomResetButton(documentRef) {
+function ensureZoomControl(documentRef) {
   let button = documentRef?.querySelector?.("#packingBoardZoomReset");
-  if (button || !documentRef?.createElement || !documentRef?.body?.appendChild) return button;
-  button = documentRef.createElement("button");
-  button.id = "packingBoardZoomReset";
-  button.className = "ghost packing-board-zoom-reset";
-  button.type = "button";
-  button.hidden = true;
-  documentRef.body.appendChild(button);
-  return button;
+  if (!button && documentRef?.createElement && documentRef?.body?.appendChild) {
+    button = documentRef.createElement("button");
+    button.id = "packingBoardZoomReset";
+    button.className = "ghost packing-board-zoom-reset";
+    button.type = "button";
+    button.hidden = true;
+    documentRef.body.appendChild(button);
+  }
+  if (!button) return { button: null, panel: null, range: null };
+  let panel = documentRef?.querySelector?.("#packingBoardZoomPanel");
+  let range = documentRef?.querySelector?.("#packingBoardZoomRange");
+  if (!panel && documentRef?.createElement && documentRef?.body?.appendChild) {
+    const candidate = documentRef.createElement("div");
+    if (candidate !== button && typeof candidate?.appendChild === "function") {
+      panel = candidate;
+      panel.id = "packingBoardZoomPanel";
+      panel.className = "packing-board-zoom-panel";
+      panel.hidden = true;
+      range = documentRef.createElement("input");
+      range.id = "packingBoardZoomRange";
+      range.className = "packing-board-zoom-range";
+      range.type = "range";
+      range.min = String(PACKING_BOARD_ZOOM_MIN * 100);
+      range.max = String(PACKING_BOARD_ZOOM_MAX * 100);
+      range.step = "1";
+      panel.appendChild(range);
+      documentRef.body.appendChild(panel);
+    }
+  }
+  return { button, panel, range };
 }
 
 function notifyGeometryChanged(board, windowRef) {
@@ -425,6 +447,7 @@ export function applyPackingBoardZoomToDragGhost(source, ghost, sourceRect) {
 }
 
 export function bindPackingBoardZoom(board, {
+  controlLabel = "Adjust packing board zoom",
   documentRef = document,
   resetLabel = "Reset packing board zoom",
   storage = globalThis.localStorage,
@@ -453,7 +476,12 @@ export function bindPackingBoardZoom(board, {
   const baseHeaderHeight = Math.max(1, Number.parseFloat(
     computedHeaderStyle?.getPropertyValue?.("--packing-root-header-cell-height")
   ) || 78);
-  const resetButton = ensureZoomResetButton(documentRef);
+  const { button: resetButton, panel: zoomPanel, range: zoomRange } = ensureZoomControl(documentRef);
+  const desktopZoomControl = Boolean(
+    zoomPanel &&
+    zoomRange &&
+    windowRef?.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches
+  );
   const verticalScrollHost = scrollHostForBoard(board, documentRef);
   const gestureSurface = documentRef;
   let zoom = 1;
@@ -784,8 +812,17 @@ export function bindPackingBoardZoom(board, {
     if (!resetButton) return;
     resetButton.textContent = `${Math.round(zoom * 100)}%`;
     resetButton.hidden = false;
-    resetButton.setAttribute("aria-label", resetLabel);
-    resetButton.title = resetLabel;
+    resetButton.setAttribute("aria-label", desktopZoomControl ? controlLabel : resetLabel);
+    resetButton.title = desktopZoomControl ? controlLabel : resetLabel;
+    resetButton.setAttribute("aria-expanded", String(Boolean(desktopZoomControl && zoomPanel && !zoomPanel.hidden)));
+    if (desktopZoomControl) resetButton.setAttribute("aria-controls", "packingBoardZoomPanel");
+    if (zoomRange) {
+      zoomRange.min = String(PACKING_BOARD_ZOOM_MIN * 100);
+      zoomRange.max = String(Math.round(fitMaxZoom() * 100));
+      zoomRange.value = String(Math.round(zoom * 100));
+      zoomRange.setAttribute?.("aria-label", controlLabel);
+      zoomRange.setAttribute?.("aria-valuetext", `${Math.round(zoom * 100)}%`);
+    }
   };
 
   const applyZoom = (nextZoom, anchor = null, {
@@ -1377,6 +1414,50 @@ export function bindPackingBoardZoom(board, {
     settleBoardGeometry();
   };
 
+  const closeZoomPanel = () => {
+    if (!zoomPanel || zoomPanel.hidden) return;
+    zoomPanel.hidden = true;
+    syncResetButton();
+  };
+
+  const onZoomButtonClick = () => {
+    if (!desktopZoomControl) {
+      resetZoom();
+      return;
+    }
+    zoomPanel.hidden = !zoomPanel.hidden;
+    syncResetButton();
+    if (!zoomPanel.hidden) zoomRange.focus?.({ preventScroll: true });
+  };
+
+  const onZoomRangeInput = () => {
+    stopZoomMomentum();
+    stopZoomSettle();
+    stopGeometrySettle();
+    const startScrollLeft = Number(board.scrollLeft) || 0;
+    const startMaxScrollLeft = naturalHorizontalMaximum();
+    applyZoom(Number(zoomRange?.value) / 100, {
+      preserveScrollProgress: true,
+      startMaxScrollLeft,
+      startScrollLeft
+    });
+    saveZoom(storage, storageKey, zoom, fitMaxZoom());
+  };
+
+  const onZoomRangeChange = () => settleBoardGeometry();
+
+  const onZoomControlPointerDown = (event) => {
+    if (!desktopZoomControl || zoomPanel?.hidden) return;
+    if (event?.target === resetButton || zoomPanel?.contains?.(event?.target)) return;
+    closeZoomPanel();
+  };
+
+  const onZoomControlKeyDown = (event) => {
+    if (event?.key !== "Escape" || zoomPanel?.hidden) return;
+    closeZoomPanel();
+    resetButton?.focus?.({ preventScroll: true });
+  };
+
   const stopPresentation = () => {
     if (presentationTimer !== null) {
       (windowRef?.clearTimeout || globalThis.clearTimeout)?.(presentationTimer);
@@ -1518,7 +1599,11 @@ export function bindPackingBoardZoom(board, {
     gestureSurface?.removeEventListener?.("gestureend", preventNativeBoardZoom, true);
     gestureSurface?.removeEventListener?.("wheel", onWheel, true);
     verticalScrollHost?.removeEventListener?.("scroll", requestVerticalScrollClamp);
-    resetButton?.removeEventListener?.("click", resetZoom);
+    resetButton?.removeEventListener?.("click", onZoomButtonClick);
+    zoomRange?.removeEventListener?.("input", onZoomRangeInput);
+    zoomRange?.removeEventListener?.("change", onZoomRangeChange);
+    documentRef?.removeEventListener?.("pointerdown", onZoomControlPointerDown, true);
+    documentRef?.removeEventListener?.("keydown", onZoomControlKeyDown, true);
     resizeObserver?.disconnect?.();
     if (heightFrame !== null) windowRef?.cancelAnimationFrame?.(heightFrame);
     if (verticalClampFrame !== null) windowRef?.cancelAnimationFrame?.(verticalClampFrame);
@@ -1542,6 +1627,7 @@ export function bindPackingBoardZoom(board, {
     singleTouchBoardVelocity = 0;
     twoFingerMode = "";
     if (resetButton) resetButton.hidden = true;
+    if (zoomPanel) zoomPanel.hidden = true;
   };
 
   gestureSurface?.addEventListener?.("touchstart", onTouchStart, { capture: true, passive: false });
@@ -1553,7 +1639,11 @@ export function bindPackingBoardZoom(board, {
   gestureSurface?.addEventListener?.("gestureend", preventNativeBoardZoom, { capture: true, passive: false });
   gestureSurface?.addEventListener?.("wheel", onWheel, { capture: true, passive: false });
   verticalScrollHost?.addEventListener?.("scroll", requestVerticalScrollClamp, { passive: true });
-  resetButton?.addEventListener?.("click", resetZoom);
+  resetButton?.addEventListener?.("click", onZoomButtonClick);
+  zoomRange?.addEventListener?.("input", onZoomRangeInput);
+  zoomRange?.addEventListener?.("change", onZoomRangeChange);
+  documentRef?.addEventListener?.("pointerdown", onZoomControlPointerDown, true);
+  documentRef?.addEventListener?.("keydown", onZoomControlKeyDown, true);
   const initialMaximum = fitMaxZoom();
   applyZoom(packingBoardStoredZoom(storage, storageKey, initialMaximum), null, {
     maxZoom: initialMaximum,

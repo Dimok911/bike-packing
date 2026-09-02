@@ -29,6 +29,26 @@ test("clean guest starts the packing board at 100% and sees the zoom indicator",
   ))).toBeNull();
 });
 
+test("desktop zoom indicator opens a vertical slider and applies its value", async ({ page }) => {
+  await openApp(page);
+  await createEmptyLayout(page, "Ползунок масштаба");
+  await createRootContainer(page, "Сумка для ползунка");
+
+  await page.locator("#packingBoardZoomReset").click();
+  await expect(page.locator("#packingBoardZoomPanel")).toBeVisible();
+  await page.locator("#packingBoardZoomRange").evaluate((range) => {
+    range.value = "75";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    range.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  await expect(page.locator("#packingView .board")).toHaveAttribute("data-packing-board-zoom", "0.75");
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("75%");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("bike-packing-board-zoom-v1"))).toBe("0.75");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#packingBoardZoomPanel")).toBeHidden();
+});
+
 test("guest creates a layout, bag and item and keeps them after reload", async ({ page }) => {
   await createGuestWorkspace(page, {
     layoutName: TEST_LAYOUT_NAME,
