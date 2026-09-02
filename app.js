@@ -1009,6 +1009,8 @@ import {
   shouldShowItemPhotosForMode
 } from "./src/ui/item-display-mode.js";
 import {
+  createStableSyncStatusMessageController,
+  isTransientSyncProgressMessage,
   OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE,
   offlineRememberedStatusMessages,
   updateSyncUiControls
@@ -1316,6 +1318,7 @@ let activeHistorySource = "private";
 let selectedHistoryDetailRecordKey = "";
 let historyNavigationContext = null;
 let adminReportsDialogController = null;
+let stableSyncStatusMessageController = null;
 let filterViewCollapseSignature = "";
 let filterViewCollapsedContainers = {};
 let filterMatchIndex = 0;
@@ -5892,15 +5895,7 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
   throw error;
 }
 
-function updateSyncUi(message = "") {
-  connectionStatusController.refresh();
-  const rememberedStatus = isOfflineRememberedSession()
-    ? offlineRememberedStatusMessages(offlineRememberedSessionReason)
-    : { sync: "" };
-  const effectiveMessage = connectionStatusController.currentMessage() ||
-    offlinePhotoCacheController.currentMessage() ||
-    message ||
-    rememberedStatus.sync;
+function renderSyncUi(effectiveMessage = "") {
   updateSyncUiControls({
     adminReportsDialogController,
     appUnlocked,
@@ -5927,6 +5922,23 @@ function updateSyncUi(message = "") {
     syncMeta,
     syncPackingVisualStyleControls,
     t
+  });
+}
+
+function updateSyncUi(message = "") {
+  stableSyncStatusMessageController ||= createStableSyncStatusMessageController({
+    render: renderSyncUi
+  });
+  connectionStatusController.refresh();
+  const rememberedStatus = isOfflineRememberedSession()
+    ? offlineRememberedStatusMessages(offlineRememberedSessionReason)
+    : { sync: "" };
+  const effectiveMessage = connectionStatusController.currentMessage() ||
+    offlinePhotoCacheController.currentMessage() ||
+    message ||
+    rememberedStatus.sync;
+  stableSyncStatusMessageController.update(effectiveMessage, {
+    transient: isTransientSyncProgressMessage(effectiveMessage)
   });
 }
 
