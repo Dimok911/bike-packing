@@ -12,7 +12,7 @@ const OFFLINE_REMOTE_PHOTO_NAMESPACE = "offline-remote";
 function decorateBikepackingCacheRecord(task, cached, record) {
   return {
     ...record,
-    cachePurpose: cached?.cachePurpose || task.cachePurpose || OFFLINE_REMOTE_PHOTO_NAMESPACE
+    cachePurpose: task.cachePurpose || cached?.cachePurpose || OFFLINE_REMOTE_PHOTO_NAMESPACE
   };
 }
 

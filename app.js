@@ -757,6 +757,7 @@ import {
   uploadPhotoToPath
 } from "./src/sync/photo-upload-flow.js";
 import {
+  collectOfflinePhotoCacheTasks,
   createOfflinePhotoCacheController,
   createOfflinePhotoRenderCoordinator
 } from "./src/sync/offline-photo-cache.js";
@@ -1372,6 +1373,9 @@ const photoPreviewLoader = createDemandDrivenPhotoPreviewLoader({
   downloadCoordinator: photoDownloadCoordinator,
   getCachedPhotoForPreview: (id, scopeKey) => getCachedPhoto(id, scopeKey),
   putCachedPhotoForPreview: (record, scopeKey) => putCachedPhoto(record, scopeKey),
+  shouldPersistPreview: (task) => (
+    !isReadOnlyStateScope() && selectedOfflinePhotoKeySet().has(String(task?.key || ""))
+  ),
   getScopeKey: () => isReadOnlyStateScope()
     ? `${localStorageScopeKey}|readonly:${activeReadOnlyLayoutId()}:${uiLanguage}`
     : localStorageScopeKey,
@@ -2079,6 +2083,10 @@ function selectedOfflinePhotoState(targetState = state) {
   });
 }
 
+function selectedOfflinePhotoKeySet(targetState = state) {
+  return new Set(collectOfflinePhotoCacheTasks(selectedOfflinePhotoState(targetState)).map((task) => task.key));
+}
+
 function formatOfflineStorageBytes(value) {
   const bytes = Math.max(0, Number(value) || 0);
   if (bytes < 1024) return `${Math.round(bytes)} B`;
@@ -2128,7 +2136,7 @@ function renderOfflineLayoutSettingsHtml() {
         <button type="button" class="ghost" id="offlineSelectCurrentLayout">${en ? "Current layout" : "Текущая укладка"}</button>
         <button type="button" class="ghost" id="offlineClearLayouts">${en ? "Clear all" : "Снять все"}</button>
       </div>
-      <small class="offline-layout-storage-estimate">${en ? "Checking the Bike Packing photo cache…" : "Проверяем фотокэш Bike Packing…"}</small>
+      <small class="offline-layout-storage-estimate">${en ? "Checking local Bike Packing photo copies in IndexedDB…" : "Проверяем локальные копии фотографий Bike Packing в IndexedDB…"}</small>
       <small>${en
         ? "Clearing a selection removes only the offline copies from this browser. Server photos remain intact."
         : "Снятие отметки удаляет только офлайн-копии из этого браузера. Фотографии на сервере остаются без изменений."}</small>
@@ -2160,8 +2168,8 @@ function bindOfflineLayoutSettingsControls() {
         : `Офлайн-копии выбранных укладок: ${offlineBytes}, фото: ${offlineUsage.photos}. Всего фотографий Bike Packing на этом устройстве: ${totalBytes}, фото: ${totalUsage.photos}.`;
     } catch {
       target.textContent = en
-        ? "The Bike Packing photo cache size is unavailable."
-        : "Не удалось определить размер фотокэша Bike Packing.";
+        ? "The size of local Bike Packing photo copies in IndexedDB is unavailable."
+        : "Не удалось определить размер локальных копий фотографий Bike Packing в IndexedDB.";
     }
   };
   const applySelection = async (ids) => {
@@ -2181,11 +2189,57 @@ function bindOfflineLayoutSettingsControls() {
       ? `Offline layouts updated${result.removedBytes ? `; ${formatOfflineStorageBytes(result.removedBytes)} of old copies outside selected layouts freed.` : "."}`
       : `Офлайн-укладки обновлены${result.removedBytes ? `; освобождено ${formatOfflineStorageBytes(result.removedBytes)} старых копий вне выбранных укладок.` : "."}`, "success");
   };
-  inputs().forEach((input) => input.addEventListener("change", () => {
-    applySelection(inputs().filter((entry) => entry.checked).map((entry) => entry.dataset.offlineLayoutId));
+  const confirmRemoval = async (layoutIds, { clearAll = false } = {}) => {
+    const layoutsById = new Map(offlineLayoutSettingsLayouts().map((layout) => [layout.id, layout]));
+    const names = layoutIds.map((id) => layoutsById.get(id)?.name).filter(Boolean);
+    const records = await listCachedPhotos(localStorageScopeKey).catch(() => []);
+    const usage = offlinePhotoCacheUsage(records, { purpose: "offline-remote" });
+    const offlineNow = isForcedOffline() || Boolean(connectionStatusController.currentProblem());
+    const subject = clearAll
+      ? (en ? "all selected layouts" : "всех отмеченных укладок")
+      : (names.length ? names.join(", ") : (en ? "this layout" : "этой укладки"));
+    const warning = offlineNow
+      ? (en
+        ? " You are offline: removed photos can be restored only after reconnecting to the internet."
+        : " Сейчас нет подключения: вернуть удалённые фотографии получится только после выхода в интернет.")
+      : "";
+    return askConfirmDialog({
+      title: en ? "Remove local offline copies?" : "Удалить локальные офлайн-копии?",
+      text: en
+        ? `Local IndexedDB copies for ${subject} will be removed when they are no longer needed by another selected layout. Server photos will remain.${warning}`
+        : `Локальные копии в IndexedDB для ${subject} будут удалены, если они не нужны другой отмеченной укладке. Фотографии на сервере останутся.${warning}`,
+      highlightText: en
+        ? `${usage.photos} offline photos currently use ${formatOfflineStorageBytes(usage.bytes)}`
+        : `Сейчас сохранено офлайн: ${usage.photos} фото, ${formatOfflineStorageBytes(usage.bytes)}`,
+      okText: en ? "Remove local copies" : "Удалить локальные копии",
+      tone: "danger"
+    });
+  };
+  inputs().forEach((input) => input.addEventListener("change", async () => {
+    const previous = new Set(selectedOfflineLayoutIds());
+    const layoutId = input.dataset.offlineLayoutId;
+    if (!input.checked && previous.has(layoutId)) {
+      const confirmed = await confirmRemoval([layoutId]);
+      if (!confirmed) {
+        input.checked = true;
+        updateCount();
+        return;
+      }
+    }
+    await applySelection(inputs().filter((entry) => entry.checked).map((entry) => entry.dataset.offlineLayoutId));
   }));
-  root.querySelector("#offlineSelectCurrentLayout")?.addEventListener("click", () => applySelection([state.activeLayoutId]));
-  root.querySelector("#offlineClearLayouts")?.addEventListener("click", () => applySelection([]));
+  root.querySelector("#offlineSelectCurrentLayout")?.addEventListener("click", () => applySelection([
+    ...selectedOfflineLayoutIds(),
+    state.activeLayoutId
+  ]));
+  root.querySelector("#offlineClearLayouts")?.addEventListener("click", async () => {
+    const selected = selectedOfflineLayoutIds();
+    const records = await listCachedPhotos(localStorageScopeKey).catch(() => []);
+    const usage = offlinePhotoCacheUsage(records, { purpose: "offline-remote" });
+    if (!selected.length && !usage.photos) return;
+    const confirmed = await confirmRemoval(selected, { clearAll: true });
+    if (confirmed) await applySelection([]);
+  });
   updateCount();
   updateStorageEstimate();
 }
