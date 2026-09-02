@@ -761,6 +761,14 @@ import {
   createOfflinePhotoRenderCoordinator
 } from "./src/sync/offline-photo-cache.js";
 import {
+  OFFLINE_LAYOUT_SELECTION_KEY,
+  offlineLayoutPhotoCount,
+  offlinePhotoStateForLayouts,
+  pruneOfflineRemotePhotoCache,
+  readOfflineLayoutIds,
+  writeOfflineLayoutIds
+} from "./src/sync/offline-layout-selection.js";
+import {
   createPhotoDownloadCoordinator,
   PHOTO_DOWNLOAD_PRIORITY
 } from "./src/sync/photo-download-coordinator.js";
@@ -1416,7 +1424,7 @@ const offlinePhotoRenderCoordinator = createOfflinePhotoRenderCoordinator({
   objectUrls: photoObjectUrls
 });
 const offlinePhotoCacheController = createOfflinePhotoCacheController({
-  getState: () => isReadOnlyStateScope() ? createSharedVirtualState() : state,
+  getState: () => isReadOnlyStateScope() ? createSharedVirtualState() : selectedOfflinePhotoState(),
   isEnabled: () => (
     !isForcedOffline() &&
     !initialRemoteLoadPending
@@ -1859,7 +1867,7 @@ const appTailControllerDeps = {
   renderDictionaryHtml, renderEmptyState, renderPackingAddRootCard, renderPackingEmptyState,
   renderFilterControls, renderFilteredRootContainerColumnHtml, renderFilters,
   renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls, renderInitialLocalFallbackIfNeeded,
-  renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml, renderListItemHtml,
+  renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml, renderListItemHtml, renderOfflineLayoutSettingsHtml, bindOfflineLayoutSettingsControls,
   renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml, renderRootContainerColumnHtml,
   updatePhotoGalleryUploadProgress,
   renderRootContainersEditorHtml, renderSharedItemsViewHtml, renderSharedLayouts, renderSharedLayoutsHtml, renderSubcontainerSectionHtml,
@@ -2049,6 +2057,135 @@ init();
 
 function scopedLocalStorageKey(key, scope = localStorageScopeKey) {
   return scopedStorageKey(key, scope);
+}
+
+function offlineLayoutSelectionStorageKey() {
+  return scopedLocalStorageKey(OFFLINE_LAYOUT_SELECTION_KEY);
+}
+
+function selectedOfflineLayoutIds(targetState = state) {
+  return readOfflineLayoutIds(
+    localStorage,
+    offlineLayoutSelectionStorageKey(),
+    targetState
+  );
+}
+
+function selectedOfflinePhotoState(targetState = state) {
+  return offlinePhotoStateForLayouts(targetState, selectedOfflineLayoutIds(targetState), {
+    getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+    getLayoutItemIdSet: getLayoutItemIdSetForState
+  });
+}
+
+function formatOfflineStorageBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function offlineLayoutSettingsLayouts() {
+  const editable = userEditableLayoutsForState(state, { canUseLocalEditableState });
+  return editable.length ? editable : Object.values(state.layouts || {}).filter(Boolean);
+}
+
+function renderOfflineLayoutSettingsHtml() {
+  const layouts = offlineLayoutSettingsLayouts();
+  if (!layouts.length) return "";
+  const visibleIds = new Set(layouts.map((layout) => layout.id));
+  const selected = new Set(selectedOfflineLayoutIds().filter((id) => visibleIds.has(id)));
+  const en = normalizeUiLanguage(uiLanguage) === "en";
+  const rows = layouts.map((layout) => {
+    const photoCount = offlineLayoutPhotoCount(state, layout.id, {
+      getLayoutContainerIdSet: getLayoutContainerIdSetForState,
+      getLayoutItemIdSet: getLayoutItemIdSetForState
+    });
+    const photoLabel = en
+      ? `${photoCount} photo${photoCount === 1 ? "" : "s"}`
+      : `${photoCount} фото`;
+    return `
+      <label class="offline-layout-option">
+        <input type="checkbox" data-offline-layout-id="${escapeHtml(layout.id)}" ${selected.has(layout.id) ? "checked" : ""}>
+        <span><strong>${escapeHtml(layout.name || (en ? "Untitled layout" : "Укладка без названия"))}</strong><small>${photoLabel}</small></span>
+      </label>`;
+  }).join("");
+  return `
+    <section class="settings-panel offline-layout-settings-panel">
+      <div class="offline-layout-settings-heading">
+        <div>
+          <h2>${en ? "Available offline" : "Доступно офлайн"}</h2>
+          <p>${en
+            ? "Layout data stays on this device. Photos are downloaded in full only for selected layouts."
+            : "Данные укладок остаются на этом устройстве. Полностью скачиваются только фотографии отмеченных укладок."}</p>
+        </div>
+        <span class="offline-layout-selected-count">${selected.size}/${layouts.length}</span>
+      </div>
+      <div class="offline-layout-options">${rows}</div>
+      <div class="offline-layout-actions">
+        <button type="button" class="ghost" id="offlineSelectCurrentLayout">${en ? "Current layout" : "Текущая укладка"}</button>
+        <button type="button" class="ghost" id="offlineClearLayouts">${en ? "Clear all" : "Снять все"}</button>
+      </div>
+      <small class="offline-layout-storage-estimate">${en ? "Checking browser storage…" : "Проверяем хранилище браузера…"}</small>
+      <small>${en
+        ? "Clearing a selection removes only the offline copies from this browser. Server photos remain intact."
+        : "Снятие отметки удаляет только офлайн-копии из этого браузера. Фотографии на сервере остаются без изменений."}</small>
+    </section>`;
+}
+
+function bindOfflineLayoutSettingsControls() {
+  const root = refs.settingsView?.querySelector?.(".offline-layout-settings-panel");
+  if (!root) return;
+  const en = normalizeUiLanguage(uiLanguage) === "en";
+  const inputs = () => [...root.querySelectorAll("[data-offline-layout-id]")];
+  const updateCount = () => {
+    const count = inputs().filter((input) => input.checked).length;
+    const total = inputs().length;
+    const target = root.querySelector(".offline-layout-selected-count");
+    if (target) target.textContent = `${count}/${total}`;
+  };
+  const updateStorageEstimate = async () => {
+    const target = root.querySelector(".offline-layout-storage-estimate");
+    if (!target) return;
+    try {
+      const estimate = await navigator.storage?.estimate?.();
+      if (!estimate || !Number.isFinite(Number(estimate.usage))) throw new Error("unavailable");
+      const usage = formatOfflineStorageBytes(estimate.usage);
+      const quota = Number.isFinite(Number(estimate.quota)) ? formatOfflineStorageBytes(estimate.quota) : "";
+      target.textContent = en
+        ? `This site uses ${usage}${quota ? ` of ${quota}` : ""} in this browser.`
+        : `Этот сайт использует ${usage}${quota ? ` из ${quota}` : ""} в браузере.`;
+    } catch {
+      target.textContent = en
+        ? "Browser storage estimate is unavailable."
+        : "Браузер не сообщил объём локального хранилища.";
+    }
+  };
+  const applySelection = async (ids) => {
+    const normalized = writeOfflineLayoutIds(localStorage, offlineLayoutSelectionStorageKey(), ids, state);
+    const selected = new Set(normalized);
+    inputs().forEach((input) => { input.checked = selected.has(input.dataset.offlineLayoutId); });
+    updateCount();
+    const scopeKey = localStorageScopeKey;
+    const targetState = selectedOfflinePhotoState();
+    const result = await pruneOfflineRemotePhotoCache(targetState, {
+      listCachedPhotos: () => listCachedPhotos(scopeKey),
+      deleteCachedPhoto: (id) => deleteCachedPhoto(id, scopeKey)
+    });
+    await offlinePhotoCacheController.schedule({ force: true });
+    await updateStorageEstimate();
+    showToast(en
+      ? `Offline layouts updated${result.removed ? `; ${result.removed} cached photo${result.removed === 1 ? "" : "s"} removed.` : "."}`
+      : `Офлайн-укладки обновлены${result.removed ? `; локальных фото удалено: ${result.removed}.` : "."}`, "success");
+  };
+  inputs().forEach((input) => input.addEventListener("change", () => {
+    applySelection(inputs().filter((entry) => entry.checked).map((entry) => entry.dataset.offlineLayoutId));
+  }));
+  root.querySelector("#offlineSelectCurrentLayout")?.addEventListener("click", () => applySelection([state.activeLayoutId]));
+  root.querySelector("#offlineClearLayouts")?.addEventListener("click", () => applySelection([]));
+  updateCount();
+  updateStorageEstimate();
 }
 
 function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true } = {}) {

@@ -346,7 +346,7 @@ export function createAppTailControllers(ctx) {
     renderPackingEmptyState, renderFilterControls, renderFilteredRootContainerColumnHtml,
     renderFilters, renderGuestPublicDemoPreviewDuringAuthCheck, renderHistoryRecordArticleHtml, renderHistoryRecords, renderHistorySourceControls,
     renderInitialLocalFallbackIfNeeded, renderItemPhotoHtml, renderItemQuantityText, renderItemsViewHtml, renderLayoutEditorHtml,
-    renderListItemHtml, renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml,
+    renderListItemHtml, renderOfflineLayoutSettingsHtml, bindOfflineLayoutSettingsControls, renderPackingItemCardHtml, renderPackingRootHeaderCellHtml, renderPhotoGalleryHtml, renderPreservingPackingScroll, renderRootContainerCardHtml,
     renderRootContainerColumnHtml, renderRootContainersEditorHtml, renderSharedItemsViewHtml, renderSharedLayouts, renderSharedLayoutsHtml,
     renderSubcontainerSectionHtml, repairActiveEmptyAdminDemoDraft, repairAdminDemoLayout, repairAdminDemoLayoutValue, repairCollapsedActiveLayoutBeforeSave,
     repairContainerMembershipFromItemLinks, repairEmptyTemplateCopyDraftFromPublishedLayout, repairMojibakeLayoutNames, repairPlacementRegressionFromReference, repairPrivateMojibakeLayoutNames,
@@ -3163,7 +3163,7 @@ function renderPacking() {
     const comparisonBoard = refs.packingView.querySelector(".comparison-board");
     restorePendingPackingScroll(comparisonBoard);
     bindBoardScroll(comparisonBoard);
-    bindPackingBoardZoom(comparisonBoard, { resetLabel: t("packing.zoomReset") });
+    bindPackingBoardZoom(comparisonBoard, { controlLabel: t("packing.zoomControl"), resetLabel: t("packing.zoomReset") });
     bindFixedScrollbar(comparisonBoard);
     return;
   }
@@ -3223,7 +3223,7 @@ function renderPacking() {
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
-  bindPackingBoardZoom(sharedBoard, { resetLabel: t("packing.zoomReset") });
+  bindPackingBoardZoom(sharedBoard, { controlLabel: t("packing.zoomControl"), resetLabel: t("packing.zoomReset") });
   bindStickyRootHeaderRow(sharedBoard);
   bindFixedScrollbar(sharedBoard);
 }
@@ -3404,7 +3404,7 @@ function renderSharedPacking() {
   const sharedBoard = refs.packingView.querySelector(".board");
   restorePendingPackingScroll(sharedBoard);
   bindBoardScroll(sharedBoard);
-  bindPackingBoardZoom(sharedBoard, { resetLabel: t("packing.zoomReset") });
+  bindPackingBoardZoom(sharedBoard, { controlLabel: t("packing.zoomControl"), resetLabel: t("packing.zoomReset") });
   bindStickyRootHeaderRow(sharedBoard);
   bindFixedScrollbar(sharedBoard);
 }
@@ -4614,6 +4614,7 @@ function renderSettings() {
   const dictionaryOwner = activeDictionaryOwner();
   refs.settingsView.innerHTML = `
     ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
+    ${renderOfflineLayoutSettingsHtml()}
     <div class="settings-grid">
       ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
       ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
@@ -4622,6 +4623,7 @@ function renderSettings() {
   bindDictionary("location", dictionaryOwner);
   bindDictionary("category", dictionaryOwner);
   bindProfileSettingsControls();
+  bindOfflineLayoutSettingsControls();
 }
 
 function bindProfileSettingsControls() {

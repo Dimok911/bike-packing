@@ -162,10 +162,11 @@ test("CRITICAL demand-driven photos: opened photos overtake a one-file backgroun
   await Promise.all([blocker, offline, opened]);
 });
 
-test("CRITICAL demand-driven photos: app does not auto-cache and lightbox does not prefetch neighbors", () => {
+test("CRITICAL demand-driven photos: bulk caching requires an explicit offline-layout choice and lightbox does not prefetch neighbors", () => {
   const app = projectFile("app.js");
   const gallery = projectFile("src/ui/photo-gallery.js");
-  assert.doesNotMatch(app, /offlinePhotoCacheController\.schedule\(/);
+  assert.match(app, /function bindOfflineLayoutSettingsControls\([\s\S]*?offlinePhotoCacheController\.schedule\(\{ force: true \}\)/);
+  assert.doesNotMatch(app, /bindPhotoGalleries\(document, photoGalleryBindingOptions\(\)\);\s*offlinePhotoCacheController\.schedule/);
   assert.doesNotMatch(app, /offlinePhotoRenderCoordinator\.prepare\(/);
   assert.match(gallery, /prefetchAdjacent:\s*false/);
   assert.match(gallery, /entryIndex === initialIndex \? \(directFullSrc \|\| previewSrc\) : ""/);
