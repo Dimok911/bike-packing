@@ -53,7 +53,8 @@ function Relative-Path([IO.FileInfo]$File) {
 }
 
 function Write-Utf8Lines([string]$Path, [string[]]$Lines) {
-  [IO.File]::WriteAllLines($Path, $Lines, [Text.UTF8Encoding]::new($false))
+  $content = if ($Lines.Count -gt 0) { ($Lines -join "`n") + "`n" } else { "" }
+  [IO.File]::WriteAllText($Path, $content, [Text.UTF8Encoding]::new($false))
 }
 
 function Receive-HttpsFile([string]$Relative, [string]$Destination, [string]$CacheBuster) {

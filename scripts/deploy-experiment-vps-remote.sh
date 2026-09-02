@@ -2,6 +2,7 @@
 set -euo pipefail
 
 mode="${1:-}"
+trap 'printf "DEPLOY_FAILED mode=%s line=%s\n" "$mode" "$LINENO" >&2' ERR
 release_id="${2:-}"
 [[ "$release_id" =~ ^v[0-9A-Za-z._-]+-[0-9a-f]{10}-[0-9]{8}T[0-9]{6}Z$ ]]
 

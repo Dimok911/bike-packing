@@ -14,6 +14,10 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   assert.match(script, /\$server\s*=\s*"root@90\.156\.128\.115"/);
   assert.match(script, /\$livePath\s*=\s*"\/var\/www\/experiment"/);
   assert.match(script, /\$sharedPrefix\s*=\s*"assets\/"/);
+  assert.match(script, /\$Lines -join "`n"/);
+  assert.match(script, /WriteAllText/);
+  assert.doesNotMatch(script, /WriteAllLines/);
+  assert.match(remoteScript, /DEPLOY_FAILED mode=%s line=%s/);
   assert.match(remoteScript, /shared_assets=\$shared_parent\/assets/);
   assert.match(remoteScript, /cp -al "\$shared_assets\/\." "\$assets_stage\/"/);
   assert.match(remoteScript, /unlink_changed "\$assets_stage"[\s\S]*tar -xf "\$upload\/assets\.tar"/);
