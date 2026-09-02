@@ -16,6 +16,7 @@ on:
       - ".github/workflows/manufacturer-catalog-scan.yml"
       - "scripts/build-manufacturer-catalog.mjs"
       - "scripts/scan-manufacturer-catalog.mjs"
+      - "scripts/publish-manufacturer-catalog-scan.mjs"
       - "scripts/manufacturer-catalog/**"
       - "src/data/manufacturer-catalog-scan.js"
       - "src/data/manufacturer-catalog-sources.js"
