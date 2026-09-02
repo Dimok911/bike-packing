@@ -3344,3 +3344,11 @@ test("CRITICAL offline layouts: cache usage counts Bike Packing photo blobs inst
     photos: 2
   });
 });
+
+test("CRITICAL offline layouts: removing one or all selections requires confirmation before IndexedDB cleanup", () => {
+  const appSource = readFileSync(resolve(process.cwd(), "app.js"), "utf8");
+  assert.match(appSource, /const confirmRemoval = async[\s\S]*?askConfirmDialog\(\{/);
+  assert.match(appSource, /!input\.checked && previous\.has\(layoutId\)[\s\S]*?await confirmRemoval\(\[layoutId\]\)/);
+  assert.match(appSource, /#offlineClearLayouts[\s\S]*?await confirmRemoval\(selected, \{ clearAll: true \}\)/);
+  assert.match(appSource, /connectionStatusController\.currentProblem\(\)[\s\S]*?вернуть удалённые фотографии получится только после выхода в интернет/);
+});

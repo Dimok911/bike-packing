@@ -73,6 +73,7 @@ test("CRITICAL demand-driven photos: only intersecting previews load and duplica
   let observerCallback = null;
   let observedOptions = null;
   let cacheReads = 0;
+  let cacheWrites = 0;
   let downloads = 0;
   const records = new Map();
   const images = [fakeImage(), fakeImage()];
@@ -87,7 +88,8 @@ test("CRITICAL demand-driven photos: only intersecting previews load and duplica
       cacheReads += 1;
       return null;
     },
-    putCachedPhotoForPreview: async () => {},
+    putCachedPhotoForPreview: async () => { cacheWrites += 1; },
+    shouldPersistPreview: () => false,
     downloadCoordinator: {
       download: async (url) => {
         downloads += 1;
@@ -113,6 +115,7 @@ test("CRITICAL demand-driven photos: only intersecting previews load and duplica
   observerCallback(images.map((target) => ({ target, isIntersecting: true })));
   await waitFor(() => images.every((image) => image.src === "blob:photo-1"));
   assert.equal(cacheReads, 1);
+  assert.equal(cacheWrites, 0);
   assert.equal(downloads, 1);
   assert.equal(images[0].classes.has("photo-preview-ready"), true);
   assert.equal(images[0].status.hidden, true);
@@ -166,8 +169,10 @@ test("CRITICAL demand-driven photos: bulk caching requires an explicit offline-l
   const app = projectFile("app.js");
   const gallery = projectFile("src/ui/photo-gallery.js");
   assert.match(app, /function bindOfflineLayoutSettingsControls\([\s\S]*?offlinePhotoCacheController\.schedule\(\{ force: true \}\)/);
+  assert.match(app, /shouldPersistPreview:[\s\S]*?selectedOfflinePhotoKeySet\(\)\.has/);
   assert.doesNotMatch(app, /bindPhotoGalleries\(document, photoGalleryBindingOptions\(\)\);\s*offlinePhotoCacheController\.schedule/);
   assert.doesNotMatch(app, /offlinePhotoRenderCoordinator\.prepare\(/);
+  assert.match(gallery, /priority: PHOTO_DOWNLOAD_PRIORITY\.VISIBLE_PREVIEW,[\s\S]{0,140}?requestInit: \{ credentials: "include" \}/);
   assert.match(gallery, /prefetchAdjacent:\s*false/);
   assert.match(gallery, /entryIndex === initialIndex \? \(directFullSrc \|\| previewSrc\) : ""/);
 });

@@ -103,6 +103,7 @@ export function createDemandDrivenPhotoPreviewLoader({
   downloadCoordinator = createPhotoDownloadCoordinator(),
   getCachedPhotoForPreview = getCachedPhoto,
   putCachedPhotoForPreview = putCachedPhoto,
+  shouldPersistPreview = () => true,
   getScopeKey = () => "",
   activateScope = (scopeKey) => photoObjectUrls?.activateScope?.(scopeKey),
   intersectionObserverFactory = typeof globalThis.IntersectionObserver === "function"
@@ -142,7 +143,7 @@ export function createDemandDrivenPhotoPreviewLoader({
       key: task.remoteThumbSrc,
       priority: PHOTO_DOWNLOAD_PRIORITY.VISIBLE_PREVIEW,
       background: false,
-      requestInit: { credentials: "include", cache: "no-store" }
+      requestInit: { credentials: "include" }
     });
     if (task.scopeKey !== String(getScopeKey() || "")) throw new Error("photo-preview-scope-changed");
     const savedAt = new Date().toISOString();
@@ -160,9 +161,11 @@ export function createDemandDrivenPhotoPreviewLoader({
       createdAt: matching && cached?.createdAt ? cached.createdAt : savedAt,
       updatedAt: savedAt
     };
-    await (task.scopeKey
-      ? putCachedPhotoForPreview(record, task.scopeKey)
-      : putCachedPhotoForPreview(record)).catch(() => null);
+    if (shouldPersistPreview(task)) {
+      await (task.scopeKey
+        ? putCachedPhotoForPreview(record, task.scopeKey)
+        : putCachedPhotoForPreview(record)).catch(() => null);
+    }
     return registerRecord(task, record);
   };
 
