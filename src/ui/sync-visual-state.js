@@ -39,6 +39,12 @@ const SYNCING_MESSAGE_PARTS = [
   "checking"
 ];
 
+export function isSyncProgressMessage(message = "") {
+  const lowerMessage = String(message || "").toLowerCase();
+  return !ERROR_MESSAGE_PARTS.some((part) => lowerMessage.includes(part)) &&
+    SYNCING_MESSAGE_PARTS.some((part) => lowerMessage.includes(part));
+}
+
 export function resolveSyncVisualState({
   loggedIn = false,
   unlocked = false,
@@ -55,7 +61,7 @@ export function resolveSyncVisualState({
   if (ERROR_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "error";
   if (!loggedIn && unlocked) return readOnlyScope ? "synced" : "offline";
   if (rememberedOffline) return dirty ? "dirty" : "offline";
-  if (loggedIn && SYNCING_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "syncing";
+  if (loggedIn && isSyncProgressMessage(lowerMessage)) return "syncing";
   if (loggedIn && dirty) return "dirty";
   if (loggedIn) return "synced";
   return "local";

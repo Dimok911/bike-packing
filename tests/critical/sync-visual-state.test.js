@@ -6,6 +6,11 @@ import {
   resolveSyncVisualState,
   syncVisualHelp
 } from "../../src/ui/sync-visual-state.js";
+import {
+  createStableSyncStatusMessageController,
+  isTransientSyncProgressMessage,
+  SYNC_STATUS_PROGRESS_DELAY_MS
+} from "../../src/ui/sync-ui.js";
 import { createConnectionStatusController } from "../../src/ui/connection-status.js";
 import { apiFetchRequest } from "../../src/sync/api-client.js";
 import { shouldReportConnectionFailure } from "../../src/sync/connection-failure-policy.js";
@@ -31,6 +36,52 @@ test("sync visual state recognizes progress and errors in both languages", () =>
   assert.equal(resolveSyncVisualState({ loggedIn: true, message: "Server unavailable" }), "error");
   assert.equal(resolveSyncVisualState({ loggedIn: true, message: "Сервер не отвечает · работа продолжается локально" }), "error");
   assert.equal(resolveSyncVisualState({ loggedIn: true, message: "Server is not responding · work continues locally" }), "error");
+});
+
+test("brief sync progress messages do not replace the stable header status", () => {
+  const timers = [];
+  const rendered = [];
+  const controller = createStableSyncStatusMessageController({
+    render: (message) => rendered.push(message),
+    setTimer: (callback, delay) => {
+      const timer = { callback, delay, cleared: false };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: (timer) => { timer.cleared = true; }
+  });
+
+  assert.equal(isTransientSyncProgressMessage("Сохраняю на сервер..."), true);
+  assert.equal(isTransientSyncProgressMessage("Не удалось сохранить"), false);
+  controller.update("Сохраняю на сервер...", { transient: true });
+  assert.deepEqual(rendered, [""]);
+  assert.equal(timers[0].delay, SYNC_STATUS_PROGRESS_DELAY_MS);
+
+  controller.update("", { transient: false });
+  assert.equal(timers[0].cleared, true);
+  timers[0].callback();
+  assert.deepEqual(rendered, ["", ""]);
+});
+
+test("long sync progress is shown once and stays stable across progress wording changes", () => {
+  const timers = [];
+  const rendered = [];
+  const controller = createStableSyncStatusMessageController({
+    render: (message) => rendered.push(message),
+    setTimer: (callback) => {
+      const timer = { callback, cleared: false };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: (timer) => { timer.cleared = true; }
+  });
+
+  controller.update("Проверяю сервер...", { transient: true });
+  timers[0].callback();
+  controller.update("Сохраняю на сервер...", { transient: true });
+  assert.deepEqual(rendered, ["", "Проверяю сервер...", "Проверяю сервер..."]);
+  controller.update("Синхронизировано", { transient: false });
+  assert.equal(rendered.at(-1), "Синхронизировано");
 });
 
 test("foreground connection failures stay visible until a successful server response", () => {

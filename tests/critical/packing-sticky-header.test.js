@@ -36,7 +36,8 @@ import {
   packingBoardWheelZoom,
   packingBoardWheelPageDelta,
   packingBoardZoomMomentumValue,
-  packingBoardZoomedTouchScrollAxis
+  packingBoardZoomedTouchScrollAxis,
+  packingBoardStoredZoom
 } from "../../src/ui/packing-board-zoom.js";
 import fs from "node:fs";
 
@@ -868,6 +869,18 @@ test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is
   }), 1.4);
 });
 
+test("CRITICAL packing zoom: a clean browser starts at 100% and keeps the indicator visible", async () => {
+  const emptyStorage = { getItem: () => null };
+  const savedStorage = { getItem: () => "0.75" };
+  assert.equal(packingBoardStoredZoom(emptyStorage, "zoom"), 1);
+  assert.equal(packingBoardStoredZoom(savedStorage, "zoom"), 0.75);
+
+  const source = fs.readFileSync(new URL("../../src/ui/packing-board-zoom.js", import.meta.url), "utf8");
+  const styles = fs.readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+  assert.match(source, /resetButton\.hidden = false;/);
+  assert.match(styles, /body:not\(:has\(#packingView:not\(\.hidden\) \.board\)\) \.packing-board-zoom-reset/);
+});
+
 test("CRITICAL packing zoom: an open dialog keeps wheel and touch gestures away from the board", () => {
   const openDialog = { open: true };
   const closedDialog = { open: false };
@@ -993,5 +1006,5 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(styles, /\.packing-root-header-row\.packing-board-zoom-active[\s\S]*?width:\s*var\(--packing-board-base-column-width, 360px\);[\s\S]*?transform:\s*scale\(var\(--packing-board-zoom, 1\)\);/);
   assert.doesNotMatch(styles, /\.board\.packing-board-zoom-active[\s\S]{0,500}?\bzoom\s*:/);
   assert.match(styles, /\.packing-board-zoom-reset\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*63;/);
-  assert.match(styles, /body:not\(:has\(#packingView:not\(\.hidden\) \.board\.packing-board-zoom-active\)\) \.packing-board-zoom-reset\s*\{\s*display:\s*none;/);
+  assert.match(styles, /body:not\(:has\(#packingView:not\(\.hidden\) \.board\)\) \.packing-board-zoom-reset\s*\{\s*display:\s*none;/);
 });

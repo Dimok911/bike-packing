@@ -1,5 +1,6 @@
 import {
   applySyncVisualState,
+  isSyncProgressMessage,
   resolveSyncVisualState
 } from "./sync-visual-state.js";
 import { currentDocumentLanguage } from "../utils/language.js";
@@ -9,6 +10,64 @@ function localText(en, ru) {
 }
 
 export const OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE = "api-unavailable";
+export const SYNC_STATUS_PROGRESS_DELAY_MS = 650;
+
+export function isTransientSyncProgressMessage(message = "") {
+  return isSyncProgressMessage(message);
+}
+
+export function createStableSyncStatusMessageController({
+  clearTimer = (timer) => globalThis.clearTimeout(timer),
+  delayMs = SYNC_STATUS_PROGRESS_DELAY_MS,
+  render = () => {},
+  setTimer = (callback, delay) => globalThis.setTimeout(callback, delay)
+} = {}) {
+  let pendingTimer = null;
+  let pendingMessage = "";
+  let visibleProgressMessage = "";
+
+  const cancelPending = () => {
+    if (pendingTimer === null) return;
+    clearTimer(pendingTimer);
+    pendingTimer = null;
+  };
+
+  const update = (message = "", { transient = false } = {}) => {
+    const text = String(message || "");
+    if (!transient || !text) {
+      cancelPending();
+      pendingMessage = "";
+      visibleProgressMessage = "";
+      render(text);
+      return text;
+    }
+
+    pendingMessage = text;
+    if (visibleProgressMessage) {
+      render(visibleProgressMessage);
+      return visibleProgressMessage;
+    }
+
+    cancelPending();
+    render("");
+    pendingTimer = setTimer(() => {
+      pendingTimer = null;
+      if (!pendingMessage) return;
+      visibleProgressMessage = pendingMessage;
+      render(visibleProgressMessage);
+    }, Math.max(0, Number(delayMs) || 0));
+    return "";
+  };
+
+  return {
+    cancel: () => {
+      cancelPending();
+      pendingMessage = "";
+      visibleProgressMessage = "";
+    },
+    update
+  };
+}
 
 export function offlineRememberedStatusMessages(reason = "") {
   if (reason !== OFFLINE_REMEMBERED_REASON_API_UNAVAILABLE) {

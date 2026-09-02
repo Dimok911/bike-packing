@@ -349,9 +349,11 @@ function touchPair(touches) {
   };
 }
 
-function storedZoom(storage, storageKey, maxZoom = PACKING_BOARD_ZOOM_MAX) {
+export function packingBoardStoredZoom(storage, storageKey, maxZoom = PACKING_BOARD_ZOOM_MAX) {
   try {
-    return clampPackingBoardZoom(storage?.getItem?.(storageKey), { max: maxZoom });
+    const storedValue = storage?.getItem?.(storageKey);
+    if (storedValue === null || storedValue === undefined || storedValue === "") return 1;
+    return clampPackingBoardZoom(storedValue, { max: maxZoom });
   } catch {
     return 1;
   }
@@ -781,7 +783,7 @@ export function bindPackingBoardZoom(board, {
   const syncResetButton = () => {
     if (!resetButton) return;
     resetButton.textContent = `${Math.round(zoom * 100)}%`;
-    resetButton.hidden = Math.abs(zoom - 1) < 0.005;
+    resetButton.hidden = false;
     resetButton.setAttribute("aria-label", resetLabel);
     resetButton.title = resetLabel;
   };
@@ -1553,7 +1555,7 @@ export function bindPackingBoardZoom(board, {
   verticalScrollHost?.addEventListener?.("scroll", requestVerticalScrollClamp, { passive: true });
   resetButton?.addEventListener?.("click", resetZoom);
   const initialMaximum = fitMaxZoom();
-  applyZoom(storedZoom(storage, storageKey, initialMaximum), null, {
+  applyZoom(packingBoardStoredZoom(storage, storageKey, initialMaximum), null, {
     maxZoom: initialMaximum,
     notify: false
   });
