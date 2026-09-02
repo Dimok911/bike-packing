@@ -37,6 +37,7 @@ import {
   createOfflinePhotoRenderCoordinator
 } from "../../src/sync/offline-photo-cache.js";
 import {
+  offlinePhotoCacheUsage,
   offlinePhotoStateForLayouts,
   pruneOfflineRemotePhotoCache,
   readOfflineLayoutIds,
@@ -3315,12 +3316,31 @@ test("CRITICAL offline layouts: pruning removes only unselected offline-remote r
   }, {
     listCachedPhotos: async () => [
       { id: "keep", cachePurpose: "offline-remote" },
-      { id: "remove", cachePurpose: "offline-remote" },
+      { id: "remove", cachePurpose: "offline-remote", blob: new Blob(["1234"]) },
       { id: "pending-local", cachePurpose: "upload-draft" }
     ],
     deleteCachedPhoto: async (id) => removed.push(id)
   });
 
   assert.deepEqual(removed, ["remove"]);
-  assert.deepEqual(result, { removed: 1, kept: 1 });
+  assert.deepEqual(result, { removed: 1, removedBytes: 4, kept: 1 });
+});
+
+test("CRITICAL offline layouts: cache usage counts Bike Packing photo blobs instead of the whole web origin", () => {
+  const sharedBlob = new Blob(["1234"]);
+  const records = [
+    { id: "offline", cachePurpose: "offline-remote", blob: sharedBlob, thumbBlob: sharedBlob },
+    { id: "preview", cachePurpose: "visible-preview", blob: new Blob(["123456"]), thumbBlob: new Blob(["12"]) }
+  ];
+
+  assert.deepEqual(offlinePhotoCacheUsage(records, { purpose: "offline-remote" }), {
+    bytes: 4,
+    files: 1,
+    photos: 1
+  });
+  assert.deepEqual(offlinePhotoCacheUsage(records), {
+    bytes: 12,
+    files: 3,
+    photos: 2
+  });
 });
