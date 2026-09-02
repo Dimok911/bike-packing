@@ -24,6 +24,7 @@ import {
 import {
   buildRevelateCatalogEntry,
   revelateCatalogTargets,
+  revelateProductPageIsValid,
 } from "../../scripts/manufacturer-catalog/revelate-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
@@ -43,6 +44,11 @@ test("CRITICAL catalog scan: an omitted manufacturer filter selects every adapte
   assert.equal(selectManufacturerCatalogSources(), MANUFACTURER_CATALOG_SOURCES);
   assert.deepEqual(selectManufacturerCatalogSources(new Set(["revelate-designs"])).map(({ id }) => id), ["revelate-designs"]);
   assert.throws(() => selectManufacturerCatalogSources(["unknown-brand"]), /Unknown manufacturer id: unknown-brand/);
+});
+
+test("CRITICAL catalog scan: Revelate product pages reject incomplete HTTP 200 responses", () => {
+  assert.equal(revelateProductPageIsValid("<html><title>Just a moment</title></html>"), false);
+  assert.equal(revelateProductPageIsValid('<h1 class="product_title entry-title">Burrote</h1>'), true);
 });
 
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {

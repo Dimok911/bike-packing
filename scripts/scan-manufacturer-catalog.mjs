@@ -9,7 +9,10 @@ import {
 } from "../src/data/manufacturer-catalog-sources.js";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
-import { revelateCatalogTargets } from "./manufacturer-catalog/revelate-adapter.mjs";
+import {
+  revelateCatalogTargets,
+  revelateProductPageIsValid,
+} from "./manufacturer-catalog/revelate-adapter.mjs";
 import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
@@ -34,7 +37,7 @@ const scannedAt = new Date().toISOString();
 const checkedAt = scannedAt.slice(0, 10);
 const errors = Object.fromEntries(activeSources.map((source) => [source.id, []]));
 
-async function fetchText(url, attempts = 3) {
+async function fetchText(url, attempts = 3, validate = null) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
@@ -49,7 +52,9 @@ async function fetchText(url, attempts = 3) {
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.text();
+      const body = await response.text();
+      if (validate && !validate(body)) throw new Error("HTTP 200 did not contain the expected catalog content");
+      return body;
     } catch (error) {
       lastError = error;
     } finally {
@@ -57,7 +62,9 @@ async function fetchText(url, attempts = 3) {
     }
   }
   try {
-    return await fetchTextWithCurl(url);
+    const body = await fetchTextWithCurl(url);
+    if (validate && !validate(body)) throw new Error("curl response did not contain the expected catalog content");
+    return body;
   } catch (curlError) {
     throw new Error(`${url}: ${String(lastError?.message || lastError || "request failed")}; curl fallback: ${String(curlError?.message || curlError)}`);
   }
@@ -136,7 +143,8 @@ async function downloadManufacturer(source) {
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
     try {
       const pageUrl = product.url || `${source.productBaseUrl}${encodeURIComponent(handle)}`;
-      await writeFile(pagePath, await fetchText(pageUrl), "utf8");
+      const validate = source.adapter === "revelate-product-chart" ? revelateProductPageIsValid : null;
+      await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
       await writeFile(pagePath, "", "utf8");
@@ -154,9 +162,12 @@ async function runBuilder() {
       "--image-manifest", imageManifestPath,
       "--checked-at", checkedAt,
     ];
-    if (requestedManufacturers.size) {
+    const successfulManufacturerIds = activeSources
+      .filter(({ id }) => !errors[id].length)
+      .map(({ id }) => id);
+    if (requestedManufacturers.size || successfulManufacturerIds.length !== activeSources.length) {
       builderArgs.push(
-        "--manufacturers", [...requestedManufacturers].join(","),
+        "--manufacturers", successfulManufacturerIds.join(",") || "__none__",
         "--approved-catalog", resolve("src/data/manufacturer-bag-catalog.generated.js"),
       );
     }

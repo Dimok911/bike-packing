@@ -144,6 +144,10 @@ function productName(html = "") {
   return plainText(heading).replace(/\s*[|–-]\s*Revelate Designs\s*$/i, "").trim();
 }
 
+export function revelateProductPageIsValid(html = "") {
+  return Boolean(productName(html));
+}
+
 function productSku(html = "") {
   const sku = String(html || "").match(/<span\b[^>]*class\s*=\s*["'][^"']*\bsku\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
   const normalized = plainText(sku || "");
