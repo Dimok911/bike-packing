@@ -5,7 +5,10 @@ import {
   buildManufacturerCatalogScanReport,
   compareManufacturerCatalogSnapshots,
 } from "../../src/data/manufacturer-catalog-scan.js";
-import { MANUFACTURER_CATALOG_SOURCES } from "../../src/data/manufacturer-catalog-sources.js";
+import {
+  MANUFACTURER_CATALOG_SOURCES,
+  selectManufacturerCatalogSources,
+} from "../../src/data/manufacturer-catalog-sources.js";
 import {
   buildTailfinCatalogEntry,
   tailfinCatalogTargets,
@@ -34,6 +37,12 @@ const bag = (id, brand, extra = {}) => ({
   mountingOptions: ["Quick-Lock2.1"],
   variants: [],
   ...extra,
+});
+
+test("CRITICAL catalog scan: an omitted manufacturer filter selects every adapter", () => {
+  assert.equal(selectManufacturerCatalogSources(), MANUFACTURER_CATALOG_SOURCES);
+  assert.deepEqual(selectManufacturerCatalogSources(new Set(["revelate-designs"])).map(({ id }) => id), ["revelate-designs"]);
+  assert.throws(() => selectManufacturerCatalogSources(["unknown-brand"]), /Unknown manufacturer id: unknown-brand/);
 });
 
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {

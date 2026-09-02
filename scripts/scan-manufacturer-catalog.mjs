@@ -4,7 +4,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.js";
-import { MANUFACTURER_CATALOG_SOURCES } from "../src/data/manufacturer-catalog-sources.js";
+import {
+  selectManufacturerCatalogSources,
+} from "../src/data/manufacturer-catalog-sources.js";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
 import { revelateCatalogTargets } from "./manufacturer-catalog/revelate-adapter.mjs";
@@ -23,14 +25,7 @@ const requestedManufacturers = new Set(String(args.get("--manufacturers") || "")
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean));
-const activeSources = requestedManufacturers.size
-  ? MANUFACTURER_CATALOG_SOURCES.filter((source) => requestedManufacturers.has(source.id))
-  : MANUFACTURER_CATALOG_SOURCES;
-if (requestedManufacturers.size !== activeSources.length) {
-  const known = new Set(activeSources.map(({ id }) => id));
-  const unknown = [...requestedManufacturers].filter((id) => !known.has(id));
-  throw new Error(`Unknown manufacturer id: ${unknown.join(", ")}`);
-}
+const activeSources = selectManufacturerCatalogSources(requestedManufacturers);
 const workDir = requestedWorkDir ? resolve(requestedWorkDir) : await mkdtemp(join(tmpdir(), "bike-packing-catalog-scan-"));
 const pagesDir = join(workDir, ".catalog-pages");
 const generatedPath = join(workDir, "manufacturer-bag-catalog.generated.mjs");

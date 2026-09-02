@@ -68,3 +68,17 @@ export function manufacturerCatalogSource(id) {
   const normalized = String(id || "").trim().toLowerCase();
   return MANUFACTURER_CATALOG_SOURCES.find((item) => item.id === normalized) || null;
 }
+
+export function selectManufacturerCatalogSources(requestedIds = []) {
+  const requested = new Set(Array.from(requestedIds)
+    .map((id) => String(id || "").trim().toLowerCase())
+    .filter(Boolean));
+  if (!requested.size) return MANUFACTURER_CATALOG_SOURCES;
+  const selected = MANUFACTURER_CATALOG_SOURCES.filter(({ id }) => requested.has(id));
+  if (selected.length !== requested.size) {
+    const known = new Set(selected.map(({ id }) => id));
+    const unknown = [...requested].filter((id) => !known.has(id));
+    throw new Error(`Unknown manufacturer id: ${unknown.join(", ")}`);
+  }
+  return selected;
+}
