@@ -4,6 +4,7 @@ import "./manufacturer-catalog-review.test.js";
 import {
   buildManufacturerCatalogScanReport,
   compareManufacturerCatalogSnapshots,
+  manufacturerIdForEntry,
 } from "../../src/data/manufacturer-catalog-scan.js";
 import {
   MANUFACTURER_CATALOG_SOURCES,
@@ -44,6 +45,11 @@ test("CRITICAL catalog scan: an omitted manufacturer filter selects every adapte
   assert.equal(selectManufacturerCatalogSources(), MANUFACTURER_CATALOG_SOURCES);
   assert.deepEqual(selectManufacturerCatalogSources(new Set(["revelate-designs"])).map(({ id }) => id), ["revelate-designs"]);
   assert.throws(() => selectManufacturerCatalogSources(["unknown-brand"]), /Unknown manufacturer id: unknown-brand/);
+});
+
+test("CRITICAL catalog scan: display names and technical manufacturer ids normalize identically", () => {
+  assert.equal(manufacturerIdForEntry({ brand: "Revelate Designs" }), "revelate-designs");
+  assert.equal(manufacturerIdForEntry({ manufacturerId: "revelate-designs", brand: "Revelate Designs" }), "revelate-designs");
 });
 
 test("CRITICAL catalog scan: Revelate product pages reject incomplete HTTP 200 responses", () => {

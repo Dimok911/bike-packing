@@ -6,6 +6,7 @@ import {
   manufacturerBagCatalogFixedVolumes,
   splitManufacturerBagCatalogSkuModels
 } from "../src/data/manufacturer-bag-catalog-variants.js";
+import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
 import {
   buildTailfinCatalogEntry,
   tailfinCatalogTargets,
@@ -623,7 +624,7 @@ if (approvedCatalogPath) {
     || approvedModule.MANUFACTURER_BAG_CATALOG_GENERATED
     || [];
   if (requestedManufacturers.size) {
-    const brandId = (entry) => String(entry?.brand || "").trim().toLowerCase();
+    const brandId = manufacturerIdForEntry;
     const approvedBrandOrder = [...new Set(approvedEntries.map(brandId).filter(Boolean))];
     const freshBrands = new Set(normalizedEntries.map(brandId).filter(Boolean));
     outputEntries = approvedBrandOrder.flatMap((id) => {
