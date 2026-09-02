@@ -53,6 +53,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["restrap-on-body.json", "https://restrap.com/collections/on-body-bags/products.json?limit=250"],
     ]),
   }),
+  Object.freeze({
+    id: "revelate-designs",
+    name: "Revelate Designs",
+    adapter: "revelate-product-chart",
+    productBaseUrl: "https://revelatedesigns.com/product/",
+    collections: Object.freeze([
+      ["revelate-product-chart.html", "https://revelatedesigns.com/product-chart/"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

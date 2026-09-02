@@ -169,7 +169,8 @@ function replaceVolumeSummary(description = "", replacement = "") {
 function splitEntry(entry, group, groups) {
   const volume = group.volume;
   const quantity = group.setKind === "pair" ? 2 : 1;
-  const specificationsPerBag = group.separateSetKinds && group.setKind === "pair";
+  const specificationsPerBag = group.setKind === "pair"
+    && (group.separateSetKinds || entry.specificationBasis === "per-bag");
   const soldAsSet = group.setKind === "pair";
   const totalVolume = specificationsPerBag ? volume * quantity : volume;
   const volumeText = specificationsPerBag

@@ -11,7 +11,7 @@ on:
         type: string
   push:
     branches:
-      - codex/experiment-auth-photo-scroll-v1582
+      - experiment/frontend
     paths:
       - ".github/workflows/manufacturer-catalog-scan.yml"
       - "scripts/build-manufacturer-catalog.mjs"
@@ -66,9 +66,18 @@ jobs:
             manufacturer-catalog-scan-work/.catalog-pages/apidura
             manufacturer-catalog-scan-work/restrap-*.json
             manufacturer-catalog-scan-work/.catalog-pages/restrap
-            manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
+            manufacturer-catalog-scan-work/revelate-product-chart.html
+            manufacturer-catalog-scan-work/.catalog-pages/revelate-designs
           if-no-files-found: error
           retention-days: 90
+      - name: Store short-lived official image snapshot
+        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: manufacturer-catalog-scan-images
+          path: manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
+          if-no-files-found: error
+          retention-days: 14
       - name: Store checked import artifact
         if: github.event_name == 'workflow_dispatch' && inputs.review_report_path != ''
         uses: actions/upload-artifact@v4

@@ -18,6 +18,10 @@ import {
   buildRestrapCatalogEntry,
   restrapCatalogTargets,
 } from "./manufacturer-catalog/restrap-adapter.mjs";
+import {
+  buildRevelateCatalogEntry,
+  revelateCatalogTargets,
+} from "./manufacturer-catalog/revelate-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -568,6 +572,9 @@ if (manufacturerRequested("restrap")) {
   }
 }
 const restrapTargets = restrapCatalogTargets([...restrapByHandle.values()]);
+const revelateTargets = manufacturerRequested("revelate-designs")
+  ? revelateCatalogTargets(await readFile(join(sourceDir, "revelate-product-chart.html"), "utf8"))
+  : [];
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -595,6 +602,13 @@ for (const target of restrapTargets) {
   entries.push(buildRestrapCatalogEntry({
     product: target,
     html: await readFile(join(pagesDir, "restrap", `${target.handle}.html`), "utf8"),
+    sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of revelateTargets) {
+  entries.push(buildRevelateCatalogEntry({
+    html: await readFile(join(pagesDir, "revelate-designs", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
   }));

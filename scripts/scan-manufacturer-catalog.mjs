@@ -7,6 +7,7 @@ import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.j
 import { MANUFACTURER_CATALOG_SOURCES } from "../src/data/manufacturer-catalog-sources.js";
 import { tailfinCatalogTargets } from "./manufacturer-catalog/tailfin-adapter.mjs";
 import { apiduraCatalogTargets } from "./manufacturer-catalog/apidura-adapter.mjs";
+import { revelateCatalogTargets } from "./manufacturer-catalog/revelate-adapter.mjs";
 import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
@@ -42,10 +43,14 @@ async function fetchText(url, attempts = 3) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 60000);
     try {
       const response = await fetch(url, {
-        headers: { "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)" },
+        headers: {
+          "user-agent": "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)",
+          "accept": "text/html,application/xhtml+xml,application/json,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "en-US,en;q=0.8",
+        },
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -56,7 +61,42 @@ async function fetchText(url, attempts = 3) {
       clearTimeout(timeout);
     }
   }
-  throw new Error(`${url}: ${String(lastError?.message || lastError || "request failed")}`);
+  try {
+    return await fetchTextWithCurl(url);
+  } catch (curlError) {
+    throw new Error(`${url}: ${String(lastError?.message || lastError || "request failed")}; curl fallback: ${String(curlError?.message || curlError)}`);
+  }
+}
+
+async function fetchTextWithCurl(url) {
+  const command = process.platform === "win32" ? "curl.exe" : "curl";
+  const curlArgs = [
+    "--location", "--fail", "--silent", "--show-error", "--compressed",
+    "--retry", "3", "--retry-delay", "2", "--max-time", "90",
+    "--user-agent", "bike-packing-catalog-monitor/1.0 (+https://experiment.vniipo-help.ru/)",
+    String(url),
+  ];
+  return await new Promise((resolvePromise, reject) => {
+    const child = spawn(command, curlArgs, { stdio: ["ignore", "pipe", "pipe"] });
+    const output = [];
+    const errors = [];
+    let bytes = 0;
+    const maxBytes = 25 * 1024 * 1024;
+    child.stdout.on("data", (chunk) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        child.kill();
+        reject(new Error("response exceeds 25 MB"));
+        return;
+      }
+      output.push(chunk);
+    });
+    child.stderr.on("data", (chunk) => errors.push(chunk));
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0
+      ? resolvePromise(Buffer.concat(output).toString("utf8"))
+      : reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `curl exited with ${code}`)));
+  });
 }
 
 async function mapConcurrent(items, limit, worker) {
@@ -78,6 +118,9 @@ async function downloadManufacturer(source) {
       } else if (source.adapter === "apidura-sitemap") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         apiduraCatalogTargets(fetched).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "revelate-product-chart") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        revelateCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -87,12 +130,13 @@ async function downloadManufacturer(source) {
       }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html"
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart"
         ? ""
         : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
-  await mapConcurrent([...products.values()], 6, async (product) => {
+  const productConcurrency = source.adapter === "revelate-product-chart" ? 2 : 6;
+  await mapConcurrent([...products.values()], productConcurrency, async (product) => {
     const handle = product.handle;
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
     try {

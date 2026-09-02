@@ -9,6 +9,7 @@ const MANUFACTURER_HOSTS = Object.freeze({
   tailfin: ["tailfin.cc"],
   apidura: ["apidura.com"],
   restrap: ["restrap.com"],
+  "revelate-designs": ["revelatedesigns.com"],
 });
 const CHANGE_TYPES = new Set(["added", "changed", "missing"]);
 

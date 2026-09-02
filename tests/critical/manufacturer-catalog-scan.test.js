@@ -18,6 +18,10 @@ import {
   buildRestrapCatalogEntry,
   restrapCatalogTargets,
 } from "../../scripts/manufacturer-catalog/restrap-adapter.mjs";
+import {
+  buildRevelateCatalogEntry,
+  revelateCatalogTargets,
+} from "../../scripts/manufacturer-catalog/revelate-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -73,12 +77,13 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 5);
+  assert.equal(report.manufacturers.length, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "apidura").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "restrap").sourceCount, 7);
+  assert.equal(report.manufacturers.find((item) => item.id === "revelate-designs").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 
@@ -213,6 +218,54 @@ test("CRITICAL catalog scan: Restrap adapter normalizes official metrics, varian
   assert.equal(entry.sourceImageUrls.length, 2);
   assert.ok(entry.sourceImageUrls.every((url) => /width=700/.test(url)));
   assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/restrap\//.test(path)));
+});
+
+test("CRITICAL catalog scan: Revelate adapter discovers only approved bags from the official product chart", () => {
+  const targets = revelateCatalogTargets(`
+    <a href="https://revelatedesigns.com/product/tangleframebag/">Tangle Frame Bag</a>
+    <a href="/product/portage-panniers/">Portage Panniers</a>
+    <a href="/product/terrapindrybag/">Replacement dry bag</a>
+    <a href="/product/framesavertape/">Frame saver tape</a>
+    <a href="https://example.test/product/choss/">Foreign product</a>
+  `);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["portage-panniers", "tangleframebag"]);
+  assert.ok(targets.every(({ url }) => url.startsWith("https://revelatedesigns.com/product/")));
+});
+
+test("CRITICAL catalog scan: Revelate adapter keeps WooCommerce SKU sizes, pair totals, specs, and gallery", () => {
+  const variations = [
+    { attributes: { attribute_pa_size: "10l" }, sku: "RD-PORT-10", is_in_stock: true, variation_is_active: true, variation_is_visible: true, display_name: "Portage Panniers - 10L" },
+    { attributes: { attribute_pa_size: "14l" }, sku: "RD-PORT-14", is_in_stock: false, variation_is_active: true, variation_is_visible: true, display_name: "Portage Panniers - 14L" },
+  ];
+  const encodedVariations = JSON.stringify(variations).replaceAll('"', "&quot;");
+  const entry = buildRevelateCatalogEntry({
+    checkedAt: "2026-09-02",
+    sourceUrl: "https://revelatedesigns.com/product/portage-panniers/",
+    html: `<html><head><meta name="description" content="Waterproof pannier holster system."></head><body>
+      <div class="iconic-woothumbs-images-wrap"><div class="iconic-woothumbs-images">
+        <img data-large_image="https://revelatedesigns.com/wp-content/uploads/2026/08/portage-front.jpg">
+        <img data-large_image="https://revelatedesigns.com/wp-content/uploads/2026/08/portage-side.jpg">
+      </div></div><div class="summary entry-summary"><h1 class="product_title entry-title">Portage Panniers</h1>
+      <form data-product_variations="${encodedVariations}"></form></div>
+      <div id="tab-title-description"><p>Removable dry bag and holster pannier system.</p></div>
+      <div id="tab-title-dimensions"><p>Length (L) 40 cm<br>Height (H) 32 cm<br>Width (W) 15 cm</p></div>
+      <div id="tab-title-specifications"><p>Weight (g)<br>Volume (L)<br>10L<br>800 g<br>Each side 10 L<br>14L<br>900 g<br>Each side 14 L</p>
+        <p>Materials: 420 denier TPU laminated Nylon. Weight is per pair, volume is per pannier.</p></div>
+      <div id="tab-title-reviews"></div></body></html>`,
+  });
+  assert.equal(entry.id, "revelate-designs-portage-panniers");
+  assert.equal(entry.manufacturerId, "revelate-designs");
+  assert.equal(entry.category, "pannier");
+  assert.equal(entry.soldAsSet, true);
+  assert.deepEqual(entry.volumeOptions, [10, 14]);
+  assert.deepEqual(entry.weightOptions, [800, 900]);
+  assert.deepEqual(entry.variants.map(({ sku }) => sku), ["RD-PORT-10", "RD-PORT-14"]);
+  assert.deepEqual(entry.variants.map(({ available }) => available), [true, false]);
+  assert.deepEqual(entry.totalVolumeOptions, [20, 28]);
+  assert.equal(entry.waterproof, "Waterproof");
+  assert.match(entry.material, /420 denier TPU/);
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/revelate-designs\//.test(path)));
 });
 
 test("CRITICAL catalog scan: checked imports accept only complete official manufacturer evidence", () => {
