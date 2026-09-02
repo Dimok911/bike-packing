@@ -763,6 +763,7 @@ import {
 import {
   OFFLINE_LAYOUT_SELECTION_KEY,
   offlineLayoutPhotoCount,
+  offlinePhotoCacheUsage,
   offlinePhotoStateForLayouts,
   pruneOfflineRemotePhotoCache,
   readOfflineLayoutIds,
@@ -2103,8 +2104,8 @@ function renderOfflineLayoutSettingsHtml() {
       getLayoutItemIdSet: getLayoutItemIdSetForState
     });
     const photoLabel = en
-      ? `${photoCount} photo${photoCount === 1 ? "" : "s"}`
-      : `${photoCount} фото`;
+      ? `${photoCount} photo${photoCount === 1 ? "" : "s"} in layout`
+      : `${photoCount} фото в укладке`;
     return `
       <label class="offline-layout-option">
         <input type="checkbox" data-offline-layout-id="${escapeHtml(layout.id)}" ${selected.has(layout.id) ? "checked" : ""}>
@@ -2127,7 +2128,7 @@ function renderOfflineLayoutSettingsHtml() {
         <button type="button" class="ghost" id="offlineSelectCurrentLayout">${en ? "Current layout" : "Текущая укладка"}</button>
         <button type="button" class="ghost" id="offlineClearLayouts">${en ? "Clear all" : "Снять все"}</button>
       </div>
-      <small class="offline-layout-storage-estimate">${en ? "Checking browser storage…" : "Проверяем хранилище браузера…"}</small>
+      <small class="offline-layout-storage-estimate">${en ? "Checking the Bike Packing photo cache…" : "Проверяем фотокэш Bike Packing…"}</small>
       <small>${en
         ? "Clearing a selection removes only the offline copies from this browser. Server photos remain intact."
         : "Снятие отметки удаляет только офлайн-копии из этого браузера. Фотографии на сервере остаются без изменений."}</small>
@@ -2149,17 +2150,18 @@ function bindOfflineLayoutSettingsControls() {
     const target = root.querySelector(".offline-layout-storage-estimate");
     if (!target) return;
     try {
-      const estimate = await navigator.storage?.estimate?.();
-      if (!estimate || !Number.isFinite(Number(estimate.usage))) throw new Error("unavailable");
-      const usage = formatOfflineStorageBytes(estimate.usage);
-      const quota = Number.isFinite(Number(estimate.quota)) ? formatOfflineStorageBytes(estimate.quota) : "";
+      const records = await listCachedPhotos(localStorageScopeKey);
+      const offlineUsage = offlinePhotoCacheUsage(records, { purpose: "offline-remote" });
+      const totalUsage = offlinePhotoCacheUsage(records);
+      const offlineBytes = formatOfflineStorageBytes(offlineUsage.bytes);
+      const totalBytes = formatOfflineStorageBytes(totalUsage.bytes);
       target.textContent = en
-        ? `This site uses ${usage}${quota ? ` of ${quota}` : ""} in this browser.`
-        : `Этот сайт использует ${usage}${quota ? ` из ${quota}` : ""} в браузере.`;
+        ? `Selected-layout offline copies: ${offlineBytes}, ${offlineUsage.photos} photos. Total Bike Packing photos on this device: ${totalBytes}, ${totalUsage.photos} photos.`
+        : `Офлайн-копии выбранных укладок: ${offlineBytes}, фото: ${offlineUsage.photos}. Всего фотографий Bike Packing на этом устройстве: ${totalBytes}, фото: ${totalUsage.photos}.`;
     } catch {
       target.textContent = en
-        ? "Browser storage estimate is unavailable."
-        : "Браузер не сообщил объём локального хранилища.";
+        ? "The Bike Packing photo cache size is unavailable."
+        : "Не удалось определить размер фотокэша Bike Packing.";
     }
   };
   const applySelection = async (ids) => {
@@ -2176,8 +2178,8 @@ function bindOfflineLayoutSettingsControls() {
     await offlinePhotoCacheController.schedule({ force: true });
     await updateStorageEstimate();
     showToast(en
-      ? `Offline layouts updated${result.removed ? `; ${result.removed} cached photo${result.removed === 1 ? "" : "s"} removed.` : "."}`
-      : `Офлайн-укладки обновлены${result.removed ? `; локальных фото удалено: ${result.removed}.` : "."}`, "success");
+      ? `Offline layouts updated${result.removedBytes ? `; ${formatOfflineStorageBytes(result.removedBytes)} of old copies outside selected layouts freed.` : "."}`
+      : `Офлайн-укладки обновлены${result.removedBytes ? `; освобождено ${formatOfflineStorageBytes(result.removedBytes)} старых копий вне выбранных укладок.` : "."}`, "success");
   };
   inputs().forEach((input) => input.addEventListener("change", () => {
     applySelection(inputs().filter((entry) => entry.checked).map((entry) => entry.dataset.offlineLayoutId));

@@ -60,6 +60,26 @@ export function offlineLayoutPhotoCount(targetState, layoutId, helpers) {
   ).length;
 }
 
+export function offlinePhotoCacheUsage(records, { purpose = "" } = {}) {
+  const filtered = (Array.isArray(records) ? records : []).filter((record) => (
+    !purpose || String(record?.cachePurpose || record?.namespace || "") === purpose
+  ));
+  let bytes = 0;
+  let files = 0;
+  filtered.forEach((record) => {
+    const seen = new Set();
+    [record?.blob, record?.thumbBlob].forEach((blob) => {
+      if (!blob || seen.has(blob)) return;
+      seen.add(blob);
+      const size = Math.max(0, Number(blob.size) || 0);
+      if (!size) return;
+      bytes += size;
+      files += 1;
+    });
+  });
+  return { bytes, files, photos: filtered.length };
+}
+
 export async function pruneOfflineRemotePhotoCache(targetState, {
   deleteCachedPhoto = async () => {},
   listCachedPhotos = async () => []
@@ -71,6 +91,7 @@ export async function pruneOfflineRemotePhotoCache(targetState, {
     const key = String(record?.id || record?.key || "").trim();
     return purpose === "offline-remote" && key && !allowedKeys.has(key);
   });
+  const removedBytes = offlinePhotoCacheUsage(removable).bytes;
   await Promise.all(removable.map((record) => deleteCachedPhoto(record.id || record.key)));
-  return { removed: removable.length, kept: allowedKeys.size };
+  return { removed: removable.length, removedBytes, kept: allowedKeys.size };
 }
