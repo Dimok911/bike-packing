@@ -692,8 +692,10 @@ test("[shared-api:auth][app-api:bike-packing] browser covers MySQL sync, photos,
     await page.locator("#authConfirmBtn").click();
     await page.locator("#authDialog").waitFor({ state: "hidden", timeout: 20_000 });
     await poll("session cookie captured from the real API", () => guestSession.token);
-    await page.locator("#syncUserEmail").waitFor({ state: "visible", timeout: 20_000 });
-    const guestDisplayedEmail = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
+    const guestDisplayedEmail = await poll("signed-in guest email displayed", async () => {
+      const text = (await page.locator("#syncUserEmail").textContent()).replaceAll("\u200b", "");
+      return /guest-transfer@example\.test/.test(text) ? text : "";
+    }, 20_000);
     assert.match(guestDisplayedEmail, /guest-transfer@example\.test/);
     await selectLayoutByName(page, guestLayoutName);
     await page.locator("#packingView [data-root-container-id]").filter({ hasText: guestContainerName })
