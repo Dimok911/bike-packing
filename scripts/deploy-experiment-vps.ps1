@@ -65,6 +65,11 @@ function Receive-HttpsFile([string]$Relative, [string]$Destination, [string]$Cac
   ) "HTTPS download failed for $Relative."
 }
 
+function Https-TemporaryFileName([string]$Relative) {
+  $hex = [Convert]::ToHexString([Text.Encoding]::UTF8.GetBytes($Relative))
+  return $hex.Substring(0, [Math]::Min(16, $hex.Length)) + ".bin"
+}
+
 function Assert-Hash([string]$Expected, [string]$Actual, [string]$Label) {
   $left = (Get-FileHash -LiteralPath $Expected -Algorithm SHA256).Hash
   $right = (Get-FileHash -LiteralPath $Actual -Algorithm SHA256).Hash
@@ -158,12 +163,12 @@ try {
   if ($null -ne $reusedStatic) { $publicPaths += $reusedStatic.Path }
   if ($null -ne $changedStaticSample) { $publicPaths += $changedStaticSample.Path }
   foreach ($relative in $publicPaths | Select-Object -Unique) {
-    $name = ([Convert]::ToHexString([Text.Encoding]::UTF8.GetBytes($relative))).Substring(0, 16) + ".bin"
+    $name = Https-TemporaryFileName $relative
     $download = Join-Path $publicDir $name
     Receive-HttpsFile $relative $download $releaseId
     Assert-Hash (Join-Path $ArtifactRoot $relative.Replace("/", "\")) $download "HTTPS/$relative"
   }
-  $indexName = ([Convert]::ToHexString([Text.Encoding]::UTF8.GetBytes("index.html"))).Substring(0, 16) + ".bin"
+  $indexName = Https-TemporaryFileName "index.html"
   $publicHtml = Get-Content -LiteralPath (Join-Path $publicDir $indexName) -Raw
   if ($publicHtml -notmatch ('app\.js\?v=' + [regex]::Escape($versionNumber))) { throw "Public Experiment exposes the wrong version." }
   Invoke-SshChecked @("cleanup", $releaseId)

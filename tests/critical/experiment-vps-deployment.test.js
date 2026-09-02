@@ -17,6 +17,7 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   assert.match(script, /\$Lines -join "`n"/);
   assert.match(script, /WriteAllText/);
   assert.doesNotMatch(script, /WriteAllLines/);
+  assert.match(script, /Substring\(0, \[Math\]::Min\(16, \$hex\.Length\)\)/);
   assert.match(remoteScript, /DEPLOY_FAILED mode=%s line=%s/);
   assert.match(remoteScript, /shared_assets=\$shared_parent\/assets/);
   assert.match(remoteScript, /cp -al "\$shared_assets\/\." "\$assets_stage\/"/);
