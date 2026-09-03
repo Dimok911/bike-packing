@@ -4,6 +4,9 @@ export const PACKING_BOARD_ZOOM_STORAGE_KEY = "bike-packing-board-zoom-v1";
 export const PACKING_BOARD_ZOOM_MIN = 0.2;
 export const PACKING_BOARD_ZOOM_MAX = 1.6;
 export const PACKING_BOARD_ZOOM_ELASTIC_MAX = 1.8;
+export const PACKING_BOARD_ZOOM_SNAP_PERCENT = 100;
+export const PACKING_BOARD_ZOOM_SNAP_RADIUS_PERCENT = 2;
+export const PACKING_BOARD_ZOOM_SNAP_SPEED_PERCENT_PER_MS = 0.06;
 export const PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE = 52;
 export const PACKING_BOARD_POST_PINCH_PAN_DELAY_MS = 80;
 export const PACKING_BOARD_PAN_MAX_VELOCITY = 1.5;
@@ -70,6 +73,26 @@ export function clampPackingBoardZoom(value, {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 1;
   return Math.max(Number(min) || PACKING_BOARD_ZOOM_MIN, Math.min(Number(max) || PACKING_BOARD_ZOOM_MAX, parsed));
+}
+
+export function packingBoardSliderZoomPercent(value, {
+  pointerActive = false,
+  gestureStartPercent = value,
+  elapsedMs = Number.POSITIVE_INFINITY,
+  snapPercent = PACKING_BOARD_ZOOM_SNAP_PERCENT,
+  snapRadiusPercent = PACKING_BOARD_ZOOM_SNAP_RADIUS_PERCENT,
+  snapSpeedPercentPerMs = PACKING_BOARD_ZOOM_SNAP_SPEED_PERCENT_PER_MS
+} = {}) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) return snapPercent;
+  if (!pointerActive || Math.abs(percent - snapPercent) > snapRadiusPercent) return percent;
+  const startPercent = Number(gestureStartPercent);
+  if (!Number.isFinite(startPercent) || Math.abs(startPercent - snapPercent) <= snapRadiusPercent) {
+    return percent;
+  }
+  const duration = Math.max(1, Number(elapsedMs) || 0);
+  const speed = Math.abs(percent - startPercent) / duration;
+  return speed >= snapSpeedPercentPerMs ? snapPercent : percent;
 }
 
 export function packingBoardFitMaxZoom({
@@ -507,6 +530,9 @@ export function bindPackingBoardZoom(board, {
     computedHeaderStyle?.getPropertyValue?.("--packing-root-header-cell-height")
   ) || 78);
   const { button: resetButton, panel: zoomPanel, range: zoomRange } = ensureZoomControl(documentRef);
+  let zoomRangePointerActive = false;
+  let zoomRangeGestureStartPercent = PACKING_BOARD_ZOOM_SNAP_PERCENT;
+  let zoomRangeGestureStartedAt = 0;
   const desktopZoomControl = Boolean(
     zoomPanel &&
     zoomRange &&
@@ -1495,7 +1521,15 @@ export function bindPackingBoardZoom(board, {
     stopGeometrySettle();
     const startScrollLeft = Number(board.scrollLeft) || 0;
     const startMaxScrollLeft = naturalHorizontalMaximum();
-    applyZoom(Number(zoomRange?.value) / 100, {
+    const rawPercent = Number(zoomRange?.value);
+    const adjustedPercent = packingBoardSliderZoomPercent(rawPercent, {
+      pointerActive: zoomRangePointerActive,
+      gestureStartPercent: zoomRangeGestureStartPercent,
+      elapsedMs: zoomRangePointerActive
+        ? Math.max(1, (Number(windowRef?.performance?.now?.()) || Date.now()) - zoomRangeGestureStartedAt)
+        : Number.POSITIVE_INFINITY
+    });
+    applyZoom(adjustedPercent / 100, {
       preserveScrollProgress: true,
       startMaxScrollLeft,
       startScrollLeft
@@ -1504,6 +1538,16 @@ export function bindPackingBoardZoom(board, {
   };
 
   const onZoomRangeChange = () => settleBoardGeometry();
+
+  const onZoomRangePointerDown = () => {
+    zoomRangePointerActive = true;
+    zoomRangeGestureStartPercent = Number(zoomRange?.value) || PACKING_BOARD_ZOOM_SNAP_PERCENT;
+    zoomRangeGestureStartedAt = Number(windowRef?.performance?.now?.()) || Date.now();
+  };
+
+  const onZoomRangePointerEnd = () => {
+    zoomRangePointerActive = false;
+  };
 
   const onZoomControlPointerDown = (event) => {
     if (!desktopZoomControl || zoomPanel?.hidden) return;
@@ -1666,6 +1710,9 @@ export function bindPackingBoardZoom(board, {
     resetButton?.removeEventListener?.("click", onZoomButtonClick);
     zoomRange?.removeEventListener?.("input", onZoomRangeInput);
     zoomRange?.removeEventListener?.("change", onZoomRangeChange);
+    zoomRange?.removeEventListener?.("pointerdown", onZoomRangePointerDown);
+    documentRef?.removeEventListener?.("pointerup", onZoomRangePointerEnd, true);
+    documentRef?.removeEventListener?.("pointercancel", onZoomRangePointerEnd, true);
     documentRef?.removeEventListener?.("pointerdown", onZoomControlPointerDown, true);
     documentRef?.removeEventListener?.("keydown", onZoomControlKeyDown, true);
     resizeObserver?.disconnect?.();
@@ -1706,6 +1753,9 @@ export function bindPackingBoardZoom(board, {
   resetButton?.addEventListener?.("click", onZoomButtonClick);
   zoomRange?.addEventListener?.("input", onZoomRangeInput);
   zoomRange?.addEventListener?.("change", onZoomRangeChange);
+  zoomRange?.addEventListener?.("pointerdown", onZoomRangePointerDown);
+  documentRef?.addEventListener?.("pointerup", onZoomRangePointerEnd, true);
+  documentRef?.addEventListener?.("pointercancel", onZoomRangePointerEnd, true);
   documentRef?.addEventListener?.("pointerdown", onZoomControlPointerDown, true);
   documentRef?.addEventListener?.("keydown", onZoomControlKeyDown, true);
   const initialMaximum = fitMaxZoom();

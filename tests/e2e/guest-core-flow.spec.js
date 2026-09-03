@@ -59,6 +59,38 @@ test("desktop zoom indicator opens a vertical slider and applies its value", asy
   await expect(page.locator("#packingBoardZoomPanel")).toBeHidden();
 });
 
+test("desktop zoom slider snaps fast movement to 100% but keeps 101% and 102% selectable", async ({ page }) => {
+  await openApp(page);
+  await createEmptyLayout(page, "Магнит масштаба");
+  await createRootContainer(page, "Сумка для магнита");
+
+  await page.locator("#packingBoardZoomReset").click();
+  const range = page.locator("#packingBoardZoomRange");
+  await range.evaluate((input) => {
+    input.value = "70";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
+    input.value = "102";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("100%");
+
+  await range.evaluate((input) => {
+    input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 2 }));
+    input.value = "101";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 2 }));
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("101%");
+
+  await range.evaluate((input) => {
+    input.value = "102";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("102%");
+});
+
 test("zooming out at the right keeps the focused card still until the user pans away", async ({ page }) => {
   await openApp(page);
   await createEmptyLayout(page, "Без скачка масштаба");

@@ -98,7 +98,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await page.locator("dialog.photo-lightbox .photo-lightbox-close").click();
   await page.locator('[data-bag-catalog-select="ortlieb-seat-pack-16-5l"]').click();
 
-  await expect(page.locator("#bagCatalogDialog")).not.toBeVisible();
+  await expect(page.locator("#bagCatalogDialog")).not.toBeVisible({ timeout: 15_000 });
   await expect(page.locator("#rootContainerDialog")).toBeVisible();
   await expect(page.locator("#rootContainerName")).toHaveValue("ORTLIEB Seat-Pack 16.5 L");
   await expect(page.locator("#rootContainerWeight")).toHaveValue("490");

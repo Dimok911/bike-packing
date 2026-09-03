@@ -170,7 +170,7 @@ test("CRITICAL permissions: Bike authorization is loaded separately from shared 
   ]);
 });
 
-test("CRITICAL permissions: production may fall back to its legacy auth response during cutover", async () => {
+test("CRITICAL permissions: legacy auth authorization remains a compatibility fallback", async () => {
   const authorization = await loadBikePackingAuthorization(async () => {
     const error = new Error("not found");
     error.status = 404;

@@ -44,7 +44,7 @@ export async function loadBikePackingAuthorization(apiFetch, fallbackAuthorizati
       authorization = response.authorization;
     }
   } catch {
-    // Production keeps the legacy /auth/me authorization until its API split.
+    // Keep the legacy /auth/me authorization as a safe compatibility fallback.
   }
   return normalizeAuthAuthorization(authorization);
 }
