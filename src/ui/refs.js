@@ -44,7 +44,6 @@ export function createRefs(root = document) {
     layoutCompareToLabel: root.querySelector("#layoutCompareToLabel"),
     layoutCompareTo: root.querySelector("#layoutCompareTo"),
     layoutCompareUnavailable: root.querySelector("#layoutCompareUnavailable"),
-    layoutCompareCancelBtn: root.querySelector("#layoutCompareCancelBtn"),
     layoutCompareStartBtn: root.querySelector("#layoutCompareStartBtn"),
     searchInput: root.querySelector("#searchInput"),
     clearSearchBtn: root.querySelector("#clearSearchBtn"),

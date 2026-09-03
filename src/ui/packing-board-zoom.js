@@ -17,10 +17,17 @@ export function packingBoardZoomControllerFor(board) {
 }
 
 export function packingBoardHorizontalGeometry(board, {
-  basePaddingRight
+  basePaddingRight,
+  includeRetainedGutter = true
 } = {}) {
   const clientWidth = Math.max(0, Number(board?.clientWidth) || 0);
-  const rawContentWidth = Math.max(clientWidth, Number(board?.scrollWidth) || 0);
+  const configuredGutter = Number(board?.dataset?.packingBoardRetainedRightGutter);
+  const retainedGutter = Number.isFinite(configuredGutter) ? Math.max(0, configuredGutter) : 0;
+  const visibleRetainedGutter = includeRetainedGutter ? retainedGutter : 0;
+  const rawContentWidth = Math.max(
+    clientWidth,
+    (Number(board?.scrollWidth) || 0) - (includeRetainedGutter ? 0 : retainedGutter)
+  );
   const rawMaxScroll = Math.max(0, rawContentWidth - clientWidth);
   if (!board?.classList?.contains?.("packing-board-zoom-active")) {
     return { clientWidth, contentWidth: rawContentWidth, maxScroll: rawMaxScroll };
@@ -48,7 +55,7 @@ export function packingBoardHorizontalGeometry(board, {
 
   const configuredPadding = Number(basePaddingRight ?? board?.dataset?.packingBoardBasePaddingRight);
   const safePaddingRight = Number.isFinite(configuredPadding) ? Math.max(0, configuredPadding) : 0;
-  const contentWidth = Math.max(clientWidth, visualRight + safePaddingRight);
+  const contentWidth = Math.max(clientWidth, visualRight + safePaddingRight + visibleRetainedGutter);
   return {
     clientWidth,
     contentWidth,
@@ -415,6 +422,19 @@ function ensureZoomControl(documentRef) {
   return { button, panel, range };
 }
 
+export function packingBoardRetainedHorizontalGutter({
+  currentGutter,
+  currentScrollLeft,
+  naturalMaxScrollLeft
+} = {}) {
+  const retained = Math.max(0, Number(currentGutter) || 0);
+  const requiredAtCurrentPosition = Math.max(
+    0,
+    (Number(currentScrollLeft) || 0) - Math.max(0, Number(naturalMaxScrollLeft) || 0)
+  );
+  return Math.min(retained, requiredAtCurrentPosition);
+}
+
 function notifyGeometryChanged(board, windowRef) {
   const requestFrame = windowRef?.requestAnimationFrame || ((callback) => callback());
   requestFrame(() => {
@@ -535,8 +555,32 @@ export function bindPackingBoardZoom(board, {
   const frameNow = () => Number(windowRef?.performance?.now?.()) || Date.now();
 
   const naturalHorizontalMaximum = () => packingBoardHorizontalGeometry(board, {
-    basePaddingRight
+    basePaddingRight,
+    includeRetainedGutter: false
   }).maxScroll;
+
+  const setHorizontalAnchorGutter = (value) => {
+    const next = Math.max(0, Number(value) || 0);
+    horizontalAnchorGutter = next > 0.5 ? next : 0;
+    if (horizontalAnchorGutter) {
+      board.dataset.packingBoardRetainedRightGutter = String(horizontalAnchorGutter);
+      board.style.paddingRight = `${basePaddingRight + horizontalAnchorGutter}px`;
+      return;
+    }
+    board.style.removeProperty("padding-right");
+    delete board.dataset.packingBoardRetainedRightGutter;
+  };
+
+  const trimHorizontalAnchorGutter = () => {
+    if (!horizontalAnchorGutter) return false;
+    const previous = horizontalAnchorGutter;
+    setHorizontalAnchorGutter(packingBoardRetainedHorizontalGutter({
+      currentGutter: horizontalAnchorGutter,
+      currentScrollLeft: board.scrollLeft,
+      naturalMaxScrollLeft: naturalHorizontalMaximum()
+    }));
+    return Math.abs(previous - horizontalAnchorGutter) > 0.5;
+  };
 
   const horizontalMaximum = () => naturalHorizontalMaximum() + horizontalAnchorGutter;
 
@@ -778,11 +822,8 @@ export function bindPackingBoardZoom(board, {
 
   const settleBoardGeometry = () => {
     stopGeometrySettle();
-    if (horizontalAnchorGutter) {
-      horizontalAnchorGutter = 0;
-      board.style.removeProperty("padding-right");
-    }
-    const maxScrollLeft = naturalHorizontalMaximum();
+    trimHorizontalAnchorGutter();
+    const maxScrollLeft = horizontalMaximum();
     if ((Number(board.scrollLeft) || 0) > maxScrollLeft + 0.5) {
       board.scrollLeft = maxScrollLeft;
     }
@@ -855,10 +896,7 @@ export function bindPackingBoardZoom(board, {
       board.style.removeProperty("grid-auto-columns");
       board.style.removeProperty("gap");
     }
-    if (!anchor?.preserveHorizontalPoint && horizontalAnchorGutter) {
-      horizontalAnchorGutter = 0;
-      board.style.removeProperty("padding-right");
-    }
+    if (!anchor?.preserveHorizontalPoint) trimHorizontalAnchorGutter();
     if (headerRow) {
       headerRow.style.setProperty("--packing-board-zoom", String(normalized));
       if (baseColumnWidth) {
@@ -882,10 +920,7 @@ export function bindPackingBoardZoom(board, {
       });
     }
     if (anchor?.preserveHorizontalPoint) {
-      if (horizontalAnchorGutter) {
-        horizontalAnchorGutter = 0;
-        board.style.removeProperty("padding-right");
-      }
+      setHorizontalAnchorGutter(0);
       const desiredScrollLeft = packingBoardAnchoredScrollLeft({
         anchorClientX: anchor.anchorClientX,
         anchorContentX: anchor.anchorContentX,
@@ -894,10 +929,7 @@ export function bindPackingBoardZoom(board, {
         zoom: normalized
       });
       const naturalMaxScrollLeft = naturalHorizontalMaximum();
-      horizontalAnchorGutter = Math.max(0, desiredScrollLeft - naturalMaxScrollLeft);
-      if (horizontalAnchorGutter > 0.5) {
-        board.style.paddingRight = `${basePaddingRight + horizontalAnchorGutter}px`;
-      }
+      setHorizontalAnchorGutter(Math.max(0, desiredScrollLeft - naturalMaxScrollLeft));
       board.scrollLeft = packingBoardAnchoredScrollLeft({
         anchorClientX: anchor.anchorClientX,
         anchorContentX: anchor.anchorContentX,
@@ -1458,6 +1490,10 @@ export function bindPackingBoardZoom(board, {
     resetButton?.focus?.({ preventScroll: true });
   };
 
+  const onBoardScroll = () => {
+    if (trimHorizontalAnchorGutter()) notifyGeometryChanged(board, windowRef);
+  };
+
   const stopPresentation = () => {
     if (presentationTimer !== null) {
       (windowRef?.clearTimeout || globalThis.clearTimeout)?.(presentationTimer);
@@ -1599,6 +1635,7 @@ export function bindPackingBoardZoom(board, {
     gestureSurface?.removeEventListener?.("gestureend", preventNativeBoardZoom, true);
     gestureSurface?.removeEventListener?.("wheel", onWheel, true);
     verticalScrollHost?.removeEventListener?.("scroll", requestVerticalScrollClamp);
+    board.removeEventListener?.("scroll", onBoardScroll);
     resetButton?.removeEventListener?.("click", onZoomButtonClick);
     zoomRange?.removeEventListener?.("input", onZoomRangeInput);
     zoomRange?.removeEventListener?.("change", onZoomRangeChange);
@@ -1616,8 +1653,7 @@ export function bindPackingBoardZoom(board, {
     verticalClampFrame = null;
     board.classList.remove("packing-board-zooming");
     board.classList.remove("packing-board-page-panning");
-    horizontalAnchorGutter = 0;
-    board.style.removeProperty("padding-right");
+    setHorizontalAnchorGutter(0);
     delete board.dataset.packingBoardBasePaddingRight;
     postPinchPanning = false;
     postPinchPanActivated = false;
@@ -1639,6 +1675,7 @@ export function bindPackingBoardZoom(board, {
   gestureSurface?.addEventListener?.("gestureend", preventNativeBoardZoom, { capture: true, passive: false });
   gestureSurface?.addEventListener?.("wheel", onWheel, { capture: true, passive: false });
   verticalScrollHost?.addEventListener?.("scroll", requestVerticalScrollClamp, { passive: true });
+  board.addEventListener?.("scroll", onBoardScroll, { passive: true });
   resetButton?.addEventListener?.("click", onZoomButtonClick);
   zoomRange?.addEventListener?.("input", onZoomRangeInput);
   zoomRange?.addEventListener?.("change", onZoomRangeChange);

@@ -8,6 +8,24 @@ function availableLayoutIdSet(availableLayoutIds) {
   );
 }
 
+export function layoutComparisonPickerState(layouts = [], selection = {}) {
+  const entries = Array.from(layouts || []).filter((layout) => String(layout?.id || "").trim());
+  const availableIds = new Set(entries.map((layout) => String(layout.id)));
+  let fromLayoutId = String(selection?.fromLayoutId || "").trim();
+  let toLayoutId = String(selection?.toLayoutId || "").trim();
+  if (!availableIds.has(fromLayoutId)) fromLayoutId = entries[0]?.id || "";
+  if (!availableIds.has(toLayoutId) || toLayoutId === fromLayoutId) {
+    toLayoutId = entries.find((layout) => layout.id !== fromLayoutId)?.id || "";
+  }
+  if (fromLayoutId === toLayoutId) fromLayoutId = "";
+  return {
+    fromLayoutId,
+    toLayoutId,
+    fromLayouts: entries.filter((layout) => layout.id !== toLayoutId),
+    toLayouts: entries.filter((layout) => layout.id !== fromLayoutId)
+  };
+}
+
 export function loadLayoutComparisonSelection(
   storageKey,
   availableLayoutIds,

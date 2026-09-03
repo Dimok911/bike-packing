@@ -104,6 +104,7 @@ import {
 } from "../ui/layout-comparison-render.js";
 import {
   LAYOUT_COMPARISON_SELECTION_STORAGE_KEY,
+  layoutComparisonPickerState,
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../ui/layout-comparison-selection.js";
@@ -2700,15 +2701,32 @@ function currentLayoutComparison() {
 }
 
 function comparisonLayoutOptions() {
-  return userEditableLayouts().filter((layout) => layout?.id);
+  const editableIds = new Set(userEditableLayouts().map((layout) => layout?.id).filter(Boolean));
+  return orderedLayouts(state.layouts, {
+    guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG,
+    includeLayout: (layout) => editableIds.has(layout?.id),
+    locale: uiLanguage || "ru"
+  });
 }
 
-function updateLayoutComparisonDialogState() {
+function updateLayoutComparisonDialogState(selection = null) {
   const options = comparisonLayoutOptions();
+  const picker = layoutComparisonPickerState(options, selection || {
+    fromLayoutId: refs.layoutCompareFrom?.value,
+    toLayoutId: refs.layoutCompareTo?.value
+  });
+  fillSelect(
+    refs.layoutCompareFrom,
+    picker.fromLayouts.map((layout) => [layout.id, layoutDisplayName(layout)]),
+    picker.fromLayoutId
+  );
+  fillSelect(
+    refs.layoutCompareTo,
+    picker.toLayouts.map((layout) => [layout.id, layoutDisplayName(layout)]),
+    picker.toLayoutId
+  );
   const enoughLayouts = options.length >= 2;
-  const differentLayouts = refs.layoutCompareFrom?.value &&
-    refs.layoutCompareTo?.value &&
-    refs.layoutCompareFrom.value !== refs.layoutCompareTo.value;
+  const differentLayouts = picker.fromLayoutId && picker.toLayoutId && picker.fromLayoutId !== picker.toLayoutId;
   if (refs.layoutCompareFields) refs.layoutCompareFields.hidden = !enoughLayouts;
   if (refs.layoutCompareUnavailable) {
     refs.layoutCompareUnavailable.hidden = enoughLayouts && differentLayouts;
@@ -2733,10 +2751,10 @@ function openLayoutComparisonDialog() {
   );
   const preferredToId = layoutComparison?.toLayoutId || savedSelection?.toLayoutId ||
     options.find((layout) => layout.id !== preferredFromId)?.id || "";
-  const selectOptions = options.map((layout) => [layout.id, layoutDisplayName(layout)]);
-  fillSelect(refs.layoutCompareFrom, selectOptions, preferredFromId);
-  fillSelect(refs.layoutCompareTo, selectOptions, preferredToId);
-  updateLayoutComparisonDialogState();
+  updateLayoutComparisonDialogState({
+    fromLayoutId: preferredFromId,
+    toLayoutId: preferredToId
+  });
   closeTopMenu();
   openModalDialog(refs.layoutCompareDialog);
 }
@@ -2744,9 +2762,11 @@ function openLayoutComparisonDialog() {
 function swapLayoutComparisonDialogValues() {
   if (!refs.layoutCompareFrom || !refs.layoutCompareTo) return;
   const fromId = refs.layoutCompareFrom.value;
-  refs.layoutCompareFrom.value = refs.layoutCompareTo.value;
-  refs.layoutCompareTo.value = fromId;
-  updateLayoutComparisonDialogState();
+  const toId = refs.layoutCompareTo.value;
+  updateLayoutComparisonDialogState({
+    fromLayoutId: toId,
+    toLayoutId: fromId
+  });
 }
 
 function startLayoutComparison() {
@@ -2805,8 +2825,8 @@ function bindLayoutComparisonControls() {
     }
     openLayoutComparisonDialog();
   });
-  refs.layoutCompareFrom?.addEventListener("change", updateLayoutComparisonDialogState);
-  refs.layoutCompareTo?.addEventListener("change", updateLayoutComparisonDialogState);
+  refs.layoutCompareFrom?.addEventListener("change", () => updateLayoutComparisonDialogState());
+  refs.layoutCompareTo?.addEventListener("change", () => updateLayoutComparisonDialogState());
   refs.layoutCompareSwapBtn?.addEventListener("click", swapLayoutComparisonDialogValues);
   refs.layoutCompareStartBtn?.addEventListener("click", startLayoutComparison);
 }
@@ -2825,6 +2845,9 @@ function renderLayoutComparisonSummary(comparison) {
 }
 
 function bindLayoutComparisonView() {
+  refs.packingView.querySelectorAll("[data-compare-open-item]").forEach((button) => {
+    button.addEventListener("click", () => openItemDialog(button.dataset.compareOpenItem));
+  });
   refs.packingView.querySelector("[data-compare-only-changes]")?.addEventListener("click", () => {
     capturePackingScroll();
     layoutComparisonOnlyChanges = !layoutComparisonOnlyChanges;
@@ -3143,6 +3166,10 @@ function renderPacking() {
       ${renderLayoutComparisonItemChangesHtml({
         comparison,
         escapeHtml,
+        renderThumbnail: (record) => pickerListThumbnailHtml(record, {
+          enabled: true,
+          photoObjectUrls
+        }),
         state,
         t
       })}

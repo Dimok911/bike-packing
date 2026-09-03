@@ -131,7 +131,6 @@ export function applyStaticTranslationsUi({
   setText(refs.layoutCompareFromLabel, t("compare.fromLayout"));
   setText(refs.layoutCompareToLabel, t("compare.toLayout"));
   setText(refs.layoutCompareUnavailable, t("compare.needTwoLayouts"));
-  setText(refs.layoutCompareCancelBtn, t("buttons.cancel"));
   setText(refs.layoutCompareStartBtn, t("compare.start"));
   setAttr(refs.layoutCompareSwapBtn, "aria-label", t("compare.swapAria"));
   setAttr(refs.layoutCompareSwapBtn, "title", t("compare.swapAria"));

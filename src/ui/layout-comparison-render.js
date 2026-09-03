@@ -68,6 +68,7 @@ function comparisonItemChangeEntries(comparison, state, status, t) {
 function renderComparisonItemChangeGroup({
   comparison,
   escapeHtml,
+  renderThumbnail,
   state,
   status,
   t
@@ -84,10 +85,16 @@ function renderComparisonItemChangeGroup({
           ${entries.map(({ diff, name }) => {
             const containerId = added ? diff.toContainerId : diff.fromContainerId;
             const container = parentName(state, containerId, t("compare.layoutRoot"));
+            const item = state?.items?.[diff.id];
             return `
               <li>
-                <strong>${escapeHtml(name)}</strong>
-                <small>${escapeHtml(t(locationKey, { container }))}</small>
+                <button type="button" class="comparison-item-change-button" data-compare-open-item="${escapeHtml(diff.id)}">
+                  ${renderThumbnail(item)}
+                  <span class="comparison-item-change-copy">
+                    <strong>${escapeHtml(name)}</strong>
+                    <small>${escapeHtml(t(locationKey, { container }))}</small>
+                  </span>
+                </button>
               </li>
             `;
           }).join("")}
@@ -100,6 +107,7 @@ function renderComparisonItemChangeGroup({
 export function renderLayoutComparisonItemChangesHtml({
   comparison,
   escapeHtml,
+  renderThumbnail = () => "",
   state,
   t
 }) {
@@ -107,8 +115,8 @@ export function renderLayoutComparisonItemChangesHtml({
     <section class="layout-comparison-item-changes" aria-labelledby="comparisonItemChangesTitle">
       <h2 id="comparisonItemChangesTitle">${escapeHtml(t("compare.itemsTitle"))}</h2>
       <div class="comparison-item-change-grid">
-        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, state, status: "added", t })}
-        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, state, status: "removed", t })}
+        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, renderThumbnail, state, status: "added", t })}
+        ${renderComparisonItemChangeGroup({ comparison, escapeHtml, renderThumbnail, state, status: "removed", t })}
       </div>
     </section>
   `;

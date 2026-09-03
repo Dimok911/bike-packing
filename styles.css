@@ -3774,9 +3774,7 @@ body.layout-comparison-active #metaToggleBtn {
 }
 
 .comparison-item-change-group li {
-  display: grid;
-  gap: 2px;
-  padding: 9px 11px;
+  min-width: 0;
 }
 
 .comparison-item-change-group li + li {
@@ -3786,6 +3784,33 @@ body.layout-comparison-active #metaToggleBtn {
 .comparison-item-change-group strong {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.comparison-item-change-button {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 66px;
+  gap: 10px;
+  padding: 7px 11px 7px 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.comparison-item-change-button:hover,
+.comparison-item-change-button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.comparison-item-change-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
 }
 
 .comparison-item-change-group small,
