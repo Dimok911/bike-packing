@@ -29,8 +29,16 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#bagCatalogPath")).toHaveText("Apidura");
   await expect(page.locator('[data-bag-catalog-family="bikepacking"]')).toBeVisible();
   await expect(page.locator('[data-bag-catalog-family="carry"]')).toHaveCount(0);
-  await brandPicker.locator('[data-bag-catalog-brand="all"]').click();
   await page.locator('[data-bag-catalog-family="bikepacking"]').click();
+  await expect(page.locator('[data-bag-catalog-category="saddle"]')).toBeVisible();
+  await brandPicker.evaluate((element) => { element.scrollLeft = 120; });
+  await brandPicker.locator('[data-bag-catalog-brand="restrap"]').click();
+  await expect(page.locator("#bagCatalogPath")).toHaveText(/Restrap \/ .+/);
+  await expect(page.locator('[data-bag-catalog-family="bikepacking"]')).toHaveCount(0);
+  await expect(page.locator('[data-bag-catalog-category="saddle"]')).toBeVisible();
+  await expect.poll(() => brandPicker.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  await brandPicker.locator('[data-bag-catalog-brand="all"]').click();
+  await expect(page.locator('[data-bag-catalog-category="saddle"]')).toBeVisible();
   await page.locator('[data-bag-catalog-compare-category="saddle"]').click();
 
   const comparison = page.locator("#bagCatalogCompareDialog");
@@ -98,6 +106,63 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(3);
   await expect(page.locator("#rootContainerNote")).toHaveValue(/Артикул \(SKU\):/);
   await expect(page.locator("#rootContainerNote")).toHaveValue(/Официальная страница: https:\/\/us\.ortlieb\.com/);
+});
+
+test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await openApp(page);
+  await createEmptyLayout(page, "Мобильный каталог");
+
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#openBagCatalogBtn").click();
+
+  const dialog = page.locator("#bagCatalogDialog");
+  const brandPicker = page.locator("#bagCatalogBrands");
+  const results = page.locator("#bagCatalogResults");
+  await expect(dialog).toBeVisible();
+  const before = await dialog.evaluate((element) => {
+    const dialogRect = element.getBoundingClientRect();
+    const brands = element.querySelector("#bagCatalogBrands");
+    const brandRect = brands.getBoundingClientRect();
+    const resultRect = element.querySelector("#bagCatalogResults").getBoundingClientRect();
+    const style = getComputedStyle(brands);
+    return {
+      dialogTop: dialogRect.top,
+      dialogHeight: dialogRect.height,
+      brandTop: brandRect.top,
+      resultTop: resultRect.top,
+      brandClientWidth: brands.clientWidth,
+      brandScrollWidth: brands.scrollWidth,
+      overflowX: style.overflowX,
+      touchAction: style.touchAction
+    };
+  });
+  expect(before.dialogHeight).toBeGreaterThan(650);
+  expect(before.brandScrollWidth).toBeGreaterThan(before.brandClientWidth);
+  expect(["auto", "scroll"]).toContain(before.overflowX);
+  expect(before.touchAction).toContain("pan-x");
+
+  await brandPicker.evaluate((element) => { element.scrollLeft = 140; });
+  await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
+  await page.locator('[data-bag-catalog-family="bikepacking"]').click();
+  const after = await dialog.evaluate((element) => {
+    const dialogRect = element.getBoundingClientRect();
+    const brandRect = element.querySelector("#bagCatalogBrands").getBoundingClientRect();
+    const resultRect = element.querySelector("#bagCatalogResults").getBoundingClientRect();
+    return {
+      dialogTop: dialogRect.top,
+      dialogHeight: dialogRect.height,
+      brandTop: brandRect.top,
+      resultTop: resultRect.top
+    };
+  });
+  expect(after.dialogTop).toBeCloseTo(before.dialogTop, 0);
+  expect(after.dialogHeight).toBeCloseTo(before.dialogHeight, 0);
+  expect(after.brandTop).toBeCloseTo(before.brandTop, 0);
+  expect(after.resultTop).toBeCloseTo(before.resultTop, 0);
+  await expect.poll(() => brandPicker.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  await expect(results).toBeVisible();
 });
 
 for (const scenario of [

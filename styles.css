@@ -6544,14 +6544,16 @@ button.touch-tooltip-open:active {
 
 #bagCatalogDialog {
   width: min(940px, calc(100vw - 24px));
+  height: min(820px, calc(100dvh - 24px));
   max-height: calc(100dvh - 24px);
   overflow: hidden;
 }
 
 .manufacturer-bag-catalog-dialog-card {
   width: 100%;
+  height: 100%;
   min-width: 0;
-  max-height: calc(100dvh - 24px);
+  max-height: 100%;
   box-sizing: border-box;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
@@ -6576,7 +6578,14 @@ button.touch-tooltip-open:active {
   min-height: 40px;
 }
 
+.manufacturer-catalog-back[hidden] {
+  display: inline-flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .manufacturer-catalog-path {
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
   font-size: 14px;
@@ -6604,7 +6613,10 @@ button.touch-tooltip-open:active {
   padding: 2px 2px 8px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
   scrollbar-width: thin;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 
 .manufacturer-brand-choice {
@@ -7395,7 +7407,6 @@ button.manufacturer-brand-choice:hover {
 }
 
 @media (max-width: 650px) {
-  .manufacturer-catalog-toolbar,
   .manufacturer-catalog-sections,
   .manufacturer-catalog-edit-fields {
     grid-template-columns: 1fr;
@@ -8896,6 +8907,16 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
     max-height: inherit;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  #bagCatalogDialog {
+    height: calc(100dvh - max(12px, env(safe-area-inset-top)) - 12px);
+  }
+
+  #bagCatalogDialog .manufacturer-bag-catalog-dialog-card {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
   }
 
   #itemDialog,

@@ -147,6 +147,7 @@ export function createManufacturerBagCatalogDialogController({
 
   function renderBrandPicker() {
     if (!refs?.bagCatalogBrands) return;
+    const scrollLeft = refs.bagCatalogBrands.scrollLeft;
     const activeBrands = brands.filter((entry) => entry.status === "active");
     const plannedBrands = brands.filter((entry) => entry.status === "planned");
     refs.bagCatalogBrands.setAttribute("aria-label", t("bagCatalog.brands.label"));
@@ -171,6 +172,7 @@ export function createManufacturerBagCatalogDialogController({
         </span>
       `).join("")}
     `;
+    refs.bagCatalogBrands.scrollLeft = scrollLeft;
   }
 
   function renderFamilyList() {
@@ -381,11 +383,21 @@ export function createManufacturerBagCatalogDialogController({
     if (!button || selectingId) return;
     const requested = button.dataset.bagCatalogBrand || "all";
     const definition = brands.find((entry) => entry.id === requested && entry.status === "active");
-    manufacturer = requested === "all" || manufacturer === definition?.catalogBrand
+    const nextManufacturer = requested === "all" || manufacturer === definition?.catalogBrand
       ? ""
       : String(definition?.catalogBrand || "");
-    family = "";
-    category = "";
+    manufacturer = nextManufacturer;
+    const keepsFamily = Boolean(family && manufacturerBagCatalogCount(catalogRows(), {
+      brand: manufacturer,
+      family
+    }));
+    const keepsCategory = Boolean(keepsFamily && category && manufacturerBagCatalogCount(catalogRows(), {
+      brand: manufacturer,
+      family,
+      category
+    }));
+    if (!keepsFamily) family = "";
+    if (!keepsCategory) category = "";
     query = "";
     if (refs?.bagCatalogSearch) refs.bagCatalogSearch.value = "";
     render();
