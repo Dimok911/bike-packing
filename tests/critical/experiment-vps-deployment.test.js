@@ -10,6 +10,8 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   const script = readProjectFile("scripts/deploy-experiment-vps.ps1");
   const remoteScript = readProjectFile("scripts/deploy-experiment-vps-remote.sh");
   const docs = readProjectFile("docs/experimental-deployment.md");
+  const workflow = readProjectFile(".github/workflows/frontend-quality.yml");
+  const liveContractCheck = readProjectFile("scripts/verify-live-api-contract.mjs");
 
   assert.match(script, /\$server\s*=\s*"root@90\.156\.128\.115"/);
   assert.match(script, /\$livePath\s*=\s*"\/var\/www\/experiment"/);
@@ -33,6 +35,20 @@ test("Experiment VPS deployment reuses unchanged files without weakening release
   assert.match(remoteScript, /abort\)[\s\S]*rm -rf -- "\$stage" "\$assets_stage"/);
   assert.match(script, /Experiment deployment failed; the previous release was restored/);
   assert.match(script, /\$sharedPrefix\*/);
+  assert.match(script, /\$ApiCapabilitiesUrl\s*=\s*"https:\/\/experiment\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/capabilities"/);
+  assert.match(script, /function Assert-ExperimentApiContract/);
+  assert.match(script, /requiredApiCompatibilityVersion/);
+  assert.match(script, /requiredApiCapabilities/);
+  assert.match(script, /release-contract\.json/);
+  assert.match(script, /Experiment was not changed/);
+  const preflightCall = script.indexOf("$apiContractVerification = Assert-ExperimentApiContract");
+  const firstRemoteRead = script.indexOf("$remoteLines = @(& $sshPath");
+  assert.ok(preflightCall > 0 && firstRemoteRead > preflightCall, "API preflight must finish before the first remote read/upload");
+  assert.match(liveContractCheck, /EXPERIMENT_API_BASE/);
+  assert.match(liveContractCheck, /REQUIRED_ADMIN_API_VERSION/);
+  assert.match(liveContractCheck, /REQUIRED_ADMIN_API_CAPABILITIES/);
+  assert.match(liveContractCheck, /\/bike-packing\/capabilities/);
+  assert.match(workflow, /name: Live Experiment API contract[\s\S]*?npm run check:live-api-contract/);
   assert.doesNotMatch(script, /88\.212\.206\.188|FTPS|ftp:\/\//i);
 
   assert.match(docs, /manifest of actual SHA-256/i);

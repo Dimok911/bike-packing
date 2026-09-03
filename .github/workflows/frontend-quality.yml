@@ -37,6 +37,9 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Live Experiment API contract
+        run: npm run check:live-api-contract
+
       - name: Install browsers
         run: npx playwright install --with-deps chromium webkit
 

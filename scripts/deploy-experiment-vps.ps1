@@ -6,7 +6,8 @@ param(
   [string]$ExpectedVersion = "",
   [string]$ArtifactRoot = "",
   [string]$IdentityFile = "",
-  [string]$PublicUrl = "https://experiment.vniipo-help.ru/"
+  [string]$PublicUrl = "https://experiment.vniipo-help.ru/",
+  [string]$ApiCapabilitiesUrl = "https://experiment.vniipo-help.ru/letters-vniipo/api/bike-packing/capabilities"
 )
 
 Set-StrictMode -Version Latest
@@ -65,6 +66,41 @@ function Receive-HttpsFile([string]$Relative, [string]$Destination, [string]$Cac
   ) "HTTPS download failed for $Relative."
 }
 
+function Receive-AbsoluteHttpsFile([string]$Url, [string]$Destination) {
+  Invoke-NativeChecked $curlPath @(
+    "--fail", "--silent", "--show-error", "--location",
+    "--header", "Cache-Control: no-cache", "--output", $Destination, $Url
+  ) "HTTPS download failed for $Url."
+}
+
+function Assert-ExperimentApiContract([string]$ContractPath, [string]$TemporaryDirectory, [string]$CacheBuster) {
+  $contract = Get-Content -LiteralPath $ContractPath -Raw | ConvertFrom-Json
+  $requiredVersion = [string]$contract.requiredApiCompatibilityVersion
+  $requiredCapabilities = @($contract.requiredApiCapabilities | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  if ([int]$contract.schemaVersion -ne 1 -or [string]::IsNullOrWhiteSpace($requiredVersion)) {
+    throw "Release API contract is missing or invalid."
+  }
+  if ([string]$contract.appVersion -ne $ExpectedVersion) {
+    throw "Release API contract belongs to $($contract.appVersion), expected $ExpectedVersion."
+  }
+
+  $separator = if ($ApiCapabilitiesUrl.Contains("?")) { "&" } else { "?" }
+  $livePath = Join-Path $TemporaryDirectory "experiment-api-capabilities.json"
+  Receive-AbsoluteHttpsFile "$ApiCapabilitiesUrl${separator}release=$CacheBuster" $livePath
+  $live = Get-Content -LiteralPath $livePath -Raw | ConvertFrom-Json
+  $liveVersion = [string]$live.apiCompatibilityVersion
+  if ($liveVersion -ne $requiredVersion) {
+    throw "Experiment API compatibility mismatch: frontend requires $requiredVersion, live API reports $liveVersion. Experiment was not changed."
+  }
+  $available = @{}
+  @($live.capabilities) | ForEach-Object { $available[[string]$_] = $true }
+  $missing = @($requiredCapabilities | Where-Object { -not $available.ContainsKey($_) })
+  if ($missing.Count -gt 0) {
+    throw "Experiment API is missing required capabilities: $($missing -join ', '). Experiment was not changed."
+  }
+  return [pscustomobject]@{ Version = $liveVersion; CapabilityCount = $requiredCapabilities.Count }
+}
+
 function Https-TemporaryFileName([string]$Relative) {
   $hex = [Convert]::ToHexString([Text.Encoding]::UTF8.GetBytes($Relative))
   return $hex.Substring(0, [Math]::Min(16, $hex.Length)) + ".bin"
@@ -76,7 +112,7 @@ function Assert-Hash([string]$Expected, [string]$Actual, [string]$Label) {
   if ($left -ne $right) { throw "SHA-256 mismatch for $Label." }
 }
 
-foreach ($required in @("index.html", "app.js", "styles.css", "sw.js", "manifest.webmanifest")) {
+foreach ($required in @("index.html", "app.js", "release-contract.json", "styles.css", "sw.js", "manifest.webmanifest")) {
   if (-not (Test-Path -LiteralPath (Join-Path $ArtifactRoot $required) -PathType Leaf)) {
     throw "Experiment artifact is incomplete; missing $required."
   }
@@ -106,6 +142,10 @@ $activated = $false
 $rollbackVerified = $false
 
 try {
+  $apiContractVerification = Assert-ExperimentApiContract `
+    (Join-Path $ArtifactRoot "release-contract.json") `
+    $temporaryRoot `
+    $releaseId
   $entries = @(Get-ChildItem -LiteralPath $ArtifactRoot -Recurse -File | ForEach-Object {
     [pscustomobject]@{
       Path = Relative-Path $_
@@ -157,7 +197,7 @@ try {
 
   $publicDir = Join-Path $temporaryRoot "https"
   New-Item -Path $publicDir -ItemType Directory | Out-Null
-  $publicPaths = @("index.html", "app.js", "styles.css", "sw.js")
+  $publicPaths = @("index.html", "app.js", "release-contract.json", "styles.css", "sw.js")
   $reusedStatic = $reusedEntries | Where-Object Path -like "$sharedPrefix*" | Select-Object -First 1
   $changedStaticSample = $changedShared | Select-Object -First 1
   if ($null -ne $reusedStatic) { $publicPaths += $reusedStatic.Path }
@@ -214,4 +254,6 @@ finally {
   FrontendBackup = "/var/www/experiment-backup-before-$releaseId"
   FullSha256 = "verified"
   PublicHttps = "verified"
+  ExperimentApiVersion = $apiContractVerification.Version
+  ExperimentApiCapabilities = $apiContractVerification.CapabilityCount
 } | Format-List

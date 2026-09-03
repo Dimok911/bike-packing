@@ -1,6 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  REQUIRED_ADMIN_API_CAPABILITIES,
+  REQUIRED_ADMIN_API_VERSION
+} from "../src/config/api-contract.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputArg = process.argv[2] || process.env.BIKE_PACKING_DIST_DIR || "dist";
@@ -32,6 +36,20 @@ async function versionDistEntryAssets(appVersion) {
     `$1?v=${version}$2`
   );
   await fs.writeFile(indexPath, versioned, "utf8");
+}
+
+async function writeReleaseContract(appVersion) {
+  const contract = {
+    schemaVersion: 1,
+    appVersion,
+    requiredApiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
+    requiredApiCapabilities: REQUIRED_ADMIN_API_CAPABILITIES
+  };
+  await fs.writeFile(
+    path.join(distDir, "release-contract.json"),
+    `${JSON.stringify(contract, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 function buildServiceWorkerSource(cacheName, assets) {
@@ -110,6 +128,7 @@ await copyIfExists(path.join(rootDir, "index.php"), path.join(distDir, "index.ph
 
 const appVersion = await readAppVersion();
 await versionDistEntryAssets(appVersion);
+await writeReleaseContract(appVersion);
 const precache = new Set(["./", "./index.html", "./manifest.webmanifest"]);
 const indexSource = await fs.readFile(path.join(distDir, "index.html"), "utf8");
 for (const match of indexSource.matchAll(/\b(?:src|href)=["'](\.\/[^"'#?]+(?:\?[^"'#]*)?)["']/g)) {

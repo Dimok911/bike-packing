@@ -25,10 +25,11 @@ test("magic link confirmation maps stable API failures to localized messages", (
 });
 
 test("in-app confirmation UI keeps the original email link flow and requires the new API capability", async () => {
-  const [appSource, indexSource, constantsSource] = await Promise.all([
+  const [appSource, indexSource, constantsSource, apiContractSource] = await Promise.all([
     readFile(new URL("../../app.js", import.meta.url), "utf8"),
     readFile(new URL("../../index.html", import.meta.url), "utf8"),
-    readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8")
+    readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8"),
+    readFile(new URL("../../src/config/api-contract.js", import.meta.url), "utf8")
   ]);
 
   assert.match(indexSource, /id="authMagicLink"/);
@@ -38,21 +39,22 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /authSubmitBtn\.classList\.add\("ghost"\)/);
   assert.match(appSource, /authConfirmBtn\.classList\.remove\("ghost"\)/);
   assert.match(appSource, /apiFetch\("\/auth\/verify-magic-link",\s*\{\s*method:\s*"POST"/);
-  assert.match(appSource, /"inAppMagicLinkConfirmation"/);
-  assert.match(appSource, /"magicLinkManualCodeDelivery"/);
-  assert.match(appSource, /"slidingSessionRenewal"/);
-  assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
-  assert.match(appSource, /2026-08-30\.catalog-review-v1/);
-  assert.match(appSource, /"manufacturerCatalogReview"/);
+  assert.match(apiContractSource, /"inAppMagicLinkConfirmation"/);
+  assert.match(apiContractSource, /"magicLinkManualCodeDelivery"/);
+  assert.match(apiContractSource, /"slidingSessionRenewal"/);
+  assert.match(apiContractSource, /"publicTemplateCanonicalPhotoReferences"/);
+  assert.match(apiContractSource, /2026-08-30\.catalog-review-v1/);
+  assert.match(apiContractSource, /"manufacturerCatalogReview"/);
+  assert.match(appSource, /REQUIRED_ADMIN_API_VERSION/);
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
-  assert.match(appSource, /adminTemplateDraftSync/);
-  assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1590"/);
+  assert.match(apiContractSource, /adminTemplateDraftSync/);
+  assert.match(apiContractSource, /historyRestoreProvenance/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1591"/);
 });
 
 test("experiment admin compatibility requires the catalog review contract", () => {
   const options = {
-    appVersion: "v1590",
+    appVersion: "v1591",
     requiredVersion: "2026-08-30.catalog-review-v1",
     requiredCapabilities: ["manufacturerCatalogReview"],
     localText: (en) => en
