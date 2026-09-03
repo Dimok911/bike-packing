@@ -435,6 +435,16 @@ export function packingBoardRetainedHorizontalGutter({
   return Math.min(retained, requiredAtCurrentPosition);
 }
 
+export function packingBoardMissingAnchorGutter({
+  actualMaxScrollLeft,
+  desiredScrollLeft
+} = {}) {
+  return Math.max(
+    0,
+    (Number(desiredScrollLeft) || 0) - Math.max(0, Number(actualMaxScrollLeft) || 0)
+  );
+}
+
 function notifyGeometryChanged(board, windowRef) {
   const requestFrame = windowRef?.requestAnimationFrame || ((callback) => callback());
   requestFrame(() => {
@@ -574,10 +584,16 @@ export function bindPackingBoardZoom(board, {
   const trimHorizontalAnchorGutter = () => {
     if (!horizontalAnchorGutter) return false;
     const previous = horizontalAnchorGutter;
+    const actualNaturalMaxScrollLeft = Math.max(
+      0,
+      (Number(board.scrollWidth) || 0) -
+        (Number(board.clientWidth) || 0) -
+        horizontalAnchorGutter
+    );
     setHorizontalAnchorGutter(packingBoardRetainedHorizontalGutter({
       currentGutter: horizontalAnchorGutter,
       currentScrollLeft: board.scrollLeft,
-      naturalMaxScrollLeft: naturalHorizontalMaximum()
+      naturalMaxScrollLeft: actualNaturalMaxScrollLeft
     }));
     return Math.abs(previous - horizontalAnchorGutter) > 0.5;
   };
@@ -930,6 +946,17 @@ export function bindPackingBoardZoom(board, {
       });
       const naturalMaxScrollLeft = naturalHorizontalMaximum();
       setHorizontalAnchorGutter(Math.max(0, desiredScrollLeft - naturalMaxScrollLeft));
+      const actualMaxScrollLeft = Math.max(
+        0,
+        (Number(board.scrollWidth) || 0) - (Number(board.clientWidth) || 0)
+      );
+      const missingAnchorGutter = packingBoardMissingAnchorGutter({
+        actualMaxScrollLeft,
+        desiredScrollLeft
+      });
+      if (missingAnchorGutter > 0.5) {
+        setHorizontalAnchorGutter(horizontalAnchorGutter + missingAnchorGutter);
+      }
       board.scrollLeft = packingBoardAnchoredScrollLeft({
         anchorClientX: anchor.anchorClientX,
         anchorContentX: anchor.anchorContentX,

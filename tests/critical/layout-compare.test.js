@@ -16,7 +16,10 @@ import {
   loadLayoutComparisonSelection,
   saveLayoutComparisonSelection
 } from "../../src/ui/layout-comparison-selection.js";
-import { comparisonMoveArrowGeometry } from "../../src/ui/layout-comparison-link.js";
+import {
+  comparisonMoveArrowGeometry,
+  refreshLayoutComparisonMoveLink
+} from "../../src/ui/layout-comparison-link.js";
 import {
   layoutItemQuantityMigrationRecovered,
   normalizeLayoutFields
@@ -503,7 +506,9 @@ test("CRITICAL moved-item arrow points from the source card edge to the destinat
   assert.deepEqual(geometry.end, { x: 340, y: 200 });
   assert.match(geometry.path, /^M 140 40 C /);
   assert.match(geometry.path, /, 340 200$/);
+  assert.equal(refreshLayoutComparisonMoveLink({ querySelector: () => null }), false);
   assert.match(appTailSource, /data-compare-show-move-link[\s\S]*toggleLayoutComparisonMoveLink/);
+  assert.match(appTailSource, /comparisonBoard\?\.addEventListener\("scroll"[\s\S]*refreshLayoutComparisonMoveLink/);
   assert.match(stylesSource, /\.comparison-move-arrow-overlay\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
   assert.match(stylesSource, /\.comparison-move-arrow-path\s*\{[^}]*stroke:\s*#aa7c00;[^}]*vector-effect:\s*non-scaling-stroke;/s);
 });

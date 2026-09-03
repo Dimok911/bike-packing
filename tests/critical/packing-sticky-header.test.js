@@ -21,6 +21,7 @@ import {
   packingBoardHorizontalGeometry,
   packingBoardGestureTargetsFixedScrollbar,
   packingBoardGestureTargetsOpenDialog,
+  packingBoardMissingAnchorGutter,
   packingBoardPinchZoom,
   packingBoardMomentumScrollLeft,
   packingBoardPanVelocity,
@@ -830,6 +831,14 @@ test("CRITICAL packing zoom: horizontal range follows transformed card edges ins
 });
 
 test("CRITICAL packing zoom: zoom-out width stays until panning makes a jump-free trim possible", () => {
+  assert.equal(packingBoardMissingAnchorGutter({
+    actualMaxScrollLeft: 741,
+    desiredScrollLeft: 752.25
+  }), 11.25);
+  assert.equal(packingBoardMissingAnchorGutter({
+    actualMaxScrollLeft: 800,
+    desiredScrollLeft: 752.25
+  }), 0);
   assert.equal(packingBoardRetainedHorizontalGutter({
     currentGutter: 240,
     currentScrollLeft: 540,
@@ -848,6 +857,7 @@ test("CRITICAL packing zoom: zoom-out width stays until panning makes a jump-fre
 
   const source = fs.readFileSync(new URL("../../src/ui/packing-board-zoom.js", import.meta.url), "utf8");
   assert.match(source, /const settleBoardGeometry = \(\) => \{[\s\S]*?trimHorizontalAnchorGutter\(\)[\s\S]*?horizontalMaximum\(\)/);
+  assert.match(source, /actualNaturalMaxScrollLeft[\s\S]*?board\.scrollWidth[\s\S]*?horizontalAnchorGutter/);
   assert.match(source, /board\.addEventListener\?\.\("scroll", onBoardScroll/);
 });
 

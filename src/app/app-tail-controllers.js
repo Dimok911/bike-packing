@@ -110,6 +110,7 @@ import {
 } from "../ui/layout-comparison-selection.js";
 import {
   clearLayoutComparisonMoveLink,
+  refreshLayoutComparisonMoveLink,
   toggleLayoutComparisonMoveLink
 } from "../ui/layout-comparison-link.js";
 import {
@@ -2864,6 +2865,15 @@ function renderLayoutComparisonSummary(comparison) {
 }
 
 function bindLayoutComparisonView() {
+  const comparisonBoard = refs.packingView.querySelector(".comparison-board");
+  let moveLinkRefreshFrame = null;
+  comparisonBoard?.addEventListener("scroll", () => {
+    if (!comparisonBoard.dataset.comparisonMoveLink || moveLinkRefreshFrame !== null) return;
+    moveLinkRefreshFrame = requestAnimationFrame(() => {
+      moveLinkRefreshFrame = null;
+      refreshLayoutComparisonMoveLink(refs.packingView);
+    });
+  });
   refs.packingView.querySelectorAll("[data-compare-open-item]").forEach((button) => {
     button.addEventListener("click", () => openItemDialog(button.dataset.compareOpenItem));
   });

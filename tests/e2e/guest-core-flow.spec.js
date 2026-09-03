@@ -24,6 +24,16 @@ test("clean guest starts the packing board at 100% and sees the zoom indicator",
   await expect(page.locator("#packingView .board")).toHaveAttribute("data-packing-board-zoom", "1");
   await expect(page.locator("#packingBoardZoomReset")).toBeVisible();
   await expect(page.locator("#packingBoardZoomReset")).toHaveText("100%");
+  await page.locator("body").evaluate((body) => {
+    body.classList.remove("app-ready");
+    body.classList.add("app-starting");
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toBeHidden();
+  await page.locator("body").evaluate((body) => {
+    body.classList.add("app-ready");
+    body.classList.remove("app-starting");
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     localStorage.getItem("bike-packing-board-zoom-v1")
   ))).toBeNull();
@@ -85,6 +95,9 @@ test("zooming out at the right keeps the focused card still until the user pans 
   }, "Без скачка масштаба");
   await page.reload();
   await waitForApp(page);
+  await page.locator("#packingView").evaluate(async (packingView) => {
+    await Promise.all(packingView.getAnimations().map((animation) => animation.finished.catch(() => {})));
+  });
 
   const board = page.locator("#packingView .board");
   const lastCard = board.locator("[data-root-container-id]").last();
@@ -242,4 +255,60 @@ test("layout comparison keeps the full main order, marks the opposite choice, an
   await changedItem.click();
   await expect(page.locator("#itemDialog")).toBeVisible();
   await expect(page.locator("#itemName")).toHaveValue(itemName);
+});
+
+test("layout comparison keeps a move arrow aligned while zoom changes", async ({ page }) => {
+  const fromLayoutName = "Стрелка исходная";
+  const toLayoutName = "Стрелка конечная";
+  const itemName = "Перемещённая вещь";
+  await createGuestWorkspace(page, {
+    layoutName: fromLayoutName,
+    containerName: "Исходная сумка",
+    itemName,
+  });
+  await createEmptyLayout(page, toLayoutName);
+  await createRootContainer(page, "Конечная сумка");
+  await page.evaluate(({ fromLayoutName, toLayoutName, itemName }) => {
+    const storageKey = "bike-packing-prototype-state-v1";
+    const state = JSON.parse(localStorage.getItem(storageKey) || "null");
+    const fromLayout = Object.values(state?.layouts || {}).find((layout) => layout?.name === fromLayoutName);
+    const toLayout = Object.values(state?.layouts || {}).find((layout) => layout?.name === toLayoutName);
+    const item = Object.values(state?.items || {}).find((entry) => entry?.name === itemName);
+    const sourceId = fromLayout?.arrangement?.items?.[item?.id];
+    const targetId = toLayout?.rootContainerIds?.[0];
+    const sourcePlacement = fromLayout?.arrangement?.containers?.[sourceId];
+    const targetPlacement = toLayout?.arrangement?.containers?.[targetId];
+    if (!fromLayout || !toLayout || !item || !sourcePlacement || !targetPlacement) {
+      throw new Error("comparison move fixture missing");
+    }
+    targetPlacement.itemIds.push(item.id);
+    targetPlacement.order.push({ type: "item", id: item.id });
+    toLayout.arrangement.items[item.id] = targetId;
+    localStorage.setItem(storageKey, JSON.stringify(state));
+  }, { fromLayoutName, toLayoutName, itemName });
+  await page.reload();
+  await waitForApp(page);
+
+  await page.locator("#menuBtn").click();
+  await page.locator("#compareLayoutsMenuBtn").click();
+  await page.locator("#layoutCompareFrom").selectOption({ label: fromLayoutName });
+  await page.locator("#layoutCompareTo").selectOption({ label: toLayoutName });
+  await page.locator("#layoutCompareStartBtn").click();
+
+  const moveButtons = page.locator("[data-compare-show-move-link]");
+  await expect(moveButtons).toHaveCount(2);
+  await moveButtons.first().click();
+  const arrow = page.locator(".comparison-move-arrow-overlay");
+  await expect(arrow).toHaveCount(1);
+  const pathBeforeZoom = await arrow.locator(".comparison-move-arrow-path").getAttribute("d");
+
+  await page.locator("#packingBoardZoomReset").click();
+  await page.locator("#packingBoardZoomRange").evaluate((range) => {
+    range.value = "75";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("75%");
+  await expect(arrow).toHaveCount(1);
+  await expect.poll(async () => arrow.locator(".comparison-move-arrow-path").getAttribute("d"))
+    .not.toBe(pathBeforeZoom);
 });

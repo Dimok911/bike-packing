@@ -76,14 +76,9 @@ export function clearLayoutComparisonMoveLink(root) {
   if (board) delete board.dataset.comparisonMoveLink;
 }
 
-export function toggleLayoutComparisonMoveLink(root, entityKey) {
+function renderLayoutComparisonMoveLink(root, entityKey) {
   const board = root?.querySelector?.(".comparison-board");
   if (!board || !entityKey) return false;
-  if (board.dataset.comparisonMoveLink === entityKey) {
-    clearLayoutComparisonMoveLink(root);
-    return false;
-  }
-
   const cards = comparisonCards(root, entityKey);
   const source = cards.find((card) => card.dataset.comparisonVariant === "source-ghost");
   const target = cards.find((card) => card.dataset.comparisonVariant === "target");
@@ -125,4 +120,19 @@ export function toggleLayoutComparisonMoveLink(root, entityKey) {
   board.appendChild(svg);
   board.dataset.comparisonMoveLink = entityKey;
   return true;
+}
+
+export function refreshLayoutComparisonMoveLink(root) {
+  const entityKey = root?.querySelector?.(".comparison-board")?.dataset?.comparisonMoveLink || "";
+  return entityKey ? renderLayoutComparisonMoveLink(root, entityKey) : false;
+}
+
+export function toggleLayoutComparisonMoveLink(root, entityKey) {
+  const board = root?.querySelector?.(".comparison-board");
+  if (!board || !entityKey) return false;
+  if (board.dataset.comparisonMoveLink === entityKey) {
+    clearLayoutComparisonMoveLink(root);
+    return false;
+  }
+  return renderLayoutComparisonMoveLink(root, entityKey);
 }

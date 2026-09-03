@@ -2169,6 +2169,11 @@ button.ghost.context-toggle.active:focus-visible {
   direction: rtl;
 }
 
+body:not(.app-ready) .packing-board-zoom-reset,
+body:not(.app-ready) .packing-board-zoom-panel {
+  display: none !important;
+}
+
 body:not(:has(#packingView:not(.hidden) .board)) .packing-board-zoom-reset {
   display: none;
 }
