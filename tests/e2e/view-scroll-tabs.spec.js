@@ -48,6 +48,25 @@ async function addScrollableViewFixtures(page) {
   });
 }
 
+async function setFixtureViewportScroll(page, top) {
+  await expect.poll(() => page.evaluate(async (nextTop) => {
+    document.querySelectorAll("#packingView, #itemsView, #bagsView, #settingsView").forEach((view) => {
+      if (view.querySelector("[data-e2e-scroll-spacer]")) return;
+      const spacer = document.createElement("div");
+      spacer.dataset.e2eScrollSpacer = "";
+      spacer.style.height = "2600px";
+      spacer.style.pointerEvents = "none";
+      view.append(spacer);
+    });
+    const host = document.querySelector(".app[data-viewport-scroll-host]");
+    (host || window).scrollTo({ top: nextTop, left: 0, behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const actual = host?.scrollTop || document.scrollingElement?.scrollTop || window.scrollY || 0;
+    return Math.abs(actual - nextTop);
+  }, top), { timeout: 10_000 }).toBeLessThanOrEqual(8);
+  return viewportScrollTop(page);
+}
+
 test("iPhone accepts consecutive first taps on different main tabs", async ({ page }) => {
   await openApp(page);
 
@@ -568,9 +587,9 @@ test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ p
     await page.waitForTimeout(50);
     await expect.poll(async () => (await stickySnapshot()).compact).toBe(true);
     const baseline = await stickySnapshot();
-    await setViewportScroll(page, 900);
+    await setFixtureViewportScroll(page, 900);
     for (const top of [720, 520, 320, 120]) {
-      await setViewportScroll(page, top);
+      await setFixtureViewportScroll(page, top);
       expect(await stickySnapshot()).toEqual(baseline);
     }
   }
