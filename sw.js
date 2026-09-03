@@ -1,9 +1,10 @@
-const CACHE_NAME = "bike-packing-prototype-v1586";
+const CACHE_NAME = "bike-packing-prototype-v1589";
+const PRESERVED_CACHE_NAMES = new Set(["bike-packing-manufacturer-catalog-offline-v1"]);
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=1586",
-  "./app.js?v=1586",
+  "./styles.css?v=1589",
+  "./app.js?v=1589",
   "./manifest.webmanifest"
 ];
 
@@ -15,7 +16,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key !== CACHE_NAME && !PRESERVED_CACHE_NAMES.has(key)).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
 });
@@ -27,6 +28,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (event.request.headers.get("X-Bike-Packing-Offline-Catalog") === "1") return;
   const isApiRequest =
     url.origin !== self.location.origin ||
     url.pathname.includes("/letters-vniipo/api/") ||

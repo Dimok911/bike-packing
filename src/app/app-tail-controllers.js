@@ -80,12 +80,6 @@ import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
 import { focusRecentlyAddedPackingCard } from "../ui/packing-created-focus.js";
 import {
-  MANUFACTURER_BAG_CATALOG,
-  MANUFACTURER_BAG_CATALOG_BRANDS,
-  MANUFACTURER_BAG_CATALOG_CATEGORIES,
-  MANUFACTURER_BAG_CATALOG_FAMILIES
-} from "../data/manufacturer-bag-catalog.js";
-import {
   manufacturerBagSourceMeta,
   mergeManufacturerBagCatalogOverrides
 } from "../state/manufacturer-bag-catalog.js";
@@ -94,8 +88,6 @@ import {
   writeManufacturerBagCatalogOverride
 } from "../storage/manufacturer-bag-catalog-overrides.js";
 import { prepareManufacturerBagCatalogImport } from "../public/manufacturer-bag-catalog-import.js";
-import { createManufacturerBagCatalogDialogController } from "../ui/manufacturer-bag-catalog-dialog.js";
-import { createManufacturerBagComparisonDialogController } from "../ui/manufacturer-bag-comparison-dialog.js";
 import {
   createNewEntityFormDraft,
   entityFormDraftStorageKey,
@@ -126,6 +118,7 @@ import {
 } from "../ui/layout-comparison-selection.js";
 import {
   clearLayoutComparisonMoveLink,
+  refreshLayoutComparisonMoveLink,
   toggleLayoutComparisonMoveLink
 } from "../ui/layout-comparison-link.js";
 import {
@@ -443,46 +436,97 @@ export function createAppTailControllers(ctx) {
     t,
     textarea: refs.rootContainerNote
   });
-const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
-  MANUFACTURER_BAG_CATALOG,
-  manufacturerBagCatalogOverrides
-);
+let manufacturerBagCatalogImportAvailable = true;
+let manufacturerBagCatalogControllerPromise = null;
 
-const manufacturerBagComparisonDialogController = createManufacturerBagComparisonDialogController({
-  bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
-  brands: MANUFACTURER_BAG_CATALOG_BRANDS,
-  catalog: manufacturerBagCatalogRows,
-  categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
-  escapeHtml,
-  language: () => isEnglishUi() ? "en" : "ru",
-  openModalDialog,
-  refs,
-  t
-});
+async function loadManufacturerBagCatalogController() {
+  if (manufacturerBagCatalogControllerPromise) return manufacturerBagCatalogControllerPromise;
+  manufacturerBagCatalogControllerPromise = Promise.all([
+    import("../data/manufacturer-bag-catalog.js"),
+    import("../ui/manufacturer-bag-catalog-dialog.js"),
+    import("../ui/manufacturer-bag-comparison-dialog.js")
+  ]).then(([catalogData, catalogDialog, comparisonDialog]) => {
+    const {
+      MANUFACTURER_BAG_CATALOG,
+      MANUFACTURER_BAG_CATALOG_BRANDS,
+      MANUFACTURER_BAG_CATALOG_CATEGORIES,
+      MANUFACTURER_BAG_CATALOG_FAMILIES
+    } = catalogData;
+    const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
+      MANUFACTURER_BAG_CATALOG,
+      manufacturerBagCatalogOverrides
+    );
+    const comparisonController = comparisonDialog.createManufacturerBagComparisonDialogController({
+      bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+      brands: MANUFACTURER_BAG_CATALOG_BRANDS,
+      catalog: manufacturerBagCatalogRows,
+      categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
+      escapeHtml,
+      language: () => isEnglishUi() ? "en" : "ru",
+      openModalDialog,
+      refs,
+      t
+    });
+    const controller = catalogDialog.createManufacturerBagCatalogDialogController({
+      bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
+      bindOpenButton: false,
+      brands: MANUFACTURER_BAG_CATALOG_BRANDS,
+      canEdit: () => isAdminUser(),
+      catalog: manufacturerBagCatalogRows,
+      categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
+      escapeHtml,
+      families: MANUFACTURER_BAG_CATALOG_FAMILIES,
+      language: () => isEnglishUi() ? "en" : "ru",
+      onCompareCategory: (categoryId) => comparisonController.open(categoryId),
+      onSelect: applyManufacturerBagCatalogSelection,
+      onSelectError: () => {
+        setRootContainerDialogPhotoStatus(t("bagCatalog.photoError"));
+        showToast(t("bagCatalog.photoError"), "error");
+      },
+      onUpdate: (entry) => {
+        manufacturerBagCatalogOverrides = writeManufacturerBagCatalogOverride(entry);
+        showToast(t("bagCatalog.savedLocal"), "success");
+      },
+      openModalDialog,
+      refs,
+      t
+    });
+    controller.setImportAvailable(manufacturerBagCatalogImportAvailable);
+    return controller;
+  }).catch((error) => {
+    manufacturerBagCatalogControllerPromise = null;
+    throw error;
+  });
+  return manufacturerBagCatalogControllerPromise;
+}
 
-const manufacturerBagCatalogDialogController = createManufacturerBagCatalogDialogController({
-  bindGalleries: (root) => bindPhotoGalleries(root, photoGalleryBindingOptions()),
-  brands: MANUFACTURER_BAG_CATALOG_BRANDS,
-  canEdit: () => isAdminUser(),
-  catalog: manufacturerBagCatalogRows,
-  categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
-  escapeHtml,
-  families: MANUFACTURER_BAG_CATALOG_FAMILIES,
-  language: () => isEnglishUi() ? "en" : "ru",
-  onCompareCategory: (categoryId) => manufacturerBagComparisonDialogController.open(categoryId),
-  onSelect: applyManufacturerBagCatalogSelection,
-  onSelectError: () => {
-    setRootContainerDialogPhotoStatus(t("bagCatalog.photoError"));
-    showToast(t("bagCatalog.photoError"), "error");
+const manufacturerBagCatalogDialogController = {
+  async open() {
+    if (!manufacturerBagCatalogImportAvailable || !refs?.openBagCatalogBtn) return;
+    const button = refs.openBagCatalogBtn;
+    button.disabled = true;
+    button.textContent = `${t("bagCatalog.open")}…`;
+    try {
+      const controller = await loadManufacturerBagCatalogController();
+      controller.open();
+    } catch {
+      showToast(isEnglishUi()
+        ? "The global catalog could not be loaded. Check the connection or save it for offline use in Settings."
+        : "Не удалось загрузить глобальный каталог. Проверьте подключение или сохраните каталог для офлайн-работы в настройках.", "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = t("bagCatalog.open");
+    }
   },
-  onUpdate: (entry) => {
-    manufacturerBagCatalogOverrides = writeManufacturerBagCatalogOverride(entry);
-    showToast(t("bagCatalog.savedLocal"), "success");
-  },
-  openModalDialog,
-  refs,
-  t
-});
+  setImportAvailable(available) {
+    manufacturerBagCatalogImportAvailable = Boolean(available);
+    if (!refs?.openBagCatalogBtn) return;
+    refs.openBagCatalogBtn.hidden = !manufacturerBagCatalogImportAvailable;
+    refs.openBagCatalogBtn.textContent = t("bagCatalog.open");
+  }
+};
+
+refs?.openBagCatalogBtn?.addEventListener("click", () => manufacturerBagCatalogDialogController.open());
 
 async function applyManufacturerBagCatalogSelection(entry) {
   if (runtime.editingRootContainerId) return;
@@ -2940,6 +2984,15 @@ function renderLayoutComparisonSummary(comparison) {
 }
 
 function bindLayoutComparisonView() {
+  const comparisonBoard = refs.packingView.querySelector(".comparison-board");
+  let moveLinkRefreshFrame = null;
+  comparisonBoard?.addEventListener("scroll", () => {
+    if (!comparisonBoard.dataset.comparisonMoveLink || moveLinkRefreshFrame !== null) return;
+    moveLinkRefreshFrame = requestAnimationFrame(() => {
+      moveLinkRefreshFrame = null;
+      refreshLayoutComparisonMoveLink(refs.packingView);
+    });
+  });
   refs.packingView.querySelector("[data-compare-only-changes]")?.addEventListener("click", () => {
     capturePackingScroll();
     layoutComparisonOnlyChanges = !layoutComparisonOnlyChanges;

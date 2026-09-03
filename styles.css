@@ -2169,6 +2169,11 @@ button.ghost.context-toggle.active:focus-visible {
   direction: rtl;
 }
 
+body:not(.app-ready) .packing-board-zoom-reset,
+body:not(.app-ready) .packing-board-zoom-panel {
+  display: none !important;
+}
+
 body:not(:has(#packingView:not(.hidden) .board)) .packing-board-zoom-reset {
   display: none;
 }
@@ -8840,6 +8845,39 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.offline-catalog-settings {
+  display: grid;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.offline-catalog-settings h3,
+.offline-catalog-settings p {
+  margin: 0;
+}
+
+.offline-catalog-settings p {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.offline-storage-capacity {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.manufacturer-catalog-load-more {
+  display: block;
+  margin: 14px auto 2px;
 }
 
 @media (max-width: 560px) {

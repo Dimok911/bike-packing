@@ -775,6 +775,12 @@ import {
   writeOfflineLayoutIds
 } from "./src/sync/offline-layout-selection.js";
 import {
+  browserStorageEstimate,
+  cacheManufacturerCatalogPreviews,
+  clearManufacturerCatalogOffline,
+  manufacturerCatalogOfflineUsage
+} from "./src/sync/manufacturer-catalog-offline.js";
+import {
   createPhotoDownloadCoordinator,
   PHOTO_DOWNLOAD_PRIORITY
 } from "./src/sync/photo-download-coordinator.js";
@@ -2123,7 +2129,6 @@ function offlineLayoutSettingsLayouts() {
 
 function renderOfflineLayoutSettingsHtml() {
   const layouts = offlineLayoutSettingsLayouts();
-  if (!layouts.length) return "";
   const visibleIds = new Set(layouts.map((layout) => layout.id));
   const selected = new Set(selectedOfflineLayoutIds().filter((id) => visibleIds.has(id)));
   const en = normalizeUiLanguage(uiLanguage) === "en";
@@ -2152,15 +2157,30 @@ function renderOfflineLayoutSettingsHtml() {
         </div>
         <span class="offline-layout-selected-count">${selected.size}/${layouts.length}</span>
       </div>
-      <div class="offline-layout-options">${rows}</div>
-      <div class="offline-layout-actions">
-        <button type="button" class="ghost" id="offlineSelectCurrentLayout">${en ? "Current layout" : "Текущая укладка"}</button>
-        <button type="button" class="ghost" id="offlineClearLayouts">${en ? "Clear all" : "Снять все"}</button>
-      </div>
+      ${layouts.length ? `
+        <div class="offline-layout-options">${rows}</div>
+        <div class="offline-layout-actions">
+          <button type="button" class="ghost" id="offlineSelectCurrentLayout">${en ? "Current layout" : "Текущая укладка"}</button>
+          <button type="button" class="ghost" id="offlineClearLayouts">${en ? "Clear all" : "Снять все"}</button>
+        </div>` : ""}
       <small class="offline-layout-storage-estimate">${en ? "Checking local Bike Packing photo copies in IndexedDB…" : "Проверяем локальные копии фотографий Bike Packing в IndexedDB…"}</small>
       <small>${en
         ? "Clearing a selection removes only the offline copies from this browser. Server photos remain intact."
         : "Снятие отметки удаляет только офлайн-копии из этого браузера. Фотографии на сервере остаются без изменений."}</small>
+      <div class="offline-catalog-settings">
+        <div>
+          <h3>${en ? "Global bag catalog" : "Глобальный каталог сумок"}</h3>
+          <p>${en
+            ? "Catalog data loads only when opened. Save all model cards and their main previews for offline browsing; extra gallery photos continue to load only as viewed."
+            : "Данные каталога загружаются только при открытии. Можно сохранить карточки всех моделей и основные превью для офлайн-просмотра; дополнительные фото галерей по-прежнему загружаются только по мере просмотра."}</p>
+        </div>
+        <div class="offline-layout-actions">
+          <button type="button" id="offlineSaveManufacturerCatalog">${en ? "Save catalog offline" : "Сохранить каталог офлайн"}</button>
+          <button type="button" class="ghost" id="offlineClearManufacturerCatalog">${en ? "Remove offline catalog" : "Удалить офлайн-каталог"}</button>
+        </div>
+        <small class="offline-catalog-status">${en ? "Checking offline catalog…" : "Проверяем офлайн-каталог…"}</small>
+      </div>
+      <div class="offline-storage-capacity" role="status">${en ? "Checking browser storage…" : "Проверяем хранилище браузера…"}</div>
     </section>`;
 }
 
@@ -2177,20 +2197,41 @@ function bindOfflineLayoutSettingsControls() {
   };
   const updateStorageEstimate = async () => {
     const target = root.querySelector(".offline-layout-storage-estimate");
-    if (!target) return;
+    const catalogTarget = root.querySelector(".offline-catalog-status");
+    const capacityTarget = root.querySelector(".offline-storage-capacity");
     try {
-      const records = await listCachedPhotos(localStorageScopeKey);
+      const [records, catalogUsage, storage] = await Promise.all([
+        listCachedPhotos(localStorageScopeKey),
+        manufacturerCatalogOfflineUsage(),
+        browserStorageEstimate()
+      ]);
       const offlineUsage = offlinePhotoCacheUsage(records, { purpose: "offline-remote" });
       const totalUsage = offlinePhotoCacheUsage(records);
       const offlineBytes = formatOfflineStorageBytes(offlineUsage.bytes);
       const totalBytes = formatOfflineStorageBytes(totalUsage.bytes);
-      target.textContent = en
-        ? `Selected-layout offline copies: ${offlineBytes}, ${offlineUsage.photos} photos. Total Bike Packing photos on this device: ${totalBytes}, ${totalUsage.photos} photos.`
-        : `Офлайн-копии выбранных укладок: ${offlineBytes}, фото: ${offlineUsage.photos}. Всего фотографий Bike Packing на этом устройстве: ${totalBytes}, фото: ${totalUsage.photos}.`;
+      if (target) target.textContent = en
+          ? `Selected-layout offline copies: ${offlineBytes}, ${offlineUsage.photos} photos. Total Bike Packing photos on this device: ${totalBytes}, ${totalUsage.photos} photos.`
+          : `Офлайн-копии выбранных укладок: ${offlineBytes}, фото: ${offlineUsage.photos}. Всего фотографий Bike Packing на этом устройстве: ${totalBytes}, фото: ${totalUsage.photos}.`;
+      if (catalogTarget) catalogTarget.textContent = catalogUsage.available
+        ? (en
+          ? `Offline catalog: ${catalogUsage.files} previews, ${formatOfflineStorageBytes(catalogUsage.bytes)}.`
+          : `Офлайн-каталог: ${catalogUsage.files} превью, ${formatOfflineStorageBytes(catalogUsage.bytes)}.`)
+        : (en ? "The global catalog is not saved offline." : "Глобальный каталог не сохранён офлайн.");
+      if (capacityTarget) capacityTarget.textContent = storage.quota
+        ? (en
+          ? `Browser storage: ${formatOfflineStorageBytes(storage.available)} available of ${formatOfflineStorageBytes(storage.quota)}; ${formatOfflineStorageBytes(storage.usage)} used${storage.persisted ? ". Storage is protected from automatic cleanup." : "."}`
+          : `Хранилище браузера: доступно ${formatOfflineStorageBytes(storage.available)} из ${formatOfflineStorageBytes(storage.quota)}; занято ${formatOfflineStorageBytes(storage.usage)}${storage.persisted ? ". Данные защищены от автоматической очистки." : "."}`)
+        : (en ? "The browser did not report an offline storage limit." : "Браузер не сообщил лимит офлайн-хранилища.");
     } catch {
-      target.textContent = en
+      if (target) target.textContent = en
         ? "The size of local Bike Packing photo copies in IndexedDB is unavailable."
         : "Не удалось определить размер локальных копий фотографий Bike Packing в IndexedDB.";
+      if (catalogTarget) catalogTarget.textContent = en
+        ? "Could not inspect the offline catalog."
+        : "Не удалось проверить офлайн-каталог.";
+      if (capacityTarget) capacityTarget.textContent = en
+        ? "The browser did not report offline storage capacity."
+        : "Браузер не сообщил доступный объём офлайн-хранилища.";
     }
   };
   const applySelection = async (ids) => {
@@ -2260,6 +2301,48 @@ function bindOfflineLayoutSettingsControls() {
     if (!selected.length && !usage.photos) return;
     const confirmed = await confirmRemoval(selected, { clearAll: true });
     if (confirmed) await applySelection([]);
+  });
+  root.querySelector("#offlineSaveManufacturerCatalog")?.addEventListener("click", async () => {
+    const button = root.querySelector("#offlineSaveManufacturerCatalog");
+    const status = root.querySelector(".offline-catalog-status");
+    button.disabled = true;
+    try {
+      status.textContent = en ? "Loading catalog data…" : "Загружаем данные каталога…";
+      const { MANUFACTURER_BAG_CATALOG } = await import("./src/data/manufacturer-bag-catalog.js");
+      const result = await cacheManufacturerCatalogPreviews(MANUFACTURER_BAG_CATALOG, {
+        onProgress: ({ completed, total }) => {
+          status.textContent = en
+            ? `Saving previews: ${completed}/${total}`
+            : `Сохраняем превью: ${completed}/${total}`;
+        }
+      });
+      if (result.failed) throw new Error(`catalog-offline-failed-${result.failed}`);
+      showToast(en ? "Global catalog is available offline." : "Глобальный каталог доступен офлайн.", "success");
+    } catch {
+      showToast(en
+        ? "Could not save the complete catalog. Check the connection and available storage."
+        : "Не удалось сохранить каталог полностью. Проверьте подключение и свободное место.", "error");
+    } finally {
+      button.disabled = false;
+      await updateStorageEstimate();
+    }
+  });
+  root.querySelector("#offlineClearManufacturerCatalog")?.addEventListener("click", async () => {
+    const usage = await manufacturerCatalogOfflineUsage().catch(() => ({ available: false, bytes: 0, files: 0 }));
+    if (!usage.available) return;
+    const confirmed = await askConfirmDialog({
+      title: en ? "Remove offline catalog?" : "Удалить офлайн-каталог?",
+      text: en
+        ? "Saved model previews will be removed from this browser. The catalog will still load from the network as you browse."
+        : "Сохранённые превью моделей будут удалены из этого браузера. При просмотре каталог продолжит загружаться из сети.",
+      highlightText: `${usage.files} · ${formatOfflineStorageBytes(usage.bytes)}`,
+      okText: en ? "Remove offline catalog" : "Удалить офлайн-каталог",
+      tone: "danger"
+    });
+    if (!confirmed) return;
+    await clearManufacturerCatalogOffline();
+    await updateStorageEstimate();
+    showToast(en ? "Offline catalog removed." : "Офлайн-каталог удалён.", "success");
   });
   updateCount();
   updateStorageEstimate();

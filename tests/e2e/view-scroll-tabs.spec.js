@@ -280,6 +280,13 @@ test("iPhone back-to-top recovers a platform-consumed momentum tap", async ({ pa
 
   const button = page.locator("[data-catalog-back-to-top]");
   await expect(button).toBeVisible();
+  await button.evaluate((target) => {
+    const nativeMatches = target.matches.bind(target);
+    target.matches = (selector) => selector === ":hover"
+      ? Boolean(window.__e2eBackToTopHovered)
+      : nativeMatches(selector);
+    window.__e2eBackToTopHovered = false;
+  });
   await page.locator("#itemsView").evaluate((surface) => {
     const dispatchTouch = (type, x, y, active) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
@@ -291,15 +298,11 @@ test("iPhone back-to-top recovers a platform-consumed momentum tap", async ({ pa
     dispatchTouch("touchstart", 180, 620, true);
     dispatchTouch("touchmove", 182, 380, true);
     dispatchTouch("touchend", 182, 380, false);
-    window.dispatchEvent(new Event("scroll"));
   });
 
   await button.evaluate((target) => {
-    const nativeMatches = target.matches.bind(target);
-    target.matches = (selector) => selector === ":hover"
-      ? Boolean(window.__e2eBackToTopHovered)
-      : nativeMatches(selector);
     window.__e2eBackToTopHovered = true;
+    window.dispatchEvent(new Event("scroll"));
     window.dispatchEvent(new Event("scrollend"));
   });
   await expect.poll(() => viewportScrollTop(page)).toBe(0);

@@ -25,6 +25,7 @@ test("CRITICAL offline-start: the static shell shows a neutral startup state ins
   assert.match(styles, /body\.app-starting \.topbar,[\s\S]*display: none !important/);
   assert.match(styles, /body\.app-starting \.auth-gate,[\s\S]*body\.app-starting \.auth-required[\s\S]*display: none !important/);
   assert.match(styles, /body\.app-ready \.topbar,[\s\S]*animation: app-content-reveal 360ms/);
+  assert.match(styles, /body:not\(\.app-ready\) \.packing-board-zoom-reset,[\s\S]*\.packing-board-zoom-panel\s*\{\s*display: none !important;/);
   assert.match(styles, /animation: app-content-reveal 360ms[^;]*backwards/);
   assert.doesNotMatch(styles, /animation: app-content-reveal 360ms[^;]*both/);
   assert.match(styles, /\.topbar \{[\s\S]*?position: relative;[\s\S]*?z-index: 80;/);

@@ -10,6 +10,8 @@ import {
 import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
 import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
+const PRODUCT_BATCH_SIZE = 12;
+
 function metricRange(values = []) {
   const normalized = [...new Set((Array.isArray(values) ? values : [])
     .map(Number)
@@ -51,6 +53,7 @@ function safeCatalogUrl(value, { localAsset = false } = {}) {
 
 export function createManufacturerBagCatalogDialogController({
   bindGalleries = () => null,
+  bindOpenButton = true,
   canEdit = () => false,
   catalog = [],
   brands = [],
@@ -73,6 +76,9 @@ export function createManufacturerBagCatalogDialogController({
   let editingId = "";
   let selectingId = "";
   let photoGalleryBinding = null;
+  let productLimit = PRODUCT_BATCH_SIZE;
+  let productListSignature = "";
+  let productPagingObserver = null;
   const selectedVariantSkuByEntry = new Map();
 
   function catalogRows() {
@@ -104,6 +110,8 @@ export function createManufacturerBagCatalogDialogController({
 
   function render() {
     if (!refs?.bagCatalogResults) return;
+    productPagingObserver?.disconnect?.();
+    productPagingObserver = null;
     const hasQuery = Boolean(query.trim());
     refs.bagCatalogTitle.textContent = t("bagCatalog.title");
     refs.bagCatalogSearch.placeholder = t("bagCatalog.searchPlaceholder");
@@ -123,6 +131,7 @@ export function createManufacturerBagCatalogDialogController({
           : renderFamilyList();
     photoGalleryBinding?.destroy?.();
     photoGalleryBinding = bindGalleries(refs.bagCatalogResults);
+    bindProductPaging();
   }
 
   function currentPath(hasQuery = false) {
@@ -214,7 +223,31 @@ export function createManufacturerBagCatalogDialogController({
         </div>
       `;
     }
-    return `<div class="manufacturer-catalog-products">${entries.map(renderProductCard).join("")}</div>`;
+    const signature = entries.map((entry) => entry.id).join("|");
+    if (signature !== productListSignature) {
+      productListSignature = signature;
+      productLimit = PRODUCT_BATCH_SIZE;
+    }
+    const visibleEntries = entries.slice(0, productLimit);
+    const remaining = Math.max(0, entries.length - visibleEntries.length);
+    return `<div class="manufacturer-catalog-products">${visibleEntries.map(renderProductCard).join("")}</div>
+      ${remaining ? `<button class="ghost manufacturer-catalog-load-more" type="button" data-bag-catalog-load-more>${escapeHtml(t("bagCatalog.models", { count: remaining }))} ↓</button>` : ""}`;
+  }
+
+  function loadNextProductBatch() {
+    productLimit += PRODUCT_BATCH_SIZE;
+    render();
+  }
+
+  function bindProductPaging() {
+    const button = refs?.bagCatalogResults?.querySelector?.("[data-bag-catalog-load-more]");
+    if (!button || typeof globalThis.IntersectionObserver !== "function") return;
+    productPagingObserver = new globalThis.IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      productPagingObserver?.disconnect?.();
+      loadNextProductBatch();
+    }, { root: refs.bagCatalogDialog, rootMargin: "240px 0px" });
+    productPagingObserver.observe(button);
   }
 
   function renderProductCard(entry) {
@@ -297,6 +330,11 @@ export function createManufacturerBagCatalogDialogController({
   }
 
   async function handleResultsClick(event) {
+    const loadMoreButton = event.target.closest("[data-bag-catalog-load-more]");
+    if (loadMoreButton) {
+      loadNextProductBatch();
+      return;
+    }
     const familyButton = event.target.closest("[data-bag-catalog-family]");
     if (familyButton) {
       family = familyButton.dataset.bagCatalogFamily || "";
@@ -440,7 +478,7 @@ export function createManufacturerBagCatalogDialogController({
     render();
   }
 
-  refs?.openBagCatalogBtn?.addEventListener("click", open);
+  if (bindOpenButton) refs?.openBagCatalogBtn?.addEventListener("click", open);
   refs?.bagCatalogBackBtn?.addEventListener("click", navigateBack);
   refs?.bagCatalogSearch?.addEventListener("input", () => {
     query = refs.bagCatalogSearch.value || "";

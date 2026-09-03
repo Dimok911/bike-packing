@@ -14,25 +14,6 @@ async function copyIfExists(source, target) {
   }
 }
 
-async function walkFiles(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await walkFiles(fullPath));
-    } else {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-
-function toAssetPath(filePath) {
-  const relative = path.relative(distDir, filePath).replaceAll(path.sep, "/");
-  return `./${relative}`;
-}
-
 async function readAppVersion() {
   const constants = await fs.readFile(path.join(rootDir, "src/config/constants.js"), "utf8");
   return constants.match(/APP_VERSION\s*=\s*"([^"]+)"/)?.[1] || `build-${Date.now()}`;
@@ -40,11 +21,6 @@ async function readAppVersion() {
 
 function runtimeVersionToken(appVersion) {
   return String(appVersion || "").replace(/^v/, "");
-}
-
-function versionRuntimeAsset(asset, appVersion) {
-  if (asset !== "./app.js" && asset !== "./styles.css") return asset;
-  return `${asset}?v=${runtimeVersionToken(appVersion)}`;
 }
 
 async function versionDistEntryAssets(appVersion) {
@@ -60,6 +36,7 @@ async function versionDistEntryAssets(appVersion) {
 
 function buildServiceWorkerSource(cacheName, assets) {
   return `const CACHE_NAME = ${JSON.stringify(cacheName)};
+const PRESERVED_CACHE_NAMES = new Set(["bike-packing-manufacturer-catalog-offline-v1"]);
 const ASSETS = ${JSON.stringify(assets, null, 2)};
 
 self.addEventListener("install", (event) => {
@@ -70,7 +47,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key !== CACHE_NAME && !PRESERVED_CACHE_NAMES.has(key)).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
 });
@@ -82,6 +59,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (event.request.headers.get("X-Bike-Packing-Offline-Catalog") === "1") return;
   const isApiRequest =
     url.origin !== self.location.origin ||
     url.pathname.includes("/letters-vniipo/api/") ||
@@ -132,13 +110,11 @@ await copyIfExists(path.join(rootDir, "index.php"), path.join(distDir, "index.ph
 
 const appVersion = await readAppVersion();
 await versionDistEntryAssets(appVersion);
-const files = await walkFiles(distDir);
 const precache = new Set(["./", "./index.html", "./manifest.webmanifest"]);
-files
-  .map(toAssetPath)
-  .filter((asset) => !asset.endsWith("/sw.js") && !asset.endsWith("/index.php"))
-  .map((asset) => versionRuntimeAsset(asset, appVersion))
-  .forEach((asset) => precache.add(asset));
+const indexSource = await fs.readFile(path.join(distDir, "index.html"), "utf8");
+for (const match of indexSource.matchAll(/\b(?:src|href)=["'](\.\/[^"'#?]+(?:\?[^"'#]*)?)["']/g)) {
+  if (!match[1].endsWith("/sw.js") && !match[1].endsWith("/index.php")) precache.add(match[1]);
+}
 
 const serviceWorker = buildServiceWorkerSource(`bike-packing-prototype-${appVersion}`, [...precache].sort());
 await fs.writeFile(path.join(distDir, "sw.js"), serviceWorker, "utf8");

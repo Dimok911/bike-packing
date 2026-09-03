@@ -68,6 +68,13 @@ test("CRITICAL offline-start: production build preserves runtime cache-busting U
   const buildScript = read("scripts/build-dist-assets.mjs");
   assert.match(buildScript, /async function versionDistEntryAssets\(appVersion\)/);
   assert.match(buildScript, /app\\\.js\|styles\\\.css/);
-  assert.match(buildScript, /versionRuntimeAsset\(asset, appVersion\)/);
   assert.match(buildScript, /await versionDistEntryAssets\(appVersion\)/);
+});
+
+test("CRITICAL offline-start: production precache contains only entry assets, not the global catalog", () => {
+  const buildScript = read("scripts/build-dist-assets.mjs");
+  assert.match(buildScript, /indexSource\.matchAll/);
+  assert.doesNotMatch(buildScript, /walkFiles\(distDir\)/);
+  assert.match(buildScript, /PRESERVED_CACHE_NAMES/);
+  assert.match(buildScript, /X-Bike-Packing-Offline-Catalog/);
 });

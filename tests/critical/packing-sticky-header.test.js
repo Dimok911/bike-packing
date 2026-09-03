@@ -21,6 +21,7 @@ import {
   packingBoardHorizontalGeometry,
   packingBoardGestureTargetsFixedScrollbar,
   packingBoardGestureTargetsOpenDialog,
+  packingBoardMissingAnchorGutter,
   packingBoardPinchZoom,
   packingBoardMomentumScrollLeft,
   packingBoardPanVelocity,
@@ -29,6 +30,7 @@ import {
   packingBoardPagePanVelocity,
   packingBoardPostPinchPanReady,
   packingBoardProportionalScrollLeft,
+  packingBoardRetainedHorizontalGutter,
   packingBoardScaledHeight,
   packingBoardTwoFingerMode,
   packingBoardUsableColumnWidth,
@@ -824,8 +826,51 @@ test("CRITICAL packing zoom: horizontal range follows transformed card edges ins
     contentWidth: 456,
     maxScroll: 96
   });
+  board.dataset.packingBoardRetainedRightGutter = "180";
+  assert.deepEqual(packingBoardHorizontalGeometry(board), {
+    clientWidth: 360,
+    contentWidth: 636,
+    maxScroll: 276
+  });
+  assert.deepEqual(packingBoardHorizontalGeometry(board, { includeRetainedGutter: false }), {
+    clientWidth: 360,
+    contentWidth: 456,
+    maxScroll: 96
+  });
   zoomedClasses.clear();
   assert.equal(packingBoardHorizontalGeometry(board).maxScroll, 224);
+  assert.equal(packingBoardHorizontalGeometry(board, { includeRetainedGutter: false }).maxScroll, 44);
+});
+
+test("CRITICAL packing zoom: zoom-out width stays until panning makes a jump-free trim possible", () => {
+  assert.equal(packingBoardMissingAnchorGutter({
+    actualMaxScrollLeft: 741,
+    desiredScrollLeft: 752.25
+  }), 11.25);
+  assert.equal(packingBoardMissingAnchorGutter({
+    actualMaxScrollLeft: 800,
+    desiredScrollLeft: 752.25
+  }), 0);
+  assert.equal(packingBoardRetainedHorizontalGutter({
+    currentGutter: 240,
+    currentScrollLeft: 540,
+    naturalMaxScrollLeft: 300
+  }), 240);
+  assert.equal(packingBoardRetainedHorizontalGutter({
+    currentGutter: 240,
+    currentScrollLeft: 430,
+    naturalMaxScrollLeft: 300
+  }), 130);
+  assert.equal(packingBoardRetainedHorizontalGutter({
+    currentGutter: 240,
+    currentScrollLeft: 280,
+    naturalMaxScrollLeft: 300
+  }), 0);
+
+  const source = fs.readFileSync(new URL("../../src/ui/packing-board-zoom.js", import.meta.url), "utf8");
+  assert.match(source, /const settleBoardGeometry = \(\) => \{[\s\S]*?trimHorizontalAnchorGutter\(\)[\s\S]*?horizontalMaximum\(\)/);
+  assert.match(source, /actualNaturalMaxScrollLeft[\s\S]*?board\.scrollWidth[\s\S]*?horizontalAnchorGutter/);
+  assert.match(source, /board\.addEventListener\?\.\("scroll", onBoardScroll/);
 });
 
 test("CRITICAL packing zoom: Ctrl-wheel scaling is bounded and board momentum is continuous", () => {
@@ -961,7 +1006,8 @@ test("CRITICAL packing zoom: runtime binds every 2D board and styles only board 
   assert.match(packingZoomSource, /classifyTouchScrollAxis\([\s\S]*?singleTouchAxis === "vertical"[\s\S]*?verticalScrollHost\.scrollTop\s*=\s*nextScrollTop/);
   assert.match(packingZoomSource, /startPageMomentum[\s\S]*?packingBoardPageMomentumScrollTop[\s\S]*?requestFrame\(step\)/);
   assert.match(packingZoomSource, /preserveHorizontalPoint[\s\S]*?packingBoardAnchoredScrollLeft/);
-  assert.match(packingZoomSource, /desiredScrollLeft[\s\S]*?naturalMaxScrollLeft[\s\S]*?horizontalAnchorGutter[\s\S]*?paddingRight/);
+  assert.match(packingZoomSource, /desiredScrollLeft[\s\S]*?naturalMaxScrollLeft[\s\S]*?setHorizontalAnchorGutter/);
+  assert.match(packingZoomSource, /const setHorizontalAnchorGutter[\s\S]*?paddingRight/);
   assert.match(packingZoomSource, /packingBoardFitMaxZoom\([\s\S]*?elasticMaxZoom[\s\S]*?settleZoomToFit/);
   assert.match(packingZoomSource, /dragHeightLocked[^\n]*!== "true"[\s\S]*?removeProperty\("min-height"\)/);
   assert.match(packingZoomSource, /fixedScrollbar[\s\S]*?PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE[\s\S]*?bottomClearance/);

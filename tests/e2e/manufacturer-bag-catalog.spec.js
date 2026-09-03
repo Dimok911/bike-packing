@@ -76,6 +76,12 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await comparison.locator('button[value="cancel"]').click();
 
   await page.locator('[data-bag-catalog-category="saddle"]').click();
+  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(12);
+  await page.locator("#bagCatalogResults").evaluate((root) => {
+    while (root.querySelector("[data-bag-catalog-load-more]")) {
+      root.querySelector("[data-bag-catalog-load-more]").click();
+    }
+  });
   await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(39);
   const seatPackCard = page.locator('.manufacturer-catalog-product:has([data-bag-catalog-select="ortlieb-seat-pack-16-5l"])');
   await expect.poll(() => seatPackCard.locator(".manufacturer-catalog-photo-gallery .photo-gallery-dot").count()).toBeGreaterThan(1);

@@ -43,6 +43,13 @@ import {
   writeManufacturerBagCatalogOverride
 } from "../../src/storage/manufacturer-bag-catalog-overrides.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
+import {
+  browserStorageEstimate,
+  cacheManufacturerCatalogPreviews,
+  clearManufacturerCatalogOffline,
+  manufacturerCatalogOfflineUsage,
+  manufacturerCatalogPreviewUrls
+} from "../../src/sync/manufacturer-catalog-offline.js";
 
 test("CRITICAL manufacturer catalog: active and planned brand marks stay explicit", () => {
   const active = MANUFACTURER_BAG_CATALOG_BRANDS.filter(({ status }) => status === "active");
@@ -569,6 +576,8 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(controller, /data-bag-catalog-compare-category/);
   assert.match(controller, /bagCatalog\.useHelp/);
   assert.match(controller, /renderManufacturerCatalogPhotoGallery/);
+  assert.match(controller, /PRODUCT_BATCH_SIZE = 12/);
+  assert.match(controller, /IntersectionObserver/);
   assert.match(comparison, /manufacturerBagComparisonRows/);
   assert.match(comparison, /manufacturerBagComparisonViewRows/);
   assert.match(comparison, /comparisonVolumeText\(entry\.volumeOptions, entry\.volumeTotalOptions/);
@@ -579,6 +588,8 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(styles, /\.manufacturer-comparison-filter-body[\s\S]*overflow-y:\s*auto/);
   assert.match(styles, /\.manufacturer-comparison-filter-panel > footer[\s\S]*border-top/);
   assert.match(appTail, /prepareManufacturerBagCatalogImport/);
+  assert.match(appTail, /import\("\.\.\/data\/manufacturer-bag-catalog\.js"\)/);
+  assert.doesNotMatch(appTail, /from "\.\.\/data\/manufacturer-bag-catalog\.js"/);
   assert.match(appTail, /refs\.rootContainerNote\.value = draft\.note/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
   assert.equal((i18n.match(/"bagCatalog\.photoReady"/g) || []).length, 2);
@@ -594,4 +605,55 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.equal((i18n.match(/"bagCatalog\.setTotalWithPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.officialPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.variantPicker"/g) || []).length, 2);
+});
+
+test("CRITICAL manufacturer catalog: explicit offline cache stores only unique primary previews", async () => {
+  const records = new Map();
+  const cache = {
+    keys: async () => [...records.keys()].map((url) => new Request(url)),
+    match: async (request) => records.get(typeof request === "string" ? request : request.url),
+    put: async (request, response) => records.set(typeof request === "string" ? request : request.url, response)
+  };
+  const cachesImpl = {
+    open: async () => cache,
+    delete: async () => {
+      records.clear();
+      return true;
+    }
+  };
+  const catalog = [
+    { imageUrls: ["https://example.test/a.jpg", "https://example.test/a-2.jpg"] },
+    { imageUrl: "https://example.test/b.jpg" },
+    { imageUrls: ["https://example.test/a.jpg"] }
+  ];
+  const fetched = [];
+  const progress = [];
+  const result = await cacheManufacturerCatalogPreviews(catalog, {
+    cachesImpl,
+    fetchImpl: async (url, options) => {
+      fetched.push([url, options.headers["X-Bike-Packing-Offline-Catalog"]]);
+      return new Response("preview", { status: 200, headers: { "content-length": "7" } });
+    },
+    onProgress: (value) => progress.push(value.completed),
+    storageManager: { persist: async () => true }
+  });
+  assert.deepEqual(manufacturerCatalogPreviewUrls(catalog), ["https://example.test/a.jpg", "https://example.test/b.jpg"]);
+  assert.equal(result.files, 2);
+  assert.equal(result.downloaded, 2);
+  assert.equal(result.bytes, 14);
+  assert.equal(progress.at(-1), 2);
+  assert.deepEqual(fetched.map(([url]) => url).sort(), manufacturerCatalogPreviewUrls(catalog).sort());
+  assert.ok(fetched.every(([, marker]) => marker === "1"));
+  assert.deepEqual(await manufacturerCatalogOfflineUsage({ cachesImpl }), { available: true, bytes: 14, files: 2 });
+  assert.equal(await clearManufacturerCatalogOffline({ cachesImpl }), true);
+  assert.deepEqual(await manufacturerCatalogOfflineUsage({ cachesImpl }), { available: false, bytes: 0, files: 0 });
+});
+
+test("CRITICAL manufacturer catalog: browser storage reports usable offline capacity", async () => {
+  assert.deepEqual(await browserStorageEstimate({
+    storageManager: {
+      estimate: async () => ({ quota: 1000, usage: 250 }),
+      persisted: async () => true
+    }
+  }), { available: 750, persisted: true, quota: 1000, usage: 250 });
 });
