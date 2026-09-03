@@ -58,18 +58,22 @@ uses `88.212.206.188` as the fixed fallback address, requires TLS, and verifies
 the hosting server with its pinned SPKI public key. The legacy hosting
 certificate is self-signed and has a different certificate name, so the SPKI
 pin is the trust anchor; changing it requires a separately verified hosting
-certificate rotation. The script performs this recoverable sequence:
+certificate rotation. Before touching FTP, it also verifies the build against
+the live production API contract. The script performs this recoverable sequence:
 
-1. upload the build to a unique sibling staging directory below FTP
+1. read the build's `release-contract.json`, request the live production API
+   contract, and refuse to upload anything unless both the compatibility
+   version and every required capability match;
+2. upload the build to a unique sibling staging directory below FTP
    `/www/vniipo-help.ru/`;
-2. download it back and compare every file with the local artifact by SHA-256;
-3. verify staging `index.html`, `app.js`, `styles.css`, and `sw.js` through its
+3. download it back and compare every file with the local artifact by SHA-256;
+4. verify staging `index.html`, `app.js`, `release-contract.json`, `styles.css`, and `sw.js` through its
    public HTTPS sibling URL;
-4. rename production to a unique backup and staging to `bike-packing`;
-5. download production back and compare every artifact file by SHA-256;
-6. verify `index.html`, `app.js`, `styles.css`, and `sw.js` through production
+5. rename production to a unique backup and staging to `bike-packing`;
+6. download production back and compare every artifact file by SHA-256;
+7. verify `index.html`, `app.js`, `release-contract.json`, `styles.css`, and `sw.js` through production
    HTTPS;
-7. automatically restore and verify the previous directory if activation or
+8. automatically restore and verify the previous directory if activation or
    public verification fails.
 
 The versioned backup is intentionally retained for manual recovery. A failed

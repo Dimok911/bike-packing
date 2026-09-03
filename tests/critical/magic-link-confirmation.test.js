@@ -24,10 +24,11 @@ test("magic link confirmation maps stable API failures to localized messages", (
 });
 
 test("in-app confirmation UI keeps the original email link flow and requires the new API capability", async () => {
-  const [appSource, indexSource, constantsSource] = await Promise.all([
+  const [appSource, indexSource, constantsSource, apiContractSource] = await Promise.all([
     readFile(new URL("../../app.js", import.meta.url), "utf8"),
     readFile(new URL("../../index.html", import.meta.url), "utf8"),
-    readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8")
+    readFile(new URL("../../src/config/constants.js", import.meta.url), "utf8"),
+    readFile(new URL("../../src/config/api-contract.js", import.meta.url), "utf8")
   ]);
 
   assert.match(indexSource, /id="authMagicLink"/);
@@ -37,32 +38,33 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /authSubmitBtn\.classList\.add\("ghost"\)/);
   assert.match(appSource, /authConfirmBtn\.classList\.remove\("ghost"\)/);
   assert.match(appSource, /apiFetch\("\/auth\/verify-magic-link",\s*\{\s*method:\s*"POST"/);
-  assert.match(appSource, /"inAppMagicLinkConfirmation"/);
-  assert.match(appSource, /"magicLinkManualCodeDelivery"/);
-  assert.match(appSource, /"slidingSessionRenewal"/);
-  assert.match(appSource, /"publicTemplateCanonicalPhotoReferences"/);
-  assert.match(appSource, /2026-08-30\.production-v1/);
+  assert.match(apiContractSource, /"inAppMagicLinkConfirmation"/);
+  assert.match(apiContractSource, /"magicLinkManualCodeDelivery"/);
+  assert.match(apiContractSource, /"slidingSessionRenewal"/);
+  assert.match(apiContractSource, /"publicTemplateCanonicalPhotoReferences"/);
+  assert.match(appSource, /REQUIRED_ADMIN_API_VERSION/);
+  assert.match(apiContractSource, /2026-08-30\.split-services-bridge-v1/);
   assert.doesNotMatch(appSource, /COMPATIBLE_ADMIN_API_VERSIONS/);
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
-  assert.match(appSource, /adminTemplateDraftSync/);
-  assert.match(appSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1589"/);
+  assert.match(apiContractSource, /adminTemplateDraftSync/);
+  assert.match(apiContractSource, /historyRestoreProvenance/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1590"/);
 });
 
-test("admin compatibility requires only the neutral production API version", () => {
+test("admin compatibility requires the live split-services API contract", () => {
   const options = {
-    appVersion: "v1589",
-    requiredVersion: "2026-08-30.production-v1",
+    appVersion: "v1590",
+    requiredVersion: "2026-08-30.split-services-bridge-v1",
     requiredCapabilities: [],
     localText: (en) => en
   };
 
   assert.equal(adminApiWarningFromCapabilities({
-    apiCompatibilityVersion: "2026-08-30.production-v1"
+    apiCompatibilityVersion: "2026-08-30.split-services-bridge-v1"
   }, options), "");
   assert.match(adminApiWarningFromCapabilities({
     apiCompatibilityVersion: "legacy-version"
-  }, options), /requires API 2026-08-30\.production-v1/);
+  }, options), /requires API 2026-08-30\.split-services-bridge-v1/);
 });
 
 test("production shell has no experimental banner and uses the production API", async () => {

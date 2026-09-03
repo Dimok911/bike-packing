@@ -26,6 +26,7 @@ $ftpCanonicalHost = "vniipo-help.ru"
 $ftpFallbackIp = "88.212.206.188"
 $ftpPort = 21
 $ftpPinnedPublicKey = "sha256//+gOwS0YQ8/CGtOD9zgyFzgYGLtl38K9YhxYssMpjz+Y="
+$productionApiCapabilitiesUrl = "https://api.vniipo-help.ru/letters-vniipo/api/bike-packing/capabilities"
 if (-not (Test-Path -LiteralPath $curlPath -PathType Leaf)) {
   throw "Required curl.exe was not found at the project-approved path."
 }
@@ -175,7 +176,7 @@ function Receive-HttpsFile([string]$url, [string]$localPath, [int]$attempts = 5)
 
 function Assert-PublicBuild([string]$baseUrl, [string]$temporaryDirectory, [string]$cacheBuster) {
   $publicBase = $baseUrl.TrimEnd("/")
-  foreach ($relative in @("index.html", "app.js", "styles.css", "sw.js")) {
+  foreach ($relative in @("index.html", "app.js", "release-contract.json", "styles.css", "sw.js")) {
     $publicPath = Join-Path $temporaryDirectory $relative
     Receive-HttpsFile "${publicBase}/${relative}?release=$cacheBuster" $publicPath
     Assert-FilesEqual (Join-Path $ArtifactRoot $relative) $publicPath "HTTPS/$relative"
@@ -191,8 +192,37 @@ function Assert-PublicBuild([string]$baseUrl, [string]$temporaryDirectory, [stri
   }
 }
 
+function Assert-ProductionApiContract([string]$contractPath, [string]$temporaryDirectory, [string]$cacheBuster) {
+  $contract = Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json
+  $requiredVersion = [string]$contract.requiredApiCompatibilityVersion
+  $requiredCapabilities = @($contract.requiredApiCapabilities | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  if ([int]$contract.schemaVersion -ne 1 -or [string]::IsNullOrWhiteSpace($requiredVersion)) {
+    throw "Release API contract is missing or invalid."
+  }
+  if ([string]$contract.appVersion -ne $ExpectedVersion) {
+    throw "Release API contract belongs to $($contract.appVersion), expected $ExpectedVersion."
+  }
+
+  $livePath = Join-Path $temporaryDirectory "production-api-capabilities.json"
+  Receive-HttpsFile "${productionApiCapabilitiesUrl}?release=$cacheBuster" $livePath
+  $live = Get-Content -LiteralPath $livePath -Raw | ConvertFrom-Json
+  $liveVersion = [string]$live.apiCompatibilityVersion
+  if ($liveVersion -ne $requiredVersion) {
+    throw "Production API compatibility mismatch: frontend requires $requiredVersion, live API reports $liveVersion. Production was not changed."
+  }
+  $liveCapabilities = @($live.capabilities | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  $missingCapabilities = @($requiredCapabilities | Where-Object { $liveCapabilities -notcontains $_ })
+  if ($missingCapabilities.Count -gt 0) {
+    throw "Production API lacks required frontend capabilities: $($missingCapabilities -join ', '). Production was not changed."
+  }
+  return [pscustomobject]@{
+    Version = $liveVersion
+    CapabilityCount = $requiredCapabilities.Count
+  }
+}
+
 $artifactFiles = @(Get-ChildItem -Path $ArtifactRoot -Recurse -File)
-foreach ($requiredFile in @("app.js", "index.html", "index.php", "manifest.webmanifest", "styles.css", "sw.js")) {
+foreach ($requiredFile in @("app.js", "index.html", "index.php", "manifest.webmanifest", "release-contract.json", "styles.css", "sw.js")) {
   if (-not (Test-Path -LiteralPath (Join-Path $ArtifactRoot $requiredFile) -PathType Leaf)) {
     throw "Production artifact is incomplete; missing $requiredFile."
   }
@@ -229,6 +259,10 @@ $stageActivated = $false
 $rollbackCompleted = $false
 
 try {
+  $apiContractVerification = Assert-ProductionApiContract `
+    (Join-Path $ArtifactRoot "release-contract.json") `
+    $temporaryRoot `
+    "$safeVersion-$timestamp"
   foreach ($file in $artifactFiles) {
     $relative = Get-RelativeArtifactPath $file
     Send-FtpFile $file.FullName "$stageRemotePath/$relative"
@@ -308,4 +342,6 @@ finally {
   FtpSha256 = "verified"
   StageHttps = "verified"
   ProductionHttps = "verified"
+  ProductionApiVersion = $apiContractVerification.Version
+  ProductionApiCapabilities = $apiContractVerification.CapabilityCount
 } | Format-List

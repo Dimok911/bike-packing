@@ -9,6 +9,8 @@ function readProjectFile(path) {
 test("production FTP deployment keeps the account root separate from the public directory", () => {
   const script = readProjectFile("scripts/deploy-production-ftp.ps1");
   const docs = readProjectFile("docs/production-deployment.md");
+  const workflow = readProjectFile(".github/workflows/frontend-quality.yml");
+  const liveContractCheck = readProjectFile("scripts/verify-live-api-contract.mjs");
 
   assert.match(script, /\$productionRemotePath\s*=\s*"www\/vniipo-help\.ru\/bike-packing"/);
   assert.match(script, /remotePath\)\.Trim\(\)\s*-ne\s*"\/"/);
@@ -28,6 +30,17 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(script, /Invoke-CurlConfig -Ftps -Lines/);
   assert.match(script, /function Send-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
   assert.match(script, /function Receive-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
+  assert.match(script, /\$productionApiCapabilitiesUrl\s*=\s*"https:\/\/api\.vniipo-help\.ru\/letters-vniipo\/api\/bike-packing\/capabilities"/);
+  assert.match(script, /function Assert-ProductionApiContract/);
+  assert.match(script, /requiredApiCompatibilityVersion/);
+  assert.match(script, /requiredApiCapabilities/);
+  assert.match(script, /Assert-ProductionApiContract[\s\S]*?foreach \(\$file in \$artifactFiles\)/);
+  assert.match(script, /Production was not changed/);
+  assert.match(script, /release-contract\.json/);
+  assert.match(liveContractCheck, /REQUIRED_ADMIN_API_VERSION/);
+  assert.match(liveContractCheck, /REQUIRED_ADMIN_API_CAPABILITIES/);
+  assert.match(liveContractCheck, /\/bike-packing\/capabilities/);
+  assert.match(workflow, /name: Live API contract[\s\S]*?npm run check:live-api-contract/);
 
   assert.match(docs, /`remotePath: "\/"` means the FTP account root/);
   assert.match(docs, /`\/www\/vniipo-help\.ru\/bike-packing\/`/);
@@ -35,4 +48,5 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(docs, /explicit FTPS/i);
   assert.match(docs, /pinned SPKI public key/i);
   assert.match(docs, /retries transient upload and download failures/i);
+  assert.match(docs, /live production API contract/i);
 });

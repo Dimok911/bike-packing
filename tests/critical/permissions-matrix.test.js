@@ -201,9 +201,10 @@ test("CRITICAL permissions: confirmed server capability is the only source of on
   }), false);
 
   const appSource = readFileSync(resolve(projectRoot, "app.js"), "utf8");
+  const apiContractSource = readFileSync(resolve(projectRoot, "src/config/api-contract.js"), "utf8");
   assert.match(appSource, /function isAdminUser\(\)[\s\S]*?return canPermission\(FRONTEND_PERMISSION_ACTIONS\.ADMIN_SESSION/);
   assert.doesNotMatch(appSource, /adminPermissionWithLegacyFallback/);
-  assert.match(appSource, /"authUserCapabilities"/);
+  assert.match(apiContractSource, /"authUserCapabilities"/);
 
   const appTailSource = readFileSync(resolve(projectRoot, "src/app/app-tail-controllers.js"), "utf8");
   assert.match(appTailSource, /await loadBikePackingAuthorization\(apiFetch, authData\.authorization\)/);
