@@ -13,16 +13,16 @@ export function layoutComparisonPickerState(layouts = [], selection = {}) {
   const availableIds = new Set(entries.map((layout) => String(layout.id)));
   let fromLayoutId = String(selection?.fromLayoutId || "").trim();
   let toLayoutId = String(selection?.toLayoutId || "").trim();
-  if (!availableIds.has(fromLayoutId)) fromLayoutId = entries[0]?.id || "";
-  if (!availableIds.has(toLayoutId) || toLayoutId === fromLayoutId) {
-    toLayoutId = entries.find((layout) => layout.id !== fromLayoutId)?.id || "";
+  if (!availableIds.has(fromLayoutId)) fromLayoutId = String(entries[0]?.id || "");
+  if (!availableIds.has(toLayoutId)) {
+    toLayoutId = String(entries.find((layout) => String(layout.id) !== fromLayoutId)?.id || entries[0]?.id || "");
   }
-  if (fromLayoutId === toLayoutId) fromLayoutId = "";
   return {
     fromLayoutId,
     toLayoutId,
-    fromLayouts: entries.filter((layout) => layout.id !== toLayoutId),
-    toLayouts: entries.filter((layout) => layout.id !== fromLayoutId)
+    fromLayouts: entries,
+    toLayouts: entries,
+    sameLayout: Boolean(fromLayoutId && toLayoutId && fromLayoutId === toLayoutId)
   };
 }
 

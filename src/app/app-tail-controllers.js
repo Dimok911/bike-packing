@@ -2715,18 +2715,37 @@ function updateLayoutComparisonDialogState(selection = null) {
     fromLayoutId: refs.layoutCompareFrom?.value,
     toLayoutId: refs.layoutCompareTo?.value
   });
+  const comparisonOptionLabel = (layout, oppositeLayoutId) => {
+    const name = layoutDisplayName(layout);
+    return String(layout.id) === String(oppositeLayoutId)
+      ? `${name} — ${t("compare.alreadySelected")}`
+      : name;
+  };
   fillSelect(
     refs.layoutCompareFrom,
-    picker.fromLayouts.map((layout) => [layout.id, layoutDisplayName(layout)]),
+    picker.fromLayouts.map((layout) => [layout.id, comparisonOptionLabel(layout, picker.toLayoutId)]),
     picker.fromLayoutId
   );
   fillSelect(
     refs.layoutCompareTo,
-    picker.toLayouts.map((layout) => [layout.id, layoutDisplayName(layout)]),
+    picker.toLayouts.map((layout) => [layout.id, comparisonOptionLabel(layout, picker.fromLayoutId)]),
     picker.toLayoutId
   );
+  [
+    [refs.layoutCompareFrom, picker.toLayoutId],
+    [refs.layoutCompareTo, picker.fromLayoutId]
+  ].forEach(([select, conflictId]) => {
+    const option = Array.from(select?.options || []).find((entry) => entry.value === String(conflictId));
+    option?.classList.add("layout-compare-option-conflict");
+  });
   const enoughLayouts = options.length >= 2;
   const differentLayouts = picker.fromLayoutId && picker.toLayoutId && picker.fromLayoutId !== picker.toLayoutId;
+  [refs.layoutCompareFrom, refs.layoutCompareTo].forEach((select) => {
+    if (!select) return;
+    select.classList.toggle("layout-compare-selection-conflict", picker.sameLayout);
+    if (picker.sameLayout) select.setAttribute("aria-invalid", "true");
+    else select.removeAttribute("aria-invalid");
+  });
   if (refs.layoutCompareFields) refs.layoutCompareFields.hidden = !enoughLayouts;
   if (refs.layoutCompareUnavailable) {
     refs.layoutCompareUnavailable.hidden = enoughLayouts && differentLayouts;

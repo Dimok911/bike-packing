@@ -158,7 +158,7 @@ test("guest creates a layout, bag and item and keeps them after reload", async (
   expect(persisted).toEqual({ hasLayout: true, hasContainer: true, hasItem: true });
 });
 
-test("layout comparison keeps main order, excludes the opposite choice, and opens pictured item cards", async ({ page }) => {
+test("layout comparison keeps the full main order, marks the opposite choice, and opens pictured item cards", async ({ page }) => {
   const firstLayout = "Сравнение первое";
   const secondLayout = "Сравнение второе";
   const thirdLayout = "Сравнение третье";
@@ -203,18 +203,37 @@ test("layout comparison keeps main order, excludes the opposite choice, and open
   const initialFromId = await page.locator("#layoutCompareFrom").inputValue();
   const initialToId = await page.locator("#layoutCompareTo").inputValue();
   await expect(page.locator("#layoutCompareFrom option")).toHaveText(
-    mainLayoutOptions.filter((option) => option.value !== initialToId).map((option) => option.text)
+    mainLayoutOptions.map((option) => (
+      option.value === initialToId ? `${option.text} — уже выбрана` : option.text
+    ))
   );
   await expect(page.locator("#layoutCompareTo option")).toHaveText(
-    mainLayoutOptions.filter((option) => option.value !== initialFromId).map((option) => option.text)
+    mainLayoutOptions.map((option) => (
+      option.value === initialFromId ? `${option.text} — уже выбрана` : option.text
+    ))
   );
+  await expect(page.locator(`#layoutCompareFrom option[value="${initialToId}"]`))
+    .toHaveClass(/layout-compare-option-conflict/);
+  await expect(page.locator(`#layoutCompareTo option[value="${initialFromId}"]`))
+    .toHaveClass(/layout-compare-option-conflict/);
+
+  await page.locator("#layoutCompareFrom").selectOption(initialToId);
+  await expect(page.locator("#layoutCompareFrom")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareTo")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareUnavailable")).toBeVisible();
+  await expect(page.locator("#layoutCompareStartBtn")).toBeDisabled();
 
   await page.locator("#layoutCompareTo").selectOption({ label: secondLayout });
   await page.locator("#layoutCompareFrom").selectOption({ label: firstLayout });
-  const firstLayoutId = mainLayoutOptions.find((option) => option.text === firstLayout)?.value;
   await expect(page.locator("#layoutCompareTo option")).toHaveText(
-    mainLayoutOptions.filter((option) => option.value !== firstLayoutId).map((option) => option.text)
+    mainLayoutOptions.map((option) => (
+      option.text === firstLayout ? `${option.text} — уже выбрана` : option.text
+    ))
   );
+  await expect(page.locator("#layoutCompareFrom")).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareTo")).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#layoutCompareUnavailable")).toBeHidden();
+  await expect(page.locator("#layoutCompareStartBtn")).toBeEnabled();
   await page.locator("#layoutCompareStartBtn").click();
 
   const changedItem = page.locator("[data-compare-open-item]").filter({ hasText: itemName });

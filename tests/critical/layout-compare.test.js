@@ -171,7 +171,7 @@ test("CRITICAL layout comparison uses shared entity ids across independently cre
   ]);
 });
 
-test("CRITICAL comparison pickers keep the main layout order and exclude the opposite selection", () => {
+test("CRITICAL comparison pickers keep the full main layout order and flag matching selections", () => {
   const layouts = [
     { id: "third", name: "Third" },
     { id: "first", name: "First" },
@@ -184,10 +184,21 @@ test("CRITICAL comparison pickers keep the main layout order and exclude the opp
 
   assert.equal(picker.fromLayoutId, "first");
   assert.equal(picker.toLayoutId, "second");
-  assert.deepEqual(picker.fromLayouts.map((layout) => layout.id), ["third", "first"]);
-  assert.deepEqual(picker.toLayouts.map((layout) => layout.id), ["third", "second"]);
+  assert.deepEqual(picker.fromLayouts.map((layout) => layout.id), ["third", "first", "second"]);
+  assert.deepEqual(picker.toLayouts.map((layout) => layout.id), ["third", "first", "second"]);
+  assert.equal(picker.sameLayout, false);
+
+  const matchingPicker = layoutComparisonPickerState(layouts, {
+    fromLayoutId: "second",
+    toLayoutId: "second"
+  });
+  assert.equal(matchingPicker.fromLayoutId, "second");
+  assert.equal(matchingPicker.toLayoutId, "second");
+  assert.equal(matchingPicker.sameLayout, true);
   assert.match(appTailSource, /function comparisonLayoutOptions\(\)[\s\S]*?return orderedLayouts\(state\.layouts/);
   assert.match(appTailSource, /layoutCompareFrom\?\.addEventListener\("change", \(\) => updateLayoutComparisonDialogState\(\)\)/);
+  assert.match(appTailSource, /classList\.add\("layout-compare-option-conflict"\)/);
+  assert.match(appTailSource, /classList\.toggle\("layout-compare-selection-conflict", picker\.sameLayout\)/);
   assert.match(appTailSource, /data-compare-open-item[\s\S]*?openItemDialog\(button\.dataset\.compareOpenItem\)/);
 });
 

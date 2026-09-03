@@ -3605,6 +3605,18 @@ body:has(.board.fixed-bar-scroll-ready) .kanban-scroll-thumb {
   width: 100%;
 }
 
+.layout-compare-fields option.layout-compare-option-conflict {
+  color: #8f331f;
+  background: #ffe4da;
+  font-weight: 800;
+}
+
+.layout-compare-fields select.layout-compare-selection-conflict {
+  border-color: #b64d37;
+  background: #fff5f1;
+  box-shadow: 0 0 0 2px rgb(182 77 55 / 14%);
+}
+
 .layout-compare-swap {
   min-width: 44px;
   padding-inline: 10px;
