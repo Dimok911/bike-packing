@@ -32,6 +32,7 @@ import {
   packingBoardProportionalScrollLeft,
   packingBoardRetainedHorizontalGutter,
   packingBoardScaledHeight,
+  packingBoardSliderZoomPercent,
   packingBoardTwoFingerMode,
   packingBoardUsableColumnWidth,
   packingBoardVisualMaxScrollTop,
@@ -828,6 +829,30 @@ test("CRITICAL packing zoom: horizontal range follows transformed card edges ins
   zoomedClasses.clear();
   assert.equal(packingBoardHorizontalGeometry(board).maxScroll, 224);
   assert.equal(packingBoardHorizontalGeometry(board, { includeRetainedGutter: false }).maxScroll, 44);
+});
+
+test("CRITICAL packing zoom: fast slider movement snaps to 100 without blocking nearby exact values", () => {
+  assert.equal(packingBoardSliderZoomPercent(98, {
+    pointerActive: true,
+    gestureStartPercent: 70,
+    elapsedMs: 200
+  }), 100);
+  assert.equal(packingBoardSliderZoomPercent(102, {
+    pointerActive: true,
+    gestureStartPercent: 130,
+    elapsedMs: 200
+  }), 100);
+  assert.equal(packingBoardSliderZoomPercent(101, {
+    pointerActive: true,
+    gestureStartPercent: 70,
+    elapsedMs: 900
+  }), 101);
+  assert.equal(packingBoardSliderZoomPercent(102, {
+    pointerActive: true,
+    gestureStartPercent: 100,
+    elapsedMs: 10
+  }), 102);
+  assert.equal(packingBoardSliderZoomPercent(101), 101);
 });
 
 test("CRITICAL packing zoom: zoom-out width stays until panning makes a jump-free trim possible", () => {

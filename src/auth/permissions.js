@@ -34,6 +34,19 @@ export function hasAuthCapability(authorization, capability) {
   return Boolean(normalized.serverProvided && target && normalized.capabilities.includes(target));
 }
 
+export async function loadBikePackingAuthorization(apiFetch, fallbackAuthorization = null) {
+  let authorization = fallbackAuthorization;
+  try {
+    const response = await apiFetch("/bike-packing/authorization", { silentErrors: true });
+    if (response && typeof response === "object" && "authorization" in response) {
+      authorization = response.authorization;
+    }
+  } catch {
+    // Keep the legacy /auth/me authorization as a safe compatibility fallback.
+  }
+  return normalizeAuthAuthorization(authorization);
+}
+
 export function can(action, {
   authorization = null,
   serverSessionConfirmed = false,

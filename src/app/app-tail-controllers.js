@@ -53,7 +53,7 @@ import {
   shouldShowSharedEntityPlacement
 } from "../public/shared-entity-link.js";
 import { dialogHasSavableChanges } from "../ui/dialog-save-guard.js";
-import { normalizeAuthAuthorization } from "../auth/permissions.js";
+import { loadBikePackingAuthorization, normalizeAuthAuthorization } from "../auth/permissions.js";
 import { focusCreatedCatalogCard } from "../ui/catalog-created-focus.js";
 import { canMoveContainerToLayoutRoot } from "../state/layout-ops.js";
 import { shouldShowContainerPickerLayoutSelect } from "../ui/container-picker-layout-select.js";
@@ -2090,7 +2090,9 @@ async function hydrateAuthForSharedLink() {
     const authData = await apiFetch("/auth/me", { silentErrors: true });
     runtime.currentUser = authData.user || authData.me || authData.account || null;
     if (!runtime.currentUser && (authData.id || authData.email)) runtime.currentUser = { id: authData.id, email: authData.email };
-    runtime.currentAuthorization = normalizeAuthAuthorization(authData.authorization);
+    runtime.currentAuthorization = runtime.currentUser
+      ? await loadBikePackingAuthorization(apiFetch, authData.authorization)
+      : normalizeAuthAuthorization(null);
     if (runtime.currentUser) {
       clearOfflineRememberedSession();
       setExplicitlySignedOut(false);
