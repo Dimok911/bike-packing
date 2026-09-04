@@ -31,7 +31,9 @@ function withDerivedImageAssets(entry, manufacturerId) {
     .replace(new RegExp(`^${manufacturerId}-`), "")
     .trim()
     .toLowerCase();
-  const preferredHandle = manufacturerId === "topeak" && /^\d+-/i.test(sourceLeaf) ? sourceLeaf : (entryHandle || sourceHandle);
+  const preferredHandle = manufacturerId === "rockgeist"
+    ? sourceHandle
+    : manufacturerId === "topeak" && /^\d+-/i.test(sourceLeaf) ? sourceLeaf : (entryHandle || sourceHandle);
   const handle = preferredHandle
     .replace(/\+/g, " plus ")
     .replace(/&/g, " and ")

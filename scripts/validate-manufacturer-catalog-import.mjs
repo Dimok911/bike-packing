@@ -14,6 +14,7 @@ const MANUFACTURER_HOSTS = Object.freeze({
   cyclite: ["cyclite.cc"],
   blackburn: ["blackburndesign.com", "bellhelmets.com"],
   topeak: ["topeak.com"],
+  rockgeist: ["rockgeist.com"],
 });
 const CHANGE_TYPES = new Set(["added", "changed", "missing"]);
 

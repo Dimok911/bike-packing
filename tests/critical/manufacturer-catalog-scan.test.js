@@ -49,6 +49,11 @@ import {
   topeakCatalogTargets,
   topeakProductPageIsValid,
 } from "../../scripts/manufacturer-catalog/topeak-adapter.mjs";
+import {
+  buildRockgeistCatalogEntry,
+  rockgeistCatalogTargets,
+  rockgeistProductPageIsValid,
+} from "../../scripts/manufacturer-catalog/rockgeist-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -206,6 +211,39 @@ test("CRITICAL catalog scan: Topeak discovers bag sections, excludes accessories
   assert.equal(entry.sourceImageUrls.length, 2);
 });
 
+test("CRITICAL catalog scan: Rockgeist keeps current bags and excludes prototypes and spare parts", () => {
+  const products = [
+    { id: 10, name: "Mountain 52Hz Waterproof Framebag", permalink: "https://rockgeist.com/product/mountain-52hz/", categories: [{ slug: "waterproof-framebags" }] },
+    { id: 11, name: "Mr. Fusion Seat Pack", permalink: "https://rockgeist.com/product/mr-fusion-seat-pack/", categories: [{ slug: "saddlebags" }] },
+    { id: 12, name: "Extra Mr. Fusion Dry Bag", permalink: "https://rockgeist.com/product/dry-bag-for-mr-fusion-seat-pack/", categories: [{ slug: "waterproof-saddlebag" }] },
+    { id: 13, name: "ALUULA Saddlebag", permalink: "https://rockgeist.com/product/aluula-saddlebag/", categories: [{ slug: "prototypes" }] },
+  ];
+  const targets = rockgeistCatalogTargets(products);
+  assert.deepEqual(targets.map(({ handle, category }) => ({ handle, category })), [
+    { handle: "mountain-52hz", category: "frame" },
+    { handle: "mr-fusion-seat-pack", category: "saddle" },
+  ]);
+  const json = JSON.stringify({
+    ...products[0],
+    short_description: "A fully waterproof welded framebag.",
+    description: "Small: 6 Liters. Medium: 9 Liters. Bag weight: 315 g.",
+    attributes: [{ name: "Size", terms: [{ name: "Small 6 L" }, { name: "Medium 9 L" }] }],
+    images: [
+      { thumbnail: "https://rockgeist.com/wp-content/uploads/mountain-500x500.webp" },
+      { thumbnail: "https://rockgeist.com/wp-content/uploads/mountain-side-500x500.jpg" },
+    ],
+    is_in_stock: true,
+  });
+  assert.equal(rockgeistProductPageIsValid(json), true);
+  assert.equal(rockgeistProductPageIsValid("<html>challenge</html>"), false);
+  const entry = buildRockgeistCatalogEntry({ target: targets[0], json, checkedAt: "2026-09-04" });
+  assert.deepEqual({ brand: entry.brand, category: entry.category, volumes: entry.volumeOptions, weights: entry.weightOptions },
+    { brand: "Rockgeist", category: "frame", volumes: [6, 9], weights: [315] });
+  assert.equal(entry.waterproof, "Waterproof");
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/rockgeist\//.test(path)));
+});
+
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {
   const result = compareManufacturerCatalogSnapshots(
     [bag("ortlieb-old", "ORTLIEB"), bag("ortlieb-back-roller", "ORTLIEB")],
@@ -247,7 +285,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 10);
+  assert.equal(report.manufacturers.length, 11);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
@@ -258,6 +296,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
   assert.equal(report.manufacturers.find((item) => item.id === "cyclite").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "blackburn").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "topeak").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "rockgeist").sourceCount, 2);
   assert.equal(report.summary.added, 1);
 });
 

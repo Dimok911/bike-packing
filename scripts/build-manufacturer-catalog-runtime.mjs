@@ -16,7 +16,8 @@ const brandFiles = new Map([
   ["Miss Grape", "miss-grape"],
   ["CYCLITE", "cyclite"],
   ["Blackburn", "blackburn"],
-  ["Topeak", "topeak"]
+  ["Topeak", "topeak"],
+  ["Rockgeist", "rockgeist"]
 ]);
 const omittedRuntimeFields = new Set([
   "imageAssetPath",

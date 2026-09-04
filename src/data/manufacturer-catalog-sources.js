@@ -98,6 +98,16 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["topeak-bags.html", "https://www.topeak.com/global/en/products/186-Bags"],
     ]),
   }),
+  Object.freeze({
+    id: "rockgeist",
+    name: "Rockgeist",
+    adapter: "rockgeist-wc-store",
+    productBaseUrl: "https://rockgeist.com/product/",
+    collections: Object.freeze([
+      ["rockgeist-products-1.json", "https://rockgeist.com/wp-json/wc/store/v1/products?per_page=100&page=1&_fields=id,name,permalink,categories,attributes,prices"],
+      ["rockgeist-products-2.json", "https://rockgeist.com/wp-json/wc/store/v1/products?per_page=100&page=2&_fields=id,name,permalink,categories,attributes,prices"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

@@ -15,7 +15,8 @@ const LOADERS = new Map([
   ["Miss Grape", () => import("./manufacturer-catalog-runtime/miss-grape.generated.js")],
   ["CYCLITE", () => import("./manufacturer-catalog-runtime/cyclite.generated.js")],
   ["Blackburn", () => import("./manufacturer-catalog-runtime/blackburn.generated.js")],
-  ["Topeak", () => import("./manufacturer-catalog-runtime/topeak.generated.js")]
+  ["Topeak", () => import("./manufacturer-catalog-runtime/topeak.generated.js")],
+  ["Rockgeist", () => import("./manufacturer-catalog-runtime/rockgeist.generated.js")]
 ]);
 const loadedByBrand = new Map();
 const loadingByBrand = new Map();

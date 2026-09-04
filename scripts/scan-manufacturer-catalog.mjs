@@ -30,6 +30,10 @@ import {
   topeakProductPageIsValid,
 } from "./manufacturer-catalog/topeak-adapter.mjs";
 import {
+  rockgeistCatalogTargets,
+  rockgeistProductPageIsValid,
+} from "./manufacturer-catalog/rockgeist-adapter.mjs";
+import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
   manufacturerIdForEntry,
@@ -152,6 +156,10 @@ async function downloadManufacturer(source) {
       } else if (source.adapter === "topeak-html") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         topeakCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "rockgeist-wc-store") {
+        const parsed = JSON.parse(fetched);
+        await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
+        rockgeistCatalogTargets(parsed).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -177,7 +185,8 @@ async function downloadManufacturer(source) {
         : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid
           : source.adapter === "cyclite-collection" ? cycliteProductPageIsValid
             : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid
-              : source.adapter === "topeak-html" ? topeakProductPageIsValid : null;
+              : source.adapter === "topeak-html" ? topeakProductPageIsValid
+                : source.adapter === "rockgeist-wc-store" ? rockgeistProductPageIsValid : null;
       await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));

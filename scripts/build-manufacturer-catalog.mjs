@@ -39,6 +39,10 @@ import {
   buildTopeakCatalogEntry,
   topeakCatalogTargets,
 } from "./manufacturer-catalog/topeak-adapter.mjs";
+import {
+  buildRockgeistCatalogEntry,
+  rockgeistCatalogTargets,
+} from "./manufacturer-catalog/rockgeist-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -76,6 +80,11 @@ const RESTRAP_COLLECTION_FILES = [
   "restrap-rack.json",
   "restrap-saddle.json",
   "restrap-on-body.json",
+];
+
+const ROCKGEIST_COLLECTION_FILES = [
+  "rockgeist-products-1.json",
+  "rockgeist-products-2.json",
 ];
 
 const ORTLIEB_EXCLUDED = new Set([
@@ -604,6 +613,13 @@ const blackburnTargets = manufacturerRequested("blackburn")
 const topeakTargets = manufacturerRequested("topeak")
   ? topeakCatalogTargets(await readFile(join(sourceDir, "topeak-bags.html"), "utf8"))
   : [];
+const rockgeistProducts = [];
+if (manufacturerRequested("rockgeist")) {
+  for (const fileName of ROCKGEIST_COLLECTION_FILES) {
+    rockgeistProducts.push(...JSON.parse(await readFile(join(sourceDir, fileName), "utf8")));
+  }
+}
+const rockgeistTargets = rockgeistCatalogTargets(rockgeistProducts);
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -669,6 +685,13 @@ for (const target of topeakTargets) {
     target,
     html: await readFile(join(pagesDir, "topeak", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of rockgeistTargets) {
+  entries.push(buildRockgeistCatalogEntry({
+    target,
+    json: await readFile(join(pagesDir, "rockgeist", `${target.handle}.html`), "utf8"),
     checkedAt,
   }));
 }
