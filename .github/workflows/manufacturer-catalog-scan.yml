@@ -39,7 +39,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
         run: node scripts/scan-manufacturer-catalog.mjs --output manufacturer-catalog-scan.json --markdown manufacturer-catalog-scan.md --work-dir manufacturer-catalog-scan-work
       - name: Download official image snapshot
-        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
+        if: github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.review_report_path == '')
         run: node scripts/download-manufacturer-catalog-images.mjs --manifest manufacturer-catalog-scan-work/manufacturer-catalog-images.json --root manufacturer-catalog-scan-snapshot
       - name: Validate checked review report
         if: github.event_name == 'workflow_dispatch' && inputs.review_report_path != ''
@@ -74,7 +74,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Store short-lived official image snapshot
-        if: github.event_name != 'workflow_dispatch' || inputs.review_report_path == ''
+        if: github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.review_report_path == '')
         uses: actions/upload-artifact@v4
         with:
           name: manufacturer-catalog-scan-images

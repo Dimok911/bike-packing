@@ -242,6 +242,7 @@ test("CRITICAL catalog scan: all official image URLs are reviewable and the Acti
   assert.match(downloader, /unavailableShare > 0\.05/);
   assert.match(downloader, /counts\.unavailable === counts\.requested/);
   assert.match(workflow, /manufacturer-catalog-scan-snapshot\/manufacturer-catalog-image-download\.json/);
+  assert.equal((workflow.match(/if: github\.event_name != 'push' && \(github\.event_name != 'workflow_dispatch' \|\| inputs\.review_report_path == ''\)/g) || []).length, 2);
 });
 
 test("CRITICAL catalog scan: Tailfin adapter discovers only official bag product pages", () => {
