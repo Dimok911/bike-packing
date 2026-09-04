@@ -48,6 +48,7 @@ import {
   writeManufacturerBagCatalogOverride
 } from "../../src/storage/manufacturer-bag-catalog-overrides.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
+import { renderManufacturerBrandMark } from "../../src/ui/manufacturer-brand-mark.js";
 import {
   browserStorageEstimate,
   cacheManufacturerCatalogPreviews,
@@ -63,6 +64,10 @@ test("CRITICAL manufacturer catalog: active and planned brand marks stay explici
   assert.ok(active.every(({ logoUrl }) => /manufacturer-brands\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs|miss-grape)\.(?:png|svg)/.test(logoUrl)));
   assert.deepEqual(planned.map(({ name }) => name), ["CYCLITE", "Blackburn", "Topeak", "Rockgeist"]);
   assert.ok(planned.every(({ catalogBrand, logoUrl }) => !catalogBrand && !logoUrl));
+  const revelateMark = renderManufacturerBrandMark({ brand: "Revelate Designs", brands: MANUFACTURER_BAG_CATALOG_BRANDS });
+  assert.match(revelateMark, /manufacturer-brand-mark-revelate-designs/);
+  assert.match(readFileSync(resolve(import.meta.dirname, "../..", "styles.css"), "utf8"),
+    /\.manufacturer-brand-mark-revelate-designs\s*\{[^}]*background:\s*#27312d;/s);
 });
 
 test("CRITICAL manufacturer catalog: brand filtering keeps only that manufacturer's available structure", () => {

@@ -6684,6 +6684,13 @@ button.manufacturer-brand-choice:hover {
   object-fit: contain;
 }
 
+.manufacturer-brand-mark-revelate-designs {
+  box-sizing: border-box;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: #27312d;
+}
+
 .manufacturer-brand-choice .manufacturer-brand-mark {
   width: 94px;
   height: 28px;

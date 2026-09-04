@@ -57,6 +57,8 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Restrap"]')).toHaveCount(7);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Revelate Designs"]')).toHaveCount(7);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Miss Grape"]')).toHaveCount(4);
+  await expect(comparison.locator('.manufacturer-comparison-brand:has(img[alt="Revelate Designs"])').first())
+    .toHaveCSS("background-color", "rgb(39, 49, 45)");
 
   await comparison.locator("#bagCatalogCompareManufacturerBtn").click();
   const filterPanel = comparison.locator("#bagCatalogCompareFilterPanel");

@@ -13,7 +13,16 @@ export function renderManufacturerBrandMark({
 } = {}) {
   const definition = manufacturerBrandDefinition(brands, brand);
   const name = String(definition?.name || brand || "").trim();
-  const classes = ["manufacturer-brand-mark", className].filter(Boolean).join(" ");
+  const brandClass = String(definition?.id || "")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const classes = [
+    "manufacturer-brand-mark",
+    brandClass ? `manufacturer-brand-mark-${brandClass}` : "",
+    className
+  ].filter(Boolean).join(" ");
   const logoUrl = String(definition?.logoUrl || "").trim();
   return logoUrl
     ? `<span class="${escapeHtml(classes)}"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(name)}" /></span>`
