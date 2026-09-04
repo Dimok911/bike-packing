@@ -76,7 +76,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: manufacturer-catalog-scan-images
-          path: manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
+          path: |
+            manufacturer-catalog-scan-snapshot/assets/manufacturer-catalog
+            manufacturer-catalog-scan-snapshot/manufacturer-catalog-image-download.json
           if-no-files-found: error
           retention-days: 14
       - name: Store checked import artifact

@@ -68,15 +68,61 @@ async function writeImage(item) {
 
 const queue = [...manifest];
 let completed = 0;
+let attempted = 0;
+const failures = [];
 await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
   while (queue.length) {
     const item = queue.shift();
-    await writeImage(item);
-    completed += 1;
-    if (completed % 50 === 0 || completed === manifest.length) {
-      process.stdout.write(`Downloaded ${completed}/${manifest.length} manufacturer catalog images\n`);
+    try {
+      await writeImage(item);
+      completed += 1;
+    } catch (error) {
+      failures.push({
+        output: String(item?.output || ""),
+        url: String(item?.url || ""),
+        error: String(error?.message || error || "image request failed"),
+      });
+    } finally {
+      attempted += 1;
+    }
+    if (attempted % 50 === 0 || attempted === manifest.length) {
+      process.stdout.write(`Processed ${attempted}/${manifest.length} manufacturer catalog images (${completed} downloaded, ${failures.length} unavailable)\n`);
     }
   }
 }));
 
-process.stdout.write(`${JSON.stringify({ images: completed, outputRoot })}\n`);
+const manufacturerCounts = new Map();
+for (const item of manifest) {
+  const manufacturerId = String(item?.output || "").replaceAll("\\", "/").split("/")[2] || "unknown";
+  const counts = manufacturerCounts.get(manufacturerId) || { requested: 0, unavailable: 0 };
+  counts.requested += 1;
+  manufacturerCounts.set(manufacturerId, counts);
+}
+for (const failure of failures) {
+  const manufacturerId = failure.output.replaceAll("\\", "/").split("/")[2] || "unknown";
+  const counts = manufacturerCounts.get(manufacturerId);
+  if (counts) counts.unavailable += 1;
+}
+
+const report = {
+  images: completed,
+  requested: manifest.length,
+  unavailable: failures.length,
+  manufacturers: Object.fromEntries([...manufacturerCounts.entries()].sort(([left], [right]) => left.localeCompare(right))),
+  failures,
+};
+await mkdir(outputRoot, { recursive: true });
+const reportPath = resolve(outputRoot, "manufacturer-catalog-image-download.json");
+await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+
+const unavailableShare = manifest.length ? failures.length / manifest.length : 1;
+const emptyManufacturers = [...manufacturerCounts.entries()]
+  .filter(([, counts]) => counts.requested > 0 && counts.unavailable === counts.requested)
+  .map(([manufacturerId]) => manufacturerId);
+if (!completed || unavailableShare > 0.05 || emptyManufacturers.length) {
+  throw new Error(`Official image snapshot is incomplete beyond the allowed tolerance: ${failures.length}/${manifest.length} unavailable${emptyManufacturers.length ? `; no images for ${emptyManufacturers.join(", ")}` : ""}. See ${reportPath}`);
+}
+if (failures.length) {
+  process.stderr.write(`Warning: ${failures.length}/${manifest.length} official images were temporarily unavailable; details are recorded in ${reportPath}\n`);
+}
+process.stdout.write(`${JSON.stringify({ images: completed, unavailable: failures.length, outputRoot, reportPath })}\n`);

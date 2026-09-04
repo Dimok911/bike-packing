@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import "./manufacturer-catalog-review.test.js";
 import {
   buildManufacturerCatalogScanReport,
@@ -191,6 +193,12 @@ test("CRITICAL catalog scan: all official image URLs are reviewable and the Acti
   });
   const result = compareManufacturerCatalogSnapshots([before], [after]);
   assert.deepEqual(result.changes[0].fields.map(({ field }) => field), ["sourceImageUrls"]);
+
+  const downloader = readFileSync(resolve(import.meta.dirname, "../..", "scripts/download-manufacturer-catalog-images.mjs"), "utf8");
+  const workflow = readFileSync(resolve(import.meta.dirname, "../..", ".github/workflows/manufacturer-catalog-scan.yml"), "utf8");
+  assert.match(downloader, /unavailableShare > 0\.05/);
+  assert.match(downloader, /counts\.unavailable === counts\.requested/);
+  assert.match(workflow, /manufacturer-catalog-scan-snapshot\/manufacturer-catalog-image-download\.json/);
 });
 
 test("CRITICAL catalog scan: Tailfin adapter discovers only official bag product pages", () => {
