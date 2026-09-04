@@ -27,6 +27,10 @@ import {
   buildMissGrapeCatalogEntry,
   missGrapeCatalogTargets,
 } from "./manufacturer-catalog/miss-grape-adapter.mjs";
+import {
+  buildCycliteCatalogEntry,
+  cycliteCatalogTargets,
+} from "./manufacturer-catalog/cyclite-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -583,6 +587,9 @@ const revelateTargets = manufacturerRequested("revelate-designs")
 const missGrapeTargets = manufacturerRequested("miss-grape")
   ? missGrapeCatalogTargets(await readFile(join(sourceDir, "miss-grape-products.json"), "utf8"))
   : [];
+const cycliteTargets = manufacturerRequested("cyclite")
+  ? cycliteCatalogTargets(await readFile(join(sourceDir, "cyclite-bikepacking.html"), "utf8"))
+  : [];
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -625,6 +632,13 @@ for (const target of missGrapeTargets) {
   entries.push(buildMissGrapeCatalogEntry({
     product: target,
     html: await readFile(join(pagesDir, "miss-grape", `${target.handle}.html`), "utf8"),
+    sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of cycliteTargets) {
+  entries.push(buildCycliteCatalogEntry({
+    html: await readFile(join(pagesDir, "cyclite", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
   }));

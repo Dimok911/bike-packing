@@ -12,7 +12,8 @@ const LOADERS = new Map([
   ["Tailfin", () => import("./manufacturer-catalog-runtime/tailfin.generated.js")],
   ["Arkel", () => import("./manufacturer-catalog-runtime/arkel.generated.js")],
   ["Revelate Designs", () => import("./manufacturer-catalog-runtime/revelate-designs.generated.js")],
-  ["Miss Grape", () => import("./manufacturer-catalog-runtime/miss-grape.generated.js")]
+  ["Miss Grape", () => import("./manufacturer-catalog-runtime/miss-grape.generated.js")],
+  ["CYCLITE", () => import("./manufacturer-catalog-runtime/cyclite.generated.js")]
 ]);
 const loadedByBrand = new Map();
 const loadingByBrand = new Map();

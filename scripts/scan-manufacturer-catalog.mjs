@@ -18,6 +18,10 @@ import {
   missGrapeProductPageIsValid,
 } from "./manufacturer-catalog/miss-grape-adapter.mjs";
 import {
+  cycliteCatalogTargets,
+  cycliteProductPageIsValid,
+} from "./manufacturer-catalog/cyclite-adapter.mjs";
+import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
   manufacturerIdForEntry,
@@ -131,6 +135,9 @@ async function downloadManufacturer(source) {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
         missGrapeCatalogTargets(parsed).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "cyclite-collection") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        cycliteCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -140,7 +147,7 @@ async function downloadManufacturer(source) {
       }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart"
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart" || source.adapter === "cyclite-collection"
         ? ""
         : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
@@ -153,7 +160,8 @@ async function downloadManufacturer(source) {
       const pageUrl = product.url || `${source.productBaseUrl}${encodeURIComponent(handle)}`;
       const validate = source.adapter === "revelate-product-chart"
         ? revelateProductPageIsValid
-        : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid : null;
+        : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid
+          : source.adapter === "cyclite-collection" ? cycliteProductPageIsValid : null;
       await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));

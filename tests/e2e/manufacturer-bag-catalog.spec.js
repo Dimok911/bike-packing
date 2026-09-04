@@ -28,10 +28,11 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   await expect(page.locator("#bagCatalogDialog")).toBeVisible();
   const brandPicker = page.locator("#bagCatalogBrands");
-  await expect(brandPicker.locator('button[data-bag-catalog-brand]:not([data-bag-catalog-brand="all"])')).toHaveCount(7);
-  await expect(brandPicker.locator(".manufacturer-brand-choice.is-planned")).toHaveCount(4);
+  await expect(brandPicker.locator('button[data-bag-catalog-brand]:not([data-bag-catalog-brand="all"])')).toHaveCount(8);
+  await expect(brandPicker.locator(".manufacturer-brand-choice.is-planned")).toHaveCount(3);
   await expect(brandPicker.locator('img[alt="Apidura"]')).toBeVisible();
   await expect(brandPicker.locator('img[alt="Miss Grape"]')).toBeVisible();
+  await expect(brandPicker.locator('img[alt="CYCLITE"]')).toBeVisible();
   await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
   await expect(page.locator("#bagCatalogPath")).toHaveText("Apidura");
   await expect(page.locator('[data-bag-catalog-family="bikepacking"]')).toBeVisible();
@@ -50,13 +51,14 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   const comparison = page.locator("#bagCatalogCompareDialog");
   await expect(comparison).toBeVisible();
-  await expect(comparison.locator("tbody tr")).toHaveCount(43);
+  await expect(comparison.locator("tbody tr")).toHaveCount(46);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Apidura"]')).toHaveCount(12);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="ORTLIEB"]')).toHaveCount(8);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Arkel"]')).toHaveCount(5);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Restrap"]')).toHaveCount(7);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Revelate Designs"]')).toHaveCount(7);
   await expect(comparison.locator('.manufacturer-comparison-brand img[alt="Miss Grape"]')).toHaveCount(4);
+  await expect(comparison.locator('.manufacturer-comparison-brand img[alt="CYCLITE"]')).toHaveCount(3);
   await expect(comparison.locator('.manufacturer-comparison-brand:has(img[alt="Revelate Designs"])').first())
     .toHaveCSS("background-color", "rgb(39, 49, 45)");
 
@@ -65,7 +67,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(filterPanel).toBeVisible();
   await filterPanel.locator('label:has(img[alt="Arkel"]) input[type="checkbox"]').uncheck();
   await filterPanel.locator("#bagCatalogCompareFilterApplyBtn").click();
-  await expect(comparison.locator("tbody tr")).toHaveCount(38);
+  await expect(comparison.locator("tbody tr")).toHaveCount(41);
   await expect(comparison.locator('tbody .manufacturer-comparison-brand img[alt="Arkel"]')).toHaveCount(0);
 
   await comparison.locator('[data-bag-comparison-detail="ortlieb-seat-pack-11l"]').click();
@@ -102,7 +104,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
       root.querySelector("[data-bag-catalog-load-more]").click();
     }
   });
-  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(43);
+  await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(46);
   const seatPackCard = page.locator('.manufacturer-catalog-product:has([data-bag-catalog-select="ortlieb-seat-pack-16-5l"])');
   await expect.poll(() => seatPackCard.locator(".manufacturer-catalog-photo-gallery .photo-gallery-dot").count()).toBeGreaterThan(1);
   await seatPackCard.locator("[data-photo-open]").first().click();
@@ -123,7 +125,7 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 test(MOBILE_WEBKIT_CATALOG_TEST, async ({ page }) => {
   const catalogChunks = [];
   page.on("request", (request) => {
-    if (/\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs|miss-grape)\.generated-[^/]+\.js(?:\?|$)/.test(request.url())) {
+    if (/\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs|miss-grape|cyclite)\.generated-[^/]+\.js(?:\?|$)/.test(request.url())) {
       catalogChunks.push(request.url());
     }
   });

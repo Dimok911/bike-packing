@@ -22,11 +22,12 @@ function withDerivedImageAssets(entry, manufacturerId) {
   };
   if (Array.isArray(normalizedEntry.imageAssetPaths) && normalizedEntry.imageAssetPaths.length) return normalizedEntry;
   const sourceUrl = new URL(String(normalizedEntry.sourceUrl || ""));
+  const sourceHandle = sourceUrl.pathname.split("/").filter(Boolean).at(-1)?.toLowerCase() || "";
   const entryHandle = String(normalizedEntry.sourceProductId || normalizedEntry.id || "")
     .replace(new RegExp(`^${manufacturerId}-`), "")
     .trim()
     .toLowerCase();
-  const handle = entryHandle || sourceUrl.pathname.split("/").filter(Boolean).at(-1)?.toLowerCase() || "";
+  const handle = sourceHandle || entryHandle;
   const imageUrls = Array.isArray(normalizedEntry.sourceImageUrls)
     ? normalizedEntry.sourceImageUrls
     : [normalizedEntry.sourceImageUrl].filter(Boolean);

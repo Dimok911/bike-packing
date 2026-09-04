@@ -69,6 +69,8 @@ jobs:
             manufacturer-catalog-scan-work/.catalog-pages/restrap
             manufacturer-catalog-scan-work/revelate-product-chart.html
             manufacturer-catalog-scan-work/.catalog-pages/revelate-designs
+            manufacturer-catalog-scan-work/cyclite-bikepacking.html
+            manufacturer-catalog-scan-work/.catalog-pages/cyclite
           if-no-files-found: error
           retention-days: 90
       - name: Store short-lived official image snapshot

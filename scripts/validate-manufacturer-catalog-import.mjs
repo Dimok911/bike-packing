@@ -11,6 +11,7 @@ const MANUFACTURER_HOSTS = Object.freeze({
   restrap: ["restrap.com"],
   "revelate-designs": ["revelatedesigns.com"],
   "miss-grape": ["missgrape.net"],
+  cyclite: ["cyclite.cc"],
 });
 const CHANGE_TYPES = new Set(["added", "changed", "missing"]);
 

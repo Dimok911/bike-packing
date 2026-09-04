@@ -1,0 +1,1681 @@
+{
+  "schemaVersion": 1,
+  "id": "catalog-scan-20260904125654",
+  "scannedAt": "2026-09-04T12:56:54.424Z",
+  "status": "complete",
+  "manufacturers": [
+    {
+      "id": "cyclite",
+      "name": "CYCLITE",
+      "status": "complete",
+      "sourceCount": 1,
+      "productCount": 17,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "manufacturers": 1,
+    "products": 387,
+    "unchanged": 370,
+    "added": 17,
+    "changed": 0,
+    "missing": 0,
+    "errors": 0
+  },
+  "changes": [
+    {
+      "id": "cyclite:added:cyclite-food-pouch-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-food-pouch-02",
+      "productName": "FOOD POUCH / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/food-pouch-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-food-pouch-02",
+        "name": "FOOD POUCH / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/food-pouch-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 0.8,
+        "volumeOptions": [
+          0.8
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 35,
+        "weightOptions": [
+          35
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "B-2026-031-01-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, mesh, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar straps",
+        "mountingOptions": [
+          "Handlebar straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-031-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 0.8,
+            "weight": 35,
+            "mounting": "Handlebar straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-031-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 0.8,
+            "weight": 35,
+            "mounting": "Handlebar straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FOOD POUCH / 02 is a CYCLITE handlebar bag in 0.8 L. Technical data is normalized from the official product page.",
+          "ru": "Рулевая сумка CYCLITE объёмом 0.8 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe FOOD POUCH / 02 is a minimalist, all-purpose solution for quick access and transport right next to the stem. Whether it's snacks, water bottles, or clothing like gloves, arm warmers, etc., this small bag can hold everything you want to access quickly and easily while riding. The FOOD POUCH / 02 is also excellent for collecting trash. As is typical of CYCLITE, the bag's streamlined and well-designed construction sets new standards in terms of (ultra-light) weight, functionality, and stability. The bag can be attached to either side of the stem, allowing for the combination of two FOOD POUCHES for even more storage space. The FOOD POUCH / 02 is open at the top for easy and quick access, but its height prevents the contents from falling out. A mesh lining in the bottom keeps the bag clean and allows water to drain away. Due to its light weight (35 g) and great functionality, FOOD POUCH / 02 belongs in the basic equipment of every bikepacker.\nThe FOOD POUCH / 02 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDie FOOD POUCH / 02 wird links und/oder rechts am Vorbau und Lenker geklettet. Dazu wird eine minimale Vorbaulänge von 60 mm benötigt. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, mesh, reflective film \nTechnical Specifications \nVolume: 0.8 l\nHeight: 15 cm\nDiameter: 8 cm\nWeight: 35 g \nScope of Delivery \nBag\nRestraint straps\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Light-Grey_Studio_01.jpg?v=1761825503&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Light-Grey_Studio_01.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Black_Studio_01.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Light-Grey_Studio_02.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Light-Grey_Studio_03.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Light-Grey_Studio_04.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FOOD-POUCH-02_Black_Studio_02.jpg?v=1761825503&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-031-01-600_FOOD-POUCH-02_Pink-Rush_Studio_2.jpg?v=1783407502&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-031-01-600_FOOD-POUCH-02_Pink-Rush_Studio_3.jpg?v=1783407501&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-fork-bag-01-pair",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-fork-bag-01-pair",
+      "productName": "FORK BAG / 01 6.2 L Pair (2 × 3.1 L)",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/fork-bag-01",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-fork-bag-01-pair",
+        "name": "FORK BAG / 01 6.2 L Pair (2 × 3.1 L)",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/fork-bag-01",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "fork",
+        "volume": 3.1,
+        "volumeOptions": [
+          3.1
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": 3.1,
+        "volumePerBagOptions": [
+          3.1
+        ],
+        "volumeTotal": null,
+        "totalVolume": 6.2,
+        "totalVolumeOptions": [
+          6.2
+        ],
+        "specificationBasis": "per-bag",
+        "setQuantity": 2,
+        "volumeSetBasis": null,
+        "weight": 224,
+        "weightOptions": [
+          224
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": 224,
+        "weightPerBagOptions": [
+          224
+        ],
+        "weightTotal": null,
+        "totalWeight": 448,
+        "totalWeightOptions": [
+          448
+        ],
+        "dimensions": {
+          "lengthCm": 19,
+          "widthCm": 8,
+          "heightCm": 30
+        },
+        "sku": "B-2026-034-03-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP, Elastic PA Mesh, weatherproof zippers, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Fork mount / straps",
+        "mountingOptions": [
+          "Fork mount / straps"
+        ],
+        "soldAsSet": true,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-034-03-101",
+            "title": "pair · light grey / set",
+            "color": "light grey",
+            "volume": 3.1,
+            "weight": 448,
+            "mounting": "Fork mount / straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-034-03-900",
+            "title": "pair · black / set",
+            "color": "black",
+            "volume": 3.1,
+            "weight": 448,
+            "mounting": "Fork mount / straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FORK BAG / 01 is a CYCLITE fork bag in 3.1 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на вилку CYCLITE объёмом 3.1 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nFORK BAG / 01 is a fork bag for bikepackers who need additional volume outside the frame without compromising aerodynamics. Its signature is the flat, wedge-shaped design, keeping it sleek and aero. Combined with a low center of gravity, handling remains balanced and natural. A stable internal structure prevents bulging, even when using the full 3.1‑liter capacity. A weatherproof zipper gives access to the main compartment, plus a mesh quick-access pocket for short stops on the go. The FORK BAG / 01 mounts via a quick, uncomplicated and reliable locking mechanism – either directly to existing fork mounts (threaded bosses) or, on rigid and suspension forks without mounts, via thru axles on the bike. For thru-axle mounting, an appropriate adapter solution such as the Old Man Mountain Axle Pack is required. Both mounting options are twist- and slip-resistant. FORK BAG / 01 can be purchased as a single bag for the right or left side, or as a set for both sides.\nThanks to our proprietary LiteGrid-RN200T3 material, FORK BAG / 01 is ultralight, robust and weatherproof. We combine two nylon yarn strengths using a special weaving technique into a ripstop fabric that is then coated on both sides and high-frequency welded. The result is the perfect balance of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nThe FORK BAG / 01 fits all forks with at least two threaded bushings per fork leg, spaced at the standard 64 mm interval. Rigid and suspension forks without threaded bushings require an additional compatible mount, such as the Axle Pack from Old Man Mountain.\nFor optimal riding stability, we recommend using two FORK BAGS with balanced weight distribution. The maximum load per bag is 3 kg. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP, Elastic PA Mesh, weatherproof zippers, reflective film \nTechnical Specifications \nVolume: 3.1 l\nSize: 19 x 8 x 30 cm (L x W x H)\nWeight: 224 g \nScope of Delivery \nDelivery includes individual items \n1 pocket (left or right)\n2x fork adapter, 2x screw M5 x 12\nInstruction booklet\nScope of delivery set \n2 pockets (left and right)\n4x fork adapters, 4x M5 x 12 screws\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_04.jpg?v=1761737650&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_04.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_01.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_01.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_02.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_03.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_03.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_02.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_04.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_05.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_06.jpg?v=1761737650&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-fork-bag-01-single",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-fork-bag-01-single",
+      "productName": "FORK BAG / 01 3.1 L",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/fork-bag-01",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-fork-bag-01-single",
+        "name": "FORK BAG / 01 3.1 L",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/fork-bag-01",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "fork",
+        "volume": 3.1,
+        "volumeOptions": [
+          3.1
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 224,
+        "weightOptions": [
+          224
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 19,
+          "widthCm": 8,
+          "heightCm": 30
+        },
+        "sku": "B-2026-032-03-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP, Elastic PA Mesh, weatherproof zippers, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Fork mount / straps",
+        "mountingOptions": [
+          "Fork mount / straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-032-03-101",
+            "title": "unit · light grey / left",
+            "color": "light grey",
+            "volume": 3.1,
+            "weight": 224,
+            "mounting": "Fork mount / straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-033-03-101",
+            "title": "unit · light grey / right",
+            "color": "light grey",
+            "volume": 3.1,
+            "weight": 224,
+            "mounting": "Fork mount / straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-032-03-900",
+            "title": "unit · black / left",
+            "color": "black",
+            "volume": 3.1,
+            "weight": 224,
+            "mounting": "Fork mount / straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-033-03-900",
+            "title": "unit · black / right",
+            "color": "black",
+            "volume": 3.1,
+            "weight": 224,
+            "mounting": "Fork mount / straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FORK BAG / 01 is a CYCLITE fork bag in 3.1 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на вилку CYCLITE объёмом 3.1 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nFORK BAG / 01 is a fork bag for bikepackers who need additional volume outside the frame without compromising aerodynamics. Its signature is the flat, wedge-shaped design, keeping it sleek and aero. Combined with a low center of gravity, handling remains balanced and natural. A stable internal structure prevents bulging, even when using the full 3.1‑liter capacity. A weatherproof zipper gives access to the main compartment, plus a mesh quick-access pocket for short stops on the go. The FORK BAG / 01 mounts via a quick, uncomplicated and reliable locking mechanism – either directly to existing fork mounts (threaded bosses) or, on rigid and suspension forks without mounts, via thru axles on the bike. For thru-axle mounting, an appropriate adapter solution such as the Old Man Mountain Axle Pack is required. Both mounting options are twist- and slip-resistant. FORK BAG / 01 can be purchased as a single bag for the right or left side, or as a set for both sides.\nThanks to our proprietary LiteGrid-RN200T3 material, FORK BAG / 01 is ultralight, robust and weatherproof. We combine two nylon yarn strengths using a special weaving technique into a ripstop fabric that is then coated on both sides and high-frequency welded. The result is the perfect balance of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nThe FORK BAG / 01 fits all forks with at least two threaded bushings per fork leg, spaced at the standard 64 mm interval. Rigid and suspension forks without threaded bushings require an additional compatible mount, such as the Axle Pack from Old Man Mountain.\nFor optimal riding stability, we recommend using two FORK BAGS with balanced weight distribution. The maximum load per bag is 3 kg. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP, Elastic PA Mesh, weatherproof zippers, reflective film \nTechnical Specifications \nVolume: 3.1 l\nSize: 19 x 8 x 30 cm (L x W x H)\nWeight: 224 g \nScope of Delivery \nDelivery includes individual items \n1 pocket (left or right)\n2x fork adapter, 2x screw M5 x 12\nInstruction booklet\nScope of delivery set \n2 pockets (left and right)\n4x fork adapters, 4x M5 x 12 screws\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_04.jpg?v=1761737650&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_04.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_01.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_01.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_02.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Light-Grey_Studio_03.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_03.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_02.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_04.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_05.jpg?v=1761737650&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FORK-BAG-01_Black_Studio_06.jpg?v=1761737650&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-frame-bag-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-frame-bag-02",
+      "productName": "FRAME BAG / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/frame-bag-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-frame-bag-02",
+        "name": "FRAME BAG / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/frame-bag-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 2.8,
+        "volumeOptions": [
+          2.8
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 120,
+        "weightOptions": [
+          120,
+          170
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 38,
+          "widthCm": 6,
+          "heightCm": 13
+        },
+        "sku": "B-2026-021-03-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps",
+        "mountingOptions": [
+          "Frame straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-021-03-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 2.8,
+            "weight": 120,
+            "mounting": "Frame straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-021-03-900",
+            "title": "black",
+            "color": "black",
+            "volume": 2.8,
+            "weight": 120,
+            "mounting": "Frame straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FRAME BAG / 02 is a CYCLITE frame bag in 2.8 L. Technical data is normalized from the official product page.",
+          "ru": "Нарамная сумка CYCLITE объёмом 2.8 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe FRAME BAG / 02 is our versatile, always-with-you bag that surprisingly holds a lot. It features two weatherproof zippers: one on the left provides access to a flat compartment, ideal for documents or money, while the other on the right leads to the spacious main compartment. Inside, you'll find two mesh pockets for small items and a key hook. A covered opening on the front allows you to route cables for powering a GPS, light, or mobile phone, or for a hydration tube. The FRAME BAG / 02 is best suited for carrying heavier gear that you'll need to access easily during the day (tools, power bank, lock, hydration bladder).\nThe FRAME BAG / 02 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDie FRAME BAG / 02 benötigt einen gewissen Platz unterhalb des Oberrohrs, der bei einigen Mountainbikes aufgrund der Dämpferanordnung nicht vorhanden ist. Durch die Form der Tasche können Trinkflaschen im Flaschenhalter in der Regel verwendet werden. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film \nTechnical Specifications \nVolume: 2.8 l\nSize: 38 x 6 x 13 cm (L x W x H)\nWeight: 120 g (without reinforcement), 170 g (complete) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Light_grey_Studio_01.jpg?v=1765864945&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Light_grey_Studio_01.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Black_Studio_01.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Light_grey_Studio_02.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Light_grey_Studio_03.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Black_Studio_02.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-03_Black_Studio_03.jpg?v=1765864945&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-021-03-600_FRAME-BAG-02_Pink-Rush_Studio_2.jpg?v=1783408245&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-021-03-600_FRAME-BAG-02_Pink-Rush_Studio_3.jpg?v=1783408246&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-frame-bag-large-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-frame-bag-large-02",
+      "productName": "FRAME BAG LARGE / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/frame-bag-large-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-frame-bag-large-02",
+        "name": "FRAME BAG LARGE / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/frame-bag-large-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 3.6,
+        "volumeOptions": [
+          3.6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 214,
+        "weightOptions": [
+          214,
+          282
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 44,
+          "widthCm": 6,
+          "heightCm": 22
+        },
+        "sku": "B-2026-023-04-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps",
+        "mountingOptions": [
+          "Frame straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-023-04-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 3.6,
+            "weight": 214,
+            "mounting": "Frame straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-023-04-900",
+            "title": "black",
+            "color": "black",
+            "volume": 3.6,
+            "weight": 214,
+            "mounting": "Frame straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FRAME BAG LARGE / 02 is a CYCLITE frame bag in 3.6 L. Technical data is normalized from the official product page.",
+          "ru": "Нарамная сумка CYCLITE объёмом 3.6 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe FRAME BAG LARGE / 02 is the larger alternative to the FRAME BAG / 02. It offers 3.6 liters of storage capacity, providing more space for centrally and aerodynamically positioned gear (such as tools, a hydration bladder, power bank, and lock) that can be accessed throughout the day. The design ensures that even on smaller frame sizes, there's still room for a water bottle in the frame triangle alongside the FRAME BAG LARGE / 02. The bag is divided into two large compartments, top and bottom, and features an additional side pocket for credit cards, ID, or cash, two internal mesh pockets for small items, and a key hook. A covered opening on the front of the bag allows for the routing of power cables or a hydration tube. Despite its large volume and numerous features, the FRAME BAG LARGE / 02 is extremely lightweight, making it perfect for extended adventures or ultra-distance races.\nThe FRAME BAG LARGE / 02 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDie FRAME BAG LARGE / 02 setzt einen gewissen Freiraum unterhalb des Oberrohrs voraus, der bei sehr kleinen Rahmen eventuell nicht gegeben ist. Der Abstand zwischen Steuerrohr und Sattelrohr muss zudem mindestens 44 cm betragen. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film \nTechnical Specifications \nVolume: 3.6 l\nSize: 44 x 6 x 22 cm (L x W x H)\nWeight: 214 g (without reinforcement), 282 g (complete) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_01.jpg?v=1761737018&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_01.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Black_Studo_01.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_02.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_03.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_04.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Light-Grey_Studio_05.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Black_Studo_02.jpg?v=1761737018&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-LARGE-02_Black_Studo_03.jpg?v=1761737018&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-frame-bag-small-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-frame-bag-small-02",
+      "productName": "FRAME BAG SMALL / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/frame-bag-small-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-frame-bag-small-02",
+        "name": "FRAME BAG SMALL / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/frame-bag-small-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 1.4,
+        "volumeOptions": [
+          1.4
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 84,
+        "weightOptions": [
+          84,
+          114
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 23,
+          "widthCm": 6,
+          "heightCm": 11
+        },
+        "sku": "B-2026-020-01-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps",
+        "mountingOptions": [
+          "Frame straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-020-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 1.4,
+            "weight": 84,
+            "mounting": "Frame straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-020-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 1.4,
+            "weight": 84,
+            "mounting": "Frame straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FRAME BAG SMALL / 02 is a CYCLITE frame bag in 1.4 L. Technical data is normalized from the official product page.",
+          "ru": "Нарамная сумка CYCLITE объёмом 1.4 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe FRAME BAG SMALL / 02 is our slimmest frame bag with a 1.4-liter capacity, suitable for almost any frame: as the main bag on smaller frames for longer tours or as a compact bag on larger bikes. Thanks to its slim design, it fits even on XS frames in the front triangle – as well as on full-suspension mountain bikes with shocks. It can also be used as a compact storage space between two large bottles. Like all FRAME BAG models, the Small version has two separate compartments: The larger zippered compartment on the right offers space for tools, energy bars, a light rain jacket, and a power bank. An integrated elastic inner pocket and a key hook keep things organized and secure. The narrow compartment on the left is ideal for maps, ID, or cash. The covered opening on the front allows for the routing of a charging cable for a mobile phone, GPS, and lights.\nThe FRAME BAG SMALL / 02 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDurch ihre kompakte Form passt die FRAME BAG SMALL / 02 auch in die meisten kleinen Rahmen und an viele Mountainbikes mit Dämpfer. In der Regel können auch Trinkflaschen im Flaschenhalter verwendet werden. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, weatherproof zippers, reflective film \nTechnical Specifications \nVolume: 1.4 l\nSize: 23 x 6 x 11 cm (L x W x H)\nWeight: 84 g (without reinforcement), 114 g (complete) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Light-Grey_Studio_01.jpg?v=1761837246&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Light-Grey_Studio_01.jpg?v=1761837246&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Black_Studio_01.jpg?v=1761837246&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Light-Grey_Studio_02.jpg?v=1761837246&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Light-Grey_Studio_03.jpg?v=1761837246&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Black_Studio_02.jpg?v=1761837246&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-SMALL-02_Black_Studio_03.jpg?v=1761837246&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-frame-bag-xt-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-frame-bag-xt-02",
+      "productName": "FRAME BAG XT / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/frame-bag-xt-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-frame-bag-xt-02",
+        "name": "FRAME BAG XT / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/frame-bag-xt-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 3.2,
+        "volumeOptions": [
+          3.2
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 150,
+        "weightOptions": [
+          150,
+          216
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 46,
+          "widthCm": 6,
+          "heightCm": 13
+        },
+        "sku": "B-2026-022-04-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, Weatherproof zippers, Reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps",
+        "mountingOptions": [
+          "Frame straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-022-04-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 3.2,
+            "weight": 150,
+            "mounting": "Frame straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-022-04-900",
+            "title": "black",
+            "color": "black",
+            "volume": 3.2,
+            "weight": 150,
+            "mounting": "Frame straps",
+            "available": false
+          },
+          {
+            "sku": "B-2026-022-04-600",
+            "title": "pink rush",
+            "color": "pink rush",
+            "volume": 3.2,
+            "weight": 150,
+            "mounting": "Frame straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "FRAME BAG XT / 02 is a CYCLITE frame bag in 3.2 L. Technical data is normalized from the official product page.",
+          "ru": "Нарамная сумка CYCLITE объёмом 3.2 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe FRAME BAG XT / 02 is the larger version of the otherwise identical FRAME BAG / 02 and offers even more space for larger frames. This frame bag also features two weatherproof zippers, a flat compartment for documents, money, and other essentials, as well as the spacious main compartment for larger items. Two internal mesh pockets provide additional organization for small items, and a key hook ensures that keys are always within easy reach. The front, covered (cable) opening is also present on this bag. The FRAME BAG XT / 02's 3.2-liter capacity can securely store a variety of gear that needs to be easily accessible while riding, such as tools, a power bank, a lock, or a jacket.\nThe FRAME BAG XT / 02 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We achieve this by combining two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nFRAME BAG XT / 02 setzt eine ausreichende Rahmengröße sowie genügend Freiraum unterhalb des Oberrohrs voraus, der bei manchen Mountainbikes durch die Dämpferanordnung nicht gegeben ist. Durch die Form der Tasche können Trinkflaschen im Flaschenhalter in der Regel verwendet werden. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, HD-PE, Elastic PA Mesh, Weatherproof zippers, Reflective film \nTechnical Specifications \nVolume: 3.2 l\nSize: 46 x 6 x 13 cm (L x W x H)\nWeight: 150 g (without reinforcement), 216 g (complete) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Light-Grey_01_15302eb5-672d-4a84-8e9a-71372852a12b.jpg?v=1761739026&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Light-Grey_01_15302eb5-672d-4a84-8e9a-71372852a12b.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-022-04-600_FRAME-BAG-XT-02_Pink-Rush_Studio_1.jpg?v=1783406888&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Black_Studio_01_82165cac-6a56-4d9d-8807-8e1ef6a9ffd0.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Light-Grey_02_420f6b5e-bb3a-45d6-8367-7a78cc23161d.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Light-Grey_03_841e70a0-8776-4636-8b79-b06b08eb8398.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Light-Grey_04.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FRAME-BAG-XT-02_Black_Studio_02_85ed0a0b-dacd-4938-b93a-2abd51882157.jpg?v=1761739026&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-022-04-600_FRAME-BAG-XT-02_Pink-Rush_Studio_2.jpg?v=1783406888&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-022-04-600_FRAME-BAG-XT-02_Pink-Rush_Studio_3_d4a4737a-ea18-4260-a6b2-f7744b9b5fce.jpg?v=1783423659&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-full-frame-bag-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-full-frame-bag-02",
+      "productName": "FULL FRAME BAG / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/full-frame-bag-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-full-frame-bag-02",
+        "name": "FULL FRAME BAG / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/full-frame-bag-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 0,
+        "weightOptions": [],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "B-2026-024-00-101",
+        "color": "",
+        "material": "LiteGrid-RN200T3, Nylon",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps",
+        "mountingOptions": [
+          "Frame straps"
+        ],
+        "soldAsSet": false,
+        "available": false,
+        "variants": [
+          {
+            "sku": "B-2026-024-00-101",
+            "title": "Manufacturer model",
+            "color": "",
+            "volume": 0,
+            "weight": 0,
+            "mounting": "Frame straps",
+            "available": false
+          }
+        ],
+        "description": {
+          "en": "FULL FRAME BAG / 02 is a CYCLITE frame bag. Technical data is normalized from the official product page.",
+          "ru": "Нарамная сумка CYCLITE. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Beschreibung \nFULL FRAME BAG / 02 Made to fit your frame precisely. Bikepackers and lovers of long adventures know: millimeters matter. Driven by this need – to use every angle to its full potential – we manufacture the FULL FRAME BAG / 02 as an individual piece in Germany, even made to measure. It fills your main triangle to the maximum and is therefore our frame bag with the greatest possible capacity.\nThe frame bag is ideal for long tours or for bikepackers who want to store their gear as centrally as possible on the bike. Your kit is safely stowed in two large main compartments that can also be combined into one. Thoughtful details such as the slim side pocket, the covered cable and hydration hose exit, the waterproof zippers and the reflectors turn this ultralight, robust bag into a travel one-off.\nNote: This bag is produced in highly limited quantities in monthly “drops”. If it is currently unavailable, we recommend joining the waitlist to secure the next drop. \nThanks to our proprietary LiteGrid-RN200T3 material, FULL FRAME BAG / 02 is ultralight, robust and weatherproof. We combine two nylon yarn strengths using a special weaving technique into a ripstop fabric that is then coated on both sides, stitched and taped. The result is the perfect balance of lightness and stability – for weatherproof products that are easy to clean.\nOrdering & delivery process \n1. After your order, we send you a kit to create a frame template, including all required information and a prepaid envelope for returning the completed template to us.\n2. Once we receive your template, we start production. Please expect a 3–4 week lead time.\n3. You receive your custom-made frame bag – and the adventures can begin.\nThe FULL FRAME BAG is custom-made according to your measurements. Therefore, pursuant to Section 312g (2) No. 1 of the German Civil Code (BGB), there is no right of withdrawal. \nKompatibilität \nThe FULL FRAME BAG / 02 is individually adapted and custom-made to the specific frame size and geometry by creating a template in advance. For this reason, the bag is only compatible with the specific frame it was made for.\nDepending on your preference, the bag can be made in a width of 5 cm or 6 cm. We will ask for your preferred width after the order, when the template is created.\nNote: Due to the complex geometry inside the frame triangle, especially around the rear shock, we cannot produce FULL FRAME BAGs for full-suspension MTBs.\nMaterial \nLiteGrid-RN200T3, Nylon \nLieferumfang \nFULL FRAME BAG / 02\nKit for creating a frame template\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_01_c3163d40-f0ae-4e82-bff6-3f0f970916df.jpg?v=1767619578&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_01_c3163d40-f0ae-4e82-bff6-3f0f970916df.jpg?v=1767619578&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Black_Studio_01_e4cc30a9-edcb-40e6-aff0-dd9b49b028e6.jpg?v=1767619578&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_03_b4020015-406f-4e0a-a80c-819c67460c7d.jpg?v=1767619578&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_02_21a1d2d1-b6fc-491e-8fa2-f77d04b8ed55.jpg?v=1767619578&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_05_92f7272a-02f7-4e04-bde0-54922f97f03e.jpg?v=1767619458&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_FULL-FRAME-BAG-02_Light-Grey_Studio_06_ffe83c3f-e46e-4f4e-b6ce-d31e27e72261.jpg?v=1767619460&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-handle-bar-aero-bag-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-handle-bar-aero-bag-02",
+      "productName": "HANDLE BAR AERO BAG / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/handle-bar-aero-bag-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-handle-bar-aero-bag-02",
+        "name": "HANDLE BAR AERO BAG / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/handle-bar-aero-bag-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 4.9,
+        "volumeOptions": [
+          4.9
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 179,
+        "weightOptions": [
+          179,
+          228
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 23,
+          "widthCm": 18,
+          "heightCm": 16
+        },
+        "sku": "B-2026-029-05-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP webbing, HD-PE, elastic PA mesh, weatherproof 2-way zipper, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar straps",
+        "mountingOptions": [
+          "Handlebar straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-029-05-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 4.9,
+            "weight": 179,
+            "mounting": "Handlebar straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-029-05-900",
+            "title": "black",
+            "color": "black",
+            "volume": 4.9,
+            "weight": 179,
+            "mounting": "Handlebar straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "HANDLE BAR AERO BAG / 02 is a CYCLITE handlebar bag in 4.9 L. Technical data is normalized from the official product page.",
+          "ru": "Рулевая сумка CYCLITE объёмом 4.9 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe HANDLE BAR AERO BAG / 02 is a high-capacity handlebar bag whose slim design also enhances aerodynamics. Used alone or in combination with the HANDLE BAR ROLL BAG, it significantly expands storage capacity and provides a good counterweight to the SADDLE BAG. A wraparound, weatherproof zipper allows quick access from both sides. Electronic devices such as a tracker can be attached to the top, while two side mesh pockets accommodate items like trash. An optional elastic loop offers additional quick attachment points. A covered opening on the back allows for the routing of cables or a hydration tube. The HANDLE BAR AERO BAG / 02 is particularly well-suited for storing gear that needs to be readily accessible, such as rain gear or a hydration bladder like the AERO BLADDER / 02.\nThe HANDLE BAR AERO BAG / 02 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nHANDLE BAR AERO BAG / 02 kann optimal unter Aero-Lenkern (Aero Bars) angebracht werden - dies funktioniert als alleinige Fronttasche oder in Kombination mit einer dahinter angebrachten HANDLE BAR ROLL BAG. Die HANDLE BAR AERO BAG / 02 lässt sich auch ohne Aero-Lenker nutzen und wird dabei direkt unter / am Lenker stabil befestigt. Bei der Montage an Standardlenkern wird die Tasche für einen stabilen Halt zur Gabelkrone hin verspannt oder liegt am Steuerrohr an. Eine Nutzung mit Carbon-Lenkern und / oder Carbon-Aufliegern ist problemlos möglich. Der Abstand zwischen dem Lenker bzw. den Aero Bars und dem Reifen sollte bei Rennrädern mindestens 20cm betragen. Im Gelände (Gravel- und Mountainbikes) sollten es wegen Schmutz und Schwingungen mindestens 22cm sein. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP webbing, HD-PE, elastic PA mesh, weatherproof 2-way zipper, reflective film \nTechnical Specifications \nVolume: 4.9 l\nSize: 23 x 18 x 16 cm (L x W x H)\nWeight: 179 g (without stiffener), 228 g (complete) \nScope of Delivery \nBag\n2 pcs. 10 mm short fixing straps\n2 pcs. 10 mm long fixing straps\nElastic fixation loop\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Light-Grey_Studio_01.jpg?v=1761824211&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Light-Grey_Studio_01.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Black_Studio_01.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Light-Grey_Studio_02.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Light-Grey_Studio_03.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Black_Studio_02.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Black_Studio_03.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-AERO-BAG-02_Black_Studio_04.jpg?v=1761824211&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-029-05-600_HANDLE-BAR-AERO-BAG-02_Pink-Rush_Studio_2.jpg?v=1783408075&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-029-05-600_HANDLE-BAR-AERO-BAG-02_Pink-Rush_Studio_3_26041cb3-6aa5-4f7f-bd01-75b0e5a0649a.jpg?v=1783423725&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-handle-bar-bag-nano-01",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-handle-bar-bag-nano-01",
+      "productName": "HANDLE BAR BAG NANO / 01",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/handle-bar-bag-nano-01",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-handle-bar-bag-nano-01",
+        "name": "HANDLE BAR BAG NANO / 01",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/handle-bar-bag-nano-01",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 1.3,
+        "volumeOptions": [
+          1.3
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 98,
+        "weightOptions": [
+          98
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 19.5,
+          "widthCm": 10,
+          "heightCm": 9.5
+        },
+        "sku": "B-2026-028-01-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, HD-PE, TPU, POM, weatherproof zipper,\nReflective film, PA12, Hypalon, neodymium magnet",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar straps",
+        "mountingOptions": [
+          "Handlebar straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-028-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 1.3,
+            "weight": 98,
+            "mounting": "Handlebar straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-028-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 1.3,
+            "weight": 98,
+            "mounting": "Handlebar straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "HANDLE BAR BAG NANO / 01 is a CYCLITE handlebar bag in 1.3 L. Technical data is normalized from the official product page.",
+          "ru": "Рулевая сумка CYCLITE объёмом 1.3 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe HANDLE BAR BAG NANO / 01 is the ideal handlebar bag for anyone needing extra storage without compromising their bike's aerodynamics. It offers ample space for a rain jacket, vest, extra food, or small tools. Its large, wraparound zipper allows for quick and easy access to the contents. Thanks to the innovative magnetic closure, the HANDLE BAR BAG NANO / 01 attaches effortlessly and securely to the handlebars and detaches just as quickly. It's very lightweight and stays firmly in place, even on demanding rides. Whether for gravel and road races or short one- or two-day trips, the HANDLE BAR BAG NANO / 01 is the perfect choice. With its minimalist, sleek design, it complements any bike perfectly, combining functionality with style.\nThe HANDLE BAR BAG NANO / 01 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nHANDLE BAR BAG NANO / 01 lässt sich unter kompatiblen Aero-Cockpits oder Computer-Mounts mit GoPro-Aufnahme schrauben. Mit dem separat erhältlichen NANO HANDLE BAR MOUNT kann sie an allen Rundlenkern mit 31,8 mm Durchmesser befestigt werden.\nBei mehr als 300 Gramm Beladung, beiliegenden Sicherungsklett anbringen. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, HD-PE, TPU, POM, weatherproof zipper,\nReflective film, PA12, Hypalon, neodymium magnet \nTechnical Specifications \nVolume: 1.3 l\nSize: 19,5 x 10 x 9,5 cm (L x W x D)\nWeight: 98 g \nScope of Delivery \nBag\nNANO UNIVERSAL MOUNT\nNANO COMPUTER MOUNT ADAPTER\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761825334&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761825334&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Black_Studio_01.jpg?v=1761825334&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Light-Grey_Studio_02.jpg?v=1761825334&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Light-Grey_Studio_03.jpg?v=1761825334&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Black_Studio_02.jpg?v=1761825334&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-BAG-NANO-01_Black_Studio_03.jpg?v=1761825334&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-handle-bar-roll-bag-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-handle-bar-roll-bag-02",
+      "productName": "HANDLE BAR ROLL BAG / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/handle-bar-roll-bag-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-handle-bar-roll-bag-02",
+        "name": "HANDLE BAR ROLL BAG / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/handle-bar-roll-bag-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 12.6,
+        "volumeOptions": [
+          12.6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 284,
+        "weightOptions": [
+          284
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "B-2026-030-13-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP webbing, HD-PE, EVA, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar straps",
+        "mountingOptions": [
+          "Handlebar straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-030-13-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 12.6,
+            "weight": 284,
+            "mounting": "Handlebar straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-030-13-900",
+            "title": "black",
+            "color": "black",
+            "volume": 12.6,
+            "weight": 284,
+            "mounting": "Handlebar straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "HANDLE BAR ROLL BAG / 02 is a CYCLITE handlebar bag in 12.6 L. Technical data is normalized from the official product page.",
+          "ru": "Рулевая сумка CYCLITE объёмом 12.6 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe HANDLE BAR ROLL BAG / 02 is the ultralight option for attaching a lot of gear to your handlebars. Used alone or in combination with the HANDLE BAR AERO BAG, it significantly expands storage space and provides a good counterweight to the SADDLE BAG. The roll-top closure on both sides makes packing easy, and the included compression straps allow you to optionally tighten the ends against each other to ensure the brake levers aren't obstructed on drop bars. The integrated compression valve helps to pack the bag compactly. Additional gear can be secured under elastic straps on the front. Optionally, the included spacer foam can be attached to the bag to improve cable routing for external shift and brake cables. The HANDLE BAR ROLL BAG / 02 is particularly suitable for storing items you don't need immediate access to while riding, such as a tent, sleeping mat, or warm clothing.\nThe HANDLE BAR ROLL BAG / 02 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect combination of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nHANDLE BAR ROLL BAG / 02 kann nur so breit genutzt werden, dass sie bei Drop Bar Lenkern zwischen die Griffe passt, ohne das Betätigen der Bremsen zu beeinträchtigen. Außerdem muss der Abstand zwischen (Ober-)Lenker und Reifen mindestens 21 cm betragen. Eine Nutzung mit Carbon Lenkern ist problemlos möglich. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, POM, PP webbing, HD-PE, EVA, reflective film \nTechnical Specifications \nVolume: 12.6 l\nLength: 33 – 55 cm\nDiameter: 17 cm\nWeight: 284 g \nScope of Delivery \nBag\n2 pcs. 15 mm compression straps\n2 pcs. 10 mm short fixing straps\n2 pcs. 10 mm long fixing straps\nSpacer foam with hook and loop patch\nFrame protection film",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Light-Grey_Studio_01_25f5ae8b-e377-4fc1-b997-a29e042a1a21.jpg?v=1768394306&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Light-Grey_Studio_01_25f5ae8b-e377-4fc1-b997-a29e042a1a21.jpg?v=1768394306&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Black_Studio_01_353af4b6-2928-45fa-b763-c8e3d0699cfb.jpg?v=1768999626&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Light-Grey_Studio_02.jpg?v=1768999626&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Light-Grey_Studio_03.jpg?v=1768394306&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Light-Grey_Studio_04.jpg?v=1768394306&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Black_Studio_01.jpg?v=1768394306&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Black_Studio_03.jpg?v=1768394306&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_HANDLE-BAR-ROLL-BAG-02_Black_Studio_04.jpg?v=1768394306&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-saddle-bag-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-saddle-bag-02",
+      "productName": "SADDLE BAG / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-saddle-bag-02",
+        "name": "SADDLE BAG / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 12.9,
+        "volumeOptions": [
+          12.9
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 356,
+        "weightOptions": [
+          356
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "B-2026-027-13-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, PP webbing, POM, HD-PE, CF strip, AL hook, reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-027-13-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 12.9,
+            "weight": 356,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-027-13-900",
+            "title": "black",
+            "color": "black",
+            "volume": 12.9,
+            "weight": 356,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "SADDLE BAG / 02 is a CYCLITE saddle bag in 12.9 L. Technical data is normalized from the official product page.",
+          "ru": "Подседельная сумка CYCLITE объёмом 12.9 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe SADDLE BAG / 02 is a classic among bikepacking bags. It allows you to carry a significant amount of gear in the rider's slipstream. However, such bags typically tend to swing from side to side, especially when standing and pedaling. Therefore, we paid particular attention to its stable attachment. Using aluminum hooks and a robust strap system, the bag is individually secured to each saddle rail. Thanks to the central carbon fiber strip, this creates a very stable, ultra-lightweight storage compartment. For more rigid packing with the roll-top closure, the bag features a valve for air release. Additional equipment can be secured under elastic straps on the top. Mounting points for a rear light are also included. The SADDLE BAG / 02 is especially suitable for carrying items you don't necessarily need access to while riding, such as a sleeping bag, toiletries, and a change of clothes.\nThe SADDLE BAG / 02 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect combination of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDie SADDLE BAG benötigt einen vertikalen Mindestabstand zwischen Sattelstrebenunterkante und Hinterradreifen von 23 cm (gemessen im zusammengedrückten Zustand bei Fullies). Der Auszug der Sattelstütze bzw. die Sattelstützenlänge bis zum Ansatz der Sitzstreben muss mindestens 15cm betragen. Falls die Sattelklemme über die Sattelstütze herausragt, sollte sie nach vorne gedreht werden, um Reibung mit der Tasche zu vermeiden. Wird eine absenkbare Sattelstütze verwendet, muss die Absenkung ebenfalls berücksichtigt werden, um ein Aufsetzen der Tasche auf dem Hinterreifen und eine mögliche Beschädigung dadurch zu vermeiden. Auch perfekt für die Nutzung mit Aero Sattelstützen geeignet. Maximale Stützenbreite = 6cm. Eine Nutzung mit Carbon Sattelstützen ist ebenfalls problemlos möglich. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, PP webbing, POM, HD-PE, CF strip, AL hook, reflective film \nTechnical Specifications \nVolume: 12.9 l\nSize: 35 – 52 x 18 x 23 cm (L x W x H)\nWeight: 356 g \nScope of Delivery \nBag\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Light-Grey_Studio_01.jpg?v=1761739753&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Light-Grey_Studio_01.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Black_Studio_01.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Light-Grey_Studio_02.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Light-Grey_Studio_03.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Light-Grey_Studio_04.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Black_Studio_02.jpg?v=1761739753&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-02_Black_Studio_03.jpg?v=1761739753&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-saddle-bag-nano-01",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-saddle-bag-nano-01",
+      "productName": "SADDLE BAG NANO / 01",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-nano-01",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-saddle-bag-nano-01",
+        "name": "SADDLE BAG NANO / 01",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-nano-01",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 0.5,
+        "volumeOptions": [
+          0.5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 64,
+        "weightOptions": [
+          64
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 18,
+          "widthCm": 5,
+          "heightCm": 9
+        },
+        "sku": "B-2026-025-01-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, TPU, POM, weatherproof zipper, reflective film, neodymium magnet",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-025-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 0.5,
+            "weight": 64,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-025-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 0.5,
+            "weight": 64,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "SADDLE BAG NANO / 01 is a CYCLITE saddle bag in 0.5 L. Technical data is normalized from the official product page.",
+          "ru": "Подседельная сумка CYCLITE объёмом 0.5 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe SADDLE BAG NANO / 01 is perfect for carrying essential equipment such as a spare inner tube, compact pump, tools, and other important items that should be with you on every ride. Its innovative magnetic closure allows for quick and easy attachment and removal. It's very lightweight and sits aerodynamically behind the seatpost. The wraparound zipper provides quick and easy access to the contents. The SADDLE BAG NANO / 01 also boasts a stylish design that complements any bike – from gravel bikes to aero road bikes. The SADDLE BAG NANO / 01 is the ideal saddle bag for gravel and road races, as well as for all your training rides.\nThe SADDLE BAG NANO / 01 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different weights of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nThe SADDLE BAG NANO / 01 can be mounted on all common saddle posts, including profiled ones, using the NANO UNIVERSAL MOUNT and O-rings. It requires a seatpost extension of at least 18 cm. A rear light or radar unit can be attached using the separately available RADAR MOUNT. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, TPU, POM, weatherproof zipper, reflective film, neodymium magnet \nTechnical Specifications \nVolume: 0.5 l\nSize: 18 x 5 x 9 cm (L x W x D)\nWeight: 64 g \nScope of Delivery \nBag\nNANO UNIVERSAL MOUNT\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761827081&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761827081&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Black_Studio_02.jpg?v=1761827081&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Light-Grey_Studio_03.jpg?v=1761827081&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Black_Studio_01.jpg?v=1761827081&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-NANO-01_Light-Grey_Studio_04.jpg?v=1761826936&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-saddle-bag-small-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-saddle-bag-small-02",
+      "productName": "SADDLE BAG SMALL / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-small-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-saddle-bag-small-02",
+        "name": "SADDLE BAG SMALL / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/saddle-bag-small-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 6,
+        "volumeOptions": [
+          6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 228,
+        "weightOptions": [
+          228
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "B-2026-026-08-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, CF strip, AL hook, reflective film, PP webbing, POM",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-026-08-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 6,
+            "weight": 228,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          },
+          {
+            "sku": "B-2026-026-08-900",
+            "title": "black",
+            "color": "black",
+            "volume": 6,
+            "weight": 228,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "SADDLE BAG SMALL / 02 is a CYCLITE saddle bag in 6 L. Technical data is normalized from the official product page.",
+          "ru": "Подседельная сумка CYCLITE объёмом 6 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nSADDLE BAG SMALL / 02 is a smaller and therefore even lighter version of the SADDLE BAG / 02, offering all the familiar features of the popular larger model. It's the perfect companion for all adventures where you want to travel compactly and lightly – from spontaneous overnighters and shorter bikepacking trips to unsupported multi-day races.\nThe smaller saddlebag with an 6-liter capacity is perfect for storing items for the night, such as a sleeping bag, sleeping mat, or a change of clothes. Practical features include the roll-top closure, elastic straps, reflectors, a light holder, and the proven, stable SR system for vibration-free attachment under the saddle.\nThanks to our proprietary LiteGrid-RN200T3 material, the bag is weatherproof, durable, and easy to clean. The high-quality, super-strong yet lightweight fabric is coated on both sides and high-frequency welded to ensure maximum robustness and ease of cleaning.\nCompatibility \nDie SADDLE BAG SMALL / 02 benötigt einen vertikalen Mindest-Abstand zwischen Sattelstrebenunterkante und Hinterreifen von 21 cm (bei Fullies im eingefederten Zustand gemessen). Auch perfekt für die Nutzung mit Aero Sattelstützen geeignet. Maximale Stützenbreite = 6cm. Eine Nutzung mit Carbon Sattelstützen ist ebenfalls problemlos möglich. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, CF strip, AL hook, reflective film, PP webbing, POM \nTechnical Specifications \nVolume: 6.0 l\nSize: 25 - 38 x 17 x 21 cm (L x W x H)\nWeight: 228 g \nScope of Delivery \nBag\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Light-Grey_Studio_01.jpg?v=1761827654&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Light-Grey_Studio_01.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Black_Studio_01.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Light-Grey_Studio_02.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Light-Grey_Studio_03.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Black_Studio_02.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Black_Studio_03.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_SADDLE-BAG-SMALL-02_Black_Studio_04.jpg?v=1761827654&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-026-08-600_SADDLE-BAG-SMALL-02_Pink-Rush_Studio_2.jpg?v=1783408353&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-026-08-600_SADDLE-BAG-SMALL-02_Pink-Rush_Studio_3_79da4922-bf70-4678-a739-effa5487db3e.jpg?v=1783423789&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-top-tube-bag-03",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-top-tube-bag-03",
+      "productName": "TOP TUBE BAG / 03",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-03",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-top-tube-bag-03",
+        "name": "TOP TUBE BAG / 03",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-03",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 1.1,
+        "volumeOptions": [
+          1.1
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 124,
+        "weightOptions": [
+          124,
+          138
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 25,
+          "widthCm": 5,
+          "heightCm": 10
+        },
+        "sku": "B-2026-018-01-101",
+        "color": "light grey",
+        "material": "Recycled PPA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, EVA, hook and loop magnetic buckle, reflective film, elastic PA mesh",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / direct mount",
+        "mountingOptions": [
+          "Top-tube straps / direct mount"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-018-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 1.1,
+            "weight": 124,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          },
+          {
+            "sku": "B-2026-018-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 1.1,
+            "weight": 124,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "TOP TUBE BAG / 03 is a CYCLITE top-tube bag in 1.1 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу CYCLITE объёмом 1.1 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe TOP TUBE BAG / 03 is the next generation of our most popular bag. The large opening with a flap closure and magnetic fastener, offering easy access and a clear view of the contents, remains the central, unique feature of this version. The front strap design has been further developed: the hook and loop strap is now replaceable and extendable – making it compatible with integrated handlebars. As before, the bottom of the bag features light padding to securely transport smartphones or other electronics, even on rough rides. The reinforced sides and slightly reduced width of the bag prevent contact with the thighs, even during extremely sporty riding. Last but not least, the TOP TUBE BAG / 03 is bolt-on ready and can be screwed directly to the frame without the included hook and loop straps. This makes it the ideal solution for carrying snacks and gear that you want to access quickly while riding.\nTOP TUBE BAG / 03 is ultralight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nTOP TUBE BAG / 03 passt an alle Fahrräder, die ein Oberrohr besitzen und kann hinter das Steuerrohr oder vor die Sattelstütze montiert werden (oder beides, wenn man zwei davon verwendet). Die Tasche kann optional auch aufs Oberrohr geschraubt werden, wenn der Rahmen dafür vorbereitet ist (Löcher vorhanden). Die Tasche bietet dabei zwei verschiedene Schraubpositionen, wodurch sie auf nahezu alle Rahmen passt. Der Mindestabstand zur Befestigung mit Schrauben, beträgt zwischen vorderer Gewindebohrung und Hinterkante des Steuerrohrs / Vorbaus 7 cm (bei senkrechtem Steuerrohr/Vorbau kann der Abstand noch etwas geringer sein). \nMaterial \nRecycled PPA/N6.6 200D R/S TPU/PU3, Hypalon, HD-PE, EVA, hook and loop magnetic buckle, reflective film, elastic PA mesh \nTechnical Specifications \nVolume: 1.1 l\nSize: 25 x 5 x 10 cm (L x W x H)\nWeight: 124 g (with hook and loop fastening), 138 g (bolt-on) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\n2 screws M5x12 with O-rings\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Light-Grey_Studio_01_88bcc662-44c0-4558-9363-beed1327eb9c.jpg?v=1761738584&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Light-Grey_Studio_01_88bcc662-44c0-4558-9363-beed1327eb9c.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Black_Studio_01_4fdc2dc2-fa6a-4d3d-9478-2fadf600d134.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Light-Grey_Studio_02.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Light-Grey_Studio_03.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Black_Studio_02_e1ef43af-2387-4c2b-bd6d-4c2f1251c6c7.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-03_Black_Studio_03.jpg?v=1761738584&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-018-01-600_TOP-TUBE-BAG-03_Pink-Rush_Studio_2.jpg?v=1783407881&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_B-2026-018-01-600_TOP-TUBE-BAG-03_Pink-Rush_Studio_3_c47074b1-fa17-4409-a169-a265455f6e53.jpg?v=1783423502&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-top-tube-bag-large-02",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-top-tube-bag-large-02",
+      "productName": "TOP TUBE BAG LARGE / 02",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-large-02",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-top-tube-bag-large-02",
+        "name": "TOP TUBE BAG LARGE / 02",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-large-02",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 2.2,
+        "volumeOptions": [
+          2.2
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 204,
+        "weightOptions": [
+          204,
+          212
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 42,
+          "widthCm": 5,
+          "heightCm": 12
+        },
+        "sku": "B-2026-019-02-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, Hypalon, Elastic PA Mesh HD-PE, EVA, Weatherproof zipper, magnetic buckle, Reflective film",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / direct mount",
+        "mountingOptions": [
+          "Top-tube straps / direct mount"
+        ],
+        "soldAsSet": false,
+        "available": false,
+        "variants": [
+          {
+            "sku": "B-2026-019-02-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 2.2,
+            "weight": 204,
+            "mounting": "Top-tube straps / direct mount",
+            "available": false
+          },
+          {
+            "sku": "B-2026-019-02-900",
+            "title": "black",
+            "color": "black",
+            "volume": 2.2,
+            "weight": 204,
+            "mounting": "Top-tube straps / direct mount",
+            "available": false
+          }
+        ],
+        "description": {
+          "en": "TOP TUBE BAG LARGE / 02 is a CYCLITE top-tube bag in 2.2 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу CYCLITE объёмом 2.2 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe TOP TUBE BAG LARGE / 02 is the larger sibling of the TOP TUBE BAG / 03 and, with a volume of 2.2 liters, is the ideal solution for those who ride for extended periods, don't have room for a frame bag on their frame, or simply desire the convenience of more storage space with direct access while riding. The TOP TUBE BAG LARGE / 02 also features a very large opening to the front compartment, which is secured with a flap and Fidlock magnetic buckle. The rear compartment opens with a central, weatherproof zipper, making it perfect for storing items you don't need to access as frequently while riding. Its tapered shape prevents contact with your thighs. Features familiar from the smaller version, such as the cable port, are also present in the TOP TUBE BAG LARGE / 02. Despite its large volume, it's an ultralight bag that has already gained many fans, especially among ultra-distance riders. Compared to the previous version, the front strap design has been further developed: The hook and loop strap is now replaceable and extendable – making it compatible with integrated handlebars. In addition, the bag is now bolt-on ready and can be screwed onto the top tube.\nThe TOP TUBE BAG LARGE / 02 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect combination of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nDie TOP TUBE BAG LARGE benötigt einen Mindestabstand Steuerkopf-Sattelstütze von 44 cm. Sie ist mit allen CYCLITE FRAME BAGs und den meisten Rahmentaschen anderer Hersteller kompatibel, da die Position der Fixierungsgurte verschoben werden kann. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, Hypalon, Elastic PA Mesh HD-PE, EVA, Weatherproof zipper, magnetic buckle, Reflective film \nTechnical Specifications \nVolume: 2.2 l\nSize: 42 x 5 x 12 cm (L x W x H)\nWeight: 204 g (without divider), 212 g (complete) \nScope of Delivery \nBag\nAlternative hook and loop fasteners\n2 screws M5 x 12 with O-rings\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_01.jpg?v=1761737969&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_01.jpg?v=1761737969&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Black_Studio_01.jpg?v=1761737969&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_02.jpg?v=1761737969&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_03.jpg?v=1761737969&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_04.jpg?v=1761738207&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Light-Grey_Studio_05.jpg?v=1761738207&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Black_Studio_02.jpg?v=1761737969&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-LARGE-02_Black_Studio_03.jpg?v=1761737969&width=900"
+        ]
+      }
+    },
+    {
+      "id": "cyclite:added:cyclite-top-tube-bag-nano-01",
+      "manufacturerId": "cyclite",
+      "manufacturer": "CYCLITE",
+      "productId": "cyclite-top-tube-bag-nano-01",
+      "productName": "TOP TUBE BAG NANO / 01",
+      "type": "added",
+      "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-nano-01",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "cyclite-top-tube-bag-nano-01",
+        "name": "TOP TUBE BAG NANO / 01",
+        "brand": "CYCLITE",
+        "sourceUrl": "https://cyclite.cc/en/products/top-tube-bag-nano-01",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0.6,
+        "volumeOptions": [
+          0.6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 68,
+        "weightOptions": [
+          68
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 19.5,
+          "widthCm": 5,
+          "heightCm": 7
+        },
+        "sku": "B-2026-017-01-101",
+        "color": "light grey",
+        "material": "Recycled PA/N6.6 200D R/S TPU/PU3, TPU, POM, Hypalon, HD-PE, weatherproof zipper, reflective film, neodymium magnet",
+        "waterproof": "Weatherproof",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / direct mount",
+        "mountingOptions": [
+          "Top-tube straps / direct mount"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "B-2026-017-01-101",
+            "title": "light grey",
+            "color": "light grey",
+            "volume": 0.6,
+            "weight": 68,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          },
+          {
+            "sku": "B-2026-017-01-900",
+            "title": "black",
+            "color": "black",
+            "volume": 0.6,
+            "weight": 68,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "TOP TUBE BAG NANO / 01 is a CYCLITE top-tube bag in 0.6 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу CYCLITE объёмом 0.6 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description \nThe TOP TUBE BAG NANO / 01 is perfect for storing snacks like bars or gels. The central zipper allows quick access to the contents. The slim bag doesn't interfere with your knees, is aerodynamic, and sits very securely on the top tube. It can be attached and removed in seconds with an innovative magnetic closure. Its minimalist look perfectly complements any bike. Extremely lightweight and efficient, it's the ideal top tube bag for shorter gravel and road bike rides or races.\nThe TOP TUBE BAG NANO / 01 is ultra-lightweight, robust, and weatherproof thanks to our specially developed LiteGrid-RN200T3 material. We combine two different thicknesses of nylon using a special weaving technique to create a ripstop fabric, which is then coated on both sides and high-frequency welded. This results in the perfect symbiosis of lightness and stability – for weatherproof products that are easy to clean.\nCompatibility \nTOP TUBE BAG NANO / 01 lässt sich mit der NANO UNIVERSAL MOUNT und O-Ringen an allen gängigen Oberrohren befestigen. Mit dem separat erhältlichen NANO BOLT MOUNT kann sie direkt an Rädern mit Gewindebuchsen im Oberrohr montiert werden. Sie ist mit allen CYCLITE-Rahmentaschen kompatibel. \nMaterial \nRecycled PA/N6.6 200D R/S TPU/PU3, TPU, POM, Hypalon, HD-PE, weatherproof zipper, reflective film, neodymium magnet \nTechnical Specifications \nVolume: 0.6 l\nSize: 19.5 x 5 x 7 cm (L x W x D)\nWeight: 68 g \nScope of Delivery \nBag\nNANO UNIVERSAL MOUNT\nFrame protection film\nInstruction booklet",
+        "sourceImageUrl": "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761739505&width=900",
+        "sourceImageUrls": [
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Light-Grey_Studio_01.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Black_Studio_01.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Light-Grey_Studio_02.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Light-Grey_Studio_03.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Light-Grey_Studio_04.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Black_Studio_02.jpg?v=1761739505&width=900",
+          "https://cyclite.cc/cdn/shop/files/CYCLITE_TOP-TUBE-BAG-NANO-01_Black_Studio_03.jpg?v=1761739505&width=900"
+        ]
+      }
+    }
+  ]
+}

@@ -60,9 +60,9 @@ import {
 test("CRITICAL manufacturer catalog: active and planned brand marks stay explicit", () => {
   const active = MANUFACTURER_BAG_CATALOG_BRANDS.filter(({ status }) => status === "active");
   const planned = MANUFACTURER_BAG_CATALOG_BRANDS.filter(({ status }) => status === "planned");
-  assert.deepEqual(active.map(({ catalogBrand }) => catalogBrand), ["ORTLIEB", "Apidura", "Restrap", "Tailfin", "Arkel", "Revelate Designs", "Miss Grape"]);
-  assert.ok(active.every(({ logoUrl }) => /manufacturer-brands\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs|miss-grape)\.(?:png|svg)/.test(logoUrl)));
-  assert.deepEqual(planned.map(({ name }) => name), ["CYCLITE", "Blackburn", "Topeak", "Rockgeist"]);
+  assert.deepEqual(active.map(({ catalogBrand }) => catalogBrand), ["ORTLIEB", "Apidura", "Restrap", "Tailfin", "Arkel", "Revelate Designs", "Miss Grape", "CYCLITE"]);
+  assert.ok(active.every(({ logoUrl }) => /manufacturer-brands\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs|miss-grape|cyclite)\.(?:png|svg)/.test(logoUrl)));
+  assert.deepEqual(planned.map(({ name }) => name), ["Blackburn", "Topeak", "Rockgeist"]);
   assert.ok(planned.every(({ catalogBrand, logoUrl }) => !catalogBrand && !logoUrl));
   const revelateMark = renderManufacturerBrandMark({ brand: "Revelate Designs", brands: MANUFACTURER_BAG_CATALOG_BRANDS });
   assert.match(revelateMark, /manufacturer-brand-mark-revelate-designs/);
@@ -82,7 +82,7 @@ const root = resolve(import.meta.dirname, "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("CRITICAL manufacturer catalog: runtime opens from a small index and loads one brand at a time", async () => {
-  assert.equal(MANUFACTURER_BAG_CATALOG_INDEX.length, 370);
+  assert.equal(MANUFACTURER_BAG_CATALOG_INDEX.length, 387);
   assert.deepEqual(loadedManufacturerBagCatalog(), []);
 
   const apidura = await loadManufacturerBagCatalog({ brand: "Apidura" });
@@ -101,7 +101,8 @@ test("CRITICAL manufacturer catalog: runtime opens from a small index and loads 
     "tailfin.generated.js",
     "arkel.generated.js",
     "revelate-designs.generated.js",
-    "miss-grape.generated.js"
+    "miss-grape.generated.js",
+    "cyclite.generated.js"
   ];
   runtimeFiles.forEach((fileName) => {
     const path = `src/data/manufacturer-catalog-runtime/${fileName}`;
@@ -122,7 +123,7 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
     MANUFACTURER_BAG_CATALOG_CATEGORIES.filter(({ family }) => family === "carry").map(({ id }) => id),
     ["backpack", "shoulder-waist"]
   );
-  assert.equal(MANUFACTURER_BAG_CATALOG.length, 370);
+  assert.equal(MANUFACTURER_BAG_CATALOG.length, 387);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "ORTLIEB").length, 62);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Arkel").length, 61);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Tailfin").length, 42);
@@ -130,6 +131,7 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Restrap").length, 46);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Revelate Designs").length, 63);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "Miss Grape").length, 25);
+  assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "CYCLITE").length, 17);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ category }) => category === "pannier").length, 54);
   assert.equal(MANUFACTURER_BAG_CATALOG.filter(({ category }) => category === "shoulder-waist").length, 12);
   assert.ok(!MANUFACTURER_BAG_CATALOG.some(({ category }) => [
@@ -145,9 +147,9 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
     assert.ok(MANUFACTURER_BAG_CATALOG.some(({ category }) => category === id));
   });
   MANUFACTURER_BAG_CATALOG.forEach((entry) => {
-    assert.match(entry.imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap|revelate-designs|miss-grape)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
-    assert.match(entry.sourceImageUrl, /^https:\/\/(?:cdn\.shopify\.com|media\.tailfin\.cc|medias\.apidura\.com|revelatedesigns\.com|missgrape\.net|ed58xxhnoja\.exactdn\.com)\//);
-    assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca|www\.tailfin\.cc|www\.apidura\.com|restrap\.com|revelatedesigns\.com|missgrape\.net)\//);
+    assert.match(entry.imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap|revelate-designs|miss-grape|cyclite)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
+    assert.match(entry.sourceImageUrl, /^https:\/\/(?:cdn\.shopify\.com|media\.tailfin\.cc|medias\.apidura\.com|revelatedesigns\.com|missgrape\.net|ed58xxhnoja\.exactdn\.com|cyclite\.cc)\//);
+    assert.match(entry.sourceUrl, /^https:\/\/(?:us\.ortlieb\.com|arkel\.ca|www\.tailfin\.cc|www\.apidura\.com|restrap\.com|revelatedesigns\.com|missgrape\.net|cyclite\.cc)\//);
     assert.ok(statSync(resolve(root, entry.imageAssetPath)).size > 5_000);
     assert.ok(Array.isArray(entry.imageAssetPaths));
     assert.ok(Array.isArray(entry.sourceImageUrls));
@@ -155,7 +157,7 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
     assert.equal(entry.imageAssetPaths.length, entry.sourceImageUrls.length);
     assert.equal(entry.imageAssetPaths.length, entry.imageUrls.length);
     entry.imageAssetPaths.forEach((imageAssetPath) => {
-      assert.match(imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap|revelate-designs|miss-grape)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
+      assert.match(imageAssetPath, /^assets\/manufacturer-catalog\/(?:ortlieb|arkel|tailfin|apidura|restrap|revelate-designs|miss-grape|cyclite)\/[a-z0-9-]+\.(?:jpg|png|webp)$/);
       assert.ok(statSync(resolve(root, imageAssetPath)).size > 1_000);
     });
     assert.ok(entry.variantCount > 0);
@@ -168,6 +170,7 @@ test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundle
       Restrap: "2026-09-01",
       "Revelate Designs": "2026-09-02",
       "Miss Grape": "2026-09-04",
+      CYCLITE: "2026-09-04",
     }[entry.brand]);
   });
 });
@@ -183,6 +186,24 @@ test("CRITICAL manufacturer catalog: Miss Grape keeps verified models and adjust
   assert.equal(tendril.volumeMax, 17);
   assert.deepEqual(tendril.weightOptions, [396]);
   assert.equal(rows.find(({ id }) => id === "miss-grape-cluster-7-wp").volume, 7);
+});
+
+test("CRITICAL manufacturer catalog: CYCLITE keeps official models, custom sizing, and fork set totals", () => {
+  const rows = MANUFACTURER_BAG_CATALOG.filter(({ brand }) => brand === "CYCLITE");
+  assert.equal(rows.length, 17);
+  assert.ok(rows.every(({ family }) => family === "bikepacking"));
+  const forkSingle = rows.find(({ id }) => id === "cyclite-fork-bag-01-single");
+  const forkPair = rows.find(({ id }) => id === "cyclite-fork-bag-01-pair");
+  assert.deepEqual({ volume: forkSingle.volume, weight: forkSingle.weight, soldAsSet: forkSingle.soldAsSet }, { volume: 3.1, weight: 224, soldAsSet: false });
+  assert.deepEqual(
+    { volumePerBag: forkPair.volumePerBag, weightPerBag: forkPair.weightPerBag, totalVolume: forkPair.totalVolume, totalWeight: forkPair.totalWeight, setQuantity: forkPair.setQuantity },
+    { volumePerBag: 3.1, weightPerBag: 224, totalVolume: 6.2, totalWeight: 448, setQuantity: 2 }
+  );
+  const customFrame = rows.find(({ id }) => id === "cyclite-full-frame-bag-02");
+  assert.deepEqual({ volume: customFrame.volume, weight: customFrame.weight, volumeOptions: customFrame.volumeOptions, weightOptions: customFrame.weightOptions }, { volume: 0, weight: 0, volumeOptions: [], weightOptions: [] });
+  const topTube = rows.find(({ id }) => id === "cyclite-top-tube-bag-03");
+  assert.deepEqual({ volume: topTube.volume, weightOptions: topTube.weightOptions }, { volume: 1.1, weightOptions: [124, 138] });
+  assert.ok(topTube.imageAssetPaths.length > 1);
 });
 
 test("CRITICAL manufacturer catalog: search covers SKU, Russian aliases and specifications", () => {
@@ -376,7 +397,7 @@ test("CRITICAL manufacturer catalog: comparison filters intersect numeric ranges
   assert.equal(manufacturerBagComparisonFilterKey(seatPack, "manufacturer"), "ORTLIEB");
   assert.deepEqual(
     manufacturerBagComparisonFilterOptions(saddleRows, "manufacturer").map(({ key }) => key).sort(),
-    ["Apidura", "Arkel", "Miss Grape", "ORTLIEB", "Restrap", "Revelate Designs"]
+    ["Apidura", "Arkel", "CYCLITE", "Miss Grape", "ORTLIEB", "Restrap", "Revelate Designs"]
   );
 
   const pointInsideRange = filterManufacturerBagComparisonRows(saddleRows, {

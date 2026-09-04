@@ -71,6 +71,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["miss-grape-products.json", "https://missgrape.net/wp-json/wp/v2/product?per_page=100&_fields=id,slug,link,title,featured_media,product_cat,product_tag"],
     ]),
   }),
+  Object.freeze({
+    id: "cyclite",
+    name: "CYCLITE",
+    adapter: "cyclite-collection",
+    productBaseUrl: "https://cyclite.cc/en/products/",
+    collections: Object.freeze([
+      ["cyclite-bikepacking.html", "https://cyclite.cc/en/collections/bikepacking-bags"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

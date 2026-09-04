@@ -34,6 +34,11 @@ import {
   missGrapeCatalogTargets,
   missGrapeProductPageIsValid,
 } from "../../scripts/manufacturer-catalog/miss-grape-adapter.mjs";
+import {
+  buildCycliteCatalogEntry,
+  cycliteCatalogTargets,
+  cycliteProductPageIsValid,
+} from "../../scripts/manufacturer-catalog/cyclite-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -97,6 +102,43 @@ test("CRITICAL catalog scan: Miss Grape normalizes official range, weight, dimen
   assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/miss-grape\//.test(path)));
 });
 
+test("CRITICAL catalog scan: CYCLITE discovers only bags and normalizes ProductGroup specifications", () => {
+  const targets = cycliteCatalogTargets(`
+    <a href="/en/products/top-tube-bag-03">Top Tube</a>
+    <a href="/en/products/fork-bag-01?variant=left">Fork Bag</a>
+    <a href="/en/products/universal-mount-01">Mount</a>
+  `);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["fork-bag-01", "top-tube-bag-03"]);
+
+  const html = `<html><head><meta name="description" content="Weatherproof 3.1 L fork bag weighing 224 g."></head><body>
+    <script type="application/ld+json">${JSON.stringify({
+      "@type": "ProductGroup",
+      name: "FORK BAG / 01",
+      brand: { name: "CYCLITE" },
+      productGroupID: "fork-bag-01",
+      description: "Weatherproof fork bag",
+      hasVariant: [
+        { name: "FORK BAG / 01 - Black / Left", sku: "FB01-L", offers: { availability: "https://schema.org/InStock" } },
+        { name: "FORK BAG / 01 - Black / Set", sku: "FB01-S", offers: { availability: "https://schema.org/InStock" } },
+      ],
+    })}</script>
+    <media-gallery><img src="//cyclite.cc/cdn/shop/files/FoB-QR.png?v=1"><img src="//cyclite.cc/cdn/shop/files/fork-front.jpg?v=1"><img data-src="https://cdn.shopify.com/s/files/fork-side.webp"></media-gallery>
+    <section>Description\nMaterial\nLiteGrid-RN200T3 Nylon\nTechnical Specifications\nVolume: 3.1 l\nWeight: 224 g\nSize: 24 x 13 x 9 cm\nScope of Delivery</section>
+  </body></html>`;
+  assert.equal(cycliteProductPageIsValid(html), true);
+  assert.equal(cycliteProductPageIsValid("<html>challenge</html>"), false);
+  const entry = buildCycliteCatalogEntry({ html, sourceUrl: "https://cyclite.cc/en/products/fork-bag-01", checkedAt: "2026-09-04" });
+  assert.deepEqual({ brand: entry.brand, category: entry.category, volume: entry.volume, weight: entry.weight }, { brand: "CYCLITE", category: "fork", volume: 3.1, weight: 224 });
+  assert.deepEqual(entry.dimensions, { lengthCm: 24, widthCm: 13, heightCm: 9 });
+  assert.deepEqual(entry.variants.map(({ title, weight }) => ({ title, weight })), [
+    { title: "unit · Black / Left", weight: 224 },
+    { title: "pair · Black / Set", weight: 448 },
+  ]);
+  assert.equal(entry.waterproof, "Weatherproof");
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.sourceImageUrls.every((url) => !/-QR\./i.test(url)));
+});
+
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {
   const result = compareManufacturerCatalogSnapshots(
     [bag("ortlieb-old", "ORTLIEB"), bag("ortlieb-back-roller", "ORTLIEB")],
@@ -138,7 +180,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 7);
+  assert.equal(report.manufacturers.length, 8);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
@@ -146,6 +188,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
   assert.equal(report.manufacturers.find((item) => item.id === "restrap").sourceCount, 7);
   assert.equal(report.manufacturers.find((item) => item.id === "revelate-designs").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "miss-grape").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "cyclite").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 
