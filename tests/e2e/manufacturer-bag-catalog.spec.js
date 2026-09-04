@@ -85,6 +85,8 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
 
   await page.locator('[data-bag-catalog-category="saddle"]').click();
   await expect(page.locator(".manufacturer-catalog-product")).toHaveCount(12);
+  await expect.poll(() => page.locator('.manufacturer-catalog-photo-gallery img[src]').count()).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('.manufacturer-catalog-photo-gallery img[data-manufacturer-catalog-src]:not([src])').count()).toBeGreaterThan(0);
   await page.locator("#bagCatalogResults").evaluate((root) => {
     while (root.querySelector("[data-bag-catalog-load-more]")) {
       root.querySelector("[data-bag-catalog-load-more]").click();
@@ -141,9 +143,23 @@ test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail
   expect(before.dialogHeight).toBeGreaterThan(650);
   expect(before.brandScrollWidth).toBeGreaterThan(before.brandClientWidth);
   expect(["auto", "scroll"]).toContain(before.overflowX);
-  expect(before.touchAction).toContain("pan-x");
+  expect(before.touchAction).toContain("pan-y");
 
-  await brandPicker.evaluate((element) => { element.scrollLeft = 140; });
+  await brandPicker.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const options = {
+      bubbles: true,
+      pointerType: "touch",
+      pointerId: 41,
+      isPrimary: true,
+      clientX: rect.right - 24,
+      clientY: rect.top + rect.height / 2
+    };
+    element.dispatchEvent(new PointerEvent("pointerdown", options));
+    element.dispatchEvent(new PointerEvent("pointermove", { ...options, clientX: rect.left + 80 }));
+    element.dispatchEvent(new PointerEvent("pointerup", { ...options, clientX: rect.left + 80 }));
+  });
+  await expect.poll(() => brandPicker.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
   await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
   await page.locator('[data-bag-catalog-family="bikepacking"]').click();
   const after = await dialog.evaluate((element) => {

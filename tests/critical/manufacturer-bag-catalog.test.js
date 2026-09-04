@@ -578,6 +578,10 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(controller, /renderManufacturerCatalogPhotoGallery/);
   assert.match(controller, /PRODUCT_BATCH_SIZE = 12/);
   assert.match(controller, /IntersectionObserver/);
+  assert.match(controller, /bindManufacturerCatalogPhotoLoading\(refs\.bagCatalogResults\)/);
+  assert.match(controller, /bindHorizontalTouchScroll\(refs\?\.bagCatalogBrands\)/);
+  assert.match(styles, /\.manufacturer-brand-picker\s*\{[^}]*touch-action:\s*pan-y pinch-zoom;/s);
+  assert.match(styles, /\.manufacturer-brand-picker\s*>\s*\*\s*\{[^}]*touch-action:\s*pan-y pinch-zoom;/s);
   assert.match(comparison, /manufacturerBagComparisonRows/);
   assert.match(comparison, /manufacturerBagComparisonViewRows/);
   assert.match(comparison, /comparisonVolumeText\(entry\.volumeOptions, entry\.volumeTotalOptions/);

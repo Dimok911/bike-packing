@@ -7,7 +7,11 @@ import {
   manufacturerBagCatalogVariantChoices,
   manufacturerBagCatalogVariantEntry
 } from "../state/manufacturer-bag-catalog.js";
-import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
+import { bindHorizontalTouchScroll } from "./horizontal-touch-scroll.js";
+import {
+  bindManufacturerCatalogPhotoLoading,
+  renderManufacturerCatalogPhotoGallery
+} from "./manufacturer-catalog-photo-gallery.js";
 import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
 const PRODUCT_BATCH_SIZE = 12;
@@ -76,6 +80,7 @@ export function createManufacturerBagCatalogDialogController({
   let editingId = "";
   let selectingId = "";
   let photoGalleryBinding = null;
+  let productPhotoLoadingBinding = null;
   let productLimit = PRODUCT_BATCH_SIZE;
   let productListSignature = "";
   let productPagingObserver = null;
@@ -112,6 +117,10 @@ export function createManufacturerBagCatalogDialogController({
     if (!refs?.bagCatalogResults) return;
     productPagingObserver?.disconnect?.();
     productPagingObserver = null;
+    productPhotoLoadingBinding?.destroy?.();
+    productPhotoLoadingBinding = null;
+    photoGalleryBinding?.destroy?.();
+    photoGalleryBinding = null;
     const hasQuery = Boolean(query.trim());
     refs.bagCatalogTitle.textContent = t("bagCatalog.title");
     refs.bagCatalogSearch.placeholder = t("bagCatalog.searchPlaceholder");
@@ -129,7 +138,7 @@ export function createManufacturerBagCatalogDialogController({
         : family
           ? renderCategoryList()
           : renderFamilyList();
-    photoGalleryBinding?.destroy?.();
+    productPhotoLoadingBinding = bindManufacturerCatalogPhotoLoading(refs.bagCatalogResults);
     photoGalleryBinding = bindGalleries(refs.bagCatalogResults);
     bindProductPaging();
   }
@@ -248,7 +257,7 @@ export function createManufacturerBagCatalogDialogController({
       if (!entries.some((entry) => entry.isIntersecting)) return;
       productPagingObserver?.disconnect?.();
       loadNextProductBatch();
-    }, { root: refs.bagCatalogDialog, rootMargin: "240px 0px" });
+    }, { root: refs.bagCatalogResults, rootMargin: "120px 0px" });
     productPagingObserver.observe(button);
   }
 
@@ -273,6 +282,7 @@ export function createManufacturerBagCatalogDialogController({
       <article class="manufacturer-catalog-product">
         ${renderManufacturerCatalogPhotoGallery(entry, {
           className: "manufacturer-catalog-product-image",
+          deferImages: true,
           escapeHtml,
           safeImageUrl: (value) => safeCatalogUrl(value, { localAsset: true }),
           t
@@ -504,6 +514,7 @@ export function createManufacturerBagCatalogDialogController({
   });
   refs?.bagCatalogResults?.addEventListener("click", handleResultsClick);
   refs?.bagCatalogBrands?.addEventListener("click", handleBrandClick);
+  bindHorizontalTouchScroll(refs?.bagCatalogBrands);
   refs?.bagCatalogEditForm?.addEventListener("submit", saveEditor);
 
   return { open, render, resetNavigation, setImportAvailable };

@@ -6613,10 +6613,13 @@ button.touch-tooltip-open:active {
   padding: 2px 2px 8px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-behavior: smooth;
   scrollbar-width: thin;
-  touch-action: pan-x;
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
+}
+
+.manufacturer-brand-picker > * {
+  touch-action: pan-y pinch-zoom;
 }
 
 .manufacturer-brand-choice {
