@@ -1,10 +1,10 @@
-const CACHE_NAME = "bike-packing-prototype-v1595";
+const CACHE_NAME = "bike-packing-prototype-v1596";
 const PRESERVED_CACHE_NAMES = new Set(["bike-packing-manufacturer-catalog-offline-v1"]);
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=1595",
-  "./app.js?v=1595",
+  "./styles.css?v=1596",
+  "./app.js?v=1596",
   "./manifest.webmanifest"
 ];
 

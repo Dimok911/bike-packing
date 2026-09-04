@@ -1,6 +1,7 @@
 const MANUFACTURER_BRAND_LOGOS = {
   apidura: new URL("../../assets/manufacturer-brands/apidura.svg", import.meta.url).href,
   arkel: new URL("../../assets/manufacturer-brands/arkel.png", import.meta.url).href,
+  blackburn: new URL("../../assets/manufacturer-brands/blackburn.svg", import.meta.url).href,
   cyclite: new URL("../../assets/manufacturer-brands/cyclite.svg", import.meta.url).href,
   "miss-grape": new URL("../../assets/manufacturer-brands/miss-grape.png", import.meta.url).href,
   ortlieb: new URL("../../assets/manufacturer-brands/ortlieb.png", import.meta.url).href,
@@ -18,7 +19,7 @@ export const MANUFACTURER_BAG_CATALOG_BRANDS = [
   { id: "revelate-designs", name: "Revelate Designs", catalogBrand: "Revelate Designs", logoUrl: MANUFACTURER_BRAND_LOGOS["revelate-designs"], status: "active" },
   { id: "miss-grape", name: "Miss Grape", catalogBrand: "Miss Grape", logoUrl: MANUFACTURER_BRAND_LOGOS["miss-grape"], status: "active" },
   { id: "cyclite", name: "CYCLITE", catalogBrand: "CYCLITE", logoUrl: MANUFACTURER_BRAND_LOGOS.cyclite, status: "active" },
-  { id: "blackburn", name: "Blackburn", status: "planned" },
+  { id: "blackburn", name: "Blackburn", catalogBrand: "Blackburn", logoUrl: MANUFACTURER_BRAND_LOGOS.blackburn, status: "active" },
   { id: "topeak", name: "Topeak", status: "planned" },
   { id: "rockgeist", name: "Rockgeist", status: "planned" }
 ];

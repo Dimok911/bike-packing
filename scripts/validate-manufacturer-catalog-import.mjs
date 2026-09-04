@@ -12,6 +12,7 @@ const MANUFACTURER_HOSTS = Object.freeze({
   "revelate-designs": ["revelatedesigns.com"],
   "miss-grape": ["missgrape.net"],
   cyclite: ["cyclite.cc"],
+  blackburn: ["blackburndesign.com", "bellhelmets.com"],
 });
 const CHANGE_TYPES = new Set(["added", "changed", "missing"]);
 

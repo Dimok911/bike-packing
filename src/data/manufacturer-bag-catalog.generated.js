@@ -388,7 +388,24 @@ const MANUFACTURER_BAG_IMAGE_URLS = {
   "cyclite-saddle-bag-small-02": [new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-2.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-3.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-4.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-5.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-6.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-7.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-8.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/saddle-bag-small-02-9.jpg", import.meta.url).href],
   "cyclite-top-tube-bag-03": [new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-2.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-3.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-4.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-5.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-6.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-7.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-03-8.jpg", import.meta.url).href],
   "cyclite-top-tube-bag-large-02": [new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-2.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-3.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-4.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-5.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-6.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-7.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-large-02-8.jpg", import.meta.url).href],
-  "cyclite-top-tube-bag-nano-01": [new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-2.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-3.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-4.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-5.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-6.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-7.jpg", import.meta.url).href]
+  "cyclite-top-tube-bag-nano-01": [new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-2.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-3.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-4.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-5.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-6.jpg", import.meta.url).href, new URL("../../assets/manufacturer-catalog/cyclite/top-tube-bag-nano-01-7.jpg", import.meta.url).href],
+  "blackburn-grid-handlebar-bag": [new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-5.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-6.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-7.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-8.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-handlebar-bag-9.webp", import.meta.url).href],
+  "blackburn-grid-large-seat-bag": [new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag-5.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-large-seat-bag-6.webp", import.meta.url).href],
+  "blackburn-grid-medium-seat-bag": [new URL("../../assets/manufacturer-catalog/blackburn/grid-medium-seat-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-5.webp", import.meta.url).href],
+  "blackburn-grid-sl-frame-bag": [new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-5.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-6.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-7.webp", import.meta.url).href],
+  "blackburn-local-grocery-bag": [new URL("../../assets/manufacturer-catalog/blackburn/local-grocery-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-grocery-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-grocery-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-grocery-bag-4.webp", import.meta.url).href],
+  "blackburn-local-plus-top-tube-bag": [new URL("../../assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-4.webp", import.meta.url).href],
+  "blackburn-local-rear-pannier": [new URL("../../assets/manufacturer-catalog/blackburn/local-rear-pannier.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-rear-pannier-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-rear-pannier-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-rear-pannier-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-rear-pannier-5.webp", import.meta.url).href],
+  "blackburn-local-saddle-bag": [new URL("../../assets/manufacturer-catalog/blackburn/local-saddle-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-saddle-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-saddle-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-saddle-bag-4.webp", import.meta.url).href],
+  "blackburn-local-trunk-bag": [new URL("../../assets/manufacturer-catalog/blackburn/local-trunk-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-trunk-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-trunk-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-trunk-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/local-trunk-bag-5.webp", import.meta.url).href],
+  "blackburn-outpost-carryall-bag": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-carryall-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-carryall-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-carryall-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-carryall-bag-4.webp", import.meta.url).href],
+  "blackburn-outpost-corner-bag": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-corner-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-corner-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-corner-bag-3.webp", import.meta.url).href],
+  "blackburn-outpost-elite-cargo-bag": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-5.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-6.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-7.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-8.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-9.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-10.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-11.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-12.webp", import.meta.url).href],
+  "blackburn-outpost-frame-bag-large": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-large.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-large-2.webp", import.meta.url).href],
+  "blackburn-outpost-frame-bag-medium": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-medium.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-medium-2.webp", import.meta.url).href],
+  "blackburn-outpost-frame-bag-small": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-4.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-5.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-6.webp", import.meta.url).href],
+  "blackburn-outpost-seat-pack-dry-bag": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag-3.webp", import.meta.url).href],
+  "blackburn-outpost-top-tube-bag": [new URL("../../assets/manufacturer-catalog/blackburn/outpost-top-tube-bag.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-2.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-3.webp", import.meta.url).href, new URL("../../assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-4.webp", import.meta.url).href]
 };
 
 export const MANUFACTURER_BAG_CATALOG_GENERATED = [
@@ -45144,5 +45161,1341 @@ export const MANUFACTURER_BAG_CATALOG_GENERATED = [
     ],
     "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-nano-01"],
     "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["cyclite-top-tube-bag-nano-01"][0] || ""
+  },
+  {
+    "id": "blackburn-grid-handlebar-bag",
+    "sourceProductId": "BB-7170732",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "handlebar",
+    "name": "Grid Handlebar Bag",
+    "variant": "1.2 L · 1 SKU",
+    "sku": "BB-7170732",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 1.2,
+    "volumeOptions": [
+      1.2
+    ],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "Technical fabric",
+    "mounting": "Handlebar / stem straps",
+    "mountingOptions": [
+      "Handlebar / stem straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170732",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 1.2,
+        "weight": 0,
+        "mounting": "Handlebar / stem straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/grid-handlebar-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-5.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-6.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-7.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-8.webp",
+      "assets/manufacturer-catalog/blackburn/grid-handlebar-bag-9.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/92n0hwk1dv?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/92n0hwk1dv?w=900&h=900",
+      "https://vault.widen.net/content/tyjvryfdoe?w=900&h=900",
+      "https://vault.widen.net/content/cg7nsyvljg?w=900&h=900",
+      "https://vault.widen.net/content/3zd64kkxwa?w=900&h=900",
+      "https://vault.widen.net/content/6qqtxyoy6z?w=900&h=900",
+      "https://vault.widen.net/content/4i80fl3hqm?w=900&h=900",
+      "https://vault.widen.net/content/offxvmnody?w=900&h=900",
+      "https://vault.widen.net/content/7r9dpcoyw5?w=900&h=900",
+      "https://vault.widen.net/content/qrsdopumam?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/grid-handlebar-bag/350170000100000078.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Details\nAttached right in front of you, the Grid Handlebar Bag gives you easy access to daily essentials like a phone, wallet, jacket, snack — or performance essentials like gloves, tubes, a tool, tire levers, and inflation. A split mesh pocket allows you to separate your smaller items. Spec'd with tough materials, internal pockets, and covered with reflective technology for all types of rides, road or dirt.\n\nKey Features\nREFLECTIVE TECHNOLOGY — Developed to increase the conspicuity of the rider, we've applied a retro-reflective coating to our Grid bags for an additional level of safety and visibility.\n1.2L VOLUME — Perfect for daily essentials like a phone, wallet, jacket, or snack. Or performance essentials like gloves, tubes, a tool, tire levers, and inflation.\nPADDED STRUCTURE — Grid bags feature a padded structure so they can keep their shape, and keep your payload safe.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Grid Handlebar Bag is a Blackburn handlebar bag in 1.2 L. Technical data is normalized from the official product page.",
+      "ru": "Рулевая сумка Blackburn объёмом 1.2 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "handlebar bag",
+      "рулевая сумка",
+      "bar bag",
+      "feed bag",
+      "рулевая",
+      "на руль",
+      "кормушка",
+      "grid handlebar bag",
+      "Grid Handlebar Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-handlebar-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-handlebar-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-grid-large-seat-bag",
+    "sourceProductId": "BB-7170717",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "saddle",
+    "name": "Grid Large Seat Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170717",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "210T nylon ripstop / 210D polyester",
+    "mounting": "Saddle rails / seatpost straps",
+    "mountingOptions": [
+      "Saddle rails / seatpost straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170717",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Saddle rails / seatpost straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/grid-large-seat-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag.webp",
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag-5.webp",
+      "assets/manufacturer-catalog/blackburn/grid-large-seat-bag-6.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/koprhn29gm?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/koprhn29gm?w=900&h=900",
+      "https://vault.widen.net/content/zjicv3cabq?w=900&h=900",
+      "https://vault.widen.net/content/rytcmyaefl?w=900&h=900",
+      "https://vault.widen.net/content/nwhjygit4o?w=900&h=900",
+      "https://vault.widen.net/content/vewxhxbppb?w=900&h=900",
+      "https://vault.widen.net/content/ztkmkjnkso?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/grid-large-seat-bag/350170000100000066.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nA midnight reflective material helps to keep you visible while riding on the road at night.\n\nDetails\nThe Grid Large is spec'd with tough materials and an internal pocket/removeable divider for easy organization, and covered with reflective technology. Big enough to fit a jacket or three road tubes, a multi-tool, two tire levers, and a CO2 inflator with a cartridge.\n\nKey Features\nREFLECTIVE TECHNOLOGY — Developed to increase the conspicuity of the rider, we've applied a retro-reflective coating to our Grid bags for an additional level of safety and visibility.\nPADDED STRUCTURE — Grid bags feature a padded structure so they can keep their shape, and keep your payload safe.\nBUILT TOUGH — Constructed of 210t nylon ripstop and 210d polyester and featuring coated zippers with silent nylon cord zipper pulls, Grid bags are built for a lifetime of use.\nTAIL LIGHT CLIP — Grid bags feature a tail-light clip that allows you to mount your light right to the bag for an extra measure of visibility.\nKEEP ORGANIZED — Grid bags feature a small internal pocket to help keep you organized, and the inside of the back is a lighter color to help you locate stored tools quickly.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Grid Large Seat Bag is a Blackburn saddle bag. Technical data is normalized from the official product page.",
+      "ru": "Подседельная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "saddle bag",
+      "подседельная сумка",
+      "seat bag",
+      "подседельная",
+      "седельная",
+      "grid large seat bag",
+      "Grid Large Seat Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-large-seat-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-large-seat-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-grid-medium-seat-bag",
+    "sourceProductId": "BB-7170718",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "saddle",
+    "name": "Grid Medium Seat Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170718",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "210T nylon ripstop / 210D polyester",
+    "mounting": "Saddle rails / seatpost straps",
+    "mountingOptions": [
+      "Saddle rails / seatpost straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170718",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Saddle rails / seatpost straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag.webp",
+      "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/grid-medium-seat-bag-5.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/qracidy3d2?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/qracidy3d2?w=900&h=900",
+      "https://vault.widen.net/content/owaf1hes6v?w=900&h=900",
+      "https://vault.widen.net/content/nbph4e4ks5?w=900&h=900",
+      "https://vault.widen.net/content/tpuyyzbzee?w=900&h=900",
+      "https://vault.widen.net/content/8ggp2wxqsq?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/grid-medium-seat-bag/350170000100000065.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nA midnight reflective material helps to keep you visible while riding on the road at night.\n\nDetails\nSay no to bulky jersey pockets. Easily fits 2 road tubes, a multi-tool, 2 tire levers and a CO₂ inflator with cartridge.\n\nKey Features\nREFLECTIVE TECHNOLOGY — Developed to increase the conspicuity of the rider, we've applied a retro-reflective coating to our Grid bags for an additional level of safety and visibility.\nPADDED STRUCTURE — Grid bags feature a padded structure so they can keep their shape, and keep your payload safe.\nBUILT TOUGH — Constructed of 210t nylon ripstop and 210d polyester and featuring coated zippers with silent nylon cord zipper pulls, Grid bags are built for a lifetime of use.\nTAIL LIGHT CLIP — Grid bags feature a tail-light clip that allows you to mount your light right to the bag for an extra measure of visibility.\nKEEP ORGANIZED — Grid bags feature a small internal pocket to help keep you organized, and the inside of the back is a lighter color to help you locate stored tools quickly.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Grid Medium Seat Bag is a Blackburn saddle bag. Technical data is normalized from the official product page.",
+      "ru": "Подседельная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "saddle bag",
+      "подседельная сумка",
+      "seat bag",
+      "подседельная",
+      "седельная",
+      "grid medium seat bag",
+      "Grid Medium Seat Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-medium-seat-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-medium-seat-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-grid-sl-frame-bag",
+    "sourceProductId": "BB-7200003",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "frame",
+    "name": "Grid SL Frame Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7200003",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "80%Polyester 5%TPU 5%PVC 5%EVA 5%POM",
+    "mounting": "Frame straps",
+    "mountingOptions": [
+      "Frame straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7200003",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Frame straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-5.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-6.webp",
+      "assets/manufacturer-catalog/blackburn/grid-sl-frame-bag-7.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/0jzppo02hn?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/0jzppo02hn?w=900&h=900",
+      "https://vault.widen.net/content/hqmqlrvrsw?w=900&h=900",
+      "https://vault.widen.net/content/5qppreqfsj?w=900&h=900",
+      "https://vault.widen.net/content/rrtsfwawer?w=900&h=900",
+      "https://vault.widen.net/content/8u8mbwigo8?w=900&h=900",
+      "https://vault.widen.net/content/flgm4rzszk?w=900&h=900",
+      "https://vault.widen.net/content/k8hoaz6sgy?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/grid-sl-frame-bag/350170000100000082.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Material Composition\n80%Polyester 5%TPU 5%PVC 5%EVA 5%POM",
+    "description": {
+      "en": "Grid SL Frame Bag is a Blackburn frame bag. Technical data is normalized from the official product page.",
+      "ru": "Нарамная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "frame bag",
+      "нарамная сумка",
+      "corner bag",
+      "нарамная",
+      "в раму",
+      "рамная",
+      "grid sl frame bag",
+      "Grid SL Frame Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-sl-frame-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-grid-sl-frame-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-local-grocery-bag",
+    "sourceProductId": "BB-7170723",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "panniers",
+    "category": "pannier",
+    "name": "Local Grocery Bag",
+    "variant": "16 L · 1 SKU",
+    "sku": "BB-7170723",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 16,
+    "volumeOptions": [
+      16
+    ],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Technical fabric",
+    "mounting": "Rear rack hooks",
+    "mountingOptions": [
+      "Rear rack hooks"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170723",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 16,
+        "weight": 0,
+        "mounting": "Rear rack hooks",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/local-grocery-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/local-grocery-bag.webp",
+      "assets/manufacturer-catalog/blackburn/local-grocery-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/local-grocery-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/local-grocery-bag-4.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/qzelcqvaj5?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/qzelcqvaj5?w=900&h=900",
+      "https://vault.widen.net/content/i7pfsi80df?w=900&h=900",
+      "https://vault.widen.net/content/vk1eis8pte?w=900&h=900",
+      "https://vault.widen.net/content/51i3geqhcj?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/local-grocery-bag/350170000100000026.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nThe perfect companion for your shopping needs.\n\nDetails\nThe Local Grocery Pannier offers 16 liters of carrying capacity, neatly folds out of the way when not in use and offers carrying handles for in-store shopping. With the Local Grocery Pannier, there's no need to go hungry.\n\nKey Features\nFITS MOST REAR RACKS — Straightforward mounting hardware makes mounting the Local Grocery Basket to most rear racks fast and simple.\nLIGHT MOUNT — This bag features an integrated rear light mount to help keep you extra visible while you are running errands.\nFOLDS FLAT — The Local Grocery Basket folds flat to stay out of your way when it is not in use.\nWATER-RESISTANT DESIGN — You know what's better than a soggy carton of eggs? Yep, one that's not soggy — and with water resistance, nothing has to be soggy.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Local Grocery Bag is a Blackburn pannier in 16 L. Technical data is normalized from the official product page.",
+      "ru": "Панир Blackburn объёмом 16 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "pannier",
+      "панир",
+      "rear pannier",
+      "задний панир",
+      "local grocery bag",
+      "Local Grocery Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-grocery-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-grocery-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-local-plus-top-tube-bag",
+    "sourceProductId": "BB-7170729",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "top-tube",
+    "name": "Local Plus Top Tube Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170729",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "Technical fabric",
+    "mounting": "Top-tube straps / direct mount",
+    "mountingOptions": [
+      "Top-tube straps / direct mount"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170729",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Top-tube straps / direct mount",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag.webp",
+      "assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/local-plus-top-tube-bag-4.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+      "https://vault.widen.net/content/t2g3fyqlvz?w=900&h=900",
+      "https://vault.widen.net/content/7tofhrd7xa?w=900&h=900",
+      "https://vault.widen.net/content/a4dmt0puox?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/local-plus-top-tube-bag/350170000100000055.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nWith its touchscreen-friendly design, the Local Plus Top Tube Bag is great way to get your phone out of your pocket and where you can get at it quickly.\n\nDetails\nNow you can carry your phone—along with a wallet, tools, spare tube and whatever else you need—and have it right where you need it. This bag sits on your top tube, and its touchscreen-friendly design allows you to use an iPhone 6 or other phone with smaller dimensions.\n\nKey Features\nBAG FIT — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Local Plus Top Tube Bag is a Blackburn top-tube bag. Technical data is normalized from the official product page.",
+      "ru": "Сумка на верхнюю трубу Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "top-tube bag",
+      "сумка на верхнюю трубу",
+      "top tube",
+      "toptube",
+      "bolt-on",
+      "на верхнюю трубу",
+      "бензобак",
+      "local plus top tube bag",
+      "Local Plus Top Tube Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-plus-top-tube-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-plus-top-tube-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-local-rear-pannier",
+    "sourceProductId": "BB-7170724",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "panniers",
+    "category": "pannier",
+    "name": "Local Rear Pannier",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170724",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Technical fabric",
+    "mounting": "Rear rack hooks",
+    "mountingOptions": [
+      "Rear rack hooks"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170724",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Rear rack hooks",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/local-rear-pannier.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/local-rear-pannier.webp",
+      "assets/manufacturer-catalog/blackburn/local-rear-pannier-2.webp",
+      "assets/manufacturer-catalog/blackburn/local-rear-pannier-3.webp",
+      "assets/manufacturer-catalog/blackburn/local-rear-pannier-4.webp",
+      "assets/manufacturer-catalog/blackburn/local-rear-pannier-5.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/5w49jepttf?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/5w49jepttf?w=900&h=900",
+      "https://vault.widen.net/content/ohue4zjhh9?w=900&h=900",
+      "https://vault.widen.net/content/efmtlzg5zr?w=900&h=900",
+      "https://vault.widen.net/content/6pyjplowfh?w=900&h=900",
+      "https://vault.widen.net/content/knkfsdlp9p?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/local-rear-pannier/350170000100000027.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nA great carryall bag for work, school, shopping, or anywhere your bicycle takes you.\n\nDetails\nThe Local Pannier features an easy-to-use, robust mounting system and has hits of retro reflective print to keep you visible when the sun goes down.\n\nKey Features\nFITS MOST REAR RACKS — Straightforward mounting hardware makes mounting the Local Grocery Basket to most rear racks fast and simple.\nLIGHT MOUNT — This bag features an integrated rear light mount to help keep you extra visible while you are running errands.\nWATER-RESISTANT DESIGN — You know what's better than a soggy carton of eggs? Yep, one that's not soggy — and with water resistance, nothing has to be soggy.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Local Rear Pannier is a Blackburn pannier. Technical data is normalized from the official product page.",
+      "ru": "Панир Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "pannier",
+      "панир",
+      "rear pannier",
+      "задний панир",
+      "local rear pannier",
+      "Local Rear Pannier"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-rear-pannier"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-rear-pannier"][0] || ""
+  },
+  {
+    "id": "blackburn-local-saddle-bag",
+    "sourceProductId": "BB-7170725",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "panniers",
+    "category": "pannier",
+    "name": "Local Saddle Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170725",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Technical fabric",
+    "mounting": "Rear rack hooks",
+    "mountingOptions": [
+      "Rear rack hooks"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170725",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Rear rack hooks",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/local-saddle-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/local-saddle-bag.webp",
+      "assets/manufacturer-catalog/blackburn/local-saddle-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/local-saddle-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/local-saddle-bag-4.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/sw0z7hvorm?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/sw0z7hvorm?w=900&h=900",
+      "https://vault.widen.net/content/3fxvezdkf2?w=900&h=900",
+      "https://vault.widen.net/content/1lgeoja1r1?w=900&h=900",
+      "https://vault.widen.net/content/uaspi1prr5?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/local-saddle-bag/350170000100000028.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nOur Local Saddle Bag is our most economical commuter pannier for the rider who always wants a bit of cargo power.\n\nDetails\nMaximized capacity in a lightweight and easy-to-use design. When used with our Interlock racks, can be be secured on the bike with a single key.\n\nKey Features\nFITS MOST REAR RACKS — Straightforward mounting hardware makes mounting the Local Grocery Basket to most rear racks fast and simple.\nLIGHT MOUNT — This bag features an integrated rear light mount to help keep you extra visible while you are running errands.\nFOLDS FLAT — The Local Saddle Bag folds flat to stay out of your way when it is not in use.\nWATER-RESISTANT DESIGN — You know what's better than a soggy carton of eggs? Yep, one that's not soggy — and with water resistance, nothing has to be soggy.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Local Saddle Bag is a Blackburn pannier. Technical data is normalized from the official product page.",
+      "ru": "Панир Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "pannier",
+      "панир",
+      "rear pannier",
+      "задний панир",
+      "local saddle bag",
+      "Local Saddle Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-saddle-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-saddle-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-local-trunk-bag",
+    "sourceProductId": "BB-7170726",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "panniers",
+    "category": "rack-top",
+    "name": "Local Trunk Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7170726",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Technical fabric",
+    "mounting": "Rear rack straps",
+    "mountingOptions": [
+      "Rear rack straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7170726",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Rear rack straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/local-trunk-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/local-trunk-bag.webp",
+      "assets/manufacturer-catalog/blackburn/local-trunk-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/local-trunk-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/local-trunk-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/local-trunk-bag-5.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/28zgxvlkdl?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/28zgxvlkdl?w=900&h=900",
+      "https://vault.widen.net/content/2ppnjmhvtw?w=900&h=900",
+      "https://vault.widen.net/content/ockcer23lr?w=900&h=900",
+      "https://vault.widen.net/content/xr9uxop9kc?w=900&h=900",
+      "https://vault.widen.net/content/fmor6hnszr?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/local-trunk-bag/350170000100000031.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nPerfect for running errands around town. The expandable, drop-down side pocket panniers flip and zip out to accommodate anything you might pick up.\n\nDetails\nThis do-it-all workhorse of the Local line can transform to carry just about anything you can think about picking up, from a sixer to a stack of comic books to some fresh fruit from the farmers' market. And it comes in your favorite color. As long as that color is black.\n\nKey Features\nFITS MOST REAR RACKS — Straightforward mounting hardware makes mounting the Local Grocery Basket to most rear racks fast and simple.\nLIGHT MOUNT — This bag features an integrated rear light mount to help keep you extra visible while you are running errands.\nCLEAR SIDE PANEL POCKETS — Offer light to see inner contents, plus a convenient and safe place to keep your rear safety light.\nWATER-RESISTANT DESIGN — You know what's better than a soggy carton of eggs? Yep, one that's not soggy — and with water resistance, nothing has to be soggy.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Local Trunk Bag is a Blackburn rack-top bag. Technical data is normalized from the official product page.",
+      "ru": "Сумка на багажник Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "rack-top bag",
+      "сумка на багажник",
+      "rack top",
+      "trunk bag",
+      "багажная сумка",
+      "local trunk bag",
+      "Local Trunk Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-trunk-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-local-trunk-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-carryall-bag",
+    "sourceProductId": "BB-7099759",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "handlebar",
+    "name": "Outpost Carryall Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "BB-7099759",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "",
+    "material": "Technical fabric",
+    "mounting": "Handlebar / stem straps",
+    "mountingOptions": [
+      "Handlebar / stem straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7099759",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Handlebar / stem straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-carryall-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-carryall-bag.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-carryall-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-carryall-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-carryall-bag-4.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/cxfnhovhgx?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/cxfnhovhgx?w=900&h=900",
+      "https://vault.widen.net/content/ks1acwgrat?w=900&h=900",
+      "https://vault.widen.net/content/e0vypymsij?w=900&h=900",
+      "https://vault.widen.net/content/ocmkwbl2kt?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-carryall-bag/350170000100000058.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nAn easy-to-reach, bar-mounted feed bag that's always ready to let you feed your face. Oh, and there's room for tools, bear spray, and wrappers too.\n\nDetails\nBecause cyclists are hungry ALL OF THE TIME. The Carryall bag is an easy to reach, bar mounted feed bag that's always ready to let you scoff your face. Oh, there's room for tools, bear spray and wrappers too. But mostly food. We're cyclists and eating is what we do.\n\nKey Features\nEASY ACCESS — Plenty of room for things that you want to get to quickly and easily while riding, including energy bars, trail mix — or a tube if you're not hungry. But who's ever not hungry on a trip?\nMESH POCKET — This bag has dull, sensible uses too, it's not just for scoffing food. The outer mesh pocket will carry a lightweight jacket, a multi-tool or all of those now-empty wrappers.\nDRAIN HOLES — Even when it's full, it's empty, as drain holes allow water (and spilled beverages) to empty out of the bag so you don't end up with a bowl of trail-mix soup.\nRIGHT OR LEFT — Ambidextrous fitting with adjustable straps allows you to run the bag left or right of the stem, depending on your handedness, luggage requirements, or whims.\nDRAWSTRING CLOSURE — The easy-to-use drawstring cinches up or loosens with one hand, because no one likes airborne M&Ms.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Carryall Bag is a Blackburn handlebar bag. Technical data is normalized from the official product page.",
+      "ru": "Рулевая сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "handlebar bag",
+      "рулевая сумка",
+      "bar bag",
+      "feed bag",
+      "рулевая",
+      "на руль",
+      "кормушка",
+      "outpost carryall bag",
+      "Outpost Carryall Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-carryall-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-carryall-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-corner-bag",
+    "sourceProductId": "350170000100000061",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "frame",
+    "name": "Outpost Corner Bag",
+    "variant": "OS · 1 SKU",
+    "sku": "350170000100000061",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "",
+    "waterproof": "",
+    "material": "Technical fabric",
+    "mounting": "Frame straps",
+    "mountingOptions": [
+      "Frame straps"
+    ],
+    "soldAsSet": false,
+    "available": false,
+    "variantCount": 1,
+    "availableVariantCount": 0,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "350170000100000061",
+        "title": "OS",
+        "color": "",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Frame straps",
+        "available": false
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-corner-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-corner-bag.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-corner-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-corner-bag-3.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/uxbpo5nt6r?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/uxbpo5nt6r?w=900&h=900",
+      "https://vault.widen.net/content/tjsgfsgwrl?w=900&h=900",
+      "https://vault.widen.net/content/vvqsasntvj?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-corner-bag/350170000100000061.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nA handy, rigid pouch that'll fit into that odd space behind your head tube, for storing a CO2, tube, and tools.\n\nDetails\nYou weren't using that space anyway, were you? A handy, rigid pouch that'll fit into that odd space behind your head tube for storing a CO₂, tube and tools. You weren't using that space anyway, were you?\n\nKey Features\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nNO MORE SEATBAG — Nothing to rattle against your seatpost and nothing for your tire to buzz on.\nNO MORE BACKPACK — With a tube, tool, and air within reach and a bottle on your bike, who needs a pack?\nDAISY CHAIN LOOPS — Not enough room inside the bag? No problem, just attach your gear to one of our convenient daisy chain loops made from tough webbing.\nHOOK-AND-LOOP ATTACHMENT — A quick, yet robust attachment to your bike.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Corner Bag is a Blackburn frame bag. Technical data is normalized from the official product page.",
+      "ru": "Нарамная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "frame bag",
+      "нарамная сумка",
+      "corner bag",
+      "нарамная",
+      "в раму",
+      "рамная",
+      "outpost corner bag",
+      "Outpost Corner Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-corner-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-corner-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-elite-cargo-bag",
+    "sourceProductId": "BB-7149608",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "fork",
+    "name": "Outpost Elite Cargo Bag",
+    "variant": "6.5 L · 1 SKU",
+    "sku": "BB-7149608",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 6.5,
+    "volumeOptions": [
+      6.5
+    ],
+    "loadKg": 0,
+    "dimensions": {
+      "heightCm": 47.5,
+      "widthMinCm": 15,
+      "widthMaxCm": 17.5
+    },
+    "color": "Black",
+    "waterproof": "Waterproof",
+    "material": "420D coated nylon upper / 840D coated nylon bottom",
+    "mounting": "Fork / frame cargo cage",
+    "mountingOptions": [
+      "Fork / frame cargo cage"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7149608",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 6.5,
+        "weight": 0,
+        "mounting": "Fork / frame cargo cage",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-4.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-5.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-6.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-7.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-8.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-9.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-10.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-11.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-elite-cargo-bag-12.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/mftlf2oqqh?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/mftlf2oqqh?w=900&h=900",
+      "https://vault.widen.net/content/zlyfj7yc9g?w=900&h=900",
+      "https://vault.widen.net/content/hbfsjobi1y?w=900&h=900",
+      "https://vault.widen.net/content/t6m524onzj?w=900&h=900",
+      "https://vault.widen.net/content/sickvidlfs?w=900&h=900",
+      "https://vault.widen.net/content/0yjukwlr53?w=900&h=900",
+      "https://vault.widen.net/content/rjawogxkwl?w=900&h=900",
+      "https://vault.widen.net/content/tfmffkjuc4?w=900&h=900",
+      "https://vault.widen.net/content/gfnxw8ivls?w=900&h=900",
+      "https://vault.widen.net/content/ugzvzcf5fg?w=900&h=900",
+      "https://vault.widen.net/content/yzhredtuz5?w=900&h=900",
+      "https://vault.widen.net/content/8a4p3clkvo?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-elite-cargo-bag/350170000100000079.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Details\nAttached to fork or frame cargo cages, the Outpost Elite Cargo Bag provides you stability and easy access to ride essentials while also keeping them safe and dry while riding. Large enough for expedition-level trips hauling stoves, filters, and cold-weather clothing. Spec'd with tough materials, water-resistant construction, and, when paired with our Outpost Cargo Cage, it's ready for all types of overnight rides.\n\nKey Features\nROLLTOP — Offers water protection and a large opening to access gear. To ensure water protection of the items inside, roll the top of the bag down tight at least three times, pushing out extra air prior to rolling.\n6.5L VOLUME — Large enough for expedition-level trips hauling stoves, filters, and cold-weather clothing.\nWELDED SEAMS — Welded seams not only reduce bulk, weight, and materials, they improve performance by eliminating the needle hole, a potential area for saturation and leakage. Welded seams also create a clean finish on both the interior and exterior of the bag.\n420D NYLON — 420D coated nylon upper and 840D coated nylon bottom. Built with tough, waterproof materials and designed to pair with the Outpost Cargo Cage for longer adventures in the backcountry.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Elite Cargo Bag is a Blackburn fork or cargo-cage bag in 6.5 L. Technical data is normalized from the official product page.",
+      "ru": "Сумка на вилку или грузовую клетку Blackburn объёмом 6.5 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "fork or cargo-cage bag",
+      "сумка на вилку или грузовую клетку",
+      "fork bag",
+      "cargo bag",
+      "cargo cage",
+      "на вилку",
+      "вилочная",
+      "outpost elite cargo bag",
+      "Outpost Elite Cargo Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-elite-cargo-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-elite-cargo-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-frame-bag-large",
+    "sourceProductId": "BB-7099763",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "frame",
+    "name": "Outpost Frame Bag Large",
+    "variant": "L · 1 SKU",
+    "sku": "BB-7099763",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Coated ripstop nylon",
+    "mounting": "Frame straps",
+    "mountingOptions": [
+      "Frame straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7099763",
+        "title": "L · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Frame straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-frame-bag-large.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-large.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-large-2.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/a9wae806bi?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/a9wae806bi?w=900&h=900",
+      "https://vault.widen.net/content/cfxx97p0g4?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-frame-bag-large/350170000100000047.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nAn expandable bottom compartment accommodates more mission-critical gear.\n\nDetails\nWe carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything. Sometimes you need more space, while other times you need less. This bag expands to accommodate both. The coated 210 ripstop nylon and polyurethane zippers provide extra protection and water resistance. Includes an adjustable mounting system to fit most any bike.\n\nKey Features\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nEXPANDABLE — Sometimes you need more space, while other times you need less. This bag expands to accommodate both.\nHOSE PORT — Outpost Elite frame bags feature a hose port to allow for the storage of a water reservoir and/or a cache battery to get dense, heavy products to the lowest center of gravity.\nWATER RESISTANT — Coated 70d ripstop nylon and polyurethane zippers provide extra protection against the elements.\nADJUSTABLE MOUNTING — Bikes come in a lot of shapes and sizes. This bag includes adjustable mounting systems to allow fitment to almost any bike.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Frame Bag Large is a Blackburn frame bag. Technical data is normalized from the official product page.",
+      "ru": "Нарамная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "frame bag",
+      "нарамная сумка",
+      "corner bag",
+      "нарамная",
+      "в раму",
+      "рамная",
+      "outpost frame bag large",
+      "Outpost Frame Bag Large"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-large"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-large"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-frame-bag-medium",
+    "sourceProductId": "BB-7099762",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "frame",
+    "name": "Outpost Frame Bag Medium",
+    "variant": "4.3 / 5.8 L · 1 SKU",
+    "sku": "BB-7099762",
+    "weight": 360,
+    "weightOptions": [
+      360
+    ],
+    "volume": 4.3,
+    "volumeOptions": [
+      4.3,
+      5.8
+    ],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Coated ripstop nylon",
+    "mounting": "Frame straps",
+    "mountingOptions": [
+      "Frame straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": true,
+    "variants": [
+      {
+        "sku": "BB-7099762",
+        "title": "M · Black",
+        "color": "Black",
+        "volume": 4.3,
+        "weight": 360,
+        "mounting": "Frame straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-frame-bag-medium.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-medium.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-medium-2.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/j97hsvnovw?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/j97hsvnovw?w=900&h=900",
+      "https://vault.widen.net/content/6sanuabnkn?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-frame-bag-medium/350170000100000040.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nAn expandable bottom compartment accommodates more mission-critical gear.\n\nDetails\nWe carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything. Sometimes you need more space, while other times you need less. This bag expands to accommodate both. The coated 210 ripstop nylon and polyurethane zippers provide extra protection and water resistance. Includes an adjustable mounting system to fit most any bike.\n\nKey Features\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nEXPANDABLE — Sometimes you need more space, while other times you need less. This bag expands to accommodate both.\nHOSE PORT — Outpost Elite frame bags feature a hose port to allow for the storage of a water reservoir and/or a cache battery to get dense, heavy products to the lowest center of gravity.\nWATER RESISTANT — Coated 70d ripstop nylon and polyurethane zippers provide extra protection against the elements.\nADJUSTABLE MOUNTING — Bikes come in a lot of shapes and sizes. This bag includes adjustable mounting systems to allow fitment to almost any bike.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Frame Bag Medium is a Blackburn frame bag in 4.3 / 5.8 L. Technical data is normalized from the official product page.",
+      "ru": "Нарамная сумка Blackburn объёмом 4.3 / 5.8 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "frame bag",
+      "нарамная сумка",
+      "corner bag",
+      "нарамная",
+      "в раму",
+      "рамная",
+      "outpost frame bag medium",
+      "Outpost Frame Bag Medium"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-medium"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-medium"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-frame-bag-small",
+    "sourceProductId": "BB-7099761",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "frame",
+    "name": "Outpost Frame Bag Small",
+    "variant": "S · 1 SKU",
+    "sku": "BB-7099761",
+    "weight": 0,
+    "weightOptions": [],
+    "volume": 0,
+    "volumeOptions": [],
+    "loadKg": 0,
+    "dimensions": {},
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Coated ripstop nylon",
+    "mounting": "Frame straps",
+    "mountingOptions": [
+      "Frame straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": false,
+    "variants": [
+      {
+        "sku": "BB-7099761",
+        "title": "S · Black",
+        "color": "Black",
+        "volume": 0,
+        "weight": 0,
+        "mounting": "Frame straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-3.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-4.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-5.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-frame-bag-small-6.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/x3w4zvpfru?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/x3w4zvpfru?w=900&h=900",
+      "https://vault.widen.net/content/yoatavqbzh?w=900&h=900",
+      "https://vault.widen.net/content/tksy7yl3q4?w=900&h=900",
+      "https://vault.widen.net/content/ckh7fy5tad?w=900&h=900",
+      "https://vault.widen.net/content/yeeqhgwpfh?w=900&h=900",
+      "https://vault.widen.net/content/4m22gfkwdq?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-frame-bag-small/350170000100000059.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nAn expandable bottom compartment accommodates more mission-critical gear.\n\nDetails\nWe carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything. Sometimes you need more space, while other times you need less. This bag expands to accommodate both. The coated 210 ripstop nylon and polyurethane zippers provide extra protection and water resistance. Includes an adjustable mounting system to fit most any bike.\n\nKey Features\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nEXPANDABLE — Sometimes you need more space, while other times you need less. This bag expands to accommodate both.\nHOSE PORT — Outpost Elite frame bags feature a hose port to allow for the storage of a water reservoir and/or a cache battery to get dense, heavy products to the lowest center of gravity.\nWATER RESISTANT — Coated 70d ripstop nylon and polyurethane zippers provide extra protection against the elements.\nADJUSTABLE MOUNTING — Bikes come in a lot of shapes and sizes. This bag includes adjustable mounting systems to allow fitment to almost any bike.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Frame Bag Small is a Blackburn frame bag. Technical data is normalized from the official product page.",
+      "ru": "Нарамная сумка Blackburn. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "frame bag",
+      "нарамная сумка",
+      "corner bag",
+      "нарамная",
+      "в раму",
+      "рамная",
+      "outpost frame bag small",
+      "Outpost Frame Bag Small"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-small"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-frame-bag-small"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-seat-pack-dry-bag",
+    "sourceProductId": "BB-7170716",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "saddle",
+    "name": "Outpost Seat Pack & Dry Bag",
+    "variant": "11 L · 1 SKU",
+    "sku": "BB-7170716",
+    "weight": 475,
+    "weightOptions": [
+      475
+    ],
+    "volume": 11,
+    "volumeOptions": [
+      11
+    ],
+    "loadKg": 0,
+    "dimensions": {
+      "widthCm": 15.2,
+      "heightCm": 20.3,
+      "lengthCm": 42,
+      "lengthMaxCm": 56
+    },
+    "color": "Black",
+    "waterproof": "Waterproof",
+    "material": "Technical fabric",
+    "mounting": "Saddle rails / seatpost straps",
+    "mountingOptions": [
+      "Saddle rails / seatpost straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": true,
+    "variants": [
+      {
+        "sku": "BB-7170716",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 11,
+        "weight": 475,
+        "mounting": "Saddle rails / seatpost straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-seat-pack-dry-bag-3.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+      "https://vault.widen.net/content/6s8zolghgt?w=900&h=900",
+      "https://vault.widen.net/content/96ghyjumiu?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-seat-pack-%26-dry-bag/350170000100000046.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nAn ideal solution for overnight or weekend trips, but also works well for commuting or long day trips.\n\nDetails\nA great alternative to panniers or a backpack. Ideal for mountain bike overnight trips, but also works will for commuting or long day trips.\n\nKey Features\nHARNESS SYSTEM — This bag features a system that is comprised of an outer \"harness\" that securely carries an inner bag. The inner bag can be removed from harness quickly and easily, without having to detach the harness from the bike. The advantage is that it saves time, is more secure, and allows you to carry odd/oversized items or use your favorite aftermarket bags.\nWELDED SEAM CONSTRUCTION — Welded seams not only reduce bulk, weight, and materials, they improve performance by eliminating the needle hole, a potential area for saturation and leakage. Welded seams also create a clean finish on both the interior and exterior of the bag.\nROLL-TOP DESIGN — This age-old bag design allows you to not only minimize the size of your bag to match the size of its contents, but also lets you compress the contents if you want to go even smaller.\nDAISY CHAIN LOOPS — Not enough room inside the bag? No problem, just attach your gear to one of our convenient daisy chain loops made from tough webbing.\nHOOK-AND-LOOP ATTACHMENT — A quick, yet robust attachment to your bike.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Seat Pack & Dry Bag is a Blackburn saddle bag in 11 L. Technical data is normalized from the official product page.",
+      "ru": "Подседельная сумка Blackburn объёмом 11 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "saddle bag",
+      "подседельная сумка",
+      "seat bag",
+      "подседельная",
+      "седельная",
+      "outpost seat pack dry bag",
+      "Outpost Seat Pack & Dry Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-seat-pack-dry-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-seat-pack-dry-bag"][0] || ""
+  },
+  {
+    "id": "blackburn-outpost-top-tube-bag",
+    "sourceProductId": "BB-7170730",
+    "manufacturerId": "blackburn",
+    "brand": "Blackburn",
+    "provider": "blackburndesign.com / bellhelmets.com",
+    "family": "bikepacking",
+    "category": "top-tube",
+    "name": "Outpost Top Tube Bag",
+    "variant": "0.5 L · 1 SKU",
+    "sku": "BB-7170730",
+    "weight": 185,
+    "weightOptions": [
+      185
+    ],
+    "volume": 0.5,
+    "volumeOptions": [
+      0.5
+    ],
+    "loadKg": 0,
+    "dimensions": {
+      "lengthCm": 23.5,
+      "widthCm": 8,
+      "heightCm": 12
+    },
+    "color": "Black",
+    "waterproof": "Water resistant",
+    "material": "Technical fabric",
+    "mounting": "Bolt-on / top-tube straps",
+    "mountingOptions": [
+      "Bolt-on / top-tube straps"
+    ],
+    "soldAsSet": false,
+    "available": true,
+    "variantCount": 1,
+    "availableVariantCount": 1,
+    "variantWeightsAuthoritative": true,
+    "variants": [
+      {
+        "sku": "BB-7170730",
+        "title": "OS · Black",
+        "color": "Black",
+        "volume": 0.5,
+        "weight": 185,
+        "mounting": "Bolt-on / top-tube straps",
+        "available": true
+      }
+    ],
+    "imageAssetPath": "assets/manufacturer-catalog/blackburn/outpost-top-tube-bag.webp",
+    "imageAssetPaths": [
+      "assets/manufacturer-catalog/blackburn/outpost-top-tube-bag.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-2.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-3.webp",
+      "assets/manufacturer-catalog/blackburn/outpost-top-tube-bag-4.webp"
+    ],
+    "sourceImageUrl": "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+    "sourceImageUrls": [
+      "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+      "https://vault.widen.net/content/ux27olicuo?w=900&h=900",
+      "https://vault.widen.net/content/jcadp0wqik?w=900&h=900",
+      "https://vault.widen.net/content/b9ilclvsab?w=900&h=900"
+    ],
+    "sourceUrl": "https://www.bellhelmets.com/product/outpost-top-tube-bag/350170000100000037.html",
+    "sourceCheckedAt": "2026-09-04",
+    "manufacturerDetails": "Description\nWe've redesigned our Outpost Top Tube Bag to fit more bikes, better to provide you easy access to ride essentials.\n\nDetails\nEasy access to your essential riding gear. A high end top tube bag that works great for the expedition cyclist, but also serves the needs of a long weekend ride or event.\n\nKey Features\nBOLT ON — Ditch the top tube straps. This bag bolts to your frame via two reinforced m5 grommets for a clean look and a stout mount.\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nLIFETIME WARRANTY —",
+    "description": {
+      "en": "Outpost Top Tube Bag is a Blackburn top-tube bag in 0.5 L. Technical data is normalized from the official product page.",
+      "ru": "Сумка на верхнюю трубу Blackburn объёмом 0.5 L. Характеристики нормализованы по официальной карточке товара."
+    },
+    "aliases": [
+      "Blackburn",
+      "top-tube bag",
+      "сумка на верхнюю трубу",
+      "top tube",
+      "toptube",
+      "bolt-on",
+      "на верхнюю трубу",
+      "бензобак",
+      "outpost top tube bag",
+      "Outpost Top Tube Bag"
+    ],
+    "imageUrls": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-top-tube-bag"],
+    "imageUrl": MANUFACTURER_BAG_IMAGE_URLS["blackburn-outpost-top-tube-bag"][0] || ""
   }
 ];

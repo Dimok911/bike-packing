@@ -39,6 +39,11 @@ import {
   cycliteCatalogTargets,
   cycliteProductPageIsValid,
 } from "../../scripts/manufacturer-catalog/cyclite-adapter.mjs";
+import {
+  blackburnCatalogTargets,
+  blackburnProductPageIsValid,
+  buildBlackburnCatalogEntry,
+} from "../../scripts/manufacturer-catalog/blackburn-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -139,6 +144,36 @@ test("CRITICAL catalog scan: CYCLITE discovers only bags and normalizes ProductG
   assert.ok(entry.sourceImageUrls.every((url) => !/-QR\./i.test(url)));
 });
 
+test("CRITICAL catalog scan: Blackburn keeps official bags and excludes racks from the shared storefront", () => {
+  const targets = blackburnCatalogTargets(`
+    <a href="/product/grid-handlebar-bag/350170000100000078.html">Grid Handlebar Bag</a>
+    <a href="/product/outpost-seat-pack-%26-dry-bag/350170000100000046.html">Outpost Seat Pack &amp; Dry Bag</a>
+    <a href="/product/outpost-rear-world-touring-rack/350170000200000023.html">Outpost Rear World Touring Rack</a>
+    <a href="https://www.bellhelmets.com/product/magnum/250070001800000001.html">Magnum</a>
+  `);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["grid-handlebar-bag", "outpost-seat-pack-dry-bag"]);
+  assert.ok(targets.every(({ url }) => url.startsWith("https://www.bellhelmets.com/product/")));
+
+  const html = `<html><body>
+    <div class="container product-detail product-wrapper" data-pid="BB-7170732">
+      <div class="primary-images"><img src="https://vault.widen.net/content/front123?w=1500&amp;h=1500"><img src="https://vault.widen.net/content/side456?w=1500&amp;h=1500"></div>
+      <div class="product-data"><h1 class="product-name h4">Grid Handlebar Bag</h1>
+        <span class="display-name">Color</span><span class="display-value">Black</span>
+        <span class="display-name">Size</span><span class="display-value">One Size</span>
+        <button class="add-to-cart btn" data-pid="BB-7170732">Add to Cart</button>
+        <div class="accordion"><div class="accordion-item"><div class="accordion-header h6"><a>Details</a></div><div class="collapse"><div class="accordion-content">A tough handlebar bag.</div></div></div>
+        <div class="accordion-item"><div class="accordion-header h6"><a>Key Features</a></div><div class="collapse"><div class="accordion-content"><ul><li>1.2L VOLUME</li><li>Reflective technology</li></ul></div></div></div></div>
+      </div>
+    </div></body></html>`;
+  assert.equal(blackburnProductPageIsValid(html), true);
+  assert.equal(blackburnProductPageIsValid("<html>challenge</html>"), false);
+  const entry = buildBlackburnCatalogEntry({ html, sourceUrl: targets[0].url, checkedAt: "2026-09-04" });
+  assert.deepEqual({ brand: entry.brand, category: entry.category, volume: entry.volume }, { brand: "Blackburn", category: "handlebar", volume: 1.2 });
+  assert.equal(entry.sku, "BB-7170732");
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.sourceImageUrls.every((url) => url.startsWith("https://vault.widen.net/content/") && /w=900/.test(url)));
+});
+
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {
   const result = compareManufacturerCatalogSnapshots(
     [bag("ortlieb-old", "ORTLIEB"), bag("ortlieb-back-roller", "ORTLIEB")],
@@ -180,7 +215,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 8);
+  assert.equal(report.manufacturers.length, 9);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
@@ -189,6 +224,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
   assert.equal(report.manufacturers.find((item) => item.id === "revelate-designs").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "miss-grape").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "cyclite").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "blackburn").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 

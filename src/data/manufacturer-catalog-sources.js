@@ -80,6 +80,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["cyclite-bikepacking.html", "https://cyclite.cc/en/collections/bikepacking-bags"],
     ]),
   }),
+  Object.freeze({
+    id: "blackburn",
+    name: "Blackburn",
+    adapter: "blackburn-sfcc",
+    productBaseUrl: "https://www.bellhelmets.com/product/",
+    collections: Object.freeze([
+      ["blackburn-bags.html", "https://www.blackburndesign.com/c/bags/"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

@@ -22,19 +22,28 @@ function withDerivedImageAssets(entry, manufacturerId) {
   };
   if (Array.isArray(normalizedEntry.imageAssetPaths) && normalizedEntry.imageAssetPaths.length) return normalizedEntry;
   const sourceUrl = new URL(String(normalizedEntry.sourceUrl || ""));
-  const sourceHandle = sourceUrl.pathname.split("/").filter(Boolean).at(-1)?.toLowerCase() || "";
+  const sourceParts = sourceUrl.pathname.split("/").filter(Boolean);
+  const sourceLeaf = sourceParts.at(-1)?.replace(/\.html$/i, "").toLowerCase() || "";
+  const sourceHandle = /^\d+$/.test(sourceLeaf)
+    ? String(sourceParts.at(-2) || "").toLowerCase()
+    : sourceLeaf;
   const entryHandle = String(normalizedEntry.sourceProductId || normalizedEntry.id || "")
     .replace(new RegExp(`^${manufacturerId}-`), "")
     .trim()
     .toLowerCase();
-  const handle = sourceHandle || entryHandle;
+  const handle = (entryHandle || sourceHandle)
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(/^-|-$/g, "");
   const imageUrls = Array.isArray(normalizedEntry.sourceImageUrls)
     ? normalizedEntry.sourceImageUrls
     : [normalizedEntry.sourceImageUrl].filter(Boolean);
   if (!handle || !imageUrls.length) throw new Error(`Cannot derive baseline image assets: ${normalizedEntry.id || "missing id"}`);
   const imageAssetPaths = imageUrls.map((url, index) => {
     const extension = extname(new URL(url).pathname).toLowerCase();
-    const safeExtension = extension === ".jpeg" ? ".jpg" : ([".jpg", ".png", ".webp"].includes(extension) ? extension : ".jpg");
+    const safeExtension = new URL(url).hostname === "vault.widen.net"
+      ? ".webp"
+      : extension === ".jpeg" ? ".jpg" : ([".jpg", ".png", ".webp"].includes(extension) ? extension : ".jpg");
     return `assets/manufacturer-catalog/${manufacturerId}/${handle}${index ? `-${index + 1}` : ""}${safeExtension}`;
   });
   return { ...normalizedEntry, imageAssetPath: imageAssetPaths[0], imageAssetPaths };

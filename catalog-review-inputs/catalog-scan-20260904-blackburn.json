@@ -1,0 +1,572 @@
+{
+  "schemaVersion": 1,
+  "id": "catalog-scan-20260904134530",
+  "scannedAt": "2026-09-04T13:45:30.450Z",
+  "status": "complete",
+  "manufacturers": [
+    {
+      "id": "blackburn",
+      "name": "Blackburn",
+      "status": "complete",
+      "sourceCount": 1,
+      "productCount": 17,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "manufacturers": 1,
+    "products": 404,
+    "unchanged": 401,
+    "added": 0,
+    "changed": 3,
+    "missing": 0,
+    "errors": 0
+  },
+  "changes": [
+    {
+      "id": "blackburn:changed:blackburn-local-plus-top-tube-bag",
+      "manufacturerId": "blackburn",
+      "manufacturer": "Blackburn",
+      "productId": "blackburn-local-plus-top-tube-bag",
+      "productName": "Local Plus Top Tube Bag",
+      "type": "changed",
+      "sourceUrl": "https://www.bellhelmets.com/product/local-plus-top-tube-bag/350170000100000055.html",
+      "fields": [
+        {
+          "field": "color",
+          "before": "Black Local Plus Top Tube Bag",
+          "after": "Black"
+        },
+        {
+          "field": "variants",
+          "before": [
+            {
+              "sku": "BB-7170729",
+              "title": "OS · Black Local Plus Top Tube Bag",
+              "color": "Black Local Plus Top Tube Bag",
+              "volume": 0,
+              "weight": 0,
+              "mounting": "Top-tube straps / direct mount",
+              "available": true
+            }
+          ],
+          "after": [
+            {
+              "sku": "BB-7170729",
+              "title": "OS · Black",
+              "color": "Black",
+              "volume": 0,
+              "weight": 0,
+              "mounting": "Top-tube straps / direct mount",
+              "available": true
+            }
+          ]
+        }
+      ],
+      "before": {
+        "id": "blackburn-local-plus-top-tube-bag",
+        "name": "Local Plus Top Tube Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/local-plus-top-tube-bag/350170000100000055.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 0,
+        "weightOptions": [],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "BB-7170729",
+        "color": "Black Local Plus Top Tube Bag",
+        "material": "Technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / direct mount",
+        "mountingOptions": [
+          "Top-tube straps / direct mount"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170729",
+            "title": "OS · Black Local Plus Top Tube Bag",
+            "color": "Black Local Plus Top Tube Bag",
+            "volume": 0,
+            "weight": 0,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Local Plus Top Tube Bag is a Blackburn top-tube bag. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу Blackburn. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nWith its touchscreen-friendly design, the Local Plus Top Tube Bag is great way to get your phone out of your pocket and where you can get at it quickly.\n\nDetails\nNow you can carry your phone—along with a wallet, tools, spare tube and whatever else you need—and have it right where you need it. This bag sits on your top tube, and its touchscreen-friendly design allows you to use an iPhone 6 or other phone with smaller dimensions.\n\nKey Features\nBAG FIT — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+          "https://vault.widen.net/content/t2g3fyqlvz?w=900&h=900",
+          "https://vault.widen.net/content/7tofhrd7xa?w=900&h=900",
+          "https://vault.widen.net/content/a4dmt0puox?w=900&h=900"
+        ]
+      },
+      "after": {
+        "id": "blackburn-local-plus-top-tube-bag",
+        "name": "Local Plus Top Tube Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/local-plus-top-tube-bag/350170000100000055.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 0,
+        "weightOptions": [],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "BB-7170729",
+        "color": "Black",
+        "material": "Technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / direct mount",
+        "mountingOptions": [
+          "Top-tube straps / direct mount"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170729",
+            "title": "OS · Black",
+            "color": "Black",
+            "volume": 0,
+            "weight": 0,
+            "mounting": "Top-tube straps / direct mount",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Local Plus Top Tube Bag is a Blackburn top-tube bag. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу Blackburn. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nWith its touchscreen-friendly design, the Local Plus Top Tube Bag is great way to get your phone out of your pocket and where you can get at it quickly.\n\nDetails\nNow you can carry your phone—along with a wallet, tools, spare tube and whatever else you need—and have it right where you need it. This bag sits on your top tube, and its touchscreen-friendly design allows you to use an iPhone 6 or other phone with smaller dimensions.\n\nKey Features\nBAG FIT — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nREFLECTIVE PRINT — For better night time visibility and safety.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/kyzhrpmrt0?w=900&h=900",
+          "https://vault.widen.net/content/t2g3fyqlvz?w=900&h=900",
+          "https://vault.widen.net/content/7tofhrd7xa?w=900&h=900",
+          "https://vault.widen.net/content/a4dmt0puox?w=900&h=900"
+        ]
+      }
+    },
+    {
+      "id": "blackburn:changed:blackburn-outpost-seat-pack-dry-bag",
+      "manufacturerId": "blackburn",
+      "manufacturer": "Blackburn",
+      "productId": "blackburn-outpost-seat-pack-dry-bag",
+      "productName": "Outpost Seat Pack & Dry Bag",
+      "type": "changed",
+      "sourceUrl": "https://www.bellhelmets.com/product/outpost-seat-pack-%26-dry-bag/350170000100000046.html",
+      "fields": [
+        {
+          "field": "color",
+          "before": "Black Black",
+          "after": "Black"
+        },
+        {
+          "field": "variants",
+          "before": [
+            {
+              "sku": "BB-7170716",
+              "title": "OS · Black Black",
+              "color": "Black Black",
+              "volume": 11,
+              "weight": 475,
+              "mounting": "Saddle rails / seatpost straps",
+              "available": true
+            }
+          ],
+          "after": [
+            {
+              "sku": "BB-7170716",
+              "title": "OS · Black",
+              "color": "Black",
+              "volume": 11,
+              "weight": 475,
+              "mounting": "Saddle rails / seatpost straps",
+              "available": true
+            }
+          ]
+        }
+      ],
+      "before": {
+        "id": "blackburn-outpost-seat-pack-dry-bag",
+        "name": "Outpost Seat Pack & Dry Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/outpost-seat-pack-%26-dry-bag/350170000100000046.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 11,
+        "volumeOptions": [
+          11
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 475,
+        "weightOptions": [
+          475
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "widthCm": 15.2,
+          "heightCm": 20.3,
+          "lengthCm": 42,
+          "lengthMaxCm": 56
+        },
+        "sku": "BB-7170716",
+        "color": "Black Black",
+        "material": "Technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170716",
+            "title": "OS · Black Black",
+            "color": "Black Black",
+            "volume": 11,
+            "weight": 475,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Outpost Seat Pack & Dry Bag is a Blackburn saddle bag in 11 L. Technical data is normalized from the official product page.",
+          "ru": "Подседельная сумка Blackburn объёмом 11 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nAn ideal solution for overnight or weekend trips, but also works well for commuting or long day trips.\n\nDetails\nA great alternative to panniers or a backpack. Ideal for mountain bike overnight trips, but also works will for commuting or long day trips.\n\nKey Features\nHARNESS SYSTEM — This bag features a system that is comprised of an outer \"harness\" that securely carries an inner bag. The inner bag can be removed from harness quickly and easily, without having to detach the harness from the bike. The advantage is that it saves time, is more secure, and allows you to carry odd/oversized items or use your favorite aftermarket bags.\nWELDED SEAM CONSTRUCTION — Welded seams not only reduce bulk, weight, and materials, they improve performance by eliminating the needle hole, a potential area for saturation and leakage. Welded seams also create a clean finish on both the interior and exterior of the bag.\nROLL-TOP DESIGN — This age-old bag design allows you to not only minimize the size of your bag to match the size of its contents, but also lets you compress the contents if you want to go even smaller.\nDAISY CHAIN LOOPS — Not enough room inside the bag? No problem, just attach your gear to one of our convenient daisy chain loops made from tough webbing.\nHOOK-AND-LOOP ATTACHMENT — A quick, yet robust attachment to your bike.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+          "https://vault.widen.net/content/6s8zolghgt?w=900&h=900",
+          "https://vault.widen.net/content/96ghyjumiu?w=900&h=900"
+        ]
+      },
+      "after": {
+        "id": "blackburn-outpost-seat-pack-dry-bag",
+        "name": "Outpost Seat Pack & Dry Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/outpost-seat-pack-%26-dry-bag/350170000100000046.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 11,
+        "volumeOptions": [
+          11
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 475,
+        "weightOptions": [
+          475
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "widthCm": 15.2,
+          "heightCm": 20.3,
+          "lengthCm": 42,
+          "lengthMaxCm": 56
+        },
+        "sku": "BB-7170716",
+        "color": "Black",
+        "material": "Technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170716",
+            "title": "OS · Black",
+            "color": "Black",
+            "volume": 11,
+            "weight": 475,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Outpost Seat Pack & Dry Bag is a Blackburn saddle bag in 11 L. Technical data is normalized from the official product page.",
+          "ru": "Подседельная сумка Blackburn объёмом 11 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nAn ideal solution for overnight or weekend trips, but also works well for commuting or long day trips.\n\nDetails\nA great alternative to panniers or a backpack. Ideal for mountain bike overnight trips, but also works will for commuting or long day trips.\n\nKey Features\nHARNESS SYSTEM — This bag features a system that is comprised of an outer \"harness\" that securely carries an inner bag. The inner bag can be removed from harness quickly and easily, without having to detach the harness from the bike. The advantage is that it saves time, is more secure, and allows you to carry odd/oversized items or use your favorite aftermarket bags.\nWELDED SEAM CONSTRUCTION — Welded seams not only reduce bulk, weight, and materials, they improve performance by eliminating the needle hole, a potential area for saturation and leakage. Welded seams also create a clean finish on both the interior and exterior of the bag.\nROLL-TOP DESIGN — This age-old bag design allows you to not only minimize the size of your bag to match the size of its contents, but also lets you compress the contents if you want to go even smaller.\nDAISY CHAIN LOOPS — Not enough room inside the bag? No problem, just attach your gear to one of our convenient daisy chain loops made from tough webbing.\nHOOK-AND-LOOP ATTACHMENT — A quick, yet robust attachment to your bike.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/9u3a62gdx3?w=900&h=900",
+          "https://vault.widen.net/content/6s8zolghgt?w=900&h=900",
+          "https://vault.widen.net/content/96ghyjumiu?w=900&h=900"
+        ]
+      }
+    },
+    {
+      "id": "blackburn:changed:blackburn-outpost-top-tube-bag",
+      "manufacturerId": "blackburn",
+      "manufacturer": "Blackburn",
+      "productId": "blackburn-outpost-top-tube-bag",
+      "productName": "Outpost Top Tube Bag",
+      "type": "changed",
+      "sourceUrl": "https://www.bellhelmets.com/product/outpost-top-tube-bag/350170000100000037.html",
+      "fields": [
+        {
+          "field": "color",
+          "before": "Black Black",
+          "after": "Black"
+        },
+        {
+          "field": "variants",
+          "before": [
+            {
+              "sku": "BB-7170730",
+              "title": "OS · Black Black",
+              "color": "Black Black",
+              "volume": 0.5,
+              "weight": 185,
+              "mounting": "Bolt-on / top-tube straps",
+              "available": true
+            }
+          ],
+          "after": [
+            {
+              "sku": "BB-7170730",
+              "title": "OS · Black",
+              "color": "Black",
+              "volume": 0.5,
+              "weight": 185,
+              "mounting": "Bolt-on / top-tube straps",
+              "available": true
+            }
+          ]
+        }
+      ],
+      "before": {
+        "id": "blackburn-outpost-top-tube-bag",
+        "name": "Outpost Top Tube Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/outpost-top-tube-bag/350170000100000037.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0.5,
+        "volumeOptions": [
+          0.5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 185,
+        "weightOptions": [
+          185
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 23.5,
+          "widthCm": 8,
+          "heightCm": 12
+        },
+        "sku": "BB-7170730",
+        "color": "Black Black",
+        "material": "Technical fabric",
+        "waterproof": "Water resistant",
+        "waterproofRating": null,
+        "mounting": "Bolt-on / top-tube straps",
+        "mountingOptions": [
+          "Bolt-on / top-tube straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170730",
+            "title": "OS · Black Black",
+            "color": "Black Black",
+            "volume": 0.5,
+            "weight": 185,
+            "mounting": "Bolt-on / top-tube straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Outpost Top Tube Bag is a Blackburn top-tube bag in 0.5 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу Blackburn объёмом 0.5 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nWe've redesigned our Outpost Top Tube Bag to fit more bikes, better to provide you easy access to ride essentials.\n\nDetails\nEasy access to your essential riding gear. A high end top tube bag that works great for the expedition cyclist, but also serves the needs of a long weekend ride or event.\n\nKey Features\nBOLT ON — Ditch the top tube straps. This bag bolts to your frame via two reinforced m5 grommets for a clean look and a stout mount.\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+          "https://vault.widen.net/content/ux27olicuo?w=900&h=900",
+          "https://vault.widen.net/content/jcadp0wqik?w=900&h=900",
+          "https://vault.widen.net/content/b9ilclvsab?w=900&h=900"
+        ]
+      },
+      "after": {
+        "id": "blackburn-outpost-top-tube-bag",
+        "name": "Outpost Top Tube Bag",
+        "brand": "Blackburn",
+        "sourceUrl": "https://www.bellhelmets.com/product/outpost-top-tube-bag/350170000100000037.html",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0.5,
+        "volumeOptions": [
+          0.5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 185,
+        "weightOptions": [
+          185
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 23.5,
+          "widthCm": 8,
+          "heightCm": 12
+        },
+        "sku": "BB-7170730",
+        "color": "Black",
+        "material": "Technical fabric",
+        "waterproof": "Water resistant",
+        "waterproofRating": null,
+        "mounting": "Bolt-on / top-tube straps",
+        "mountingOptions": [
+          "Bolt-on / top-tube straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BB-7170730",
+            "title": "OS · Black",
+            "color": "Black",
+            "volume": 0.5,
+            "weight": 185,
+            "mounting": "Bolt-on / top-tube straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Outpost Top Tube Bag is a Blackburn top-tube bag in 0.5 L. Technical data is normalized from the official product page.",
+          "ru": "Сумка на верхнюю трубу Blackburn объёмом 0.5 L. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Description\nWe've redesigned our Outpost Top Tube Bag to fit more bikes, better to provide you easy access to ride essentials.\n\nDetails\nEasy access to your essential riding gear. A high end top tube bag that works great for the expedition cyclist, but also serves the needs of a long weekend ride or event.\n\nKey Features\nBOLT ON — Ditch the top tube straps. This bag bolts to your frame via two reinforced m5 grommets for a clean look and a stout mount.\nORGANIZATION — We carefully consider what is put in each of our bags and tailor the compartments, pockets and other features to make sure there is a perfect place for everything.\nLIFETIME WARRANTY —",
+        "sourceImageUrl": "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+        "sourceImageUrls": [
+          "https://vault.widen.net/content/imajwawgq4?w=900&h=900",
+          "https://vault.widen.net/content/ux27olicuo?w=900&h=900",
+          "https://vault.widen.net/content/jcadp0wqik?w=900&h=900",
+          "https://vault.widen.net/content/b9ilclvsab?w=900&h=900"
+        ]
+      }
+    }
+  ]
+}

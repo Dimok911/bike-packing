@@ -31,6 +31,10 @@ import {
   buildCycliteCatalogEntry,
   cycliteCatalogTargets,
 } from "./manufacturer-catalog/cyclite-adapter.mjs";
+import {
+  blackburnCatalogTargets,
+  buildBlackburnCatalogEntry,
+} from "./manufacturer-catalog/blackburn-adapter.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -590,6 +594,9 @@ const missGrapeTargets = manufacturerRequested("miss-grape")
 const cycliteTargets = manufacturerRequested("cyclite")
   ? cycliteCatalogTargets(await readFile(join(sourceDir, "cyclite-bikepacking.html"), "utf8"))
   : [];
+const blackburnTargets = manufacturerRequested("blackburn")
+  ? blackburnCatalogTargets(await readFile(join(sourceDir, "blackburn-bags.html"), "utf8"))
+  : [];
 
 const entries = [];
 for (const product of [...ortliebByHandle.values()].sort((left, right) => left.title.localeCompare(right.title))) {
@@ -639,6 +646,13 @@ for (const target of missGrapeTargets) {
 for (const target of cycliteTargets) {
   entries.push(buildCycliteCatalogEntry({
     html: await readFile(join(pagesDir, "cyclite", `${target.handle}.html`), "utf8"),
+    sourceUrl: target.url,
+    checkedAt,
+  }));
+}
+for (const target of blackburnTargets) {
+  entries.push(buildBlackburnCatalogEntry({
+    html: await readFile(join(pagesDir, "blackburn", `${target.handle}.html`), "utf8"),
     sourceUrl: target.url,
     checkedAt,
   }));

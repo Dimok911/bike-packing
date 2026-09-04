@@ -22,6 +22,10 @@ import {
   cycliteProductPageIsValid,
 } from "./manufacturer-catalog/cyclite-adapter.mjs";
 import {
+  blackburnCatalogTargets,
+  blackburnProductPageIsValid,
+} from "./manufacturer-catalog/blackburn-adapter.mjs";
+import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
   manufacturerIdForEntry,
@@ -138,6 +142,9 @@ async function downloadManufacturer(source) {
       } else if (source.adapter === "cyclite-collection") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         cycliteCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "blackburn-sfcc") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        blackburnCatalogTargets(fetched).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -147,12 +154,12 @@ async function downloadManufacturer(source) {
       }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart" || source.adapter === "cyclite-collection"
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart" || source.adapter === "cyclite-collection" || source.adapter === "blackburn-sfcc"
         ? ""
         : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
-  const productConcurrency = source.adapter === "revelate-product-chart" ? 2 : 6;
+  const productConcurrency = source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : 6;
   await mapConcurrent([...products.values()], productConcurrency, async (product) => {
     const handle = product.handle;
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
@@ -161,7 +168,8 @@ async function downloadManufacturer(source) {
       const validate = source.adapter === "revelate-product-chart"
         ? revelateProductPageIsValid
         : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid
-          : source.adapter === "cyclite-collection" ? cycliteProductPageIsValid : null;
+          : source.adapter === "cyclite-collection" ? cycliteProductPageIsValid
+            : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid : null;
       await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
