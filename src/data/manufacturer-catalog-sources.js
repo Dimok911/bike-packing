@@ -89,6 +89,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["blackburn-bags.html", "https://www.blackburndesign.com/c/bags/"],
     ]),
   }),
+  Object.freeze({
+    id: "topeak",
+    name: "Topeak",
+    adapter: "topeak-html",
+    productBaseUrl: "https://www.topeak.com/global/en/product/",
+    collections: Object.freeze([
+      ["topeak-bags.html", "https://www.topeak.com/global/en/products/186-Bags"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

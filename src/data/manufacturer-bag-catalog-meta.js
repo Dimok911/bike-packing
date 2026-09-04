@@ -7,7 +7,8 @@ const MANUFACTURER_BRAND_LOGOS = {
   ortlieb: new URL("../../assets/manufacturer-brands/ortlieb.png", import.meta.url).href,
   "revelate-designs": new URL("../../assets/manufacturer-brands/revelate-designs.png", import.meta.url).href,
   restrap: new URL("../../assets/manufacturer-brands/restrap.svg", import.meta.url).href,
-  tailfin: new URL("../../assets/manufacturer-brands/tailfin.svg", import.meta.url).href
+  tailfin: new URL("../../assets/manufacturer-brands/tailfin.svg", import.meta.url).href,
+  topeak: new URL("../../assets/manufacturer-brands/topeak.svg", import.meta.url).href
 };
 
 export const MANUFACTURER_BAG_CATALOG_BRANDS = [
@@ -20,7 +21,7 @@ export const MANUFACTURER_BAG_CATALOG_BRANDS = [
   { id: "miss-grape", name: "Miss Grape", catalogBrand: "Miss Grape", logoUrl: MANUFACTURER_BRAND_LOGOS["miss-grape"], status: "active" },
   { id: "cyclite", name: "CYCLITE", catalogBrand: "CYCLITE", logoUrl: MANUFACTURER_BRAND_LOGOS.cyclite, status: "active" },
   { id: "blackburn", name: "Blackburn", catalogBrand: "Blackburn", logoUrl: MANUFACTURER_BRAND_LOGOS.blackburn, status: "active" },
-  { id: "topeak", name: "Topeak", status: "planned" },
+  { id: "topeak", name: "Topeak", catalogBrand: "Topeak", logoUrl: MANUFACTURER_BRAND_LOGOS.topeak, status: "active" },
   { id: "rockgeist", name: "Rockgeist", status: "planned" }
 ];
 

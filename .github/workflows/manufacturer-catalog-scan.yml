@@ -73,6 +73,8 @@ jobs:
             manufacturer-catalog-scan-work/.catalog-pages/cyclite
             manufacturer-catalog-scan-work/blackburn-bags.html
             manufacturer-catalog-scan-work/.catalog-pages/blackburn
+            manufacturer-catalog-scan-work/topeak-bags.html
+            manufacturer-catalog-scan-work/.catalog-pages/topeak
           if-no-files-found: error
           retention-days: 90
       - name: Store short-lived official image snapshot

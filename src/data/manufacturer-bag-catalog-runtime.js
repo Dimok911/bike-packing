@@ -14,7 +14,8 @@ const LOADERS = new Map([
   ["Revelate Designs", () => import("./manufacturer-catalog-runtime/revelate-designs.generated.js")],
   ["Miss Grape", () => import("./manufacturer-catalog-runtime/miss-grape.generated.js")],
   ["CYCLITE", () => import("./manufacturer-catalog-runtime/cyclite.generated.js")],
-  ["Blackburn", () => import("./manufacturer-catalog-runtime/blackburn.generated.js")]
+  ["Blackburn", () => import("./manufacturer-catalog-runtime/blackburn.generated.js")],
+  ["Topeak", () => import("./manufacturer-catalog-runtime/topeak.generated.js")]
 ]);
 const loadedByBrand = new Map();
 const loadingByBrand = new Map();

@@ -44,6 +44,11 @@ import {
   blackburnProductPageIsValid,
   buildBlackburnCatalogEntry,
 } from "../../scripts/manufacturer-catalog/blackburn-adapter.mjs";
+import {
+  buildTopeakCatalogEntry,
+  topeakCatalogTargets,
+  topeakProductPageIsValid,
+} from "../../scripts/manufacturer-catalog/topeak-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -174,6 +179,33 @@ test("CRITICAL catalog scan: Blackburn keeps official bags and excludes racks fr
   assert.ok(entry.sourceImageUrls.every((url) => url.startsWith("https://vault.widen.net/content/") && /w=900/.test(url)));
 });
 
+test("CRITICAL catalog scan: Topeak discovers bag sections, excludes accessories, and normalizes variants", () => {
+  const catalog = `<main>
+    <div class="category-section"><h3 class="category-section__title">Saddle Bags</h3><ul class="product-card">
+      <li class="product-card__item"><a href="/global/en/product/1423-BACKLOADER-X"></a><div class="product-card__container"><h2 class="product-card__title">BACKLOADER X</h2><h3 class="product-card__subtitle">10L / 15L / Waterproof</h3></div></li>
+    </ul></div><button></button></div>
+    <div class="category-section"><h3 class="category-section__title">Rain Cover</h3><ul class="product-card">
+      <li class="product-card__item"><a href="/global/en/product/302-RAIN-COVER"></a><div class="product-card__container"><h2 class="product-card__title">RAIN COVER</h2></div></li>
+    </ul></div><button></button></div>
+  </main>`;
+  const targets = topeakCatalogTargets(catalog);
+  assert.deepEqual(targets.map(({ handle, category }) => ({ handle, category })), [{ handle: "1423-backloader-x", category: "saddle" }]);
+
+  const html = `<html><head><meta itemprop="name" content="BACKLOADER X"><meta name="description" content="Waterproof seat bag."></head><body>
+    <div class="product-content__presentation"><img data-src="https://www.topeak.com/storage/app/media/product/bikepacking/backloader-x/main.png"><img data-src="https://www.topeak.com/storage/app/media/product/bikepacking/backloader-x/side.jpg"></div><div class="product-content__details">
+    <h6>ART NO: <span id="product-id">TBP-BLX3B</span></h6>
+    <li class="size-option" data-size="10 Liter" data-color="Black" data-quiver-id="" data-mod-id="1665">10L</li>
+    <li class="size-option" data-size="15 Liter" data-color="Green" data-quiver-id="" data-mod-id="1666">15L</li>
+    <div class="product-info"><table><tr><td class="table-border__caption">CAPACITY</td><td class="table-border__description">10 L<br>15 L</td></tr><tr><td class="table-border__caption">WEIGHT</td><td class="table-border__description">10L: 575 g (Black)<br>15L: 555 g (Green)</td></tr><tr><td class="table-border__caption">BAG ATTACHMENT</td><td class="table-border__description">Saddle rails / seatpost</td></tr></table></div>
+  </body></html>`;
+  assert.equal(topeakProductPageIsValid(html), true);
+  assert.equal(topeakProductPageIsValid("<html>challenge</html>"), false);
+  const entry = buildTopeakCatalogEntry({ target: targets[0], html, checkedAt: "2026-09-04" });
+  assert.deepEqual({ brand: entry.brand, category: entry.category, volumes: entry.volumeOptions }, { brand: "Topeak", category: "saddle", volumes: [10, 15] });
+  assert.deepEqual(entry.variants.map(({ volume, weight }) => ({ volume, weight })), [{ volume: 10, weight: 575 }, { volume: 15, weight: 555 }]);
+  assert.equal(entry.sourceImageUrls.length, 2);
+});
+
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {
   const result = compareManufacturerCatalogSnapshots(
     [bag("ortlieb-old", "ORTLIEB"), bag("ortlieb-back-roller", "ORTLIEB")],
@@ -215,7 +247,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 9);
+  assert.equal(report.manufacturers.length, 10);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
@@ -225,6 +257,7 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
   assert.equal(report.manufacturers.find((item) => item.id === "miss-grape").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "cyclite").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "blackburn").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "topeak").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 

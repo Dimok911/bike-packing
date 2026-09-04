@@ -26,6 +26,10 @@ import {
   blackburnProductPageIsValid,
 } from "./manufacturer-catalog/blackburn-adapter.mjs";
 import {
+  topeakCatalogTargets,
+  topeakProductPageIsValid,
+} from "./manufacturer-catalog/topeak-adapter.mjs";
+import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
   manufacturerIdForEntry,
@@ -145,6 +149,9 @@ async function downloadManufacturer(source) {
       } else if (source.adapter === "blackburn-sfcc") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         blackburnCatalogTargets(fetched).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "topeak-html") {
+        await writeFile(join(workDir, fileName), fetched, "utf8");
+        topeakCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -154,12 +161,12 @@ async function downloadManufacturer(source) {
       }
     } catch (error) {
       errors[source.id].push(String(error?.message || error));
-      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart" || source.adapter === "cyclite-collection" || source.adapter === "blackburn-sfcc"
+      await writeFile(join(workDir, fileName), source.adapter === "tailfin-html" || source.adapter === "revelate-product-chart" || source.adapter === "cyclite-collection" || source.adapter === "blackburn-sfcc" || source.adapter === "topeak-html"
         ? ""
         : source.adapter === "apidura-sitemap" ? "" : "{\"products\":[]}\n", "utf8");
     }
   }
-  const productConcurrency = source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : 6;
+  const productConcurrency = source.adapter === "revelate-product-chart" || source.adapter === "blackburn-sfcc" ? 2 : source.adapter === "topeak-html" ? 8 : 6;
   await mapConcurrent([...products.values()], productConcurrency, async (product) => {
     const handle = product.handle;
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
@@ -169,7 +176,8 @@ async function downloadManufacturer(source) {
         ? revelateProductPageIsValid
         : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid
           : source.adapter === "cyclite-collection" ? cycliteProductPageIsValid
-            : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid : null;
+            : source.adapter === "blackburn-sfcc" ? blackburnProductPageIsValid
+              : source.adapter === "topeak-html" ? topeakProductPageIsValid : null;
       await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));

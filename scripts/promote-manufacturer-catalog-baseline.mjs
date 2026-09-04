@@ -31,9 +31,11 @@ function withDerivedImageAssets(entry, manufacturerId) {
     .replace(new RegExp(`^${manufacturerId}-`), "")
     .trim()
     .toLowerCase();
-  const handle = (entryHandle || sourceHandle)
+  const preferredHandle = manufacturerId === "topeak" && /^\d+-/i.test(sourceLeaf) ? sourceLeaf : (entryHandle || sourceHandle);
+  const handle = preferredHandle
+    .replace(/\+/g, " plus ")
     .replace(/&/g, " and ")
-    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(manufacturerId === "topeak" ? /[^a-z0-9]+/g : /[^a-z0-9.-]+/g, "-")
     .replace(/^-|-$/g, "");
   const imageUrls = Array.isArray(normalizedEntry.sourceImageUrls)
     ? normalizedEntry.sourceImageUrls
