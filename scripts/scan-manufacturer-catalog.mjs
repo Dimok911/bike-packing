@@ -14,6 +14,10 @@ import {
   revelateProductPageIsValid,
 } from "./manufacturer-catalog/revelate-adapter.mjs";
 import {
+  missGrapeCatalogTargets,
+  missGrapeProductPageIsValid,
+} from "./manufacturer-catalog/miss-grape-adapter.mjs";
+import {
   buildManufacturerCatalogScanReport,
   manufacturerCatalogScanMarkdown,
   manufacturerIdForEntry,
@@ -123,6 +127,10 @@ async function downloadManufacturer(source) {
       } else if (source.adapter === "revelate-product-chart") {
         await writeFile(join(workDir, fileName), fetched, "utf8");
         revelateCatalogTargets(fetched, { baseUrl: url }).forEach((product) => products.set(product.handle, product));
+      } else if (source.adapter === "miss-grape-wordpress") {
+        const parsed = JSON.parse(fetched);
+        await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
+        missGrapeCatalogTargets(parsed).forEach((product) => products.set(product.handle, product));
       } else {
         const parsed = JSON.parse(fetched);
         await writeFile(join(workDir, fileName), `${JSON.stringify(parsed)}\n`, "utf8");
@@ -143,7 +151,9 @@ async function downloadManufacturer(source) {
     const pagePath = join(pagesDir, source.id, `${handle}.html`);
     try {
       const pageUrl = product.url || `${source.productBaseUrl}${encodeURIComponent(handle)}`;
-      const validate = source.adapter === "revelate-product-chart" ? revelateProductPageIsValid : null;
+      const validate = source.adapter === "revelate-product-chart"
+        ? revelateProductPageIsValid
+        : source.adapter === "miss-grape-wordpress" ? missGrapeProductPageIsValid : null;
       await writeFile(pagePath, await fetchText(pageUrl, 3, validate), "utf8");
     } catch (error) {
       errors[source.id].push(String(error?.message || error));

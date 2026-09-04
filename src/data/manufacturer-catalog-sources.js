@@ -62,6 +62,15 @@ export const MANUFACTURER_CATALOG_SOURCES = Object.freeze([
       ["revelate-product-chart.html", "https://revelatedesigns.com/product-chart/"],
     ]),
   }),
+  Object.freeze({
+    id: "miss-grape",
+    name: "Miss Grape",
+    adapter: "miss-grape-wordpress",
+    productBaseUrl: "https://missgrape.net/en/",
+    collections: Object.freeze([
+      ["miss-grape-products.json", "https://missgrape.net/wp-json/wp/v2/product?per_page=100&_fields=id,slug,link,title,featured_media,product_cat,product_tag"],
+    ]),
+  }),
 ]);
 
 export function manufacturerCatalogSource(id) {

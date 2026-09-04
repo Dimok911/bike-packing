@@ -27,6 +27,11 @@ import {
   revelateCatalogTargets,
   revelateProductPageIsValid,
 } from "../../scripts/manufacturer-catalog/revelate-adapter.mjs";
+import {
+  buildMissGrapeCatalogEntry,
+  missGrapeCatalogTargets,
+  missGrapeProductPageIsValid,
+} from "../../scripts/manufacturer-catalog/miss-grape-adapter.mjs";
 import { validateManufacturerCatalogImport } from "../../scripts/validate-manufacturer-catalog-import.mjs";
 import { manufacturerCatalogBaselineEntries } from "../../scripts/promote-manufacturer-catalog-baseline.mjs";
 
@@ -55,6 +60,39 @@ test("CRITICAL catalog scan: display names and technical manufacturer ids normal
 test("CRITICAL catalog scan: Revelate product pages reject incomplete HTTP 200 responses", () => {
   assert.equal(revelateProductPageIsValid("<html><title>Just a moment</title></html>"), false);
   assert.equal(revelateProductPageIsValid('<h1 class="product_title entry-title">Burrote</h1>'), true);
+});
+
+test("CRITICAL catalog scan: Miss Grape keeps current bags and rejects second-hand duplicates", () => {
+  const targets = missGrapeCatalogTargets([
+    { slug: "cluster-7-wp", link: "https://missgrape.net/road/seat-bags/cluster-7-waterproof/", title: { rendered: "Cluster 7 Waterproof" } },
+    { slug: "node", link: "https://missgrape.net/adventure-series/top-tube-bags/node/", title: { rendered: "Node Adventure" } },
+    { slug: "cluster-7-waterproof-second-hand", link: "https://missgrape.net/prodotto/second-hand/cluster-7-waterproof-second-hand/" },
+    { slug: "protection-kit", link: "https://missgrape.net/accessori/bike-frame-protection-kit/" },
+  ]);
+  assert.deepEqual(targets.map(({ handle }) => handle), ["cluster-7-wp", "node"]);
+  assert.ok(targets.every(({ url }) => url.startsWith("https://missgrape.net/en/")));
+  assert.equal(missGrapeProductPageIsValid("<html><title>Challenge</title></html>"), false);
+});
+
+test("CRITICAL catalog scan: Miss Grape normalizes official range, weight, dimensions, and gallery", () => {
+  const entry = buildMissGrapeCatalogEntry({
+    checkedAt: "2026-09-04",
+    sourceUrl: "https://missgrape.net/en/adventure-series/handlebar-bags/tendril-10-7-waterproof/",
+    product: { slug: "tendril-10-7", title: { rendered: "Tendril 10.7 Waterproof" } },
+    html: `<html><head><meta property="og:image" content="https://ed58xxhnoja.exactdn.com/wp-content/uploads/tendril-front.jpg?ssl=1"><meta property="og:description" content="Waterproof handlebar bag."></head><body>
+      <main><h1>Tendril 10.7 Waterproof</h1><span class="sku">TD10AWPB</span>
+      <img data-large_image="https://ed58xxhnoja.exactdn.com/wp-content/uploads/tendril-side.jpg?ssl=1">
+      <h2>Introduction</h2><p>Completely waterproof. Black 210 nylon and 420 nylon / 300 polyester.</p>
+      <h2>Characteristics</h2><p>DIAMETER<br>18cm<br>MIN. WIDTH<br>34cm<br>MAX. WIDTH<br>70cm<br>MIN. VOLUME<br>10 litres<br>MAX VOLUME<br>17 litres<br>WEIGHT<br>396 g</p></main></body></html>`,
+  });
+  assert.equal(entry.brand, "Miss Grape");
+  assert.equal(entry.category, "handlebar");
+  assert.deepEqual(entry.volumeOptions, [10, 17]);
+  assert.deepEqual(entry.weightOptions, [396]);
+  assert.deepEqual(entry.dimensions, { diameterCm: 18, widthMinCm: 34, widthMaxCm: 70 });
+  assert.equal(entry.waterproof, "Waterproof");
+  assert.equal(entry.sourceImageUrls.length, 2);
+  assert.ok(entry.imageAssetPaths.every((path) => /^assets\/manufacturer-catalog\/miss-grape\//.test(path)));
 });
 
 test("CRITICAL catalog scan: detects additions, changes, and missing models without deleting evidence", () => {
@@ -98,13 +136,14 @@ test("CRITICAL catalog scan: report keeps manufacturer adapters independent", ()
     manufacturers: MANUFACTURER_CATALOG_SOURCES,
     scannedAt: "2026-08-30T09:00:00.000Z",
   });
-  assert.equal(report.manufacturers.length, 6);
+  assert.equal(report.manufacturers.length, 7);
   assert.equal(report.manufacturers.find((item) => item.id === "ortlieb").sourceCount, 6);
   assert.equal(report.manufacturers.find((item) => item.id === "arkel").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "tailfin").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "apidura").sourceCount, 1);
   assert.equal(report.manufacturers.find((item) => item.id === "restrap").sourceCount, 7);
   assert.equal(report.manufacturers.find((item) => item.id === "revelate-designs").sourceCount, 1);
+  assert.equal(report.manufacturers.find((item) => item.id === "miss-grape").sourceCount, 1);
   assert.equal(report.summary.added, 1);
 });
 

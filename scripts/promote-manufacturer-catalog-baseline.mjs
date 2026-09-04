@@ -3,6 +3,7 @@ import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { MANUFACTURER_BAG_CATALOG } from "../src/data/manufacturer-bag-catalog.js";
 import { assertManufacturerBagCatalogSkuModels } from "../src/data/manufacturer-bag-catalog-variants.js";
+import { manufacturerIdForEntry } from "../src/data/manufacturer-catalog-scan.js";
 import { readManufacturerCatalogImport } from "./validate-manufacturer-catalog-import.mjs";
 
 const args = new Map();
@@ -21,7 +22,11 @@ function withDerivedImageAssets(entry, manufacturerId) {
   };
   if (Array.isArray(normalizedEntry.imageAssetPaths) && normalizedEntry.imageAssetPaths.length) return normalizedEntry;
   const sourceUrl = new URL(String(normalizedEntry.sourceUrl || ""));
-  const handle = sourceUrl.pathname.split("/").filter(Boolean).at(-1)?.toLowerCase() || "";
+  const entryHandle = String(normalizedEntry.sourceProductId || normalizedEntry.id || "")
+    .replace(new RegExp(`^${manufacturerId}-`), "")
+    .trim()
+    .toLowerCase();
+  const handle = entryHandle || sourceUrl.pathname.split("/").filter(Boolean).at(-1)?.toLowerCase() || "";
   const imageUrls = Array.isArray(normalizedEntry.sourceImageUrls)
     ? normalizedEntry.sourceImageUrls
     : [normalizedEntry.sourceImageUrl].filter(Boolean);
@@ -40,7 +45,7 @@ export function manufacturerCatalogBaselineEntries(existingEntries, report, manu
     .filter(Boolean));
   if (!requested.size) throw new Error("At least one baseline manufacturer is required");
   const existing = (Array.isArray(existingEntries) ? existingEntries : [])
-    .filter((entry) => !requested.has(String(entry?.brand || "").trim().toLowerCase()))
+    .filter((entry) => !requested.has(manufacturerIdForEntry(entry)))
     .map(withoutRuntimeImages);
   const byId = new Map(existing.map((entry) => [String(entry.id || ""), entry]));
   const counts = Object.fromEntries([...requested].map((id) => [id, 0]));

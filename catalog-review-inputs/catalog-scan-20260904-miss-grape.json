@@ -1,0 +1,2191 @@
+{
+  "schemaVersion": 1,
+  "id": "catalog-scan-20260904102104",
+  "scannedAt": "2026-09-04T10:21:04.417Z",
+  "status": "complete",
+  "manufacturers": [
+    {
+      "id": "miss-grape",
+      "name": "Miss Grape",
+      "status": "complete",
+      "sourceCount": 1,
+      "productCount": 25,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "manufacturers": 1,
+    "products": 370,
+    "unchanged": 345,
+    "added": 25,
+    "changed": 0,
+    "missing": 0,
+    "errors": 0
+  },
+  "changes": [
+    {
+      "id": "miss-grape:added:miss-grape-big-node-2h-road",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-big-node-2h-road",
+      "productName": "Big Node 2H",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/big-node-2h-road/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-big-node-2h-road",
+        "name": "Big Node 2H",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/big-node-2h-road/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 1.8,
+        "volumeOptions": [
+          1.8
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 179,
+        "weightOptions": [
+          179
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 40,
+          "heightCm": 9,
+          "widthCm": 4.5
+        },
+        "sku": "BND2HRWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BND2HRWRB",
+            "title": "1.8 L",
+            "color": "Black",
+            "volume": 1.8,
+            "weight": 179,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Big Node 2H top tube bag is the longer and more capacious version of its sister Node 2H. Designed for ultra-distance competitions but also to be the reliable and safe travel companion for storing the objects you always need at hand.",
+          "ru": "Сумка на верхнюю трубу Miss Grape объёмом 1.8 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Big Node 2H is the longer and more capacious version of its sister, the Node 2H. Designed for ultra-distance competitions but also to be a reliable and safe travel companion for storing the items you always need close at hand.\nThe zipper is waterproof and opens in one direction.\nIdeal for storing cell phones, energy bars, snacks, batteries, cameras, etc.\nMade with our ultra-resistant, tear-resistant and lightweight dotted resin fabric. \nThe bag has a capacity of 1.8 liters and weighs 179 g and is Water Resistant.\nThe interior of the bag features an adjustable divider that can be opened to create a single, solid and stable compartment.\nThe bag is fixed to the upper horizontal tube, to the stem and to the 2 adjustable screw seats thanks to the presence of 7 positioning holes.\nCompatible with all frame bags , thanks to the adjustable Velcro® strap .\nThe side structure is reinforced with a polypropylene frame to protect and keep the bag stable while pedaling. \nTo ensure the bag's stability, the base is made of a non-slip fabric .\nIt doesn't hinder pedaling , leaving the necessary space for the knees. \nReflective logo to improve safety while riding, even in low-visibility conditions.\nCharacteristics\nLength\n40cm\nHeight\n9cm\nLength\n4.5cm\nVOLUME\n1.8 litres\nWEIGHT\n179 g\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nPersonalized polypropylene tapes, black colour.\nNylon plastic accessories.\nThe Big Node 2H Road is made in Italy and certified according to Reach CE regulation n. 1097/2006. 1097/2006.\nBig Node, the measurements.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_2H_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_2H_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_2H_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_2H_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/size-bignode2h.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_2H_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/ENOUGH-PRE-RAR-CHIARA-REDASCHI-139.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-big-node-road",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-big-node-road",
+      "productName": "Big Node",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/big-node-road/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-big-node-road",
+        "name": "Big Node",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/big-node-road/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 1.8,
+        "volumeOptions": [
+          1.8
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 186,
+        "weightOptions": [
+          186
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 40,
+          "heightCm": 9,
+          "widthCm": 4.5
+        },
+        "sku": "BNDRWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": false,
+        "variants": [
+          {
+            "sku": "BNDRWRB",
+            "title": "1.8 L",
+            "color": "Black",
+            "volume": 1.8,
+            "weight": 186,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": false
+          }
+        ],
+        "description": {
+          "en": "The Big Node top tube bag is the longer and roomier version of its sister Node. Designed for ultra-distance competitions but also to be the reliable and safe travel companion for storing the objects you always need at hand.",
+          "ru": "Сумка на верхнюю трубу Miss Grape объёмом 1.8 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Big Node is the longer and more capacious version of its sister, the Node. Designed for ultra-distance competitions but also to be a reliable and safe travel companion for storing the items you always need close at hand.\nThe zipper is waterproof and opens in one direction.\nIdeal for storing cell phones, energy bars, snacks, batteries, cameras, etc.\nMade with our ultra-resistant , tear-proof and lightweight .\nThe bag has a capacity of 1.8 liters and weighs 186 g and is Water Resistant.\nThe interior of the bag features an adjustable divider that can be opened to create a single, solid and stable compartment.\nThe bag attaches to the top tube and stem and is compatible with all frame bags , thanks to the adjustable Velcro® strap . \nThe side structure is reinforced with a polypropylene frame to protect and keep the bag stable while pedaling.\nTo ensure the bag's stability, the base is made of a non-slip fabric .\nIt doesn't hinder pedaling , leaving the necessary space for the knees.\nReflective logo to improve safety while riding, even in low-visibility conditions.\nCharacteristics\nLength\n40cm\nHeight\n9cm\nLength\n4.5cm\nVOLUME\n1.8 litres\nWEIGHT\n186 g\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nPersonalized polypropylene tapes, black colour.\nNylon plastic accessories.\nThe Big Node Road bag is produced in Italy and certified according to the Reach CE regulation n. 1097/2006. 1097/2006. \nBig Node, the measurements.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_CATALOG_NBG_2.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_CATALOG_NBG_2.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/MGBIGNODE_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/size-bignode.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/02/AMR23-Enough-Nils_Laengner-9577.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/AMR23-Day3-Nils_Laengner-3678.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-bud",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-bud",
+      "productName": "Bud",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/handlebar-bags/bud/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-bud",
+        "name": "Bud",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/handlebar-bags/bud/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 1,
+        "volumeOptions": [
+          1
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 88,
+        "weightOptions": [
+          88
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "diameterCm": 9,
+          "heightCm": 15
+        },
+        "sku": "BDAWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "BDAWRB",
+            "title": "1 L",
+            "color": "Black",
+            "volume": 1,
+            "weight": 88,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Bud bag is mounted between the handlebars and the stem via two Velcro™ and then secured to the fork crown with a strap. Versatile and compatible with all bicycles on the market.",
+          "ru": "Рулевая сумка Miss Grape объёмом 1 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Bud is mounted between the handlebars and stem using two Velcro ™ straps and then secured to the fork crown with a strap.\nVersatile and compatible with all commercially available bicycles. \nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns.\nThe fabric is a black 210 nylon coated with phthalate-free PVC.\nNylon plastic accessories;\nThe Bud is made in Italy and certified according to Reach CE regulation n. 1097/2006.\nUsage tips\nThe Bud is the ideal bag for storing items you want to keep in an easily accessible place so you can retrieve them even while riding. Its diameter is designed to accommodate a water bottle or thermos, or a camera, supplements, keys, and so on. The Bud bag is made of weather-resistant fabric but is not waterproof. We recommend using a dry bag for items that need to stay absolutely dry.\nCharacteristics\ndiameter\n9cm\nheight\n15cm\nVOLUME\n1 litre\nWEIGHT\n88 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_DETAIL_7.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_DETAIL_6.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGBUD_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-cluster-13-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-cluster-13-waterproof",
+      "productName": "Cluster 13 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/seat-bags/cluster-13-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-cluster-13-waterproof",
+        "name": "Cluster 13 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/seat-bags/cluster-13-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 13,
+        "volumeOptions": [
+          13
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 419,
+        "weightOptions": [
+          419
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 49,
+          "heightCm": 14
+        },
+        "sku": "CL13AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "CL13AWPB",
+            "title": "13 L",
+            "color": "Black",
+            "volume": 13,
+            "weight": 419,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Cluster 13 Waterproof saddle bag is a \"must-have\" for anyone undertaking a cycling trip. An essential item for any bikepacking experience. Whether you are leaving for a month-long trip or just one night, the Cluster 13 will prove to be an indispensable component for this type of experience.",
+          "ru": "Подседельная сумка Miss Grape объёмом 13 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Cluster 13 Waterproof saddle bag is a must-have for anyone embarking on a bike trip. An essential item for any bikepacking experience. Whether you're setting off on a month-long trip or just an overnight stay, the Cluster 13 WP will prove to be an indispensable component for this type of experience. The careful choice of materials makes the Cluster 13 WP extremely resistant to stress. It is precisely thanks to its tear-resistant fabric that this bag has become known and appreciated in the bikepacking world. Underneath, we find a reinforced double-layer fabric insert, thanks to which the Cluster 13 WP is resistant to any contact with the rear wheel and acts as a mudguard. The bag attaches to the seat post with two resistant Velcro straps coated internally with a non-slip material that guarantees excellent grip and reduces potential abrasion on the seat post by 50%. The Cluster 13 WP can also be mounted on carbon seat posts and saddles. \nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nSmooth black fabric (wheel area) in polyester with double phthalate-free PVC coating, 30,000 water columns.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Cluster 13 WP is made in Italy and certified according to Reach CE regulation n. 1097/2006. 1097/2006.\nUsage tips\nThe Cluster 13 Waterproof is designed to hold everything you might need during a day on the bike. From rain gear, spare parts, a stove, gas, and camp food, to clothing and heavier gear.\nCharacteristics\nVOLUME\n13 litres\nMAX. LENGTH\n49cm\nHEIGHT\n14cm\nWEIGHT\n419 gr\nMAXIMUM CAPACITY\n5kg / 11lbs",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_WP_CATALOG_NBG.jpeg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_WP_CATALOG_NBG.jpeg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_WP_DETAIL_3.jpeg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Cluster-ingombro.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_13_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_28-1.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_29.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-cluster-2-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-cluster-2-waterproof",
+      "productName": "Cluster 2 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/seat-bags-road/cluster-2-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-cluster-2-waterproof",
+        "name": "Cluster 2 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/seat-bags-road/cluster-2-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 2,
+        "volumeOptions": [
+          2
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 142,
+        "weightOptions": [
+          142
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 35,
+          "widthCm": 28,
+          "widthMaxCm": 15,
+          "widthMinCm": 5,
+          "heightCm": 10
+        },
+        "sku": "CL2RWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "CL2RWPB",
+            "title": "2 L",
+            "color": "Black",
+            "volume": 2,
+            "weight": 142,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Cluster 2 Underworld bag has a capacity of 2 liters and is waterproof. Super light and ultra resistant bag with a weight of only 142 gr.",
+          "ru": "Подседельная сумка Miss Grape объёмом 2 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Cluster 2 is the saddle bag designed for those seeking lightness, stability and protection from the elements on every type of journey, from long distances to gravel, road or MTB outings.\nWith a 2-liter capacity , it's perfect for carrying essentials without taking up too much space. Thanks to its compact and stable structure, it doesn't move while pedaling, always ensuring maximum comfort.\nThe Cluster 2 is made of durable materials and features a waterproofing system with an internal bag that adheres perfectly to the outer fabric, protecting the contents from rain and moisture. This technical solution makes it waterproof and suitable for all weather conditions.\nTechnical specifications\n2 litre capacity , perfect for essentials\n100% waterproof thanks to our special treatment\nColor: Black dotted\nFabric: Nylon 420 and Polyester 300 dotted with waterproof polyurethane coating\nNylon plastic accessories\nUltra light and stable, it does not move during the ride\nSuitable for each trip. \nDesigned and made in Italy\nWaterproof fabric with polyurethane treatment (water column 10,000 mm)\nProduced in Italy and certified Reach CE n. 1097/2006 \nWhy choose it\nThe Cluster 2 is the ideal solution for those looking for a simple, lightweight, and completely waterproof saddle bag. Perfect for protecting your gear from rain, mud, and dust, wherever the road takes you.\nMeasures\nMAX VOLUME\n2 litres\nMAX. LENGTH\n35cm\nmin length\n28 cm\nMax width\n15cm\nmin Width\n5cm\nHEIGHT\n10cm\nWEIGHT\n142 gr",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_CATALOG-NBG_1.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_CATALOG-NBG_1.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2025/03/MGCLUSTER_2_WP_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-cluster-20-wp",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-cluster-20-wp",
+      "productName": "Cluster 20 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/seat-bags/cluster-20-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-cluster-20-wp",
+        "name": "Cluster 20 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/seat-bags/cluster-20-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 18.6,
+        "volumeOptions": [
+          18.6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 478,
+        "weightOptions": [
+          478
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 62,
+          "heightCm": 18
+        },
+        "sku": "CL20AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "CL20AWPB",
+            "title": "18.6 L",
+            "color": "Black",
+            "volume": 18.6,
+            "weight": 478,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Cluster 20 Waterproof saddle bag is a \"must-have\" for anyone undertaking a cycling trip. An essential item for any bikepacking experience. Whether you are leaving for a month-long trip or just one night, the Cluster 20 will prove to be an indispensable component for this type of experience.",
+          "ru": "Подседельная сумка Miss Grape объёмом 18.6 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Cluster 20 Waterproof saddle bag is a must-have for anyone embarking on a bike trip. An essential item for any bikepacking experience. Whether you're setting off on a month-long trip or just an overnight stay, the Cluster 20 WP will prove to be an indispensable component for this type of experience. The careful choice of materials makes the Cluster 20 WP extremely resistant to stress. It is precisely thanks to its tear-resistant fabric that this bag has become known and appreciated in the bikepacking world. Underneath, we find a reinforced double-layer fabric insert, thanks to which the Cluster 20 WP is resistant to any contact with the rear wheel and acts as a mudguard. The bag attaches to the seat post with two resistant Velcro straps coated internally with a non-slip material that guarantees excellent grip and reduces potential abrasion on the seat post by 50%. The Cluster 20 WP can also be mounted on carbon seat posts and saddles. \nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nSmooth black fabric (wheel area) in polyester with double phthalate-free PVC coating, 30,000 water columns.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Cluster 20 WP is made in Italy and certified according to Reach EC regulation no. 1097/2006. 1097/2006.\nUsage tips\nThe Cluster 20 Waterproof is designed to hold everything you might need during a day on the bike. From rain gear, spare parts, a stove, gas, and camp food, to clothing and heavier gear.\nCharacteristics\nVOLUME\n18.6 litres\nMAX. LENGTH\n62cm\nHEIGHT\n18cm\nWEIGHT\n478 gr\nMAXIMUM CAPACITY\n5kg / 11lbs",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_CATALOG_NBG_2-1.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_CATALOG_NBG_2-1.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_CATALOG.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Cluster-ingombro.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGCLUSTER_20_WP_SIDE_2.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_26-1.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_27.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-cluster-7-wp",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-cluster-7-wp",
+      "productName": "Cluster 7 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/seat-bags/cluster-7-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-cluster-7-wp",
+        "name": "Cluster 7 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/seat-bags/cluster-7-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "saddle",
+        "volume": 7,
+        "volumeOptions": [
+          7
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 256,
+        "weightOptions": [
+          256
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 44,
+          "widthCm": 16,
+          "heightCm": 14
+        },
+        "sku": "CL7RWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Saddle rails / seatpost straps",
+        "mountingOptions": [
+          "Saddle rails / seatpost straps"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "CL7RWPB",
+            "title": "7 L",
+            "color": "Black",
+            "volume": 7,
+            "weight": 256,
+            "mounting": "Saddle rails / seatpost straps",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Saddle bag for racing, gravel and race bikes. Stable, ultra light and 100% waterproof. Designed not to get in the way of the legs (Q factor).",
+          "ru": "Подседельная сумка Miss Grape объёмом 7 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nSaddle bag for racing, gravel and race bikes.\nStable, ultra light and 100% waterproof .\nDesigned not to get in the way of the legs (Q factor).\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Cluster 7 WP is made in Italy and certified according to Reach CE regulation n. 1097/2006. 1097/2006.\nUsage tips\nThe Cluster 7 WP is designed to hold everything you need during a day on the bike, from your rain gear to spare parts.\nCharacteristics\nVOLUME max\n7 litres\nVOLUME min\n1 litre\nMAX. LENGTH\n44 cm\nlength\n16cm\nHEIGHT\n14cm\nWEIGHT\n256 gr\nMAXIMUM CAPACITY\n5kg / 11lbs",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_CATALOG.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_DETAIL_5.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Cluster-ingombro.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGCLUSTER_7_WP_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/Scavezzon_Missgrape_14.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/Scavezzon_Missgrape_15.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-custom-frame-bags",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-custom-frame-bags",
+      "productName": "Custom Frame Bags",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/service/internode-custom-frame-bags/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-custom-frame-bags",
+        "name": "Custom Frame Bags",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/service/internode-custom-frame-bags/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 0,
+        "weightOptions": [],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "",
+        "color": "",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "",
+            "title": "Manufacturer model",
+            "color": "",
+            "volume": 0,
+            "weight": 0,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Our custom line is designed for the most demanding cyclists, for those who need to make the most of every centimeter of their bicycle. Even in custom bags we pay attention to the different needs of use with two types of products: Internode Custom Road/gravel and Internode Custom Adventure.",
+          "ru": "Нарамная сумка Miss Grape. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nOur custom line is designed for the most demanding cyclists, for those who need to make the most of every inch of their bike. Even in custom bags, we focus on different usage needs with two product types: Internode Custom Road/Gravel and Internode Custom Adventure. \nInternode Custom Road/Gravel (ZIP)\nThe image is purely indicative and may not fully reflect the characteristics of the product.\nUltralight bag with ZIP closure system ;\nallows you to access the bag very quickly, both when opening and closing;\nThe width of the bag is 5 cm so as not to hinder pedaling;\nBag with a ZIP (1 zip on the right side) : the bag has an internal vertical divider.\nBag with 2 ZIPs (2 zips on the right side): the bag has an internal horizontal divider;\nBag with 3 ZIPs (2 zips on the right side and 1 zip on the left side) : the bag has an internal horizontal divider.\nAn internal vertical/horizontal divider divides the bag in two. If necessary, it can be removed (for example if you need to insert tent poles or a water bottle); \nTwo (2) reflective side bands to be more visible and for safety when cycling at night or with poor visibility;\nIt is possible to insert a water bag (not supplied).\nInternode Custom Adventure (ROLL)\nThe image is purely indicative and may not fully reflect the characteristics of the product.\nUltra-resistant bag with ROLL closure system; \nThe width of the bag is 6 cm so as not to hinder pedaling;\nThe Roll closure system completely eliminates zip durability problems, making the bag practically indestructible;\nThanks to the access mouth larger than that of a zip system, it allows greater ease of access both for taking and storing objects;\nSignificantly increases waterproofness;\nalthough the opening and closing operation is slower than opening a zip, filling the bag will be quicker and easier;\nThe Roll system makes the volume of the bag modular. A need that often arises during a multi-day adventure; \nan internal vertical divider divides the bag in two. If necessary, it can be removed (for example if you need to insert tent poles or a water bottle; \nTwo (2) reflective side bands to be more visible and for safety when cycling at night or with poor visibility;\nIt is possible to insert a water bag (not supplied).\nWhat do you need\nYour bicycle\nA ruler or tape measure\nCamera or mobile phone\n1st Step - Prepare the bike\nFirst, take your bicycle and place it against a wall (preferably white or light and uniform so that the shape does not confuse us with the background).\nThe bike must be photographed on the side of the crankset (gear side);\nThe bicycle must be upright;\nMake sure you are in a well-lit environment;\nThe orientation of the photo must be perpendicular to the bike. Photograph while sitting or crouching (see photo step 2); \nFor FULL FRAME bag : Remove water bottles, water bottle holders and any other accessories attached to the inside of the triangle (such as a pump);\nFor PARTIAL bag : leave any water bottles you want to integrate with the bag mounted to show the bulk;\nFor both solutions, leave any other bags mounted (for example the Top Tube and down tube bags) so that the fixing points can be seen and can be integrated with those of the bag under construction.\n2nd Step - Position yourself\nNow, stand about 2 meters away from the bike. \n3rd Step - Take 1 full photo of the bike\nTake the first photo where you can see the entire bike and the reference tape placed on the top tube. \nPS: No wide-angle photos.\n4th Step - Take 1 photo of the triangle\nTake the second photo where you can see the entire triangle and the reference tape measure positioned on the top tube. \nWheels, handlebars, and saddle are not included.\nPS: No wide-angle shots.\nTimes & Costs\nA project crafted with precision and quality, especially if 100% made in Italy , requires time and skill. The bag's production time can range from 20 to 40 days , depending on the season.\nThe price* is :\n€220 – bag with one ZIP or ROLL;\n€235 – bag with two ZIPs;\n€250 – bag with three ZIPs;\n€295 – bag with MAGNETIC closure.\n*Shipping costs excluded.\nShipping costs within Italy are €4.90. \nShipping costs within the EU are €14.90. \nShipping costs outside the EU are calculated based on the destination country. \nAdditional charges may apply for special requests. \nBelow you can see some examples of creations.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/11/MGCUSTOM_DETAIL_1.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/11/MGCUSTOM_DETAIL_1.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/11/MGCUSTOM_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/11/FULLFRAME_2ZIP_01_FULL.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/03/Trek_Missgrape_01.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/10/Schermata-2022-10-25-alle-15.57.54-1024x314.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/10/IMG_9519-1024x576.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/10/IMG_9520-1024x576.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/194588429_343369123814807_8033147410583536760_n-1000x922.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/271985076_2208064592683223_2824654030411522130_n-1000x794.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/Trek_Missgrape_10-1000x1067.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/272996616_496621988489519_8373432902763245144_n-1000x960.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/89261038_627420388043670_5090332532696678400_n-1000x1250.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/02/Trek_Missgrape_38-1000x1067.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2022/03/Missgrape_Locomotive_001-1000x1250.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-internode-2-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-internode-2-waterproof",
+      "productName": "Internode 2 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/frame-bags/internode-2-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-internode-2-waterproof",
+        "name": "Internode 2 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/frame-bags/internode-2-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 2,
+        "volumeOptions": [
+          2
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 139,
+        "weightOptions": [
+          139
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 31,
+          "heightCm": 15,
+          "widthMinCm": 5,
+          "widthMaxCm": 7
+        },
+        "sku": "IN2RWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "IN2RWPB",
+            "title": "2 L",
+            "color": "Black",
+            "volume": 2,
+            "weight": 139,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Frame bag for racing, gravel and race bikes. Stable, ultra light. Designed not to get in the way of your legs (Q factor) and water bottles. 100% Waterproof",
+          "ru": "Нарамная сумка Miss Grape объёмом 2 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nFrame bag for racing, gravel and race bikes.\nStable, ultra light.\nDesigned not to get in the way of your legs (Q factor) and water bottles.\n100% Waterproof \nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Internode 2 WP is made in Italy and certified according to Reach EC regulation no. 1097/2006. 1097/2006.\nUsage tips\nThe Internode 2 WP is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while riding. Ideal for sunglasses, vests, arm warmers, hats, gloves, multitools, inner tubes, pumps, and more.\nCharacteristics\nLength\n31cm\nHeight\n15cm\nMIN. width\n5cm\nMAX. width\n7cm\nVOLUME\n2 litres\nWEIGHT\n139 g\nDownload printable template",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_DETAIL_8.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_2_WP_SIDE_2.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/Scavezzon_Missgrape_11.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-internode-3-copia",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-internode-3-copia",
+      "productName": "Internode 3 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/frame-bags/internode-3-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-internode-3-copia",
+        "name": "Internode 3 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/frame-bags/internode-3-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 3,
+        "volumeOptions": [
+          3
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 179,
+        "weightOptions": [
+          179
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 41,
+          "heightCm": 16,
+          "widthMinCm": 5,
+          "widthMaxCm": 7
+        },
+        "sku": "IN3RWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "IN3RWPB",
+            "title": "3 L",
+            "color": "Black",
+            "volume": 3,
+            "weight": 179,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Frame bag for racing, gravel and race bikes. Stable, ultra light. Designed not to get in the way of your legs (Q factor) and water bottles. 100% Waterproof",
+          "ru": "Нарамная сумка Miss Grape объёмом 3 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nFrame bag for racing, gravel and race bikes.\nStable, ultra light.\nDesigned not to get in the way of your legs (Q factor) and water bottles.\n100% Waterproof \nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Internode 3 WP is made in Italy and certified according to Reach EC regulation no. 1097/2006. 1097/2006.\nUsage tips\nThe Internode 3 WP is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while riding. Ideal for sunglasses, vests, arm warmers, hats, gloves, multitools, inner tubes, pumps, and more.\nCharacteristics\nLength\n41cm\nHeight\n16cm\nMIN. width\n5cm\nMAX. width\n7cm\nVOLUME\n3 litres\nWEIGHT\n179 g\nDownload printable template",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_DETAIL_6.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/04/MGINTERNODE_3_WP_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-internode-4-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-internode-4-waterproof",
+      "productName": "Internode 4 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-4-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-internode-4-waterproof",
+        "name": "Internode 4 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-4-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 4,
+        "volumeOptions": [
+          4
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 198,
+        "weightOptions": [
+          198
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "IN4AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "IN4AWPB",
+            "title": "4 L",
+            "color": "Black",
+            "volume": 4,
+            "weight": 198,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Internode 4 waterproof is Miss Grape's frame bag. Roomy and extremely resistant, it is designed not only for long journeys, but also for day trips and for those who use the bicycle daily as a means of urban transport.",
+          "ru": "Нарамная сумка Miss Grape объёмом 4 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nInternode 4 Waterproof is our frame bag. Spacious and extremely durable, it's designed not only for long trips, but also for day trips and for those who use their bike as a daily means of urban transportation.\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance\nBlack nylon 210 fabric coated in phthalate-free PVC 30,000 water columns\nZip Riri model Aquazip M8\nNylon plastic accessories\nThe Internode 4 WP is produced in Italy and certified according to Reach CE regulation n. 1097/2006.\nUsage tips\nThe Internode 4 WP is designed to hold items you want to keep in an easily accessible place so you can retrieve them while riding. For example: sunglasses, vest, arm warmers, hat, gloves, multitool, inner tube, pump, etc. We recommend using a waterproof bag for items that need to stay absolutely dry.\nCharacteristics\nLength A\n42cm\nLENGTH C\n30cm\nHEIGHT B\n10cm\nHEIGHT D\n3cm\nVOLUME\n4 litres\nWEIGHT\n198 g\nFind your ideal Internode\nIf you're not sure which Internode is best for your frame, click below and we'll clear up any doubts! \nhow to measure the internode",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/MGINTERNODE_4_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/MGINTERNODE_4_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/MGINTERNODE_4_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/size-internode-4.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/MGINTERNODE_4_WP_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/ENOUGH-PRE_RAR-CHIARA_REDASCHI-084.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-internode-5-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-internode-5-waterproof",
+      "productName": "Internode 5 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-5-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-internode-5-waterproof",
+        "name": "Internode 5 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-5-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 5,
+        "volumeOptions": [
+          5
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 227,
+        "weightOptions": [
+          227
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "IN5AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "IN5AWPB",
+            "title": "5 L",
+            "color": "Black",
+            "volume": 5,
+            "weight": 227,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Internode 5 waterproof is Miss Grape's frame bag. Roomy and extremely resistant, it is designed not only for long journeys, but also for day trips and for those who use the bicycle daily as a means of urban transport.",
+          "ru": "Нарамная сумка Miss Grape объёмом 5 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nInternode 5 Waterproof is our frame bag. Spacious and extremely durable, it's designed not only for long trips, but also for day trips and for those who use their bike as a daily means of urban transportation.\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance\nBlack nylon 210 fabric coated in phthalate-free PVC 30,000 water columns\nZip Riri model Aquazip M8\nNylon plastic accessories\nThe Internode 5 WP is produced in Italy and certified according to Reach CE regulation n. 1097/2006.\nUsage tips\nThe Internode 5 WP is designed to hold items you want to keep in an easily accessible place so you can retrieve them while riding. For example: sunglasses, vest, arm warmers, hat, gloves, multitool, inner tube, pump, and so on. We recommend using a waterproof bag for items that need to stay absolutely dry.\nCharacteristics\nLength A\n49cm\nLENGTH C\n35cm\nHEIGHT B\n12cm\nHEIGHT D\n3cm\nVOLUME\n5 litres\nWEIGHT\n227 g\nFind your ideal Internode\nIf you're not sure which Internode is best for your frame, click below and we'll clear up any doubts! \nhow to measure the internode",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/Internode-5-WP-misure.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_5_WP_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/ENOUGH-PRE_RAR-CHIARA_REDASCHI-061.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-internode-6-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-internode-6-waterproof",
+      "productName": "Internode 6 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-6-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-internode-6-waterproof",
+        "name": "Internode 6 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventures/frame-bags/internode-6-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "frame",
+        "volume": 6,
+        "volumeOptions": [
+          6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 249,
+        "weightOptions": [
+          249
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {},
+        "sku": "IN6AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Frame straps / custom frame attachment",
+        "mountingOptions": [
+          "Frame straps / custom frame attachment"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "IN6AWPB",
+            "title": "6 L",
+            "color": "Black",
+            "volume": 6,
+            "weight": 249,
+            "mounting": "Frame straps / custom frame attachment",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Internode 6 waterproof is Miss Grape's frame bag. Roomy and extremely resistant, it is designed not only for long journeys, but also for day trips and for those who use the bicycle daily as a means of urban transport.",
+          "ru": "Нарамная сумка Miss Grape объёмом 6 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nInternode 6 Waterproof is our frame bag. Spacious and extremely durable, it's designed not only for long trips, but also for day trips and for those who use their bike as a daily means of urban transportation.\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance\nBlack nylon 210 fabric coated in phthalate-free PVC 30,000 water columns\nZip Riri model Aquazip M8\nNylon plastic accessories\nThe Internode 6 WP is produced in Italy and certified according to Reach CE regulation n. 1097/2006.\nUsage tips\nThe Internode 6 WP is designed to hold items you want to keep in an easily accessible place so you can retrieve them while riding. For example: sunglasses, vest, arm warmers, hat, gloves, multitool, inner tube, pump, etc. We recommend using a waterproof bag for items that need to stay absolutely dry.\nCharacteristics\nLength A\n52 cm\nLENGTH C\n37 cm\nHEIGHT B\n14cm\nHEIGHT D\n4 cm\nVOLUME\n6 litres\nWEIGHT\n249 g\nFind your ideal Internode\nIf you're not sure which Internode is best for your frame, click below and we'll clear up any doubts! \nhow to measure the internode",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_6_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_6_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_6_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_6_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGINTERNODE_6_WP_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/Internode-6-WP-misure.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/07/ENOUGH-PRE_RAR-CHIARA_REDASCHI-061.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-moon",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-moon",
+      "productName": "Moon",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/commuting/handlebar-bags/moon/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-moon",
+        "name": "Moon",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/commuting/handlebar-bags/moon/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 2,
+        "volumeOptions": [
+          2
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 155,
+        "weightOptions": [
+          155
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 23,
+          "diameterCm": 11
+        },
+        "sku": "MNCWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "MNCWRB",
+            "title": "2 L",
+            "color": "Black",
+            "volume": 2,
+            "weight": 155,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Handlebar bag ideal for urban, road and gravel. Modern lines and compatible with all bicycles. Made with Weather-resistant material.",
+          "ru": "Рулевая сумка Miss Grape объёмом 2 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nHandlebar bag ideal for urban , road and gravel .\nModern lines and compatible with all bicycles.\nMade with Weather-resistant .\nTechnical specifications\nAvailable in dotted black colour.\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns.\nNylon plastic accessories.\nRigid interior in PE LD;\nThe Moon is made in Italy and certified according to Reach CE regulation n. 1097/2006.\nUsage tips\nThe Moon is designed for all the items we want to always have close at hand, so we can retrieve them even while pedaling.\nCharacteristics\nlength\n23cm\ndiameter\n11cm\nvolume\n2 litres\nWEIGHT\n155 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_CATALOG_NGB.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_CATALOG_NGB.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_DETAIL_7.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_DETAIL_6.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/12/MGMOON_CATALOG.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/09/Torpado_Zenith_439.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-moon-ic",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-moon-ic",
+      "productName": "Moon IC",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/product/commuting/handlebar-bags-commuting/moon-ic/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-moon-ic",
+        "name": "Moon IC",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/product/commuting/handlebar-bags-commuting/moon-ic/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 2.3,
+        "volumeOptions": [
+          2.3
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 252,
+        "weightOptions": [
+          252
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 26.5,
+          "diameterCm": 11.5
+        },
+        "sku": "MNICCWRB",
+        "color": "",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "",
+        "waterproofRating": null,
+        "mounting": "ILCOSO support",
+        "mountingOptions": [
+          "ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "MNICCWRB",
+            "title": "2.3 L",
+            "color": "",
+            "volume": 2.3,
+            "weight": 252,
+            "mounting": "ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Moon IC is the handlebar bag designed exclusively for Ilcoso support (not included). Perfect for Urban, Road and Gravel use, it combines modern lines and maximum functionality in an essential accessory for each output.",
+          "ru": "Рулевая сумка Miss Grape объёмом 2.3 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Moon IC is the handlebar bag designed exclusively for the ILCOSO",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_CATALOG_NBG-1.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_CATALOG_NBG-1.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_CATALOG_1jpg.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_SETUP_13jpg.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2024/11/MGMOON_IC_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-node",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-node",
+      "productName": "Node Adventure",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/top-tube-bags/node/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-node",
+        "name": "Node Adventure",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/top-tube-bags/node/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 125,
+        "weightOptions": [
+          125
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 25,
+          "widthCm": 7,
+          "heightCm": 12
+        },
+        "sku": "NDAWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "NDAWRB",
+            "title": "Manufacturer model",
+            "color": "Black",
+            "volume": 0,
+            "weight": 125,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Node is housed on the horizontal tube of your frame and can be positioned both at the height of the headset and close to the seat post.",
+          "ru": "Сумка на верхнюю трубу Miss Grape. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Node Adventure fits on the top tube of your frame and can be positioned either at the height of the headset or close to the seat post.\nTechnical specifications\nAvailable in dotted black colour\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns\nNylon plastic accessories\nRiri zipper model “Aquazip” M8 weather-resistant\nThe Node Adventure bag is made in Italy and certified according to the Reach CE regulation n. 1097/2006\nUsage tips\nThe Node Adventure is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while pedaling, such as energy bars, a smartphone, a power bank, a camera, and so on. The Node bag is made of weather-resistant fabric but is not waterproof. We recommend using a dry bag for items that need to stay completely dry.\nCharacteristics\nLENGTH\n25cm\nLENGTH\n7cm\nHEIGHT\n12cm\nWEIGHT\n125 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2016/09/MGNODE_ADV_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-node-2",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-node-2",
+      "productName": "Node Rd",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/node/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-node-2",
+        "name": "Node Rd",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/node/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 98,
+        "weightOptions": [
+          98
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 20,
+          "heightCm": 8,
+          "widthCm": 4.8
+        },
+        "sku": "NDRWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "NDRWRB",
+            "title": "Manufacturer model",
+            "color": "Black",
+            "volume": 0,
+            "weight": 98,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Node Road is an ultra-light top tube bag designed for Road/Gravel use. Its width of 4.8 cm, the narrowest in its category, minimizes the possibility of contact with the legs while pedaling.",
+          "ru": "Сумка на верхнюю трубу Miss Grape. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Node Road is an ultralight top tube bag designed for road/gravel use. Its width of 4.8 cm, the narrowest in its category, minimizes the possibility of contact with your legs while pedaling.\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Node Road bag is made in Italy and certified according to Reach EC regulation no. 1097/2006. 1097/2006.\nUsage tips\nThe Node Road is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while pedaling, such as energy bars, a smartphone, a power bank, a camera, and so on. The Node bag is made of weather-resistant fabric but is not waterproof. We recommend using a dry bag for items that need to stay absolutely dry.\nCharacteristics\nLength\n20cm\nHeight\n8cm\nLength\n4.8cm\nWEIGHT\n98 g\nNot compatible with the MBC URS model.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_ROAD_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_ROAD_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_ROAD_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_ROAD_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_ROAD_FULL.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_48-1.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-node-2h",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-node-2h",
+      "productName": "Node 2H Adventure",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/top-tube-bags/node-2h/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-node-2h",
+        "name": "Node 2H Adventure",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/top-tube-bags/node-2h/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 125,
+        "weightOptions": [
+          125
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 25,
+          "widthCm": 7,
+          "heightCm": 12
+        },
+        "sku": "ND2HAWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "ND2HAWRB",
+            "title": "Manufacturer model",
+            "color": "Black",
+            "volume": 0,
+            "weight": 125,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Node 2H (2 Holes) is housed on the horizontal tube of your frame. It has two holes in the underlying part and is mounted (screwed) only on frames that have two-bolt mounting holes on the top tube.",
+          "ru": "Сумка на верхнюю трубу Miss Grape. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Node 2H (2 Holes) Adventure is housed on the top tube of your frame.\nIt has two holes in the underlying part and is mounted (screwed) only on frames that have two-bolt mounting holes on the top tube.\nTechnical specifications\nAvailable in dotted black colour\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns\nNylon plastic accessories\nRiri zipper model “Aquazip” M8 weather-resistant\nThe Node 2H Adventure is made in Italy and certified according to the Reach CE regulation n. 1097/2006\nUsage tips\nThe Node 2H Adventure is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while pedaling, such as energy bars, a smartphone, a power bank, a camera, and so on. The Node bag is made of weather-resistant fabric but is not waterproof. We recommend using a dry bag for items that need to stay completely dry.\nCharacteristics\nLENGTH\n25cm\nLENGTH\n7cm\nHEIGHT\n12cm\nWEIGHT\n125 g\nNot compatible with the MBC URS model.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_CATALOG_NGB.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_CATALOG_NGB.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1143&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/MGNODE_2H_ADV_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/Scavezzon_Missgrape_30_2023.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2018/11/Scavezzon_Missgrape_31-2023.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-node-2h-2",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-node-2h-2",
+      "productName": "Node 2H Rd",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/node-2h/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-node-2h-2",
+        "name": "Node 2H Rd",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/top-tube-bags/node-2h/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "top-tube",
+        "volume": 0,
+        "volumeOptions": [],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 98,
+        "weightOptions": [
+          98
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "lengthCm": 20,
+          "heightCm": 8,
+          "widthCm": 4.8
+        },
+        "sku": "ND2HRWRB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Weather-resistant",
+        "waterproofRating": null,
+        "mounting": "Top-tube straps / bolt-on",
+        "mountingOptions": [
+          "Top-tube straps / bolt-on"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "ND2HRWRB",
+            "title": "Manufacturer model",
+            "color": "Black",
+            "volume": 0,
+            "weight": 98,
+            "mounting": "Top-tube straps / bolt-on",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Node 2H Road has two holes underneath and is mounted (screwed) only on frames that have two-bolt mounting holes on the top tube. Thanks to this attachment system, the Node 2H Road is particularly stable. This ensures that the bag clings to the top tube and avoids annoying sideways swinging while pedaling.",
+          "ru": "Сумка на верхнюю трубу Miss Grape. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Node 2H Road features two holes on the underside and is mounted (screwed) only on frames with two-bolt mounting holes on the top tube. Thanks to this attachment system, the Node 2H Road is particularly stable. This ensures the bag stays securely on the top tube and prevents annoying lateral rocking while pedaling.\nTechnical specifications\nDotted nylon 420 polyester 300 fabric with water-repellent polyurethane resin, 10,000 water columns, tear-proof and with very high mechanical resistance.\nCustomized polypropylene tapes, black/green and black colour.\nNylon plastic accessories.\nThe Node 2H Road is made in Italy and certified according to Reach CE regulation n. 1097/2006. 1097/2006.\nUsage tips\nThe Node 2H Road is designed to hold items you want to keep in an easily accessible place, so you can retrieve them even while riding, such as energy bars, a smartphone, a power bank, a camera, and so on. The Node bag is made of weather-resistant fabric but is not waterproof. We recommend using a dry bag for items that need to stay absolutely dry.\nCharacteristics\nLength\n20cm\nHeight\n8cm\nLength\n4.8cm\nWEIGHT\n98 g\nNot compatible with the MBC URS model.",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_2H_ROAD_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_2H_ROAD_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_2H_ROAD_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_2H_ROAD_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/MGNODE_2H_ROAD_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Scavezzon_Missgrape_13-1.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-tendril-10-7",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-tendril-10-7",
+      "productName": "Tendril 10.7 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure-series/handlebar-bags/tendril-10-7-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-tendril-10-7",
+        "name": "Tendril 10.7 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure-series/handlebar-bags/tendril-10-7-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 10,
+        "volumeOptions": [
+          10,
+          17
+        ],
+        "volumeMin": 10,
+        "volumeMax": 17,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 396,
+        "weightOptions": [
+          396
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "diameterCm": 18,
+          "widthMinCm": 34,
+          "widthMaxCm": 70
+        },
+        "sku": "TD10AWPB",
+        "color": "Black",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "TD10AWPB",
+            "title": "10–17 L",
+            "color": "Black",
+            "volume": 10,
+            "weight": 396,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Tendril 10.7 is a completely waterproof (Waterproof) handlebar bag. It can be mounted with both Drop Bar handlebars and MTB handlebars.",
+          "ru": "Рулевая сумка Miss Grape объёмом 10–17 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nTendril 10.7 Waterproof is a completely waterproof handlebar bag. The Tendril 10.7 WP can be mounted on both drop bar and MTB handlebars .\nTechnical specifications\n• Black 210 nylon fabric coated in phthalate-free PVC, 30,000 water column;\n• Reinforcement fabric in 420 nylon/300 polyester dotted with\nwater-repellent polyurethane resin, 10,000 water column;\n• Tear-proof with very high mechanical resistance;\n• Customised polypropylene straps, black/green and black;\n• Plastic accessories in nylon;\n• The Tendril 10.7 WP is made in Italy and certified according to the Reach CE 1097/2006 regulation.\nUsage tips\nThe Tendril 10.7 WP is designed to hold everything you need for the night: sleeping bag, sleeping pad, inflatable pillow, clothing, extra food, etc. We recommend using a dry bag for items that need to stay absolutely dry.\nCharacteristics\nDIAMETER\n18cm\nMIN. WIDTH\n34cm\nMAX. WIDTH\n70cm\nMIN. VOLUME\n10 litres\nMAX VOLUME\n17 litres\nWEIGHT\n396 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_DETAIL_10-1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_DETAIL_14.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_DETAIL_15.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Tendril-10.7-ingombro.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/06/MGTENDRIL_10_7_WP_CATALOG.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-tendril-4-10-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-tendril-4-10-waterproof",
+      "productName": "Tendril 4.10 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/road/handlebar-bags/tendril-4-10-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-tendril-4-10-waterproof",
+        "name": "Tendril 4.10 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/road/handlebar-bags/tendril-4-10-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 4,
+        "volumeOptions": [
+          4,
+          10
+        ],
+        "volumeMin": 4,
+        "volumeMax": 10,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 240,
+        "weightOptions": [
+          240
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "diameterCm": 14,
+          "widthMinCm": 27,
+          "widthMaxCm": 55
+        },
+        "sku": "TD4RWPB",
+        "color": "Black",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "TD4RWPB",
+            "title": "4–10 L",
+            "color": "Black",
+            "volume": 4,
+            "weight": 240,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "Tendril 4.10 is a completely waterproof (Waterproof) handlebar bag. It can be mounted with both Drop Bar handlebars and MTB handlebars.",
+          "ru": "Рулевая сумка Miss Grape объёмом 4–10 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nTendril 4.10 Waterproof is a completely waterproof handlebar bag. The Tendril 4.10 can be mounted on both drop bar and MTB handlebars .\nTechnical specifications\n• Black 210 nylon fabric coated in phthalate-free PVC, 30,000 water column;\n• Reinforcement fabric in 420 nylon/300 polyester dotted with\nwater-repellent polyurethane resin, 10,000 water column;\n• Tear-proof with very high mechanical resistance;\n• Customised polypropylene straps, black/green and black;\n• Plastic accessories in nylon;\n• The Tendril 4.10 bag is made in Italy and certified according to the Reach CE 1097/2006 regulation.\nUsage tips\nThe Tendril 4.10 is designed to hold everything you need for the night: sleeping bag, sleeping pad, inflatable pillow, clothing, extra food, etc. We recommend using a dry bag for items that need to stay absolutely dry. \nCharacteristics\nDIAMETER\n14cm\nMIN. WIDTH\n27cm\nMAX. WIDTH\n55cm\nMIN. VOLUME\n4 litres\nMAX VOLUME\n10 litres\nWEIGHT\n240 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_DETAIL_7.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_DETAIL_8.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2020/05/Tendril-4.10-ingombri.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_FRONT.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2019/04/MGTENDRIL_4_10_WP_SIDE.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-trunk-16-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-trunk-16-waterproof",
+      "productName": "Trunk 16 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/shop/handlebar-bags/trunk-16-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-trunk-16-waterproof",
+        "name": "Trunk 16 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/shop/handlebar-bags/trunk-16-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 16,
+        "volumeOptions": [
+          16
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 179,
+        "weightOptions": [
+          179
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "diameterCm": 18,
+          "widthMinCm": 34,
+          "widthMaxCm": 70
+        },
+        "sku": "TK16AWPB",
+        "color": "Black",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "TK16AWPB",
+            "title": "16 L",
+            "color": "Black",
+            "volume": 16,
+            "weight": 179,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Trunk 16 WP bag, designed for the \"ILCOSO\" handlebar mount, offers watertight protection and two roll-lock entrances for safe, dry transport during your cycling adventures.",
+          "ru": "Рулевая сумка Miss Grape объёмом 16 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe ideal bag for the new “ILCOSO” handlebar mount . With its completely waterproof construction and two roll-lock entrances, the Trunk 16 bag gives you the peace of mind of knowing that your items will be safe, regardless of the weather.\nFeaturing a sturdy external structure and high-quality materials, the Trunk 8 bag is designed to resist wear and tear and last over time. Its sleek design blends seamlessly with your bike, while the large internal capacity lets you carry everything you need on your riding adventures. \nThe two entrances with roll closure guarantee a secure and waterproof closure, keeping your items dry and protected from humidity.\nDesigned to contain everything for the night. Sleeping bag, mattress, inflatable pillow, clothing, extra food, etc. \nTechnical specifications\nThe fabric is a black 210 nylon coated in phthalate-free PVC;\nAnti-tear with very high mechanical resistance;\nCustomized polypropylene straps, black/green and black colour;\nNylon plastic accessories;\nThe Trunk 16 WP is made in Italy and certified according to the Reach CE regulation 1097/2006.\nCharacteristics\nDIAMETER\n18cm\nMIN. WIDTH\n34cm\nMAX. WIDTH\n70cm\nMAX VOLUME \n16 litres\nWEIGHT\n179 g\nYou May Also Like\nILCOSO \n128.00 € \nAdd to Cart",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_16_WP_CATALOG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_16_WP_CATALOG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_16_WP_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_16_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_16_WP_DETAIL_5.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/Il_Coso_Gravel_Mount-7imageoptim.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/Il_Coso_Gravel_Mount-14.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGILCOSO_CATALOG_NGB-1000x1250.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGILCOSO_DETAIL_2-1000x1250.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-trunk-8-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-trunk-8-waterproof",
+      "productName": "Trunk 8 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/shop/handlebar-bags/trunk-8-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-trunk-8-waterproof",
+        "name": "Trunk 8 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/shop/handlebar-bags/trunk-8-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 8,
+        "volumeOptions": [
+          8
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 129,
+        "weightOptions": [
+          129
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "diameterCm": 14,
+          "widthMinCm": 27,
+          "widthMaxCm": 55
+        },
+        "sku": "TK8AWPB",
+        "color": "Black",
+        "material": "Miss Grape technical fabric",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "TK8AWPB",
+            "title": "8 L",
+            "color": "Black",
+            "volume": 8,
+            "weight": 129,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Trunk 8 WP bag, designed for the \"ILCOSO\" handlebar mount, offers watertight protection and two roll-lock entrances for safe, dry transport during your cycling adventures.",
+          "ru": "Рулевая сумка Miss Grape объёмом 8 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe ideal bag for the new “ILCOSO” handlebar mount . With its completely waterproof construction and two roll-lock entrances, the Trunk 8 bag gives you the peace of mind of knowing your items will be safe, no matter the weather.\nFeaturing a sturdy external structure and high-quality materials, the Trunk 8 bag is designed to resist wear and tear and last over time. Its sleek design blends seamlessly with your bike, while the large internal capacity lets you carry everything you need on your riding adventures. \nThe two entrances with roll closure guarantee a secure and waterproof closure, keeping your items dry and protected from humidity.\nDesigned to contain everything for the night. Sleeping bag, mattress, inflatable pillow, clothing, extra food, etc. \nTechnical specifications\nThe fabric is a black 210 nylon coated in phthalate-free PVC;\nAnti-tear with very high mechanical resistance;\nCustomized polypropylene straps, black/green and black colour;\nNylon plastic accessories;\nThe Trunk 8 WP is made in Italy and certified according to the Reach CE regulation 1097/2006.\nCharacteristics\nDIAMETER\n14cm\nMIN. WIDTH\n27cm\nMAX. WIDTH\n55cm\nMAX VOLUME \n8 litres\nWEIGHT\n129 g\nYou May Also Like\nILCOSO \n128.00 € \nAdd to Cart",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_8_WP_CATALOG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_8_WP_CATALOG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_8_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_8_WP_DETAIL_3.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/MGTRUNK_8_WP_DETAIL_4.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/Il_Coso_Mtb_Mount-8imageoptim.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/06/Il_Coso_Mtb_Mount-12imageoptim.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGILCOSO_CATALOG_NGB-1000x1250.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGILCOSO_DETAIL_2-1000x1250.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-trunk-aero-bar",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-trunk-aero-bar",
+      "productName": "Trunk Aero Bar",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/adventure/aero-bar-bags/trunk-6-aero-bar-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-trunk-aero-bar",
+        "name": "Trunk Aero Bar",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/adventure/aero-bar-bags/trunk-6-aero-bar-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "handlebar",
+        "volume": 6,
+        "volumeOptions": [
+          6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 121,
+        "weightOptions": [
+          121
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "heightCm": 36,
+          "diameterCm": 13
+        },
+        "sku": "TKABB6AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Handlebar / stem straps or ILCOSO support",
+        "mountingOptions": [
+          "Handlebar / stem straps or ILCOSO support"
+        ],
+        "soldAsSet": false,
+        "available": true,
+        "variants": [
+          {
+            "sku": "TKABB6AWPB",
+            "title": "6 L",
+            "color": "Black",
+            "volume": 6,
+            "weight": 121,
+            "mounting": "Handlebar / stem straps or ILCOSO support",
+            "available": true
+          }
+        ],
+        "description": {
+          "en": "The Trunk Aero Bar is a completely waterproof (Waterproof), lightweight and ultra-resistant handlebar bag. The bag can be mounted in the aero bars for long distance events, audax and ultracycling races.",
+          "ru": "Рулевая сумка Miss Grape объёмом 6 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Trunk 6 Aero Bar WP is a completely waterproof , lightweight, and ultra-durable handlebar bag . The bag can be mounted on aero bars for long-distance events, audaxes, and ultracycling races. It can be attached using the included Velcro® kit, using the various adjustment positions. It features a roll closure and a reflective logo to stay visible even in low light. It has a capacity of 6 liters and can also be used as a fork bag.\nTechnical specifications\nThe fabric is a black 210 nylon coated in phthalate-free PVC;\nStippled nylon 420/polyester 300 reinforcement fabric with water-repellent polyurethane resin;\nCustomized polypropylene straps, black/green and black colour;\nNylon plastic accessories;\nThe Trunk 6 Aero Bar WP is made in Italy and certified according to the Reach CE regulation. 1097/2006.\nCharacteristics\nmax. height\n36 cm\ndiameter\n13cm\nVOLUME\n6 litres\nWEIGHT\n121 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_CATALOG_NBG-1.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_CATALOG_NBG-1.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_2.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_3-1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_4-1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_5.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_8.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/05/MGTRUNK_AEROBAR_DETAIL_9.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    },
+    {
+      "id": "miss-grape:added:miss-grape-trunk6-waterproof",
+      "manufacturerId": "miss-grape",
+      "manufacturer": "Miss Grape",
+      "productId": "miss-grape-trunk6-waterproof",
+      "productName": "Trunk 6 Waterproof",
+      "type": "added",
+      "sourceUrl": "https://missgrape.net/en/fork-bags/trunk-6-waterproof/",
+      "fields": [],
+      "before": null,
+      "after": {
+        "id": "miss-grape-trunk6-waterproof",
+        "name": "Trunk 6 Waterproof",
+        "brand": "Miss Grape",
+        "sourceUrl": "https://missgrape.net/en/fork-bags/trunk-6-waterproof/",
+        "sourceCheckedAt": "2026-09-04",
+        "family": "bikepacking",
+        "category": "fork",
+        "volume": 6,
+        "volumeOptions": [
+          6
+        ],
+        "volumeMin": null,
+        "volumeMax": null,
+        "volumePerBag": null,
+        "volumePerBagOptions": null,
+        "volumeTotal": null,
+        "totalVolume": null,
+        "totalVolumeOptions": null,
+        "specificationBasis": null,
+        "setQuantity": null,
+        "volumeSetBasis": null,
+        "weight": 119,
+        "weightOptions": [
+          119
+        ],
+        "weightMin": null,
+        "weightMax": null,
+        "weightPerBag": null,
+        "weightPerBagOptions": null,
+        "weightTotal": null,
+        "totalWeight": null,
+        "totalWeightOptions": null,
+        "dimensions": {
+          "heightCm": 36,
+          "diameterCm": 13
+        },
+        "sku": "TK6AWPB",
+        "color": "Black",
+        "material": "420D nylon / 300D polyester",
+        "waterproof": "Waterproof",
+        "waterproofRating": null,
+        "mounting": "Fork / cargo cage straps",
+        "mountingOptions": [
+          "Fork / cargo cage straps"
+        ],
+        "soldAsSet": false,
+        "available": false,
+        "variants": [
+          {
+            "sku": "TK6AWPB",
+            "title": "6 L",
+            "color": "Black",
+            "volume": 6,
+            "weight": 119,
+            "mounting": "Fork / cargo cage straps",
+            "available": false
+          }
+        ],
+        "description": {
+          "en": "Trunk 6 is a completely waterproof fork bag (Waterproof).",
+          "ru": "Сумка на вилку Miss Grape объёмом 6 л. Характеристики нормализованы по официальной карточке товара."
+        },
+        "manufacturerDetails": "Introduction\nThe Trunk 6 is a completely waterproof , lightweight, and ultra-durable fork bag . It can be attached to any fork that has holes for mounting a fork bag carrier.\nThe Trunk 6 WP does not include the Fork Cage. \nTechnical specifications\nThe fabric is a black 210 nylon coated in phthalate-free PVC;\nStippled nylon 420/polyester 300 reinforcement fabric with water-repellent polyurethane resin;\nCustomized polypropylene straps, black/green and black colour;\nNylon plastic accessories;\nThe Trunk 6 WP is made in Italy and certified according to the Reach CE regulation. 1097/2006.\nCharacteristics\nmax. height\n36 cm\ndiameter\n13cm\nVOLUME\n6 litres\nWEIGHT\n119 g",
+        "sourceImageUrl": "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_CATALOG_NBG.jpg",
+        "sourceImageUrls": [
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_CATALOG_NBG.jpg",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2023/04/Miss-Grape-classico-nero-nobg.png?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_DETAIL_7.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_CATALOG_DETAIL.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_CATALOG_DETAIL_1.jpg?strip=all&lossy=1&fit=1000%2C1250&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/MGTRUNK_6_WP_SIDE.jpg?strip=all&lossy=1&ssl=1",
+          "https://ed58xxhnoja.exactdn.com/wp-content/uploads/2021/05/Scavezzon_Missgrape_51.jpg?strip=all&lossy=1&ssl=1"
+        ]
+      }
+    }
+  ]
+}

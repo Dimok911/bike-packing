@@ -1,6 +1,7 @@
 const MANUFACTURER_BRAND_LOGOS = {
   apidura: new URL("../../assets/manufacturer-brands/apidura.svg", import.meta.url).href,
   arkel: new URL("../../assets/manufacturer-brands/arkel.png", import.meta.url).href,
+  "miss-grape": new URL("../../assets/manufacturer-brands/miss-grape.png", import.meta.url).href,
   ortlieb: new URL("../../assets/manufacturer-brands/ortlieb.png", import.meta.url).href,
   "revelate-designs": new URL("../../assets/manufacturer-brands/revelate-designs.png", import.meta.url).href,
   restrap: new URL("../../assets/manufacturer-brands/restrap.svg", import.meta.url).href,
@@ -14,7 +15,7 @@ export const MANUFACTURER_BAG_CATALOG_BRANDS = [
   { id: "tailfin", name: "Tailfin", catalogBrand: "Tailfin", logoUrl: MANUFACTURER_BRAND_LOGOS.tailfin, status: "active" },
   { id: "arkel", name: "Arkel", catalogBrand: "Arkel", logoUrl: MANUFACTURER_BRAND_LOGOS.arkel, status: "active" },
   { id: "revelate-designs", name: "Revelate Designs", catalogBrand: "Revelate Designs", logoUrl: MANUFACTURER_BRAND_LOGOS["revelate-designs"], status: "active" },
-  { id: "miss-grape", name: "Miss Grape", status: "planned" },
+  { id: "miss-grape", name: "Miss Grape", catalogBrand: "Miss Grape", logoUrl: MANUFACTURER_BRAND_LOGOS["miss-grape"], status: "active" },
   { id: "cyclite", name: "CYCLITE", status: "planned" },
   { id: "blackburn", name: "Blackburn", status: "planned" },
   { id: "topeak", name: "Topeak", status: "planned" },
