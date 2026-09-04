@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build --outDir www/vniipo-help.ru/bike-packing && node scripts/build-dist-assets.mjs www/vniipo-help.ru/bike-packing",
+    "build": "node scripts/build-manufacturer-catalog-runtime.mjs && vite build --outDir www/vniipo-help.ru/bike-packing && node scripts/build-dist-assets.mjs www/vniipo-help.ru/bike-packing",
+    "catalog:runtime": "node scripts/build-manufacturer-catalog-runtime.mjs",
     "catalog:scan": "node scripts/scan-manufacturer-catalog.mjs --output manufacturer-catalog-scan.json --markdown manufacturer-catalog-scan.md",
     "catalog:download-images": "node scripts/download-manufacturer-catalog-images.mjs --manifest manufacturer-catalog-images.json --root .",
     "preview": "vite preview --host 127.0.0.1",

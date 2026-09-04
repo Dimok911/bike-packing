@@ -442,18 +442,20 @@ let manufacturerBagCatalogControllerPromise = null;
 async function loadManufacturerBagCatalogController() {
   if (manufacturerBagCatalogControllerPromise) return manufacturerBagCatalogControllerPromise;
   manufacturerBagCatalogControllerPromise = Promise.all([
-    import("../data/manufacturer-bag-catalog.js"),
+    import("../data/manufacturer-bag-catalog-runtime.js"),
     import("../ui/manufacturer-bag-catalog-dialog.js"),
     import("../ui/manufacturer-bag-comparison-dialog.js")
   ]).then(([catalogData, catalogDialog, comparisonDialog]) => {
     const {
-      MANUFACTURER_BAG_CATALOG,
+      MANUFACTURER_BAG_CATALOG_INDEX,
       MANUFACTURER_BAG_CATALOG_BRANDS,
       MANUFACTURER_BAG_CATALOG_CATEGORIES,
-      MANUFACTURER_BAG_CATALOG_FAMILIES
+      MANUFACTURER_BAG_CATALOG_FAMILIES,
+      loadedManufacturerBagCatalog,
+      loadManufacturerBagCatalog
     } = catalogData;
     const manufacturerBagCatalogRows = () => mergeManufacturerBagCatalogOverrides(
-      MANUFACTURER_BAG_CATALOG,
+      loadedManufacturerBagCatalog(),
       manufacturerBagCatalogOverrides
     );
     const comparisonController = comparisonDialog.createManufacturerBagComparisonDialogController({
@@ -473,11 +475,16 @@ async function loadManufacturerBagCatalogController() {
       brands: MANUFACTURER_BAG_CATALOG_BRANDS,
       canEdit: () => isAdminUser(),
       catalog: manufacturerBagCatalogRows,
+      catalogIndex: MANUFACTURER_BAG_CATALOG_INDEX,
       categories: MANUFACTURER_BAG_CATALOG_CATEGORIES,
       escapeHtml,
       families: MANUFACTURER_BAG_CATALOG_FAMILIES,
       language: () => isEnglishUi() ? "en" : "ru",
+      loadCatalog: loadManufacturerBagCatalog,
       onCompareCategory: (categoryId) => comparisonController.open(categoryId),
+      onCatalogLoadError: () => showToast(isEnglishUi()
+        ? "The selected catalog section could not be loaded. Check the connection."
+        : "Не удалось загрузить выбранный раздел каталога. Проверьте подключение.", "error"),
       onSelect: applyManufacturerBagCatalogSelection,
       onSelectError: () => {
         setRootContainerDialogPhotoStatus(t("bagCatalog.photoError"));

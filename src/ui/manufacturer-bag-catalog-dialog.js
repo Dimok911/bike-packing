@@ -60,11 +60,14 @@ export function createManufacturerBagCatalogDialogController({
   bindOpenButton = true,
   canEdit = () => false,
   catalog = [],
+  catalogIndex = [],
   brands = [],
   categories = [],
   escapeHtml = (value) => String(value || ""),
   families = [],
   language = () => "en",
+  loadCatalog = async () => {},
+  onCatalogLoadError = () => {},
   onCompareCategory = () => {},
   onSelect = async () => {},
   onSelectError = () => {},
@@ -84,11 +87,51 @@ export function createManufacturerBagCatalogDialogController({
   let productLimit = PRODUCT_BATCH_SIZE;
   let productListSignature = "";
   let productPagingObserver = null;
+  let catalogLoadRequest = 0;
+  let searchLoadTimer = null;
   const selectedVariantSkuByEntry = new Map();
 
   function catalogRows() {
     const rows = typeof catalog === "function" ? catalog() : catalog;
     return Array.isArray(rows) ? rows : [];
+  }
+
+  function catalogCountRows() {
+    const rows = typeof catalogIndex === "function" ? catalogIndex() : catalogIndex;
+    return Array.isArray(rows) && rows.length ? rows : catalogRows();
+  }
+
+  function renderCatalogLoading() {
+    if (!refs?.bagCatalogResults) return;
+    refs.bagCatalogResults.innerHTML = `
+      <div class="manufacturer-catalog-empty manufacturer-catalog-loading" role="status">
+        <strong>${escapeHtml(t("bagCatalog.loading"))}</strong>
+      </div>
+    `;
+  }
+
+  async function loadCurrentCatalogAndRender() {
+    const request = ++catalogLoadRequest;
+    const loadingTimer = globalThis.setTimeout?.(() => {
+      if (request === catalogLoadRequest) renderCatalogLoading();
+    }, 120);
+    try {
+      await loadCatalog({ brand: manufacturer });
+      if (request !== catalogLoadRequest) return false;
+      render();
+      return true;
+    } catch (error) {
+      if (request !== catalogLoadRequest) return false;
+      refs.bagCatalogResults.innerHTML = `
+        <div class="manufacturer-catalog-empty" role="alert">
+          <strong>${escapeHtml(t("bagCatalog.loadError"))}</strong>
+        </div>
+      `;
+      onCatalogLoadError(error);
+      return false;
+    } finally {
+      if (loadingTimer != null) globalThis.clearTimeout?.(loadingTimer);
+    }
   }
 
   function setImportAvailable(available) {
@@ -98,12 +141,21 @@ export function createManufacturerBagCatalogDialogController({
   }
 
   function resetNavigation() {
+    catalogLoadRequest += 1;
+    if (searchLoadTimer != null) globalThis.clearTimeout?.(searchLoadTimer);
+    searchLoadTimer = null;
     family = "";
     category = "";
     manufacturer = "";
     query = "";
     selectingId = "";
     if (refs?.bagCatalogSearch) refs.bagCatalogSearch.value = "";
+  }
+
+  function cancelPendingCatalogLoad() {
+    catalogLoadRequest += 1;
+    if (searchLoadTimer != null) globalThis.clearTimeout?.(searchLoadTimer);
+    searchLoadTimer = null;
   }
 
   function open() {
@@ -165,7 +217,7 @@ export function createManufacturerBagCatalogDialogController({
         <span>${escapeHtml(t("bagCatalog.brands.all"))}</span>
       </button>
       ${activeBrands.map((entry) => {
-        const count = manufacturerBagCatalogCount(catalogRows(), { brand: entry.catalogBrand });
+        const count = manufacturerBagCatalogCount(catalogCountRows(), { brand: entry.catalogBrand });
         const selected = manufacturer === entry.catalogBrand;
         return `
           <button class="manufacturer-brand-choice ${selected ? "is-selected" : ""}" type="button" data-bag-catalog-brand="${escapeHtml(entry.id)}" aria-pressed="${selected ? "true" : "false"}" aria-label="${escapeHtml(t("bagCatalog.brands.filter", { brand: entry.name, count }))}">
@@ -188,7 +240,7 @@ export function createManufacturerBagCatalogDialogController({
     return `
       <div class="manufacturer-catalog-sections">
         ${families.map((entry) => {
-          const count = manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family: entry.id });
+          const count = manufacturerBagCatalogCount(catalogCountRows(), { brand: manufacturer, family: entry.id });
           if (!count) return "";
           return `
             <button class="manufacturer-catalog-section" type="button" data-bag-catalog-family="${escapeHtml(entry.id)}">
@@ -204,12 +256,12 @@ export function createManufacturerBagCatalogDialogController({
 
   function renderCategoryList() {
     const rows = categories.filter((entry) => entry.family === family
-      && manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family, category: entry.id }));
+      && manufacturerBagCatalogCount(catalogCountRows(), { brand: manufacturer, family, category: entry.id }));
     return `
       <div class="manufacturer-catalog-sections manufacturer-catalog-categories">
         ${rows.map((entry) => {
-          const count = manufacturerBagCatalogCount(catalogRows(), { brand: manufacturer, family, category: entry.id });
-          const comparisonCount = manufacturerBagCatalogCount(catalogRows(), { family, category: entry.id });
+          const count = manufacturerBagCatalogCount(catalogCountRows(), { brand: manufacturer, family, category: entry.id });
+          const comparisonCount = manufacturerBagCatalogCount(catalogCountRows(), { family, category: entry.id });
           return `
             <article class="manufacturer-catalog-section manufacturer-catalog-category-section">
               <button class="manufacturer-catalog-category-open" type="button" data-bag-catalog-category="${escapeHtml(entry.id)}">
@@ -335,6 +387,7 @@ export function createManufacturerBagCatalogDialogController({
 
   function navigateBack() {
     if (selectingId) return;
+    cancelPendingCatalogLoad();
     if (category) category = "";
     else family = "";
     if (!family && !category && manufacturer) manufacturer = "";
@@ -349,6 +402,7 @@ export function createManufacturerBagCatalogDialogController({
     }
     const familyButton = event.target.closest("[data-bag-catalog-family]");
     if (familyButton) {
+      cancelPendingCatalogLoad();
       family = familyButton.dataset.bagCatalogFamily || "";
       category = "";
       render();
@@ -357,12 +411,16 @@ export function createManufacturerBagCatalogDialogController({
     const categoryButton = event.target.closest("[data-bag-catalog-category]");
     if (categoryButton) {
       category = categoryButton.dataset.bagCatalogCategory || "";
-      render();
+      await loadCurrentCatalogAndRender();
       return;
     }
     const compareButton = event.target.closest("[data-bag-catalog-compare-category]");
     if (compareButton) {
-      onCompareCategory(compareButton.dataset.bagCatalogCompareCategory || "");
+      const comparisonCategory = compareButton.dataset.bagCatalogCompareCategory || "";
+      await loadCatalog({ brand: "" }).then(
+        () => onCompareCategory(comparisonCategory),
+        onCatalogLoadError
+      );
       return;
     }
     const editButton = event.target.closest("[data-bag-catalog-edit]");
@@ -388,20 +446,21 @@ export function createManufacturerBagCatalogDialogController({
     }
   }
 
-  function handleBrandClick(event) {
+  async function handleBrandClick(event) {
     const button = event.target.closest("[data-bag-catalog-brand]");
     if (!button || selectingId) return;
+    cancelPendingCatalogLoad();
     const requested = button.dataset.bagCatalogBrand || "all";
     const definition = brands.find((entry) => entry.id === requested && entry.status === "active");
     const nextManufacturer = requested === "all" || manufacturer === definition?.catalogBrand
       ? ""
       : String(definition?.catalogBrand || "");
     manufacturer = nextManufacturer;
-    const keepsFamily = Boolean(family && manufacturerBagCatalogCount(catalogRows(), {
+    const keepsFamily = Boolean(family && manufacturerBagCatalogCount(catalogCountRows(), {
       brand: manufacturer,
       family
     }));
-    const keepsCategory = Boolean(keepsFamily && category && manufacturerBagCatalogCount(catalogRows(), {
+    const keepsCategory = Boolean(keepsFamily && category && manufacturerBagCatalogCount(catalogCountRows(), {
       brand: manufacturer,
       family,
       category
@@ -410,7 +469,8 @@ export function createManufacturerBagCatalogDialogController({
     if (!keepsCategory) category = "";
     query = "";
     if (refs?.bagCatalogSearch) refs.bagCatalogSearch.value = "";
-    render();
+    if (category) await loadCurrentCatalogAndRender();
+    else render();
   }
 
   function openEditor(id) {
@@ -503,8 +563,16 @@ export function createManufacturerBagCatalogDialogController({
   if (bindOpenButton) refs?.openBagCatalogBtn?.addEventListener("click", open);
   refs?.bagCatalogBackBtn?.addEventListener("click", navigateBack);
   refs?.bagCatalogSearch?.addEventListener("input", () => {
+    cancelPendingCatalogLoad();
     query = refs.bagCatalogSearch.value || "";
-    render();
+    if (!query.trim()) {
+      render();
+      return;
+    }
+    searchLoadTimer = globalThis.setTimeout?.(() => {
+      searchLoadTimer = null;
+      loadCurrentCatalogAndRender();
+    }, 180);
   });
   refs?.bagCatalogResults?.addEventListener("change", (event) => {
     const select = event.target.closest("[data-bag-catalog-variant-select]");

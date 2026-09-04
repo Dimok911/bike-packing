@@ -6,7 +6,13 @@ import {
   prepareIsolatedRussianGuest,
 } from "./guest-test-helpers.js";
 
-test.beforeEach(async ({ page }) => {
+const MOBILE_WEBKIT_CATALOG_TEST = "manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail";
+
+test.beforeEach(async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile-webkit" && testInfo.title !== MOBILE_WEBKIT_CATALOG_TEST,
+    "The focused mobile WebKit catalog flow is covered separately."
+  );
   await prepareIsolatedRussianGuest(page);
 });
 
@@ -110,7 +116,13 @@ test("manufacturer catalog compares one type and copies an ORTLIEB photo into a 
   await expect(page.locator("#rootContainerNote")).toHaveValue(/Официальная страница: https:\/\/us\.ortlieb\.com/);
 });
 
-test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail", async ({ page }) => {
+test(MOBILE_WEBKIT_CATALOG_TEST, async ({ page }) => {
+  const catalogChunks = [];
+  page.on("request", (request) => {
+    if (/\/(?:ortlieb|apidura|restrap|tailfin|arkel|revelate-designs)\.generated-[^/]+\.js(?:\?|$)/.test(request.url())) {
+      catalogChunks.push(request.url());
+    }
+  });
   await page.setViewportSize({ width: 390, height: 720 });
   await openApp(page);
   await createEmptyLayout(page, "Мобильный каталог");
@@ -123,6 +135,7 @@ test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail
   const brandPicker = page.locator("#bagCatalogBrands");
   const results = page.locator("#bagCatalogResults");
   await expect(dialog).toBeVisible();
+  expect(catalogChunks).toEqual([]);
   const before = await dialog.evaluate((element) => {
     const dialogRect = element.getBoundingClientRect();
     const brands = element.querySelector("#bagCatalogBrands");
@@ -145,6 +158,8 @@ test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail
   expect(["auto", "scroll"]).toContain(before.overflowX);
   expect(before.touchAction).toContain("pan-y");
 
+  await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
+  await expect(page.locator("#bagCatalogPath")).toHaveText("Apidura");
   await brandPicker.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     const options = {
@@ -160,8 +175,11 @@ test("manufacturer catalog keeps a fixed mobile frame and a swipeable brand rail
     element.dispatchEvent(new PointerEvent("pointerup", { ...options, clientX: rect.left + 80 }));
   });
   await expect.poll(() => brandPicker.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-  await brandPicker.locator('[data-bag-catalog-brand="apidura"]').click();
   await page.locator('[data-bag-catalog-family="bikepacking"]').click();
+  await page.locator('[data-bag-catalog-category="saddle"]').click();
+  await expect(page.locator(".manufacturer-catalog-product").first()).toBeVisible();
+  await expect.poll(() => catalogChunks.some((url) => /\/apidura\.generated-/.test(url))).toBe(true);
+  expect(catalogChunks.some((url) => !/\/apidura\.generated-/.test(url))).toBe(false);
   const after = await dialog.evaluate((element) => {
     const dialogRect = element.getBoundingClientRect();
     const brandRect = element.querySelector("#bagCatalogBrands").getBoundingClientRect();

@@ -9,6 +9,11 @@ import {
   MANUFACTURER_BAG_CATALOG_FAMILIES
 } from "../../src/data/manufacturer-bag-catalog.js";
 import {
+  MANUFACTURER_BAG_CATALOG_INDEX,
+  loadedManufacturerBagCatalog,
+  loadManufacturerBagCatalog
+} from "../../src/data/manufacturer-bag-catalog-runtime.js";
+import {
   assertManufacturerBagCatalogSkuModels,
   manufacturerBagCatalogSkuModelGroups,
   splitManufacturerBagCatalogSkuModels
@@ -70,6 +75,36 @@ test("CRITICAL manufacturer catalog: brand filtering keeps only that manufacture
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
+
+test("CRITICAL manufacturer catalog: runtime opens from a small index and loads one brand at a time", async () => {
+  assert.equal(MANUFACTURER_BAG_CATALOG_INDEX.length, 345);
+  assert.deepEqual(loadedManufacturerBagCatalog(), []);
+
+  const apidura = await loadManufacturerBagCatalog({ brand: "Apidura" });
+  assert.equal(apidura.length, 71);
+  assert.ok(apidura.every(({ brand }) => brand === "Apidura"));
+
+  const withOrtlieb = await loadManufacturerBagCatalog({ brand: "ORTLIEB" });
+  assert.equal(withOrtlieb.length, 133);
+  assert.deepEqual([...new Set(withOrtlieb.map(({ brand }) => brand))], ["ORTLIEB", "Apidura"]);
+
+  const runtimeFiles = [
+    "index.generated.js",
+    "ortlieb.generated.js",
+    "apidura.generated.js",
+    "restrap.generated.js",
+    "tailfin.generated.js",
+    "arkel.generated.js",
+    "revelate-designs.generated.js"
+  ];
+  runtimeFiles.forEach((fileName) => {
+    const path = `src/data/manufacturer-catalog-runtime/${fileName}`;
+    const source = read(path);
+    assert.doesNotMatch(source, /sourceImageUrls|imageAssetPaths|manufacturer-bag-catalog\.generated/);
+    assert.ok(statSync(resolve(root, path)).size < 450_000, `${fileName} is unexpectedly large`);
+  });
+  assert.ok(statSync(resolve(root, "src/data/manufacturer-catalog-runtime/index.generated.js")).size < 50_000);
+});
 
 test("CRITICAL manufacturer catalog: approved manufacturer baselines have bundled images", () => {
   assert.deepEqual(MANUFACTURER_BAG_CATALOG_FAMILIES.map(({ id }) => id), ["bikepacking", "panniers", "carry"]);
@@ -592,7 +627,9 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.match(styles, /\.manufacturer-comparison-filter-body[\s\S]*overflow-y:\s*auto/);
   assert.match(styles, /\.manufacturer-comparison-filter-panel > footer[\s\S]*border-top/);
   assert.match(appTail, /prepareManufacturerBagCatalogImport/);
-  assert.match(appTail, /import\("\.\.\/data\/manufacturer-bag-catalog\.js"\)/);
+  assert.match(appTail, /import\("\.\.\/data\/manufacturer-bag-catalog-runtime\.js"\)/);
+  assert.match(appTail, /MANUFACTURER_BAG_CATALOG_INDEX/);
+  assert.match(appTail, /loadManufacturerBagCatalog/);
   assert.doesNotMatch(appTail, /from "\.\.\/data\/manufacturer-bag-catalog\.js"/);
   assert.match(appTail, /refs\.rootContainerNote\.value = draft\.note/);
   assert.match(appTail, /uploadRootContainerDialogDraftPhotos\(result\.accepted\)/);
@@ -609,6 +646,8 @@ test("CRITICAL manufacturer catalog: UI exposes async photo copy and bilingual c
   assert.equal((i18n.match(/"bagCatalog\.setTotalWithPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.compare\.officialPerBag"/g) || []).length, 2);
   assert.equal((i18n.match(/"bagCatalog\.variantPicker"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.loading"/g) || []).length, 2);
+  assert.equal((i18n.match(/"bagCatalog\.loadError"/g) || []).length, 2);
 });
 
 test("CRITICAL manufacturer catalog: explicit offline cache stores only unique primary previews", async () => {

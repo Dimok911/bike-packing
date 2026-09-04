@@ -2241,7 +2241,8 @@ function bindOfflineLayoutSettingsControls() {
     button.disabled = true;
     try {
       status.textContent = en ? "Loading catalog data…" : "Загружаем данные каталога…";
-      const { MANUFACTURER_BAG_CATALOG } = await import("./src/data/manufacturer-bag-catalog.js");
+      const catalogModule = await import("./src/data/manufacturer-bag-catalog-runtime.js");
+      const MANUFACTURER_BAG_CATALOG = await catalogModule.loadManufacturerBagCatalog();
       const result = await cacheManufacturerCatalogPreviews(MANUFACTURER_BAG_CATALOG, {
         onProgress: ({ completed, total }) => {
           status.textContent = en

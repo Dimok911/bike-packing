@@ -24,7 +24,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      testMatch: "**/view-scroll-tabs.spec.js",
+      testMatch: ["**/view-scroll-tabs.spec.js", "**/manufacturer-bag-catalog.spec.js"],
       use: { ...devices["iPhone 15"] }
     }
   ]

@@ -34,6 +34,14 @@ async function waitForServer(serverProcess) {
 
 export default async function globalSetup() {
   const viteBin = fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url));
+  const catalogRuntime = spawnSync(process.execPath, ["scripts/build-manufacturer-catalog-runtime.mjs"], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  if (catalogRuntime.status !== 0) {
+    throw new Error(`Manufacturer catalog runtime build failed with code ${catalogRuntime.status ?? "unknown"}`);
+  }
   const build = spawnSync(process.execPath, [viteBin, "build", "--outDir", DIST_DIR], {
     cwd: process.cwd(),
     stdio: "inherit",
