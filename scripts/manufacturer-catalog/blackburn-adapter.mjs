@@ -225,8 +225,8 @@ export function buildBlackburnCatalogEntry({ html = "", sourceUrl = "", checkedA
     sourceCheckedAt: checkedAt,
     manufacturerDetails: details,
     description: {
-      en: `${name} is a Blackburn ${meta.en}${volumeSummary ? ` in ${volumeSummary}` : ""}. Technical data is normalized from the official product page.`,
-      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Blackburn${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`,
+      en: `${name} is a Blackburn ${meta.en}${volumeSummary ? ` in ${volumeSummary}` : ""}. Specifications are from the manufacturer's official product page.`,
+      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Blackburn${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики взяты с официальной страницы производителя.`,
     },
     aliases: [...new Set(["Blackburn", meta.en, meta.ru, ...meta.aliases, handle.replaceAll("-", " "), name])],
   };

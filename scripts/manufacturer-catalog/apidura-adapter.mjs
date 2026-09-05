@@ -372,8 +372,8 @@ export function buildApiduraCatalogEntry({ product = {}, html = "", sourceUrl = 
     sourceCheckedAt: checkedAt,
     manufacturerDetails: details,
     description: {
-      en: description || `${name} is an Apidura ${meta.en}. Technical data is normalized from the official product page.`,
-      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Apidura${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`,
+      en: description || `${name} is an Apidura ${meta.en}. Specifications are from the manufacturer's official product page.`,
+      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Apidura${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики взяты с официальной страницы производителя.`,
     },
     aliases: [...new Set(["Apidura", meta.en, meta.ru, handle.replaceAll("-", " "), name])],
   };

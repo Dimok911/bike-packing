@@ -399,8 +399,8 @@ export function buildRevelateCatalogEntry({ html = "", sourceUrl = "", checkedAt
     sourceCheckedAt: checkedAt,
     manufacturerDetails: details,
     description: {
-      en: description.slice(0, 1200) || `${name} is a Revelate Designs ${meta.en}. Technical data is normalized from the official product page.`,
-      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Revelate Designs${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`,
+      en: description.slice(0, 1200) || `${name} is a Revelate Designs ${meta.en}. Specifications are from the manufacturer's official product page.`,
+      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Revelate Designs${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики взяты с официальной страницы производителя.`,
     },
     aliases: [...new Set(["Revelate Designs", meta.en, meta.ru, ...meta.aliases, handle.replaceAll("-", " "), name])],
   };

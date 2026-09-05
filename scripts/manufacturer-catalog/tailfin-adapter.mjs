@@ -464,8 +464,8 @@ export function buildTailfinCatalogEntry({ html = "", sourceUrl = "", checkedAt 
     sourceCheckedAt: checkedAt,
     manufacturerDetails: technicalDetails,
     description: {
-      en: manufacturerDescription || `${name} is a Tailfin ${meta.en}. Technical data is normalized from the official product page.`,
-      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Tailfin${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`,
+      en: manufacturerDescription || `${name} is a Tailfin ${meta.en}. Specifications are from the manufacturer's official product page.`,
+      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Tailfin${volumeSummary ? ` объёмом ${volumeSummary}` : ""}. Характеристики взяты с официальной страницы производителя.`,
     },
     aliases: [...new Set([
       "Tailfin",

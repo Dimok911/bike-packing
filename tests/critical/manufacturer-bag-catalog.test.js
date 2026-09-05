@@ -49,6 +49,7 @@ import {
 } from "../../src/storage/manufacturer-bag-catalog-overrides.js";
 import { saveRootContainerDialogAction } from "../../src/ui/item-dialog-save.js";
 import { renderManufacturerBrandMark } from "../../src/ui/manufacturer-brand-mark.js";
+import { plainManufacturerCatalogDescription } from "../../src/ui/manufacturer-catalog-description.js";
 import {
   browserStorageEstimate,
   cacheManufacturerCatalogPreviews,
@@ -68,6 +69,17 @@ test("CRITICAL manufacturer catalog: active and planned brand marks stay explici
   assert.match(revelateMark, /manufacturer-brand-mark-revelate-designs/);
   assert.match(readFileSync(resolve(import.meta.dirname, "../..", "styles.css"), "utf8"),
     /\.manufacturer-brand-mark-revelate-designs\s*\{[^}]*background:\s*#27312d;/s);
+});
+
+test("CRITICAL manufacturer catalog: technical provenance is shown in plain language", () => {
+  assert.equal(
+    plainManufacturerCatalogDescription("Подседельная сумка 10 L. Характеристики нормализованы по официальной карточке товара."),
+    "Подседельная сумка 10 L. Характеристики взяты с официальной страницы производителя."
+  );
+  assert.equal(
+    plainManufacturerCatalogDescription("A 10 L saddle bag. Technical data is normalized from the official product page."),
+    "A 10 L saddle bag. Specifications are from the manufacturer's official product page."
+  );
 });
 
 test("CRITICAL manufacturer catalog: brand filtering keeps only that manufacturer's available structure", () => {

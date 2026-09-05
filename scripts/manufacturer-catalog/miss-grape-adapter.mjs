@@ -304,8 +304,8 @@ export function buildMissGrapeCatalogEntry({ product = {}, html = "", sourceUrl 
     sourceCheckedAt: checkedAt,
     manufacturerDetails: details,
     description: {
-      en: description || `${name} is a Miss Grape ${meta.en}. Technical data is normalized from the official product page.`,
-      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Miss Grape${volumes.length ? ` объёмом ${volumes.join("–")} л` : ""}. Характеристики нормализованы по официальной карточке товара.`,
+      en: description || `${name} is a Miss Grape ${meta.en}. Specifications are from the manufacturer's official product page.`,
+      ru: `${meta.ru[0].toLocaleUpperCase()}${meta.ru.slice(1)} Miss Grape${volumes.length ? ` объёмом ${volumes.join("–")} л` : ""}. Характеристики взяты с официальной страницы производителя.`,
     },
     aliases: [...new Set(["Miss Grape", meta.en, meta.ru, handle.replaceAll("-", " "), name])],
   };

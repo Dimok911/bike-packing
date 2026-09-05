@@ -11,6 +11,7 @@ import {
   manufacturerBagCatalogWeightMetrics
 } from "../state/manufacturer-bag-catalog.js";
 import { renderManufacturerCatalogPhotoGallery } from "./manufacturer-catalog-photo-gallery.js";
+import { plainManufacturerCatalogDescription } from "./manufacturer-catalog-description.js";
 import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
 const TABLE_COLUMNS = [
@@ -50,7 +51,9 @@ function safeLocalImageUrl(value = "") {
 
 function localizedDescription(entry, language = "en") {
   if (!entry?.description || typeof entry.description !== "object") return "";
-  return entry.description[language] || entry.description.en || entry.description.ru || "";
+  return plainManufacturerCatalogDescription(
+    entry.description[language] || entry.description.en || entry.description.ru || ""
+  );
 }
 
 function parseDecimal(value) {

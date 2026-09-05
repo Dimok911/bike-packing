@@ -12,6 +12,7 @@ import {
   bindManufacturerCatalogPhotoLoading,
   renderManufacturerCatalogPhotoGallery
 } from "./manufacturer-catalog-photo-gallery.js";
+import { plainManufacturerCatalogDescription } from "./manufacturer-catalog-description.js";
 import { renderManufacturerBrandMark } from "./manufacturer-brand-mark.js";
 
 const PRODUCT_BATCH_SIZE = 12;
@@ -35,7 +36,9 @@ function catalogMetricText(metrics, unit, t) {
 
 function localizedDescription(entry, language = "en") {
   if (!entry?.description || typeof entry.description !== "object") return "";
-  return entry.description[language] || entry.description.en || entry.description.ru || "";
+  return plainManufacturerCatalogDescription(
+    entry.description[language] || entry.description.en || entry.description.ru || ""
+  );
 }
 
 function dimensionText(dimensions = {}) {

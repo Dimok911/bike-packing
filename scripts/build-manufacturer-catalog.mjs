@@ -504,8 +504,8 @@ async function normalizeProduct({ brandKey, product }) {
     : volumeSummary;
   const setNote = soldAsSet ? " · pair/set" : "";
   const description = {
-    en: `${brand} ${categoryMeta.en}${catalogVolumeSummary ? ` in ${catalogVolumeSummary}` : ""}. Technical data is normalized from the official product page.`,
-    ru: `${capitalizeSentence(categoryMeta.ru)} ${brand}${catalogVolumeSummary ? ` объёмом ${specificationsPerBag ? `${totalVolumeSummary} за пару (${volumeSummary} на одну сумку)` : catalogVolumeSummary}` : ""}. Характеристики нормализованы по официальной карточке товара.`
+    en: `${brand} ${categoryMeta.en}${catalogVolumeSummary ? ` in ${catalogVolumeSummary}` : ""}. Specifications are from the manufacturer's official product page.`,
+    ru: `${capitalizeSentence(categoryMeta.ru)} ${brand}${catalogVolumeSummary ? ` объёмом ${specificationsPerBag ? `${totalVolumeSummary} за пару (${volumeSummary} на одну сумку)` : catalogVolumeSummary}` : ""}. Характеристики взяты с официальной страницы производителя.`
   };
   const dimensions = Object.fromEntries(Object.entries(specs.dimensions || {}).filter(([, value]) => Number(value) > 0));
   const availableVariants = variants.filter((variant) => variant.available);
