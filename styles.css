@@ -7142,6 +7142,10 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
   height: min(var(--photo-lightbox-natural-height), calc(100dvh - 18px));
 }
 
+.photo-lightbox-image.photo-lightbox-image-awaiting-size {
+  visibility: hidden;
+}
+
 .photo-lightbox-image:active {
   cursor: grabbing;
 }

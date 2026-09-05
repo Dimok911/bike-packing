@@ -75,6 +75,7 @@ import {
   resolvePhotoGallerySnapIndex,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml,
+  renderPhotoGalleryHtml,
   renderPhotoDots,
   renderPhotoSlide
 } from "../../src/ui/photo-gallery.js";
@@ -2247,6 +2248,18 @@ test("CRITICAL offline-photos: known dimensions constrain a small fullscreen pho
   assert.match(source, /photo-lightbox-image\$\{sizingClass\}/);
 });
 
+test("CRITICAL offline-photos: editable galleries preserve known dimensions for stable fullscreen paging", async () => {
+  const html = await renderPhotoGalleryHtml([{
+    id: "photo-dialog-small",
+    url: "https://api.example.test/photo-dialog-small/file",
+    thumbUrl: "https://api.example.test/photo-dialog-small/thumb",
+    width: 640,
+    height: 480
+  }]);
+
+  assert.match(html, /data-photo-width="640" data-photo-height="480"/);
+});
+
 test("CRITICAL offline-photos: high-resolution or already-downscaled photos keep screen fitting", () => {
   assert.deepEqual(photoLightboxAutoSize({
     naturalWidth: 1600,
@@ -2291,8 +2304,22 @@ test("CRITICAL offline-photos: lightbox auto-size class follows each decoded pho
   assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
   assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
 
+  image.naturalWidth = 0;
+  image.naturalHeight = 0;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(classes.has("photo-lightbox-image-no-upscale"), true);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+
+  image.dataset = { photoWidth: "640", photoHeight: "480", photoLightboxQuality: "preview" };
+  image.naturalWidth = 1200;
+  image.naturalHeight = 900;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+  assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
+
   image.naturalWidth = 2000;
   image.naturalHeight = 1500;
+  image.dataset.photoLightboxQuality = "full";
   updatePhotoLightboxAutoSize(image, viewport);
   assert.equal(classes.has("photo-lightbox-image-no-upscale"), false);
   assert.equal(properties.size, 0);
@@ -2886,6 +2913,10 @@ test("CRITICAL offline-photos: lightbox keeps stable geometry and never downgrad
   assert.doesNotMatch(source, /image\.src = previewSrc;/);
   assert.match(styles, /\.photo-lightbox-image\s*\{[\s\S]*width:\s*calc\(100vw - 18px\);[\s\S]*height:\s*calc\(100dvh - 18px\);[\s\S]*object-fit:\s*contain;/);
   assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-no-upscale\s*\{[\s\S]*--photo-lightbox-natural-width[\s\S]*--photo-lightbox-natural-height/);
+  assert.match(source, /renderedDimensionsMatchFullSource[\s\S]*sharedFullscreenImageUsesSource\(image, fullSrc\)/);
+  assert.match(source, /photo-lightbox-image-awaiting-size/);
+  assert.match(source, /settleImagePresentation\(visibleImage, \{ force: true \}\)/);
+  assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-awaiting-size\s*\{[\s\S]*visibility:\s*hidden/);
 });
 
 test("CRITICAL offline-photos: fast full-size resolution cancels the loading notice before it flashes", () => {

@@ -44,9 +44,19 @@ export function updatePhotoLightboxAutoSize(image, viewport, {
   lowResolutionMaxPixels = PHOTO_LIGHTBOX_LOW_RESOLUTION_MAX_PIXELS
 } = {}) {
   if (!image || !viewport) return { limitAutoUpscale: false, width: 0, height: 0 };
+  const fullWidth = Number(image.dataset?.photoWidth) || 0;
+  const fullHeight = Number(image.dataset?.photoHeight) || 0;
+  // A thumbnail and an empty slide must retain the original's known geometry.
+  const useFullDimensions = fullWidth > 0 && fullHeight > 0
+    && (image.dataset?.photoLightboxQuality !== "full" || !image.naturalWidth || !image.naturalHeight);
+  const naturalWidth = useFullDimensions ? fullWidth : image.naturalWidth;
+  const naturalHeight = useFullDimensions ? fullHeight : image.naturalHeight;
+  // complete === true on an <img> without src does not mean it has loaded.
+  // Keep sizing established before the first paint until dimensions are known.
+  if (!(naturalWidth > 0 && naturalHeight > 0)) return { limitAutoUpscale: false, width: 0, height: 0 };
   const sizing = photoLightboxSizingPresentation({
-    naturalWidth: image.naturalWidth,
-    naturalHeight: image.naturalHeight,
+    naturalWidth,
+    naturalHeight,
     availableWidth: Math.max(0, Number(viewport.clientWidth) - inset),
     availableHeight: Math.max(0, Number(viewport.clientHeight) - inset),
     lowResolutionMaxPixels

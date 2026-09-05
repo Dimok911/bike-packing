@@ -48,12 +48,12 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(apiContractSource, /adminTemplateDraftSync/);
   assert.match(apiContractSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1590"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1591"/);
 });
 
 test("admin compatibility requires the live split-services API contract", () => {
   const options = {
-    appVersion: "v1590",
+    appVersion: "v1591",
     requiredVersion: "2026-08-30.split-services-bridge-v1",
     requiredCapabilities: [],
     localText: (en) => en
