@@ -967,7 +967,7 @@ export async function openPhotoLightbox(sourceImage, {
       : "";
     return `
       <div class="photo-lightbox-slide" data-photo-lightbox-index="${entryIndex}">
-        <img class="photo-lightbox-image${sizingClass}${pendingSizingClass}"${sizingStyle}${initialSrc ? ` src="${escapeHtml(initialSrc)}"` : ""} alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" />
+        <img class="photo-lightbox-image${sizingClass}${pendingSizingClass}"${sizingStyle}${initialSrc ? ` src="${escapeHtml(initialSrc)}"` : ""} alt="" data-photo-width="${Number(entry?.width) || 0}" data-photo-height="${Number(entry?.height) || 0}" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" />
       </div>
     `;
   }).join("");
@@ -1317,6 +1317,10 @@ export async function openPhotoLightbox(sourceImage, {
           visibleImage = nextImage;
           lightboxImages[entryIndex] = nextImage;
           if (activeIndex === entryIndex) image = nextImage;
+          // Size the decoded original synchronously, before the replacement's
+          // first paint (the shared helper waits for paint before resolving).
+          nextImage.dataset.photoLightboxQuality = "full";
+          settleImagePresentation(nextImage, { force: true });
           bindImageInteractions(nextImage);
         },
         onRollback: (restoredImage) => {

@@ -2304,8 +2304,22 @@ test("CRITICAL offline-photos: lightbox auto-size class follows each decoded pho
   assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
   assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
 
+  image.naturalWidth = 0;
+  image.naturalHeight = 0;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(classes.has("photo-lightbox-image-no-upscale"), true);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+
+  image.dataset = { photoWidth: "640", photoHeight: "480", photoLightboxQuality: "preview" };
+  image.naturalWidth = 1200;
+  image.naturalHeight = 900;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+  assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
+
   image.naturalWidth = 2000;
   image.naturalHeight = 1500;
+  image.dataset.photoLightboxQuality = "full";
   updatePhotoLightboxAutoSize(image, viewport);
   assert.equal(classes.has("photo-lightbox-image-no-upscale"), false);
   assert.equal(properties.size, 0);
