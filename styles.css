@@ -503,7 +503,7 @@ button.button-loading::before {
   background: #a51d1d;
   box-shadow: 0 5px 18px rgba(77, 10, 10, 0.32);
   color: #fff;
-  font-size: clamp(20px, 4vw, 30px);
+  font-size: clamp(24px, 5vw, 34px);
   font-weight: 900;
   letter-spacing: 0.08em;
   line-height: 1.15;
@@ -11310,6 +11310,11 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
 
   .app {
     padding: 8px;
+  }
+
+  .experiment-banner {
+    margin: -8px -8px 12px;
+    padding-inline: 8px;
   }
 
   .topbar {

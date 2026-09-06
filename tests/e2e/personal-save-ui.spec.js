@@ -28,6 +28,14 @@ async function submitForm(page, button, input) {
   else await page.locator(button).click();
 }
 
+async function reloadApp(page) {
+  page.personalFixture.reloading = true;
+  try {
+    await page.reload();
+    await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  } finally { page.personalFixture.reloading = false; }
+}
+
 async function createRootContainer(page, name) {
   await page.locator("[data-add-packing-root]").click();
   await page.locator("#createRootForLayoutBtn").click();
@@ -56,9 +64,9 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false } = {}) {
+async function setup(page, context, { fresh = false, lose = false } = {}) {
   const state = { listId: fresh ? null : "list-a", payload: initialPayload(), revision: fresh ? 0 : 1,
-    posts: [], receipts: new Map(), lose: false, unknown: false, errors: [] };
+    posts: [], receipts: new Map(), lose, unknown: lose, errors: [] };
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
     stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`, payload: state.payload });
@@ -66,6 +74,8 @@ async function setup(page, context, { fresh = false } = {}) {
     // WebKit reports a cancelled injected receipt fetch during reload. Do not
     // confuse this deliberate fixture failure with a JavaScript application error.
     if (state.injectedFailure && /\/list-operations\/.*due to access control checks\./.test(error.message)) return;
+    if (test.info().project.name === "mobile-webkit" && state.reloading
+      && /\/letters-vniipo\/api\/.*due to access control checks\.$/.test(error.message)) return;
     state.errors.push(error.message);
   });
   await context.addInitScript(() => { localStorage.setItem("bike-packing-language-v1", "ru"); });
@@ -122,17 +132,16 @@ async function setup(page, context, { fresh = false } = {}) {
 
 test("actual bag and item dialogs persist immutable actions and recover lost ACK after reload", async ({ page, context }) => {
   test.setTimeout(90000);
-  const f = await setup(page, context);
-  f.lose = true; f.unknown = true;
+  const f = await setup(page, context, { lose: true });
   const bag = await createRootContainer(page, "Сумка очереди");
   await createItemInContainer(page, bag, "Насос очереди", { weight: "130" });
   await expect.poll(async () => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:") && !key.includes("applied:")).length)).toBeGreaterThan(0);
   await page.locator("#syncBtn").click();
   await expect.poll(() => f.posts.length).toBe(1);
+  await expect.poll(() => f.injectedFailure).toBe(true);
   const firstId = f.posts[0].operationId;
   f.lose = false; f.unknown = false;
-  await page.reload();
-  await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await reloadApp(page);
   await page.locator("#syncBtn").click();
   await expect.poll(() => Object.values(f.payload.items || {}).some(item => item.name === "Насос очереди"), { timeout: 20000 }).toBe(true);
   expect(f.posts.filter(post => post.operationId === firstId)).toHaveLength(1);
@@ -157,7 +166,8 @@ test("actual edit/delete dialogs, nested placement and confirmed compaction keep
   await synchronize(page, () => Object.keys(f.payload.items).length === 1);
   await bag.locator("[data-add-to-container]").click();
   await page.locator("#newSubcontainerName").fill("Внутренний карман");
-  await page.locator("#createSubcontainerBtn").click();
+  await submitForm(page, "#createSubcontainerBtn", "#newSubcontainerName");
+  await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
   await synchronize(page, () => Object.values(f.payload.containers).some(entry => entry.name === "Внутренний карман"));
   const nested = Object.values(f.payload.containers).find(entry => entry.name === "Внутренний карман");
   expect(f.payload.layouts["layout-a"].arrangement.containers[nested.id].parentId).toBeTruthy();
@@ -181,7 +191,7 @@ test("actual edit/delete dialogs, nested placement and confirmed compaction keep
   await page.locator("#confirmOkBtn").click();
   await synchronize(page, () => Object.keys(f.payload.containers).length === 0);
   expect(f.payload.layouts["layout-a"].rootContainerIds).toEqual([]);
-  await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/);
+  await reloadApp(page);
   expect(Object.keys(f.payload.items)).toEqual([]);
   await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(0);
   expect(new Set(f.posts.map(post => post.operationId)).size).toBe(f.posts.length);
@@ -197,7 +207,7 @@ test("full application adopts a newer server baseline and next edit keeps the se
   f.payload = { ...f.payload, containers: { ...f.payload.containers, [id]: { ...previous, note: "Изменено с другого устройства" } } };
   f.revision += 10;
   const remoteRevision = f.revision;
-  await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/);
+  await reloadApp(page);
   await expect.poll(() => page.evaluate(() => Object.entries(localStorage).some(([key, value]) =>
     key.endsWith(":anchor") && JSON.parse(value)?.baseline?.stateRevision > 10))).toBe(true);
   const bag = page.locator("#packingView [data-root-container-id]").filter({ hasText: "Первая сумка" });
@@ -213,8 +223,7 @@ test("full application adopts a newer server baseline and next edit keeps the se
 
 test("first authenticated UI change owns a durable create and survives a lost first ACK", async ({ page, context }) => {
   test.setTimeout(90000);
-  const f = await setup(page, context, { fresh: true });
-  f.lose = true; f.unknown = true;
+  const f = await setup(page, context, { fresh: true, lose: true });
   await page.locator("#newLayoutBtn").click();
   await page.locator("#layoutCreateMode").selectOption("empty");
   await page.locator("#layoutName").fill("Самая первая укладка");
@@ -224,13 +233,34 @@ test("first authenticated UI change owns a durable create and survives a lost fi
   await createItemInContainer(page, bag, "Первая вещь");
   await page.locator("#syncBtn").click();
   await expect.poll(() => f.posts.length).toBe(1);
+  await expect.poll(() => f.injectedFailure).toBe(true);
   const first = structuredClone(f.posts[0]);
   expect(first.kind).toBe("list.create"); expect(first.listId).toMatch(/^personal-[a-f0-9]{64}$/);
   f.lose = false; f.unknown = false;
-  await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/);
+  await reloadApp(page);
   await synchronize(page, () => Object.values(f.payload.items).some(item => item.name === "Первая вещь"));
   expect(f.posts.filter(post => post.kind === "list.create")).toEqual([first]);
   expect(f.posts.every(post => post.listId === first.listId)).toBe(true);
   expect(new Set(f.posts.map(post => post.operationId)).size).toBe(f.posts.length);
   expect(f.errors).toEqual([]);
+});
+
+test("Experiment is prominent above the header, fits mobile and remains translated", async ({ page, context }, info) => {
+  await setup(page, context);
+  const banner = page.locator("#experimentBanner");
+  await expect(banner).toHaveText("ЭКСПЕРИМЕНТ");
+  const bounds = await banner.evaluate(element => {
+    const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth,
+      headerTop: document.querySelector(".topbar").getBoundingClientRect().top,
+      fontSize: parseFloat(style.fontSize), weight: Number(style.fontWeight), position: style.position };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0); expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.headerTop);
+  expect(bounds.fontSize).toBeGreaterThanOrEqual(24); expect(bounds.weight).toBe(900);
+  expect(bounds.position).toBe("sticky");
+  await page.screenshot({ path: info.outputPath("experiment-banner.png") });
+  await page.locator("#menuBtn").click();
+  await page.locator("#languageSelect").selectOption("en");
+  await expect(banner).toHaveText("EXPERIMENT");
 });

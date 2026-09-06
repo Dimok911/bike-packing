@@ -730,6 +730,7 @@ import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/ca
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities } from "./src/sync/personal-deletion-intent.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
+import { installExperimentBanner } from "./src/ui/experiment-banner.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
@@ -3298,6 +3299,7 @@ function applyStaticTranslations() {
 }
 
 async function init() {
+  installExperimentBanner();
   syncMainViewScrollHost(getCurrentView(), {
     documentRef: document,
     navigatorRef: navigator,
