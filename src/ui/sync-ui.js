@@ -112,6 +112,7 @@ export function updateSyncUiControls({
   isReadOnlyStateScope = () => false,
   isReadonlyTemplateView = () => false,
   message = "",
+  saveBlocked = false,
   refs,
   state,
   syncMeta,
@@ -179,6 +180,7 @@ export function updateSyncUiControls({
     refs.mobileAdminApiWarning.textContent = adminApiWarning || "";
   }
   const syncVisualState = resolveSyncVisualState({
+    saveBlocked,
     loggedIn,
     unlocked,
     message,

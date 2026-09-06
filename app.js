@@ -725,6 +725,8 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
+import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
+import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities } from "./src/sync/personal-deletion-intent.js";
@@ -1165,6 +1167,19 @@ applyPublicTemplateLanguage();
 let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 const personalSaveOutboxes = new Map();
 let personalInitialSaveOutbox = null;
+const personalSaveRecovery = createPersonalSaveRecovery({
+  isCurrentScope: scopeKey => scopeKey === localStorageScopeKey && scopeKey?.startsWith("id:"),
+  onBlocked: failure => {
+    personalSaveRecoveryDialog?.show();
+    personalSaveRecoveryDialog?.setReason(failure.error.code);
+    queueMicrotask(() => updateSyncUi());
+  }
+});
+const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSaveRecoveryDialog({
+  getLanguage: () => uiLanguage,
+  getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage),
+  ownsError: error => personalSaveRecovery.owns(error)
+}) : null;
 let applyingLayoutArrangement = false;
 let hadLocalStateAtStartup = hasLocalSavedState();
 const startupSyncMeta = loadSyncMeta();
@@ -2400,14 +2415,15 @@ function personalSavePilotEnabled() {
 
 function personalSaveOutboxForScope({ reload = false } = {}) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")) return null;
+  personalSaveRecovery.assertRunning();
   const listId = loadActivePackingListId();
   if (!listId) return null;
   const actorId = localStorageScopeKey.slice(3);
   const key = JSON.stringify([actorId, listId, localStorageScopeKey]);
   if (reload) personalSaveOutboxes.delete(key);
-  if (!personalSaveOutboxes.has(key)) personalSaveOutboxes.set(key, createPersonalSaveOutbox({
+  if (!personalSaveOutboxes.has(key)) personalSaveOutboxes.set(key, personalSaveRecovery.outbox(() => createPersonalSaveOutbox({
     storage: localStorage, actorId, listId, scopeKey: localStorageScopeKey
-  }));
+  }), localStorageScopeKey));
   return personalSaveOutboxes.get(key);
 }
 
@@ -2455,7 +2471,9 @@ async function prepareInitialPersonalSave() {
   if (["actorId", "scopeKey", "scope", "generation"].some(key => initial[key] !== current[key]) || currentPackingListId) {
     throw new Error("Локальная версия изменилась при подготовке списка. Требуется повторная проверка.");
   }
-  const outbox = createPersonalSaveOutbox({ storage: localStorage, actorId: initial.actorId, scopeKey: initial.scopeKey, listId });
+  const outbox = personalSaveRecovery.outbox(() => createPersonalSaveOutbox({
+    storage: localStorage, actorId: initial.actorId, scopeKey: initial.scopeKey, listId
+  }), initial.scopeKey);
   if (outbox.recover()) throw new Error("Найдено сохранённое действие. Сначала восстановите локальный список.");
   // Retain this editor's empty head. Do not create a fresh outbox on its first
   // click, which could silently observe another tab's intervening creation.
@@ -2463,6 +2481,7 @@ async function prepareInitialPersonalSave() {
 }
 
 function persistStateSnapshot(snapshot = state, { recordAction = true, personalMutation = null } = {}) {
+  if (personalSavePilotEnabled()) personalSaveRecovery.assertRunning();
   const intent = recordAction && personalSavePilotEnabled() && !applyingRemoteState
     ? capturePersonalSaveIntent(snapshot, personalMutation) : null;
   if (intent || personalSavePilotEnabled() && hasPendingPersonalSave()) {
@@ -3850,7 +3869,8 @@ function loadState({ createFallbackLayout = true } = {}) {
     installRuntimeActiveLayoutId(parsed, parsed.activeLayoutId);
     persistStateSnapshot(parsed, { recordAction: false });
     return parsed;
-  } catch {
+  } catch (error) {
+    if (error.isPersonalSaveBlocked) throw error;
     const fallback = createEmptyUserState();
     installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
     return fallback;
@@ -4126,7 +4146,9 @@ function loadActivePackingListId() {
     scopedKey: scopedLocalStorageKey
   });
   if (storedId || !personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")) return storedId;
-  return recoverPersonalSaveListId({ storage: localStorage, actorId: localStorageScopeKey.slice(3), scopeKey: localStorageScopeKey });
+  return personalSaveRecovery.run(() => recoverPersonalSaveListId({
+    storage: localStorage, actorId: localStorageScopeKey.slice(3), scopeKey: localStorageScopeKey
+  }), { scopeKey: localStorageScopeKey });
 }
 
 function saveActivePackingListId(listId) {
@@ -6261,6 +6283,7 @@ async function assertAdminApiCompatibility({ force = false } = {}) {
 
 function renderSyncUi(effectiveMessage = "") {
   updateSyncUiControls({
+    saveBlocked: Boolean(personalSaveRecovery.message()),
     adminReportsDialogController,
     manufacturerCatalogReviewDialogController,
     appUnlocked,
@@ -6298,7 +6321,9 @@ function updateSyncUi(message = "") {
   const rememberedStatus = isOfflineRememberedSession()
     ? offlineRememberedStatusMessages(offlineRememberedSessionReason)
     : { sync: "" };
-  const effectiveMessage = connectionStatusController.currentMessage() ||
+  const recoveryMessage = personalSaveRecovery.message();
+  const effectiveMessage = (recoveryMessage ? localText("Saving is paused. Download a recovery copy before reloading.",
+    "Сохранение приостановлено. Перед перезагрузкой скачайте копию для восстановления.") : "") || connectionStatusController.currentMessage() ||
     offlinePhotoCacheController.currentMessage() ||
     message ||
     rememberedStatus.sync;
@@ -6632,7 +6657,7 @@ async function ensureCurrentPackingListId() {
   if (personalSavePilotEnabled() && currentUser && !isReadOnlyBikePackingContext()
     && !isAdminPublicEditScope(modeState)) {
     if (isPublicTemplateListId(currentPackingListId)) throw new Error("Для сохранения нужен личный список, не публичный шаблон.");
-    return ensureCausalPersonalListId({
+    return personalSaveRecovery.run(() => ensureCausalPersonalListId({
       storage: localStorage, getContext: personalSaveContext, getCurrentListId: () => currentPackingListId,
       snapshot: state, body: { ...buildListSaveBody(), title: localText("My packing lists", "Мои укладки") },
       fetchLists: async () => {
@@ -6646,7 +6671,7 @@ async function ensureCurrentPackingListId() {
       // Do not install a revision from a summary as authority to save a draft.
       onExisting: () => {},
       onRegistered: listId => saveActivePackingListId(listId)
-    });
+    }), { scopeKey: localStorageScopeKey, snapshot: clone(state) });
   }
   return ensurePersonalListId({
     chooseDefaultList: chooseDefaultPackingList,
@@ -8102,6 +8127,7 @@ function personalSaveContext() {
 async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = false } = {}) {
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
+    personalSaveRecovery.assertRunning();
     if (isForcedOffline()) {
       updateSyncUi("Офлайн · действия сохранены на устройстве и ждут отправки.");
       return;
@@ -8138,13 +8164,19 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     if (containsPhotos(loadBaseState()) || outbox.list().some(record => containsPhotos(record.action.body.payload))) {
       throw new Error("Сохранение с фотографиями ждёт подключения составных действий с файлами. Локальные данные сохранены.");
     }
-    const getContext = personalSaveContext;
+    const getContext = () => {
+      personalSaveRecovery.assertRunning();
+      return personalSaveContext();
+    };
     const queue = createListOperationQueue({ transport: experimentTransport, getContext });
     updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
     await outbox.drain({ queue, getContext, onConfirmed(data, record) {
+      personalSaveRecovery.assertRunning();
       const writeRequired = (key, value) => {
         if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {
-          throw new Error("Сервер подтвердил действие, но локальное подтверждение не сохранено. Сверка будет повторена.");
+          throw Object.assign(new Error("Сервер подтвердил действие, но локальное подтверждение не сохранено. Сверка будет повторена."), {
+            code: "storage", isPersonalSaveBlocked: true, isOperationReceiptError: true
+          });
         }
       };
       writeRequired(STORAGE_KEY, state);
@@ -8164,6 +8196,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;
+    personalSaveRecovery.report(error, { scopeKey: owner.scopeKey });
     syncMeta.dirty = true;
     saveSyncMeta();
     updateSyncUi(error.message || "Сохранение приостановлено до подтверждения.");

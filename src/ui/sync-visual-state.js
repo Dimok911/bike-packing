@@ -53,9 +53,11 @@ export function resolveSyncVisualState({
   forcedOffline = false,
   rememberedOffline = false,
   readOnlyScope = false,
-  dirty = false
+  dirty = false,
+  saveBlocked = false
 } = {}) {
   const lowerMessage = message.toLowerCase();
+  if (saveBlocked) return "error";
   if (adminApiWarning) return "error";
   if (forcedOffline) return "offline";
   if (ERROR_MESSAGE_PARTS.some((part) => lowerMessage.includes(part))) return "error";

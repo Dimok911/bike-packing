@@ -245,6 +245,137 @@ test("first authenticated UI change owns a durable create and survives a lost fi
   expect(f.errors).toEqual([]);
 });
 
+async function downloadRecovery(page) {
+  const downloaded = page.waitForEvent("download");
+  await page.locator("#personalSaveRecoveryDialog button").click();
+  const file = await downloaded;
+  expect(file.suggestedFilename()).toBe("bike-packing-recovery.json");
+  return JSON.parse(await readFile(await file.path(), "utf8"));
+}
+
+test("quota failure in a real form pauses editing and exports the unsaved draft without rewriting the queue", async ({ page, context }, info) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Уже сохранённая сумка");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#rootContainerName").fill("Несохранённая сумка");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await submitForm(page, "#saveRootContainerBtn", "#rootContainerName");
+  const warning = page.locator("#personalSaveRecoveryDialog");
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("не хватает места");
+  await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "error");
+  await page.keyboard.press("Escape");
+  await expect(warning).toBeVisible();
+  await expect(page.locator("#rootContainerDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(copy.scopeKey).toBe("id:actor-a");
+  expect(copy.automaticImportAllowed).toBe(false);
+  expect(Object.values(copy.unconfirmedMemoryDraft.containers).some(entry => entry.name === "Несохранённая сумка")).toBe(true);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort())).toEqual(before);
+  expect(f.posts.length).toBe(postsBefore);
+  const box = await warning.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+  expect(box.height).toBeLessThanOrEqual(page.viewportSize().height);
+  await page.screenshot({ path: info.outputPath("personal-save-quota.png") });
+  expect(f.errors).toEqual([]);
+});
+
+test("corrupt journal at reload shows a blocking recovery dialog without empty-list fallback or POST", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Сумка до повреждения");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  const corruptedKey = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find(key => key.startsWith("bike-packing-personal-save-v1:") && /:[0-9a-f-]{36}$/.test(key));
+    localStorage.setItem(key, "broken journal retained verbatim");
+    localStorage.setItem("fixture-auth-token", "not-for-export");
+    return key;
+  });
+  const postsBefore = f.posts.length;
+  f.reloading = true;
+  await page.reload();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible({ timeout: 20000 });
+  f.reloading = false;
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("недоступна или повреждена");
+  const copy = await downloadRecovery(page);
+  expect(copy.journalEntries.find(entry => entry.key === corruptedKey).value).toBe("broken journal retained verbatim");
+  expect(copy.memoryDraftAvailable).toBe(false);
+  expect(JSON.stringify(copy)).not.toContain("not-for-export");
+  expect(await page.evaluate(key => localStorage.getItem(key), corruptedKey)).toBe("broken journal retained verbatim");
+  expect(f.posts.length).toBe(postsBefore);
+  expect(Object.values(f.payload.containers).some(entry => entry.name === "Сумка до повреждения")).toBe(true);
+  expect(f.errors).toEqual([]);
+});
+
+test("failed local ACK checkpoint pauses the UI and reload settles the same receipt without another POST", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Подтверждённая исходная сумка");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  const precedingIds = f.posts.map(post => post.operationId);
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && String(key).includes(":applied:")) {
+        throw new DOMException("Injected checkpoint quota", "QuotaExceededError");
+      }
+      return original.call(this, key, value);
+    };
+  });
+  await createRootContainer(page, "Сумка с потерянной локальной отметкой");
+  // Let autosave reach the injected checkpoint failure; on mobile the modal
+  // may already cover the manual sync button by the time the form closes.
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#syncBtn")).toHaveAttribute("data-sync-state", "error");
+  expect(f.posts).toHaveLength(precedingIds.length + 1);
+  const operationId = f.posts.at(-1).operationId;
+  const copy = await downloadRecovery(page);
+  expect(copy.journalEntries.some(entry => entry.key.endsWith(`:${operationId}`))).toBe(true);
+  expect(copy.journalEntries.some(entry => entry.key.endsWith(`:applied:${operationId}`))).toBe(false);
+  page.once("dialog", dialog => dialog.accept()); // Explicitly leave only after the recovery download.
+  await reloadApp(page);
+  await synchronize(page, () => Object.values(f.payload.containers).some(entry => entry.name === "Сумка с потерянной локальной отметкой"));
+  expect(f.posts.map(post => post.operationId)).toEqual([...precedingIds, operationId]);
+  await expect(page.locator("#personalSaveRecoveryDialog")).toHaveCount(0);
+  expect(f.errors).toEqual([]);
+});
+
+test("a stale real tab cannot save over another tab and can export its separate draft", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  const other = await context.newPage();
+  other.personalFixture = f;
+  await other.goto(origin);
+  await expect(other.locator("#layoutSelect option[value='layout-a']")).toBeAttached({ timeout: 20000 });
+  await other.locator("#layoutSelect").selectOption("layout-a");
+  await createRootContainer(other, "Сумка другой вкладки");
+  await page.locator("[data-add-packing-root]").click();
+  await page.locator("#createRootForLayoutBtn").click();
+  await page.locator("#rootContainerName").fill("Сумка старой вкладки");
+  await submitForm(page, "#saveRootContainerBtn", "#rootContainerName");
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Другая вкладка");
+  const copy = await downloadRecovery(page);
+  expect(Object.values(copy.unconfirmedMemoryDraft.containers).some(entry => entry.name === "Сумка старой вкладки")).toBe(true);
+  expect(copy.journalEntries.some(entry => entry.value.includes("Сумка другой вкладки"))).toBe(true);
+  expect(copy.journalEntries.some(entry => entry.value.includes("Сумка старой вкладки"))).toBe(false);
+  expect(f.posts.some(post => Object.values(post.body.payload.containers).some(entry => entry.name === "Сумка старой вкладки"))).toBe(false);
+  expect(f.errors).toEqual([]);
+});
+
 test("Experiment is prominent above the header, fits mobile and remains translated", async ({ page, context }, info) => {
   await setup(page, context);
   const banner = page.locator("#experimentBanner");

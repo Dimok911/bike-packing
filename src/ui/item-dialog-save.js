@@ -80,10 +80,10 @@ export function saveRootContainerDialogAction({
     };
     markRecordActivePublicCatalog(state.containers[id]);
     placeCreatedRootContainer(id, changedAt);
-    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
     const layoutId = getPublishedEditLayoutId();
     restoreAdminPublishedLayoutContext(layoutId);
     saveLayoutMutation(layoutId, { publishDelay: 500 });
+    const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
     render();
     return { created: true, dialogCloseSettled, id, type: "container" };
   }
@@ -102,10 +102,10 @@ export function saveRootContainerDialogAction({
   touchContainer(container.id, changedAt);
   applyRootContainerDialogParent(changedAt);
   applyRootContainerDialogPlacement();
-  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
   const layoutId = getPublishedEditLayoutId();
   restoreAdminPublishedLayoutContext(layoutId);
   saveLayoutMutation(layoutId, { publishDelay: 500 });
+  const dialogCloseSettled = closeDialogWithoutRestoringFocus(refs.rootContainerDialog);
   render();
   return { created: false, dialogCloseSettled, id: container.id, type: "container" };
 }
@@ -179,7 +179,6 @@ export function saveItemDialogAction({
     markRecordActivePublicCatalog(item, layoutId);
     touchItem(editingItemId, changedAt);
     if (previousContainerId !== containerId) {
-      closeDialogWithoutRestoringFocus(refs.dialog);
       if (containerId) {
         if (itemIsUnavailable) {
           showToast(unavailablePlacementText, "warning");
@@ -193,6 +192,7 @@ export function saveItemDialogAction({
         touchLayout(layoutId, changedAt);
         restoreAdminPublishedLayoutContext(layoutId);
         saveLayoutMutation(layoutId);
+        closeDialogWithoutRestoringFocus(refs.dialog);
         render();
         return;
       }
@@ -202,6 +202,7 @@ export function saveItemDialogAction({
       if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
       restoreAdminPublishedLayoutContext(layoutId);
       saveLayoutMutation(layoutId);
+      closeDialogWithoutRestoringFocus(refs.dialog);
       render();
       return;
     }

@@ -110,6 +110,7 @@ test("actual app uses causal bootstrap, recovers a missing pointer and refuses t
   };
   const f = fixture(); await ensureCausalPersonalListId(f.options);
   const load = extract("loadActivePackingListId", { loadStoredActivePackingListId: () => "", ACTIVE_LIST_ID_KEY: "active",
+    personalSaveRecovery: { run: callback => callback() },
     scopedLocalStorageKey: key => key, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
     localStorage: f.storage, recoverPersonalSaveListId });
   assert.equal(load(), f.recoverId());
@@ -118,6 +119,7 @@ test("actual app uses causal bootstrap, recovers a missing pointer and refuses t
   assert.throws(() => clear(""), /неподтверждённые/);
   assert.throws(() => clear("other-list"), /неподтверждённые/);
   const ensure = extract("ensureCurrentPackingListId", { personalSavePilotEnabled: () => true, currentUser: { id: "actor-a" },
+    personalSaveRecovery: { run: callback => callback() }, clone: structuredClone, localStorageScopeKey: "id:actor-a",
     isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
     isPublicTemplateListId: () => false, currentPackingListId: "", localStorage: f.storage,
     personalSaveContext: f.options.getContext, state: f.input.snapshot, buildListSaveBody: () => f.input.body,

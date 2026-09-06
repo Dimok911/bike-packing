@@ -114,6 +114,13 @@ preparation below; a future Production transfer must extract/review these
 slices deliberately, not blindly cherry-pick the entire candidate. Test-only
 build output under `test-results` is never a publication artifact.
 
+2026-09-07 local follow-up stays in batch 2: latched personal-journal failure UI,
+scope-isolated recovery download and save-before-close form ordering. Recovery
+exports are diagnostic, not ordinary backups or automatic replay/import inputs;
+they do not include separately cached photo files. This slice does not complete
+conflict resolution or concurrent anchor/baseline mutation safety. All release
+gates stay disabled, and no live migration or publication is authorized here.
+
 One existing API backend, two network routes. Route configuration and diagnostics
 are separate from catalog content and operation acknowledgements. Current EU
 client source gate remains off and coordinator owns the read-only proxy gate.

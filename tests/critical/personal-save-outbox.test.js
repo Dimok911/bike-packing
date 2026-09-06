@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { createPersonalSaveOutbox, PERSONAL_SAVE_OUTBOX_ENABLED } from "../../src/sync/personal-save-outbox.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot, personalSnapshotWithUiPreferences } from "../../src/sync/personal-snapshot-codec.js";
 import { personalDeletionReference, preservesUndeletedEntities } from "../../src/sync/personal-deletion-intent.js";
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
+import { saveRootContainerDialogAction, saveItemDialogAction } from "../../src/ui/item-dialog-save.js";
+import { resolveSyncVisualState } from "../../src/ui/sync-visual-state.js";
 
 const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 function appFunction(name, dependencies) {
@@ -131,6 +134,7 @@ test("actual app persistence writes the intent before its mirror and cannot fall
   const calls = [], f = fixture();
   let fail = false;
   const persist = appFunction("persistStateSnapshot", {
+    personalSaveRecovery: createPersonalSaveRecovery(),
     personalSavePilotEnabled: () => true, hasPendingPersonalSave: () => false, applyingRemoteState: false, STORAGE_KEY: "mirror",
     capturePersonalSaveIntent: snapshot => {
       calls.push("intent"); if (fail) throw Error("quota"); return f.outbox.capture({ ...f.input(1), snapshot });
@@ -148,6 +152,113 @@ test("actual app persistence writes the intent before its mirror and cannot fall
   calls.length = 0;
   persist({ items: {} }, { recordAction: false });
   assert.deepEqual(calls, ["legacy"], "read-time normalization is not a user action");
+});
+
+test("storage recovery latches the failure, freezes the unsaved draft and blocks subsequent writes", () => {
+  const f = fixture(), notifications = [];
+  const recovery = createPersonalSaveRecovery({ onBlocked: info => notifications.push(info.error) });
+  const guarded = recovery.outbox(f.make, f.context.scopeKey);
+  guarded.capture(f.input(100));
+  const before = [...f.values];
+  f.storage.setItem = () => { throw Error("quota"); };
+  const next = f.input(200);
+  let failure;
+  assert.throws(() => guarded.capture(next), error => { failure = error; return error.code === "quota"; });
+  next.snapshot.items.a.weight = 999;
+  assert.deepEqual([...f.values], before);
+  assert.equal(recovery.owns(failure), true);
+  assert.throws(() => guarded.capture(f.input(300)), error => error === failure);
+  assert.throws(() => guarded.markApplied({}), error => error === failure);
+  assert.throws(() => guarded.compact(), error => error === failure);
+  const copy = recovery.recoveryCopy(f.storage);
+  assert.equal(copy.unconfirmedMemoryDraft.items.a.weight, 200);
+  assert.equal(copy.automaticImportAllowed, false);
+  assert.equal(copy.photoFilesIncluded, false);
+  assert.deepEqual(notifications, [failure]);
+});
+
+test("corrupt journal recovery exports only the affected actor and no auth or production keys", () => {
+  const f = fixture(); f.outbox.capture(f.input(100));
+  const key = [...f.values.keys()][0];
+  f.values.set(key, "broken JSON: retain exactly");
+  for (const [actorId, environment] of [["other", "bike-packing-experiment"], ["actor-a", "production"]]) {
+    const binding = { environment, actorId, scopeKey: `id:${actorId}`, listId: "list-a" };
+    f.values.set(`bike-packing-personal-save-v1:${encodeURIComponent(JSON.stringify(binding))}:anchor`, "secret");
+  }
+  f.values.set("auth-session", "secret token"); f.values.set("unrelated", "secret");
+  const recovery = createPersonalSaveRecovery();
+  assert.throws(() => recovery.outbox(f.make, f.context.scopeKey), { code: "storage" });
+  const copy = recovery.recoveryCopy(f.storage);
+  assert.deepEqual(copy.journalEntries, [{ key, value: "broken JSON: retain exactly" }]);
+  assert.equal(copy.memoryDraftAvailable, false);
+  assert.equal(JSON.stringify(copy).includes("secret"), false);
+  assert.equal(f.values.size, 5, "export never cleans or rewrites storage");
+});
+
+test("recovery observes asynchronous storage failures but not ordinary offline or context outcomes", async () => {
+  const recovery = createPersonalSaveRecovery();
+  for (const error of [Error("offline"), Object.assign(Error("new editor"), { isPersonalSaveBlocked: true, code: "context" })]) {
+    await assert.rejects(recovery.run(async () => { throw error; }), value => value === error);
+    assert.equal(recovery.message(), "");
+  }
+  const error = Object.assign(Error("checkpoint not saved"), { isPersonalSaveBlocked: true, code: "storage" });
+  await assert.rejects(recovery.run(async () => { throw error; }, { scopeKey: "id:actor-a" }), value => value === error);
+  assert.equal(recovery.message(), error.message);
+  assert.throws(() => recovery.run(() => assert.fail("must not run")), value => value === error);
+  const copy = recovery.recoveryCopy({ get length() { throw Error("storage unavailable"); } });
+  assert.equal(copy.storageReadable, false);
+});
+
+test("stale editor recovery keeps the other tab's journal and the rejected editor draft separate", () => {
+  const f = fixture(), recovery = createPersonalSaveRecovery();
+  const stale = recovery.outbox(f.make, f.context.scopeKey);
+  f.outbox.capture(f.input(100));
+  assert.throws(() => stale.capture(f.input(200)), { code: "stale-tab" });
+  const copy = recovery.recoveryCopy(f.storage);
+  assert.equal(copy.unconfirmedMemoryDraft.items.a.weight, 200);
+  assert.equal(JSON.parse(copy.journalEntries[0].value).action.body.payload.items.a.weight, 100);
+  assert.equal(copy.journalEntries.length, 1);
+});
+
+test("a late storage failure cannot expose another account's draft or authorize recovery export after scope change", async () => {
+  let scope = "id:actor-a", reject;
+  const recovery = createPersonalSaveRecovery({ isCurrentScope: value => value === scope });
+  const failure = Object.assign(Error("quota"), { code: "quota", isPersonalSaveBlocked: true });
+  const pending = recovery.run(() => new Promise((resolve, fail) => { reject = fail; }), {
+    scopeKey: scope, snapshot: { private: "actor-a" }
+  });
+  scope = "id:actor-b"; reject(failure);
+  await assert.rejects(pending, error => error === failure);
+  assert.equal(recovery.message(), "");
+  assert.throws(() => recovery.recoveryCopy({}), /No blocked/);
+  recovery.report(failure, { scopeKey: scope, snapshot: { private: "actor-b" } });
+  scope = "id:actor-c";
+  assert.throws(() => recovery.recoveryCopy({}), /different account/);
+});
+
+test("bag creation/edit and item placement do not close their forms before durable save succeeds", () => {
+  const error = Error("injected storage failure");
+  for (const editing of [false, true]) {
+    const state = { containers: editing ? { bag: { id: "bag" } } : {} };
+    const refs = Object.fromEntries(["rootContainerName", "rootContainerWeight", "rootContainerVolume", "rootContainerLocation", "rootContainerNote"]
+      .map(key => [key, { value: "test" }]));
+    refs.saveRootContainerBtn = { disabled: false };
+    assert.throws(() => saveRootContainerDialogAction({ state, refs, editingRootContainerId: editing ? "bag" : "",
+      saveLayoutMutation: () => { throw error; },
+      closeDialogWithoutRestoringFocus: () => assert.fail("must retain form"), render: () => assert.fail("must not render success")
+    }), value => value === error);
+  }
+  for (const containerId of ["next-bag", ""]) {
+    const refs = Object.fromEntries(["itemName", "itemWeight", "itemLocation", "itemNote"].map(key => [key, { value: "test" }]));
+    refs.itemContainer = { value: containerId }; refs.saveItemBtn = { disabled: false };
+    assert.throws(() => saveItemDialogAction({ refs, state: { items: { item: {} }, layouts: { layout: {} } },
+      editingItemId: "item", itemDialogTargetLayoutId: "layout", getItemContainerIdInLayout: () => "previous-bag",
+      placeExistingItemInLayout: () => true, saveLayoutMutation: () => { throw error; },
+      closeDialogWithoutRestoringFocus: () => assert.fail("must retain form"), render: () => assert.fail("must not render success")
+    }), value => value === error);
+  }
+  assert.equal(resolveSyncVisualState({ saveBlocked: true, loggedIn: true, forcedOffline: true }), "error");
+  assert.equal(resolveSyncVisualState({ saveBlocked: true, message: "saving", loggedIn: true }), "error");
 });
 
 test("snapshot codec preserves all local fields without a second full business payload or prototype mutation", () => {
