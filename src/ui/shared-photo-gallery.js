@@ -54,7 +54,7 @@ export function bindSharedPhotoGalleries(root, options = {}) {
 
 export function createSharedFullscreenSwitcher(options = {}) {
   const api = runtime();
-  const factory = api?.capabilities?.fullscreenEdgeRubberBand >= 1
+  const factory = api?.capabilities?.fullscreenEdgeRubberBand >= 2
     && (!options.waitForReady || api?.capabilities?.readyFullscreenNavigation >= 1)
     ? api.createFullscreenSwitcher
     : fallbackRuntime?.createFullscreenSwitcher;

@@ -11,7 +11,7 @@ export default defineConfig({
     ? [["line"], ["html", { open: "never" }]]
     : [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://bike-packing.localhost:4173",
+    baseURL: `http://bike-packing.localhost:${process.env.BIKE_PACKING_E2E_PORT || 4173}`,
     locale: "ru-RU",
     serviceWorkers: "block",
     trace: "retain-on-failure",
@@ -24,7 +24,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      testMatch: ["**/view-scroll-tabs.spec.js", "**/photo-lightbox-sizing.spec.js"],
+      testMatch: ["**/view-scroll-tabs.spec.js", "**/photo-lightbox-sizing.spec.js", "**/photo-lightbox-safari.spec.js"],
       use: { ...devices["iPhone 15"] }
     }
   ]

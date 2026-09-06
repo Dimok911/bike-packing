@@ -1024,6 +1024,7 @@ export async function openPhotoLightbox(sourceImage, {
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
     directDesktop: !touchCarousel,
+    canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch,
     waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
@@ -1052,6 +1053,8 @@ export async function openPhotoLightbox(sourceImage, {
   let pendingScrollIndex = null;
   let scrollFrame = 0;
   let lightboxSettleTimer = null;
+  let trackTouchActive = false;
+  let trackWidth = track.clientWidth;
   let scale = 1;
   let panX = 0;
   let panY = 0;
@@ -1255,6 +1258,21 @@ export async function openPhotoLightbox(sourceImage, {
   bindPhotoLightboxNavButton(nextButton, (event) => activateNavigation(event, 1));
   const boundLightboxImages = new WeakSet();
   let bindImageInteractions = () => {};
+  const prepareVisiblePreviews = (centerIndex) => {
+    if (!touchCarousel) return;
+    for (let index = Math.max(0, centerIndex - 1); index <= Math.min(entries.length - 1, centerIndex + 1); index += 1) {
+      const previewImage = lightboxImages[index];
+      if (!previewImage || previewImage.getAttribute("src")) continue;
+      // Populate the actual slide before native scrolling reveals it. Full-size
+      // hydration remains demand driven through the active source controller.
+      const src = entries[index]?.previewSrc;
+      if (!src) continue;
+      previewImage.src = src;
+      void decodeSharedFullscreenImage(previewImage)
+        .then(() => settleImagePresentation(previewImage))
+        .catch(() => {});
+    }
+  };
   const entryExpectsFullSize = (entry) => Boolean(
     entry?.localId
     || (entry?.fullSrc && entry.fullSrc !== entry.previewSrc)
@@ -1265,6 +1283,7 @@ export async function openPhotoLightbox(sourceImage, {
     const entryIndex = Number(targetImage.closest?.("[data-photo-lightbox-index]")?.dataset?.photoLightboxIndex);
     const entry = Number.isInteger(entryIndex) ? entries[entryIndex] : null;
     const ready = force
+      || touchCarousel
       || targetImage.dataset?.photoLightboxQuality === "full"
       || !entryExpectsFullSize(entry);
     if (ready) targetImage.classList?.remove("photo-lightbox-image-awaiting-size");
@@ -1323,10 +1342,21 @@ export async function openPhotoLightbox(sourceImage, {
       return true;
     }
     if (!replacement) return false;
-    const shouldCommit = () => (
+    const stillCurrent = () => (
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
+    const shouldCommit = async ({ phase }) => {
+      // A decoded original can arrive while the user is dragging its preview.
+      // Keep the same DOM image through the gesture and the edge return.
+      if (touchCarousel && phase === "before-replace") {
+        while (stillCurrent() && (trackTouchActive || lightboxSettleTimer !== null
+          || currentImage.classList.contains("vpg-edge-content-returning"))) {
+          await new Promise((resolve) => setTimeout(resolve, 32));
+        }
+      }
+      return stillCurrent();
+    };
     let visibleImage = replacement;
     try {
       await replacePhotoLightboxImageSource(currentImage, src, {
@@ -1340,6 +1370,7 @@ export async function openPhotoLightbox(sourceImage, {
           // first paint (the shared helper waits for paint before resolving).
           nextImage.dataset.photoLightboxQuality = "full";
           settleImagePresentation(nextImage, { force: true });
+          if (activeIndex === entryIndex) apply();
           bindImageInteractions(nextImage);
         },
         onRollback: (restoredImage) => {
@@ -1425,6 +1456,7 @@ export async function openPhotoLightbox(sourceImage, {
     if (image !== targetImage) image.style.removeProperty("transform");
     activeIndex = nextIndex;
     image = targetImage;
+    prepareVisiblePreviews(nextIndex);
     if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
     image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
     updateNavigation();
@@ -1511,7 +1543,7 @@ export async function openPhotoLightbox(sourceImage, {
     const targetLeft = track.clientWidth * safeIndex;
     if (safeIndex === activeIndex && (
       directDesktop
-      || (!pendingScrollIndex && Math.abs(track.scrollLeft - targetLeft) <= 1)
+      || (pendingScrollIndex === null && Math.abs(track.scrollLeft - targetLeft) <= 1)
     )) return false;
     pendingScrollIndex = !directDesktop && behavior === "smooth" ? safeIndex : null;
     if (safeIndex !== activeIndex) showPhoto(safeIndex);
@@ -1535,6 +1567,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const settleTouchCarouselTrack = () => {
     cancelTrackSettle();
+    if (trackTouchActive || scale > 1 || !overlay.isConnected) return;
     if (scrollFrame) {
       cancelAnimationFrame(scrollFrame);
       scrollFrame = 0;
@@ -1546,10 +1579,12 @@ export async function openPhotoLightbox(sourceImage, {
     });
     pendingScrollIndex = null;
     if (snapIndex !== activeIndex) showPhoto(snapIndex);
-    fullscreenSwitcher?.goTo(snapIndex, "auto", false);
+    // Native scroll-snap owns the position, including the edge bounce. Writing
+    // scrollLeft here interrupts WebKit's compositor and can restart settling.
   };
   const scheduleTrackSettle = () => {
     cancelTrackSettle();
+    if (trackTouchActive || !overlay.isConnected) return;
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
       if (touchCarousel) {
@@ -1566,8 +1601,16 @@ export async function openPhotoLightbox(sourceImage, {
   };
   track.addEventListener("scroll", () => {
     suppressImageCloseUntil = Date.now() + 300;
+    if (touchCarousel) prepareVisiblePreviews(resolvePhotoGallerySnapIndex({
+      scrollLeft: track.scrollLeft,
+      trackWidth: track.clientWidth,
+      slideCount: entries.length
+    }));
     if (!touchCarousel && !scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
     scheduleTrackSettle();
+  }, { passive: true });
+  track.addEventListener("scrollend", () => {
+    if (touchCarousel) settleTouchCarouselTrack();
   }, { passive: true });
   track.addEventListener("pointerdown", () => {
     if (scale <= 1) {
@@ -1701,6 +1744,11 @@ export async function openPhotoLightbox(sourceImage, {
     }
     updatePhotoLightboxAutoSize(image, overlay);
     apply();
+    // Safari's browser chrome changes viewport height while a swipe is still
+    // moving. Only a width change requires repositioning the horizontal track.
+    const widthChanged = track.clientWidth !== trackWidth;
+    trackWidth = track.clientWidth;
+    if (trackTouchActive || !widthChanged) return;
     fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
   window.addEventListener("resize", lightboxResizeHandler);
@@ -1727,6 +1775,8 @@ export async function openPhotoLightbox(sourceImage, {
   overlay.addEventListener("touchstart", (event) => {
     cancelPanInertia();
     if (isPhotoLightboxControlTarget(event.target)) return;
+    trackTouchActive = true;
+    cancelTrackSettle();
     if (event.touches.length === 1) {
       cancelTrackSettle();
       const touch = event.touches[0];
@@ -1806,6 +1856,8 @@ export async function openPhotoLightbox(sourceImage, {
     apply();
   }, { passive: false });
   overlay.addEventListener("touchend", (event) => {
+    trackTouchActive = event.touches.length > 0;
+    if (!trackTouchActive && touchCarousel) scheduleTrackSettle();
     if (isPhotoLightboxControlTarget(event.target)) return;
     if (event.touches.length === 1) {
       const touch = event.touches[0];
@@ -1852,6 +1904,7 @@ export async function openPhotoLightbox(sourceImage, {
     touchStartedWithPinch = false;
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
+    trackTouchActive = false;
     cancelPanInertia();
     pinchDistance = 0;
     pinching = false;
