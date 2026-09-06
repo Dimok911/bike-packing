@@ -7,7 +7,9 @@ import {
 test.use({ serviceWorkers: "allow" });
 
 test("[pwa:offline] installed app shell opens the saved workspace without a network", async ({ context, page }) => {
-  test.setTimeout(60_000);
+  // The production service worker precaches the manufacturer catalog as well
+  // as the shell (over 3,000 assets); cold Windows caches can exceed one minute.
+  test.setTimeout(120_000);
   await context.addInitScript(() => {
     localStorage.setItem("bike-packing-language-v1", "ru");
     const nativeFetch = window.fetch.bind(window);
