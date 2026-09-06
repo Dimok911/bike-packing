@@ -1013,9 +1013,6 @@ export async function openPhotoLightbox(sourceImage, {
   const prevButton = overlay.querySelector(".photo-lightbox-prev");
   const nextButton = overlay.querySelector(".photo-lightbox-next");
   let activeIndex = initialIndex;
-  // Navigation may already target the next photo while its bitmap is decoding.
-  // Keep desktop presentation on the last ready slide until an atomic switch.
-  let presentedIndex = initialIndex;
   const touchCarousel = photoLightboxUsesTouchCarousel({
     coarsePointer: window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches === true,
     maxTouchPoints: window.navigator?.maxTouchPoints,
@@ -1029,7 +1026,8 @@ export async function openPhotoLightbox(sourceImage, {
     track,
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
-    directDesktop: !touchCarousel
+    directDesktop: !touchCarousel,
+    waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
   let loadingNotice = null;
@@ -1194,7 +1192,7 @@ export async function openPhotoLightbox(sourceImage, {
     inertiaFrame = requestAnimationFrame(step);
   };
   const updateNavigation = () => {
-    fullscreenSwitcher?.render(directDesktop ? presentedIndex : activeIndex, false);
+    fullscreenSwitcher?.render(activeIndex, false);
     if (prevButton) {
       prevButton.disabled = activeIndex <= 0;
       prevButton.setAttribute("aria-disabled", prevButton.disabled ? "true" : "false");
@@ -1212,6 +1210,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
+    const presentedIndex = fullscreenSwitcher?.presentedIndex ?? activeIndex;
     const presentedImage = directDesktop ? lightboxImages[presentedIndex] : image;
     const hasVisiblePhoto = presentedImage?.complete && presentedImage.naturalWidth > 0
       && !presentedImage.classList.contains("photo-lightbox-image-awaiting-size");
@@ -1273,13 +1272,6 @@ export async function openPhotoLightbox(sourceImage, {
       || !entryExpectsFullSize(entry);
     if (ready) targetImage.classList?.remove("photo-lightbox-image-awaiting-size");
     return sizing;
-  };
-  const presentActivePhoto = () => {
-    const targetImage = lightboxImages[activeIndex];
-    if (!targetImage?.complete || !targetImage.naturalWidth
-      || targetImage.classList.contains("photo-lightbox-image-awaiting-size")) return;
-    presentedIndex = activeIndex;
-    if (directDesktop) fullscreenSwitcher?.goTo(presentedIndex, "auto", false);
   };
   const preparedImageKey = (entryIndex, src) => `${entryIndex}\u0000${src}`;
   const abortLifecycleDecode = () => {
@@ -1420,7 +1412,7 @@ export async function openPhotoLightbox(sourceImage, {
     sourceController = null;
     preparedFullImages.clear();
   };
-  const showPhoto = async (nextIndex, { force = false } = {}) => {
+  const preparePhoto = async (nextIndex, { force = false } = {}) => {
     if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
     cancelPanInertia(false);
     const token = ++renderToken;
@@ -1452,11 +1444,11 @@ export async function openPhotoLightbox(sourceImage, {
         await decodeSharedFullscreenImage(displayedImage);
         if (token !== renderToken || !overlay.isConnected) return false;
         settleImagePresentation(displayedImage, { force: true });
-        presentActivePhoto();
         loadingNotice.settle("idle");
       } catch {
         if (token !== renderToken || !overlay.isConnected) return false;
         loadingNotice.settle("error");
+        return false;
       }
       return true;
     }
@@ -1468,7 +1460,6 @@ export async function openPhotoLightbox(sourceImage, {
     if (lifecycleResult.success) {
       updatePhotoLightboxAutoSize(image, overlay);
       apply();
-      presentActivePhoto();
       loadingNotice.settle("idle");
       return true;
     }
@@ -1497,16 +1488,26 @@ export async function openPhotoLightbox(sourceImage, {
         }
       }
       settleImagePresentation(lightboxImages[nextIndex], { force: true });
-      presentActivePhoto();
       loadingNotice.settle(next.reason === "preview-only"
         ? "preview"
         : next.reason === "cached-preview"
           ? "saved-preview"
           : "error");
-      return true;
+      const fallbackImage = lightboxImages[nextIndex];
+      return Boolean(fallbackImage?.complete && fallbackImage.naturalWidth
+        && !fallbackImage.classList.contains("photo-lightbox-image-awaiting-size"));
     }
     loadingNotice.settle("error");
-    return true;
+    return false;
+  };
+  const showPhoto = (nextIndex, options = {}) => {
+    if (nextIndex < 0 || nextIndex >= entries.length || (!options.force && nextIndex === activeIndex)) return false;
+    // Readiness is app-specific; retention/cancellation/atomic presentation are
+    // shared with other consumers. Native touch scrolling remains caller-owned.
+    return fullscreenSwitcher.activate(nextIndex, () => preparePhoto(nextIndex, options), {
+      notify: false,
+      scroll: false
+    });
   };
   navigatePhoto = (nextIndex, behavior = "smooth") => {
     const safeIndex = Math.max(0, Math.min(entries.length - 1, Number(nextIndex) || 0));
@@ -1517,7 +1518,7 @@ export async function openPhotoLightbox(sourceImage, {
     )) return false;
     pendingScrollIndex = !directDesktop && behavior === "smooth" ? safeIndex : null;
     if (safeIndex !== activeIndex) showPhoto(safeIndex);
-    if (!directDesktop) fullscreenSwitcher?.goTo(safeIndex, behavior, false);
+    fullscreenSwitcher?.goTo(safeIndex, behavior, false);
     return true;
   };
   const syncTrackActivePhoto = () => {
@@ -1697,18 +1698,19 @@ export async function openPhotoLightbox(sourceImage, {
   };
   lightboxImages.forEach(bindImageInteractions);
   lightboxResizeHandler = () => {
+    const presentedIndex = fullscreenSwitcher?.presentedIndex ?? activeIndex;
     if (directDesktop && presentedIndex !== activeIndex) {
       updatePhotoLightboxAutoSize(lightboxImages[presentedIndex], overlay);
     }
     updatePhotoLightboxAutoSize(image, overlay);
     apply();
-    fullscreenSwitcher?.goTo(directDesktop ? presentedIndex : activeIndex, "auto", false);
+    fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
   window.addEventListener("resize", lightboxResizeHandler);
   window.visualViewport?.addEventListener?.("resize", lightboxResizeHandler);
   showPhoto(initialIndex, { force: true });
   requestAnimationFrame(() => {
-    fullscreenSwitcher?.goTo(directDesktop ? presentedIndex : activeIndex, "auto", false);
+    fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
