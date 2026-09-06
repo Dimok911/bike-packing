@@ -1342,10 +1342,21 @@ export async function openPhotoLightbox(sourceImage, {
       return true;
     }
     if (!replacement) return false;
-    const shouldCommit = () => (
+    const stillCurrent = () => (
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
+    const shouldCommit = async ({ phase }) => {
+      // A decoded original can arrive while the user is dragging its preview.
+      // Keep the same DOM image through the gesture and the edge return.
+      if (touchCarousel && phase === "before-replace") {
+        while (stillCurrent() && (trackTouchActive || lightboxSettleTimer !== null
+          || currentImage.classList.contains("vpg-edge-content-returning"))) {
+          await new Promise((resolve) => setTimeout(resolve, 32));
+        }
+      }
+      return stillCurrent();
+    };
     let visibleImage = replacement;
     try {
       await replacePhotoLightboxImageSource(currentImage, src, {
@@ -1359,6 +1370,7 @@ export async function openPhotoLightbox(sourceImage, {
           // first paint (the shared helper waits for paint before resolving).
           nextImage.dataset.photoLightboxQuality = "full";
           settleImagePresentation(nextImage, { force: true });
+          if (activeIndex === entryIndex) apply();
           bindImageInteractions(nextImage);
         },
         onRollback: (restoredImage) => {

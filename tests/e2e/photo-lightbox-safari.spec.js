@@ -125,5 +125,34 @@ test("last-photo edge pulls and viewport height events preserve the last index",
   expect(result.writes).toBe(0);
   expect(Math.abs(result.left - result.expected)).toBeLessThan(2);
   await expect(page.locator('[data-photo-lightbox-dot="4"]')).toHaveAttribute("aria-current", "true");
-  await expect(page.locator(".vpg-edge-rubber-band-dragging, .vpg-edge-rubber-band-returning")).toHaveCount(0);
+  await expect(page.locator(".vpg-edge-content-dragging, .vpg-edge-content-returning")).toHaveCount(0);
+});
+
+test("an original finishing during an edge pull waits for release before replacing the preview", async ({ page }) => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/slow-full/**", async (route) => {
+    await held;
+    await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640"><rect width="480" height="640" fill="red"/></svg>' });
+  });
+  try {
+    await openGallery(page);
+    await page.evaluate(() => {
+      window.heldPreview = document.querySelector(".photo-lightbox-image");
+      window.lightboxTouch("touchstart", 100);
+      window.lightboxTouch("touchmove", 300);
+    });
+    release();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => document.querySelector(".photo-lightbox-image") === window.heldPreview)).toBe(true);
+    await page.evaluate(() => window.lightboxTouch("touchend", 300, 0));
+    const first = page.locator(".photo-lightbox-image").first();
+    await expect(first).toHaveJSProperty("naturalWidth", 480);
+    await expect(first).toHaveAttribute("data-photo-lightbox-quality", "full");
+    await expect.poll(() => first.evaluate((image) => getComputedStyle(image).translate)).toMatch(/^(none|0px(?: 0px)?)$/);
+    await expect(page.locator(".vpg-edge-content-dragging, .vpg-edge-content-returning")).toHaveCount(0);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });

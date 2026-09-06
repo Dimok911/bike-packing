@@ -2475,19 +2475,19 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.2.0 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.2.1 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.2.0");
+  assert.equal(manifest.version, "2.2.1");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "86093aa7aba8dbdd3b79d5f3c7948dc16411ab3c44e8cf86816e9c5373ebb09e");
+  assert.equal(manifest.sha256, "498ce3707cf3368e5ac93355ca396441f597292f9d689ec74a492c6cc11a0638");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
   assert.match(asset, /fullscreenImagePresentation: 1/);
   assert.match(asset, /fullscreenEdgeSettling: 2/);
-  assert.match(asset, /fullscreenEdgeRubberBand: 1/);
+  assert.match(asset, /fullscreenEdgeRubberBand: 2/);
   assert.match(asset, /function resolveFullscreenImagePresentation\(/);
   assert.match(asset, /function createFullscreenSourceController\(/);
   assert.match(asset, /function replaceFullscreenImageSource\(/);
@@ -2708,7 +2708,7 @@ test("CRITICAL offline-photos: old stable cannot bypass shared ready navigation"
   const currentRuntime = globalThis.VniipoPhotoGallery;
   let legacyCalls = 0;
   globalThis.VniipoPhotoGallery = {
-    capabilities: { fullscreenEdgeRubberBand: 1 },
+    capabilities: { fullscreenEdgeRubberBand: 2 },
     createFullscreenSwitcher() { legacyCalls += 1; return null; }
   };
   try {
@@ -2754,7 +2754,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.2\.0"/);
+  assert.match(fallbackSource, /const VERSION = "2\.2\.1"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
@@ -2810,7 +2810,7 @@ test("CRITICAL offline-photos: inline and fullscreen edges share rubber-band wit
   assert.equal((fallbackSource.match(/createEdgeRubberBandController\(\{/g) || []).length, 2);
   assert.match(fallbackSource, /function bindGallery\(gallery, options\)[\s\S]*edgeRubberBand = createEdgeRubberBandController\(\{[\s\S]*getSlides: \(\) => slides/);
   assert.match(fallbackSource, /track\?\.addEventListener\?\.\("touchmove", onTouchMove, \{ passive: false \}\)/);
-  assert.match(fallbackSource, /vpg-edge-rubber-band-returning/);
+  assert.match(fallbackSource, /vpg-edge-content-returning/);
   assert.doesNotMatch(fallbackSource, /\[180, 420\]/);
   assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 2/);
   assert.match(sharedSource, /controller: fallbackRuntime\?\.bindInlineGalleries\(root, options\)/);
