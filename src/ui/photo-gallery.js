@@ -925,7 +925,7 @@ export async function openPhotoLightbox(sourceImage, {
 } = {}) {
   const openRequestId = ++lightboxOpenRequestId;
   const { entries, activeIndex: initialIndex } = photoLightboxEntries(sourceImage, { gallery, index });
-  if (experimentTransport.mode === "eu") {
+  if (experimentTransport.mode === "eu" || experimentTransport.automatic) {
     await Promise.all(entries.map(async (entry) => {
       // Only DOM network sources change. Canonical URLs/signatures stay intact
       // so already downloaded photos remain available after transport changes.

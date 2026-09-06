@@ -10,6 +10,7 @@ export const EXPERIMENT_WRITE_LOCK = "bike-packing-experiment-write-journal-v1";
 // Deliberate release gate, not a user preference. Enable only in a separately
 // approved release after live auth/write/redirect checks and recovery review.
 export const EU_TRANSPORT_RELEASE_ENABLED = false;
+export const AUTO_TRANSPORT_RELEASE_ENABLED = false;
 
 function tabStorage() {
   try { return globalThis.sessionStorage; } catch { return null; }
@@ -61,12 +62,14 @@ export function isExperimentFrontend(locationLike = globalThis.location) {
 }
 
 export function readTransportSelection(storage = tabStorage()) {
-  try { return storage?.getItem(EXPERIMENT_TRANSPORT_KEY) === "eu" ? "eu" : "direct"; }
-  catch { return "direct"; }
+  try {
+    const selection = storage?.getItem(EXPERIMENT_TRANSPORT_KEY);
+    return ["auto", "direct", "eu"].includes(selection) ? selection : "auto";
+  } catch { return "auto"; }
 }
 
 export function saveTransportSelection(mode, { storage = tabStorage(), locationLike = globalThis.location } = {}) {
-  if (!isExperimentFrontend(locationLike) || !["direct", "eu"].includes(mode)) throw new Error("Invalid Experiment transport");
+  if (!isExperimentFrontend(locationLike) || !["auto", "direct", "eu"].includes(mode)) throw new Error("Invalid Experiment transport");
   if (!storage) throw new Error("Session storage is unavailable");
   // Only next page load consumes this setting. Never switch in-flight requests.
   storage.setItem(EXPERIMENT_TRANSPORT_KEY, mode);
@@ -103,27 +106,62 @@ export async function probeExperimentProxy({
 } = {}) {
   if (!["eu", "ip"].includes(target)) throw new Error("Invalid diagnostic target");
   const base = target === "ip" ? IP_DIAGNOSTIC_API_BASE : EU_EXPERIMENT_API_BASE;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(`${base}/bike-packing/capabilities`, {
-      method: "GET", credentials: "omit", cache: "no-store", redirect: "error", signal: controller.signal,
-    });
-    if (!response.ok) throw transportError(`Proxy check: HTTP ${response.status}`, response.status);
-    const data = await response.json();
-    const identity = response.headers.get("X-Vniipo-Proxy-Target");
-    const gate = response.headers.get("X-Vniipo-Proxy-Write-Gate");
-    if (identity !== "bike-packing-experiment" || !["enabled", "read-only"].includes(gate)) {
-      throw transportError("Proxy identity or write gate is not confirmed");
-    }
-    if (data.apiCompatibilityVersion !== REQUIRED_ADMIN_API_VERSION
-      || !REQUIRED_ADMIN_API_CAPABILITIES.every((name) => data.capabilities?.includes(name))) {
-      throw transportError("Experiment API contract does not match");
-    }
-    return { target, gate, identity, available: true, authenticated: false, usable: target === "eu" && gate === "enabled" };
-  } finally {
-    clearTimeout(timer);
+  const { response, data } = await readRouteDescriptor(base, { fetchImpl, timeoutMs });
+  const identity = response.headers.get("X-Vniipo-Proxy-Target");
+  const gate = response.headers.get("X-Vniipo-Proxy-Write-Gate");
+  if (identity !== "bike-packing-experiment" || !["enabled", "read-only"].includes(gate)) {
+    throw transportError("Proxy identity or write gate is not confirmed");
   }
+  assertRouteContract(data);
+  return { target, gate, identity, available: true, authenticated: false, usable: target === "eu" && gate === "enabled" };
+}
+
+function assertRouteContract(data) {
+  if (data?.ok === false || data?.apiCompatibilityVersion !== REQUIRED_ADMIN_API_VERSION
+    || !Array.isArray(data.capabilities) || !REQUIRED_ADMIN_API_CAPABILITIES.every(name => data.capabilities.includes(name))) {
+    throw transportError("Experiment API contract does not match");
+  }
+}
+
+async function readRouteDescriptor(base, { fetchImpl, timeoutMs }) {
+  const controller = new AbortController();
+  let timer;
+  const unavailable = (message, status = 0) => Object.assign(transportError(message, status), { mayTryAlternateRoute: true });
+  try {
+    // Bound body decoding too. A late response cannot select a route after the
+    // timeout won; probes are anonymous GETs and never business operations.
+    return await Promise.race([
+      (async () => {
+        let response;
+        try {
+          response = await fetchImpl(`${base}/bike-packing/capabilities`, {
+            method: "GET", credentials: "omit", cache: "no-store", redirect: "error", signal: controller.signal
+          });
+        } catch { throw unavailable("API route is unreachable"); }
+        if (response.redirected || response.type === "opaqueredirect") throw transportError("API probe redirect was rejected");
+        if (!response.ok) {
+          const message = `API route check: HTTP ${response.status}`;
+          if (response.status === 408 || response.status >= 500) throw unavailable(message, response.status);
+          // Auth, permission, rate-limit and other business/configuration
+          // failures are not permission to try a different address.
+          throw transportError(message, response.status);
+        }
+        let data;
+        try { data = await response.json(); }
+        catch { throw transportError("API route returned an invalid response"); }
+        return { response, data };
+      })(),
+      new Promise((resolve, reject) => { timer = setTimeout(() => {
+        controller.abort(); reject(unavailable("API route check timed out"));
+      }, timeoutMs); })
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+export async function probeDirectExperimentRoute({ fetchImpl = globalThis.fetch, timeoutMs = 7000 } = {}) {
+  const { data } = await readRouteDescriptor(EXPERIMENT_API_BASE, { fetchImpl, timeoutMs });
+  assertRouteContract(data);
+  return { target: "direct", available: true, authenticated: false, usable: true };
 }
 
 export function createExperimentTransport({
@@ -131,12 +169,15 @@ export function createExperimentTransport({
   canonicalBase = API_BASE, fetchImpl = (...args) => globalThis.fetch(...args), storage = journalStorage(),
   locks = globalThis.navigator?.locks,
   euEnabled = EU_TRANSPORT_RELEASE_ENABLED,
+  autoEnabled = AUTO_TRANSPORT_RELEASE_ENABLED, probeTimeoutMs = 7000,
 } = {}) {
   const experiment = isExperimentFrontend(locationLike);
-  const mode = experiment && selection === "eu" ? "eu" : "direct";
+  const requestedMode = experiment && ["auto", "direct", "eu"].includes(selection) ? selection : "direct";
+  const automatic = requestedMode === "auto" && autoEnabled;
+  let mode = requestedMode === "eu" ? "eu" : "direct";
   const canonical = experiment ? EXPERIMENT_API_BASE : canonicalBase;
   let readiness = null;
-  let ready = mode === "direct";
+  let ready = mode === "direct" && !automatic;
   let journal = [];
   const ownActiveWrites = new Set();
   const refreshJournal = () => {
@@ -146,18 +187,55 @@ export function createExperimentTransport({
   };
   refreshJournal();
 
+  const verifyEu = async () => {
+    if (!euEnabled) throw transportError("EU activation is not approved for this release");
+    const result = await probeExperimentProxy({ fetchImpl, timeoutMs: probeTimeoutMs });
+    if (!result.usable) throw transportError("EU transport is read-only; local changes remain on this device");
+  };
+  const pendingRoute = () => {
+    refreshJournal();
+    const pending = journal.filter(entry => !entry.confirmed);
+    if (!pending.length) return null;
+    const modes = new Set(pending.map(entry => entry.mode));
+    if (modes.size !== 1 || !["direct", "eu"].includes([...modes][0])) {
+      throw Object.assign(transportError("Unconfirmed writes have no single verified route; select a route for reconciliation"), { isAmbiguousMutation: true });
+    }
+    return [...modes][0];
+  };
+  const chooseAutomatically = async () => {
+    const pinned = pendingRoute();
+    if (pinned === "eu") await verifyEu();
+    else {
+      try { await probeDirectExperimentRoute({ fetchImpl, timeoutMs: probeTimeoutMs }); }
+      catch (error) {
+        if (!error.mayTryAlternateRoute || pinned || pendingRoute()) throw error;
+        await verifyEu();
+        const appeared = pendingRoute();
+        if (appeared && appeared !== "eu") throw Object.assign(transportError("A pending write appeared during route selection; automatic switching was stopped"), { isAmbiguousMutation: true });
+        mode = "eu";
+        return;
+      }
+    }
+    const chosen = pinned || "direct";
+    const appeared = pendingRoute();
+    if (appeared && appeared !== chosen) throw Object.assign(transportError("Pending writes require a different route; automatic switching was stopped"), { isAmbiguousMutation: true });
+    mode = chosen;
+  };
   const prepare = () => {
     if (ready) return Promise.resolve();
-    if (!euEnabled) return Promise.reject(transportError("EU activation is not approved for this release"));
-    if (!readiness) readiness = probeExperimentProxy({ fetchImpl }).then((result) => {
-      if (!result.usable) throw transportError("EU transport is read-only; local changes remain on this device");
+    if (!readiness) readiness = (automatic ? chooseAutomatically() : verifyEu()).then(() => {
       ready = true;
-    }).catch((error) => { throw error.isTransportUnavailable ? error : transportError("EU transport unavailable; local data is unchanged"); });
+    }).catch((error) => {
+      // A failed preparation made no business request. An explicit later sync
+      // may probe again after connectivity returns; a selected route stays pinned.
+      readiness = null;
+      throw error.isTransportUnavailable ? error : transportError("API transport unavailable; local data is unchanged");
+    });
     return readiness;
   };
   const apiUrl = (path) => {
     validateApiPath(path);
-    if (!ready) throw transportError("EU transport is not verified");
+    if (!ready) throw transportError("API transport is not verified");
     return `${mode === "eu" ? EU_EXPERIMENT_API_BASE : canonical}${path}`;
   };
   const assertWritable = (path, method, recovery = null) => {
@@ -172,6 +250,7 @@ export function createExperimentTransport({
     }
   };
   const beginWrite = async (path, method = "GET", body = null, recovery = null) => {
+    if (automatic && !ready) throw transportError("API transport is not verified; write was not sent");
     assertWritable(path, method, recovery);
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
@@ -260,7 +339,9 @@ export function createExperimentTransport({
     return apiUrl(path);
   };
   return Object.freeze({
-    mode, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
+    get mode() { return mode; },
+    get ready() { return ready; },
+    selection: requestedMode, automatic, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
     get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain) || null; },
     get writes() { refreshJournal(); return journal.map((entry) => ({ ...entry })); },
     async fetchPhoto(source, options = {}) {

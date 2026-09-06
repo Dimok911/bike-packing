@@ -87,6 +87,25 @@ test("unknown result blocks replay and new generations; pending intent survives 
   assert.equal(f.posts().length, 1); assert.ok(f.transport.uncertainWrite);
 });
 
+test("explicit action ID survives editor generation changes and rejects changed inputs without POST", async () => {
+  const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+  await f.queue.run(input);
+  f.context.generation = "later editor generation";
+  await f.make().queue.run(input);
+  assert.equal(f.posts().length, 1);
+  await assert.rejects(f.make().queue.run({ ...input, body: JSON.stringify({ payload: { different: true } }) }), { isAmbiguousMutation: true });
+  assert.equal(f.posts().length, 1);
+});
+
+test("receipt-only scheduler settlement does not return a stale business payload or bypass normal freshness", async () => {
+  const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+  await f.queue.run(input); f.state.revision = 2;
+  const proof = await f.make().queue.run({ ...input, receiptOnly: true });
+  assert.equal(proof.operation.state, "committed"); assert.equal(proof.list, undefined);
+  await assert.rejects(f.make().queue.run(input), { isAmbiguousMutation: true });
+  assert.equal(f.posts().length, 1);
+});
+
 test("a later intentional equal edit uses a new ID, but concurrent same-generation tab submissions share one ID", async () => {
   const f = fixture();
   await Promise.all([f.queue.run(f.input), f.make().queue.run(f.input)]);

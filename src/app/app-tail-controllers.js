@@ -5369,7 +5369,7 @@ function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = tru
     touchLayoutsReferencingItem
   });
   if (!deleted) return;
-  saveState();
+  saveState({ personalMutation: { type: "item", id: itemId } });
   scheduleActivePublishedEditSave();
   if (renderAfter) render();
 }
@@ -5565,7 +5565,7 @@ function deleteRootContainer(containerId) {
   });
   if (!deleted) return;
   if (runtime.editingRootContainerId === containerId) runtime.editingRootContainerId = null;
-  saveState();
+  saveState({ personalMutation: { type: "container", id: containerId } });
   scheduleActivePublishedEditSave();
   render();
 }

@@ -104,6 +104,16 @@ whole-direct blockers remain; no automatic publication follows these commits.
 
 ## Batch 3 — optional alternate API route
 
+Development handoff, 2026-09-06: the personal-save UI adapter is a further
+**disabled Experiment-only** slice of batch 2, not catalog work. It owns atomic
+snapshot/action capture, initial creation, ordered dispatch, deletion intent,
+local compaction and confirmed remote-baseline adoption. Coverage and remaining
+UI/file/conflict work are tracked in `ui-causal-operations-checklist.md`.
+The current candidate also contains the separately gated batch-3 route/menu
+preparation below; a future Production transfer must extract/review these
+slices deliberately, not blindly cherry-pick the entire candidate. Test-only
+build output under `test-results` is never a publication artifact.
+
 One existing API backend, two network routes. Route configuration and diagnostics
 are separate from catalog content and operation acknowledgements. Current EU
 client source gate remains off and coordinator owns the read-only proxy gate.

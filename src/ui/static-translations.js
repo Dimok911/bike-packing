@@ -95,6 +95,7 @@ export function applyStaticTranslationsUi({
   documentRef.querySelector("#exportBtn")?.replaceChildren(documentRef.createTextNode(t("menu.print")));
   setText(languageLabel, t("menu.language"));
   setText(refs.interfaceColorMenuBtn, t("menu.interfaceColor"));
+  setText(refs.apiRouteMenuBtn, t("menu.apiRoute"));
   setText(refs.interfaceColorTitle, t("interfaceColor.title"));
   setText(refs.interfaceColorDescription, t("interfaceColor.description"));
   setText(refs.interfaceColorBrightnessLabel, t("interfaceColor.brightness"));

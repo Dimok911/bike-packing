@@ -13,15 +13,19 @@ const cors = {
   "Access-Control-Expose-Headers": "X-Vniipo-Proxy-Target, X-Vniipo-Proxy-Write-Gate", Vary: "Origin",
 };
 
-async function fixture(page, context, { gate = "enabled", uploadFailure = false, recovery = false, recoveryAfterReload = false } = {}) {
+async function fixture(page, context, { gate = "enabled", uploadFailure = false, recovery = false, recoveryAfterReload = false,
+  selection = "eu", automatic = false, settingsReleased = false, ruFailure = 0 } = {}) {
   const requests = [];
+  const indexSource = await readFile(resolve("index.html"), "utf8");
+  const menuMarkup = indexSource.match(/<button id="apiRouteMenuBtn"[^]*?<\/button>/)[0]
+    + indexSource.match(/<dialog id="apiRouteDialog"[^]*?<\/dialog>/)[0];
   let receipt = null, pageLoads = 0;
   await context.addCookies([
     { name: "bikepacking_experiment_session", value: "fixture-not-real", domain: ".vniipo-help.ru", path: "/", httpOnly: true, secure: true, sameSite: "None" },
     { name: "personal_tags_session", value: "host-only-fixture", url: "https://api.vniipo-help.ru", httpOnly: true, secure: true, sameSite: "None" },
   ]);
-  await context.addInitScript(() => {
-    if (!sessionStorage.getItem("bike-packing-experiment-transport-v1")) sessionStorage.setItem("bike-packing-experiment-transport-v1", "eu");
+  await context.addInitScript(({ selection }) => {
+    if (!sessionStorage.getItem("bike-packing-experiment-transport-v1")) sessionStorage.setItem("bike-packing-experiment-transport-v1", selection);
     localStorage.setItem("transport-test-local-state", "local-edit-and-pending-photo");
     window.transportCredentials = [];
     const originalFetch = window.fetch;
@@ -34,7 +38,7 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false,
       window.transportXhrCredentials = this.withCredentials;
       return originalSend.call(this, body);
     };
-  });
+  }, { selection });
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin === frontend && url.pathname.startsWith("/src/")) {
@@ -42,16 +46,21 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false,
     }
     if (url.origin === frontend && url.pathname === "/__transport-test") {
       pageLoads++;
-      return route.fulfill({ contentType: "text/html", body: `<html><body><div id="settings"></div><button id="run">Run</button><output id="result"></output><script type="module">
+      return route.fulfill({ contentType: "text/html", body: `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${menuMarkup}<div id="settings"></div><button id="run">Run</button><output id="result"></output><script type="module">
         import { apiFetchRequest, apiUploadFormDataRequest } from '/src/sync/api-client.js';
         import { createExperimentTransport, experimentTransport } from '/src/sync/experiment-transport.js';
         import { createPhotoOperationRecovery } from '/src/sync/photo-operation-recovery.js';
-        import { renderExperimentTransportSettings, bindExperimentTransportSettings } from '/src/ui/experiment-transport-settings.js';
-        document.querySelector('#settings').innerHTML = renderExperimentTransportSettings({language:'en'});
-        bindExperimentTransportSettings(document.querySelector('#settings'), {language:'en'});
+        import { renderExperimentTransportSettings, bindExperimentTransportSettings, bindExperimentTransportMenu } from '/src/ui/experiment-transport-settings.js';
         // Explicit dependency injection in this isolated fixture only. The
         // shipped singleton's immutable release gate remains disabled.
-        const transport = createExperimentTransport({euEnabled:true});
+        const transport = createExperimentTransport({euEnabled:true,autoEnabled:${automatic}});
+        window.renderRouteSettings=()=>{
+          document.querySelector('#settings').innerHTML = renderExperimentTransportSettings({language:'en',transport,euEnabled:${settingsReleased},autoEnabled:${settingsReleased}});
+          bindExperimentTransportSettings(document.querySelector('#settings'), {language:'en',transport,euEnabled:${settingsReleased}});
+        };
+        window.renderRouteSettings();
+        bindExperimentTransportMenu({button:document.querySelector('#apiRouteMenuBtn'),dialog:document.querySelector('#apiRouteDialog'),
+          getLanguage:()=> 'en',openModalDialog:dialog=>dialog.showModal(),transport,euEnabled:${settingsReleased},autoEnabled:${settingsReleased}});
         const photoRecovery = createPhotoOperationRecovery({transport, enabled:${recovery}});
         window.fixtureTransport = transport;
         window.shippedTransport = experimentTransport;
@@ -73,6 +82,7 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false,
       const headers = await route.request().allHeaders();
       requests.push({ url: url.href, method, headers });
       if (method === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+      if (ruFailure && url.origin === frontend) return route.fulfill({ status: ruFailure, headers: cors, body: "RU unavailable" });
       if (url.pathname.endsWith("/capabilities")) return route.fulfill({
         contentType: "application/json", headers: { ...cors, "X-Vniipo-Proxy-Target": "bike-packing-experiment", "X-Vniipo-Proxy-Write-Gate": gate },
         body: JSON.stringify({ ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
@@ -105,7 +115,7 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false,
     throw new Error(`Unexpected network destination: ${url.origin}${url.pathname}`);
   });
   await page.goto(`${frontend}/__transport-test`);
-  await expect(page.getByRole("heading", { name: "Experiment connection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "API route" })).toBeVisible();
   return requests;
 }
 
@@ -141,9 +151,10 @@ test("read-only gate blocks authenticated transport; IP never claims sign-in or 
   const requests = await fixture(page, context, { gate: "read-only" });
   await page.locator("#run").click();
   await expect(page.locator("#result")).toContainText("read-only");
+  await page.getByText("Connection diagnostics", { exact: true }).click();
   await page.getByRole("button", { name: "Check IP (anonymous only)", exact: true }).click();
   await expect(page.locator("[data-transport-status]")).toContainText("Sign-in and sync are not available on IP");
-  await expect(page.getByRole("button", { name: "Use EU after reload", exact: true })).toBeDisabled();
+  await expect(page.locator('[data-transport-choice] option[value="eu"]')).toBeDisabled();
   await page.getByRole("button", { name: "Check EU domain", exact: true }).click();
   await expect(page.locator("[data-transport-status]")).toContainText("write gate is closed");
   expect(requests.filter(({ method }) => method !== "OPTIONS").every(({ url, headers }) => url.endsWith("/capabilities") && !headers.cookie)).toBe(true);
@@ -168,9 +179,89 @@ test("release gate blocks shipped EU transport even with enabled proxy and valid
     try { await window.shippedTransport.prepare(); return "incorrectly enabled"; }
     catch (error) { return error.message; }
   })).toContain("not approved");
+  await page.getByText("Connection diagnostics", { exact: true }).click();
   await page.getByRole("button", { name: "Check EU domain", exact: true }).click();
   await expect(page.locator("[data-transport-status]")).toContainText("Activation remains subject to the release gate");
-  await expect(page.getByRole("button", { name: "Use EU after reload", exact: true })).toBeDisabled();
+  await expect(page.locator('[data-transport-choice] option[value="eu"]')).toBeDisabled();
+});
+
+test("API menu preserves manual priority and can return to automatic RU-first selection after reload", async ({ page, context }) => {
+  const requests = await fixture(page, context, { selection: "auto", automatic: true, settingsReleased: true });
+  await expect(page.getByRole("combobox", { name: "Route selection" })).toHaveValue("auto");
+  await page.evaluate(() => window.fixtureTransport.prepare());
+  expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
+  expect(requests.filter(request => request.url.endsWith("/capabilities"))).toHaveLength(1);
+  await page.getByRole("combobox", { name: "Route selection" }).selectOption("eu");
+  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await expect(page.locator("[data-transport-status]")).toContainText("European");
+  expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
+  await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
+  await page.evaluate(() => window.fixtureTransport.prepare());
+  expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("eu");
+  await page.getByRole("combobox", { name: "Route selection" }).selectOption("auto");
+  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
+  await page.evaluate(() => window.fixtureTransport.prepare());
+  await page.evaluate(() => window.renderRouteSettings());
+  await expect(page.locator("[data-transport-current]")).toContainText("Russian");
+  expect(requests.filter(request => request.url.endsWith("/capabilities")).map(request => new URL(request.url).origin))
+    .toEqual([frontend, "https://api-eu.vniipo-help.ru", frontend]);
+  expect(requests.some(request => request.method === "POST")).toBe(false);
+});
+
+test("top-menu route dialog works without sign-in and does not collide with the settings control", async ({ page, context }, testInfo) => {
+  const requests = await fixture(page, context, { selection: "auto" });
+  await page.addStyleTag({ content: await readFile(resolve("styles.css"), "utf8") });
+  await page.locator("#apiRouteMenuBtn").click();
+  const dialog = page.getByRole("dialog", { name: "API route" });
+  await expect(dialog).toBeVisible();
+  const geometry = await dialog.evaluate(node => ({ width: node.getBoundingClientRect().width, viewport: innerWidth,
+    scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
+  expect(geometry.width).toBeLessThanOrEqual(geometry.viewport);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  await page.screenshot({ path: testInfo.outputPath("api-route-menu.png") });
+  await expect(dialog.getByRole("combobox", { name: "Route selection" })).toHaveValue("auto");
+  await dialog.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
+  await dialog.getByRole("button", { name: "Save for next reload" }).click();
+  await expect(dialog.locator("[data-transport-status]")).toContainText("Russian");
+  expect(await page.evaluate(() => [...document.querySelectorAll("[data-transport-choice]")].map(node => node.id)))
+    .toEqual(["experimentApiRouteDialogChoice", "experimentApiRoute"]);
+  await dialog.getByRole("button", { name: "Close", exact: true }).last().click();
+  await expect(dialog).not.toBeVisible();
+  await page.locator("#apiRouteMenuBtn").click();
+  await expect(dialog.getByRole("combobox", { name: "Route selection" })).toHaveValue("direct");
+  expect(requests).toHaveLength(0, "opening the menu or choosing a preference performs no auth/network calls");
+});
+
+test("automatic uses EU after a failed RU probe; forced Russian never falls back to EU", async ({ page, context }) => {
+  const requests = await fixture(page, context, { selection: "auto", automatic: true, settingsReleased: true, ruFailure: 503 });
+  await page.evaluate(() => window.fixtureTransport.prepare());
+  expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("eu");
+  expect(requests.filter(request => request.method !== "OPTIONS").map(request => new URL(request.url).origin))
+    .toEqual([frontend, "https://api-eu.vniipo-help.ru"]);
+  await page.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
+  await page.getByRole("button", { name: "Save for next reload" }).click();
+  requests.length = 0;
+  await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
+  await page.locator("#run").click();
+  await expect(page.locator("#result")).toContainText("HTTP 503");
+  expect(await page.evaluate(() => window.fixtureTransport.mode)).toBe("direct");
+  expect(requests.every(request => new URL(request.url).origin === frontend)).toBe(true);
+  expect(requests.some(request => request.method === "POST")).toBe(false);
+});
+
+test("API menu keeps a lost operation and its data when selecting a manual route", async ({ page, context }) => {
+  const requests = await fixture(page, context, { uploadFailure: true, settingsReleased: true, automatic: true });
+  await page.locator("#run").click(); await expect(page.locator("#result")).toContainText("ERROR:");
+  const id = await page.evaluate(() => window.fixtureTransport.uncertainWrite.id);
+  await page.getByRole("combobox", { name: "Route selection" }).selectOption("direct");
+  await page.getByRole("button", { name: "Save for next reload" }).click();
+  await expect(page.locator("[data-transport-status]")).toContainText("does not permit a repeat send");
+  await page.reload(); await page.waitForFunction(() => Boolean(window.fixtureTransport));
+  expect(await page.evaluate(() => window.fixtureTransport.uncertainWrite.id)).toBe(id);
+  await page.locator("#run").click(); await expect(page.locator("#result")).toContainText("reconcile server state");
+  expect(requests.filter(request => request.method === "POST")).toHaveLength(1);
+  expect(await page.evaluate(() => localStorage.getItem("transport-test-local-state"))).toBe("local-edit-and-pending-photo");
 });
 
 test("real Web Locks and shared journal block simultaneous EU/direct photo replay in separate tabs", async ({ page, context }) => {

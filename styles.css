@@ -5168,6 +5168,20 @@ mark {
   padding: 14px;
 }
 
+[data-experiment-transport] {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+[data-experiment-transport] p {
+  margin: 0;
+}
+
+[data-experiment-transport] details > button {
+  margin-top: 8px;
+}
+
 .items-toolbar {
   display: grid;
   grid-template-columns: auto minmax(220px, 340px);

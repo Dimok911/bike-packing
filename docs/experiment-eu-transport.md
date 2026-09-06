@@ -1,16 +1,65 @@
-# Experiment EU transport — first stage
+# Experiment API route selection and release gates
 
 Frontend remains **https://experiment.vniipo-help.ru/**. Production/Initial and
-backend 4312 are unchanged. Direct transport remains the default. The Settings
-panel stores only an allowlisted `direct`/`eu` choice in a dedicated per-tab
-sessionStorage key; it takes effect on the next reload, never mid-request.
-Automatic failover is **not implemented** in this first stage. No request,
-including GET/auth/401/403 or uploads, is retried against another origin.
-`EU_TRANSPORT_RELEASE_ENABLED = false` is a shipped code gate: saved preferences,
-successful diagnostics and an enabled proxy cannot activate EU in this release.
-Browser tests inject a separate test transport; they do not change this gate.
+backend 4312 are unchanged. Top menu → API route (also available in Settings)
+stores an allowlisted
+`auto` / `direct` / `eu` preference in the existing per-tab sessionStorage key.
+The default preference is `auto`; a previous explicit manual choice is preserved.
+Manual mode overrides automatic choice. It takes effect on the next reload,
+never mid-request, and never clears local state, pending writes or receipts.
+
+The automatic **initial route selector is implemented, but release-gated**.
+`AUTO_TRANSPORT_RELEASE_ENABLED = false` keeps Auto on the Russian route in the
+shipped source; `EU_TRANSPORT_RELEASE_ENABLED = false` separately blocks EU.
+Saved preferences and successful diagnostics cannot override either release gate.
+Browser tests inject separate enabled test transports; live activation is not
+authorized by these changes. No business request is automatically replayed.
+
+## Selection rules
+
+| Preference | Initial preparation | Alternative |
+| --- | --- | --- |
+| Auto (when separately enabled) | Anonymous GET to exact Russian Experiment capabilities URL | EU descriptor only after network/timeout/408/5xx failure |
+| Russian | Fixed Russian Experiment address | None |
+| European | Verify EU identity, API compatibility and open write gate | None |
+
+RU 401/403/404/409/429, redirects, invalid JSON and incompatible API responses
+do not permit fallback. EU remains the exact domain below, never the IP.
+Neither probe creates business data or confirms a user's authentication.
+Timeouts include decoding the response body. Parallel preparations share one
+probe chain; a late probe cannot change the winning route. Both routes failing
+leaves data untouched; a later explicit synchronization may retry preparation.
+After successful selection the route is pinned for the tab's lifetime, including
+photos, until reload. This is not a mid-request or per-photo failover mechanism.
+
+Unconfirmed journal entries override RU-first priority **in automatic mode**:
+the prior route is pinned for receipt reconciliation, not retried elsewhere.
+Mixed/unknown journal routes stop automatic selection. A new pending operation
+appearing in another tab during the probes is rechecked before selecting EU.
+Manual selection may choose the route for reconciliation after reload, but
+does not remove the write barrier or authorize a fresh POST. Existing receipt
+validation decides whether any specific operation may progress with its old ID.
+
+The top-menu entry is available without sign-in, including when the server is
+unreachable. It is hidden outside the exact Experiment origin. Its dialog uses
+the shared modal/scroll-lock controller and distinct field IDs from Settings.
+
+Local evidence for the selector/menu: eleven dedicated unit scenarios plus the
+transport/queue browser suite (40 Chromium/mobile-WebKit scenarios). These are
+isolated fixtures, not proof of live EU session/cookie or server write readiness.
 
 ## Agreed route and activation gate
+
+Coordination update, 2026-09-06: the infrastructure owner reports the domain
+active with trusted TLS, domain guards 11/11 and certificate renewal dry-run
+passing. The previous domain-activation/TLS blocker is superseded. This is
+reported infrastructure evidence, not a frontend live-auth or write test.
+The configured EU base below already uses the domain, never the diagnostic IP.
+Writes and verify GET remain blocked by the proxy; frontend release flags stay
+off. Recovery coverage, authenticated cookie/session checks (including real
+Safari), explicit write-gate approval and an approved isolated write smoke
+remain required before calling this usable EU synchronization. Fixed-RU shared
+session bootstrap and Production/Initial are unchanged.
 
 - EU base: `https://api-eu.vniipo-help.ru/experiment/letters-vniipo/api`.
 - Proxy strips only initial `/experiment`, routes the entire namespace to

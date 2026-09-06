@@ -22,6 +22,8 @@ export function createRefs(root = document) {
     syncBtn: root.querySelector("#syncBtn"),
     syncUserEmail: root.querySelector("#syncUserEmail"),
     forceOfflineBtn: root.querySelector("#forceOfflineBtn"),
+    apiRouteMenuBtn: root.querySelector("#apiRouteMenuBtn"),
+    apiRouteDialog: root.querySelector("#apiRouteDialog"),
     collectionMenuBtn: root.querySelector("#collectionMenuBtn"),
     compareLayoutsMenuBtn: root.querySelector("#compareLayoutsMenuBtn"),
     visualStyleMenuBtn: root.querySelector("#visualStyleMenuBtn"),

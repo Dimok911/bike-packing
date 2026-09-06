@@ -19,6 +19,8 @@ async function fixture(page, context) {
       import {createExperimentTransport} from '/src/sync/experiment-transport.js';
       import {createListOperationQueue} from '/src/sync/list-operation-queue.js';
       import {createCausalActionJournal} from '/src/sync/causal-action-journal.js';
+      import {createPersonalSaveOutbox,recoverPersonalSaveListId} from '/src/sync/personal-save-outbox.js';
+      import {ensureCausalPersonalListId} from '/src/sync/causal-personal-list-bootstrap.js';
       import {apiFetchRequest} from '/src/sync/api-client.js';
       window.generation='generation-1'; window.actorId='actor-a';
       const transport=createExperimentTransport({selection:sessionStorage.getItem('list-route')||'direct',euEnabled:true});
@@ -26,8 +28,29 @@ async function fixture(page, context) {
       window.run=async()=>{try {const result=await apiFetchRequest('/bike-packing/lists/list-a',{method:'PUT',body:JSON.stringify({payload:{items:{}}})},{transport,listQueue:queue});return {ok:true,id:result.list.id};}
         catch(error){return {ok:false,ambiguous:!!error.isAmbiguousMutation};}};
       window.entries=()=>transport.writes;
+      const bootstrapBinding={environment:'bike-packing-experiment',actorId:'actor-a',scopeKey:'id:actor-a'};
+      window.initialListId=localStorage.getItem('bootstrap-list')||recoverPersonalSaveListId({storage:localStorage,...bootstrapBinding});
+      const initialContext=()=>({...bootstrapBinding,listId:window.initialListId,actorId:window.actorId,generation:window.generation,scope:'personal'});
+      window.initialConfirmations=0;
+      window.bootstrapSave=async()=>{try{
+        const id=await ensureCausalPersonalListId({storage:localStorage,getContext:initialContext,getCurrentListId:()=>window.initialListId,
+          snapshot:{items:{a:{weight:100}}},body:{payload:{items:{a:{weight:100}}}},fetchLists:async()=>[],
+          chooseDefaultList:lists=>lists[0],recordId:record=>record.id,onExisting:()=>{},
+          onRegistered:id=>{if(window.crashBeforePointer)throw Error('stopped before pointer');window.initialListId=id;localStorage.setItem('bootstrap-list',id);}});
+        const initialOutbox=createPersonalSaveOutbox({storage:localStorage,...bootstrapBinding,listId:id});
+        await initialOutbox.drain({queue,getContext:initialContext,onConfirmed:(result,record)=>{
+          initialOutbox.markApplied({operationId:record.action.operationId,stateRevision:result.list.stateRevision});window.initialConfirmations++;
+        }});return 'confirmed';
+      }catch(error){return 'blocked';}};
+      window.initialAction=()=>createPersonalSaveOutbox({storage:localStorage,...bootstrapBinding,
+        listId:recoverPersonalSaveListId({storage:localStorage,...bootstrapBinding})}).recover();
       const journal=createCausalActionJournal({storage:localStorage,actorId:'actor-a'});
       window.enqueue=input=>journal.enqueue(input); window.actions=()=>journal.list();
+      const outbox=createPersonalSaveOutbox({storage:localStorage,actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a'});
+      window.captureSave=weight=>outbox.capture({snapshot:{items:{a:{weight}}},body:{baseStateRevision:1,payload:{items:{a:{weight}}}}});
+      window.restoreSave=()=>outbox.recover(); window.saveConfirmations=0;
+      window.drainSaves=async()=>{try{await outbox.drain({queue,getContext:()=>({actorId:window.actorId,generation:window.generation,scope:'personal',scopeKey:'id:actor-a',listId:'list-a',environment:'bike-packing-experiment'}),onConfirmed:()=>window.saveConfirmations++});return 'confirmed';}
+        catch(error){return 'blocked';}};
       window.runWaiting=async()=>{try {await queue.run({path:'/bike-packing/lists/list-a',method:'PUT',body:JSON.stringify({causal:{dependsOn:[{operationId:'11111111-1111-4111-8111-111111111111',listId:'list-a'}]}})}); return 'committed';}
         catch(error){return error.isOperationWaiting?'waiting':'blocked';}};
     </script>` });
@@ -70,6 +93,66 @@ test("cold queue preserves the ID across lost ACK, page reload and direct/EU rou
   expect(await page.evaluate(() => window.run())).toEqual({ ok: true, id: "list-a" });
   expect(f.posts).toHaveLength(1);
   expect(await page.evaluate(() => window.entries()[0].id)).toBe(id);
+});
+
+test("initial create recovers after lost ACK and route change using one UUID and one POST", async ({ page, context }) => {
+  const f = await fixture(page, context); f.lose = true; f.unknown = true;
+  expect(await page.evaluate(() => window.bootstrapSave())).toBe("blocked");
+  expect(f.posts).toHaveLength(1);
+  const first = await page.evaluate(() => window.initialAction());
+  expect(first.action.kind).toBe("list.create");
+  await page.evaluate(() => { localStorage.removeItem('bootstrap-list'); sessionStorage.setItem('list-route', 'eu'); });
+  f.lose = false; f.unknown = false;
+  await page.reload(); await page.waitForFunction(() => Boolean(window.bootstrapSave));
+  expect(await page.evaluate(() => window.bootstrapSave())).toBe("confirmed");
+  expect(f.posts).toHaveLength(1);
+  expect((await page.evaluate(() => window.initialAction())).action.operationId).toBe(first.action.operationId);
+  expect(await page.evaluate(() => window.initialConfirmations)).toBe(1);
+});
+
+test("initial create snapshot survives a crash before the active-list mirror and before any network write", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  await page.evaluate(() => { window.crashBeforePointer = true; });
+  expect(await page.evaluate(() => window.bootstrapSave())).toBe("blocked");
+  const first = await page.evaluate(() => window.initialAction());
+  expect(f.posts).toHaveLength(0);
+  expect(await page.evaluate(() => localStorage.getItem('bootstrap-list'))).toBeNull();
+  await page.reload(); await page.waitForFunction(() => Boolean(window.bootstrapSave));
+  expect(await page.evaluate(() => window.bootstrapSave())).toBe("confirmed");
+  expect(f.posts).toHaveLength(1);
+  expect(f.posts[0].body.operationId).toBe(first.action.operationId);
+  expect(f.posts[0].body.listId).toBe(first.action.listId);
+});
+
+test("personal write-ahead snapshots survive reload and lost ACK without replacing action IDs", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  const first = await page.evaluate(() => window.captureSave(100));
+  const second = await page.evaluate(() => window.captureSave(200));
+  expect(second.action.body.causal.baseOperationId).toBe(first.action.operationId);
+  f.lose = true; f.unknown = true;
+  expect(await page.evaluate(() => window.drainSaves())).toBe("blocked");
+  expect(f.posts).toHaveLength(1);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.drainSaves));
+  expect((await page.evaluate(() => window.restoreSave())).snapshot.items.a.weight).toBe(200);
+  await page.evaluate(() => { window.generation = "new-editor-after-reload"; });
+  f.lose = false; f.unknown = false;
+  expect(await page.evaluate(() => window.drainSaves())).toBe("confirmed");
+  expect(f.posts.map(post => post.body.operationId)).toEqual([first.action.operationId, second.action.operationId]);
+  expect(await page.evaluate(() => window.saveConfirmations)).toBe(1);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.drainSaves));
+  expect(await page.evaluate(() => window.drainSaves())).toBe("confirmed");
+  expect(f.posts).toHaveLength(2);
+});
+
+test("another tab cannot silently attach its stale edit after an unseen save", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  const other = await context.newPage();
+  await other.goto(`${origin}/__list-queue-test`); await other.waitForFunction(() => Boolean(window.captureSave));
+  await page.evaluate(() => window.captureSave(100));
+  const error = await other.evaluate(() => { try { window.captureSave(200); return null; } catch (error) { return error.code; } });
+  expect(error).toBe("stale-tab");
+  expect(f.posts).toHaveLength(0);
+  expect((await page.evaluate(() => window.restoreSave())).snapshot.items.a.weight).toBe(100);
 });
 
 test("concurrent tabs submit one logical action once; its acknowledged replay stays GET-only", async ({ page, context }) => {

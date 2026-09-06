@@ -120,7 +120,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
 
   return {
     supports(path, method) { return enabled && transport.experiment && Boolean(listOperationRoute(path, method)); },
-    async run({ path, method, body: bodyText, operationId: requestedId }) {
+    async run({ path, method, body: bodyText, operationId: requestedId, receiptOnly = false }) {
       if (!this.supports(path, method)) throw Error("Unsupported list queue request");
       if (!locks?.request) throw paused(null, "Блокировка между вкладками недоступна. Запрос не отправлен.");
       const initial = getContext();
@@ -130,7 +130,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const route = listOperationRoute(path, method);
       const generation = await sha(initial.generation);
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
-      const requestKey = await sha(canonicalListOperationJson({ path, method, body, generation, actorId: initial.actorId,
+      const requestKey = await sha(canonicalListOperationJson({ path, method, body, ...(!requestedId ? { generation } : {}), actorId: initial.actorId,
         ...(requestedId ? { operationId: requestedId } : {}) }));
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId || body.id || requestKey}`, async () => {
         if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
@@ -150,7 +150,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
             || (requestedId && entry.recovery.body?.causal?.dependsOn?.some(dep => dep.operationId === requestedId));
           if (!explicitlyRelated) await recover(entry);
         }
-        let entry = transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
+        let entry = requestedId ? transport.writes.find(entry => entry.id === requestedId)
+          : transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
+        if (entry && requestedId) {
+          const listId = route.listId || body.id;
+          const digest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
+          if (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
+            || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId
+            || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
+        }
         let data;
         if (entry) data = await recover(entry, { resumeWaiting: true });
         else {
@@ -194,6 +202,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
             isOperationReceiptError: true, isConfirmedOperationRejection: true, operationId: entry.id,
           });
         }
+        // Internal outbox scheduler only: this is terminal historical proof,
+        // not authority to apply a historical payload to the current editor.
+        if (receiptOnly) return { operation: data.operation, status: data.result.status };
         // A receipt is historical: never resurrect a deleted list or apply a
         // snapshot after its server revision has advanced on another device.
         const current = await request(`/bike-packing/lists/${encodeURIComponent(entry.recovery.listId)}/freshness`);
