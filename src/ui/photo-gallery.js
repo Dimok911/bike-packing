@@ -1362,6 +1362,10 @@ export async function openPhotoLightbox(sourceImage, {
     getVerifiedFullSource: (entry) => entry?.verifiedFullSrc || entry?.resolvedFullSrc || "",
     resolveFullSource: async (entry, _entryIndex, { signal }) => {
       entry.lifecycleFallback = null;
+      // Catalog entries already point at the original. Keep that same decoded
+      // image: fetching an identical blob swaps the bitmap after its first paint.
+      // Local/offline records and separate previews still use the cache pipeline.
+      if (!entryExpectsFullSize(entry)) return entry.fullSrc || entry.previewSrc || null;
       const preparedSources = entry.localId
         ? await prepareFullscreenSource(entry).catch(() => null)
         : null;
