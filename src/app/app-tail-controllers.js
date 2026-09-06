@@ -28,6 +28,7 @@ import {
   readPhotoPasteEventImageFiles
 } from "../ui/photo-clipboard.js";
 import { fetchClipboardImageSource } from "../sync/remote-image-import.js";
+import { focusDialogInputWhenUnchanged } from "../ui/dialog-initial-focus.js";
 import { transportPhotoFetch } from "../sync/experiment-transport.js";
 import { renderExperimentTransportSettings, bindExperimentTransportSettings } from "../ui/experiment-transport-settings.js";
 import {
@@ -711,7 +712,7 @@ function openAddToContainerDialog(containerId) {
   if (refs.addToContainerCreationActions) refs.addToContainerCreationActions.hidden = false;
   renderAddToContainerResults();
   openModalDialog(refs.addToContainerDialog);
-  requestAnimationFrame(() => refs.addToContainerSearch.focus({ preventScroll: true }));
+  focusDialogInputWhenUnchanged(refs.addToContainerDialog, refs.addToContainerSearch);
 }
 
 function openPackingItemReplacementDialog(itemId = runtime.editingItemId) {
@@ -731,7 +732,7 @@ function openPackingItemReplacementDialog(itemId = runtime.editingItemId) {
   if (refs.addToContainerCreationActions) refs.addToContainerCreationActions.hidden = true;
   renderAddToContainerResults();
   openModalDialog(refs.addToContainerDialog);
-  requestAnimationFrame(() => refs.addToContainerSearch.focus({ preventScroll: true }));
+  focusDialogInputWhenUnchanged(refs.addToContainerDialog, refs.addToContainerSearch);
 }
 
 function resolveEditableLayoutIdForContainer(containerId) {
