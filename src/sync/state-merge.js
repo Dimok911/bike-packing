@@ -38,9 +38,38 @@ export function mergeScalarField(key, baseValue, localValue, remoteValue, confli
   return remoteValue;
 }
 
+// Only independent descriptive scalars are currently approved for field-level
+// merging. Photos, arrangements, categories and unknown future fields require
+// their own policies; a recursive JSON merge would break their invariants.
+// The result is a candidate, NOT permission to rewrite a queued operation or
+// skip its server receipt / revision check.
+export function compatibleRecordFieldChanges(type, base, local, remote, {
+  valuesEqual = (left, right) => left === right
+} = {}) {
+  if (!["item", "container"].includes(type) || !base || !local || !remote) return null;
+  const allowed = new Set(type === "container" ? ["name", "weight", "volume", "note"] : ["name", "weight", "note"]);
+  const has = (record, key) => Object.prototype.hasOwnProperty.call(record, key);
+  const same = (left, right, key) => has(left, key) === has(right, key) && valuesEqual(left[key], right[key]);
+  const valid = (record, key) => {
+    if (key === "note") return !has(record, key) || typeof record[key] === "string";
+    if (key === "name") return typeof record[key] === "string" && Boolean(record[key].trim());
+    return typeof record[key] === "number" && Number.isFinite(record[key]) && record[key] >= 0;
+  };
+  const changes = [];
+  for (const key of new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)])) {
+    const localChanged = !same(base, local, key), remoteChanged = !same(base, remote, key);
+    if (!localChanged && !remoteChanged) continue;
+    if (!allowed.has(key) || !valid(local, key) || !valid(remote, key)
+      || localChanged && remoteChanged && !same(local, remote, key)) return null;
+    if (localChanged) changes.push({ key, exists: has(local, key), value: local[key] });
+  }
+  return changes;
+}
+
 export function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts, {
   cloneValue = clonePlain,
   conflictLabel = (_type, id) => id,
+  mergeIndependentRecordFields = false,
   valuesEqual = (left, right) => left === right
 } = {}) {
   const merged = {};
@@ -71,6 +100,18 @@ export function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts, {
     }
 
     if (localChanged && remoteChanged && !valuesEqual(localCompare, remoteCompare)) {
+      const fieldChanges = mergeIndependentRecordFields && baseHas && localHas && remoteHas
+        && baseValue?.id === localValue?.id && baseValue?.id === remoteValue?.id
+        ? compatibleRecordFieldChanges(type, baseCompare, localCompare, remoteCompare, { valuesEqual }) : null;
+      if (fieldChanges) {
+        const candidate = cloneValue(remoteValue);
+        for (const { key, exists, value } of fieldChanges) {
+          if (exists) candidate[key] = cloneValue(value);
+          else delete candidate[key];
+        }
+        merged[id] = candidate;
+        return;
+      }
       conflicts.push({
         type,
         id,
@@ -96,6 +137,7 @@ export function mergeRecordMap(type, baseMap, localMap, remoteMap, conflicts, {
 export function mergeStateFromBase(baseState, localState, remoteState, {
   cloneValue = clonePlain,
   conflictLabel = (_type, id) => id,
+  mergeIndependentRecordFields = false,
   normalizeItemDisplayMode = (value) => value,
   settingLabel = (fieldKey) => fieldKey,
   valuesEqual = (left, right) => left === right,
@@ -104,7 +146,7 @@ export function mergeStateFromBase(baseState, localState, remoteState, {
   if (!baseState) return { merged: null, conflicts: [{ type: "state", label: "Нет базовой серверной копии" }] };
   const merged = cloneValue(remoteState);
   const conflicts = [];
-  const mergeRecordMapOptions = { cloneValue, conflictLabel, valuesEqual };
+  const mergeRecordMapOptions = { cloneValue, conflictLabel, valuesEqual, mergeIndependentRecordFields };
   const mergeScalarFieldOptions = { settingLabel, valuesEqual };
 
   merged.locations = mergeStringList(baseState.locations || [], localState.locations || [], remoteState.locations || []);

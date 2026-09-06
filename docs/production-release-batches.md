@@ -121,6 +121,22 @@ they do not include separately cached photo files. This slice does not complete
 conflict resolution or concurrent anchor/baseline mutation safety. All release
 gates stay disabled, and no live migration or publication is authorized here.
 
+The next local batch-2 slice replaces mutable compaction/baseline metadata with
+immutable certificates and revision-qualified applied markers. Old personal
+journals remain readable; old clients cannot read the new format. The personal
+pilot has never been publicly enabled. Future rollout/rollback must preserve a
+compatible journal reader and pending actions, receipts and server tombstones.
+See `personal-save-checkpoints.md` for the compatibility/storage boundaries.
+Independent scalar merge is prepared behind a default-off opt-in; it is not yet
+connected to causal settlement or automatic sending. It must not be activated
+through the legacy forced-conflict retry path.
+
+Small development commits do not imply a deployment per commit. Promote tested,
+cohesive batches: compatible backend/schema preparation, a matching frontend
+with gates still off, then separately approved activation. Catalog work remains
+independently portable. Do not activate the queue before the server contract is
+verified, or treat database rollback as permission to delete ordering evidence.
+
 One existing API backend, two network routes. Route configuration and diagnostics
 are separate from catalog content and operation acknowledgements. Current EU
 client source gate remains off and coordinator owns the read-only proxy gate.

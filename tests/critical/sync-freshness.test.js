@@ -51,6 +51,98 @@ import { snapshotsEqual } from "../../src/utils/json.js";
 
 const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 
+function mergeEntityFixture(type = "container") {
+  const map = type === "item" ? "items" : "containers";
+  const record = { id: "a", name: "Bag", weight: 100, note: "Original", ...(type === "container" ? { volume: 4 } : {}),
+    updatedAt: "2026-09-01", updatedByDeviceId: "base" };
+  const base = { [map]: { a: record }, locations: [], categories: [], activeLayoutId: "layout", collapseDefaultsVersion: 1 };
+  const local = structuredClone(base), remote = structuredClone(base);
+  local[map].a.updatedAt = "2099-01-01"; local[map].a.updatedByDeviceId = "local";
+  remote[map].a.updatedAt = "2000-01-01"; remote[map].a.updatedByDeviceId = "remote";
+  const merge = () => mergeStateFromBase(base, local, remote, { valuesEqual: snapshotsEqual, mergeIndependentRecordFields: true });
+  return { map, base, local, remote, merge };
+}
+
+test("compatible merge: independent bag/item fields combine in both tab orders without clock priority", () => {
+  for (const type of ["item", "container"]) for (const reverse of [false, true]) {
+    const f = mergeEntityFixture(type);
+    f.local[f.map].a[reverse ? "weight" : "name"] = reverse ? 200 : "Renamed";
+    f.remote[f.map].a[reverse ? "name" : "weight"] = reverse ? "Renamed" : 200;
+    const before = JSON.stringify([f.base, f.local, f.remote]);
+    const result = f.merge();
+    assert.deepEqual(result.conflicts, []);
+    assert.equal(result.merged[f.map].a.name, "Renamed");
+    assert.equal(result.merged[f.map].a.weight, 200);
+    assert.equal(JSON.stringify([f.base, f.local, f.remote]), before);
+  }
+});
+
+test("compatible merge: identical edits plus distinct scalar fields do not create a conflict", () => {
+  const f = mergeEntityFixture();
+  f.local.containers.a.name = f.remote.containers.a.name = "Renamed";
+  f.local.containers.a.weight = 200; f.remote.containers.a.volume = 6;
+  const result = f.merge();
+  assert.deepEqual(result.conflicts, []);
+  assert.equal(result.merged.containers.a.weight, 200);
+  assert.equal(result.merged.containers.a.volume, 6);
+});
+
+test("compatible merge: distinct values for the same field retain a real conflict", () => {
+  const f = mergeEntityFixture();
+  f.local.containers.a.weight = 200; f.remote.containers.a.weight = 300;
+  const result = f.merge();
+  assert.equal(result.conflicts.length, 1);
+  assert.equal(result.conflicts[0].localValue.weight, 200);
+  assert.equal(result.conflicts[0].remoteValue.weight, 300);
+});
+
+test("compatible merge: DELETE versus stale SAVE never becomes an automatic resurrection", () => {
+  for (const deleteLocal of [false, true]) {
+    const f = mergeEntityFixture();
+    const deleted = deleteLocal ? f.local : f.remote, edited = deleteLocal ? f.remote : f.local;
+    delete deleted.containers.a; edited.containers.a.name = "Stale rename";
+    const result = f.merge();
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(result.conflicts[0][deleteLocal ? "localHas" : "remoteHas"], false);
+    if (!deleteLocal) assert.equal(result.merged.containers.a, undefined);
+  }
+});
+
+test("compatible merge: clearing/removing an optional note is distinct from leaving it unchanged", () => {
+  for (const remove of [false, true]) {
+    const f = mergeEntityFixture();
+    if (remove) delete f.local.containers.a.note; else f.local.containers.a.note = "";
+    f.remote.containers.a.weight = 200;
+    const result = f.merge();
+    assert.deepEqual(result.conflicts, []);
+    assert.equal(result.merged.containers.a.note, remove ? undefined : "");
+    assert.equal(result.merged.containers.a.weight, 200);
+  }
+});
+
+test("compatible merge: new IDs, photos, dictionaries and structural edits are not scalar merges", () => {
+  for (const change of ["id", "photos", "categories", "dimensions", "unknown", "new-record", "invalid-weight"]) {
+    const f = mergeEntityFixture();
+    f.local.containers.a.name = "Renamed";
+    if (change === "new-record") { delete f.base.containers.a; f.remote.containers.a.weight = 200; }
+    else if (change === "invalid-weight") f.remote.containers.a.weight = -1;
+    else f.remote.containers.a[change] = change === "id" ? "different-id" : change === "photos"
+      ? [{ id: "photo", url: "https://example.test/photo.jpg" }] : change === "categories" ? ["tools"] : { value: 1 };
+    // ID is ignored by the old metadata comparison; also change a scalar to
+    // exercise the compatible-merge path's explicit identity validation.
+    if (change === "id") f.remote.containers.a.weight = 200;
+    assert.equal(f.merge().conflicts.length, 1, change);
+  }
+});
+
+test("compatible merge: the legacy writer does not opt in before the causal settlement adapter exists", () => {
+  const f = mergeEntityFixture();
+  f.local.containers.a.name = "Renamed"; f.remote.containers.a.weight = 200;
+  assert.equal(mergeStateFromBase(f.base, f.local, f.remote, { valuesEqual: snapshotsEqual }).conflicts.length, 1);
+  assert.equal(f.merge().conflicts.length, 0);
+  assert.equal(appSource.includes("mergeIndependentRecordFields: true"), false);
+});
+
 test("CRITICAL sync-save: manual sync checks remote freshness when local state is clean", async () => {
   const statuses = [];
   const freshnessCalls = [];

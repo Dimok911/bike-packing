@@ -1,5 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
+import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
+  retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
 // Separate rollout gate. Local capture is not permission to enable networking.
 export const PERSONAL_SAVE_OUTBOX_ENABLED = false;
@@ -49,29 +51,22 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   }
   const binding = { environment, actorId, listId, scopeKey };
   const keyPrefix = `${prefix}${encodeURIComponent(JSON.stringify(binding))}:`;
-  const anchorKey = `${keyPrefix}anchor`;
   const read = () => {
     try {
       const records = new Map(), applied = new Map();
-      const anchor = JSON.parse(storage.getItem(anchorKey) || "null");
-      if (anchor && (anchor.version !== 1 || !uuid(anchor.operationId)
-        || !Number.isSafeInteger(anchor.generation) || anchor.generation < 1
-        || !Number.isSafeInteger(anchor.stateRevision) || anchor.stateRevision < 1
-        || !Array.isArray(anchor.retired) || !anchor.retired.every(id => uuid(id) && id !== anchor.operationId)
-        || new Set(anchor.retired).size !== anchor.retired.length)) throw Error("Invalid compaction anchor");
-      if (anchor?.baseline && (!Number.isSafeInteger(anchor.baseline.stateRevision)
-        || anchor.baseline.stateRevision < anchor.stateRevision || !anchor.baseline.payload
-        || !Array.isArray(anchor.baseline.snapshotPatch))) throw Error("Invalid remote baseline");
+      const entries = readStablePersonalEntries(storage, keyPrefix);
+      const { anchor, checkpoints } = readPersonalCheckpoints(entries, keyPrefix);
       const retired = new Set(anchor?.retired || []);
-      for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (!key?.startsWith(keyPrefix) || key === anchorKey) continue;
+      for (const [key, value] of entries) {
+        if (checkpoints.has(key)) continue;
         const suffix = key.slice(keyPrefix.length);
-        if (retired.has(suffix) || suffix.startsWith("applied:") && retired.has(suffix.slice(8))) continue;
-        let record = JSON.parse(storage.getItem(key));
+        if (retired.has(suffix) || suffix.startsWith("applied:") && retired.has(suffix.slice(8).split(":")[0])) continue;
+        let record = JSON.parse(value);
         if (key.startsWith(`${keyPrefix}applied:`)) {
-          if (record?.version !== 1 || !uuid(record.operationId) || key !== `${keyPrefix}applied:${record.operationId}`
+          if (record?.version !== 1 || !uuid(record.operationId)
+            || ![`${keyPrefix}applied:${record.operationId}`, `${keyPrefix}applied:${record.operationId}:${record.stateRevision}`].includes(key)
             || !Number.isSafeInteger(record.stateRevision) || record.stateRevision < 1) throw Error("Invalid local checkpoint");
+          if (applied.has(record.operationId) && applied.get(record.operationId).stateRevision !== record.stateRevision) throw Error("Conflicting local confirmations");
           applied.set(record.operationId, record);
           continue;
         }
@@ -117,7 +112,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const heads = [...records.values()].filter(record => !parents.has(record.action.operationId));
       if (heads.length > 1) throw blocked("fork", "В двух вкладках сохранены разные изменения. Отправка приостановлена; обе версии сохранены.");
-      return { records, applied, anchor, head: heads[0] || null };
+      return { records, applied, anchor, checkpoints, entries, head: heads[0] || null };
     } catch (error) {
       if (error.isPersonalSaveBlocked) throw error;
       throw blocked("storage", "Журнал сохранения недоступен или повреждён. Автоматическая отправка остановлена.");
@@ -125,10 +120,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   };
   // The parent represents the version actually observed by this editor, not
   // whichever other tab happened to save while this editor was awaiting a lock.
-  let observedHead = read().head?.action.operationId || null;
+  const observation = ({ head, anchor }) => canonicalListOperationJson({
+    operationId: head?.action.operationId || null,
+    baseline: anchor?.baseline
+      ? { operationId: anchor.operationId, stateRevision: anchor.baseline.stateRevision, payload: anchor.baseline.payload } : null
+  });
+  let observed = observation(read());
   const assertObserved = () => {
     const result = read();
-    if ((result.head?.action.operationId || null) !== observedHead) {
+    if (observation(result) !== observed) {
       throw blocked("stale-tab", "Другая вкладка изменила список. Сначала загрузите её версию; текущая отправка остановлена.");
     }
     return result;
@@ -146,7 +146,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     baseline() { return clone(read().anchor?.baseline || null); },
     adoptRemoteBaseline({ snapshot, payload, stateRevision, meta = {} }) {
       const input = clone({ snapshot, payload, stateRevision, meta });
-      const { records, applied, anchor, head } = assertObserved();
+      const { records, applied, anchor, checkpoints, head } = assertObserved();
       if (!head) return false;
       const confirmedRevision = applied.get(head.action.operationId)?.stateRevision;
       if (!confirmedRevision || !Number.isSafeInteger(stateRevision)
@@ -155,11 +155,17 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const baseline = { payload: input.payload, stateRevision, meta: input.meta,
         snapshotPatch: encodePersonalSnapshot(input.payload, input.snapshot) };
+      if (anchor?.baseline?.stateRevision === stateRevision
+        && canonicalListOperationJson(anchor.baseline.payload) !== canonicalListOperationJson(baseline.payload)) {
+        throw blocked("baseline", "Одна серверная версия содержит разные данные. Автоматическая замена остановлена.");
+      }
       const next = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
         stateRevision: confirmedRevision, baseline,
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
-      try { storage.setItem(anchorKey, JSON.stringify(next)); }
+      try { publishPersonalCheckpoint(storage, keyPrefix, next); }
       catch { throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); }
+      retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
+      observed = observation({ head, anchor: next });
       assertObserved();
       return true;
     },
@@ -170,18 +176,25 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     // Called ONLY after latest-receipt freshness and durable UI/base writes.
     // This checkpoint is not a substitute for a server operation receipt.
     markApplied({ operationId, stateRevision }) {
-      const { head } = assertObserved();
+      const { head, applied } = assertObserved();
       if (head?.action.operationId !== operationId || !Number.isSafeInteger(stateRevision) || stateRevision < 1) {
         throw blocked("checkpoint", "Подтверждение не соответствует текущему сохранению.");
       }
+      if (applied.has(operationId)) {
+        if (applied.get(operationId).stateRevision !== stateRevision) throw blocked("checkpoint", "Операция уже подтверждена с другой серверной версией.");
+        return;
+      }
       try {
-        storage.setItem(`${keyPrefix}applied:${operationId}`, JSON.stringify({ version: 1, operationId, stateRevision }));
+        // Revision-qualified keys cannot overwrite a different confirmation
+        // racing from another tab. Identical retries write identical bytes.
+        storage.setItem(`${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision }));
       } catch {
         throw blocked("storage", "Подтверждение получено, но не сохранено на устройстве. Повтор будет сверен с сервером.");
       }
+      assertObserved();
     },
     compact() {
-      const { records, applied, anchor, head } = assertObserved();
+      const { records, applied, anchor, checkpoints, entries, head } = assertObserved();
       if (!head || !applied.has(head.action.operationId)) return { removed: 0, pending: true };
       const operationId = head.action.operationId;
       const retired = [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== operationId);
@@ -190,29 +203,33 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         ...(anchor?.operationId === operationId && anchor.baseline ? { baseline: anchor.baseline } : {}) };
       // Commit the exact retirement set BEFORE deleting anything. An interrupted
       // cleanup is recoverable and may only delete these immutable old keys.
-      try { storage.setItem(anchorKey, JSON.stringify(nextAnchor)); }
+      try { publishPersonalCheckpoint(storage, keyPrefix, nextAnchor); }
       catch { return { removed: 0, pending: true }; }
       let removed = 0;
-      for (const id of retired) {
-        for (const key of [keyPrefix + id, `${keyPrefix}applied:${id}`]) {
-          try {
-            if (storage.getItem(key) !== null) { storage.removeItem(key); removed++; }
-          } catch { /* The durable retirement set remains authoritative. */ }
-        }
+      const retirementSet = new Set(retired);
+      const cleanupKeys = [...entries.keys()].filter(key => {
+        const suffix = key.slice(keyPrefix.length);
+        return retirementSet.has(suffix) || suffix.startsWith("applied:") && retirementSet.has(suffix.slice(8).split(":")[0]);
+      });
+      for (const key of cleanupKeys) {
+        try {
+          if (storage.getItem(key) !== null) { storage.removeItem(key); removed++; }
+        } catch { /* The durable retirement set remains authoritative. */ }
       }
-      // Drop retired IDs only when their storage cleanup succeeded. A late stale
-      // writer with a missing parent is blocked, never mistaken for a new root.
-      const remaining = retired.filter(id => storage.getItem(keyPrefix + id) !== null || storage.getItem(`${keyPrefix}applied:${id}`) !== null);
-      try { storage.setItem(anchorKey, JSON.stringify({ ...nextAnchor, retired: remaining })); } catch { /* keep the larger safe anchor */ }
+      // Keep retired IDs as ordering evidence for late suspended writers. Only
+      // large payloads and observed, fully carried certificates are discarded.
+      retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
+      observed = observation({ head, anchor: nextAnchor });
       assertObserved();
-      return { removed, pending: remaining.length > 0 };
+      return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
     },
     list() { return clone([...read().records.values()]); },
     capture({ snapshot, body, create = false, operationId = crypto.randomUUID() }) {
       const input = clone({ snapshot, body });
       const { head, records, anchor } = assertObserved();
       if (!uuid(operationId) || !input.snapshot || typeof input.snapshot !== "object"
-        || !input.body?.payload || input.body.causal !== undefined || records.has(operationId)) {
+        || !input.body?.payload || input.body.causal !== undefined || records.has(operationId)
+        || anchor?.retired.includes(operationId) || storage.getItem(keyPrefix + operationId) !== null) {
         throw blocked("input", "Не удалось зарегистрировать действие сохранения.");
       }
       // UI-only changes don't create another business operation. The ordinary
@@ -242,7 +259,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       } catch {
         throw blocked("quota", "Не хватает места для надёжного сохранения. Изменение не отправлено; не закрывайте вкладку.");
       }
-      observedHead = operationId;
+      observed = observation({ head: record, anchor });
       assertObserved(); // Detect a racing writer if it has already completed.
       return clone(record);
     },

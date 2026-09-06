@@ -155,6 +155,64 @@ test("another tab cannot silently attach its stale edit after an unseen save", a
   expect((await page.evaluate(() => window.restoreSave())).snapshot.items.a.weight).toBe(100);
 });
 
+test("a delayed checkpoint from another browser tab cannot roll back a fresh baseline", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  const install = async target => target.evaluate(async () => {
+    const { createPersonalSaveOutbox } = await import('/src/sync/personal-save-outbox.js');
+    const binding = { actorId: 'actor-a', listId: 'list-a', scopeKey: 'id:actor-a' };
+    const storage = {
+      get length() { return localStorage.length; }, key: index => localStorage.key(index),
+      getItem: key => localStorage.getItem(key), removeItem: key => localStorage.removeItem(key),
+      setItem: (key, value) => {
+        if (window.holdCheckpoint && key.includes(':checkpoint:')) {
+          window.heldCheckpoint = { key, value }; throw Error('suspended before publication');
+        }
+        localStorage.setItem(key, value);
+      }
+    };
+    window.checkpointBox = createPersonalSaveOutbox({ storage, ...binding });
+    window.checkpointInput = weight => ({ snapshot: { items: { a: { weight } } },
+      body: { baseStateRevision: 5, payload: { items: { a: { weight } } } } });
+    window.freshCheckpointBox = () => createPersonalSaveOutbox({ storage: localStorage, ...binding });
+  });
+  await install(page);
+  await page.evaluate(() => {
+    window.checkpointBox.capture(window.checkpointInput(1));
+    const head = window.checkpointBox.capture(window.checkpointInput(2));
+    window.checkpointBox.markApplied({ operationId: head.action.operationId, stateRevision: 7 });
+    window.checkpointBox.compact();
+    window.holdCheckpoint = true;
+    window.checkpointBox.compact();
+  });
+  const other = await context.newPage(); await other.goto(`${origin}/__list-queue-test`);
+  await other.waitForFunction(() => Boolean(window.run)); await install(other);
+  await other.evaluate(() => {
+    const remote = window.checkpointInput(200);
+    window.checkpointBox.adoptRemoteBaseline({ snapshot: remote.snapshot, payload: remote.body.payload, stateRevision: 20 });
+  });
+  const oldEditor = await page.evaluate(() => {
+    window.holdCheckpoint = false;
+    const { key, value } = window.heldCheckpoint; localStorage.setItem(key, value);
+    try { window.checkpointBox.capture(window.checkpointInput(300)); return 'unexpected save'; }
+    catch (error) { return error.code; }
+  });
+  expect(oldEditor).toBe('stale-tab');
+  expect(await other.evaluate(() => window.freshCheckpointBox().baseline().stateRevision)).toBe(20);
+  // Same logical baseline: the other editor is not invalidated by a physical
+  // checkpoint append/cleanup, and its next operation retains the exact base.
+  expect(await other.evaluate(() => {
+    window.checkpointBox.compact();
+    const input = window.checkpointInput(300); input.body.baseStateRevision = 20;
+    const next = window.checkpointBox.capture(input);
+    window.checkpointBox.markApplied({ operationId: next.action.operationId, stateRevision: 21 });
+    window.checkpointBox.compact(); return next.action.body.baseStateRevision;
+  })).toBe(20);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.run)); await install(page);
+  expect(await page.evaluate(() => window.checkpointBox.recoverSnapshot().items.a.weight)).toBe(300);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('bike-packing-personal-save-v1:')).length)).toBe(3);
+  expect(f.posts).toHaveLength(0);
+});
+
 test("concurrent tabs submit one logical action once; its acknowledged replay stays GET-only", async ({ page, context }) => {
   const f = await fixture(page, context);
   const other = await context.newPage(); await other.goto(`${origin}/__list-queue-test`);

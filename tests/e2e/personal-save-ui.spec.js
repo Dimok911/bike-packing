@@ -154,7 +154,7 @@ async function synchronize(page, condition) {
   await expect.poll(condition, { timeout: 20000 }).toBe(true);
   await expect.poll(() => page.evaluate(() => {
     const keys = Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:"));
-    return keys.length === 3 && keys.some(key => key.endsWith(":anchor"));
+    return keys.length === 3 && keys.some(key => key.includes(":checkpoint:"));
   }), { timeout: 20000 }).toBe(true);
 }
 
@@ -209,7 +209,7 @@ test("full application adopts a newer server baseline and next edit keeps the se
   const remoteRevision = f.revision;
   await reloadApp(page);
   await expect.poll(() => page.evaluate(() => Object.entries(localStorage).some(([key, value]) =>
-    key.endsWith(":anchor") && JSON.parse(value)?.baseline?.stateRevision > 10))).toBe(true);
+    key.includes(":checkpoint:") && JSON.parse(value)?.baseline?.stateRevision > 10))).toBe(true);
   const bag = page.locator("#packingView [data-root-container-id]").filter({ hasText: "Первая сумка" });
   await bag.getByRole("heading", { name: "Первая сумка" }).click();
   await page.locator("#rootContainerName").fill("После серверного изменения");
@@ -344,7 +344,7 @@ test("failed local ACK checkpoint pauses the UI and reload settles the same rece
   const operationId = f.posts.at(-1).operationId;
   const copy = await downloadRecovery(page);
   expect(copy.journalEntries.some(entry => entry.key.endsWith(`:${operationId}`))).toBe(true);
-  expect(copy.journalEntries.some(entry => entry.key.endsWith(`:applied:${operationId}`))).toBe(false);
+  expect(copy.journalEntries.some(entry => entry.key.includes(`:applied:${operationId}`))).toBe(false);
   page.once("dialog", dialog => dialog.accept()); // Explicitly leave only after the recovery download.
   await reloadApp(page);
   await synchronize(page, () => Object.values(f.payload.containers).some(entry => entry.name === "Сумка с потерянной локальной отметкой"));

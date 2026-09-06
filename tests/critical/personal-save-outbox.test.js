@@ -282,7 +282,7 @@ test("confirmed compaction retains the exact last action and its dependency for 
   assert.equal(f.outbox.compact().pending, true); assert.equal(f.values.size, 30);
   f.outbox.markApplied({ operationId: before.action.operationId, stateRevision: 35 });
   assert.equal(f.outbox.compact().pending, false);
-  assert.equal(f.values.size, 3, "one action, one applied marker, one anchor");
+  assert.equal(f.values.size, 3, "one action, one applied marker, one immutable checkpoint");
   assert.deepEqual(f.make().recover(), before);
   const next = f.make().capture(f.input(40));
   assert.equal(next.action.body.causal.baseOperationId, before.action.operationId);
@@ -318,7 +318,7 @@ test("interrupted compaction at every deletion is restartable and cannot retire 
   }
 });
 
-test("failed anchor write deletes nothing; a late stale branch remains present and blocked", () => {
+test("failed checkpoint publication deletes nothing; a late stale branch remains present and blocked", () => {
   const f = fixture(); const first = f.outbox.capture(f.input(1)), second = f.outbox.capture(f.input(2));
   f.outbox.markApplied({ operationId: second.action.operationId, stateRevision: 7 });
   const original = new Map(f.values), write = f.storage.setItem;
@@ -362,6 +362,244 @@ test("pending changes, revision regression and quota block baseline adoption wit
   f.storage.setItem = () => { throw Error("quota"); };
   assert.throws(() => f.outbox.adoptRemoteBaseline({ ...input, stateRevision: 21 }), { code: "quota" });
   assert.equal(f.make().baseline().stateRevision, 20); assert.deepEqual(f.make().recover(), saved);
+});
+
+function confirmedFixture() {
+  const f = fixture();
+  f.outbox.capture(f.input(1));
+  const head = f.outbox.capture(f.input(2));
+  f.outbox.markApplied({ operationId: head.action.operationId, stateRevision: 7 });
+  f.outbox.compact();
+  f.remote = revision => ({ snapshot: f.input(revision).snapshot, payload: f.input(revision).body.payload, stateRevision: revision });
+  return f;
+}
+
+function beforeCheckpointWrite(f, callback) {
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    if (key.endsWith(":anchor") || key.includes(":checkpoint:")) {
+      f.storage.setItem = write;
+      callback();
+    }
+    write(key, value);
+  };
+}
+
+test("an older compaction cannot overwrite a concurrent newer remote baseline", () => {
+  const f = confirmedFixture(), other = f.make();
+  beforeCheckpointWrite(f, () => other.adoptRemoteBaseline(f.remote(20)));
+  assert.throws(() => f.outbox.compact(), { code: "stale-tab" });
+  assert.equal(f.make().baseline().stateRevision, 20);
+  assert.equal(f.make().recoverSnapshot().items.a.weight, 20);
+  f.make().compact();
+  assert.equal(f.values.size, 3);
+});
+
+test("simultaneous baseline refreshes retain the highest server revision in either arrival order", () => {
+  for (const [outer, inner] of [[15, 20], [20, 15]]) {
+    const f = confirmedFixture(), other = f.make();
+    beforeCheckpointWrite(f, () => other.adoptRemoteBaseline(f.remote(inner)));
+    if (outer < inner) assert.throws(() => f.outbox.adoptRemoteBaseline(f.remote(outer)), { code: "stale-tab" });
+    else assert.equal(f.outbox.adoptRemoteBaseline(f.remote(outer)), true);
+    assert.equal(f.make().baseline().stateRevision, 20);
+    assert.equal(f.make().recoverSnapshot().items.a.weight, 20);
+    f.make().compact(); assert.equal(f.values.size, 3);
+  }
+});
+
+test("a baseline change stales an editor even when its action head did not change", () => {
+  const f = confirmedFixture(), stale = f.make();
+  f.outbox.adoptRemoteBaseline(f.remote(20));
+  const before = [...f.values];
+  assert.throws(() => stale.capture(f.input(300)), { code: "stale-tab" });
+  assert.deepEqual([...f.values], before);
+});
+
+test("delayed cleanup cannot lose a newer confirmed head or the new baseline behind it", () => {
+  const f = confirmedFixture(), other = f.make();
+  let next;
+  beforeCheckpointWrite(f, () => {
+    next = other.capture(f.input(3));
+    other.markApplied({ operationId: next.action.operationId, stateRevision: 8 });
+    other.compact();
+    other.adoptRemoteBaseline(f.remote(20));
+  });
+  assert.throws(() => f.outbox.compact(), { code: "stale-tab" });
+  assert.equal(f.make().recover().action.operationId, next.action.operationId);
+  assert.equal(f.make().baseline().stateRevision, 20);
+  f.make().compact(); assert.equal(f.values.size, 3);
+});
+
+test("a delayed newer server baseline remains authoritative across a newer local confirmed head", () => {
+  const f = confirmedFixture(), other = f.make();
+  let next;
+  beforeCheckpointWrite(f, () => {
+    next = other.capture(f.input(3));
+    other.markApplied({ operationId: next.action.operationId, stateRevision: 8 });
+    other.compact();
+  });
+  assert.throws(() => f.outbox.adoptRemoteBaseline(f.remote(20)), { code: "stale-tab" });
+  const restored = f.make();
+  assert.equal(restored.recover().action.operationId, next.action.operationId);
+  assert.equal(restored.baseline().stateRevision, 20);
+  assert.equal(restored.recoverSnapshot().items.a.weight, 20);
+  restored.compact(); assert.equal(f.values.size, 3);
+  const input = f.input(30); input.body.baseStateRevision = 20;
+  const saved = restored.capture(input);
+  assert.equal(saved.action.previousLocalOperationId, next.action.operationId);
+  assert.equal(saved.action.body.baseStateRevision, 20);
+});
+
+test("concurrent compactions preserve a baseline and converge without making an editor stale", () => {
+  const f = confirmedFixture(); f.outbox.adoptRemoteBaseline(f.remote(20));
+  const other = f.make();
+  beforeCheckpointWrite(f, () => other.compact());
+  assert.equal(f.outbox.compact().pending, false);
+  assert.equal(f.make().baseline().stateRevision, 20);
+  f.outbox.compact(); assert.equal(f.values.size, 3);
+  assert.ok(other.capture({ ...f.input(30), body: { ...f.input(30).body, baseStateRevision: 20 } }));
+});
+
+test("an adoption overlapping cleanup carries the baseline in either publication order", () => {
+  for (const afterPublish of [false, true]) {
+    const f = confirmedFixture(), other = f.make();
+    const write = f.storage.setItem;
+    f.storage.setItem = (key, value) => {
+      f.storage.setItem = write;
+      if (afterPublish) write(key, value);
+      // Simulate the other tab's already prepared stale certificate, not a new
+      // observation of the freshly published baseline.
+      const old = [...f.values].find(([key]) => key.includes(":checkpoint:"));
+      if (afterPublish) {
+        const copy = JSON.parse(old[1]); delete copy.baseline;
+        write(old[0].replace(/[^:]+$/, crypto.randomUUID()), JSON.stringify(copy));
+      } else other.compact();
+      if (!afterPublish) write(key, value);
+    };
+    f.outbox.adoptRemoteBaseline(f.remote(20));
+    assert.equal(f.make().baseline().stateRevision, 20);
+    f.make().compact(); assert.equal(f.values.size, 3);
+  }
+});
+
+test("capture during compaction is never in that cleanup's retirement set", () => {
+  const f = confirmedFixture(), other = f.make();
+  let pending;
+  beforeCheckpointWrite(f, () => { pending = other.capture(f.input(300)); });
+  assert.throws(() => f.outbox.compact(), { code: "stale-tab" });
+  assert.equal(f.make().recover().action.operationId, pending.action.operationId);
+  assert.equal(f.make().recoverSnapshot().items.a.weight, 300);
+  assert.equal(f.make().hasPending(), true);
+});
+
+test("a racing baseline adoption keeps a rejected capture recoverable without sending it", () => {
+  const f = confirmedFixture(), other = f.make(), write = f.storage.setItem;
+  const previous = f.outbox.recover();
+  f.storage.setItem = (key, value) => {
+    f.storage.setItem = write;
+    other.adoptRemoteBaseline(f.remote(20));
+    write(key, value);
+  };
+  assert.throws(() => f.outbox.capture(f.input(300)), { code: "stale-tab" });
+  const pending = f.make().recover();
+  assert.equal(pending.action.body.causal.baseOperationId, previous.action.operationId);
+  assert.equal(f.make().recover().action.operationId, pending.action.operationId);
+  assert.equal(f.make().baseline().stateRevision, 20);
+  assert.equal(f.make().hasPending(), true);
+});
+
+test("every publication and deletion boundary is recoverable after reload", () => {
+  const f = confirmedFixture();
+  f.outbox.adoptRemoteBaseline(f.remote(20));
+  f.outbox.capture({ ...f.input(30), body: { ...f.input(30).body, baseStateRevision: 20 } });
+  f.outbox.capture(f.input(31));
+  const head = f.outbox.recover(); f.outbox.markApplied({ operationId: head.action.operationId, stateRevision: 22 });
+  const snapshots = [], write = f.storage.setItem, remove = f.storage.removeItem;
+  f.storage.setItem = (key, value) => { write(key, value); snapshots.push(new Map(f.values)); };
+  f.storage.removeItem = key => { remove(key); snapshots.push(new Map(f.values)); };
+  f.outbox.compact();
+  assert.ok(snapshots.length > 3);
+  f.storage.setItem = write; f.storage.removeItem = remove;
+  for (const snapshot of snapshots) {
+    f.values.clear(); for (const entry of snapshot) f.values.set(...entry);
+    assert.deepEqual(f.make().recover(), head);
+    assert.equal(f.make().hasPending(), false);
+    f.make().compact(); assert.equal(f.values.size, 3);
+  }
+});
+
+test("a scan interrupted by another tab's compaction retries a consistent observation", () => {
+  const f = confirmedFixture();
+  for (let i = 0; i < 5; i++) f.outbox.capture(f.input(40 + i));
+  const head = f.outbox.recover(); f.outbox.markApplied({ operationId: head.action.operationId, stateRevision: 30 });
+  const keyAt = f.storage.key;
+  f.storage.key = index => {
+    if (index === 1) { f.storage.key = keyAt; f.outbox.compact(); }
+    return keyAt(index);
+  };
+  assert.deepEqual(f.make().recover(), head);
+  assert.equal(f.values.size, 3);
+});
+
+test("legacy singleton and applied markers remain readable but are never overwritten or deleted", () => {
+  const f = confirmedFixture();
+  const [checkpointKey, checkpoint] = [...f.values].find(([key]) => key.includes(":checkpoint:"));
+  const legacyKey = checkpointKey.replace(/checkpoint:[^:]+$/, "anchor");
+  f.values.set(legacyKey, checkpoint); f.values.delete(checkpointKey);
+  const [appliedKey, applied] = [...f.values].find(([key]) => key.includes(":applied:"));
+  f.values.set(appliedKey.replace(/:\d+$/, ""), applied); f.values.delete(appliedKey);
+  const outbox = f.make();
+  outbox.adoptRemoteBaseline(f.remote(20));
+  const next = outbox.capture({ ...f.input(30), body: { ...f.input(30).body, baseStateRevision: 20 } });
+  outbox.markApplied({ operationId: next.action.operationId, stateRevision: 21 }); outbox.compact();
+  assert.equal(f.values.get(legacyKey), checkpoint);
+  assert.equal(f.values.size, 4, "one read-only legacy singleton plus the new checkpoint/action/applied");
+  assert.equal(f.make().recover().action.operationId, next.action.operationId);
+});
+
+test("same-revision contradictions and unrelated confirmed branches are retained and blocked", () => {
+  for (const mismatch of ["payload", "branch", "generation"]) {
+    const f = confirmedFixture(); f.outbox.adoptRemoteBaseline(f.remote(20));
+    const [key, value] = [...f.values].find(([key]) => key.includes(":checkpoint:"));
+    const copy = JSON.parse(value);
+    if (mismatch === "payload") copy.baseline.payload.items.a.weight = 999;
+    if (mismatch === "branch") { copy.operationId = crypto.randomUUID(); copy.generation++; copy.stateRevision++; }
+    if (mismatch === "generation") copy.generation++;
+    f.values.set(key.replace(/[^:]+$/, crypto.randomUUID()), JSON.stringify(copy));
+    const before = [...f.values];
+    assert.throws(f.make, { code: "storage" });
+    assert.deepEqual([...f.values], before);
+  }
+});
+
+test("conflicting applied revisions cannot overwrite each other, including a racing write", () => {
+  const f = fixture(), head = f.outbox.capture(f.input(1)), other = f.make();
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    f.storage.setItem = write;
+    other.markApplied({ operationId: head.action.operationId, stateRevision: 8 });
+    write(key, value);
+  };
+  assert.throws(() => f.outbox.markApplied({ operationId: head.action.operationId, stateRevision: 7 }), { code: "storage" });
+  assert.deepEqual([...f.values].filter(([key]) => key.includes(":applied:")).map(([, value]) => JSON.parse(value).stateRevision).sort(), [7, 8]);
+  assert.throws(f.make, { code: "storage" });
+});
+
+test("retirement evidence survives many compactions without retaining old large payloads", () => {
+  const f = fixture();
+  const first = f.outbox.capture(f.input(1));
+  for (let i = 0; i < 40; i++) {
+    const items = Object.fromEntries(Array.from({ length: 1000 }, (_, index) => [String(index), { weight: i + index, name: `item-${index}` }]));
+    const saved = f.outbox.capture({ snapshot: { items }, body: { payload: { items }, baseStateRevision: 5 } });
+    f.outbox.markApplied({ operationId: saved.action.operationId, stateRevision: i + 7 });
+    f.outbox.compact();
+    assert.equal(f.values.size, 3);
+  }
+  const checkpoint = JSON.parse([...f.values].find(([key]) => key.includes(":checkpoint:"))[1]);
+  assert.equal(checkpoint.retired.length, 40);
+  assert.ok(checkpoint.retired.includes(first.action.operationId));
+  assert.ok(JSON.stringify(checkpoint).length < 3000, "only IDs remain, not old full lists");
+  assert.throws(() => f.outbox.capture({ ...f.input(100), operationId: first.action.operationId }), { code: "input" });
 });
 
 test("actual app pilot blocks legacy list writes and file upload bypasses before network access", async () => {
