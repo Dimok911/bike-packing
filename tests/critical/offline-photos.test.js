@@ -2641,7 +2641,7 @@ test("CRITICAL offline-photos: lightbox close and side navigation use the shared
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*border:1px solid rgba\(255,255,255,\.28\)[^}]*border-radius:10px[^}]*background:rgba\(8,15,13,\.62\)/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*color:#fff/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control:focus-visible/);
-  assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenEdgeRubberBand >= 1[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
+  assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenEdgeRubberBand >= 2[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
   assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(baseIndex \+ \(dx < 0 \? 1 : -1\)\);/);
 });
 
@@ -2692,7 +2692,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.ok(next.velocityX > 0 && next.velocityX < 1);
   assert.ok(next.velocityY < 0 && next.velocityY > -0.5);
   assert.match(sharedSource, /capabilities\?\.fullscreenImagePresentation >= 1/);
-  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 1/);
+  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 2/);
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
@@ -2754,7 +2754,7 @@ test("CRITICAL offline-photos: inline and fullscreen edges share rubber-band wit
   assert.match(fallbackSource, /track\?\.addEventListener\?\.\("touchmove", onTouchMove, \{ passive: false \}\)/);
   assert.match(fallbackSource, /vpg-edge-rubber-band-returning/);
   assert.doesNotMatch(fallbackSource, /\[180, 420\]/);
-  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 1/);
+  assert.match(sharedSource, /capabilities\?\.fullscreenEdgeRubberBand >= 2/);
   assert.match(sharedSource, /controller: fallbackRuntime\?\.bindInlineGalleries\(root, options\)/);
   assert.doesNotMatch(sharedSource, /rebindAll|binding\.controller = api\.bindInlineGalleries/);
 });
@@ -2820,7 +2820,10 @@ test("CRITICAL offline-photos: fullscreen photos force carousel mode on phones o
 
 test("CRITICAL offline-photos: phone lightbox settles once after native swipe without mid-swipe source flicker", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
-  assert.match(source, /const settleTouchCarouselTrack = \(\) => \{[\s\S]*resolvePhotoGallerySnapIndex\([\s\S]*pendingScrollIndex = null;[\s\S]*fullscreenSwitcher\?\.goTo\(snapIndex, "auto", false\);/);
+  const settle = source.slice(source.indexOf("const settleTouchCarouselTrack"), source.indexOf("const scheduleTrackSettle"));
+  assert.match(settle, /trackTouchActive \|\| scale > 1/);
+  assert.match(settle, /resolvePhotoGallerySnapIndex\([\s\S]*pendingScrollIndex = null;/);
+  assert.doesNotMatch(settle, /\.goTo\(|\.scrollTo\(|scrollLeft\s*=/);
   assert.match(source, /const scheduleTrackSettle = \(\) => \{[\s\S]*if \(touchCarousel\) \{[\s\S]*settleTouchCarouselTrack\(\);/);
   assert.match(source, /track\.addEventListener\("pointerdown",[\s\S]*cancelTrackSettle\(\);/);
   assert.match(source, /overlay\.addEventListener\("touchstart",[\s\S]*if \(event\.touches\.length === 1\) \{[\s\S]*cancelTrackSettle\(\);/);
