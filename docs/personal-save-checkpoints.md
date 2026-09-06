@@ -122,8 +122,8 @@ would change its business payload stops the operation. No force flag survives.
 Unknown/waiting descendants, non-revision rejections, deleted lists, unsafe
 identity/map data, missing base, incompatible changes and files stop this path.
 Same-field and delete-versus-edit conflicts still require an explicit user
-resolution/recovery adapter. A fully committed but now stale head also requires
-a separate durable current-state adoption path. True forks/stale editors remain
+resolution/recovery adapter. The current-state adoption follow-up below handles
+a fully committed but now stale head. True forks/stale editors remain
 latched; this change does not remove those protections.
 
 Verification: 141 transport tests, 887 critical tests, source check, ordinary and
@@ -165,3 +165,34 @@ Chromium/mobile WebKit, without retries. Source check and both builds passed.
 The first UI fixture run failed safely because its missing-ID reply was an
 invalid generic error, not the real API's `unknown` envelope. Corrected the
 fixture contract; did not relax the client receipt guard.
+
+## Atomic adoption after a committed but stale head
+
+The lost-ACK case is different from a rejection: a local edit may already have
+been accepted, followed by a newer edit elsewhere. Replaying that old intention
+would undo legitimate later data. After inspecting every exact retained receipt,
+the adapter reads the current owner-bound list and installs its current snapshot
+without creating or dispatching another business action.
+
+One immutable checkpoint contains BOTH the historical head confirmation and
+the current remote baseline/snapshot. No separate applied-first write is used.
+If the browser stops before this checkpoint, the original action stays pending;
+if it stops just after, reload recovers the new baseline, never an applied-only
+old snapshot. Reader checks bind the inline confirmation to the action/account/
+revision. Before compacting to the conventional three-key form, cleanup writes
+the ordinary applied marker; quota/crash leaves the atomic certificate intact.
+Further baseline refresh also carries inline confirmation until that conversion.
+
+The UI/base readers prefer this durable baseline over the old mutable mirror.
+The next local edit uses its current server revision and an explicit local
+predecessor, not the old operation's stale server dependency. Concurrent edits
+are not retired; changed account/editor/list and contradictory receipts stop
+adoption. This is not permission to choose a competing local fork or restore a
+deleted server list. Old disabled-pilot clients need a compatible reader for
+the optional inline confirmation before any future rollback.
+
+Local checks: 156 transport, 887 critical, source check and 23/23 actual
+API/MySQL cases (no skips), including crash immediately after publication and
+the next save. Full browser regression passed 78/78 Chromium/mobile WebKit
+without retries; ordinary and isolated builds passed. The test's lost-ACK injection
+starts at the outgoing request, not before the older predecessor receipt reads.

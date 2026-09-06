@@ -346,6 +346,37 @@ test("two queued UI edits settle a rejected predecessor and its unsent child bef
   expect(f.errors).toEqual([]);
 });
 
+test("lost ACK followed by a newer server edit adopts current data without replay and anchors the next UI edit", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка новой версии");
+  const item = await createItemInContainer(page, bag, "До отправки", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.lose = true;
+  f.beforeUpdate = () => { f.unknown = true; f.beforeUpdate = null; };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Принятое локальное изменение");
+  await submitForm(page, "#saveItemBtn", "#itemName"); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.slice(before)).toHaveLength(1);
+  f.payload = structuredClone(f.payload); f.payload.items[id].name = "Более свежая серверная версия"; f.payload.items[id].weight = 555;
+  f.revision++; const adoptedRevision = f.revision;
+  f.lose = false; f.unknown = false;
+  await reloadApp(page); await page.locator("#syncBtn").click();
+  const current = page.locator("#packingView [data-item-id]").filter({ hasText: "Более свежая серверная версия" });
+  await expect(current).toHaveCount(1, { timeout: 20000 });
+  await expect.poll(() => page.evaluate(revision => Object.entries(localStorage).some(([key, value]) =>
+    key.includes(":checkpoint:") && JSON.parse(value).baseline?.stateRevision === revision), adoptedRevision)).toBe(true);
+  expect(f.posts.slice(before)).toHaveLength(1, "adoption must not replay the old intent or generate a business write");
+  await current.locator(".item-title-hitarea").click(); await page.locator("#itemNote").fill("Редактирование после принятия");
+  await submitForm(page, "#saveItemBtn", "#itemNote");
+  await synchronize(page, () => f.payload.items[id]?.note === "Редактирование после принятия");
+  expect(f.posts.slice(before)).toHaveLength(2);
+  expect(f.posts.at(-1).body.baseStateRevision).toBe(adoptedRevision);
+  expect(f.posts.at(-1).body.causal.dependsOn).toEqual([]);
+  expect(f.payload.items[id].name).toBe("Более свежая серверная версия");
+  expect(f.payload.items[id].weight).toBe(555); expect(f.errors).toEqual([]);
+});
+
 test("first authenticated UI change owns a durable create and survives a lost first ACK", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context, { fresh: true, lose: true });

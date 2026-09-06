@@ -25,3 +25,13 @@ test("personal drain never spins indefinitely, bypasses a recovery latch, or inv
     assert.equal(applications, failure === "changing-server" ? 2 : 0);
   }
 });
+
+test("adopting a newer current snapshot finishes without dispatching or applying an old receipt again", async () => {
+  const calls = [];
+  const result = await drainPersonalSaveWithReconciliation({ outbox: {
+    async drain() { calls.push("historical-stale"); throw { isOperationReceiptError: true }; },
+    async reconcile() { calls.push("atomic-adoption"); return { adoptedBaseline: true }; }
+  }, onReconciled() { assert.fail("not a new business action"); },
+  onAdopted(value) { assert.equal(value.adoptedBaseline, true); calls.push("current-ui"); return "adopted"; } });
+  assert.equal(result, "adopted"); assert.deepEqual(calls, ["historical-stale", "atomic-adoption", "current-ui"]);
+});

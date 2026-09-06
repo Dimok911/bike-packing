@@ -104,6 +104,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         records.set(action.operationId, record);
       }
       const parents = new Set();
+      if (anchor?.confirmation) {
+        const action = records.get(anchor.operationId)?.action;
+        if (!action || !validHistoricalProof(anchor.confirmation, action)
+          || applied.has(anchor.operationId) && applied.get(anchor.operationId).stateRevision !== anchor.stateRevision) throw Error("Invalid settled baseline confirmation");
+        if (!applied.has(anchor.operationId)) applied.set(anchor.operationId, {
+          version: 1, operationId: anchor.operationId, stateRevision: anchor.stateRevision, inline: true
+        });
+      }
       if (anchor && (records.get(anchor.operationId)?.action.generation !== anchor.generation
         || applied.get(anchor.operationId)?.stateRevision !== anchor.stateRevision)) throw Error("Anchor without confirmed action");
       for (const id of applied.keys()) if (!records.has(id)) throw Error("Checkpoint without action");
@@ -217,6 +225,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   const inspect = options => settle(options); // Public inspection is always GET-only.
   return {
     binding: clone(binding),
+    supportsCommittedBaseline: true,
     recover() { return clone(read().head); },
     recoverSnapshot() {
       const { head, anchor } = read();
@@ -250,6 +259,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const next = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
         stateRevision: confirmedRevision, baseline,
+        ...(applied.get(head.action.operationId)?.inline ? { confirmation: anchor.confirmation } : {}),
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
       try { publishPersonalCheckpoint(storage, keyPrefix, next); }
       catch { throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); }
@@ -286,6 +296,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const { records, applied, anchor, checkpoints, entries, head } = assertObserved();
       if (!head || !applied.has(head.action.operationId)) return { removed: 0, pending: true };
       const operationId = head.action.operationId;
+      if (applied.get(operationId).inline) {
+        // The atomic baseline already confirms this head. Before converting it
+        // to an ordinary checkpoint, durably materialize its conventional marker.
+        // A crash/quota here leaves the original atomic certificate authoritative.
+        const stateRevision = applied.get(operationId).stateRevision;
+        try { storage.setItem(`${keyPrefix}applied:${operationId}:${stateRevision}`, JSON.stringify({ version: 1, operationId, stateRevision })); }
+        catch { return { removed: 0, pending: true }; }
+        assertObserved();
+      }
       const retired = [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== operationId);
       const nextAnchor = { version: 1, operationId, generation: head.action.generation,
         stateRevision: applied.get(operationId).stateRevision, retired,
@@ -357,7 +376,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(record);
     },
     inspect,
-    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload,
+    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}),
       operationId = crypto.randomUUID() }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
@@ -366,7 +385,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       assertCurrent();
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
-      if (!revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
+      const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
+      if (!alreadyCommitted && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
       // previously committed edit is not replayed over a later remote edit.
@@ -377,13 +397,39 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         if (record.mergeBase) { base = record.mergeBase; break; }
       }
-      if (!base) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
+      if (!base && !alreadyCommitted) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
       const remote = clone(await readRemote());
       assertCurrent();
       if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
         || !Number.isSafeInteger(remote.stateRevision) || remote.stateRevision < 1
         || settled.outcomes.some(proof => Number.isSafeInteger(proof.stateRevision) && remote.stateRevision < proof.stateRevision)) {
         throw blocked("reconciliation", "Текущая серверная версия или её владелец не подтверждены.");
+      }
+      if (alreadyCommitted) {
+        if (!Number.isSafeInteger(headProof.stateRevision) || headProof.stateRevision < 1
+          || remote.stateRevision < Math.max(headProof.stateRevision, anchor?.baseline?.stateRevision || 0)
+          || settled.outcomes.some(proof => {
+            const action = records.get(proof.operation.id)?.action, parent = action?.body.causal.baseOperationId;
+            const parentProof = settled.outcomes.find(value => value.operation.id === parent);
+            return proof.operation.state === "committed" && parentProof && parentProof.operation.state !== "committed";
+          })) throw blocked("receipt", "Подтверждения очереди противоречат друг другу.");
+        const snapshot = clone(makeSnapshot(clone(remote.payload), clone(head.snapshot)));
+        const meta = clone(makeBaselineMeta(clone(remote)));
+        assertCurrent();
+        const baseline = { payload: remote.payload, stateRevision: remote.stateRevision, meta,
+          snapshotPatch: encodePersonalSnapshot(remote.payload, snapshot) };
+        const checkpoint = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
+          stateRevision: headProof.stateRevision, confirmation: headProof, baseline,
+          retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
+        // ONE atomic record closes the old outcome and owns the new remote
+        // snapshot. Writing an applied marker first could recover stale UI data
+        // after a crash; this does neither a business write nor intent replay.
+        try { publishPersonalCheckpoint(storage, keyPrefix, checkpoint); }
+        catch { throw blocked("quota", "Не хватило места для подтверждения и актуальной версии. Локальные данные сохранены."); }
+        observed = observation({ head, anchor: checkpoint });
+        assertObserved();
+        return { adoptedBaseline: true, snapshot, baseline: clone(baseline), historicalConfirmation: clone(headProof),
+          serverRecord: remote, action: clone(head.action) };
       }
       const plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
       if (plan.blocked || plan.conflicts?.length) {

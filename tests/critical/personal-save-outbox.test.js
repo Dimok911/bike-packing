@@ -304,6 +304,116 @@ test("a failed non-conflict ancestor cannot turn dependency rejections into reco
   assert.deepEqual([...f.values], before);
 });
 
+function committedBaselineFixture() {
+  const f = reconciliationFixture();
+  f.proofs.set(f.first.action.operationId, historicalProof(f, f.first));
+  f.remote.stateRevision = 20; f.remote.payload.items.a.name = "Newer remote value";
+  f.options.makeBaselineMeta = () => ({ dirty: false, serverUpdatedAt: "verified remote timestamp" });
+  return f;
+}
+
+test("a committed stale head adopts the current remote snapshot atomically without replaying the old payload", async () => {
+  const f = committedBaselineFixture(), before = [...f.values];
+  const adopted = await f.outbox.reconcile(f.options);
+  assert.equal(adopted.adoptedBaseline, true); assert.equal(adopted.action.operationId, f.first.action.operationId);
+  assert.equal(adopted.historicalConfirmation.stateRevision, 6); assert.equal(adopted.baseline.stateRevision, 20);
+  assert.equal(adopted.snapshot.items.a.name, "Newer remote value");
+  assert.deepEqual([...f.values].slice(0, 1), before, "the historical action is not rewritten");
+  assert.equal(f.values.size, 2, "one atomic certificate owns both confirmation and new baseline");
+  assert.equal(f.make().hasPending(), false);
+  assert.deepEqual(f.make().recoverSnapshot(), adopted.snapshot);
+  assert.equal(f.make().baseline().meta.dirty, false);
+  assert.equal(f.make().recover().action.body.payload.items.a.name, "Local");
+  f.outbox.compact(); assert.equal(f.values.size, 3);
+  assert.deepEqual(f.make().recoverSnapshot(), adopted.snapshot);
+  const body = { baseStateRevision: 20, payload: structuredClone(adopted.baseline.payload) };
+  body.payload.items.a.weight = 777;
+  const next = f.outbox.capture({ snapshot: body.payload, body });
+  assert.equal(next.action.previousLocalOperationId, f.first.action.operationId);
+  assert.deepEqual(next.action.body.causal, { dependsOn: [], reads: [] });
+  assert.equal(next.mergeBase.stateRevision, 20);
+});
+
+test("a crash before or after atomic baseline publication never leaves an applied-only stale snapshot", async () => {
+  for (const afterWrite of [false, true]) {
+    const f = committedBaselineFixture(), write = f.storage.setItem;
+    f.storage.setItem = (key, value) => { if (afterWrite) write(key, value); throw Error("crash"); };
+    await assert.rejects(f.outbox.reconcile(f.options), { code: "quota" });
+    const restored = f.make();
+    assert.equal(restored.hasPending(), !afterWrite);
+    assert.equal(restored.recoverSnapshot().items.a.name, afterWrite ? "Newer remote value" : "Local");
+    assert.equal(restored.baseline()?.stateRevision ?? null, afterWrite ? 20 : null);
+  }
+});
+
+test("failed conversion/cleanup of an inline confirmation keeps its current baseline recoverable", async () => {
+  for (const failure of ["before-marker", "after-marker", "checkpoint", "cleanup"]) {
+    const f = committedBaselineFixture(); await f.outbox.reconcile(f.options);
+    const write = f.storage.setItem;
+    f.storage.setItem = (key, value) => {
+      if (key.includes(":applied:") && failure.includes("marker")) {
+        if (failure === "after-marker") write(key, value);
+        throw Error(failure);
+      }
+      if (key.includes(":checkpoint:") && failure === "checkpoint") throw Error(failure);
+      write(key, value);
+    };
+    if (failure === "cleanup") f.storage.removeItem = () => { throw Error(failure); };
+    f.outbox.compact();
+    assert.equal(f.make().hasPending(), false, failure);
+    assert.equal(f.make().recoverSnapshot().items.a.name, "Newer remote value", failure);
+    assert.equal(f.make().baseline().stateRevision, 20, failure);
+  }
+});
+
+test("inline confirmation must match the head, account, state and revision; incomplete certificates cannot apply", async () => {
+  for (const failure of ["id", "actor", "state", "revision", "baseline", "marker"]) {
+    const f = committedBaselineFixture(); await f.outbox.reconcile(f.options);
+    const key = [...f.values.keys()].find(key => key.includes(":checkpoint:")), checkpoint = JSON.parse(f.values.get(key));
+    if (failure === "id") checkpoint.confirmation.operation.id = crypto.randomUUID();
+    if (failure === "actor") checkpoint.confirmation.operation.actorId = "other";
+    if (failure === "state") checkpoint.confirmation.operation.state = "rejected";
+    if (failure === "revision") checkpoint.confirmation.stateRevision = 999;
+    if (failure === "baseline") delete checkpoint.baseline;
+    if (failure === "marker") delete checkpoint.confirmation;
+    f.values.set(key, JSON.stringify(checkpoint));
+    assert.throws(f.make, { code: "storage" }, failure);
+  }
+});
+
+test("a concurrent edit during remote adoption remains pending and cannot be retired by the old certificate", async () => {
+  const f = committedBaselineFixture(), write = f.storage.setItem;
+  let raced = false;
+  f.storage.setItem = (key, value) => {
+    if (key.includes(":checkpoint:") && !raced) { raced = true; f.outbox.capture(f.input(999)); }
+    write(key, value);
+  };
+  await assert.rejects(f.outbox.reconcile(f.options), { code: "stale-tab" });
+  assert.equal(f.make().hasPending(), true);
+  assert.equal(f.make().recoverSnapshot().items.a.weight, 999);
+  assert.equal(f.make().list().length, 2);
+});
+
+test("baseline refresh before inline confirmation compaction preserves the atomic confirmation", async () => {
+  const f = committedBaselineFixture(); await f.outbox.reconcile(f.options);
+  const fresh = structuredClone(f.remote.payload); fresh.items.a.weight = 999;
+  f.outbox.adoptRemoteBaseline({ payload: fresh, snapshot: fresh, stateRevision: 21 });
+  assert.equal(f.make().hasPending(), false); assert.equal(f.make().recoverSnapshot().items.a.weight, 999);
+  f.outbox.compact(); assert.equal(f.make().baseline().stateRevision, 21);
+});
+
+test("actual base-state reader prefers the durable baseline and never swallows a journal failure", async () => {
+  const f = committedBaselineFixture(); await f.outbox.reconcile(f.options);
+  let fail = false;
+  const readBase = appFunction("loadBaseState", {
+    personalSaveOutboxForScope: () => { if (fail) throw Object.assign(Error("bad journal"), { isPersonalSaveBlocked: true }); return f.outbox; },
+    localStorage: { getItem: () => assert.fail("stale mirror must not supply the merge base") },
+    normalizeRemoteState: value => value
+  });
+  assert.equal(readBase().items.a.name, "Newer remote value");
+  fail = true; assert.throws(readBase, { isPersonalSaveBlocked: true });
+});
+
 test("outbox inspection settles exact historical actions without applying, clearing or changing their snapshots", async () => {
   const f = fixture(), first = f.outbox.capture(f.input(100)), second = f.outbox.capture(f.input(200));
   const before = [...f.values], calls = [];

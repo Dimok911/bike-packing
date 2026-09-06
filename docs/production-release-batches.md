@@ -135,6 +135,14 @@ lineage must travel with its matching journal reader/recovery code on any future
 rollback. Local verification includes 74 browser cases and 21 real API/MySQL
 cases; it is not deployment authorization or evidence of a new remote CI run.
 
+Subsequent local batch-2 work settles exact descendants of a rejected operation
+without applying effects, and adopts the current server baseline after a
+committed stale head. An immutable checkpoint binds historical confirmation to
+the current snapshot across crashes; its matching reader is required for a
+future rollback. Latest local checks: 156 transport, 887 critical, 78 browser
+and 23 real API/MySQL cases, all passing. Explicit incompatible-conflict choices
+and local-branch recovery remain open; this does not complete stage 01.
+
 Small development commits do not imply a deployment per commit. Promote tested,
 cohesive batches: compatible backend/schema preparation, a matching frontend
 with gates still off, then separately approved activation. Catalog work remains

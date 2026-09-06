@@ -3901,6 +3901,10 @@ function hasStoredLocalValue(key, scope = localStorageScopeKey) {
 }
 
 function loadBaseState() {
+  // The immutable adopted baseline survives a crash before the legacy mirror.
+  // Read it outside the fallback catch: a broken journal must not become null.
+  const baseline = personalSaveOutboxForScope()?.baseline();
+  if (baseline) return normalizeRemoteState(baseline.payload, { repairCatalog: false });
   try {
     const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(BASE_STATE_KEY)));
     return normalizeRemoteState(parsed, { repairCatalog: false });
@@ -8198,12 +8202,39 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         }
         return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
       },
+      makeBaselineMeta(record) {
+        return { ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
+          serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false };
+      },
       onReconciled(record) {
         personalSaveRecovery.assertRunning();
         replaceState(record.snapshot, { personalOperationId: record.action.operationId });
         syncMeta.dirty = true;
         renderPreservingPackingScroll();
         updateSyncUi("Совместимые изменения объединены. Проверяю подтверждение нового действия…");
+      },
+      onAdopted(record) {
+        personalSaveRecovery.assertRunning();
+        // The journal atomically owns BOTH the historical confirmation and this
+        // newer snapshot. Never install the payload of the old write receipt.
+        replaceState(record.snapshot);
+        const writeRequired = (key, value) => {
+          if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {
+            throw Object.assign(new Error("Актуальная версия сохранена в очереди, но её локальное зеркало недоступно. Не очищайте данные сайта."), {
+              code: "storage", isPersonalSaveBlocked: true, isOperationReceiptError: true
+            });
+          }
+        };
+        writeRequired(STORAGE_KEY, state);
+        writeRequired(BASE_STATE_KEY, record.baseline.payload);
+        Object.assign(syncMeta, record.baseline.meta);
+        rememberRemoteIntegrityMeta(record.serverRecord);
+        rememberCurrentSyncAccount();
+        writeRequired(SYNC_META_KEY, syncMeta);
+        outbox.compact();
+        renderPreservingPackingScroll();
+        updateSyncUi();
+        if (notify) showToast("Сохранение подтверждено. Более свежие данные загружены.", "success");
       },
       onConfirmed(data, record) {
       personalSaveRecovery.assertRunning();
