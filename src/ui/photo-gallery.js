@@ -503,6 +503,11 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
     : remoteSrc;
   const fullSrc = remoteFullSrc;
   const localId = photo.localId || photo.id || "";
+  const width = Math.max(0, Number(photo.width) || 0);
+  const height = Math.max(0, Number(photo.height) || 0);
+  const dimensionsAttr = width && height
+    ? ` data-photo-width="${width}" data-photo-height="${height}"`
+    : "";
   return `
     <button class="photo-gallery-slide vpg-slide" type="button" data-photo-open>
       <img
@@ -511,6 +516,7 @@ async function renderPhotoPreviewSlide(photo, objectUrls = [], { uploadState = n
         ${remoteThumbSrc ? `data-photo-remote-thumb-src="${escapeHtml(remoteThumbSrc)}"` : ""}
         ${sourceSignature ? `data-photo-source-signature="${escapeHtml(sourceSignature)}"` : ""}
         ${localId ? `data-photo-local-id="${escapeHtml(localId)}" data-photo-local-source-id="${escapeHtml(localId)}"` : ""}
+        ${dimensionsAttr}
         alt=""
       />
       <span class="photo-preview-status" data-photo-preview-status role="status" aria-live="polite"></span>
@@ -950,12 +956,19 @@ export async function openPhotoLightbox(sourceImage, {
       availableHeight: viewportHeight
     });
     const sizingClass = sizing.className ? ` ${sizing.className}` : "";
+    // During a cold full-size load, do not briefly paint the thumbnail and
+    // then replace it. Reveal one decoded image, with the loading notice until then.
+    const awaitingOriginal = !directFullSrc && Boolean(entry?.localId
+      || (entry?.fullSrc && entry.fullSrc !== previewSrc));
+    const pendingSizingClass = entry?.width && entry?.height && !awaitingOriginal
+      ? ""
+      : " photo-lightbox-image-awaiting-size";
     const sizingStyle = sizing.limitAutoUpscale
       ? ` style="--photo-lightbox-natural-width: ${sizing.width}px; --photo-lightbox-natural-height: ${sizing.height}px"`
       : "";
     return `
       <div class="photo-lightbox-slide" data-photo-lightbox-index="${entryIndex}">
-        <img class="photo-lightbox-image${sizingClass}"${sizingStyle}${initialSrc ? ` src="${escapeHtml(initialSrc)}"` : ""} alt="" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" />
+        <img class="photo-lightbox-image${sizingClass}${pendingSizingClass}"${sizingStyle}${initialSrc ? ` src="${escapeHtml(initialSrc)}"` : ""} alt="" data-photo-width="${Number(entry?.width) || 0}" data-photo-height="${Number(entry?.height) || 0}" data-photo-lightbox-quality="${directFullSrc ? "full" : "preview"}" />
       </div>
     `;
   }).join("");
@@ -1011,7 +1024,8 @@ export async function openPhotoLightbox(sourceImage, {
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
     directDesktop: !touchCarousel,
-    canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch
+    canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch,
+    waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
   let loadingNotice = null;
@@ -1196,7 +1210,14 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
+    const presentedIndex = fullscreenSwitcher?.presentedIndex ?? activeIndex;
+    const presentedImage = directDesktop ? lightboxImages[presentedIndex] : image;
+    const hasVisiblePhoto = presentedImage?.complete && presentedImage.naturalWidth > 0
+      && !presentedImage.classList.contains("photo-lightbox-image-awaiting-size");
+    const hasVisibleTargetPhoto = hasVisiblePhoto && (!directDesktop || presentedIndex === activeIndex);
     loadStatus.hidden = state === "idle";
+    loadStatus.classList.toggle("photo-lightbox-load-empty", !hasVisiblePhoto);
+    track?.setAttribute("aria-busy", state === "loading" ? "true" : "false");
     loadStatus.classList.toggle("photo-lightbox-load-error", ["error", "preview", "saved-preview"].includes(state));
     loadStatusText.textContent = state === "saved-preview"
       ? localText(
@@ -1209,14 +1230,14 @@ export async function openPhotoLightbox(sourceImage, {
         "Предпросмотр · сохранён только предпросмотр"
       )
       : state === "error"
-        ? localText(
+        ? hasVisibleTargetPhoto ? localText(
           "Preview · full-size photo is unavailable",
           "Предпросмотр · полная версия фото недоступна"
-        )
-        : localText(
+        ) : localText("Could not load photo", "Не удалось загрузить фото")
+        : hasVisibleTargetPhoto ? localText(
           "Loading full-size photo…",
           "Загружается полная версия фото…"
-        );
+        ) : localText("Loading photo…", "Загружается фото…");
   };
   loadingNotice = createPhotoLightboxLoadingNotice({
     onChange: updateLoadStatus
@@ -1238,6 +1259,7 @@ export async function openPhotoLightbox(sourceImage, {
   const boundLightboxImages = new WeakSet();
   let bindImageInteractions = () => {};
   const prepareVisiblePreviews = (centerIndex) => {
+    if (!touchCarousel) return;
     for (let index = Math.max(0, centerIndex - 1); index <= Math.min(entries.length - 1, centerIndex + 1); index += 1) {
       const previewImage = lightboxImages[index];
       if (!previewImage || previewImage.getAttribute("src")) continue;
@@ -1246,8 +1268,26 @@ export async function openPhotoLightbox(sourceImage, {
       const src = entries[index]?.previewSrc;
       if (!src) continue;
       previewImage.src = src;
-      void decodeSharedFullscreenImage(previewImage).catch(() => {});
+      void decodeSharedFullscreenImage(previewImage)
+        .then(() => settleImagePresentation(previewImage))
+        .catch(() => {});
     }
+  };
+  const entryExpectsFullSize = (entry) => Boolean(
+    entry?.localId
+    || (entry?.fullSrc && entry.fullSrc !== entry.previewSrc)
+  );
+  const settleImagePresentation = (targetImage, { force = false } = {}) => {
+    const sizing = updatePhotoLightboxAutoSize(targetImage, overlay);
+    if (Number(targetImage?.naturalWidth) <= 0 || Number(targetImage?.naturalHeight) <= 0) return sizing;
+    const entryIndex = Number(targetImage.closest?.("[data-photo-lightbox-index]")?.dataset?.photoLightboxIndex);
+    const entry = Number.isInteger(entryIndex) ? entries[entryIndex] : null;
+    const ready = force
+      || touchCarousel
+      || targetImage.dataset?.photoLightboxQuality === "full"
+      || !entryExpectsFullSize(entry);
+    if (ready) targetImage.classList?.remove("photo-lightbox-image-awaiting-size");
+    return sizing;
   };
   const preparedImageKey = (entryIndex, src) => `${entryIndex}\u0000${src}`;
   const abortLifecycleDecode = () => {
@@ -1291,7 +1331,17 @@ export async function openPhotoLightbox(sourceImage, {
     const currentImage = lightboxImages[entryIndex];
     const key = preparedImageKey(entryIndex, src);
     const replacement = preparedFullImages.get(key);
-    if (!currentImage || !replacement) return false;
+    if (!currentImage) return false;
+    // Revisiting a decoded slide must not replace its visible bitmap again.
+    // Recreating the same image unnecessarily can blink on mobile compositors.
+    if (currentImage.complete && currentImage.naturalWidth > 0
+      && sharedFullscreenImageUsesSource(currentImage, src)) {
+      currentImage.dataset.photoLightboxQuality = "full";
+      settleImagePresentation(currentImage, { force: true });
+      entry.resolvedFullSrc = src;
+      return true;
+    }
+    if (!replacement) return false;
     const shouldCommit = () => (
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
@@ -1305,6 +1355,10 @@ export async function openPhotoLightbox(sourceImage, {
           visibleImage = nextImage;
           lightboxImages[entryIndex] = nextImage;
           if (activeIndex === entryIndex) image = nextImage;
+          // Size the decoded original synchronously, before the replacement's
+          // first paint (the shared helper waits for paint before resolving).
+          nextImage.dataset.photoLightboxQuality = "full";
+          settleImagePresentation(nextImage, { force: true });
           bindImageInteractions(nextImage);
         },
         onRollback: (restoredImage) => {
@@ -1318,7 +1372,7 @@ export async function openPhotoLightbox(sourceImage, {
     visibleImage.dataset.photoLightboxQuality = "full";
     entry.resolvedFullSrc = src;
     if (!String(src).startsWith("blob:")) decodedPhotoLightboxSources.add(src);
-    updatePhotoLightboxAutoSize(visibleImage, overlay);
+    settleImagePresentation(visibleImage, { force: true });
     return true;
   };
   sourceController = createSharedFullscreenSourceController({
@@ -1328,6 +1382,10 @@ export async function openPhotoLightbox(sourceImage, {
     getVerifiedFullSource: (entry) => entry?.verifiedFullSrc || entry?.resolvedFullSrc || "",
     resolveFullSource: async (entry, _entryIndex, { signal }) => {
       entry.lifecycleFallback = null;
+      // Catalog entries already point at the original. Keep that same decoded
+      // image: fetching an identical blob swaps the bitmap after its first paint.
+      // Local/offline records and separate previews still use the cache pipeline.
+      if (!entryExpectsFullSize(entry)) return entry.fullSrc || entry.previewSrc || null;
       const preparedSources = entry.localId
         ? await prepareFullscreenSource(entry).catch(() => null)
         : null;
@@ -1370,7 +1428,7 @@ export async function openPhotoLightbox(sourceImage, {
     sourceController = null;
     preparedFullImages.clear();
   };
-  const showPhoto = async (nextIndex, { force = false } = {}) => {
+  const preparePhoto = async (nextIndex, { force = false } = {}) => {
     if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
     cancelPanInertia(false);
     const token = ++renderToken;
@@ -1391,24 +1449,35 @@ export async function openPhotoLightbox(sourceImage, {
     image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
     updateNavigation();
     resetTransform();
-    const expectsFullSize = Boolean(
-      entry.localId
-      || (entry.fullSrc && entry.fullSrc !== previewSrc)
-    );
+    const expectsFullSize = entryExpectsFullSize(entry);
     if (!expectsFullSize) {
       image.dataset.photoLightboxQuality = entry.fullSrc ? "full" : "preview";
       void activation;
+      // A direct catalog URL still needs to load and decode; it is not ready
+      // merely because there is no separate full-size source to resolve.
+      const displayedImage = image;
+      if (!displayedImage.complete || !displayedImage.naturalWidth) loadingNotice.pending();
+      try {
+        await decodeSharedFullscreenImage(displayedImage);
+        if (token !== renderToken || !overlay.isConnected) return false;
+        settleImagePresentation(displayedImage, { force: true });
+        loadingNotice.settle("idle");
+      } catch {
+        if (token !== renderToken || !overlay.isConnected) return false;
+        loadingNotice.settle("error");
+        return false;
+      }
       return true;
     }
-    if (!readyFullSrc) loadingNotice.pending();
+    if (!readyFullSrc || !image.complete || !image.naturalWidth) loadingNotice.pending();
     const lifecycleResult = await activation;
     if (token !== renderToken || !overlay.isConnected) {
       return false;
     }
     if (lifecycleResult.success) {
-      loadingNotice.settle("idle");
       updatePhotoLightboxAutoSize(image, overlay);
       apply();
+      loadingNotice.settle("idle");
       return true;
     }
     const next = entry.lifecycleFallback || {};
@@ -1435,15 +1504,27 @@ export async function openPhotoLightbox(sourceImage, {
           lightboxObjectUrls.delete(next.objectUrl);
         }
       }
+      settleImagePresentation(lightboxImages[nextIndex], { force: true });
       loadingNotice.settle(next.reason === "preview-only"
         ? "preview"
         : next.reason === "cached-preview"
           ? "saved-preview"
           : "error");
-      return true;
+      const fallbackImage = lightboxImages[nextIndex];
+      return Boolean(fallbackImage?.complete && fallbackImage.naturalWidth
+        && !fallbackImage.classList.contains("photo-lightbox-image-awaiting-size"));
     }
     loadingNotice.settle("error");
-    return true;
+    return false;
+  };
+  const showPhoto = (nextIndex, options = {}) => {
+    if (nextIndex < 0 || nextIndex >= entries.length || (!options.force && nextIndex === activeIndex)) return false;
+    // Readiness is app-specific; retention/cancellation/atomic presentation are
+    // shared with other consumers. Native touch scrolling remains caller-owned.
+    return fullscreenSwitcher.activate(nextIndex, () => preparePhoto(nextIndex, options), {
+      notify: false,
+      scroll: false
+    });
   };
   navigatePhoto = (nextIndex, behavior = "smooth") => {
     const safeIndex = Math.max(0, Math.min(entries.length - 1, Number(nextIndex) || 0));
@@ -1583,7 +1664,7 @@ export async function openPhotoLightbox(sourceImage, {
     if (boundLightboxImages.has(targetImage)) return;
     boundLightboxImages.add(targetImage);
     const refreshAutoSize = () => {
-      updatePhotoLightboxAutoSize(targetImage, overlay);
+      settleImagePresentation(targetImage);
     };
     targetImage.addEventListener("load", refreshAutoSize);
     if (targetImage.complete) refreshAutoSize();
@@ -1645,6 +1726,10 @@ export async function openPhotoLightbox(sourceImage, {
   };
   lightboxImages.forEach(bindImageInteractions);
   lightboxResizeHandler = () => {
+    const presentedIndex = fullscreenSwitcher?.presentedIndex ?? activeIndex;
+    if (directDesktop && presentedIndex !== activeIndex) {
+      updatePhotoLightboxAutoSize(lightboxImages[presentedIndex], overlay);
+    }
     updatePhotoLightboxAutoSize(image, overlay);
     apply();
     // Safari's browser chrome changes viewport height while a swipe is still
@@ -1658,7 +1743,7 @@ export async function openPhotoLightbox(sourceImage, {
   window.visualViewport?.addEventListener?.("resize", lightboxResizeHandler);
   showPhoto(initialIndex, { force: true });
   requestAnimationFrame(() => {
-    fullscreenSwitcher?.goTo(initialIndex, "auto", false);
+    fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   });
   overlay.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -1836,6 +1921,14 @@ function photoLightboxEntry(image) {
   const previewSrc = image.currentSrc || image.src || image.dataset.photoRemoteThumbSrc || "";
   const fullSrc = image.dataset.photoFullSrc || previewSrc;
   const verifiedFullSrc = image.dataset.photoVerifiedFullSrc || "";
+  const explicitWidth = Math.max(0, Number(image.dataset.photoWidth) || 0);
+  const explicitHeight = Math.max(0, Number(image.dataset.photoHeight) || 0);
+  const renderedDimensionsMatchFullSource = Boolean(
+    image.complete
+    && Number(image.naturalWidth) > 0
+    && Number(image.naturalHeight) > 0
+    && sharedFullscreenImageUsesSource(image, fullSrc)
+  );
   return {
     image,
     localId: image.dataset.photoLocalSourceId || image.dataset.photoLocalId || "",
@@ -1845,8 +1938,8 @@ function photoLightboxEntry(image) {
     remoteFullSrc: image.dataset.photoRemoteFullSrc || "",
     remoteThumbSrc: image.dataset.photoRemoteThumbSrc || "",
     sourceSignature: image.dataset.photoSourceSignature || "",
-    width: Math.max(0, Number(image.dataset.photoWidth) || 0),
-    height: Math.max(0, Number(image.dataset.photoHeight) || 0),
+    width: explicitWidth || (renderedDimensionsMatchFullSource ? Number(image.naturalWidth) : 0),
+    height: explicitHeight || (renderedDimensionsMatchFullSource ? Number(image.naturalHeight) : 0),
     hasExplicitFullSrc: Boolean(image.dataset.photoFullSrc),
     resolvedFullSrc: decodedPhotoLightboxSources.has(fullSrc) ? fullSrc : ""
   };

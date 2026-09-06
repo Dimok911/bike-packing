@@ -67,6 +67,7 @@ import {
   resolvePhotoGallerySnapIndex,
   resolvePhotoLightboxSource,
   renderItemPhotoHtml,
+  renderPhotoGalleryHtml,
   renderPhotoDots,
   renderPhotoSlide
 } from "../../src/ui/photo-gallery.js";
@@ -79,6 +80,7 @@ import {
   updatePhotoLightboxAutoSize
 } from "../../src/ui/photo-lightbox-sizing.js";
 import {
+  createSharedFullscreenSwitcher,
   createSharedFullscreenSourceController,
   fullscreenSwitcherMatchesRequestedMode,
   replaceSharedFullscreenImageSource,
@@ -2239,6 +2241,18 @@ test("CRITICAL offline-photos: known dimensions constrain a small fullscreen pho
   assert.match(source, /photo-lightbox-image\$\{sizingClass\}/);
 });
 
+test("CRITICAL offline-photos: editable galleries preserve known dimensions for stable fullscreen paging", async () => {
+  const html = await renderPhotoGalleryHtml([{
+    id: "photo-dialog-small",
+    url: "https://api.example.test/photo-dialog-small/file",
+    thumbUrl: "https://api.example.test/photo-dialog-small/thumb",
+    width: 640,
+    height: 480
+  }]);
+
+  assert.match(html, /data-photo-width="640" data-photo-height="480"/);
+});
+
 test("CRITICAL offline-photos: high-resolution or already-downscaled photos keep screen fitting", () => {
   assert.deepEqual(photoLightboxAutoSize({
     naturalWidth: 1600,
@@ -2283,8 +2297,22 @@ test("CRITICAL offline-photos: lightbox auto-size class follows each decoded pho
   assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
   assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
 
+  image.naturalWidth = 0;
+  image.naturalHeight = 0;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(classes.has("photo-lightbox-image-no-upscale"), true);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+
+  image.dataset = { photoWidth: "640", photoHeight: "480", photoLightboxQuality: "preview" };
+  image.naturalWidth = 1200;
+  image.naturalHeight = 900;
+  updatePhotoLightboxAutoSize(image, viewport);
+  assert.equal(properties.get("--photo-lightbox-natural-width"), "640px");
+  assert.equal(properties.get("--photo-lightbox-natural-height"), "480px");
+
   image.naturalWidth = 2000;
   image.naturalHeight = 1500;
+  image.dataset.photoLightboxQuality = "full";
   updatePhotoLightboxAutoSize(image, viewport);
   assert.equal(classes.has("photo-lightbox-image-no-upscale"), false);
   assert.equal(properties.size, 0);
@@ -2447,13 +2475,13 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.8 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.2.0 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.8");
+  assert.equal(manifest.version, "2.2.0");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "af2aee51f0a1917101db4c86cbd415d20a08bb0a7843c9861029b2aa267cc426");
+  assert.equal(manifest.sha256, "86093aa7aba8dbdd3b79d5f3c7948dc16411ab3c44e8cf86816e9c5373ebb09e");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2676,6 +2704,36 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
+test("CRITICAL offline-photos: old stable cannot bypass shared ready navigation", async () => {
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  let legacyCalls = 0;
+  globalThis.VniipoPhotoGallery = {
+    capabilities: { fullscreenEdgeRubberBand: 1 },
+    createFullscreenSwitcher() { legacyCalls += 1; return null; }
+  };
+  try {
+    const controller = createSharedFullscreenSwitcher({
+      directDesktop: true, waitForReady: true, slides: [{}, {}]
+    });
+    let release;
+    const ready = new Promise((resolve) => { release = resolve; });
+    const activation = controller.activate(1, () => ready);
+    assert.equal(legacyCalls, 0);
+    assert.equal(controller.activeIndex, 1);
+    assert.equal(controller.presentedIndex, 0);
+    release(true);
+    assert.equal(await activation, true);
+    assert.equal(controller.presentedIndex, 1);
+    controller.destroy();
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /waitForReady: true/);
+  assert.match(source, /fullscreenSwitcher\.activate\(nextIndex/);
+  assert.doesNotMatch(source, /let presentedIndex|const presentActivePhoto/);
+});
+
 test("CRITICAL offline-photos: shared helpers and edge settling are available through the cached stable fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
@@ -2696,7 +2754,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.8"/);
+  assert.match(fallbackSource, /const VERSION = "2\.2\.0"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
@@ -2881,6 +2939,10 @@ test("CRITICAL offline-photos: lightbox keeps stable geometry and never downgrad
   assert.doesNotMatch(source, /image\.src = previewSrc;/);
   assert.match(styles, /\.photo-lightbox-image\s*\{[\s\S]*width:\s*calc\(100vw - 18px\);[\s\S]*height:\s*calc\(100dvh - 18px\);[\s\S]*object-fit:\s*contain;/);
   assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-no-upscale\s*\{[\s\S]*--photo-lightbox-natural-width[\s\S]*--photo-lightbox-natural-height/);
+  assert.match(source, /renderedDimensionsMatchFullSource[\s\S]*sharedFullscreenImageUsesSource\(image, fullSrc\)/);
+  assert.match(source, /photo-lightbox-image-awaiting-size/);
+  assert.match(source, /settleImagePresentation\(visibleImage, \{ force: true \}\)/);
+  assert.match(styles, /\.photo-lightbox-image\.photo-lightbox-image-awaiting-size\s*\{[\s\S]*visibility:\s*hidden/);
 });
 
 test("CRITICAL offline-photos: fast full-size resolution cancels the loading notice before it flashes", () => {

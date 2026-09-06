@@ -62,6 +62,7 @@ test("adjacent previews are decoded before a swipe while original downloads are 
     await openGallery(page);
     const images = page.locator(".photo-lightbox-image");
     await expect.poll(() => images.nth(1).evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect(images.nth(1)).toHaveCSS("visibility", "visible");
     await expect(images.nth(2)).not.toHaveAttribute("src");
     await expect.poll(() => originals.length).toBe(1);
     expect(originals[0]).toContain("red.png");
@@ -80,6 +81,7 @@ test("adjacent previews are decoded before a swipe while original downloads are 
       track.dispatchEvent(new Event("scroll"));
     });
     await expect.poll(() => images.nth(2).evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect(images.nth(2)).toHaveCSS("visibility", "visible");
     await page.waitForTimeout(240);
     await expect(page.locator('[data-photo-lightbox-dot="0"]')).toHaveAttribute("aria-current", "true");
     expect(await page.evaluate(() => window.lightboxScrollWrites)).toBe(0);
