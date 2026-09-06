@@ -160,24 +160,26 @@ export function createExperimentTransport({
     if (!ready) throw transportError("EU transport is not verified");
     return `${mode === "eu" ? EU_EXPERIMENT_API_BASE : canonical}${path}`;
   };
-  const assertWritable = (path, method) => {
+  const assertWritable = (path, method, recovery = null) => {
     validateApiPath(path);
     refreshJournal();
-    if (journal.some((entry) => entry.uncertain) && !isReadOnlyRequest(path, method)) {
+    const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
+    if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
+      && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;
     }
   };
   const beginWrite = async (path, method = "GET", body = null, recovery = null) => {
-    assertWritable(path, method);
+    assertWritable(path, method, recovery);
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
     const identity = await photoWriteIdentity(path, method, body);
     return locks.request(EXPERIMENT_WRITE_LOCK, () => {
       // Atomic across tabs, including direct and EU. No network/await in this
       // critical section; independent photos in this page can upload concurrently.
-      assertWritable(path, method);
+      assertWritable(path, method, recovery);
       if (identity && journal.some((entry) => entry.identity === identity)) {
         const error = transportError("Photo operation was already sent; reconcile before replay");
         error.isAmbiguousMutation = true;

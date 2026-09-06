@@ -1,6 +1,6 @@
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
-export const LIST_OPERATION_CAPABILITY = "personalListDatabaseOperationsV1";
+export const LIST_OPERATION_CAPABILITY = "personalListCausalOperationsV1";
 export const LIST_OPERATION_QUEUE_LOCK = "bike-packing-list-operation-dispatch-v1";
 const environment = "bike-packing-experiment";
 const gateway = "/bike-packing/list-operations";
@@ -46,6 +46,19 @@ export function validateListReceipt(data, expected) {
     && outcomes.length === ids.length && ids.every(id => outcomes.includes(id));
 }
 
+export function validateWaitingOperation(data, expected) {
+  const op = data?.operation;
+  const declared = expected.body?.causal?.dependsOn?.map(dep => dep.operationId) || [];
+  return data?.ok === true && op?.state === "waiting" && op.id === expected.operationId
+    && op.environment === environment && op.actorId === expected.actorId && op.kind === expected.kind
+    && op.listId === expected.listId && op.payloadDigest === expected.payloadDigest && data.result === null
+    && data.waiting?.code === "dependency_not_committed" && data.waiting.retrySameOperation === true
+    && Array.isArray(data.waiting.operationIds) && data.waiting.operationIds.length > 0
+    && data.waiting.operationIds.every(id => declared.includes(id));
+}
+
+const waitingError = id => Object.assign(paused(id, "Действие ждёт подтверждения предыдущего. Его номер и данные сохранены."), { isOperationWaiting: true });
+
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
@@ -72,6 +85,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
     return current?.actorId === initial.actorId && current?.generation === initial.generation && current?.scope === initial.scope;
   };
   const recordReceipt = (entry, data) => {
+    if (validateWaitingOperation(data, entry.recovery)) throw waitingError(entry.id);
     if (!validateListReceipt(data, entry.recovery)) throw paused(entry.id);
     // Keep a compact terminal proof, not another multi-megabyte copy of list
     // state. Replaying an unapplied receipt always reads the full server result.
@@ -82,11 +96,31 @@ export function createListOperationQueue({ transport, getContext = () => null,
     if (!transport.confirmWrite(entry.id, { receipt: proof })) throw paused(entry.id);
     return data;
   };
-  const recover = async entry => recordReceipt(entry, await read(`${gateway}/${encodeURIComponent(entry.id)}`));
+  const dispatch = entry => {
+    const saved = entry.recovery;
+    return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
+      kind: saved.kind, listId: saved.listId, body: saved.body });
+  };
+  const recover = async (entry, { resumeWaiting = false } = {}) => {
+    const data = await read(`${gateway}/${encodeURIComponent(entry.id)}`);
+    // ONLY an exact server-bound waiting intent permits another POST of the
+    // frozen manifest. Unknown/timeout/404 never means permission to resend.
+    if (resumeWaiting && validateWaitingOperation(data, entry.recovery)) {
+      try {
+        const response = await dispatch(entry);
+        if (response.status !== 200) throw paused(entry.id);
+        return recordReceipt(entry, response.data);
+      } catch (error) {
+        if (error.isOperationWaiting) throw error;
+        return recordReceipt(entry, await read(`${gateway}/${encodeURIComponent(entry.id)}`));
+      }
+    }
+    return recordReceipt(entry, data);
+  };
 
   return {
     supports(path, method) { return enabled && transport.experiment && Boolean(listOperationRoute(path, method)); },
-    async run({ path, method, body: bodyText }) {
+    async run({ path, method, body: bodyText, operationId: requestedId }) {
       if (!this.supports(path, method)) throw Error("Unsupported list queue request");
       if (!locks?.request) throw paused(null, "Блокировка между вкладками недоступна. Запрос не отправлен.");
       const initial = getContext();
@@ -95,31 +129,41 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
       const generation = await sha(initial.generation);
-      const requestKey = await sha(canonicalListOperationJson({ path, method, body, generation, actorId: initial.actorId }));
-      return locks.request(LIST_OPERATION_QUEUE_LOCK, async () => {
+      if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
+      const requestKey = await sha(canonicalListOperationJson({ path, method, body, generation, actorId: initial.actorId,
+        ...(requestedId ? { operationId: requestedId } : {}) }));
+      return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId || body.id || requestKey}`, async () => {
         if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
         await transport.prepare();
         const me = await read("/auth/me");
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(null, "Аккаунт изменился. Сохранение приостановлено.");
         // Settle old same-account unknown list actions first, without applying
         // their historical result to a newer local generation or another action.
-        for (const entry of transport.writes.filter(entry => entry.recovery?.type === "list" && !entry.confirmed)) {
+        for (const entry of transport.writes.filter(entry => entry.recovery?.type === "list" && !entry.confirmed && entry.recovery.protocol !== "causal-v1")) {
           if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
           await recover(entry);
         }
+        for (const entry of transport.writes.filter(entry => entry.recovery?.protocol === "causal-v1" && !entry.confirmed
+          && entry.recovery.requestKey !== requestKey && entry.recovery.listId === (route.listId || body.id))) {
+          if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
+          const explicitlyRelated = body.causal?.dependsOn?.some(dep => dep.operationId === entry.id)
+            || (requestedId && entry.recovery.body?.causal?.dependsOn?.some(dep => dep.operationId === requestedId));
+          if (!explicitlyRelated) await recover(entry);
+        }
         let entry = transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
         let data;
-        if (entry) data = await recover(entry); // ACK persisted before local application: GET only.
+        if (entry) data = await recover(entry, { resumeWaiting: true });
         else {
-          transport.assertWritable(path, method);
+          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
+          transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
-          const operationId = crypto.randomUUID();
+          const operationId = requestedId || crypto.randomUUID();
           const payloadDigest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
           const children = route.kind.endsWith(".sync") ? (body[route.kind.split(".")[0]] || []).map(entry => entry.id || entry.payload?.id) : [];
           if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(null, "В пакете повторяются или отсутствуют номера элементов. Запрос не отправлен.");
-          const expected = { type: "list", operationId, actorId: initial.actorId, kind: route.kind, listId, body, children, payloadDigest, generation, requestKey };
+          const expected = { ...protocol, operationId, actorId: initial.actorId, kind: route.kind, listId, body, children, payloadDigest, generation, requestKey };
           if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
           await transport.beginWrite(path, method, bodyText, expected);
           entry = transport.writes.find(entry => entry.id === operationId);
@@ -129,10 +173,11 @@ export function createListOperationQueue({ transport, getContext = () => null,
             throw paused(null, "Локальные данные изменились. Запрос не отправлен.");
           }
           try {
-            const response = await request(gateway, { operationId, kind: route.kind, listId, body });
+            const response = await dispatch(entry);
             if (response.status !== 200) throw paused(operationId);
             data = recordReceipt(entry, response.data);
-          } catch {
+          } catch (error) {
+            if (error.isOperationWaiting) throw error;
             transport.noteFailure(paused(operationId), path, method, operationId);
             data = await recover(entry); // Never POST retry, even after 404/5xx/timeout.
           }

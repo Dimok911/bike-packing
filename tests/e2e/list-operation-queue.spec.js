@@ -18,6 +18,7 @@ async function fixture(page, context) {
     if (url.pathname === "/__list-queue-test") return route.fulfill({ contentType: "text/html", body: `<script type="module">
       import {createExperimentTransport} from '/src/sync/experiment-transport.js';
       import {createListOperationQueue} from '/src/sync/list-operation-queue.js';
+      import {createCausalActionJournal} from '/src/sync/causal-action-journal.js';
       import {apiFetchRequest} from '/src/sync/api-client.js';
       window.generation='generation-1'; window.actorId='actor-a';
       const transport=createExperimentTransport({selection:sessionStorage.getItem('list-route')||'direct',euEnabled:true});
@@ -25,11 +26,15 @@ async function fixture(page, context) {
       window.run=async()=>{try {const result=await apiFetchRequest('/bike-packing/lists/list-a',{method:'PUT',body:JSON.stringify({payload:{items:{}}})},{transport,listQueue:queue});return {ok:true,id:result.list.id};}
         catch(error){return {ok:false,ambiguous:!!error.isAmbiguousMutation};}};
       window.entries=()=>transport.writes;
+      const journal=createCausalActionJournal({storage:localStorage,actorId:'actor-a'});
+      window.enqueue=input=>journal.enqueue(input); window.actions=()=>journal.list();
+      window.runWaiting=async()=>{try {await queue.run({path:'/bike-packing/lists/list-a',method:'PUT',body:JSON.stringify({causal:{dependsOn:[{operationId:'11111111-1111-4111-8111-111111111111',listId:'list-a'}]}})}); return 'committed';}
+        catch(error){return error.isOperationWaiting?'waiting':'blocked';}};
     </script>` });
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers });
     let data;
     if (url.pathname.endsWith("/capabilities")) data = { apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-      capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListDatabaseOperationsV1"] };
+      capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1"] };
     else if (url.pathname.endsWith("/auth/me")) data = { user: { id: "actor-a" } };
     else if (url.pathname.endsWith("/freshness")) data = { stateRevision: state.revision };
     else if (route.request().method() === "POST") {
@@ -38,6 +43,10 @@ async function fixture(page, context) {
       const payloadDigest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
       data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest, state: "committed" },
         result: { status: 200, payload: { ok: true, list: { id: body.listId, stateRevision: 1 } } } };
+      if (state.waiting) {
+        data.operation.state = "waiting"; data.result = null;
+        data.waiting = { code: "dependency_not_committed", retrySameOperation: true, operationIds: body.body.causal.dependsOn.map(dep => dep.operationId) };
+      }
       state.receipts.set(body.operationId, data);
       await state.beforeAck?.();
       if (state.lose) return route.abort("failed");
@@ -82,4 +91,26 @@ test("new local edits during a request and newer server revisions reject histori
   await page.reload(); await page.waitForFunction(() => Boolean(window.run));
   expect(await page.evaluate(() => window.run())).toEqual({ ok: false, ambiguous: true });
   expect(f.posts).toHaveLength(1);
+});
+
+test("action DAG survives browser reload between update, copy and delete", async ({ page, context }) => {
+  await fixture(page, context);
+  const update = await page.evaluate(() => window.enqueue({ kind: "list.update", listId: "a", body: { baseStateRevision: 16, payload: { parameter: "new" } } }));
+  const copy = await page.evaluate(() => window.enqueue({ kind: "list.create", listId: "b", body: { payload: { parameter: "new" } }, sourceReads: [{ listId: "a", revision: 16 }] }));
+  await page.reload(); await page.waitForFunction(() => Boolean(window.enqueue));
+  const deletion = await page.evaluate(() => window.enqueue({ kind: "list.delete", listId: "a" }));
+  expect(copy.body.causal.reads).toEqual([{ listId: "a", operationId: update.operationId }]);
+  expect(deletion.body.causal.dependsOn.map(dep => dep.operationId)).toEqual([update.operationId, copy.operationId]);
+  expect(await page.evaluate(() => window.actions())).toHaveLength(3);
+});
+
+test("verified waiting operation resumes with its original UUID and body after reload", async ({ page, context }) => {
+  const f = await fixture(page, context); f.waiting = true;
+  expect(await page.evaluate(() => window.runWaiting())).toBe("waiting");
+  const original = f.posts[0].body;
+  await page.reload(); await page.waitForFunction(() => Boolean(window.runWaiting));
+  f.waiting = false;
+  expect(await page.evaluate(() => window.runWaiting())).toBe("committed");
+  expect(f.posts).toHaveLength(2); expect(f.posts[1].body).toEqual(original);
+  expect(await page.evaluate(() => window.runWaiting())).toBe("committed"); expect(f.posts).toHaveLength(2);
 });

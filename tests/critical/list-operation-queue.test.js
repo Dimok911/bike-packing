@@ -23,14 +23,21 @@ function fixture() {
     calls.push({ url, options });
     let data, status = 200;
     if (url.endsWith("/auth/me")) data = { user: { id: context.actorId } };
-    else if (url.endsWith("/capabilities")) data = { capabilities: ["personalListDatabaseOperationsV1"] };
+    else if (url.endsWith("/capabilities")) data = { capabilities: ["personalListCausalOperationsV1"] };
     else if (url.endsWith("/freshness")) { status = state.deleted ? 404 : 200; data = { stateRevision: state.revision }; }
     else if (options.method === "POST") {
       const envelope = JSON.parse(options.body);
+      assert.equal(envelope.expectedActorId, context.actorId);
+      assert.equal(envelope.environment, "bike-packing-experiment");
       const expected = { environment: "bike-packing-experiment", actorId: context.actorId, kind: envelope.kind, listId: envelope.listId, body: envelope.body };
       const payloadDigest = createHash("sha256").update(canonicalListOperationJson(expected)).digest("hex");
       data = { ok: true, operation: { ...expected, id: envelope.operationId, payloadDigest, state: state.rejection ? "rejected" : "committed" },
         result: state.rejection || { status: 200, payload: { ok: true, list: { id: envelope.listId, stateRevision: 1 } } } };
+      if (state.waiting) {
+        data.operation.state = "waiting"; data.result = null;
+        data.waiting = { code: "dependency_not_committed", retrySameOperation: true,
+          operationIds: envelope.body.causal.dependsOn.map(dep => dep.operationId) };
+      }
       receipts.set(envelope.operationId, data);
       state.mutate?.();
       if (state.loseResponse) throw Error("lost response");
@@ -146,4 +153,49 @@ test("actual API wrapper delegates protected writes; forced offline and ambiguou
     attempts++; throw Object.assign(Error("unknown"), { status: 409, data: { code: "stale_state_revision" }, isAmbiguousMutation: true });
   } }));
   assert.equal(attempts, 1);
+});
+
+test("only a verified waiting intent resumes the same POST after reload; no new UUID or changed body", async () => {
+  const f = fixture(); f.state.waiting = true;
+  f.input.body = JSON.stringify({ causal: { dependsOn: [{ operationId: crypto.randomUUID(), listId: "list-a" }] } });
+  await assert.rejects(f.queue.run(f.input), { isOperationWaiting: true });
+  const first = f.posts()[0].options.body;
+  assert.equal(f.transport.writes[0].confirmed, undefined);
+  f.state.waiting = false;
+  await f.make().queue.run(f.input);
+  assert.equal(f.posts().length, 2); assert.equal(f.posts()[1].options.body, first);
+  await f.make().queue.run(f.input);
+  assert.equal(f.posts().length, 2);
+});
+
+test("waiting with wrong scope is not permission to POST again; confirmed stale rejection cannot auto-rebase", async () => {
+  const f = fixture(); f.state.waiting = true;
+  f.input.body = JSON.stringify({ causal: { dependsOn: [{ operationId: crypto.randomUUID(), listId: "list-a" }] } });
+  await assert.rejects(f.queue.run(f.input), { isOperationWaiting: true });
+  f.receipts.get(f.transport.writes[0].id).operation.environment = "production";
+  await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.posts().length, 1);
+  let attempts = 0;
+  await assert.rejects(syncEntityBatchWithRevisionRetry([], { refreshRevision: () => assert.fail("must not rebase"), sendBatch: () => {
+    attempts++; throw Object.assign(Error("stale"), { status: 409, data: { code: "stale_state_revision" }, isOperationReceiptError: true });
+  } }));
+  assert.equal(attempts, 1);
+});
+
+test("unrelated target can complete while another target's POST is in flight", async () => {
+  const f = fixture(); let started, release;
+  const entered = new Promise(resolve => { started = resolve; });
+  const pause = new Promise(resolve => { release = resolve; });
+  const queue = createListOperationQueue({ transport: f.transport, enabled: true, locks: f.locks, getContext: () => ({ ...f.context }),
+    fetchImpl: async (url, options) => {
+      if (options.method === "POST" && JSON.parse(options.body).listId === "list-a") { started(); await pause; }
+      return f.fetchImpl(url, options);
+    } });
+  const first = queue.run(f.input); await entered;
+  let timer;
+  try {
+    const second = await Promise.race([queue.run({ ...f.input, path: "/bike-packing/lists/list-b" }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Error("unrelated action blocked")), 1000); })]);
+    assert.equal(second.list.id, "list-b");
+  } finally { clearTimeout(timer); release(); }
+  await first;
 });
