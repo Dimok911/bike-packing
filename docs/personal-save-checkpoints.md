@@ -135,3 +135,33 @@ SAVE. No cases skipped. This is a local paired run, not a new GitHub CI run.
 `scripts/test-causal-with-local-mysql.ps1` verifies the exact server data path
 before test database creation, restores process environment and stops its child.
 The runtime/archive/test data are ignored; no Windows service was installed.
+
+## Descendants of an already rejected action
+
+A separate `settleRejectedDependency` path can now obtain a terminal rejection
+for a child whose complete immutable manifest depends directly on an already
+rejected parent. It verifies the full parent receipt by GET, the child's exact
+ID/body and dependency, its existing receipt (if any), actor/context and server
+capability. It sends the SAME child manifest only when its state is unknown or
+valid waiting; the backend's existing dependency transaction can only reject
+it without business effects. One POST per call; lost ACK is checked by GET.
+No new endpoint, cancellation policy or force write is introduced.
+
+This is not permission to resend an independent unknown action. Unknown/committed
+parents, mismatched manifests, unrelated edges, missing capability and changes
+of actor/editor/list stop before POST. A locally confirmed child whose server
+receipt disappeared also remains blocked. Only an exact `dependency_rejected`
+receipt is accepted by this special path. Public `inspect` remains GET-only.
+
+Outbox reconciliation follows this chain back to an actual revision conflict,
+retains every old ID, then publishes a new action containing the latest local
+snapshot combined with the current remote snapshot. A permission/other business
+failure in the ancestor cannot become a version-conflict bypass. Normal waiting
+resumption also rechecks the frozen editor context immediately before POST.
+
+Local verification for this follow-up: 148 transport tests, 887 critical,
+22/22 real API/MySQL cases, and 76/76 full browser regression scenarios in
+Chromium/mobile WebKit, without retries. Source check and both builds passed.
+The first UI fixture run failed safely because its missing-ID reply was an
+invalid generic error, not the real API's `unknown` envelope. Corrected the
+fixture contract; did not relax the client receipt guard.

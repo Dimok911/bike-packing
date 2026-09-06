@@ -99,13 +99,14 @@ async function setup(page, context, { fresh = false, lose = false } = {}) {
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
-        if (body.kind === "list.update" && state.beforeUpdate) state.beforeUpdate(body);
+        if (body.kind === "list.update" && state.beforeUpdate) await state.beforeUpdate(body);
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
-        if (body.kind !== "list.create" && base !== state.revision) {
+        if (predecessor?.operation.state === "rejected" || body.kind !== "list.create" && base !== state.revision) {
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "rejected" },
-            result: { status: 409, payload: { ok: false, code: "stale_state_revision", stateRevision: state.revision } } };
+            result: { status: 409, payload: { ok: false,
+              code: predecessor?.operation.state === "rejected" ? "dependency_rejected" : "stale_state_revision", stateRevision: state.revision } } };
         } else {
           state.listId = body.listId; state.payload = body.body.payload; state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
@@ -114,7 +115,8 @@ async function setup(page, context, { fresh = false, lose = false } = {}) {
         state.receipts.set(body.operationId, data);
         if (state.lose) { state.injectedFailure = true; return route.abort("failed"); }
       } else if (path.startsWith("/bike-packing/list-operations/")) {
-        data = state.unknown ? { ok: true, operation: { state: "unknown" } } : state.receipts.get(path.split("/").at(-1));
+        data = state.unknown ? { ok: true, operation: { state: "unknown" } }
+          : state.receipts.get(path.split("/").at(-1)) || { ok: true, operation: { id: path.split("/").at(-1), state: "unknown" } };
       } else if (request.method() !== "GET") throw Error(`Unexpected legacy write: ${request.method()} ${path}`);
       else { data = { ok: false, code: "fixture_not_found" }; status = 404; }
       return route.fulfill({ status, headers, json: data || { ok: false } });
@@ -308,6 +310,39 @@ test("a reconciled full UI action survives lost ACK and reload without another P
   expect(f.posts.slice(before)).toHaveLength(2);
   expect(f.payload.items[id].weight).toBe(200);
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "После сверки" })).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("two queued UI edits settle a rejected predecessor and its unsent child before merging", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка цепочки");
+  const item = await createItemInContainer(page, bag, "Перед цепочкой", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  let release;
+  f.allowConflicts = true;
+  f.beforeUpdate = async () => {
+    f.beforeUpdate = null; f.payload = structuredClone(f.payload); f.payload.items[id].weight = 444; f.revision++;
+    await new Promise(resolve => { release = resolve; });
+  };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Первое изменение");
+  await submitForm(page, "#saveItemBtn", "#itemName"); await page.locator("#syncBtn").click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  try {
+    const renamed = page.locator("#packingView [data-item-id]").filter({ hasText: "Первое изменение" });
+    await renamed.locator(".item-title-hitarea").click(); await page.locator("#itemNote").fill("Второе изменение");
+    await submitForm(page, "#saveItemBtn", "#itemNote");
+    await expect.poll(() => page.evaluate(itemId => Object.entries(localStorage).some(([key, value]) =>
+      key.startsWith("bike-packing-personal-save-v1:") && JSON.parse(value).action?.body.payload.items[itemId]?.note === "Второе изменение"), id)).toBe(true);
+  } finally { release(); }
+  await synchronize(page, () => f.payload.items[id]?.note === "Второе изменение" && f.payload.items[id]?.weight === 444);
+  const changes = f.posts.slice(before);
+  expect(changes).toHaveLength(3);
+  expect(changes.map(post => f.receipts.get(post.operationId).operation.state)).toEqual(["rejected", "rejected", "committed"]);
+  expect(f.receipts.get(changes[1].operationId).result.payload.code).toBe("dependency_rejected");
+  expect(changes[1].body.causal.baseOperationId).toBe(changes[0].operationId);
+  expect(f.payload.items[id].name).toBe("Первое изменение");
+  expect(new Set(changes.map(post => post.operationId)).size).toBe(3);
   expect(f.errors).toEqual([]);
 });
 

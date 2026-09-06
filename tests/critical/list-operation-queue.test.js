@@ -41,7 +41,8 @@ function fixture() {
       receipts.set(envelope.operationId, data);
       state.mutate?.();
       if (state.loseResponse) throw Error("lost response");
-    } else data = state.unknown ? { ok: true, operation: { state: "unknown" } } : receipts.get(url.split("/").at(-1));
+    } else data = state.unknown ? { ok: true, operation: { state: "unknown" } }
+      : receipts.get(url.split("/").at(-1)) || { ok: true, operation: { state: "unknown" } };
     return new Response(JSON.stringify(data), { status });
   };
   const make = () => {
@@ -57,6 +58,94 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);
   const queue = createListOperationQueue({ transport: { experiment: true } });
   assert.equal(queue.supports(path, "PUT"), false);
+});
+
+async function rejectedDependencyFixture() {
+  const f = fixture();
+  const predecessor = { ...f.input, operationId: crypto.randomUUID() };
+  f.state.rejection = { status: 409, payload: { ok: false, code: "stale_state_revision", stateRevision: 1 } };
+  await assert.rejects(f.queue.run(predecessor), { isConfirmedOperationRejection: true });
+  f.state.rejection = { status: 409, payload: { ok: false, code: "dependency_rejected", stateRevision: 1 } };
+  const input = { ...f.input, operationId: crypto.randomUUID(), predecessor, body: JSON.stringify({ payload: { items: {} },
+    causal: { baseOperationId: predecessor.operationId, dependsOn: [{ operationId: predecessor.operationId, listId: "list-a" }], reads: [] } }) };
+  return { ...f, predecessor, input };
+}
+
+test("rejected-dependency settlement freezes the exact child, obtains a no-effect receipt and is GET-only on replay", async () => {
+  const f = await rejectedDependencyFixture(), before = f.posts().length;
+  const result = await f.queue.settleRejectedDependency(f.input);
+  assert.equal(result.historicalOnly, true); assert.equal(result.rejectionCode, "dependency_rejected");
+  assert.equal(f.posts().length - before, 1);
+  assert.deepEqual(JSON.parse(f.posts().at(-1).options.body).body, JSON.parse(f.input.body));
+  await f.make().queue.settleRejectedDependency(f.input);
+  assert.equal(f.posts().length - before, 1);
+});
+
+test("rejected-dependency settlement can finish an unknown exact child after lost ACK without replacing its ID", async () => {
+  const f = await rejectedDependencyFixture();
+  f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.queue.run(f.input));
+  f.state.unknown = false; f.receipts.delete(f.input.operationId);
+  const before = f.posts().length;
+  const proof = await f.make().queue.settleRejectedDependency(f.input);
+  assert.equal(proof.operation.id, f.input.operationId); assert.equal(f.posts().length - before, 1);
+  assert.equal(f.posts().at(-1).options.body, f.posts().at(-2).options.body);
+  assert.equal(proof.operation.state, "rejected");
+});
+
+test("unknown/committed/wrong parent and unrelated or changed child manifests never permit terminalization POST", async () => {
+  for (const failure of ["unknown", "committed", "hash", "actor", "list", "no-edge", "different-edge", "changed-body", "confirmed-unknown"]) {
+    const f = await rejectedDependencyFixture();
+    const receipt = f.receipts.get(f.predecessor.operationId);
+    if (failure === "unknown") f.receipts.delete(f.predecessor.operationId);
+    if (failure === "committed") receipt.operation.state = "committed";
+    if (failure === "hash") receipt.operation.payloadDigest = "0".repeat(64);
+    if (failure === "actor") receipt.operation.actorId = "other";
+    if (failure === "list") receipt.operation.listId = "other";
+    if (failure === "no-edge") f.input.body = JSON.stringify({ payload: {} });
+    if (failure === "different-edge") { const body = JSON.parse(f.input.body); body.causal.dependsOn[0].listId = "other"; f.input.body = JSON.stringify(body); }
+    if (failure === "changed-body" || failure === "confirmed-unknown") {
+      await f.queue.settleRejectedDependency(f.input);
+      if (failure === "changed-body") { const body = JSON.parse(f.input.body); body.payload.changed = true; f.input.body = JSON.stringify(body); }
+      else f.receipts.delete(f.input.operationId);
+    }
+    const before = f.posts().length;
+    await assert.rejects(f.make().queue.settleRejectedDependency(f.input), undefined, failure);
+    assert.equal(f.posts().length, before, failure);
+  }
+});
+
+test("queue freezes a mutable context reference and blocks changed scope/list before dispatch", async () => {
+  for (const key of ["actorId", "generation", "scope", "scopeKey", "listId", "environment"]) {
+    const f = fixture(); f.context.scopeKey = "id:actor-a"; f.context.listId = "list-a"; f.context.environment = "bike-packing-experiment";
+    const queue = createListOperationQueue({ transport: f.transport, enabled: true, getContext: () => f.context,
+      fetchImpl: f.fetchImpl, locks: { request: async (name, callback) => { f.context[key] = "changed"; return callback(); } } });
+    await assert.rejects(queue.run(f.input)); assert.equal(f.posts().length, 0, key);
+  }
+});
+
+test("context changes during a waiting receipt GET or failed-parent GET block every follow-up POST", async () => {
+  for (const mode of ["waiting", "rejected-parent"]) {
+    const f = mode === "waiting" ? fixture() : await rejectedDependencyFixture();
+    f.context.listId = "list-a";
+    let target;
+    if (mode === "waiting") {
+      f.state.waiting = true;
+      f.input.operationId = crypto.randomUUID();
+      f.input.body = JSON.stringify({ payload: {}, causal: { dependsOn: [{ operationId: crypto.randomUUID(), listId: "list-a" }], reads: [] } });
+      await assert.rejects(f.queue.run(f.input), { isOperationWaiting: true });
+      target = f.input.operationId;
+    } else target = f.predecessor.operationId;
+    const queue = createListOperationQueue({ transport: f.transport, enabled: true, locks: f.locks, getContext: () => f.context,
+      fetchImpl: async (url, options) => {
+        const response = await f.fetchImpl(url, options);
+        if (url.endsWith(target)) f.context.listId = "changed";
+        return response;
+      } });
+    const before = f.posts().length;
+    await assert.rejects(mode === "waiting" ? queue.run(f.input) : queue.settleRejectedDependency(f.input));
+    assert.equal(f.posts().length, before, mode);
+  }
 });
 
 test("durable intent before send; lost ACK recovered by GET; reload of acknowledged action never POSTs again", async () => {

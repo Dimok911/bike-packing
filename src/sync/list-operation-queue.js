@@ -58,6 +58,15 @@ export function validateWaitingOperation(data, expected) {
 }
 
 const waitingError = id => Object.assign(paused(id, "Действие ждёт подтверждения предыдущего. Его номер и данные сохранены."), { isOperationWaiting: true });
+const historicalProof = data => {
+  const op = data.operation, stateRevision = data.result.payload.list?.stateRevision ?? data.result.payload.stateRevision;
+  return { historicalOnly: true,
+    operation: { id: op.id, environment: op.environment, actorId: op.actorId, kind: op.kind,
+      listId: op.listId, payloadDigest: op.payloadDigest, state: op.state },
+    resultStatus: data.result.status,
+    stateRevision: Number.isSafeInteger(stateRevision) && stateRevision > 0 ? stateRevision : null,
+    rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null };
+};
 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
@@ -82,7 +91,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   };
   const contextMatches = initial => {
     const current = getContext();
-    return current?.actorId === initial.actorId && current?.generation === initial.generation && current?.scope === initial.scope;
+    return ["actorId", "generation", "scope", "scopeKey", "listId", "environment"].every(key => current?.[key] === initial[key]);
   };
   const recordReceipt = (entry, data) => {
     if (validateWaitingOperation(data, entry.recovery)) throw waitingError(entry.id);
@@ -101,11 +110,12 @@ export function createListOperationQueue({ transport, getContext = () => null,
     return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
       kind: saved.kind, listId: saved.listId, body: saved.body });
   };
-  const recover = async (entry, { resumeWaiting = false } = {}) => {
+  const recover = async (entry, { resumeWaiting = false, assertBeforeDispatch = () => {} } = {}) => {
     const data = await read(`${gateway}/${encodeURIComponent(entry.id)}`);
     // ONLY an exact server-bound waiting intent permits another POST of the
     // frozen manifest. Unknown/timeout/404 never means permission to resend.
     if (resumeWaiting && validateWaitingOperation(data, entry.recovery)) {
+      assertBeforeDispatch();
       try {
         const response = await dispatch(entry);
         if (response.status !== 200) throw paused(entry.id);
@@ -156,20 +166,82 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (!validateListReceipt(data, expected)) throw paused(operationId);
         if (entry) recordReceipt(entry, data);
         assertContext();
-        const op = data.operation;
-        const stateRevision = data.result.payload.list?.stateRevision ?? data.result.payload.stateRevision;
-        return { historicalOnly: true,
-          operation: { id: op.id, environment: op.environment, actorId: op.actorId, kind: op.kind,
-            listId: op.listId, payloadDigest: op.payloadDigest, state: op.state },
-          resultStatus: data.result.status,
-          stateRevision: Number.isSafeInteger(stateRevision) && stateRevision > 0 ? stateRevision : null,
-          rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null };
+        return historicalProof(data);
+      });
+    },
+    // Narrow terminalization, NOT generic retry/cancellation: the immutable
+    // parent is already rejected. The backend dependency transaction therefore
+    // cannot apply this exact child's effects. Unknown independent actions still
+    // have no resend permission. Both complete manifests are verified by GET.
+    async settleRejectedDependency({ path, method, body: bodyText, operationId, predecessor }) {
+      if (!this.supports(path, method) || !locks?.request) throw paused(operationId);
+      const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
+      const parent = JSON.parse(JSON.stringify(predecessor || {}));
+      const parentRoute = listOperationRoute(parent.path, parent.method), parentBody = JSON.parse(parent.body || "{}");
+      const validUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id || "");
+      const listId = route.listId;
+      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || route.kind !== "list.update"
+        || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
+        || !["list.create", "list.update"].includes(parentRoute?.kind)
+        || (parentRoute.listId || parentBody.id) !== listId
+        || body.causal?.baseOperationId !== parent.operationId
+        || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson([{ operationId: parent.operationId, listId }])
+        || canonicalListOperationJson(body.causal.reads) !== "[]") throw paused(operationId);
+      const expected = { operationId, actorId: initial.actorId, listId, kind: route.kind, body, children: [],
+        payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
+      const parentExpected = { operationId: parent.operationId, actorId: initial.actorId, listId, kind: parentRoute.kind,
+        payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: parentRoute.kind, listId, body: parentBody })) };
+      const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId, "Редактор изменился. Сверка зависимого действия остановлена."); };
+      return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
+        assertCurrent(); await transport.prepare(); assertCurrent();
+        const me = await read("/auth/me"); assertCurrent();
+        if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
+        const parentReceipt = await read(`${gateway}/${encodeURIComponent(parent.operationId)}`); assertCurrent();
+        if (!validateListReceipt(parentReceipt, parentExpected) || parentReceipt.operation.state !== "rejected") throw paused(operationId);
+        let entry = transport.writes.find(value => value.id === operationId);
+        if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
+          || entry.recovery.listId !== listId || entry.recovery.kind !== route.kind
+          || entry.recovery.payloadDigest !== expected.payloadDigest
+          || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
+        const terminal = data => {
+          assertCurrent();
+          if (!validateListReceipt(data, expected) || data.operation.state !== "rejected"
+            || data.result.status !== 409 || data.result.payload.code !== "dependency_rejected") throw paused(operationId);
+          if (entry) recordReceipt(entry, data);
+          return historicalProof(data);
+        };
+        const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
+        if (["committed", "rejected"].includes(known?.operation?.state)) return terminal(known);
+        if (entry?.confirmed || !(validateWaitingOperation(known, expected)
+          || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
+        const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
+        if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
+        if (!entry) {
+          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
+          transport.assertWritable(path, method, protocol);
+          const generation = await sha(initial.generation);
+          const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
+          assertCurrent();
+          await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
+          entry = transport.writes.find(value => value.id === operationId);
+        }
+        assertCurrent();
+        try {
+          const response = await dispatch(entry);
+          if (response.status !== 200) throw paused(operationId);
+          return terminal(response.data);
+        } catch {
+          // One POST at most in this call. A lost result is read by exact ID;
+          // no loop and no replacement ID, even for this no-effect rejection.
+          assertCurrent();
+          return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
+        }
       });
     },
     async run({ path, method, body: bodyText, operationId: requestedId, receiptOnly = false }) {
       if (!this.supports(path, method)) throw Error("Unsupported list queue request");
       if (!locks?.request) throw paused(null, "Блокировка между вкладками недоступна. Запрос не отправлен.");
-      const initial = getContext();
+      const initial = { ...getContext() };
       if (!initial?.actorId || !initial?.generation || initial.scope !== "personal") throw paused(null, "Для сохранения нужен текущий личный аккаунт.");
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
@@ -181,7 +253,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
       return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId || body.id || requestKey}`, async () => {
         if (!contextMatches(initial)) throw paused(null, "Локальные данные изменились. Устаревший запрос не отправлен.");
         await transport.prepare();
+        if (!contextMatches(initial)) throw paused(null);
         const me = await read("/auth/me");
+        if (!contextMatches(initial)) throw paused(null);
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(null, "Аккаунт изменился. Сохранение приостановлено.");
         // Settle old same-account unknown list actions first, without applying
         // their historical result to a newer local generation or another action.
@@ -206,7 +280,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
             || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
         }
         let data;
-        if (entry) data = await recover(entry, { resumeWaiting: true });
+        if (entry) data = await recover(entry, { resumeWaiting: true,
+          assertBeforeDispatch: () => { if (!contextMatches(initial)) throw paused(entry.id); } });
         else {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
           transport.assertWritable(path, method, protocol);

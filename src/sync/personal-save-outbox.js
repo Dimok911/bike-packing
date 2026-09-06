@@ -41,6 +41,17 @@ const validId = value => typeof value === "string" && value.length > 0 && value.
   && value === value.trim() && !["__proto__", "prototype", "constructor"].includes(value);
 const revisionConflict = proof => proof?.operation.state === "rejected" && proof.resultStatus === 409
   && ["conflict", "stale_state_revision"].includes(proof.rejectionCode);
+const revisionConflictChain = (action, records, outcomes) => {
+  const visited = new Set();
+  while (action && !visited.has(action.operationId)) {
+    visited.add(action.operationId);
+    const proof = outcomes.find(value => value.operation.id === action.operationId);
+    if (revisionConflict(proof)) return true;
+    if (proof?.operation.state !== "rejected" || proof.resultStatus !== 409 || proof.rejectionCode !== "dependency_rejected") return false;
+    action = records.get(action.body.causal.baseOperationId)?.action;
+  }
+  return false;
+};
 const blocked = (code, message) => Object.assign(new Error(message), {
   code, isPersonalSaveBlocked: true, isOperationReceiptError: true
 });
@@ -117,7 +128,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               || record.mergeBase.stateRevision !== action.body.baseStateRevision
               || !Array.isArray(settled) || settled.length !== ancestors.length || !settled.length
               || settled.some((proof, index) => !validHistoricalProof(proof, ancestors[index].action))
-              || settled.at(-1).operation.id !== parentId || !revisionConflict(settled.at(-1))) throw Error("Invalid reconciled successor");
+              || settled.at(-1).operation.id !== parentId || !revisionConflictChain(parent, records, settled)) throw Error("Invalid reconciled successor");
             parents.add(parentId);
             continue;
           }
@@ -175,14 +186,26 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     && /^[0-9a-f]{64}$/.test(proof.operation.payloadDigest)
     && (proof.operation.state === "committed" ? proof.resultStatus >= 200 && proof.resultStatus < 300
       : proof.operation.state === "rejected" && [400, 403, 404, 409, 413, 422].includes(proof.resultStatus)); }
-  const inspect = async ({ queue, getContext }) => {
+  const settle = async ({ queue, getContext }, terminalizeRejectedDependencies = false) => {
     const { records, head } = assertObserved();
     const assertCurrent = guardEditor(getContext, head), outcomes = [];
     for (const { action } of [...records.values()].sort((a, b) => a.action.generation - b.action.generation)) {
       assertCurrent();
-      const proof = await queue.inspect({ operationId: action.operationId,
+      const input = { operationId: action.operationId,
         path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-        method: action.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(action.body) });
+        method: action.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(action.body) };
+      let proof;
+      try { proof = await queue.inspect(input); }
+      catch (error) {
+        assertCurrent();
+        const parentId = action.body.causal.baseOperationId, parent = records.get(parentId)?.action;
+        const parentProof = outcomes.find(value => value.operation.id === parentId);
+        if (!terminalizeRejectedDependencies || !error.isOperationReceiptError || typeof queue.settleRejectedDependency !== "function"
+          || !parent || parentProof?.operation.state !== "rejected") throw error;
+        proof = await queue.settleRejectedDependency({ ...input, predecessor: { operationId: parentId,
+          path: parent.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
+          method: parent.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(parent.body) } });
+      }
       assertCurrent();
       if (!validHistoricalProof(proof, action)) {
         throw blocked("receipt", "Не удалось подтвердить точные действия очереди.");
@@ -191,6 +214,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     }
     return { historicalOnly: true, headOperationId: head?.action.operationId || null, outcomes };
   };
+  const inspect = options => settle(options); // Public inspection is always GET-only.
   return {
     binding: clone(binding),
     recover() { return clone(read().head); },
@@ -338,12 +362,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
       const assertCurrent = guardEditor(getContext, head);
-      const settled = await inspect({ queue, getContext });
+      const settled = await settle({ queue, getContext }, true);
       assertCurrent();
-      const last = settled.outcomes.at(-1);
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
-      if (!revisionConflict(last)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
+      if (!revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
       // previously committed edit is not replayed over a later remote edit.

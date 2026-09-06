@@ -270,6 +270,40 @@ test("changed historical receipt blocks a reconciled action before any dispatch"
   assert.equal(f.calls[0].operationId, f.first.action.operationId);
 });
 
+test("reconciliation settles unknown descendants only behind an exact rejected predecessor; public inspect never sends", async () => {
+  const f = reconciliationFixture();
+  const local = structuredClone(f.first.action.body.payload); local.items.a.note = "second local edit";
+  const second = f.outbox.capture({ snapshot: local, body: { baseStateRevision: 5, payload: local } });
+  let settlements = 0;
+  const inspect = f.queue.inspect;
+  f.queue.inspect = async input => {
+    if (!f.proofs.has(input.operationId)) throw Object.assign(Error("unknown"), { isOperationReceiptError: true });
+    return inspect(input);
+  };
+  f.queue.settleRejectedDependency = async input => {
+    settlements++; assert.equal(input.operationId, second.action.operationId);
+    assert.equal(input.predecessor.operationId, f.first.action.operationId);
+    assert.deepEqual(JSON.parse(input.body), second.action.body);
+    const proof = { ...historicalProof(f, second, "rejected"), rejectionCode: "dependency_rejected" };
+    f.proofs.set(second.action.operationId, proof); return proof;
+  };
+  await assert.rejects(f.outbox.inspect(f.options)); assert.equal(settlements, 0);
+  const merged = await f.outbox.reconcile(f.options);
+  assert.equal(settlements, 1); assert.equal(merged.action.generation, 3);
+  assert.equal(merged.snapshot.items.a.note, "second local edit");
+  assert.equal(merged.snapshot.items.a.name, "Local"); assert.equal(merged.snapshot.items.a.weight, 200);
+  assert.deepEqual(f.make().recover(), merged);
+});
+
+test("a failed non-conflict ancestor cannot turn dependency rejections into reconciliation permission", async () => {
+  const f = reconciliationFixture();
+  const second = f.outbox.capture(f.input(250));
+  f.proofs.get(f.first.action.operationId).rejectionCode = "forbidden";
+  f.proofs.set(second.action.operationId, { ...historicalProof(f, second, "rejected"), rejectionCode: "dependency_rejected" });
+  const before = [...f.values]; await assert.rejects(f.outbox.reconcile(f.options), { code: "reconciliation" });
+  assert.deepEqual([...f.values], before);
+});
+
 test("outbox inspection settles exact historical actions without applying, clearing or changing their snapshots", async () => {
   const f = fixture(), first = f.outbox.capture(f.input(100)), second = f.outbox.capture(f.input(200));
   const before = [...f.values], calls = [];
