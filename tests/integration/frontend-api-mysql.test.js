@@ -301,10 +301,12 @@ async function selectDatabaseLayout(page) {
 async function selectLayoutByName(page, name) {
   const option = page.locator("#layoutSelect option").filter({ hasText: name });
   await option.waitFor({ state: "attached", timeout: 20_000 });
-  const value = await option.getAttribute("value");
-  assert.ok(value, `Layout ${JSON.stringify(name)} does not have a selectable value`);
-  await page.locator("#layoutSelect").selectOption(value);
-  return value;
+  // Guest handoff replaces the local layout ID with the imported personal ID.
+  // Resolve by stable visible label during selection, not an ID read before
+  // that asynchronous replacement. Later API/MySQL and clean-browser checks
+  // still prove the import really completed and was not duplicated.
+  await page.locator("#layoutSelect").selectOption({ label: name });
+  return page.locator("#layoutSelect").inputValue();
 }
 
 async function createGuestWorkspace(page, { layoutName, containerName, itemName }) {
