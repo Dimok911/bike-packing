@@ -88,6 +88,7 @@ import {
   updatePhotoLightboxAutoSize
 } from "../../src/ui/photo-lightbox-sizing.js";
 import {
+  createSharedFullscreenSwitcher,
   createSharedFullscreenSourceController,
   fullscreenSwitcherMatchesRequestedMode,
   replaceSharedFullscreenImageSource,
@@ -2482,13 +2483,13 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.1.8 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.2.0 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.1.8");
+  assert.equal(manifest.version, "2.2.0");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "af2aee51f0a1917101db4c86cbd415d20a08bb0a7843c9861029b2aa267cc426");
+  assert.equal(manifest.sha256, "86093aa7aba8dbdd3b79d5f3c7948dc16411ab3c44e8cf86816e9c5373ebb09e");
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2711,6 +2712,36 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
+test("CRITICAL offline-photos: old stable cannot bypass shared ready navigation", async () => {
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  let legacyCalls = 0;
+  globalThis.VniipoPhotoGallery = {
+    capabilities: { fullscreenEdgeRubberBand: 1 },
+    createFullscreenSwitcher() { legacyCalls += 1; return null; }
+  };
+  try {
+    const controller = createSharedFullscreenSwitcher({
+      directDesktop: true, waitForReady: true, slides: [{}, {}]
+    });
+    let release;
+    const ready = new Promise((resolve) => { release = resolve; });
+    const activation = controller.activate(1, () => ready);
+    assert.equal(legacyCalls, 0);
+    assert.equal(controller.activeIndex, 1);
+    assert.equal(controller.presentedIndex, 0);
+    release(true);
+    assert.equal(await activation, true);
+    assert.equal(controller.presentedIndex, 1);
+    controller.destroy();
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
+  const source = readProjectFile("src/ui/photo-gallery.js");
+  assert.match(source, /waitForReady: true/);
+  assert.match(source, /fullscreenSwitcher\.activate\(nextIndex/);
+  assert.doesNotMatch(source, /let presentedIndex|const presentActivePhoto/);
+});
+
 test("CRITICAL offline-photos: shared helpers and edge settling are available through the cached stable fallback", () => {
   const sharedSource = readProjectFile("src/ui/shared-photo-gallery.js");
   const fallbackSource = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
@@ -2731,7 +2762,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.1\.8"/);
+  assert.match(fallbackSource, /const VERSION = "2\.2\.0"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
