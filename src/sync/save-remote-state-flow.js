@@ -148,6 +148,17 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     updateSyncUi();
     if (notify) showToast(localText("Sync complete.", "Синхронизация завершена."), "success");
   } catch (error) {
+    if (error?.isAmbiguousMutation) {
+      runtime.syncMeta.dirty = true;
+      saveSyncMeta();
+      const message = localText(
+        "Save result is unconfirmed · repeat saving is paused; local changes are kept",
+        "Результат сохранения не подтверждён · повтор приостановлен; локальные изменения сохранены"
+      );
+      updateSyncUi(message);
+      if (notify) showToast(message, "warning");
+      return;
+    }
     if (isReadOnlyBikePackingError(error)) {
       runtime.syncMeta.dirty = false;
       saveSyncMeta();

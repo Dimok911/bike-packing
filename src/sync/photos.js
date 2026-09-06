@@ -11,6 +11,7 @@ import {
 } from "../config/constants.js";
 import { normalizeItemPhotos, normalizePhotoStatus, normalizePhotoUrlFields } from "../state/item-photos.js";
 import { nowIso } from "../utils/time.js";
+import { transportPhotoFetch } from "./experiment-transport.js";
 
 export function hasRemotePhotoUrl(photo) {
   normalizePhotoUrlFields(photo);
@@ -263,7 +264,7 @@ async function fetchRemotePhotoBlobForCache(photo, variant = "file") {
     ? (photo.thumbUrl || photo.url || "")
     : (photo.url || photo.thumbUrl || ""));
   if (!src) return null;
-  const response = await fetch(src, { credentials: "include", cache: "no-store" });
+  const response = await transportPhotoFetch(src, { credentials: "include", cache: "no-store" });
   if (!response.ok) return null;
   return response.blob();
 }
@@ -557,7 +558,7 @@ export function shouldRetryLocalPhotoUploadAfterFailure({
   uploadPath = ""
 } = {}) {
   return Boolean(
-    retryAvailable &&
+    retryAvailable && !error?.isAmbiguousMutation &&
     blob &&
     !String(uploadPath || "").includes("/admin/") &&
     (isNetworkErrorValue || isTimeoutErrorValue || error?.isUploadStalled)

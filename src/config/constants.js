@@ -1,5 +1,5 @@
 export const STORAGE_KEY = "bike-packing-prototype-state-v1";
-export const APP_VERSION = "v1604";
+export const APP_VERSION = "v1605";
 export const SYNC_META_KEY = "bike-packing-prototype-sync-meta-v1";
 export const BASE_STATE_KEY = "bike-packing-prototype-base-state-v1";
 export const RECOVERY_STATE_KEY = "bike-packing-recovery-state-v1";
@@ -23,7 +23,11 @@ export const EXPERIMENT_API_BASE = "https://experiment.vniipo-help.ru/letters-vn
 export const EXPERIMENT_SHARED_AUTH_URL =
   "https://api.vniipo-help.ru/letters-vniipo/api/auth/experiment-share-session";
 export function resolveApiBase(locationLike = globalThis.location) {
-  return String(locationLike?.hostname || "").toLowerCase() === "experiment.vniipo-help.ru"
+  const host = String(locationLike?.hostname || "").toLowerCase();
+  if (["201.51.16.219", "api-eu.vniipo-help.ru"].includes(host)) {
+    throw new Error("API proxy is not a frontend host; open experiment.vniipo-help.ru");
+  }
+  return host === "experiment.vniipo-help.ru"
     ? EXPERIMENT_API_BASE
     : PRODUCTION_API_BASE;
 }

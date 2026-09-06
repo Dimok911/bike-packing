@@ -28,6 +28,8 @@ import {
   readPhotoPasteEventImageFiles
 } from "../ui/photo-clipboard.js";
 import { fetchClipboardImageSource } from "../sync/remote-image-import.js";
+import { transportPhotoFetch } from "../sync/experiment-transport.js";
+import { renderExperimentTransportSettings, bindExperimentTransportSettings } from "../ui/experiment-transport-settings.js";
 import {
   isContainerReplacementCandidateInLayoutState,
   isTemporaryContainerInLayoutState,
@@ -4802,6 +4804,7 @@ function renderSettings() {
   refs.settingsView.innerHTML = `
     ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
     ${renderOfflineLayoutSettingsHtml()}
+    ${renderExperimentTransportSettings({ language: uiLanguage })}
     <div class="settings-grid">
       ${renderDictionary(t("labels.storagePlaces"), "location", dictionaryOptionsForOwner("location", dictionaryOwner))}
       ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
@@ -4811,6 +4814,7 @@ function renderSettings() {
   bindDictionary("category", dictionaryOwner);
   bindProfileSettingsControls();
   bindOfflineLayoutSettingsControls();
+  bindExperimentTransportSettings(refs.settingsView, { language: uiLanguage });
 }
 
 function bindProfileSettingsControls() {
@@ -9467,7 +9471,7 @@ async function fetchBackupPhotoBlob(photo, variant = "file") {
   }
   const src = variant === "thumb" ? (photo.thumbUrl || photo.url) : (photo.url || photo.thumbUrl);
   if (!src) return null;
-  const response = await fetch(src, { credentials: "include", cache: "no-store" });
+  const response = await transportPhotoFetch(src, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw new Error(localText(`Photo ${photo.id || ""}: HTTP ${response.status}`, `Фото ${photo.id || ""}: HTTP ${response.status}`));
   return await response.blob();
 }

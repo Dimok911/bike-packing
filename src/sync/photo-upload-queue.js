@@ -18,9 +18,10 @@ export async function uploadPhotoBatchQueue(photos, {
   let cursor = 0;
   let attempted = 0;
   let uploaded = false;
+  let pausedError = null;
 
   async function runWorker() {
-    while (cursor < queue.length) {
+    while (!pausedError && cursor < queue.length) {
       const index = cursor;
       cursor += 1;
       const photo = queue[index];
@@ -29,6 +30,7 @@ export async function uploadPhotoBatchQueue(photos, {
       try {
         uploaded = Boolean(await uploadPhoto(photo, index)) || uploaded;
       } catch (error) {
+        if (error?.isAmbiguousMutation) pausedError = error;
         errors.push({ photo, error, index });
         markPhotoUploadQueueError(photo, error, { fallbackErrorMessage });
         onUnexpectedError(photo, error, index);
@@ -37,6 +39,7 @@ export async function uploadPhotoBatchQueue(photos, {
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  if (pausedError) throw pausedError;
   return { attempted, uploaded, errors };
 }
 

@@ -1,7 +1,7 @@
 import {
-  API_BASE,
   API_TIMEOUT_MS
 } from "../config/constants.js";
+import { experimentTransport } from "./experiment-transport.js";
 
 export function isNetworkError(error) {
   return Boolean(error?.isNetworkError);
@@ -34,34 +34,56 @@ export function apiErrorMessage(error) {
   );
 }
 
-export async function apiFetchRequest(path, options = {}, { isForcedOffline = () => false } = {}) {
+export async function apiFetchRequest(path, options = {}, { isForcedOffline = () => false, transport = experimentTransport } = {}) {
   if (isForcedOffline()) {
     throw createNetworkError("принудительный офлайн-режим");
   }
   const { timeoutMs = API_TIMEOUT_MS, silentErrors = false, ...fetchOptions } = options;
+  await transport.prepare();
+  transport.assertWritable(path, fetchOptions.method || "GET");
+  const writeId = await transport.beginWrite(path, fetchOptions.method || "GET", fetchOptions.body);
   const isFormDataBody = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-  let response;
+  let timeoutId;
+  let response, data;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    transport.assertWritable(path, fetchOptions.method || "GET");
+  } catch (error) {
+    transport.confirmWrite(writeId, { committed: false });
+    throw error;
+  }
+  try {
+    // Bound response-body decoding too. Only this settled await may acknowledge
+    // the intent; a late response after timeout cannot release the barrier.
+    ({ response, data } = await Promise.race([fetch(transport.apiUrl(path), {
       ...fetchOptions,
       credentials: "include",
       cache: fetchOptions.cache || "no-store",
+      ...(transport.experiment ? { redirect: "error" } : {}),
       signal: controller.signal,
       headers: {
         ...(fetchOptions.body && !isFormDataBody ? { "Content-Type": "application/json" } : {}),
         ...(fetchOptions.headers || {})
       }
-    });
+    }).then(async (response) => ({ response, data: await response.json().catch(() => null) })),
+    new Promise((resolve, reject) => {
+      timeoutId = window.setTimeout(() => {
+        controller.abort();
+        const error = new Error("Request timed out");
+        error.name = "AbortError";
+        reject(error);
+      }, timeoutMs);
+    })]));
   } catch (error) {
     const timeout = error?.name === "AbortError";
     const message = timeout ? "сервер не ответил вовремя" : "нет соединения с сервером";
-    throw createNetworkError(message, error, { timeout });
+    throw transport.noteFailure(createNetworkError(message, error, { timeout }), path, fetchOptions.method || "GET", writeId);
   } finally {
     window.clearTimeout(timeoutId);
   }
-  const data = await response.json().catch(() => null);
+  if (transport.experiment && data === null && response.ok) {
+    throw transport.noteFailure(createNetworkError("Сервер вернул неподтверждённый результат"), path, fetchOptions.method || "GET", writeId);
+  }
   if (!response.ok || data?.ok === false) {
     const apiError = new Error(data?.message || data?.error || data?.code || `HTTP ${response.status}`);
     apiError.status = response.status;
@@ -76,8 +98,10 @@ export async function apiFetchRequest(path, options = {}, { isForcedOffline = ()
         response: data
       });
     }
-    throw apiError;
+    if ([401, 403].includes(response.status)) transport.confirmWrite(writeId, { committed: false });
+    throw transport.noteFailure(apiError, path, fetchOptions.method || "GET", writeId);
   }
+  transport.confirmWrite(writeId);
   return data;
 }
 
@@ -92,13 +116,24 @@ export function apiUploadFormDataRequest(
     onUploadProgress = null,
     stalledUploadTimeoutMs = 0
   } = {},
-  { isForcedOffline = () => false } = {}
+  { isForcedOffline = () => false, transport = experimentTransport } = {}
 ) {
   if (isForcedOffline()) {
     return Promise.reject(createNetworkError("принудительный офлайн-режим"));
   }
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  const send = (writeId) => new Promise((resolve, reject) => {
+    try {
+      transport.assertWritable(path, method);
+    } catch (error) {
+      transport.confirmWrite(writeId, { committed: false });
+      throw error;
+    }
+    let xhr;
+    try { xhr = new XMLHttpRequest(); }
+    catch (error) {
+      transport.confirmWrite(writeId, { committed: false });
+      throw error;
+    }
     let settled = false;
     let stalledUploadTimer = null;
     let lastUploadLoaded = -1;
@@ -111,13 +146,15 @@ export function apiUploadFormDataRequest(
       if (settled) return;
       settled = true;
       clearStalledUploadTimer();
+      transport.confirmWrite(writeId);
       resolve(value);
     };
     const rejectOnce = (error) => {
       if (settled) return;
       settled = true;
       clearStalledUploadTimer();
-      reject(error);
+      if ([401, 403].includes(error?.status)) transport.confirmWrite(writeId, { committed: false });
+      reject(transport.noteFailure(error, path, method, writeId));
     };
     const scheduleStalledUploadTimer = () => {
       if (!stalledUploadTimeoutMs || stalledUploadTimeoutMs <= 0) return;
@@ -133,12 +170,18 @@ export function apiUploadFormDataRequest(
         }
       }, stalledUploadTimeoutMs);
     };
-    xhr.open(method, `${API_BASE}${path}`, true);
-    xhr.withCredentials = true;
-    xhr.timeout = timeoutMs;
-    Object.entries(headers || {}).forEach(([name, value]) => {
-      if (value !== undefined && value !== null) xhr.setRequestHeader(name, String(value));
-    });
+    try {
+      xhr.open(method, transport.apiUrl(path), true);
+      xhr.withCredentials = true;
+      xhr.timeout = timeoutMs;
+      Object.entries(headers || {}).forEach(([name, value]) => {
+        if (value !== undefined && value !== null) xhr.setRequestHeader(name, String(value));
+      });
+    } catch (error) {
+      transport.confirmWrite(writeId, { committed: false });
+      reject(error);
+      return;
+    }
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable || !event.total) return;
       const loaded = Number(event.loaded) || 0;
@@ -155,7 +198,16 @@ export function apiUploadFormDataRequest(
       clearStalledUploadTimer();
     };
     xhr.onload = () => {
+      if (settled) return;
+      if (transport.experiment && xhr.responseURL && xhr.responseURL !== transport.apiUrl(path)) {
+        rejectOnce(createNetworkError("Unexpected upload response URL; outcome requires reconciliation"));
+        return;
+      }
       const data = parseApiJsonResponse(xhr.responseText);
+      if (transport.experiment && data === null && xhr.status >= 200 && xhr.status < 300) {
+        rejectOnce(createNetworkError("Сервер вернул неподтверждённый результат загрузки"));
+        return;
+      }
       if (xhr.status < 200 || xhr.status >= 300 || data?.ok === false) {
         const apiError = new Error(data?.message || data?.error || data?.code || `HTTP ${xhr.status}`);
         apiError.status = xhr.status;
@@ -179,8 +231,12 @@ export function apiUploadFormDataRequest(
     xhr.ontimeout = () => rejectOnce(createNetworkError("сервер не ответил вовремя", null, { timeout: true }));
     xhr.onabort = () => rejectOnce(createNetworkError("загрузка фото отменена"));
     scheduleStalledUploadTimer();
-    xhr.send(body);
+    try { xhr.send(body); }
+    catch (error) { rejectOnce(createNetworkError("загрузка фото не подтверждена", error)); }
   });
+  return transport.experiment
+    ? transport.prepare().then(() => transport.beginWrite(path, method, body)).then(send)
+    : send(null);
 }
 
 function parseApiJsonResponse(text) {

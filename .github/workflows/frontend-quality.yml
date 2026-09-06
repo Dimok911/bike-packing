@@ -34,6 +34,9 @@ jobs:
       - name: Critical contracts
         run: npm run test:critical
 
+      - name: Experiment transport isolation
+        run: npm run test:transport
+
       - name: Production build
         run: npm run build
 

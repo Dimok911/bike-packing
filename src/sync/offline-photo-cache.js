@@ -6,6 +6,7 @@ import {
   reconcileNormalizedPhotoTasks
 } from "./photo-cache-engine.js";
 import { PHOTO_DOWNLOAD_PRIORITY } from "./photo-download-coordinator.js";
+import { transportPhotoFetch } from "./experiment-transport.js";
 
 const OFFLINE_REMOTE_PHOTO_NAMESPACE = "offline-remote";
 
@@ -123,7 +124,7 @@ export function offlinePhotoCacheFingerprint(targetState) {
 }
 
 export async function cacheRemotePhotosForOffline(targetState, {
-  fetchImpl = globalThis.fetch,
+  fetchImpl = transportPhotoFetch,
   getCachedPhoto = async () => null,
   putCachedPhoto = async () => {},
   getMemoryRecord,

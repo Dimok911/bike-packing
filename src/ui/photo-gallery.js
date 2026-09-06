@@ -24,6 +24,7 @@ import {
 } from "../state/item-photos.js";
 import { escapeHtml } from "../utils/html.js";
 import { currentDocumentLanguage } from "../utils/language.js";
+import { experimentTransport, transportPhotoFetch } from "../sync/experiment-transport.js";
 import {
   photoLightboxSizingPresentation,
   updatePhotoLightboxAutoSize
@@ -924,6 +925,15 @@ export async function openPhotoLightbox(sourceImage, {
 } = {}) {
   const openRequestId = ++lightboxOpenRequestId;
   const { entries, activeIndex: initialIndex } = photoLightboxEntries(sourceImage, { gallery, index });
+  if (experimentTransport.mode === "eu") {
+    await Promise.all(entries.map(async (entry) => {
+      // Only DOM network sources change. Canonical URLs/signatures stay intact
+      // so already downloaded photos remain available after transport changes.
+      for (const field of ["previewSrc", "fullSrc", "resolvedFullSrc"]) {
+        entry[field] = await experimentTransport.photoUrl(entry[field]).catch(() => "");
+      }
+    }));
+  }
   if (typeof photoObjectUrls?.sources === "function") {
     entries.forEach((entry) => {
       if (!entry.localId) return;
@@ -1369,7 +1379,7 @@ export async function openPhotoLightbox(sourceImage, {
       // Catalog entries already point at the original. Keep that same decoded
       // image: fetching an identical blob swaps the bitmap after its first paint.
       // Local/offline records and separate previews still use the cache pipeline.
-      if (!entryExpectsFullSize(entry)) return entry.fullSrc || entry.previewSrc || null;
+      if (!entryExpectsFullSize(entry)) return experimentTransport.photoUrl(entry.fullSrc || entry.previewSrc || null);
       const preparedSources = entry.localId
         ? await prepareFullscreenSource(entry).catch(() => null)
         : null;
@@ -1927,7 +1937,7 @@ function photoLightboxEntries(sourceImage, { gallery = null, index = -1 } = {}) 
 export async function resolvePhotoLightboxSource(entry, {
   getCachedPhotoForLightbox = getCachedPhoto,
   putCachedPhotoForLightbox = putCachedPhoto,
-  fetchImpl = globalThis.fetch,
+  fetchImpl = transportPhotoFetch,
   downloadCoordinator = null,
   createObjectUrl = (blob) => URL.createObjectURL(blob),
   onCachedRecord = () => "",

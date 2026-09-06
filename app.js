@@ -723,6 +723,7 @@ import {
 import { loadRemoteStateFlow } from "./src/sync/load-remote-state-flow.js";
 import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
+import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
 import { runSyncNowFlow } from "./src/sync/run-sync-now-flow.js";
 import {
   formatHistoryDateTime,
@@ -1386,7 +1387,7 @@ const offlinePhotoCacheController = createOfflinePhotoCacheController({
   getCacheOptions: () => {
     const scopeKey = getPhotoCacheScope();
     return {
-      fetchImpl: window.fetch.bind(window),
+      fetchImpl: transportPhotoFetch,
       getCachedPhoto: (id) => getCachedPhoto(id, scopeKey),
       putCachedPhoto: (record) => putCachedPhoto(record, scopeKey),
       getMemoryRecord: (task) => photoObjectUrls.getRecord(task),
@@ -6615,10 +6616,12 @@ async function handleSignOutButton() {
     cancelText: localText("Stay signed in", "Остаться")
   });
   if (!confirmed) return;
+  let remoteSignOutConfirmed = !currentUser;
   if (currentUser) {
     try {
       updateSyncUi(localText("Signing out...", "Выходим..."));
       await apiFetch("/auth/logout", { method: "POST" });
+      remoteSignOutConfirmed = true;
     } catch {
       // Even if the network fails, clear only the local UI state. The HttpOnly cookie remains server-owned.
     }
@@ -6630,7 +6633,11 @@ async function handleSignOutButton() {
   activateLocalStorageScope(GUEST_STORAGE_SCOPE);
   resetGuestDemoScopeToCanonical();
   await enterSignedOutPublicMode("Signed out · personal lists are hidden, local demo copy is open");
-  showToast(localText("You signed out. Personal lists are hidden; sign in again to open them.", "Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их."), "success");
+  if (experimentTransport.experiment && !remoteSignOutConfirmed) {
+    showToast(localText("Signed out on this device only. Server session revocation is not confirmed; local data was retained.", "Выход выполнен только на этом устройстве. Отзыв серверной сессии не подтверждён; локальные данные сохранены."), "warning");
+  } else {
+    showToast(localText("You signed out. Personal lists are hidden; sign in again to open them.", "Вы вышли. Личные списки скрыты; войдите снова, чтобы открыть их."), "success");
+  }
 }
 
 function getSavedAuthEmail() {

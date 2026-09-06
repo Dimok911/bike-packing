@@ -19,6 +19,7 @@ import {
   shouldRetryLocalPhotoUploadAfterFailure
 } from "./photos.js";
 import { photoCacheSourceSignature } from "./photo-cache-quality.js";
+import { transportPhotoFetch } from "./experiment-transport.js";
 
 export async function uploadPhotoToPath({
   path = "",
@@ -37,7 +38,7 @@ export async function uploadPhotoToPath({
   markEntityChanged = () => {},
   persistStateSnapshot = () => {},
   scheduleProgressRender = () => {},
-  fetchImpl = globalThis.fetch
+  fetchImpl = transportPhotoFetch
 } = {}) {
   if (!path || !entity?.id || !photo || typeof apiFetch !== "function" || typeof apiUploadFormData !== "function") {
     return false;
@@ -201,7 +202,10 @@ export async function uploadPhotoToPath({
     }
     scheduleProgressRender();
   };
-  const recoverStoredPhoto = async (targetPhoto) => {
+  const recoverStoredPhoto = async (targetPhoto, error) => {
+    // A pre-existing identical file says nothing about this operation's outcome.
+    // Do not POST a resolver or clear the barrier after an ambiguous upload.
+    if (error?.isAmbiguousMutation) return false;
     let recoveredPhoto = null;
     if (!String(path || "").includes("/admin/")) {
       try {
@@ -250,7 +254,7 @@ export async function uploadPhotoToPath({
     return true;
   } catch (error) {
     const targetPhoto = resolvePhoto();
-    if (await recoverStoredPhoto(targetPhoto)) return true;
+    if (await recoverStoredPhoto(targetPhoto, error)) return true;
     if (shouldRetryLocalPhotoUploadAfterFailure({
       blob: uploadSource?.blob,
       error,
@@ -268,10 +272,13 @@ export async function uploadPhotoToPath({
     const changedAt = nowIso();
     applyPhotoPairState(targetPhoto, (candidate) => {
       candidate.status = "error";
-      candidate.error = error.message || "Не удалось загрузить фото.";
+      candidate.error = error.isAmbiguousMutation
+        ? "Результат сохранения не подтверждён, повтор приостановлен. Локальное фото сохранено."
+        : error.message || "Не удалось загрузить фото.";
       candidate.updatedAt = changedAt;
     });
     clearPhotoPairProgress(targetPhoto);
+    if (error.isAmbiguousMutation) throw error;
     return true;
   }
 }
@@ -311,7 +318,7 @@ export function clearPhotoUploadProgress(photo) {
 }
 
 export async function getPhotoUploadSource(photo, localId, {
-  fetchImpl = globalThis.fetch,
+  fetchImpl = transportPhotoFetch,
   getCachedPhoto
 } = {}) {
   const cached = typeof getCachedPhoto === "function" ? await getCachedPhoto(localId) : null;
@@ -335,7 +342,7 @@ export async function copyRemotePhotoToList({
   photo = null,
   uploadPath = "",
   markEntityChanged = () => {},
-  fetchImpl = globalThis.fetch
+  fetchImpl = transportPhotoFetch
 } = {}) {
   if (!listId || !entity?.id || !hasRemotePhotoUrl(photo) || typeof apiFetch !== "function") return false;
   const source = remotePhotoSourceFromRecord(photo);
@@ -374,6 +381,7 @@ export async function copyRemotePhotoToList({
     markEntityChanged(photo.updatedAt);
     return true;
   } catch (error) {
+    if (error?.isAmbiguousMutation) throw error;
     if (isMissingRemotePhotoCopyError(error)) return "missing-source";
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[bike-packing] Failed to copy remote photo through API; falling back to download/upload.", {
@@ -390,7 +398,7 @@ export async function copyRemotePhotoToList({
 }
 
 export async function verifyRemotePhotoAssets(photo, {
-  fetchImpl = globalThis.fetch
+  fetchImpl = transportPhotoFetch
 } = {}) {
   if (typeof fetchImpl !== "function") return false;
   const urls = [...new Set([photo?.url, photo?.thumbUrl].filter(Boolean))];
@@ -408,7 +416,7 @@ export async function verifyRemotePhotoAssets(photo, {
 }
 
 export async function fetchRemotePhotoBlobForUpload(photo, variant = "file", {
-  fetchImpl = globalThis.fetch
+  fetchImpl = transportPhotoFetch
 } = {}) {
   normalizePhotoUrlFields(photo);
   const src = variant === "thumb"

@@ -1,4 +1,5 @@
 import { downloadPhotoBlob } from "./photo-cache-engine.js";
+import { transportPhotoFetch } from "./experiment-transport.js";
 
 export const PHOTO_DOWNLOAD_PRIORITY = Object.freeze({
   OFFLINE: 10,
@@ -55,7 +56,7 @@ export function createPhotoDownloadCoordinator({
     key = String(url || ""),
     priority = PHOTO_DOWNLOAD_PRIORITY.VISIBLE_PREVIEW,
     background = false,
-    fetchImpl = globalThis.fetch,
+    fetchImpl = transportPhotoFetch,
     requestInit,
     timeoutMs = 30_000,
     onProgress
