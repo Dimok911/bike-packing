@@ -6189,7 +6189,13 @@ function updateSyncUi(message = "") {
 async function apiFetch(path, options = {}) {
   const { connectionFailureMode = "auto", ...requestOptions } = options;
   try {
-    const response = await apiFetchRequest(path, requestOptions, { isForcedOffline });
+    const response = await apiFetchRequest(path, requestOptions, { isForcedOffline,
+      getOperationContext: () => ({
+        actorId: String(currentUser?.id || ""),
+        scope: isReadOnlyBikePackingContext() ? "readonly" : "personal",
+        generation: JSON.stringify([syncMeta.localUpdatedAt, currentPackingListMeta?.id || "", serializeState({ forSync: true })])
+      })
+    });
     connectionStatusController.reportSuccess();
     return response;
   } catch (error) {
@@ -7448,6 +7454,7 @@ async function saveRemoteListStateRecord({ forceOverwrite = false } = {}) {
     const record = rememberCurrentPackingListRecord(data);
     return data;
   } catch (error) {
+    if (error.isOperationReceiptError) throw annotatePayloadError(error, report);
     if (error.status === 404) {
       saveActivePackingListId("");
       const refreshedListId = await ensureCurrentPackingListId();

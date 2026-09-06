@@ -204,10 +204,11 @@ export function createExperimentTransport({
     if (entry?.recovery && committed && !receipt) return false;
     ownActiveWrites.delete(id);
     try {
-      // Keep a photo receipt even if the tab dies before saving its local queue.
-      // It blocks blind replay, not independent photos/edits. No response/body data.
-      if (committed && entry?.identity) {
+      // Persist protected results before a caller applies them to local state.
+      // A restarted queue must recover the same ID, not blindly send again.
+      if (committed && (entry?.identity || entry?.recovery?.type === "list")) {
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
+          ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
     } catch { /* Persisted intent remains a barrier if acknowledgement cannot be saved. */ }

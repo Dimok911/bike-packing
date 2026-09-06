@@ -91,6 +91,17 @@ Unknown old client IDs that never reached the server cannot be retroactively
 confirmed. Recovery of photo uploads alone does not remove the whole-transport
 candidate's global direct-write blocker for other types of mutation.
 
+### Additional development slice for batch 2: list/entity queue
+
+Backend seven-kind gateway: source `0dec7d2`, strengthened real-MySQL tests
+`df7f461` (CI https://github.com/Dimok911/bikepacking-api/actions/runs/34036753960).
+Frontend persisted queue, context/generation guards and compact receipts are
+described in `list-operation-queue.md`. This slice is separate from photo upload,
+uses its own disabled release gate, and must be paired with the backend additive
+`2026-09-06-list-operation-receipts.sql`. Migration is NOT applied live.
+Legacy/excluded operations, storage policy, historical-state reconciliation and
+whole-direct blockers remain; no automatic publication follows these commits.
+
 ## Batch 3 — optional alternate API route
 
 One existing API backend, two network routes. Route configuration and diagnostics

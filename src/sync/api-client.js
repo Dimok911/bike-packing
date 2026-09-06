@@ -3,6 +3,7 @@ import {
 } from "../config/constants.js";
 import { experimentTransport } from "./experiment-transport.js";
 import { createPhotoOperationRecovery } from "./photo-operation-recovery.js";
+import { createListOperationQueue } from "./list-operation-queue.js";
 
 export function isNetworkError(error) {
   return Boolean(error?.isNetworkError);
@@ -35,11 +36,14 @@ export function apiErrorMessage(error) {
   );
 }
 
-export async function apiFetchRequest(path, options = {}, { isForcedOffline = () => false, transport = experimentTransport } = {}) {
+export async function apiFetchRequest(path, options = {}, { isForcedOffline = () => false, transport = experimentTransport,
+  getOperationContext = () => null, listQueue = createListOperationQueue({ transport, getContext: getOperationContext }) } = {}) {
   if (isForcedOffline()) {
     throw createNetworkError("принудительный офлайн-режим");
   }
   const { timeoutMs = API_TIMEOUT_MS, silentErrors = false, ...fetchOptions } = options;
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  if (listQueue.supports(path, method)) return listQueue.run({ path, method, body: fetchOptions.body });
   await transport.prepare();
   transport.assertWritable(path, fetchOptions.method || "GET");
   const writeId = await transport.beginWrite(path, fetchOptions.method || "GET", fetchOptions.body);

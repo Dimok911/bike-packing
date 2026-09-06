@@ -3,6 +3,8 @@ import {
   expectedEntitySyncConfirmationFailures
 } from "./entity-sync-confirmation.js";
 import { isLegacyPersonalSyncWriteBlockedError } from "./legacy-personal-sync.js";
+import { LIST_OPERATION_QUEUE_ENABLED } from "./list-operation-queue.js";
+import { isExperimentFrontend } from "./experiment-transport.js";
 
 export async function saveRemoteStateFlow({ runtime, dependencies }, {
   notify = false,
@@ -90,6 +92,13 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     }
     updateSyncUi(localText("Saving to the server...", "Сохраняю на сервер..."));
     const baseBeforeSave = loadBaseState();
+    const protectedGeneration = LIST_OPERATION_QUEUE_ENABLED && isExperimentFrontend()
+      ? JSON.stringify([runtime.currentUser?.id, runtime.syncMeta.localUpdatedAt, serializeState({ forSync: true })]) : null;
+    const assertCurrentGeneration = () => {
+      if (protectedGeneration !== null && protectedGeneration !== JSON.stringify([
+        runtime.currentUser?.id, runtime.syncMeta.localUpdatedAt, serializeState({ forSync: true })
+      ])) throw Object.assign(new Error("Новые локальные изменения ещё не подтверждены"), { isAmbiguousMutation: true });
+    };
     const entitySync = forceOverwrite
       ? { attempted: false, skipped: true, unavailable: false, integrityMeta: null, upserted: [], deleted: [] }
       : await syncChangedBikePackingEntities({ baseState: baseBeforeSave, forceOverwrite });
@@ -105,6 +114,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     const hasLegacyChanges = confirmationFailures.length || legacyDiffKeys.length
       ? true
       : hasLegacyPayloadChanges(baseBeforeSave, runtime.state, entitySync);
+    assertCurrentGeneration();
     if (!forceOverwrite && entitySync.attempted && !hasLegacyChanges) {
       runtime.syncMeta.dirty = false;
       runtime.syncMeta.serverUpdatedAt = entitySync.serverUpdatedAt || runtime.syncMeta.serverUpdatedAt;
@@ -137,6 +147,7 @@ export async function saveRemoteStateFlow({ runtime, dependencies }, {
     // Full payload writer is allowed for force overwrite, conflict/recovery
     // merge results, and entity-sync-uncovered legacy diffs through the list API.
     const data = await saveRemoteStateRecord({ forceOverwrite });
+    assertCurrentGeneration();
     runtime.syncMeta.dirty = false;
     runtime.syncMeta.serverUpdatedAt = remoteUpdatedAt(data.record || data.list || data) || new Date().toISOString();
     runtime.syncMeta.localUpdatedAt = runtime.syncMeta.localUpdatedAt || runtime.syncMeta.serverUpdatedAt;

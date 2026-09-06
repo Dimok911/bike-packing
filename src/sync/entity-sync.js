@@ -240,7 +240,7 @@ export async function syncEntityBatchWithRevisionRetry(batch, {
   try {
     return await sendBatch(batch);
   } catch (error) {
-    if (!isEntitySyncRevisionConflict(error) || !refreshRevision(error)) throw error;
+    if (error?.isAmbiguousMutation || !isEntitySyncRevisionConflict(error) || !refreshRevision(error)) throw error;
     return sendBatch(batch);
   }
 }
