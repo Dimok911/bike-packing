@@ -71,26 +71,67 @@ another tab after a fresh baseline, then reload and the next exact-revision edit
 Full UI fixtures cover lost ACK, failed local applied, recovery export and CRUD.
 Browser API responses are simulated; these are not new paired MySQL results.
 
-Compatible field merging is separately prepared as an explicit opt-in to
+Compatible field merging is an explicit opt-in to
 `mergeStateFromBase`, default **off**. It supports independent name/weight/note
 changes for existing items/bags, plus bag volume. Same-field disagreement,
 delete-versus-edit, concurrent creation, photos, dictionaries, arrangements and
 unknown fields do not become automatic scalar merges. Default legacy callers
-and the personal queue do not enable the option yet.
+remain unchanged. The disabled personal UI pilot now enables this policy only
+inside the receipt-checked reconciliation adapter described below.
 
-Next, the causal adapter must settle every old operation by its exact receipt,
+The causal adapter settles every retained old operation by its exact receipt,
 retain unknown/in-flight operations and both conflicting inputs, establish the
 correct common base, and persist a new merge action with a new UUID and current
 server revision. It must never mutate an old queued body or reuse a rejected
 UUID with different data. Late server edits must trigger another comparison,
 not a forced retry with only the revision number advanced. This is required
-before removing the current stale-tab/fork stop or enabling automatic sending.
+before removing the current stale-tab/fork stop or enabling the release gates.
 
-Adapter audit: `list-operation-queue.js` currently checks freshness before
+Adapter audit: `list-operation-queue.js` still checks freshness before
 returning even a rejected historical operation, and `receiptOnly` is a
-committed-operation path. A future historical-settlement API must distinguish
+committed-operation path. The new GET-only `inspect` method distinguishes
 terminal evidence from authority to apply its old server payload. A verified
 old rejection can be historical evidence without making its snapshot current.
 The existing `save-remote-state-flow.js` forced-conflict retry advances the base
 revision and retries its candidate; do not reuse that path for automatic causal
 merges. Recompute against new remote data instead, with account/editor guards.
+
+## Receipt-checked reconciliation (2026-09-07)
+
+The first local mutation freezes the exact remote base observed by the editor
+with the immutable action. Subsequent actions use the confirmed predecessor or
+an adopted baseline; a mutable shared mirror is never reconstructed as the base.
+Older journals without such evidence remain readable but cannot auto-reconcile.
+
+`outbox.reconcile` inspects exact IDs/bodies and requires terminal evidence for
+every retained action, with a final confirmed revision conflict. It reads a new
+owner-bound current list separately, performs a three-way comparison, and writes
+a NEW UUID/body/snapshot/merge-base plus historical-settlement lineage in one
+storage entry. Old bytes remain intact. Server dependencies of this new root
+are empty, with the fresh `baseStateRevision`; its local predecessor remains
+explicit. Every drain rechecks the historical evidence before dispatching it.
+Only confirmed compaction can retire those old records. A historical receipt
+never installs its payload as current UI state.
+
+The real personal save button/autosave path uses this adapter. A second server
+edit triggers a new comparison, not only a changed revision number. At most two
+automatic reconciliations happen per save attempt; continued churn pauses.
+The UI installs only the exact durably recorded candidate; normalization that
+would change its business payload stops the operation. No force flag survives.
+
+Unknown/waiting descendants, non-revision rejections, deleted lists, unsafe
+identity/map data, missing base, incompatible changes and files stop this path.
+Same-field and delete-versus-edit conflicts still require an explicit user
+resolution/recovery adapter. A fully committed but now stale head also requires
+a separate durable current-state adoption path. True forks/stale editors remain
+latched; this change does not remove those protections.
+
+Verification: 141 transport tests, 887 critical tests, source check, ordinary and
+isolated builds, 74/74 Chromium/mobile WebKit scenarios (no retries). A signed
+portable Oracle MySQL 8.4.11 ran locally on loopback with a unique disposable
+data directory: 21/21 real API/MySQL tests, including this frontend adapter,
+two rejected revisions -> new commit -> lost ACK -> reload and DELETE -> old
+SAVE. No cases skipped. This is a local paired run, not a new GitHub CI run.
+`scripts/test-causal-with-local-mysql.ps1` verifies the exact server data path
+before test database creation, restores process environment and stops its child.
+The runtime/archive/test data are ignored; no Windows service was installed.

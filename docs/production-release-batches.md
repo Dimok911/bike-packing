@@ -127,9 +127,13 @@ journals remain readable; old clients cannot read the new format. The personal
 pilot has never been publicly enabled. Future rollout/rollback must preserve a
 compatible journal reader and pending actions, receipts and server tombstones.
 See `personal-save-checkpoints.md` for the compatibility/storage boundaries.
-Independent scalar merge is prepared behind a default-off opt-in; it is not yet
-connected to causal settlement or automatic sending. It must not be activated
-through the legacy forced-conflict retry path.
+Independent scalar merge is now connected to exact historical settlement and
+new revision-checked actions inside the still-disabled personal pilot. It never
+uses the legacy forced-conflict retry path. Missing bases, unknown descendants,
+incompatible conflicts and files stay blocked. The new local reconciliation
+lineage must travel with its matching journal reader/recovery code on any future
+rollback. Local verification includes 74 browser cases and 21 real API/MySQL
+cases; it is not deployment authorization or evidence of a new remote CI run.
 
 Small development commits do not imply a deployment per commit. Promote tested,
 cohesive batches: compatible backend/schema preparation, a matching frontend

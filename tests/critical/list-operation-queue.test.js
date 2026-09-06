@@ -106,6 +106,113 @@ test("receipt-only scheduler settlement does not return a stale business payload
   assert.equal(f.posts().length, 1);
 });
 
+test("historical inspection is GET-only even after server advancement or deletion and returns no payload", async () => {
+  for (const change of [{ revision: 20 }, { deleted: true }]) {
+    const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+    await f.queue.run(input); Object.assign(f.state, change);
+    f.calls.length = 0;
+    const proof = await f.make().queue.inspect(input);
+    assert.equal(proof.operation.id, input.operationId);
+    assert.equal(proof.operation.state, "committed");
+    assert.equal(proof.stateRevision, 1);
+    assert.equal(proof.historicalOnly, true);
+    assert.equal(proof.result, undefined);
+    assert.equal(proof.operation.body, undefined);
+    assert.equal(f.calls.every(call => call.options.method === "GET"), true);
+    assert.equal(f.calls.some(call => call.url.endsWith("/freshness")), false);
+    await assert.rejects(f.make().queue.run(input), { isAmbiguousMutation: true });
+    assert.equal(f.posts().length, 0);
+  }
+});
+
+test("historical rejection can be settled without applying its obsolete conflict snapshot", async () => {
+  const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+  f.state.rejection = { status: 409, payload: { ok: false, code: "stale_state_revision", stateRevision: 1,
+    serverPayload: { privateHistoricalState: true } } };
+  await assert.rejects(f.queue.run(input), { isConfirmedOperationRejection: true });
+  f.state.revision = 20; f.calls.length = 0;
+  const proof = await f.make().queue.inspect(input);
+  assert.equal(proof.operation.state, "rejected");
+  assert.equal(proof.resultStatus, 409);
+  assert.equal(proof.rejectionCode, "stale_state_revision");
+  assert.equal(JSON.stringify(proof).includes("privateHistoricalState"), false);
+  await assert.rejects(f.make().queue.run(input), { isAmbiguousMutation: true });
+  assert.equal(f.posts().length, 0);
+});
+
+test("historical inspection validates a durable action even without a transport mirror, never registering or sending it", async () => {
+  const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+  await f.queue.run(input);
+  f.values.clear(); f.calls.length = 0;
+  const reloaded = f.make();
+  assert.equal((await reloaded.queue.inspect(input)).operation.id, input.operationId);
+  assert.equal(f.posts().length, 0);
+  assert.equal(reloaded.transport.writes.length, 0);
+  await assert.rejects(reloaded.queue.inspect({ ...input, body: JSON.stringify({ payload: { changed: true } }) }), { isAmbiguousMutation: true });
+  assert.equal(f.posts().length, 0);
+});
+
+test("unknown, waiting and mismatched historical receipts never resume or release an uncertain intent", async () => {
+  for (const defect of ["unknown", "waiting", "actorId", "environment", "kind", "listId", "id", "payloadDigest", "status"]) {
+    const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID(),
+      body: JSON.stringify({ payload: { items: {} }, causal: { dependsOn: [{ operationId: crypto.randomUUID(), listId: "list-a" }] } }) };
+    f.state.loseResponse = true; f.state.unknown = true;
+    await assert.rejects(f.queue.run(input), { isAmbiguousMutation: true });
+    f.state.unknown = defect === "unknown";
+    const receipt = f.receipts.get(input.operationId);
+    if (defect === "waiting") {
+      receipt.operation.state = "waiting"; receipt.result = null;
+      receipt.waiting = { code: "dependency_not_committed", retrySameOperation: true,
+        operationIds: JSON.parse(input.body).causal.dependsOn.map(dep => dep.operationId) };
+    } else if (defect === "status") receipt.result.status = 409;
+    else if (defect !== "unknown") receipt.operation[defect] = "wrong";
+    const before = JSON.stringify(f.transport.writes);
+    await assert.rejects(f.make().queue.inspect(input), { isAmbiguousMutation: true });
+    assert.equal(JSON.stringify(f.transport.writes), before, defect);
+    assert.equal(f.posts().length, 1, defect);
+  }
+});
+
+test("historical inspection freezes context and refuses changed account, editor, scope or selected list", async () => {
+  for (const change of [{ actorId: "other" }, { generation: "next" }, { scope: "readonly" }, { listId: "list-b" }, { scopeKey: "other-scope" }]) {
+    const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+    f.state.loseResponse = true; f.state.unknown = true;
+    await assert.rejects(f.queue.run(input)); f.state.unknown = false;
+    const queue = createListOperationQueue({ transport: f.transport, enabled: true, locks: f.locks,
+      getContext: () => f.context, fetchImpl: async (url, options) => {
+        const response = await f.fetchImpl(url, options);
+        if (url.includes("/list-operations/")) Object.assign(f.context, change);
+        return response;
+      } });
+    const before = JSON.stringify(f.transport.writes);
+    await assert.rejects(queue.inspect(input), { isAmbiguousMutation: true });
+    assert.equal(JSON.stringify(f.transport.writes), before);
+    assert.equal(f.posts().length, 1);
+  }
+});
+
+test("historical inspection cannot report success after a failed local receipt write", async () => {
+  const f = fixture(), input = { ...f.input, operationId: crypto.randomUUID() };
+  f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.queue.run(input)); f.state.unknown = false;
+  f.storage.setItem = () => { throw Error("quota"); };
+  await assert.rejects(f.queue.inspect(input), { isAmbiguousMutation: true });
+  assert.equal(f.posts().length, 1);
+  assert.ok(f.transport.uncertainWrite);
+});
+
+test("historical inspection requires the gate, a personal actor, lock support and an exact UUID", async () => {
+  const f = fixture();
+  for (const override of [{ enabled: false }, { locks: null }, { getContext: () => ({ ...f.context, scope: "readonly" }) }]) {
+    const queue = createListOperationQueue({ transport: f.transport, enabled: true, locks: f.locks,
+      getContext: () => f.context, fetchImpl: f.fetchImpl, ...override });
+    await assert.rejects(queue.inspect({ ...f.input, operationId: crypto.randomUUID() }));
+  }
+  await assert.rejects(f.queue.inspect(f.input));
+  await assert.rejects(f.queue.inspect({ ...f.input, operationId: "invalid" }));
+  assert.equal(f.calls.length, 0);
+});
+
 test("a later intentional equal edit uses a new ID, but concurrent same-generation tab submissions share one ID", async () => {
   const f = fixture();
   await Promise.all([f.queue.run(f.input), f.make().queue.run(f.input)]);

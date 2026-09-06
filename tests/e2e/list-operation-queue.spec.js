@@ -49,6 +49,8 @@ async function fixture(page, context) {
       const outbox=createPersonalSaveOutbox({storage:localStorage,actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a'});
       window.captureSave=weight=>outbox.capture({snapshot:{items:{a:{weight}}},body:{baseStateRevision:1,payload:{items:{a:{weight}}}}});
       window.restoreSave=()=>outbox.recover(); window.saveConfirmations=0;
+      window.inspectSaves=async()=>{try{return await outbox.inspect({queue,getContext:()=>({actorId:window.actorId,generation:window.generation,scope:'personal',scopeKey:'id:actor-a',listId:'list-a',environment:'bike-packing-experiment'})});}
+        catch(error){return {blocked:true,waiting:!!error.isOperationWaiting};}};
       window.drainSaves=async()=>{try{await outbox.drain({queue,getContext:()=>({actorId:window.actorId,generation:window.generation,scope:'personal',scopeKey:'id:actor-a',listId:'list-a',environment:'bike-packing-experiment'}),onConfirmed:()=>window.saveConfirmations++});return 'confirmed';}
         catch(error){return 'blocked';}};
       window.runWaiting=async()=>{try {await queue.run({path:'/bike-packing/lists/list-a',method:'PUT',body:JSON.stringify({causal:{dependsOn:[{operationId:'11111111-1111-4111-8111-111111111111',listId:'list-a'}]}})}); return 'committed';}
@@ -66,6 +68,7 @@ async function fixture(page, context) {
       const payloadDigest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
       data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest, state: "committed" },
         result: { status: 200, payload: { ok: true, list: { id: body.listId, stateRevision: 1 } } } };
+      if (state.rejection) { data.operation.state = "rejected"; data.result = state.rejection; }
       if (state.waiting) {
         data.operation.state = "waiting"; data.result = null;
         data.waiting = { code: "dependency_not_committed", retrySameOperation: true, operationIds: body.body.causal.dependsOn.map(dep => dep.operationId) };
@@ -153,6 +156,36 @@ test("another tab cannot silently attach its stale edit after an unseen save", a
   expect(error).toBe("stale-tab");
   expect(f.posts).toHaveLength(0);
   expect((await page.evaluate(() => window.restoreSave())).snapshot.items.a.weight).toBe(100);
+});
+
+test("historical rejection inspection survives reload without resending or installing its obsolete snapshot", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  f.rejection = { status: 409, payload: { ok: false, code: 'stale_state_revision', stateRevision: 1, serverPayload: { items: { a: { weight: 999 } } } } };
+  const action = await page.evaluate(() => window.captureSave(100));
+  expect(await page.evaluate(() => window.drainSaves())).toBe('blocked');
+  f.revision = 20;
+  await page.reload(); await page.waitForFunction(() => Boolean(window.inspectSaves));
+  const result = await page.evaluate(() => window.inspectSaves());
+  expect(result.historicalOnly).toBe(true);
+  expect(result.headOperationId).toBe(action.action.operationId);
+  expect(result.outcomes[0].operation.state).toBe('rejected');
+  expect(result.outcomes[0].rejectionCode).toBe('stale_state_revision');
+  expect(result.outcomes[0].result).toBeUndefined();
+  expect(f.posts).toHaveLength(1);
+  expect((await page.evaluate(() => window.restoreSave())).snapshot.items.a.weight).toBe(100);
+  expect(await page.evaluate(() => window.saveConfirmations)).toBe(0);
+});
+
+test("inspection of a waiting action does not resume its POST", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  await page.evaluate(() => window.captureSave(100));
+  expect(await page.evaluate(() => window.drainSaves())).toBe('confirmed');
+  f.waiting = true;
+  await page.evaluate(() => window.captureSave(200));
+  expect(await page.evaluate(() => window.drainSaves())).toBe('blocked');
+  const before = f.posts.length;
+  expect(await page.evaluate(() => window.inspectSaves())).toEqual({ blocked: true, waiting: true });
+  expect(f.posts).toHaveLength(before);
 });
 
 test("a delayed checkpoint from another browser tab cannot roll back a fresh baseline", async ({ page, context }) => {

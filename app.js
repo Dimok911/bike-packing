@@ -728,6 +728,7 @@ import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTB
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
+import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities } from "./src/sync/personal-deletion-intent.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
@@ -5574,10 +5575,14 @@ function normalizePublishedStatePayload(payload) {
   return normalized;
 }
 
-function replaceState(nextState, { preserveLocalUi = true } = {}) {
+function replaceState(nextState, { preserveLocalUi = true, personalOperationId = null } = {}) {
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
-    throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
+    const pending = personalSaveOutboxForScope()?.recover();
+    if (!personalOperationId || !pending?.reconciliation || pending.action.operationId !== personalOperationId
+      || !sameJson(nextState, pending.snapshot)) {
+      throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
+    }
   }
   saveRecoverySnapshot("before-replace", state);
   captureActiveLayoutArrangement();
@@ -8170,7 +8175,37 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     };
     const queue = createListOperationQueue({ transport: experimentTransport, getContext });
     updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
-    await outbox.drain({ queue, getContext, onConfirmed(data, record) {
+    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext,
+      async readRemote() {
+        const initial = personalSaveContext();
+        const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(outbox.binding.listId)}/state`, {
+          timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+        });
+        const current = personalSaveContext();
+        if (Object.keys(initial).some(key => initial[key] !== current[key])) throw new Error("Редактор изменился. Сверка остановлена.");
+        if (data?.ok !== true) throw new Error("Не удалось получить актуальную версию для сравнения.");
+        const record = normalizeRemoteListRecord(data);
+        if (blockRemoteIntegrityFailureIfNeeded(normalizeRemoteState(record.payload, { repairCatalog: false }),
+          stateIntegrityMetaFromResponse(record, data), record.payload)) throw new Error("Серверная версия не прошла проверку целостности.");
+        return record;
+      },
+      makeSnapshot(payload, previous) {
+        // Restore only UI preferences/selection, never old placements or
+        // packed state. Business normalization must not change the candidate.
+        const snapshot = normalizeRemoteState({ ...payload, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
+        if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), payload)) {
+          throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");
+        }
+        return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+      },
+      onReconciled(record) {
+        personalSaveRecovery.assertRunning();
+        replaceState(record.snapshot, { personalOperationId: record.action.operationId });
+        syncMeta.dirty = true;
+        renderPreservingPackingScroll();
+        updateSyncUi("Совместимые изменения объединены. Проверяю подтверждение нового действия…");
+      },
+      onConfirmed(data, record) {
       personalSaveRecovery.assertRunning();
       const writeRequired = (key, value) => {
         if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {

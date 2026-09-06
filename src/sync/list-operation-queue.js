@@ -120,6 +120,52 @@ export function createListOperationQueue({ transport, getContext = () => null,
 
   return {
     supports(path, method) { return enabled && transport.experiment && Boolean(listOperationRoute(path, method)); },
+    // Read-only historical settlement. It never creates a transport intent,
+    // dispatches a mutation or resumes a waiting operation. The proof deliberately
+    // excludes business payloads: it is NOT authority to apply an old snapshot.
+    async inspect({ path, method, body: bodyText, operationId }) {
+      if (!this.supports(path, method)) throw Error("Unsupported list queue request");
+      if (!locks?.request) throw paused(operationId, "Блокировка между вкладками недоступна. Сверка остановлена.");
+      const initial = { ...getContext() };
+      if (!initial.actorId || !initial.generation || initial.scope !== "personal"
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(operationId || "")) throw paused(operationId);
+      const body = JSON.parse(bodyText || "{}");
+      const route = listOperationRoute(path, method), listId = route.listId || body.id;
+      if (typeof listId !== "string" || !listId.trim() || listId !== listId.trim() || listId.length > 191) throw paused(operationId);
+      const children = route.kind.endsWith(".sync") ? (body[route.kind.split(".")[0]] || []).map(entry => entry.id || entry.payload?.id) : [];
+      if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(operationId);
+      const expected = { operationId, actorId: initial.actorId, kind: route.kind, listId, body, children,
+        payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
+      const assertContext = () => {
+        const current = getContext();
+        if (["actorId", "generation", "scope", "scopeKey", "listId"].some(key => current?.[key] !== initial[key])) {
+          throw paused(operationId, "Аккаунт или локальные данные изменились. Результат сверки не применён.");
+        }
+      };
+      return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
+        assertContext();
+        await transport.prepare(); assertContext();
+        const me = await read("/auth/me"); assertContext();
+        if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId, "Аккаунт изменился. Сверка остановлена.");
+        const entry = transport.writes.find(entry => entry.id === operationId);
+        if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== expected.actorId
+          || entry.recovery.kind !== expected.kind || entry.recovery.listId !== listId
+          || entry.recovery.payloadDigest !== expected.payloadDigest)) throw paused(operationId, "Номер действия связан с другими данными.");
+        const data = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertContext();
+        if (validateWaitingOperation(data, expected)) throw waitingError(operationId);
+        if (!validateListReceipt(data, expected)) throw paused(operationId);
+        if (entry) recordReceipt(entry, data);
+        assertContext();
+        const op = data.operation;
+        const stateRevision = data.result.payload.list?.stateRevision ?? data.result.payload.stateRevision;
+        return { historicalOnly: true,
+          operation: { id: op.id, environment: op.environment, actorId: op.actorId, kind: op.kind,
+            listId: op.listId, payloadDigest: op.payloadDigest, state: op.state },
+          resultStatus: data.result.status,
+          stateRevision: Number.isSafeInteger(stateRevision) && stateRevision > 0 ? stateRevision : null,
+          rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null };
+      });
+    },
     async run({ path, method, body: bodyText, operationId: requestedId, receiptOnly = false }) {
       if (!this.supports(path, method)) throw Error("Unsupported list queue request");
       if (!locks?.request) throw paused(null, "Блокировка между вкладками недоступна. Запрос не отправлен.");

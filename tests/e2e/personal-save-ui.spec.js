@@ -99,12 +99,18 @@ async function setup(page, context, { fresh = false, lose = false } = {}) {
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
-        const base = predecessor?.result.payload.list.stateRevision ?? body.body.baseStateRevision;
+        if (body.kind === "list.update" && state.beforeUpdate) state.beforeUpdate(body);
+        const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
-        else expect(base).toBe(state.revision);
-        state.listId = body.listId; state.payload = body.body.payload; state.revision++;
-        data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
-          result: { status: 200, payload: { ok: true, list: structuredClone(record()) } } };
+        else if (!state.allowConflicts) expect(base).toBe(state.revision);
+        if (body.kind !== "list.create" && base !== state.revision) {
+          data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "rejected" },
+            result: { status: 409, payload: { ok: false, code: "stale_state_revision", stateRevision: state.revision } } };
+        } else {
+          state.listId = body.listId; state.payload = body.body.payload; state.revision++;
+          data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
+            result: { status: 200, payload: { ok: true, list: structuredClone(record()) } } };
+        }
         state.receipts.set(body.operationId, data);
         if (state.lose) { state.injectedFailure = true; return route.abort("failed"); }
       } else if (path.startsWith("/bike-packing/list-operations/")) {
@@ -218,6 +224,90 @@ test("full application adopts a newer server baseline and next edit keeps the se
   expect(f.payload.containers[id].note).toBe("Изменено с другого устройства");
   expect(f.posts.at(-1).body.baseStateRevision).toBe(remoteRevision);
   expect(f.posts.at(-1).body.causal.baseOperationId).toBeUndefined();
+  expect(f.errors).toEqual([]);
+});
+
+test("actual sync reconciles different fields with a new ID and rechecks a second server change", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка сравнения");
+  const item = await createItemInContainer(page, bag, "Исходное название", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.allowConflicts = true;
+  let intervening = 0;
+  f.beforeUpdate = () => {
+    if (intervening < 2) {
+      f.payload = structuredClone(f.payload); f.payload.items[id].weight += 50;
+      f.revision++; intervening++;
+    }
+  };
+  await item.locator(".item-title-hitarea").click();
+  await page.locator("#itemName").fill("Новое название");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await synchronize(page, () => f.payload.items[id]?.name === "Новое название");
+  const changes = f.posts.slice(before);
+  expect(changes).toHaveLength(3);
+  expect(changes.map(post => f.receipts.get(post.operationId).operation.state)).toEqual(["rejected", "rejected", "committed"]);
+  expect(new Set(changes.map(post => post.operationId)).size).toBe(3);
+  expect(changes[1].body.payload.items[id].weight).toBe(150);
+  expect(changes[2].body.payload.items[id].weight).toBe(200);
+  expect(changes.slice(1).every(post => post.body.causal.dependsOn.length === 0 && !post.body.force)).toBe(true);
+  await reloadApp(page);
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Новое название" })).toHaveCount(1);
+  expect(f.payload.items[id].weight).toBe(200); expect(f.errors).toEqual([]);
+});
+
+test("actual sync retains the local version when the same field changed or the remote item was deleted", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка конфликта");
+  const item = await createItemInContainer(page, bag, "Первоначальная вещь", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.allowConflicts = true;
+  f.beforeUpdate = () => { f.payload = structuredClone(f.payload); f.payload.items[id].name = "На другом устройстве"; f.revision++; f.beforeUpdate = null; };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("На этом устройстве");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await page.locator("#syncBtn").click();
+  await expect(page.locator("#syncStatus")).toContainText("по-разному", { timeout: 20000 });
+  expect(f.posts.slice(before)).toHaveLength(1);
+  expect(f.payload.items[id].name).toBe("На другом устройстве");
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "На этом устройстве" })).toHaveCount(1);
+  delete f.payload.items[id]; f.revision++;
+  await page.locator("#syncBtn").click();
+  await expect(page.locator("#syncStatus")).toContainText("по-разному");
+  expect(f.posts.slice(before)).toHaveLength(1); expect(f.payload.items[id]).toBeUndefined();
+  await reloadApp(page);
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "На этом устройстве" })).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("a reconciled full UI action survives lost ACK and reload without another POST", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка восстановления");
+  const item = await createItemInContainer(page, bag, "До сверки", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.allowConflicts = true;
+  let attempt = 0;
+  f.beforeUpdate = () => {
+    if (attempt++ === 0) { f.payload = structuredClone(f.payload); f.payload.items[id].weight = 200; f.revision++; }
+    else { f.lose = true; f.unknown = true; f.beforeUpdate = null; }
+  };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("После сверки");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.slice(before)).toHaveLength(2);
+  const mergedId = f.posts.at(-1).operationId;
+  await expect.poll(() => page.evaluate(operationId => Object.entries(localStorage).some(([key, value]) =>
+    key.endsWith(operationId) && JSON.parse(value).reconciliation?.settled?.length), mergedId)).toBe(true);
+  f.lose = false; f.unknown = false;
+  await reloadApp(page);
+  await synchronize(page, () => f.payload.items[id]?.name === "После сверки");
+  expect(f.posts.filter(post => post.operationId === mergedId)).toHaveLength(1);
+  expect(f.posts.slice(before)).toHaveLength(2);
+  expect(f.payload.items[id].weight).toBe(200);
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "После сверки" })).toHaveCount(1);
   expect(f.errors).toEqual([]);
 });
 

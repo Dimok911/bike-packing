@@ -130,6 +130,224 @@ test("lost ACK, offline, waiting, account switch, newer edit and server conflict
   }
 });
 
+function historicalProof(f, record, state = "committed") {
+  return { historicalOnly: true, resultStatus: state === "committed" ? 200 : 409, stateRevision: 6,
+    operation: { ...f.outbox.binding, id: record.action.operationId, kind: record.action.kind, state, payloadDigest: "1".repeat(64) } };
+}
+
+function reconciliationFixture() {
+  const f = fixture();
+  const payload = { items: { a: { id: "a", name: "Original", weight: 100 } }, containers: {}, layouts: {} };
+  f.outbox.adoptRemoteBaseline({ snapshot: payload, payload, stateRevision: 5 });
+  const local = structuredClone(payload); local.items.a.name = "Local";
+  const first = f.outbox.capture({ snapshot: { ...local, localUi: "packing" }, body: { baseStateRevision: 5, payload: local } });
+  const remote = { id: "list-a", ownerId: "actor-a", stateRevision: 6, payload: structuredClone(payload) };
+  remote.payload.items.a.weight = 200;
+  const proofs = new Map([[first.action.operationId, { ...historicalProof(f, first, "rejected"), rejectionCode: "stale_state_revision" }]]);
+  const calls = [];
+  const queue = { inspect: async input => { calls.push(input); return structuredClone(proofs.get(input.operationId)); },
+    run: async input => { calls.push(input); return { list: { stateRevision: 7 } }; } };
+  const options = { queue, getContext: () => f.context, readRemote: async () => remote,
+    makeSnapshot: (candidate, previous) => ({ ...candidate, localUi: previous.localUi }) };
+  return { ...f, first, remote, proofs, queue, calls, options };
+}
+
+test("reconciliation publishes a new immutable action and snapshot atomically, then rechecks old receipts after reload", async () => {
+  const f = reconciliationFixture(), before = [...f.values];
+  const next = await f.outbox.reconcile(f.options);
+  assert.notEqual(next.action.operationId, f.first.action.operationId);
+  assert.equal(next.action.previousLocalOperationId, f.first.action.operationId);
+  assert.equal(next.action.generation, 2); assert.equal(next.action.body.baseStateRevision, 6);
+  assert.deepEqual(next.action.body.causal, { reads: [], dependsOn: [] });
+  assert.equal(next.action.body.force, false);
+  assert.equal(next.snapshot.items.a.name, "Local"); assert.equal(next.snapshot.items.a.weight, 200);
+  assert.equal(next.snapshot.localUi, "packing");
+  assert.deepEqual([...f.values].slice(0, 1), before, "old rejected action bytes never change");
+  assert.deepEqual(f.make().recover(), next);
+  f.calls.length = 0;
+  await f.make().drain({ queue: f.queue, getContext: () => f.context });
+  assert.deepEqual(f.calls.map(input => input.operationId), [f.first.action.operationId, next.action.operationId, next.action.operationId]);
+  f.outbox.markApplied({ operationId: next.action.operationId, stateRevision: 7 });
+  f.outbox.compact();
+  assert.equal(f.values.size, 3); assert.equal(f.make().hasPending(), false);
+  f.calls.length = 0;
+  await f.make().drain({ queue: f.queue, getContext: () => f.context });
+  assert.deepEqual(f.calls.map(input => input.operationId), [next.action.operationId, next.action.operationId]);
+});
+
+test("unknown, waiting, forbidden, deleted, older or conflicting remote data never authorize reconciliation", async () => {
+  for (const failure of ["unknown", "waiting", "forbidden", "committed", "deleted", "older", "owner", "id", "same-field", "delete-entity", "files", "missing-base"]) {
+    const f = reconciliationFixture();
+    if (["unknown", "waiting", "forbidden", "committed"].includes(failure)) {
+      const proof = f.proofs.get(f.first.action.operationId);
+      if (failure === "forbidden") { proof.resultStatus = 403; proof.rejectionCode = "forbidden"; }
+      else proof.operation.state = failure;
+    }
+    if (failure === "deleted") f.remote.deleted = true;
+    if (failure === "older") f.remote.stateRevision = 4;
+    if (failure === "owner") f.remote.ownerId = "other";
+    if (failure === "id") f.remote.id = "other";
+    if (failure === "same-field") f.remote.payload.items.a.name = "Remote";
+    if (failure === "delete-entity") delete f.remote.payload.items.a;
+    if (failure === "files") f.remote.payload.items.a.photos = [{ id: "p" }];
+    if (failure === "missing-base") {
+      const [key, value] = [...f.values][0], record = JSON.parse(value); delete record.mergeBase;
+      f.values.set(key, JSON.stringify(record));
+    }
+    const before = [...f.values];
+    await assert.rejects(f.outbox.reconcile(f.options), undefined, failure);
+    assert.deepEqual([...f.values], before, failure);
+  }
+});
+
+test("reconciliation preserves the old journal on quota, changed editor, account or a new local action", async () => {
+  for (const failure of ["quota", "generation", "actor", "scope", "new-action"]) {
+    const f = reconciliationFixture(), before = [...f.values];
+    if (failure === "quota") f.storage.setItem = () => { throw Error("quota"); };
+    f.options.readRemote = async () => {
+      if (failure === "generation") f.context.generation = "next";
+      if (failure === "actor") f.context.actorId = "other";
+      if (failure === "scope") f.context.scope = "readonly";
+      if (failure === "new-action") f.outbox.capture(f.input(999));
+      return f.remote;
+    };
+    await assert.rejects(f.outbox.reconcile(f.options));
+    assert.deepEqual([...f.values].slice(0, 1), before);
+    assert.equal(f.values.size, failure === "new-action" ? 2 : 1);
+  }
+});
+
+test("a second server edit requires a new comparison and ID, never blind revision advancement", async () => {
+  const f = reconciliationFixture(), next = await f.outbox.reconcile(f.options);
+  f.proofs.set(next.action.operationId, { ...historicalProof(f, next, "rejected"), stateRevision: 8, rejectionCode: "stale_state_revision" });
+  f.remote.stateRevision = 8; f.remote.payload.items.a.weight = 300;
+  const third = await f.outbox.reconcile(f.options);
+  assert.equal(third.action.generation, 3); assert.equal(third.action.body.baseStateRevision, 8);
+  assert.equal(third.snapshot.items.a.weight, 300); assert.equal(third.snapshot.items.a.name, "Local");
+  assert.deepEqual(f.make().recover(), third);
+  f.proofs.set(third.action.operationId, { ...historicalProof(f, third, "rejected"), stateRevision: 9, rejectionCode: "stale_state_revision" });
+  f.remote.stateRevision = 9; f.remote.payload.items.a.name = "Remote";
+  await assert.rejects(f.outbox.reconcile(f.options), { code: "reconciliation-conflict" });
+  assert.equal(f.make().recover().action.operationId, third.action.operationId);
+});
+
+test("tampered reconciliation evidence and unknown descendants cannot bypass a rejected predecessor", async () => {
+  for (const failure of ["proof", "predecessor", "revision", "unknown-descendant"]) {
+    const f = reconciliationFixture();
+    if (failure === "unknown-descendant") {
+      f.outbox.capture(f.input(999));
+      await assert.rejects(f.outbox.reconcile(f.options));
+    } else {
+      const next = await f.outbox.reconcile(f.options);
+      const key = [...f.values.keys()].find(value => value.endsWith(next.action.operationId)), record = JSON.parse(f.values.get(key));
+      if (failure === "proof") record.reconciliation.settled[0].operation.actorId = "other";
+      if (failure === "predecessor") delete record.action.previousLocalOperationId;
+      if (failure === "revision") record.action.body.baseStateRevision = 999;
+      f.values.set(key, JSON.stringify(record));
+      assert.throws(f.make, { code: "storage" });
+    }
+  }
+});
+
+test("reconciliation uses the latest committed predecessor instead of replaying already accepted edits", async () => {
+  const f = reconciliationFixture();
+  f.proofs.set(f.first.action.operationId, historicalProof(f, f.first));
+  const local = structuredClone(f.first.action.body.payload); local.items.a.weight = 250;
+  const second = f.outbox.capture({ snapshot: local, body: { baseStateRevision: 5, payload: local } });
+  f.proofs.set(second.action.operationId, { ...historicalProof(f, second, "rejected"), stateRevision: 8, rejectionCode: "stale_state_revision" });
+  f.remote.stateRevision = 8; f.remote.payload.items.a.name = "Changed after committed local rename";
+  f.remote.payload.items.a.weight = 100;
+  const next = await f.outbox.reconcile(f.options);
+  assert.equal(next.action.body.payload.items.a.name, "Changed after committed local rename");
+  assert.equal(next.action.body.payload.items.a.weight, 250);
+});
+
+test("changed historical receipt blocks a reconciled action before any dispatch", async () => {
+  const f = reconciliationFixture(); await f.outbox.reconcile(f.options);
+  f.calls.length = 0; f.proofs.get(f.first.action.operationId).operation.payloadDigest = "0".repeat(64);
+  await assert.rejects(f.make().drain({ queue: f.queue, getContext: () => f.context }), { code: "receipt" });
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].operationId, f.first.action.operationId);
+});
+
+test("outbox inspection settles exact historical actions without applying, clearing or changing their snapshots", async () => {
+  const f = fixture(), first = f.outbox.capture(f.input(100)), second = f.outbox.capture(f.input(200));
+  const before = [...f.values], calls = [];
+  const result = await f.outbox.inspect({ getContext: () => f.context, queue: {
+    inspect: async input => { calls.push(input); return historicalProof(f, input.operationId === first.action.operationId ? first : second,
+      input.operationId === first.action.operationId ? "committed" : "rejected"); },
+    run: () => assert.fail("historical inspection must never dispatch")
+  } });
+  assert.deepEqual(calls.map(call => call.operationId), [first.action.operationId, second.action.operationId]);
+  assert.equal(result.headOperationId, second.action.operationId);
+  assert.deepEqual(result.outcomes.map(proof => proof.operation.state), ["committed", "rejected"]);
+  assert.equal(f.make().hasPending(), true);
+  assert.deepEqual([...f.values], before);
+});
+
+test("outbox inspection cannot become a complete settlement with an unknown or malformed child", async () => {
+  for (const defect of ["unknown", "wrong-id", "wrong-actor", "not-historical"]) {
+    const f = fixture(), first = f.outbox.capture(f.input(100)); f.outbox.capture(f.input(200));
+    const before = [...f.values]; let count = 0;
+    await assert.rejects(f.outbox.inspect({ getContext: () => f.context, queue: { inspect: async () => {
+      count++;
+      if (defect === "unknown") throw Object.assign(Error("unknown"), { isAmbiguousMutation: true });
+      const proof = historicalProof(f, first);
+      if (defect === "wrong-id") proof.operation.id = crypto.randomUUID();
+      if (defect === "wrong-actor") proof.operation.actorId = "other";
+      if (defect === "not-historical") proof.historicalOnly = false;
+      return proof;
+    } } }));
+    assert.equal(count, 1); assert.deepEqual([...f.values], before);
+  }
+});
+
+test("outbox inspection freezes the editor and stops at a new action or scope switch", async () => {
+  for (const change of ["edit", "actor", "generation", "scope"]) {
+    const f = fixture(), first = f.outbox.capture(f.input(100)); let count = 0;
+    await assert.rejects(f.outbox.inspect({ getContext: () => f.context, queue: { inspect: async () => {
+      count++;
+      if (change === "edit") f.outbox.capture(f.input(200));
+      if (change === "actor") f.context.actorId = "other";
+      if (change === "generation") f.context.generation = "next";
+      if (change === "scope") f.context.scope = "readonly";
+      return historicalProof(f, first);
+    } } }), { code: "context" });
+    assert.equal(count, 1);
+    assert.equal(f.make().hasPending(), true);
+  }
+});
+
+test("the first mutation durably freezes the server base this editor actually observed", () => {
+  const f = fixture(), base = f.input(50);
+  assert.equal(f.outbox.adoptRemoteBaseline({ snapshot: base.snapshot, payload: base.body.payload, stateRevision: 5 }), false);
+  base.body.payload.items.a.weight = 999;
+  const saved = f.outbox.capture(f.input(100));
+  assert.equal(f.values.size, 1, "base, intent and snapshot use one atomic record");
+  assert.deepEqual(saved.mergeBase, { stateRevision: 5, payload: f.input(50).body.payload });
+  assert.deepEqual(f.make().recover().mergeBase, saved.mergeBase);
+  assert.equal(f.outbox.capture(f.input(200)).mergeBase, undefined, "an unconfirmed predecessor is not a new common server base");
+});
+
+test("a confirmed predecessor or adopted remote baseline supplies the next action's immutable merge base", () => {
+  const f = fixture(), first = f.outbox.capture(f.input(100));
+  f.outbox.markApplied({ operationId: first.action.operationId, stateRevision: 6 });
+  const second = f.outbox.capture(f.input(200));
+  assert.deepEqual(second.mergeBase, { stateRevision: 6, payload: first.action.body.payload });
+  f.outbox.markApplied({ operationId: second.action.operationId, stateRevision: 7 }); f.outbox.compact();
+  const remote = f.input(250);
+  f.outbox.adoptRemoteBaseline({ snapshot: remote.snapshot, payload: remote.body.payload, stateRevision: 20 });
+  const next = f.input(300); next.body.baseStateRevision = 20;
+  assert.deepEqual(f.outbox.capture(next).mergeBase, { stateRevision: 20, payload: remote.body.payload });
+});
+
+test("missing or wrong-revision initial bases are not invented from a mutable mirror", () => {
+  const f = fixture(), remote = f.input(50);
+  f.outbox.adoptRemoteBaseline({ snapshot: remote.snapshot, payload: remote.body.payload, stateRevision: 4 });
+  assert.equal(f.outbox.capture(f.input(100)).mergeBase, undefined);
+  const cold = fixture(); assert.equal(cold.outbox.capture(cold.input(100)).mergeBase, undefined);
+});
+
 test("actual app persistence writes the intent before its mirror and cannot fallback after a quota error", () => {
   const calls = [], f = fixture();
   let fail = false;
