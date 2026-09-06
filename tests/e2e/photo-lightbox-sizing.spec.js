@@ -47,7 +47,7 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
         window.blankFramesAfterPhoto = 0;
         function sample() {
           const image = document.querySelector('[data-photo-lightbox-index="1"] img');
-          if (image?.naturalWidth && getComputedStyle(image).visibility === 'visible') {
+          if (image?.naturalWidth && image.getClientRects().length && getComputedStyle(image).visibility === 'visible') {
             const rect = image.getBoundingClientRect();
             window.photoFrames.push({ width: rect.width, height: rect.height, src: image.currentSrc });
           } else if (window.photoFrames.length) {
@@ -117,4 +117,112 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
   await expect.poll(() => next.evaluate((image) => image === window.loadedPhoto)).toBe(true);
 });
 }
+}
+
+for (const separatePreview of [false, true]) {
+test(`cold desktop paging retains the previous bitmap until ${separatePreview ? "separate original" : "catalog photo"} is ready`, async ({ page, isMobile }) => {
+  test.skip(isMobile, "Native swipe keeps its existing scroll behavior; this covers discrete desktop paging.");
+  await page.route("https://vniipo-help.ru/shared-ui/**", (route) => route.abort());
+  await page.route("**/src/**/*.js", async (route) => {
+    await route.fulfill({ contentType: "text/javascript", body: await readFile(resolve(`.${new URL(route.request().url()).pathname}`), "utf8") });
+  });
+  let releaseFirst, releaseLast;
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const lastGate = new Promise((resolve) => { releaseLast = resolve; });
+  const square = await readFile("assets/manufacturer-catalog/ortlieb/frame-pack.jpg");
+  const landscape = await readFile("assets/manufacturer-catalog/ortlieb/frame-pack-15.jpg");
+  const requests = [];
+  await page.route("**/paging-photo-*.jpg", async (route) => {
+    const index = Number(route.request().url().match(/paging-photo-(\d+)/)[1]);
+    requests.push(index);
+    if (index === 1) await firstGate;
+    if (index === 14) await lastGate;
+    await new Promise((resolve) => setTimeout(resolve, index === 2 ? 650 : 80));
+    if (index === 13) return route.abort();
+    await route.fulfill({ contentType: "image/jpeg", body: index % 2 ? landscape : square });
+  });
+  await page.route("**/__paging-test", async (route) => route.fulfill({
+    contentType: "text/html",
+    body: `<html lang="ru"><head><style>${await readFile("styles.css", "utf8")}</style></head><body>
+      <div data-photo-gallery>${Array.from({ length: 15 }, (_, index) => {
+        const src = new URL(`/paging-photo-${index}.jpg`, route.request().url()).href;
+        const preview = separatePreview ? "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='blue'/%3E%3C/svg%3E" : src;
+        return `<button data-photo-open><img data-photo-full-src="${src}" data-photo-remote-thumb-src="${preview}"></button>`;
+      }).join("")}</div><button id="open">Open gallery</button>
+      <script type="module">
+        import { openPhotoLightbox } from '/src/ui/photo-gallery.js';
+        document.querySelector('#open').onclick = () => openPhotoLightbox(document.querySelector('[data-photo-open] img'));
+        window.pagingFrames = [];
+        window.recordPaging = false;
+        function sample() {
+          if (window.recordPaging) {
+            const image = document.querySelector('.vpg-fullscreen-active img');
+            const rect = image?.getBoundingClientRect();
+            window.pagingFrames.push({
+              index: Number(image?.parentElement.dataset.photoLightboxIndex),
+              visible: Boolean(image?.complete && image.naturalWidth && getComputedStyle(image).visibility === 'visible'),
+              width: rect?.width, height: rect?.height, naturalHeight: image?.naturalHeight
+            });
+          }
+          requestAnimationFrame(sample);
+        }
+        sample();
+      </script></body></html>`
+  }));
+  await page.goto("/__paging-test");
+  await page.locator("#open").click();
+  const dialog = page.locator("dialog.photo-lightbox");
+  const slide = (index) => dialog.locator(`[data-photo-lightbox-index="${index}"] img`);
+  const key = (value) => dialog.getByRole("button", { name: "Закрыть", exact: true }).press(value);
+  await expect(slide(0)).toBeVisible();
+  await expect.poll(() => slide(0).evaluate((image) => image.complete && image.naturalWidth)).toBe(700);
+  await page.evaluate(() => { window.recordPaging = true; });
+  try {
+    await key("ArrowRight");
+    await expect(dialog.getByRole("status")).toBeVisible();
+    // Regression: the old tests only sampled AFTER the next photo appeared,
+    // missing the empty frame between the previous bitmap and the cold one.
+    await expect(slide(0)).toBeVisible();
+    await expect(slide(1)).not.toBeVisible();
+  } finally {
+    releaseFirst();
+  }
+  await expect(slide(1)).toBeVisible();
+  await expect(dialog.getByRole("status")).toBeHidden();
+  // A late result from a skipped photo must not replace the latest selection.
+  await key("ArrowRight");
+  await key("ArrowRight");
+  await expect(slide(3)).toBeVisible();
+  for (let index = 4; index <= 12; index += 1) {
+    const started = Date.now();
+    await key("ArrowRight");
+    await expect(slide(index)).toBeVisible();
+    await page.waitForTimeout(Math.max(0, 333 - (Date.now() - started)));
+  }
+  const frames = await page.evaluate(() => { window.recordPaging = false; return window.pagingFrames; });
+  expect(frames.length).toBeGreaterThan(30);
+  expect(frames.filter((frame) => !frame.visible)).toEqual([]);
+  expect(frames.every(({ width, height, naturalHeight }) => width === 700 && height === naturalHeight)).toBe(true);
+  expect(frames.some(({ index }) => index === 2)).toBe(false);
+  await key("ArrowRight");
+  if (separatePreview) {
+    // Preserve the existing explicit preview fallback for offline/user photos.
+    await expect(dialog.getByRole("status")).toHaveText("Показан сохранённый предпросмотр");
+    await expect(slide(13)).toBeVisible();
+  } else {
+    await expect(dialog.getByRole("status")).toHaveText("Не удалось загрузить фото");
+    await expect(slide(12)).toBeVisible();
+  }
+  await key("ArrowLeft");
+  await expect(dialog.getByRole("status")).toBeHidden();
+  expect([...new Set(requests)].sort((a, b) => a - b)).toEqual(Array.from({ length: 14 }, (_, index) => index));
+  // Closing during a load must not recreate the dialog when that load finishes.
+  await key("ArrowRight");
+  await key("ArrowRight");
+  await expect.poll(() => requests.includes(14)).toBe(true);
+  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+  releaseLast();
+  await page.waitForTimeout(200);
+  await expect(dialog).toHaveCount(0);
+});
 }
