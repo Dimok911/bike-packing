@@ -3,6 +3,14 @@
 This is a proposal for coordination approval, not implemented backend behavior.
 No database/schema/proxy/Production change is authorized by this document.
 
+Update 2026-09-06: this original proposal is retained as design history.
+Only owner/private **photo upload** has since been implemented behind disabled
+gates; copy/delete and the proposed general operations route below are NOT
+implemented. Exact tested commits are in `production-release-batches.md` and
+the backend's `docs/photo-upload-operation-recovery.md`. The newer backend
+`docs/operation-effects-inventory.md` records remaining handlers and side-effect
+GET/Auth boundaries. The general direct-write blocker and NO DEPLOY still apply.
+
 ## Immediate release blocker: direct mode is affected too
 
 The v1605 preparation candidate intentionally journals **all Experiment writes**,

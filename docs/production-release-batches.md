@@ -57,6 +57,19 @@ Frontend package: photo recovery controller, upload/transport integration,
 durable intent/receipt and cold/reload/cross-route tests. Keep exact tested SHAs
 in the final development handoff; commits alone do not activate the feature.
 
+Verified upload-only development pair (2026-09-06): frontend
+`01c33903c442499dd125e8909c5cba5f08ffa8ea`, backend
+`394d6305f14b7fa4c6482236be9b9e03398f97c5`.
+Frontend CI: https://github.com/Dimok911/bike-packing/actions/runs/34034841751
+Backend/MySQL/browser CI: https://github.com/Dimok911/bikepacking-api/actions/runs/34034903635
+Both succeeded. No live schema or feature activation followed these checks.
+
+Next-batch endpoint/effect inventory is in the backend's
+`docs/operation-effects-inventory.md` and `docs/operation-coverage.json`.
+It includes side-effect GETs, lazy migration/file materialization, queue/batch
+boundaries and owner-coordinated Shared Auth work. That inventory is not new
+receipt coverage. Catalog handlers are inventoried but explicitly deferred.
+
 Current code is gated for Experiment. **Do not enable the Experiment auth bridge
 on Production to make it work.** A future Production slice must deliberately
 adapt the environment namespace and deployment configuration, preserve separate
