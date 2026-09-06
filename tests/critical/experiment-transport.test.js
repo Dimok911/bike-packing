@@ -262,6 +262,23 @@ test("release gate: unsupported lock API or failed persistence prevents network 
   } finally { globalThis.fetch = previousFetch; }
 });
 
+test("release blocker: disabling EU does not disable direct journaling; unsupported storage/locks blocks current saves", async () => {
+  const storage = storageMock();
+  const direct = eu({ selection: "direct", euEnabled: false, storage });
+  await direct.prepare();
+  const id = await direct.beginWrite("/bike-packing/lists", "POST");
+  assert.equal(pendingExperimentWrites(storage)[0].mode, "direct");
+  direct.noteFailure(new Error("response lost"), "/bike-packing/lists", "POST", id);
+  assert.throws(() => direct.assertWritable("/auth/experiment-share-session", "POST"), { isAmbiguousMutation: true });
+  assert.doesNotThrow(() => direct.assertWritable("/auth/me", "GET"));
+  const restarted = eu({ selection: "direct", euEnabled: false, storage });
+  await assert.rejects(restarted.beginWrite("/bike-packing/lists", "POST"), { isAmbiguousMutation: true });
+  for (const options of [{ locks: null }, { storage: null }]) {
+    const unsupported = eu({ selection: "direct", euEnabled: false, ...options });
+    await assert.rejects(unsupported.beginWrite("/bike-packing/lists", "POST"), /write was not sent/);
+  }
+});
+
 test("release gate: server commit then lost response blocks reload, duplicated tab, switch and offline reconnect", async () => {
   const previousFetch = globalThis.fetch, previousWindow = globalThis.window;
   globalThis.window = { setTimeout, clearTimeout };
