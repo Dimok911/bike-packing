@@ -7177,6 +7177,18 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
   display: none;
 }
 
+.photo-lightbox-load-status.photo-lightbox-load-empty {
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-lightbox-loading-spinner {
+    animation: none !important;
+  }
+}
+
 .photo-lightbox-loading-spinner {
   flex: 0 0 auto;
   width: 16px;

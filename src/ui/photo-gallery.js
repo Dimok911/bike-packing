@@ -959,7 +959,11 @@ export async function openPhotoLightbox(sourceImage, {
       availableHeight: viewportHeight
     });
     const sizingClass = sizing.className ? ` ${sizing.className}` : "";
-    const pendingSizingClass = entry?.width && entry?.height
+    // During a cold full-size load, do not briefly paint the thumbnail and
+    // then replace it. Reveal one decoded image, with the loading notice until then.
+    const awaitingOriginal = !directFullSrc && Boolean(entry?.localId
+      || (entry?.fullSrc && entry.fullSrc !== previewSrc));
+    const pendingSizingClass = entry?.width && entry?.height && !awaitingOriginal
       ? ""
       : " photo-lightbox-image-awaiting-size";
     const sizingStyle = sizing.limitAutoUpscale
@@ -1205,7 +1209,11 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
+    const hasVisiblePhoto = image?.complete && image.naturalWidth > 0
+      && !image.classList.contains("photo-lightbox-image-awaiting-size");
     loadStatus.hidden = state === "idle";
+    loadStatus.classList.toggle("photo-lightbox-load-empty", !hasVisiblePhoto);
+    track?.setAttribute("aria-busy", state === "loading" ? "true" : "false");
     loadStatus.classList.toggle("photo-lightbox-load-error", ["error", "preview", "saved-preview"].includes(state));
     loadStatusText.textContent = state === "saved-preview"
       ? localText(
@@ -1218,14 +1226,14 @@ export async function openPhotoLightbox(sourceImage, {
         "Предпросмотр · сохранён только предпросмотр"
       )
       : state === "error"
-        ? localText(
+        ? hasVisiblePhoto ? localText(
           "Preview · full-size photo is unavailable",
           "Предпросмотр · полная версия фото недоступна"
-        )
-        : localText(
+        ) : localText("Could not load photo", "Не удалось загрузить фото")
+        : hasVisiblePhoto ? localText(
           "Loading full-size photo…",
           "Загружается полная версия фото…"
-        );
+        ) : localText("Loading photo…", "Загружается фото…");
   };
   loadingNotice = createPhotoLightboxLoadingNotice({
     onChange: updateLoadStatus
@@ -1303,7 +1311,17 @@ export async function openPhotoLightbox(sourceImage, {
     const currentImage = lightboxImages[entryIndex];
     const key = preparedImageKey(entryIndex, src);
     const replacement = preparedFullImages.get(key);
-    if (!currentImage || !replacement) return false;
+    if (!currentImage) return false;
+    // Revisiting a decoded slide must not replace its visible bitmap again.
+    // Recreating the same image unnecessarily can blink on mobile compositors.
+    if (currentImage.complete && currentImage.naturalWidth > 0
+      && sharedFullscreenImageUsesSource(currentImage, src)) {
+      currentImage.dataset.photoLightboxQuality = "full";
+      settleImagePresentation(currentImage, { force: true });
+      entry.resolvedFullSrc = src;
+      return true;
+    }
+    if (!replacement) return false;
     const shouldCommit = () => (
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
@@ -1410,9 +1428,22 @@ export async function openPhotoLightbox(sourceImage, {
     if (!expectsFullSize) {
       image.dataset.photoLightboxQuality = entry.fullSrc ? "full" : "preview";
       void activation;
+      // A direct catalog URL still needs to load and decode; it is not ready
+      // merely because there is no separate full-size source to resolve.
+      const displayedImage = image;
+      if (!displayedImage.complete || !displayedImage.naturalWidth) loadingNotice.pending();
+      try {
+        await decodeSharedFullscreenImage(displayedImage);
+        if (token !== renderToken || !overlay.isConnected) return false;
+        settleImagePresentation(displayedImage, { force: true });
+        loadingNotice.settle("idle");
+      } catch {
+        if (token !== renderToken || !overlay.isConnected) return false;
+        loadingNotice.settle("error");
+      }
       return true;
     }
-    if (!readyFullSrc) loadingNotice.pending();
+    if (!readyFullSrc || !image.complete || !image.naturalWidth) loadingNotice.pending();
     const lifecycleResult = await activation;
     if (token !== renderToken || !overlay.isConnected) {
       return false;
