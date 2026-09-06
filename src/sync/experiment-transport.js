@@ -35,14 +35,18 @@ export function pendingExperimentWrites(storage = journalStorage()) {
 // Photo identity is stable across queue replay/tab duplication, but different
 // photo IDs or bytes remain distinct operations. Never hash generic edit bodies:
 // two deliberately identical edits are not necessarily the same operation.
-async function photoWriteIdentity(path, method, body) {
+export async function photoWriteIdentity(path, method, body) {
   if (String(method).toUpperCase() !== "POST" || !/\/photos(?:\/copy)?$/.test(path)) return "";
   let identity;
   if (typeof FormData !== "undefined" && body instanceof FormData) {
     const file = body.get("file");
     if (!body.get("photoId") || !file?.arrayBuffer) throw transportError("Photo operation identity is missing; write was not sent");
     const bytes = await globalThis.crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-    identity = [path, body.get("photoId"), body.get("entityType"), body.get("entityId"), [...new Uint8Array(bytes)]];
+    const thumb = body.get("thumb");
+    const thumbBytes = thumb?.arrayBuffer
+      ? await globalThis.crypto.subtle.digest("SHA-256", await thumb.arrayBuffer()) : bytes;
+    identity = [path, body.get("photoId"), body.get("entityType"), body.get("entityId"),
+      file.name, file.type, thumb?.type || file.type, [...new Uint8Array(bytes)], [...new Uint8Array(thumbBytes)]];
   } else if (path.endsWith("/copy")) {
     const data = JSON.parse(body);
     if (!data.photoId) throw transportError("Photo operation identity is missing; write was not sent");
@@ -165,7 +169,7 @@ export function createExperimentTransport({
       throw error;
     }
   };
-  const beginWrite = async (path, method = "GET", body = null) => {
+  const beginWrite = async (path, method = "GET", body = null, recovery = null) => {
     assertWritable(path, method);
     if (!experiment || isReadOnlyRequest(path, method)) return null;
     if (!locks?.request) throw transportError("Cross-tab write lock unavailable; write was not sent");
@@ -180,8 +184,10 @@ export function createExperimentTransport({
         error.isDuplicateOperation = true;
         throw error;
       }
-      const id = globalThis.crypto.randomUUID();
-      const entry = { id, path, method: String(method).toUpperCase(), mode, identity, createdAt: new Date().toISOString(), uncertain: false };
+      const id = recovery?.operationId || globalThis.crypto.randomUUID();
+      if (journal.some((entry) => entry.id === id)) throw transportError("Operation ID already exists; write was not sent");
+      const entry = { id, path, method: String(method).toUpperCase(), mode, identity, createdAt: new Date().toISOString(), uncertain: false,
+        ...(recovery ? { recovery } : {}) };
       try {
         if (!storage) throw new Error("Storage unavailable");
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify(entry));
@@ -191,18 +197,22 @@ export function createExperimentTransport({
       return id;
     });
   };
-  const confirmWrite = (id, { committed = true } = {}) => {
+  const confirmWrite = (id, { committed = true, receipt = null } = {}) => {
     if (!id) return;
+    refreshJournal();
     const entry = journal.find((entry) => entry.id === id);
+    if (entry?.recovery && committed && !receipt) return false;
     ownActiveWrites.delete(id);
     try {
       // Keep a photo receipt even if the tab dies before saving its local queue.
       // It blocks blind replay, not independent photos/edits. No response/body data.
       if (committed && entry?.identity) {
-        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false }));
+        storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
+          ...(receipt ? { receipt } : {}) }));
       } else storage.removeItem(`${AMBIGUOUS_WRITE_KEY}:${id}`);
     } catch { /* Persisted intent remains a barrier if acknowledgement cannot be saved. */ }
     refreshJournal();
+    return !journal.some((entry) => entry.id === id && !entry.confirmed);
   };
   const noteFailure = (error, path, method = "GET", id = null) => {
     if (!experiment || isReadOnlyRequest(path, method) || error?.isTransportUnavailable
@@ -249,6 +259,7 @@ export function createExperimentTransport({
   return Object.freeze({
     mode, experiment, prepare, apiUrl, assertWritable, beginWrite, confirmWrite, noteFailure, reconcile, photoUrl,
     get uncertainWrite() { refreshJournal(); return journal.find((entry) => entry.uncertain) || null; },
+    get writes() { refreshJournal(); return journal.map((entry) => ({ ...entry })); },
     async fetchPhoto(source, options = {}) {
       const target = await photoUrl(source);
       return fetchImpl(target, { ...options, ...(mode === "eu" && photoPath(source) ? { redirect: "error" } : {}) });

@@ -2,6 +2,7 @@ import {
   API_TIMEOUT_MS
 } from "../config/constants.js";
 import { experimentTransport } from "./experiment-transport.js";
+import { createPhotoOperationRecovery } from "./photo-operation-recovery.js";
 
 export function isNetworkError(error) {
   return Boolean(error?.isNetworkError);
@@ -116,12 +117,12 @@ export function apiUploadFormDataRequest(
     onUploadProgress = null,
     stalledUploadTimeoutMs = 0
   } = {},
-  { isForcedOffline = () => false, transport = experimentTransport } = {}
+  { isForcedOffline = () => false, transport = experimentTransport, photoRecovery = createPhotoOperationRecovery({ transport }) } = {}
 ) {
   if (isForcedOffline()) {
     return Promise.reject(createNetworkError("принудительный офлайн-режим"));
   }
-  const send = (writeId) => new Promise((resolve, reject) => {
+  const send = (writeId, recovery = null) => new Promise((resolve, reject) => {
     try {
       transport.assertWritable(path, method);
     } catch (error) {
@@ -146,14 +147,21 @@ export function apiUploadFormDataRequest(
       if (settled) return;
       settled = true;
       clearStalledUploadTimer();
-      transport.confirmWrite(writeId);
+      if (!recovery) transport.confirmWrite(writeId);
       resolve(value);
     };
     const rejectOnce = (error) => {
       if (settled) return;
       settled = true;
       clearStalledUploadTimer();
-      if ([401, 403].includes(error?.status)) transport.confirmWrite(writeId, { committed: false });
+      if (!recovery && [401, 403].includes(error?.status)) transport.confirmWrite(writeId, { committed: false });
+      if (recovery) {
+        error.isAmbiguousMutation = true;
+        // Even validation/permission responses must not erase a protected ID:
+        // status recovery owns that operation's acknowledgement.
+        reject(error);
+        return;
+      }
       reject(transport.noteFailure(error, path, method, writeId));
     };
     const scheduleStalledUploadTimer = () => {
@@ -235,7 +243,9 @@ export function apiUploadFormDataRequest(
     catch (error) { rejectOnce(createNetworkError("загрузка фото не подтверждена", error)); }
   });
   return transport.experiment
-    ? transport.prepare().then(() => transport.beginWrite(path, method, body)).then(send)
+    ? transport.prepare().then(() => photoRecovery.run({ path, method, body,
+      send: async (recovery) => send(await transport.beginWrite(path, method, body, recovery), recovery),
+    }))
     : send(null);
 }
 

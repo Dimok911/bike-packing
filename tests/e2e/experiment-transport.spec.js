@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
 const frontend = "https://experiment.vniipo-help.ru";
@@ -12,8 +13,9 @@ const cors = {
   "Access-Control-Expose-Headers": "X-Vniipo-Proxy-Target, X-Vniipo-Proxy-Write-Gate", Vary: "Origin",
 };
 
-async function fixture(page, context, { gate = "enabled", uploadFailure = false } = {}) {
+async function fixture(page, context, { gate = "enabled", uploadFailure = false, recovery = false, recoveryAfterReload = false } = {}) {
   const requests = [];
+  let receipt = null, pageLoads = 0;
   await context.addCookies([
     { name: "bikepacking_experiment_session", value: "fixture-not-real", domain: ".vniipo-help.ru", path: "/", httpOnly: true, secure: true, sameSite: "None" },
     { name: "personal_tags_session", value: "host-only-fixture", url: "https://api.vniipo-help.ru", httpOnly: true, secure: true, sameSite: "None" },
@@ -39,15 +41,18 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false 
       return route.fulfill({ contentType: "text/javascript", body: await readFile(resolve(`.${url.pathname}`), "utf8") });
     }
     if (url.origin === frontend && url.pathname === "/__transport-test") {
+      pageLoads++;
       return route.fulfill({ contentType: "text/html", body: `<html><body><div id="settings"></div><button id="run">Run</button><output id="result"></output><script type="module">
         import { apiFetchRequest, apiUploadFormDataRequest } from '/src/sync/api-client.js';
         import { createExperimentTransport, experimentTransport } from '/src/sync/experiment-transport.js';
+        import { createPhotoOperationRecovery } from '/src/sync/photo-operation-recovery.js';
         import { renderExperimentTransportSettings, bindExperimentTransportSettings } from '/src/ui/experiment-transport-settings.js';
         document.querySelector('#settings').innerHTML = renderExperimentTransportSettings({language:'en'});
         bindExperimentTransportSettings(document.querySelector('#settings'), {language:'en'});
         // Explicit dependency injection in this isolated fixture only. The
         // shipped singleton's immutable release gate remains disabled.
         const transport = createExperimentTransport({euEnabled:true});
+        const photoRecovery = createPhotoOperationRecovery({transport, enabled:${recovery}});
         window.fixtureTransport = transport;
         window.shippedTransport = experimentTransport;
         document.querySelector('#run').onclick = async () => {
@@ -56,7 +61,7 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false 
             const photo = await transport.fetchPhoto('${frontend}/letters-vniipo/api/bike-packing/lists/test/photos/photo/file', {credentials:'include'});
             const body = new FormData(); body.set('file', new Blob(['fixture-photo'], {type:'image/png'}));
             body.set('photoId','fixture-photo'); body.set('entityId','fixture-item'); body.set('entityType','item');
-            const uploaded = await apiUploadFormDataRequest('/bike-packing/lists/test/photos', {body}, {transport});
+            const uploaded = await apiUploadFormDataRequest('/bike-packing/lists/test/photos', {body}, {transport, photoRecovery});
             document.querySelector('#result').textContent = JSON.stringify({user:auth.user.id,photo:photo.status,uploaded:uploaded.ok});
           } catch (error) { document.querySelector('#result').textContent = 'ERROR: '+error.message; }
         };
@@ -70,14 +75,30 @@ async function fixture(page, context, { gate = "enabled", uploadFailure = false 
       if (method === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
       if (url.pathname.endsWith("/capabilities")) return route.fulfill({
         contentType: "application/json", headers: { ...cors, "X-Vniipo-Proxy-Target": "bike-packing-experiment", "X-Vniipo-Proxy-Write-Gate": gate },
-        body: JSON.stringify({ ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION, capabilities: REQUIRED_ADMIN_API_CAPABILITIES }),
+        body: JSON.stringify({ ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
+          capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(recovery ? ["personalPhotoUploadOperationsV1"] : [])] }),
       });
       if (gate !== "enabled") return route.fulfill({ status: 403, headers: cors, body: "gate closed" });
       if (url.pathname.endsWith("/auth/me")) return route.fulfill({ headers: cors, contentType: "application/json", body: '{"ok":true,"user":{"id":"fixture-user"}}' });
       if (url.pathname.endsWith("/file")) return route.fulfill({ headers: cors, contentType: "image/png", body: "fixture-image" });
+      if (method === "GET" && url.pathname.includes("/photo-operations/")) {
+        const data = receipt && (!recoveryAfterReload || pageLoads > 1)
+          ? receipt : { ok: true, operation: { state: "unknown" } };
+        return route.fulfill({ headers: cors, contentType: "application/json", body: JSON.stringify(data) });
+      }
       if (method === "POST" && url.pathname.endsWith("/photos")) {
+        if (recovery) {
+          const multipart = route.request().postDataBuffer().toString("utf8");
+          const operationId = multipart.match(/name="operationId"\r\n\r\n([^\r]+)/)?.[1];
+          expect(operationId).toMatch(/^[a-f0-9-]{36}$/);
+          const fileHash = createHash("sha256").update("fixture-photo").digest("hex");
+          receipt = { ok: true, operation: { id: operationId, state: "committed", environment: "bike-packing-experiment",
+            actorId: "fixture-user", listId: "test", photoId: "fixture-photo", entityId: "fixture-item", entityType: "item",
+            fileHash, thumbHash: fileHash, payloadDigest: "a".repeat(64) },
+          photo: { id: "fixture-photo", url: `${frontend}/letters-vniipo/api/bike-packing/lists/test/photos/fixture-photo/file` } };
+        }
         if (uploadFailure) return route.abort("failed");
-        return route.fulfill({ headers: cors, contentType: "application/json", body: '{"ok":true}' });
+        return route.fulfill({ headers: cors, contentType: "application/json", body: JSON.stringify(receipt || { ok: true }) });
       }
     }
     // This fixture must NEVER reach a real account/API/Production endpoint.
@@ -193,4 +214,27 @@ test("acknowledged photo receipt prevents a stale duplicated queue from sending 
   await copied.locator("#run").click();
   await expect(copied.locator("#result")).toContainText("already sent");
   expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+});
+
+test("protected photo recovers a lost upload response using a terminal GET and no second POST", async ({ page, context }) => {
+  const requests = await fixture(page, context, { recovery: true, uploadFailure: true });
+  await page.locator("#run").click();
+  await expect(page.locator("#result")).toContainText('"uploaded":true');
+  expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+  expect(requests.some(({ url, method }) => method === "GET" && url.includes("/photo-operations/"))).toBe(true);
+  expect(await page.evaluate(() => window.fixtureTransport.uncertainWrite)).toBe(null);
+});
+
+test("protected photo recovers after reload and route switch with the same operation ID", async ({ page, context }) => {
+  const requests = await fixture(page, context, { recovery: true, uploadFailure: true, recoveryAfterReload: true });
+  await page.locator("#run").click();
+  await expect(page.locator("#result")).toContainText("ERROR:");
+  const id = await page.evaluate(() => window.fixtureTransport.uncertainWrite.id);
+  await page.evaluate(() => sessionStorage.setItem("bike-packing-experiment-transport-v1", "direct"));
+  await page.reload();
+  await page.locator("#run").click();
+  await expect(page.locator("#result")).toContainText('"uploaded":true');
+  expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+  expect(requests.filter(({ url }) => url.includes("/photo-operations/")).every(({ url }) => url.endsWith(id))).toBe(true);
+  expect(await page.evaluate(() => window.fixtureTransport.uncertainWrite)).toBe(null);
 });
