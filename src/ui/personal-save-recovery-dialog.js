@@ -111,7 +111,13 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       dialog.showModal();
     },
     showChecking() { this.show(); renderChecking(true); },
-    finishChecking() { if (checking) { renderChecking(false); dialog?.close(); } },
+    finishChecking() {
+      if (!checking) return; // A concurrent real failure owns the dialog now.
+      checking = false;
+      dialog?.close();
+      dialog?.remove();
+      dialog = undefined;
+    },
     setReason(code) {
       renderChecking(false);
       const messages = {
