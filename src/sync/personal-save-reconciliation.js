@@ -19,8 +19,19 @@ export function planPersonalPayloadReconciliation({ base, local, remote, choices
   if (!base || !revision(base.stateRevision) || !object(base.payload)) return { blocked: "missing-base" };
   if (!remote || !revision(remote.stateRevision) || !object(remote.payload)) return { blocked: "remote-unavailable" };
   if (remote.stateRevision < base.stateRevision || !object(local)) return { blocked: "revision" };
-  if ([base.payload, local, remote.payload].some(containsPhotos)) return { blocked: "files-not-supported" };
-  const before = base.payload, after = remote.payload, payload = {}, conflicts = [];
+  return comparePayloads({ before: base.payload, local, after: remote.payload, choices });
+}
+
+// This comparison uses a frozen editor base, not server revisions or clocks.
+// The caller must bind it to an observed local head and register its successor.
+export function planPersonalLocalPayloadReconciliation({ base, local, remote, choices } = {}) {
+  if (![base, local, remote].every(object)) return { blocked: "missing-base" };
+  return comparePayloads({ before: base, local, after: remote, choices });
+}
+
+function comparePayloads({ before, local, after, choices }) {
+  if ([before, local, after].some(containsPhotos)) return { blocked: "files-not-supported" };
+  const payload = {}, conflicts = [];
   const maps = { items: "item", containers: "container", layouts: "layout" };
   for (const key of new Set([...Object.keys(before), ...Object.keys(local), ...Object.keys(after)])) {
     if (has(maps, key)) {

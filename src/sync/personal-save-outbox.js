@@ -1,6 +1,6 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
-import { planPersonalPayloadReconciliation } from "./personal-save-reconciliation.js";
+import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
@@ -88,6 +88,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (record?.version === 2) record = { version: 1, action: record.action,
           snapshot: decodePersonalSnapshot(record.action?.body?.payload, record.snapshotPatch),
           ...(record.mergeBase ? { mergeBase: record.mergeBase } : {}),
+          ...(record.localReconciliation ? { localReconciliation: record.localReconciliation } : {}),
           ...(record.reconciliation ? { reconciliation: record.reconciliation } : {}) };
         const action = record?.action;
         if (record?.version !== 1 || !action || !uuid(action.operationId)
@@ -101,6 +102,12 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (record.mergeBase && (!record.mergeBase.payload || !Number.isSafeInteger(record.mergeBase.stateRevision)
           || record.mergeBase.stateRevision < 1 || action.kind !== "list.update")) throw Error("Invalid merge base");
         if (record.reconciliation && !action.previousLocalOperationId) throw Error("Reconciliation without predecessor");
+        if (record.localReconciliation && (record.localReconciliation.version !== 1
+          || !uuid(record.localReconciliation.targetOperationId)
+          || record.localReconciliation.targetOperationId !== (action.previousLocalOperationId || action.body.causal.baseOperationId)
+          || record.localReconciliation.sourceOperationId !== null && !uuid(record.localReconciliation.sourceOperationId))) {
+          throw Error("Invalid local draft reconciliation");
+        }
         records.set(action.operationId, record);
       }
       const parents = new Set();
@@ -167,7 +174,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     baseline: anchor?.baseline
       ? { operationId: anchor.operationId, stateRevision: anchor.baseline.stateRevision, payload: anchor.baseline.payload } : null
   });
-  let observed = observation(read());
+  const firstObserved = read();
+  const editorPayload = ({ head, anchor }) => head && anchor?.operationId === head.action.operationId && anchor.baseline
+    ? anchor.baseline.payload : head?.action.body.payload || null;
+  let observed = observation(firstObserved), observedPayload = clone(editorPayload(firstObserved)), staleCapture = null;
+  const observe = value => { observed = observation(value); observedPayload = clone(editorPayload(value)); };
   const assertObserved = () => {
     const result = read();
     if (observation(result) !== observed) {
@@ -227,6 +238,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     binding: clone(binding),
     supportsCommittedBaseline: true,
     supportsConflictChoices: true,
+    canReconcileStaleCapture: () => Boolean(staleCapture?.base),
     recover() { return clone(read().head); },
     recoverSnapshot() {
       const { head, anchor } = read();
@@ -265,7 +277,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       try { publishPersonalCheckpoint(storage, keyPrefix, next); }
       catch { throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); }
       retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
-      observed = observation({ head, anchor: next });
+      observe({ head, anchor: next });
       assertObserved();
       return true;
     },
@@ -328,14 +340,25 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // Keep retired IDs as ordering evidence for late suspended writers. Only
       // large payloads and observed, fully carried certificates are discarded.
       retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
-      observed = observation({ head, anchor: nextAnchor });
+      observe({ head, anchor: nextAnchor });
       assertObserved();
       return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
     },
     list() { return clone([...read().records.values()]); },
-    capture({ snapshot, body, create = false, operationId = crypto.randomUUID() }) {
+    capture({ snapshot, body, create = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
       const input = clone({ snapshot, body });
-      const { head, records, anchor, applied } = assertObserved();
+      let current;
+      try { current = assertObserved(); }
+      catch (error) {
+        // Only a pre-publication stale-editor failure has a resumable memory
+        // draft. Quota, corrupt journals and actual stored forks are separate.
+        if (error.code === "stale-tab" && !staleCapture) staleCapture = {
+          input, base: clone(observedPayload || initialMergeBase?.payload || null),
+          sourceOperationId: JSON.parse(observed).operationId
+        };
+        throw error;
+      }
+      const { head, records, anchor, applied } = current;
       if (!uuid(operationId) || !input.snapshot || typeof input.snapshot !== "object"
         || !input.body?.payload || input.body.causal !== undefined || records.has(operationId)
         || anchor?.retired.includes(operationId) || storage.getItem(keyPrefix + operationId) !== null) {
@@ -344,7 +367,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // UI-only changes don't create another business operation. The ordinary
       // local mirror may still persist those UI preferences.
       const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
-      if (head && canonicalListOperationJson(baseline?.payload || head.action.body.payload) === canonicalListOperationJson(input.body.payload)) return clone(head);
+      if (head && !localReconciliation && canonicalListOperationJson(baseline?.payload || head.action.body.payload) === canonicalListOperationJson(input.body.payload)) return clone(head);
       if (create && head) throw blocked("create", "Повторное создание списка запрещено.");
       if (!head && !create && (!Number.isSafeInteger(input.body.baseStateRevision) || input.body.baseStateRevision < 1)) {
         throw blocked("revision", "Перед первым сохранением нужна подтверждённая версия списка.");
@@ -359,22 +382,78 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}),
         kind: create ? "list.create" : "list.update", body: { ...input.body, ...(create ? { id: listId } : {}), causal } };
+      if (localReconciliation && (localReconciliation.version !== 1 || !head
+        || localReconciliation.targetOperationId !== head.action.operationId
+        || localReconciliation.sourceOperationId !== null && !uuid(localReconciliation.sourceOperationId))) {
+        throw blocked("input", "Не подтверждена связь восстановленного черновика с очередью.");
+      }
       const mergeBase = create ? null : baseline ? { payload: baseline.payload, stateRevision: baseline.stateRevision }
         : head && applied.has(head.action.operationId) ? { payload: head.action.body.payload, stateRevision: applied.get(head.action.operationId).stateRevision }
           : !head && initialMergeBase?.stateRevision === input.body.baseStateRevision ? initialMergeBase : null;
-      const record = { version: 1, snapshot: input.snapshot, action, ...(mergeBase ? { mergeBase: clone(mergeBase) } : {}) };
+      const record = { version: 1, snapshot: input.snapshot, action, ...(mergeBase ? { mergeBase: clone(mergeBase) } : {}),
+        ...(localReconciliation ? { localReconciliation: clone(localReconciliation) } : {}) };
       try {
         // The recoverable local data AND operation are one atomic setItem.
         // No await, network, mirror update, or older-record deletion precedes it.
         storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action,
           ...(mergeBase ? { mergeBase } : {}),
+          ...(localReconciliation ? { localReconciliation } : {}),
           snapshotPatch: encodePersonalSnapshot(action.body.payload, record.snapshot) }));
       } catch {
         throw blocked("quota", "Не хватает места для надёжного сохранения. Изменение не отправлено; не закрывайте вкладку.");
       }
-      observed = observation({ head: record, anchor });
+      observe({ head: record, anchor });
       assertObserved(); // Detect a racing writer if it has already completed.
       return clone(record);
+    },
+    async reconcileStaleCapture({ getContext, makeSnapshot = payload => payload, resolveConflicts } = {}) {
+      if (!staleCapture?.base) throw blocked("recovery-base", "Не сохранилась исходная версия черновика. Автоматическое восстановление недоступно.");
+      const draft = clone(staleCapture), current = read(), initial = clone(getContext());
+      const currentObservation = observation(current), target = current.head;
+      const assertCurrent = () => {
+        const context = getContext();
+        if (initial?.scope !== "personal" || context?.scope !== "personal"
+          || Object.keys(binding).some(key => initial?.[key] !== binding[key] || context?.[key] !== binding[key])
+          || initial.generation !== context.generation || currentObservation !== observation(read())) {
+          throw blocked("context", "Версия другой вкладки или редактор изменились. Повторите сравнение.");
+        }
+      };
+      assertCurrent();
+      if (!target || draft.sourceOperationId && !current.records.has(draft.sourceOperationId)
+        && !current.anchor?.retired.includes(draft.sourceOperationId)) {
+        throw blocked("recovery-base", "Исходное действие черновика не связано с текущей очередью.");
+      }
+      const remote = clone(editorPayload(current));
+      let plan = planPersonalLocalPayloadReconciliation({ base: draft.base, local: draft.input.body.payload, remote });
+      if (!plan.blocked && plan.conflicts?.length && typeof resolveConflicts === "function") {
+        const choices = await resolveConflicts(clone(plan.conflicts), { localComparison: true });
+        assertCurrent();
+        if (choices === "cancel" || choices == null) throw blocked("reconciliation-cancelled", "Сравнение отложено. Черновик и очередь сохранены.");
+        plan = planPersonalLocalPayloadReconciliation({ base: draft.base, local: draft.input.body.payload, remote, choices });
+      }
+      if (plan.blocked || plan.conflicts?.length) throw blocked("reconciliation-conflict", "Эти версии требуют выбора или проверки структуры. Черновик сохранён.");
+      const payload = clone(plan.payload), snapshot = clone(makeSnapshot(clone(payload), clone(draft.input.snapshot)));
+      assertCurrent();
+      // Continue the existing local chain; never bypass/retire its unknown
+      // operations or claim that this local comparison is a server receipt.
+      const latest = createPersonalSaveOutbox({ storage, actorId, listId, scopeKey });
+      const baseline = current.anchor?.operationId === target.action.operationId ? current.anchor.baseline : null;
+      const body = { ...draft.input.body, payload,
+        baseStateRevision: baseline?.stateRevision || target.action.body.baseStateRevision,
+        force: false, forceOverwrite: false, fullReplace: false };
+      delete body.causal;
+      if (body.userDeletion && Object.hasOwn(payload[body.userDeletion.type === "item" ? "items" : "containers"] || {}, body.userDeletion.id)) {
+        delete body.userDeletion; // The user chose to retain this entity.
+      }
+      try {
+        return latest.capture({ snapshot, body, localReconciliation: {
+          version: 1, sourceOperationId: draft.sourceOperationId, targetOperationId: target.action.operationId
+        } });
+      } catch (error) {
+        // Publication may have succeeded just before another writer/crash was
+        // detected. Never offer a fresh-ID recovery attempt in this old editor.
+        throw Object.assign(error, { draftPublicationAttempted: true });
+      }
     },
     inspect,
     async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts,
@@ -427,7 +506,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         // after a crash; this does neither a business write nor intent replay.
         try { publishPersonalCheckpoint(storage, keyPrefix, checkpoint); }
         catch { throw blocked("quota", "Не хватило места для подтверждения и актуальной версии. Локальные данные сохранены."); }
-        observed = observation({ head, anchor: checkpoint });
+        observe({ head, anchor: checkpoint });
         assertObserved();
         return { adoptedBaseline: true, snapshot, baseline: clone(baseline), historicalConfirmation: clone(headProof),
           serverRecord: remote, action: clone(head.action) };
@@ -465,7 +544,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
           snapshotPatch: encodePersonalSnapshot(payload, snapshot) }));
       } catch { throw blocked("quota", "Не хватает места для объединённого действия. Прежние версии сохранены."); }
-      observed = observation({ head: record, anchor });
+      observe({ head: record, anchor });
       assertObserved();
       return clone(record);
     },

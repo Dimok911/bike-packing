@@ -223,3 +223,34 @@ desktop/mobile dialog scenarios and the real API/MySQL choice/lost-ACK scenario
 passed. Full browser regression passed 80/80 without retries, both builds
 passed, and all 24 real API/MySQL cases completed successfully. All gates
 remain disabled; no new push, live migration, deployment or Production transfer.
+
+## Recovering a stale tab's memory draft
+
+A capture stopped before publication because another tab advanced the journal
+can retain its frozen editor base and draft in memory. An explicit comparison
+uses that base, not the mutable local mirror or clocks. The other tab's durable
+head must still descend from the observed action (or retain its retirement
+proof). Compatible fields merge; incompatible records require fresh choices.
+Changed account/editor/head while choosing, missing bases, photos and invalid
+structures remain blocked.
+
+The result is one atomic new local successor, with `localReconciliation`
+metadata binding its old observed head and current target head. It retains the
+target's causal dependency, or the target's adopted server baseline, and never
+settles/retires unknown operations merely to recover a draft. Even choosing the
+other version creates a durable decision. Server confirmation is still required.
+Only successful publication and re-read unlock the recovery latch; old forms
+close and the fresh adapter adopts the exact saved snapshot. Existing actions
+and their bytes remain unchanged.
+
+If publication was attempted but failed/changed concurrently, another recovery
+click with a new UUID is disabled. The journal plus memory draft remain
+exportable; reload inspects whatever was durably recorded. Cancel or a changed
+comparison before publication can be compared again. This is not automatic
+import of recovery files or recovery of actual stored forks/corrupt journals.
+
+Local validation: 887 critical, source check, six targeted Chromium/mobile
+WebKit recovery cases and 25/25 real API/MySQL cases passed. The initial export
+test selected "any button"; updated it to the exact download button after adding
+the comparison button. No application guard was relaxed. Full browser regression
+passed 84/84 without retries; both builds and 169 transport tests passed.

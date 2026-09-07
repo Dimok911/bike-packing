@@ -2,7 +2,7 @@
 // before the ordinary status controls exist. The native top layer also covers
 // the still-open form whose save failed, including on mobile.
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
-  getLanguage = () => "ru", getRecoveryCopy, ownsError } = {}) {
+  getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft } = {}) {
   let dialog;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
@@ -42,6 +42,19 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       download.textContent = text("Скачать копию для восстановления", "Download recovery copy");
       const status = documentRef.createElement("p");
       status.setAttribute("role", "status");
+      const recover = documentRef.createElement("button");
+      recover.type = "button"; recover.dataset.recoverStaleDraft = "";
+      recover.textContent = text("Сравнить с другой вкладкой", "Compare with the other tab");
+      recover.hidden = !canRecoverDraft();
+      recover.addEventListener("click", async () => {
+        recover.disabled = true;
+        try {
+          await recoverDraft();
+          dialog.close();
+        } catch (error) {
+          status.textContent = error.message || text("Восстановление остановлено. Черновик сохранён.", "Recovery paused. The draft is retained.");
+        } finally { recover.disabled = false; recover.hidden = !canRecoverDraft(); }
+      });
       download.addEventListener("click", () => {
         try {
           const copy = getRecoveryCopy();
@@ -58,7 +71,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, reason, guidance, download, status);
+      dialog.append(title, description, reason, guidance, download, recover, status);
       documentRef.body.append(dialog);
       dialog.showModal();
     },
@@ -71,7 +84,10 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
         selection: ["Найдено несколько локальных списков. Нужна проверка, какой список восстанавливать.", "Several local lists were found. The recovery target needs to be checked."]
       };
       const message = messages[code] || messages.storage;
-      if (dialog) dialog.querySelector("[data-recovery-reason]").textContent = text(...message);
+      if (dialog) {
+        dialog.querySelector("[data-recovery-reason]").textContent = text(...message);
+        dialog.querySelector("[data-recover-stale-draft]").hidden = !canRecoverDraft();
+      }
     }
   };
 }

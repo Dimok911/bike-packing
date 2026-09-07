@@ -633,6 +633,125 @@ test("stale editor recovery keeps the other tab's journal and the rejected edito
   assert.equal(copy.journalEntries.length, 1);
 });
 
+function staleDraftFixture() {
+  const f = fixture(), payload = { items: { a: { id: "a", name: "Original", weight: 100 } }, containers: {}, layouts: {} };
+  const base = f.outbox.capture({ snapshot: payload, body: { baseStateRevision: 5, payload } });
+  f.outbox.markApplied({ operationId: base.action.operationId, stateRevision: 6 }); f.outbox.compact();
+  const recovery = createPersonalSaveRecovery({ isCurrentScope: scope => scope === f.context.scopeKey });
+  const stale = recovery.outbox(f.make, f.context.scopeKey);
+  const local = structuredClone(payload); local.items.a.name = "Local rename";
+  const remote = structuredClone(payload); remote.items.a.weight = 222;
+  return { ...f, base, recovery, stale, local, remote,
+    saveRemote: () => f.outbox.capture({ snapshot: remote, body: { baseStateRevision: 6, payload: remote } }),
+    failCapture: () => assert.throws(() => stale.capture({ snapshot: local, body: { baseStateRevision: 6, payload: local } }), { code: "stale-tab" }),
+    options: { getContext: () => f.context }
+  };
+}
+
+test("stale draft recovery merges the frozen editor base and publishes one durable successor before unlocking", async () => {
+  const f = staleDraftFixture(), remote = f.saveRemote(); f.failCapture();
+  assert.equal(f.recovery.canRecoverDraft(), true); const before = [...f.values];
+  const result = await f.recovery.recoverDraft(f.options);
+  assert.doesNotThrow(f.recovery.assertRunning);
+  assert.equal(result.localReconciliation.sourceOperationId, f.base.action.operationId);
+  assert.equal(result.localReconciliation.targetOperationId, remote.action.operationId);
+  assert.equal(result.action.body.causal.baseOperationId, remote.action.operationId);
+  assert.equal(result.action.body.payload.items.a.name, "Local rename"); assert.equal(result.action.body.payload.items.a.weight, 222);
+  assert.deepEqual([...f.values].slice(0, before.length), before);
+  assert.equal(f.values.size, before.length + 1); assert.deepEqual(f.make().recover(), result);
+  const calls = [];
+  await f.make().drain({ queue: { run: async input => { calls.push(input.operationId); return {}; } }, getContext: () => f.context });
+  assert.ok(calls.indexOf(remote.action.operationId) < calls.indexOf(result.action.operationId));
+});
+
+test("stale draft recovery survives compaction of its observed ancestor and uses the adopted server base", async () => {
+  const f = staleDraftFixture(), remote = f.saveRemote();
+  f.outbox.markApplied({ operationId: remote.action.operationId, stateRevision: 7 }); f.outbox.compact();
+  f.remote.items.a.weight = 333;
+  f.outbox.adoptRemoteBaseline({ payload: f.remote, snapshot: f.remote, stateRevision: 20 });
+  f.failCapture();
+  const result = await f.recovery.recoverDraft(f.options);
+  assert.equal(result.action.body.baseStateRevision, 20); assert.deepEqual(result.action.body.causal.dependsOn, []);
+  assert.equal(result.action.previousLocalOperationId, remote.action.operationId);
+  assert.equal(result.action.body.payload.items.a.name, "Local rename"); assert.equal(result.action.body.payload.items.a.weight, 333);
+  assert.equal(result.mergeBase.stateRevision, 20);
+});
+
+test("a stale draft conflict needs an explicit decision and can be postponed without releasing the recovery latch", async () => {
+  const f = staleDraftFixture(); f.remote.items.a.name = "Other tab name"; const remote = f.saveRemote(); f.failCapture();
+  const before = [...f.values];
+  await assert.rejects(f.recovery.recoverDraft({ ...f.options, resolveConflicts: async (conflicts, info) => {
+    assert.equal(info.localComparison, true); assert.equal(conflicts[0].remoteValue.name, "Other tab name"); return "cancel";
+  } }), { code: "reconciliation-cancelled" });
+  assert.throws(f.recovery.assertRunning, { code: "stale-tab" }); assert.deepEqual([...f.values], before);
+  const result = await f.recovery.recoverDraft({ ...f.options, resolveConflicts: async () => "server" });
+  assert.notEqual(result.action.operationId, remote.action.operationId, "even accepting the other head has a durable decision");
+  assert.equal(result.action.body.payload.items.a.name, "Other tab name"); assert.doesNotThrow(f.recovery.assertRunning);
+});
+
+test("changed editor/account/other head, invalid structures and quota preserve the stale draft and latch", async () => {
+  for (const mode of ["context", "actor", "other-head", "structure", "quota-before", "quota-after"]) {
+    const f = staleDraftFixture(); f.remote.items.a.name = "Other"; f.saveRemote(); f.failCapture();
+    const before = [...f.values], write = f.storage.setItem;
+    if (mode.startsWith("quota")) f.storage.setItem = (key, value) => {
+      if (mode === "quota-after") write(key, value); throw Error("quota");
+    };
+    await assert.rejects(f.recovery.recoverDraft({ ...f.options,
+      makeSnapshot: mode === "structure" ? () => { throw Error("invalid structure"); } : payload => payload,
+      resolveConflicts: async () => {
+        if (mode === "context") f.context.generation = "new editor";
+        if (mode === "actor") f.context.actorId = "other";
+        if (mode === "other-head") { f.remote.items.a.weight++; f.saveRemote(); }
+        return { 0: "local" };
+      }
+    }));
+    assert.throws(f.recovery.assertRunning, { code: "stale-tab" }, mode);
+    assert.deepEqual([...f.values].slice(0, before.length), before, mode);
+    assert.equal(f.recovery.recoveryCopy(f.storage).unconfirmedMemoryDraft.items.a.name, "Local rename");
+    if (mode === "quota-after") assert.equal(f.make().recover().localReconciliation.version, 1);
+    if (mode.startsWith("quota")) {
+      assert.equal(f.recovery.canRecoverDraft(), false);
+      await assert.rejects(f.recovery.recoverDraft(f.options));
+    }
+  }
+});
+
+test("concurrent recovery clicks cannot create two successors from one frozen stale draft", async () => {
+  const f = staleDraftFixture(); f.remote.items.a.name = "Other"; f.saveRemote(); f.failCapture();
+  let choose;
+  const first = f.recovery.recoverDraft({ ...f.options, resolveConflicts: () => new Promise(resolve => { choose = resolve; }) });
+  assert.equal(f.recovery.canRecoverDraft(), false);
+  await assert.rejects(f.recovery.recoverDraft(f.options), /No recoverable draft/);
+  choose({ 0: "local" }); const record = await first;
+  assert.equal(f.make().list().filter(entry => entry.localReconciliation).length, 1);
+  assert.equal(f.make().recover().action.operationId, record.action.operationId);
+  await assert.rejects(f.recovery.recoverDraft(f.options), /No recoverable draft/);
+});
+
+test("recovery cannot invent the other tab's parent or load a malformed local reconciliation marker", async () => {
+  const f = staleDraftFixture(); f.saveRemote(); f.failCapture();
+  const record = await f.recovery.recoverDraft(f.options);
+  const key = [...f.values.keys()].find(key => key.endsWith(record.action.operationId)), original = f.values.get(key);
+  for (const change of [{ version: 9 }, { targetOperationId: crypto.randomUUID() }, { sourceOperationId: "wrong" }]) {
+    const value = JSON.parse(original); Object.assign(value.localReconciliation, change);
+    f.values.set(key, JSON.stringify(value)); assert.throws(f.make, { code: "storage" });
+  }
+  f.values.set(key, original); assert.equal(f.make().recover().action.operationId, record.action.operationId);
+});
+
+test("missing common base, stored forks and non-stale storage failures never enable draft replay", async () => {
+  const f = fixture(), recovery = createPersonalSaveRecovery(), stale = recovery.outbox(f.make, f.context.scopeKey);
+  f.outbox.capture(f.input(100)); assert.throws(() => stale.capture(f.input(200)), { code: "stale-tab" });
+  assert.equal(recovery.canRecoverDraft(), false);
+  await assert.rejects(recovery.recoverDraft({ getContext: () => f.context }), /No recoverable draft/);
+  assert.throws(recovery.assertRunning, { code: "stale-tab" });
+  for (const code of ["fork", "storage", "quota", "selection"]) {
+    const latch = createPersonalSaveRecovery();
+    latch.report(Object.assign(Error(code), { code, isPersonalSaveBlocked: true }), { scopeKey: "id:actor-a", snapshot: {} });
+    assert.equal(latch.canRecoverDraft(), false); await assert.rejects(latch.recoverDraft({}));
+  }
+});
+
 test("a late storage failure cannot expose another account's draft or authorize recovery export after scope change", async () => {
   let scope = "id:actor-a", reject;
   const recovery = createPersonalSaveRecovery({ isCurrentScope: value => value === scope });

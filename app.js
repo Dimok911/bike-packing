@@ -1179,7 +1179,9 @@ const personalSaveRecovery = createPersonalSaveRecovery({
 const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSaveRecoveryDialog({
   getLanguage: () => uiLanguage,
   getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage),
-  ownsError: error => personalSaveRecovery.owns(error)
+  ownsError: error => personalSaveRecovery.owns(error),
+  canRecoverDraft: () => personalSaveRecovery.canRecoverDraft(),
+  recoverDraft: () => recoverStalePersonalDraft()
 }) : null;
 let applyingLayoutArrangement = false;
 let hadLocalStateAtStartup = hasLocalSavedState();
@@ -5583,7 +5585,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
     const pending = personalSaveOutboxForScope()?.recover();
-    if (!personalOperationId || !pending?.reconciliation || pending.action.operationId !== personalOperationId
+    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -5860,10 +5862,14 @@ function applyConflictChoices(mergedState, conflicts, choices) {
   });
 }
 
-function askConflictResolution(conflicts, { stateRevision } = {}) {
+function askConflictResolution(conflicts, { stateRevision, localComparison = false } = {}) {
   if (refs.conflictDialog.open) return Promise.resolve("cancel");
-  const explicit = Number.isSafeInteger(stateRevision) && stateRevision > 0;
-  const context = explicit
+  const explicit = localComparison || Number.isSafeInteger(stateRevision) && stateRevision > 0;
+  const otherLabel = localComparison ? localText("Other tab", "Другая вкладка") : localText("Server", "С сервера");
+  const context = localComparison
+    ? `<p class="dialog-note">${escapeHtml(localText("Compare with the saved version from the other tab. Choose each conflicting record; device clocks do not decide.",
+      "Сравнение с сохранённой версией другой вкладки. Выберите вариант для каждого спорного элемента; время на устройствах не определяет результат."))}</p>`
+    : explicit
     ? `<p class="dialog-note">${escapeHtml(localText(`Comparing with server version ${stateRevision}. Choose each version explicitly. Restoring a deleted record needs your choice; device clocks do not decide.`,
       `Сравнение с серверной версией ${stateRevision}. Выберите вариант для каждого элемента. Возврат удалённого элемента требует вашего выбора; время на устройствах не определяет результат.`))}</p>`
     : renderConflictSyncContext();
@@ -5874,7 +5880,7 @@ function askConflictResolution(conflicts, { stateRevision } = {}) {
       <h3>${escapeHtml(conflict.label)}</h3>
       <div class="conflict-kind">${escapeHtml(conflictKindLabel(conflict))}</div>
       <p>${escapeHtml(conflictSummary(conflict))}</p>
-      ${renderConflictDetails(conflict)}
+      ${renderConflictDetails(conflict, { remoteLabel: otherLabel })}
       <div class="conflict-choice">
         <label>
           <input type="radio" name="conflict-${index}" value="local"${defaultChoice === "local" ? " checked" : ""} />
@@ -5883,18 +5889,21 @@ function askConflictResolution(conflicts, { stateRevision } = {}) {
         </label>
         <label>
           <input type="radio" name="conflict-${index}" value="remote"${defaultChoice === "remote" ? " checked" : ""} />
-          <span>${escapeHtml(localText("Server", "С сервера"))}</span>
-          <small>${escapeHtml(explicit ? (conflict.remoteHas ? localText("Server version", "Серверная версия") : localText("Deleted", "Удалено")) : conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке")))}</small>
+          <span>${escapeHtml(otherLabel)}</span>
+          <small>${escapeHtml(explicit ? (conflict.remoteHas ? otherLabel : localText("Deleted", "Удалено")) : conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке")))}</small>
         </label>
       </div>
     </section>
   `;
   }).join("")}`;
   refs.conflictDialog.returnValue = "";
+  const serverButtonText = refs.conflictServerBtn.textContent;
+  if (localComparison) refs.conflictServerBtn.textContent = localText("Use the other tab's whole version", "Принять всю версию другой вкладки");
   return new Promise((resolve) => {
     const cleanup = () => {
       refs.conflictDialog.removeEventListener("close", handleClose);
       refs.conflictServerBtn.onclick = null;
+      refs.conflictServerBtn.textContent = serverButtonText;
       refs.conflictApplyBtn.onclick = null;
       refs.conflictApplyBtn.disabled = false;
       refs.conflictList.onchange = null;
@@ -5979,7 +5988,7 @@ function conflictTimestamp(value) {
   return timeValue(value?.updatedAt || value?.updated_at || value?.clientUpdatedAt || "");
 }
 
-function renderConflictDetails(conflict) {
+function renderConflictDetails(conflict, { remoteLabel = localText("Server", "С сервера") } = {}) {
   const rows = conflictFormatter.conflictDetailRows(conflict);
   if (!rows.length) return "";
   const changesLabel = localText("What changed", "Что изменилось");
@@ -5988,7 +5997,7 @@ function renderConflictDetails(conflict) {
       <div class="conflict-diff-head">
         <span>${escapeHtml(localText("Field", "Поле"))}</span>
         <span>${escapeHtml(localText("Mine", "Моё"))}</span>
-        <span>${escapeHtml(localText("Server", "С сервера"))}</span>
+        <span>${escapeHtml(remoteLabel)}</span>
       </div>
       ${rows.map((row) => `
         <div class="conflict-diff-row">
@@ -8146,6 +8155,35 @@ function personalSaveContext() {
   };
 }
 
+function personalReconciledSnapshot(payload, previous) {
+  // Restore only UI preferences/selection, never old business relationships.
+  const snapshot = normalizeRemoteState({ ...payload, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
+  if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), payload)) {
+    throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");
+  }
+  return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+}
+
+async function recoverStalePersonalDraft() {
+  const record = await personalSaveRecovery.recoverDraft({
+    getContext: personalSaveContext, makeSnapshot: personalReconciledSnapshot,
+    resolveConflicts: (conflicts, details) => askConflictResolution(conflicts, details)
+  });
+  // The new local successor is already durable. Replace the stale adapter
+  // before UI adoption; neither its old draft nor old forms may save again.
+  personalSaveOutboxes.clear();
+  replaceState(record.snapshot, { personalOperationId: record.action.operationId });
+  syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso();
+  persistStateSnapshot(state, { recordAction: false });
+  saveSyncMeta();
+  document.querySelectorAll("dialog[open]").forEach(dialog => {
+    if (dialog.id !== "personalSaveRecoveryDialog") closeDialogWithoutRestoringFocus(dialog, "cancel");
+  });
+  renderPreservingPackingScroll();
+  updateSyncUi("Черновик согласован с другой вкладкой и сохранён. Ожидает подтверждения сервера.");
+  scheduleRemoteSave();
+}
+
 async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = false } = {}) {
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
@@ -8206,15 +8244,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
           stateIntegrityMetaFromResponse(record, data), record.payload)) throw new Error("Серверная версия не прошла проверку целостности.");
         return record;
       },
-      makeSnapshot(payload, previous) {
-        // Restore only UI preferences/selection, never old placements or
-        // packed state. Business normalization must not change the candidate.
-        const snapshot = normalizeRemoteState({ ...payload, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
-        if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), payload)) {
-          throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");
-        }
-        return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
-      },
+      makeSnapshot: personalReconciledSnapshot,
       makeBaselineMeta(record) {
         return { ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
           serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false };

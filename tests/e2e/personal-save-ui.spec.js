@@ -451,7 +451,7 @@ test("first authenticated UI change owns a durable create and survives a lost fi
 
 async function downloadRecovery(page) {
   const downloaded = page.waitForEvent("download");
-  await page.locator("#personalSaveRecoveryDialog button").click();
+  await page.locator("#personalSaveRecoveryDialog").getByRole("button", { name: "Скачать копию для восстановления", exact: true }).click();
   const file = await downloaded;
   expect(file.suggestedFilename()).toBe("bike-packing-recovery.json");
   return JSON.parse(await readFile(await file.path(), "utf8"));
@@ -577,6 +577,69 @@ test("a stale real tab cannot save over another tab and can export its separate 
   expect(copy.journalEntries.some(entry => entry.value.includes("Сумка другой вкладки"))).toBe(true);
   expect(copy.journalEntries.some(entry => entry.value.includes("Сумка старой вкладки"))).toBe(false);
   expect(f.posts.some(post => Object.values(post.body.payload.containers).some(entry => entry.name === "Сумка старой вкладки"))).toBe(false);
+  expect(f.errors).toEqual([]);
+});
+
+test("a stale real editor can reconcile its retained draft with the other tab and continue the same queue", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка двух вкладок");
+  const item = await createItemInContainer(page, bag, "Общее начало", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], other = await context.newPage(); other.personalFixture = f;
+  await other.goto(origin); await expect(other.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await expect(other.locator("#layoutSelect option[value='layout-a']")).toBeAttached({ timeout: 20000 });
+  await other.locator("#layoutSelect").selectOption("layout-a");
+  await other.locator("#packingView [data-item-id]").filter({ hasText: "Общее начало" }).locator(".item-title-hitarea").click();
+  await other.locator("#itemWeight").fill("333"); await submitForm(other, "#saveItemBtn", "#itemWeight");
+  await expect(other.locator("#itemDialog")).not.toBeVisible();
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Черновик старой вкладки");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await page.locator("[data-recover-stale-draft]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  await expect(page.locator("#itemDialog")).not.toBeVisible();
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Черновик старой вкладки" })).toHaveCount(1);
+  await synchronize(page, () => f.payload.items[id]?.name === "Черновик старой вкладки" && f.payload.items[id]?.weight === 333);
+  expect(new Set(f.posts.map(post => post.operationId)).size).toBe(f.posts.length);
+  await reloadApp(page);
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Черновик старой вкладки" })).toHaveCount(1);
+  expect(f.payload.items[id].weight).toBe(333); expect(f.errors).toEqual([]);
+});
+
+test("stale draft choices can be postponed and must be compared again if the other tab edits during the dialog", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка сравнения вкладок");
+  const item = await createItemInContainer(page, bag, "Общая вещь", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], other = await context.newPage(); other.personalFixture = f;
+  await other.goto(origin); await expect(other.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await expect(other.locator("#layoutSelect option[value='layout-a']")).toBeAttached({ timeout: 20000 });
+  await other.locator("#layoutSelect").selectOption("layout-a");
+  const editOther = async (from, to) => {
+    await other.locator("#packingView [data-item-id]").filter({ hasText: from }).locator(".item-title-hitarea").click();
+    await other.locator("#itemName").fill(to); await submitForm(other, "#saveItemBtn", "#itemName");
+    await expect(other.locator("#itemDialog")).not.toBeVisible();
+  };
+  await editOther("Общая вещь", "Другой вариант 1");
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Мой отложенный вариант");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await page.locator("[data-recover-stale-draft]").click();
+  await expect(page.locator("#conflictDialog")).toBeVisible();
+  await expect(page.locator("#conflictList")).toContainText("другой вкладки");
+  await expect(page.locator("#conflictList input:checked")).toHaveCount(0);
+  await page.locator("#conflictCancelBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Сравнение отложено");
+  await page.locator("[data-recover-stale-draft]").click();
+  await expect(page.locator("#conflictDialog")).toBeVisible();
+  await editOther("Другой вариант 1", "Другой вариант 2");
+  await page.locator('#conflictList input[value="local"]').check(); await page.locator("#conflictApplyBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Повторите сравнение");
+  await page.locator("[data-recover-stale-draft]").click();
+  await expect(page.locator("#conflictList")).toContainText("Другой вариант 2");
+  await page.locator('#conflictList input[value="remote"]').check(); await page.locator("#conflictApplyBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  await synchronize(page, () => f.payload.items[id]?.name === "Другой вариант 2");
+  expect(f.posts.some(post => post.body.payload.items[id]?.name === "Мой отложенный вариант")).toBe(false);
   expect(f.errors).toEqual([]);
 });
 

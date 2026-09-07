@@ -5,9 +5,9 @@ const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selecti
 // A storage failure is a latched stop for this editor, not an invitation to
 // retry a form which may already have changed its in-memory entities.
 export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScope = () => true } = {}) {
-  let failure = null;
+  let failure = null, resolving = false;
   const assertRunning = () => { if (failure) throw failure.error; };
-  const report = (error, { scopeKey, snapshot } = {}) => {
+  const report = (error, { scopeKey, snapshot, recoverDraft, canRecoverDraft } = {}) => {
     if (!error?.isPersonalSaveBlocked || !blockingCodes.has(error.code)) return false;
     if (!isCurrentScope(scopeKey)) return false;
     if (!failure) failure = { error, scopeKey, draft: null, draftAvailable: false };
@@ -16,6 +16,7 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
       try { failure.draft = JSON.parse(JSON.stringify(snapshot)); failure.draftAvailable = true; }
       catch { /* The journal can still be exported when the memory copy fails. */ }
     }
+    if (error.code === "stale-tab" && recoverDraft && canRecoverDraft?.() && !failure.recoverDraft) failure.recoverDraft = recoverDraft;
     onBlocked(failure);
     return true;
   };
@@ -31,11 +32,36 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
     assertRunning, report, run,
     owns: error => Boolean(failure && failure.error === error),
     message: () => failure?.error.message || "",
+    canRecoverDraft: () => Boolean(failure?.recoverDraft && isCurrentScope(failure.scopeKey) && !resolving),
+    async recoverDraft(options) {
+      const original = failure;
+      if (!original?.recoverDraft || !isCurrentScope(original.scopeKey) || resolving) throw Error("No recoverable draft in this scope");
+      resolving = true;
+      try {
+        const record = await original.recoverDraft(options);
+        if (failure !== original || !isCurrentScope(original.scopeKey)
+          || record?.action?.scopeKey !== original.scopeKey || !record.localReconciliation || !record.snapshot) {
+          throw Error("The recovered draft no longer belongs to this editor");
+        }
+        // The adapter has published and re-read the exact successor. Only this
+        // narrow success unlocks editing; cancel/errors leave the latch intact.
+        failure = null;
+        return record;
+      } catch (error) {
+        if (error.draftPublicationAttempted) original.recoverDraft = null;
+        throw error;
+      } finally { resolving = false; }
+    },
     outbox(factory, scopeKey) {
       const outbox = run(factory, { scopeKey });
       return Object.fromEntries(Object.entries(outbox).map(([name, value]) => [name,
         typeof value !== "function" ? value : (...args) => run(() => value(...args), {
-          scopeKey, snapshot: name === "capture" ? args[0]?.snapshot : undefined
+          scopeKey, snapshot: name === "capture" ? args[0]?.snapshot : undefined,
+          recoverDraft: name === "capture" ? options => {
+            if (!outbox.canReconcileStaleCapture?.()) throw Error("No frozen common base for this draft");
+            return outbox.reconcileStaleCapture(options);
+          } : undefined,
+          canRecoverDraft: () => outbox.canReconcileStaleCapture?.()
         })]));
     },
     recoveryCopy(storage) {
