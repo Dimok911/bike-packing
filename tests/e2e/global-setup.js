@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
 const HOST = "127.0.0.1";
-const PORT = 4173;
+const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173);
 const SERVER_URL = `http://${HOST}:${PORT}/`;
 const DIST_DIR = "www/vniipo-help.ru/bike-packing";
 const STARTUP_TIMEOUT_MS = 30_000;
