@@ -287,6 +287,17 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(head?.snapshot || null);
     },
     baseline() { return clone(read().anchor?.baseline || null); },
+    confirmedBase() {
+      const { anchor, head, applied } = read();
+      if (!head) return clone(initialMergeBase || null);
+      const confirmed = applied.get(head.action.operationId);
+      if (!confirmed) return null;
+      if (anchor?.operationId === head.action.operationId && anchor.baseline) return clone(anchor.baseline);
+      // A prior checkpoint can coexist with a newer confirmed DB head. Its
+      // historical baseline must not become the base of this new photo form.
+      return head.action.kind === "photos.mutate" ? null
+        : clone({ payload: personalRecordPayload(head), stateRevision: confirmed.stateRevision });
+    },
     adoptRemoteBaseline({ snapshot, payload, stateRevision, meta = {} }) {
       const input = clone({ snapshot, payload, stateRevision, meta });
       const { records, applied, anchor, checkpoints, head } = assertObserved();

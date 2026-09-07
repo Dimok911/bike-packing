@@ -29,6 +29,31 @@ function fixture() {
   return { values, storage, context, make, input, outbox: make() };
 }
 
+test("confirmed base reader exposes the observed initial server version, never a mutable draft or UI preference", () => {
+  const f = fixture(), base = { items: {}, containers: {} };
+  assert.equal(f.outbox.confirmedBase(), null);
+  f.outbox.adoptRemoteBaseline({ snapshot: { ...base, ui: "local" }, payload: base, stateRevision: 5 });
+  assert.deepEqual(f.outbox.confirmedBase(), { payload: base, stateRevision: 5 });
+  const view = f.outbox.confirmedBase(); view.payload.items.other = { id: "other" };
+  assert.deepEqual(f.outbox.confirmedBase(), { payload: base, stateRevision: 5 });
+  // A new instance without an observed server read must not infer this base.
+  assert.equal(f.make().confirmedBase(), null);
+});
+
+test("confirmed base follows the newest applied DB head, not an older checkpoint snapshot", () => {
+  const f = fixture(), firstInput = f.input(1), first = f.outbox.capture(firstInput);
+  assert.equal(f.outbox.confirmedBase(), null);
+  f.outbox.markApplied({ operationId: first.action.operationId, stateRevision: 6 });
+  f.outbox.adoptRemoteBaseline({ snapshot: firstInput.snapshot, payload: firstInput.body.payload, stateRevision: 6 });
+  f.outbox.compact();
+  const nextInput = f.input(2); nextInput.body.baseStateRevision = 6;
+  const second = f.outbox.capture(nextInput); assert.equal(f.outbox.confirmedBase(), null);
+  f.outbox.markApplied({ operationId: second.action.operationId, stateRevision: 7 });
+  assert.deepEqual(f.outbox.confirmedBase(), { payload: nextInput.body.payload, stateRevision: 7 });
+  f.outbox.compact();
+  assert.deepEqual(f.make().confirmedBase(), { payload: nextInput.body.payload, stateRevision: 7 });
+});
+
 test("confirmed empty list edits survive reload and follow causal ancestry rather than dates or storage order", () => {
   const f = fixture(), base = { items: {}, containers: {}, layouts: { layout: { id: "layout", name: "Empty" } }, categories: [] };
   f.outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 5 });

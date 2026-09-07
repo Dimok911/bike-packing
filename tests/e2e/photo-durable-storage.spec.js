@@ -186,6 +186,21 @@ test("photo recovery raw reader rejects changed context during its transaction a
   expect(result).toEqual({ foreignCount: 0, code: "context-changed", retained: 1 });
 });
 
+test("opt-in prepared form cache preserves native binary full/thumb bytes through reload on both browsers", async ({ page, context }) => {
+  await fixture(page, context);
+  await page.evaluate(() => window.photos.putCachedPhoto({ id: "prepared-binary", fileName: "Фото.png", fullBlobVerified: true,
+    blob: new Blob([new Uint8Array([0, 255, 128, 1])], { type: "image/png" }),
+    thumbBlob: new Blob(["prepared thumbnail"], { type: "image/webp" }) }, "id:actor-a", { binary: true }));
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  expect(await page.evaluate(async () => {
+    const value = await window.photos.getCachedPhoto("prepared-binary", "id:actor-a");
+    return { id: value.id, name: value.fileName, full: [...new Uint8Array(await value.blob.arrayBuffer())],
+      type: value.blob.type, thumb: await value.thumbBlob.text(), thumbType: value.thumbBlob.type, verified: value.fullBlobVerified,
+      foreign: await window.photos.getCachedPhoto("prepared-binary", "id:other") };
+  })).toEqual({ id: "prepared-binary", name: "Фото.png", full: [0, 255, 128, 1], type: "image/png",
+    thumb: "prepared thumbnail", thumbType: "image/webp", verified: true, foreign: null });
+});
+
 test("photo cache preserves actual Blob bytes and MIME through browser reload", async ({ page, context, browserName }) => {
   // Playwright's Windows WebKit fails native IndexedDB Blob preparation before
   // commit. This is NOT evidence about real iOS Safari; do not claim that test.

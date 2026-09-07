@@ -4,7 +4,7 @@
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
   getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
   getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false,
-  cancelPhotoUpload, canCancelPhotos = () => false } = {}) {
+  cancelPhotoUpload, canCancelPhotos = () => false, resumePhotoUpload, canResumePhotos = () => false } = {}) {
   let dialog, checking = false;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
@@ -30,6 +30,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
     dialog.querySelector("[data-download-photo-recovery]").hidden = active || !canExportPhotos();
     dialog.querySelector("[data-check-photo-result]").hidden = active || !canCheckPhotos();
     dialog.querySelector("[data-cancel-photo-upload]").hidden = active || !canCancelPhotos();
+    dialog.querySelector("[data-resume-photo-upload]").hidden = active || !canResumePhotos();
   };
   return {
     show() {
@@ -74,11 +75,15 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       cancelUpload.type = "button"; cancelUpload.dataset.cancelPhotoUpload = "";
       cancelUpload.textContent = text("Остановить отправку / выбрать версию", "Stop upload / choose version");
       cancelUpload.hidden = !canCancelPhotos();
+      const resumeUpload = documentRef.createElement("button");
+      resumeUpload.type = "button"; resumeUpload.dataset.resumePhotoUpload = "";
+      resumeUpload.textContent = text("Продолжить сохранённую форму", "Continue retained form");
+      resumeUpload.hidden = !canResumePhotos();
       let checkingResult = false;
       const resolvePhotoResult = async (action, startingMessage) => {
         if (checkingResult) return;
         let verified = false;
-        checkingResult = true; checkResult.disabled = true; cancelUpload.disabled = true;
+        checkingResult = true; checkResult.disabled = true; cancelUpload.disabled = true; resumeUpload.disabled = true;
         status.textContent = startingMessage;
         status.scrollIntoView({ block: "nearest" });
         try {
@@ -94,9 +99,10 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
         } catch (error) {
           status.textContent = error.message || text("Результат пока не подтверждён. Файлы сохранены.", "Outcome not confirmed yet. Files are retained.");
         } finally {
-          checkingResult = false; checkResult.disabled = false; cancelUpload.disabled = false;
+          checkingResult = false; checkResult.disabled = false; cancelUpload.disabled = false; resumeUpload.disabled = false;
           checkResult.hidden = verified || !canCheckPhotos();
           cancelUpload.hidden = verified || !canCancelPhotos();
+          resumeUpload.hidden = verified || !canResumePhotos();
           status.scrollIntoView({ block: "nearest" });
         }
       };
@@ -104,6 +110,9 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
         text("Проверяю подтверждения сервера. Фото повторно не отправляются…", "Checking server receipts. Photos are not uploaded again…")));
       cancelUpload.addEventListener("click", () => resolvePhotoResult(cancelPhotoUpload,
         text("Уточняю результат и останавливаю непринятую отправку. Файл остаётся на устройстве…", "Checking the outcome and stopping an unaccepted upload. The file stays on this device…")));
+      resumeUpload.addEventListener("click", () => resolvePhotoResult(resumePhotoUpload,
+        text("Продолжаю прежнее действие с теми же номерами и файлами. Уже принятые части повторно не отправляются…",
+          "Continuing the retained action with the same IDs and files. Accepted parts are not uploaded again…")));
       photoDownload.addEventListener("click", async () => {
         photoDownload.disabled = true;
         status.textContent = text("Собираю локальные файлы. Ничего не отправляется на сервер…", "Collecting local files. Nothing is sent to the server…");
@@ -148,7 +157,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, status, reason, guidance, checkResult, cancelUpload, download, photoDownload, recover);
+      dialog.append(title, description, status, reason, guidance, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
       documentRef.body.append(dialog);
       dialog.showModal();
     },

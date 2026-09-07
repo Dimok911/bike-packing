@@ -735,6 +735,11 @@ import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-reco
 import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
   personalPhotoRecoveryCancellationHead } from "./src/sync/personal-photo-recovery-cancel.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "./src/sync/personal-photo-outbox-record.js";
+import { personalPhotoFormGatesEnabled } from "./src/sync/personal-photo-form-gates.js";
+import { createPersonalPhotoFormSession } from "./src/sync/personal-photo-form-session.js";
+import { drainPersonalPhotoForm } from "./src/sync/personal-photo-form-drain.js";
+import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js";
+import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -1185,6 +1190,7 @@ let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 const personalSaveOutboxes = new Map();
 let personalInitialSaveOutbox = null;
 let personalPhotoRecoveryCheck = null, personalPhotoRecoverySource = null;
+let personalPhotoFormPreparing = 0, personalPhotoFormLiveSource = null;
 const personalSaveRecovery = createPersonalSaveRecovery({
   isCurrentScope: scopeKey => scopeKey === localStorageScopeKey && scopeKey?.startsWith("id:"),
   onBlocked: failure => {
@@ -1205,6 +1211,8 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   checkPhotoResult: () => checkRetainedPersonalPhotoResult(),
   canCancelPhotos: () => canCancelRetainedPersonalPhoto(),
   cancelPhotoUpload: () => cancelRetainedPersonalPhoto(),
+  canResumePhotos: () => canResumeRetainedPersonalPhotoForm(),
+  resumePhotoUpload: () => drainLivePersonalPhotoForm({ recovery: true }),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
@@ -1891,6 +1899,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
+  personalPhotoFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2443,6 +2452,76 @@ function personalSavePilotEnabled() {
   return PERSONAL_SAVE_OUTBOX_ENABLED && experimentTransport.experiment;
 }
 
+function personalPhotoFormUiEnabled() {
+  return personalPhotoFormGatesEnabled() && experimentTransport.experiment && Boolean(currentUser)
+    && localStorageScopeKey === `id:${currentUser.id}` && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState);
+}
+
+function personalPhotoFormRequest(values) {
+  personalSaveRecovery.assertRunning();
+  const outbox = personalSaveOutboxForScope(), baseline = outbox?.confirmedBase();
+  if (!personalPhotoFormUiEnabled() || !baseline || !currentPackingListId) {
+    throw Error("Сначала подтвердите личный список. Поля и фото остались в форме.");
+  }
+  return { ...values, binding: outbox.binding, snapshot: JSON.parse(JSON.stringify(state)),
+    basePayload: baseline.payload, baseStateRevision: baseline.stateRevision };
+}
+
+function personalPhotoFormSession(options) {
+  personalSaveRecovery.assertRunning();
+  if (!personalPhotoFormUiEnabled()) throw Error("Сохранение формы с фото не включено.");
+  const outbox = personalSaveOutboxForScope();
+  const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
+  const source = { outbox, store, inventory: null };
+  personalPhotoRecoverySource = source;
+  const session = createPersonalPhotoFormSession({ ...options, outbox, store,
+    snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
+    readEntities: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
+    onDurable(record) {
+      personalSaveRecovery.assertRunning();
+      // The file transaction AND the list journal already own this exact form.
+      assertPersonalPhotoFormRecord(record);
+      personalReconciledSnapshot(record.photoState.payload, record.snapshot);
+      replaceState(record.snapshot, { personalOperationId: record.action.operationId });
+      if (!sameJson(serializeState({ forSync: true }), record.photoState.payload)) {
+        throw Error("Отображение формы изменило её данные. Исходная форма и все файлы сохранены для проверки.");
+      }
+      persistStateSnapshot(state, { recordAction: false });
+      syncMeta.localUpdatedAt = nowIso(); syncMeta.dirty = true;
+      saveSyncMeta();
+      personalPhotoFormLiveSource = source;
+      options.onDurable(record);
+    } });
+  let completion;
+  return { ...session, submit(input) {
+    if (!completion) {
+      personalPhotoFormPreparing++;
+      completion = session.submit(input).finally(() => { personalPhotoFormPreparing--; });
+    }
+    return completion;
+  } };
+}
+
+function reportPersonalPhotoFormError(error, { recovery } = {}) {
+  // The still-open form retains preflight failures. Once bytes/queue might be
+  // durable, keep a blocking recovery screen rather than permit another action.
+  if (recovery) {
+    if (personalPhotoRecoverySource) {
+      personalPhotoRecoverySource.memoryForm = recovery;
+      // Recovery reads/explicit continuation must remain available after the
+      // normal editor's outbox wrapper has latched a storage failure.
+      personalPhotoRecoverySource.outbox = createPersonalSaveOutbox({
+        ...personalPhotoRecoverySource.store.binding, storage: localStorage });
+    }
+    const blocked = Object.assign(new Error(error.message || "Форма с фото требует проверки."), {
+      cause: error, code: "photo-recovery", isPersonalSaveBlocked: true,
+      unconfirmedMemoryDraft: error.unconfirmedMemoryDraft || recovery.preview
+    });
+    personalSaveRecovery.report(blocked, { scopeKey: localStorageScopeKey });
+  }
+  showToast(error.message || "Поля и фото сохранены в открытой форме.", "warning");
+}
+
 function preparePersonalCatalogDeletion(value) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
@@ -2677,7 +2756,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     throw new Error("Для причинного сохранения сначала нужен подтверждённый личный список и аккаунт.");
   }
   const latest = outbox.recover?.();
-  if (!personalMutation && ["list.restore", "list.migrate"].includes(latest?.action.kind)
+  if (!personalMutation && ["list.restore", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
   return outbox.capture({ snapshot, body });
 }
@@ -5803,7 +5882,9 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
     const pending = personalSaveOutboxForScope()?.recover();
-    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
+    const durableForm = personalPhotoFormUiEnabled() && pending?.action.kind === "photos.mutate" && pending.action.body.action === "form";
+    if (durableForm) assertPersonalPhotoFormRecord(pending);
+    if (!personalOperationId || !(durableForm || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -8523,10 +8604,65 @@ async function recoverStalePersonalDraft() {
   scheduleRemoteSave();
 }
 
+function canResumeRetainedPersonalPhotoForm() {
+  if (!personalPhotoFormUiEnabled() || isForcedOffline()) return false;
+  try {
+    const outbox = personalPhotoRecoverySource?.outbox;
+    return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
+      && outbox.hasPending() && outbox.recover()?.action.body.action === "form");
+  } catch { return false; }
+}
+
+async function drainLivePersonalPhotoForm({ notify = false, recovery = false } = {}) {
+  const source = recovery ? personalPhotoRecoverySource : personalPhotoFormLiveSource;
+  if (!personalPhotoFormUiEnabled() || !source?.outbox || isForcedOffline()
+    || Object.keys(source.outbox.binding).some(key => personalSaveContext()[key] !== source.outbox.binding[key])) {
+    throw Error("Продолжение этой формы недоступно. Поля, файлы и прежние номера сохранены.");
+  }
+  const getContext = personalSaveContext;
+  const queue = createListOperationQueue({ transport: experimentTransport, getContext });
+  const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
+  updateSyncUi("Отправляю сохранённую форму и проверяю подтверждения фото…");
+  const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
+    queue, staging, getContext,
+    onAdopted(record) {
+      if (recovery) return; // Journal is complete; the blocked editor reloads explicitly.
+      personalSaveRecovery.assertRunning();
+      replaceState(record.snapshot);
+      const writeRequired = (key, value) => {
+        if (!safeSetLocalStorage(scopedLocalStorageKey(key), JSON.stringify(value), { silent: true })) {
+          throw Object.assign(new Error("Подтверждение сохранено в очереди, но локальное зеркало недоступно. Не очищайте данные сайта."),
+            { code: "storage", isPersonalSaveBlocked: true });
+        }
+      };
+      writeRequired(STORAGE_KEY, state);
+      writeRequired(BASE_STATE_KEY, record.baseline.payload);
+      Object.assign(syncMeta, record.baseline.meta);
+      rememberRemoteIntegrityMeta(record.serverRecord); rememberCurrentSyncAccount();
+      writeRequired(SYNC_META_KEY, syncMeta);
+      // Byte retirement/cleanup is a separate acknowledged action, not a side
+      // effect of successful saving. Keep the native files and their receipts.
+      personalPhotoFormLiveSource = null;
+      personalPhotoRecoverySource = null;
+      renderPreservingPackingScroll(); updateSyncUi();
+      if (notify) showToast("Карточка и фотографии подтверждены сервером.", "success");
+    }
+  });
+  return recovery ? { ...result, verified: true, reloadRequired: true } : result;
+}
+
 async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = false } = {}) {
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
     personalSaveRecovery.assertRunning();
+    // Do not mistake this form's file-commit -> queue-link interval for an
+    // abandoned startup record. Its own session guards every awaited step.
+    if (personalPhotoFormPreparing) return;
+    if (personalPhotoFormLiveSource && personalPhotoFormUiEnabled()) {
+      if (isForcedOffline()) { updateSyncUi("Офлайн · форма и фото сохранены на устройстве."); return; }
+      if (forceOverwrite) throw Error("Принудительная перезапись формы с фото запрещена.");
+      return await drainLivePersonalPhotoForm({ notify });
+    }
     await checkPersonalPhotoRecoveryBeforeLoad();
     if (isForcedOffline()) {
       updateSyncUi("Офлайн · действия сохранены на устройстве и ждут отправки.");

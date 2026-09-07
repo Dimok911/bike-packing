@@ -1586,8 +1586,12 @@ test("CRITICAL offline-photos: dialog photo uploads render a queued batch before
   assert.doesNotMatch(itemDialogUploadBlock, /updateItemDialogPhotoPreview/);
   assert.doesNotMatch(rootContainerDialogUploadBlock, /updateRootContainerDialogPhotoPreview/);
   assert.equal((controllers.match(/markPhotoUploadStarted\(candidate\);/g) || []).length, 2);
-  assert.match(controllers, /setItemDialogPhotoStatus\(photoDialogStatusText\(list\)\)/);
-  assert.match(controllers, /setRootContainerDialogPhotoStatus\(photoDialogStatusText\(list\)\)/);
+  assert.match(controllers, /setItemDialogPhotoStatus\(openedFormPhotoStatus\(list\)\)/);
+  assert.match(controllers, /setRootContainerDialogPhotoStatus\(openedFormPhotoStatus\(list\)\)/);
+  const statusBlock = controllers.slice(controllers.indexOf("function openedFormPhotoStatus"), controllers.indexOf("const personalPhotoForms"));
+  assert.match(statusBlock, /personalPhotoFormUiEnabled\(\) && prepared\.length/);
+  assert.match(statusBlock, /Отправятся после сохранения карточки/);
+  assert.match(statusBlock, /return photoDialogStatusText\(list\)/); // Legacy uploads retain their progress label.
   assert.doesNotMatch(app, /async function getPhotoUploadSource|async function copyRemotePhotoToList|async function fetchRemotePhotoBlobForUpload/);
   assert.doesNotMatch(app.slice(app.indexOf("async function uploadEntityPhotoToPath")), /retryAvailable:\s*true/);
   assert.doesNotMatch(app.slice(app.indexOf("async function uploadEntityPhotoToPath")), /const retryPhoto = resolvePhoto\(\)/);

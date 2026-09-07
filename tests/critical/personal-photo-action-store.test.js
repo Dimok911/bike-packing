@@ -84,3 +84,32 @@ test("photo recovery archive reports unavailable bytes explicitly and never manu
   assert.equal(archive.manifest.files[0].thumbnailAbsent, false);
   assert.equal(entries.has(`photos/${f.row.operationId}/original.bin`), false);
 });
+
+test("photo recovery archive also retains an opened form whose native capture failed", async () => {
+  const f = archiveFixture();
+  f.options.memoryForm = { request: { binding: f.store.binding, fields: { name: "Edited before quota" } },
+    ids: [randomUUID()], preview: { items: {} }, automaticImportAllowed: false,
+    files: [{ fileName: "../not-an-archive-path.png", file: new Blob(["full form bytes"], { type: "image/png" }),
+      thumb: new Blob(["form thumbnail"], { type: "image/png" }) }] };
+  const archive = await createPersonalPhotoRecoveryArchive(f.options), entries = await readZipEntries(archive.blob);
+  assert.equal(zipText(entries.get("opened-form/0/original.bin")), "full form bytes");
+  assert.equal(zipText(entries.get("opened-form/0/thumbnail.bin")), "form thumbnail");
+  const form = JSON.parse(zipText(entries.get("opened-form/form.json")));
+  assert.equal(form.request.fields.name, "Edited before quota"); assert.equal(form.dispatchable, false);
+  assert.equal(form.files[0].fileName, "../not-an-archive-path.png");
+  assert.equal(archive.manifest.openedFormIncluded, true); assert.equal(archive.manifest.openedFormDispatchable, false);
+  assert.equal(archive.manifest.automaticImportAllowed, false);
+  assert.equal(zipText(entries.get(`photos/${f.row.operationId}/original.bin`)), "retained bytes");
+});
+
+test("opened form archive refuses another account, missing bytes, automatic import and context switches", async () => {
+  for (const change of [form => { form.request.binding.actorId = "other"; }, form => { form.files[0].file = null; },
+    form => { form.automaticImportAllowed = true; }, (form, f) => {
+      form.files[0].file.arrayBuffer = async () => { f.current.generation = "changed"; return new ArrayBuffer(1); };
+    }]) {
+    const f = archiveFixture(); f.options.memoryForm = { request: { binding: { ...f.store.binding } }, automaticImportAllowed: false,
+      files: [{ fileName: "photo.png", file: new Blob(["bytes"], { type: "image/png" }), thumb: null }] };
+    change(f.options.memoryForm, f);
+    await assert.rejects(createPersonalPhotoRecoveryArchive(f.options), { code: "photo-recovery-export" });
+  }
+});

@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
+import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
 import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
@@ -14,7 +15,7 @@ const origin = "https://experiment.vniipo-help.ru";
 const bundleRoot = path.resolve("test-results/personal-ui-build");
 const photoRecoveryBundleRoot = path.resolve("test-results/personal-photo-cancel-ui-build");
 test.beforeAll(async () => {
-  for (const mode of ["production", "photo-recovery"]) {
+  for (const mode of ["production", "photo-recovery", "photo-form"]) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)),
     "build", "--config", "tests/e2e/personal-ui.vite.config.js", "--mode", mode], { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
@@ -22,6 +23,8 @@ test.beforeAll(async () => {
 });
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) {
+    const formError = await page.evaluate(() => globalThis.__personalTestPhotoFormError).catch(() => null);
+    if (formError) { console.log("PHOTO FORM FAILURE", JSON.stringify(formError)); await info.attach("photo-form-failure", { body: JSON.stringify(formError), contentType: "application/json" }); }
     const difference = await page.evaluate(() => globalThis.__personalTestProjectionDifference).catch(() => null);
     if (difference) await info.attach("personal-projection-difference", { body: JSON.stringify(difference, null, 2), contentType: "application/json" });
   }
@@ -72,7 +75,7 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, migration = false, migrationComplete = true } = {}) {
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, migration = false, migrationComplete = true } = {}) {
   if (migration && migrationComplete) {
     // A previously saved complete legacy list, not an intentionally incomplete
     // fixture requiring unrelated structural/dictionary repair in the UI.
@@ -87,7 +90,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   }
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
-  const activeBundleRoot = photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  const activeBundleRoot = photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  state.stagePosts = [];
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
     stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`,
@@ -101,6 +105,18 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
     state.errors.push(error.message);
   });
   await context.addInitScript(() => { localStorage.setItem("bike-packing-language-v1", "ru"); });
+  if (photoForm) await context.addInitScript(() => {
+    globalThis.formSentFiles = {};
+    const original = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (options?.body instanceof FormData) {
+        const form = options.body, file = form.get("file"), thumb = form.get("thumb");
+        const hash = async blob => blob && [...new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()))].map(byte => byte.toString(16).padStart(2, "0")).join("");
+        globalThis.formSentFiles[form.get("operationId")] = { fileHash: await hash(file), thumbHash: await hash(thumb), size: file.size };
+      }
+      return original(url, options);
+    };
+  });
   await context.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url());
     const headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true",
@@ -112,7 +128,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -140,7 +156,24 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           restore: { payload, baseStateRevision: state.revision, historyRestore: { version: 1, historyId: 101,
             historyPayloadHash: hash(source.payload), payloadHash: hash(payload), layoutIds, targetStateRevision: state.revision } } };
       }
-      else if (photoRecovery && path.startsWith(`/bike-packing/lists/${state.listId}/photo-assets/`)) {
+      else if (photoForm && ["items", "containers"].some(collection => path === `/bike-packing/lists/${state.listId}/${collection}`)) {
+        const collection = path.split("/").at(-1);
+        data = { ok: true, listId: state.listId, stateRevision: state.revision,
+          [collection]: Object.values(state.payload[collection]).map(owner => ({ id: owner.id, listId: state.listId, ownerId: "actor-a",
+            stateRevision: state.revision, deleted: false, deletedAt: null, payload: structuredClone(owner) })) };
+      }
+      else if (photoForm && path === `/bike-packing/lists/${state.listId}/photo-assets` && request.method() === "POST") {
+        const form = await new Request(request.url(), { method: "POST", headers: request.headers(), body: request.postDataBuffer() }).formData();
+        const id = form.get("operationId"), sent = await page.evaluate(id => formSentFiles[id], id);
+        expect(sent.size).toBeGreaterThan(0); expect(form.get("expectedActorId")).toBe("actor-a");
+        data = { ok: true, operation: { id, state: "committed", environment: "bike-packing-experiment", actorId: "actor-a", listId: state.listId,
+          entityType: form.get("entityType"), entityId: form.get("entityId"), photoId: form.get("photoId"), payloadDigest: "a".repeat(64) },
+          asset: { id, state: "ready", publication: "not-published", fileHash: sent.fileHash, thumbHash: sent.thumbHash,
+            storedFileHash: sent.fileHash, storedThumbHash: sent.thumbHash || sent.fileHash } };
+        state.stagePosts.push(id); state.stageReceipts.set(id, data);
+        if (state.loseStage || state.loseStageAt === state.stagePosts.length) { state.hiddenStage = id; return route.abort("failed"); }
+      }
+      else if ((photoRecovery || photoForm) && path.startsWith(`/bike-packing/lists/${state.listId}/photo-assets/`)) {
         const id = path.split("/photo-assets/")[1].split("/")[0];
         if (request.method() === "POST") {
           expect(path.endsWith("/cancel")).toBe(true); // No multipart file upload endpoint in this fixture.
@@ -153,7 +186,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             fileHash: expected.cancellation.fileHash, thumbHash: expected.cancellation.thumbHash });
           state.cancellationPosts.push({ id, body }); state.stageReceipts.set(id, expected);
         }
-        data = state.stageReceipts.get(id) || { ok: true, operation: { id, state: "unknown",
+        data = (id !== state.hiddenStage && state.stageReceipts.get(id)) || { ok: true, operation: { id, state: "unknown",
           actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId } };
       }
       else if (photoRecovery && /^\/bike-packing\/list-operations\/[^/]+\/cancel$/.test(path) && request.method() === "POST") {
@@ -179,7 +212,27 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
-        if (photoRecovery && body.kind === "photos.mutate") {
+        if (photoForm && body.kind === "photos.mutate") {
+          expect(body.body.action).toBe("form");
+          const owner = personalPhotoFormOwner(state.payload, body.body), changes = [];
+          for (const [index, change] of body.body.changes.entries()) {
+            expect(state.stageReceipts.has(change.assetId)).toBe(true);
+            const photo = { id: change.photoId, photoId: change.photoId, assetId: change.assetId, listId: state.listId, status: "synced",
+              url: `${origin}/photo/${change.photoId}.png`, thumbUrl: `${origin}/thumb/${change.photoId}.png`,
+              fileName: "prepared.png", type: "image/png", size: 68, width: 1, height: 1 };
+            owner.photos.splice(change.index, 0, photo);
+            changes.push({ index, action: "attach", entityType: change.entityType, entityId: change.entityId, photoId: change.photoId,
+              assetId: change.assetId, photoIds: owner.photos.map(photo => photo.id), photo });
+          }
+          if (body.body.baseEntityRevision === 0) {
+            for (const key of body.body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) delete owner[key];
+          }
+          state.payload[body.body.entityType === "item" ? "items" : "containers"][owner.id] = owner; state.revision++;
+          data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
+            result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
+              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 } } } };
+          if (state.afterFormCommit) await state.afterFormCommit(body);
+        } else if (photoRecovery && body.kind === "photos.mutate") {
           throw Error("Photo recovery must not dispatch the original photo mutation");
         } else if (predecessor?.operation.state === "rejected" || body.kind !== "list.create" && base !== state.revision) {
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "rejected" },
@@ -195,9 +248,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
+        if (state.loseFormOwner && body.kind === "photos.mutate" && body.body.action === "form") {
+          state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
+          return route.abort("failed");
+        }
         if (state.lose) { state.injectedFailure = true; return route.abort("failed"); }
       } else if (path.startsWith("/bike-packing/list-operations/")) {
-        data = state.unknown ? { ok: true, operation: { state: "unknown" } }
+        data = state.unknown || path.split("/").at(-1) === state.hiddenFormOwner ? { ok: true, operation: { state: "unknown" } }
           : state.receipts.get(path.split("/").at(-1)) || { ok: true, operation: { id: path.split("/").at(-1), state: "unknown" } };
       } else if (request.method() !== "GET") throw Error(`Unexpected legacy write: ${request.method()} ${path}`);
       else { data = { ok: false, code: "fixture_not_found" }; status = 404; }
@@ -505,6 +562,132 @@ async function synchronize(page, condition) {
     return keys.length === 3 && keys.some(key => key.includes(":checkpoint:"));
   }), { timeout: 20000 }).toBe(true);
 }
+
+async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false } = {}) {
+  const f = await setup(page, context, { photoForm: true }), bag = await createRootContainer(page, "База фотоформы");
+  if (type === "item" && !created) await createItemInContainer(page, bag, "Вещь фотоформы");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1 && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
+  const before = f.posts.length, collection = type === "item" ? "items" : "containers";
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  if (created) await page.locator(type === "item" ? "#addItemBtn" : "#addRootContainerBtn").click();
+  else await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: type === "item" ? "Вещь фотоформы" : "База фотоформы" }).click();
+  const prefix = type === "item" ? "item" : "rootContainer", dialog = page.locator(`#${prefix}Dialog`), button = type === "item" ? "#saveItemBtn" : "#saveRootContainerBtn";
+  await expect(dialog).toBeVisible();
+  await page.locator(`#${prefix}Name`).fill("Карточка со всеми файлами");
+  await page.locator(`#${prefix}Note`).fill("Поля и два фото — одно действие");
+  const image = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+    const paint = canvas.getContext("2d"); paint.fillStyle = "red"; paint.fillRect(0, 0, 2, 2);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles([1, 2].map(index => ({ name: `фото-${index}.png`, mimeType: "image/png", buffer: image })));
+  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(2);
+  await expect(page.locator(`#${prefix}PhotoStatus`)).toContainText("Отправятся после сохранения карточки");
+  await expect(page.locator(button)).toBeEnabled();
+  expect(f.stagePosts).toHaveLength(0); expect(f.posts).toHaveLength(before);
+  await page.locator(`#${prefix}Note`).blur();
+  await expect(page.locator(button)).toBeVisible();
+  return { f, before, collection, prefix, button, dialog };
+}
+
+for (const type of ["container", "item"]) for (const created of [false, true]) test(`ordinary photo form ${type} ${created ? "create" : "edit"} saves fields and two native files once`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, created });
+  await submitForm(page, button);
+  await page.locator(button).evaluate(button => button.click());
+  await expect(dialog).not.toBeVisible();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1);
+  const action = f.posts.at(-1); expect(action.kind).toBe("photos.mutate"); expect(action.body.action).toBe("form");
+  expect(action.body.baseEntityRevision === 0).toBe(created);
+  await expect.poll(() => f.payload[collection][action.body.entityId]?.photos.length).toBe(2);
+  expect(f.stagePosts).toEqual(action.body.changes.map(change => change.assetId));
+  expect(f.payload[collection][action.body.entityId].note).toBe("Поля и два фото — одно действие");
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  await reloadApp(page);
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
+  expect(f.errors).toEqual([]);
+});
+
+for (const scenario of ["lost-owner", "lost-last-file", "deleted-after-owner"]) test(`ordinary photo form recovery retains exact IDs through reload (${scenario})`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { created: scenario === "deleted-after-owner" });
+  if (scenario === "lost-last-file") f.loseStageAt = 2;
+  else f.loseFormOwner = true;
+  if (scenario === "deleted-after-owner") f.afterFormCommit = body => {
+    delete f.payload.containers[body.body.entityId]; f.revision++;
+  };
+  await submitForm(page, button); await expect(dialog).not.toBeVisible();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.stagePosts.length).toBe(2);
+  if (scenario === "lost-last-file") expect(f.posts).toHaveLength(before);
+  else await expect.poll(() => f.injectedFailure).toBe(true);
+  const stageIds = [...f.stagePosts], original = f.posts.slice(before).map(post => structuredClone(post));
+  await page.reload();
+  const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+  await expect(recovery).toBeVisible(); await expect(resume).toBeVisible();
+  // A still-unknown claim is not authorization to upload the same bytes again.
+  await resume.click(); await expect(resume).toBeEnabled();
+  expect(f.stagePosts).toEqual(stageIds); expect(f.posts.slice(before)).toEqual(original);
+  f.loseFormOwner = false; f.hiddenFormOwner = null; f.loseStageAt = 0; f.hiddenStage = null;
+  await resume.click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  const action = f.posts.slice(before).find(post => post.kind === "photos.mutate");
+  expect(action.body.changes.map(change => change.assetId)).toEqual(stageIds);
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toEqual(stageIds);
+  await reloadApp(page);
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  const owner = await page.evaluate(id => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a"))?.containers[id], action.body.entityId);
+  if (scenario === "deleted-after-owner") expect(owner).toBeUndefined();
+  else { expect(owner.name).toBe("Карточка со всеми файлами"); expect(owner.photos).toHaveLength(2); }
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toEqual(stageIds); expect(f.errors).toEqual([]);
+});
+
+for (const storage of ["native-files", "queue-link"]) test(`ordinary photo form quota keeps the window and exports all chosen bytes (${storage})`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context);
+  await page.evaluate(storage => {
+    if (storage === "native-files") {
+      const original = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function (...args) {
+        if (this.name === "actions") {
+          globalThis.__photoQuotaInjected = true;
+          throw new DOMException("Injected native photo quota", "QuotaExceededError");
+        }
+        return original.apply(this, args);
+      };
+    } else {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.kind === "photos.mutate") {
+          globalThis.__photoQuotaInjected = true;
+          throw new DOMException("Injected photo queue link quota", "QuotaExceededError");
+        }
+        return original.call(this, key, value);
+      };
+    }
+  }, storage);
+  await submitForm(page, button);
+  const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery).toBeVisible(); await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => globalThis.__photoQuotaInjected)).toBe(true);
+  expect(f.posts).toHaveLength(before); expect(f.stagePosts).toEqual([]);
+  const downloaded = page.waitForEvent("download");
+  await recovery.locator("[data-download-photo-recovery]").click();
+  const download = await downloaded, bytes = await readFile(await download.path()), entries = await readZipEntries(new Blob([bytes]));
+  const manifest = JSON.parse(zipText(entries.get("recovery-manifest.json")));
+  expect(manifest.openedFormIncluded).toBe(true); expect(manifest.openedFormDispatchable).toBe(false);
+  expect(manifest.automaticImportAllowed).toBe(false); expect(manifest.serverConfirmationIncluded).toBe(false);
+  const form = JSON.parse(zipText(entries.get("opened-form/form.json")));
+  expect(form.request.fields.name).toBe("Карточка со всеми файлами"); expect(form.files).toHaveLength(2);
+  for (const index of [0, 1]) {
+    expect(entries.get(`opened-form/${index}/original.bin`).byteLength).toBeGreaterThan(0);
+    expect(entries.get(`opened-form/${index}/thumbnail.bin`).byteLength).toBeGreaterThan(0);
+  }
+  expect(manifest.files).toHaveLength(storage === "queue-link" ? 1 : 0);
+  await expect(recovery.locator("[data-resume-photo-upload]")).not.toBeVisible();
+  expect(f.errors).toEqual([]);
+});
 
 for (const type of ["item", "container"]) test(`actual ${type} editor and reload preserve a complete confirmed causal photo reference`, async ({ page, context }) => {
   test.setTimeout(90000);

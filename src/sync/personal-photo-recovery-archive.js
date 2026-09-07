@@ -6,7 +6,7 @@ const paused = () => Object.assign(new Error("Не удалось подгото
 
 // Not a normal backup and deliberately has no automatic importer. The raw
 // journal and byte inventory remain useful even when intent hashes are damaged.
-export async function createPersonalPhotoRecoveryArchive({ store, getContext, getRecoveryCopy, inventory = null }) {
+export async function createPersonalPhotoRecoveryArchive({ store, getContext, getRecoveryCopy, inventory = null, memoryForm = null }) {
   const initial = { ...getContext?.() }, binding = store?.binding;
   const assertCurrent = () => {
     const current = getContext?.();
@@ -22,6 +22,25 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   if (!Array.isArray(rows) || new Set(rows.map(row => row.operationId)).size !== rows.length) throw paused();
   const entries = [{ name: "personal-queue.json", content: frozenCopy }], files = [];
   let totalBytes = new TextEncoder().encode(frozenCopy).byteLength;
+  let memoryFormIncluded = false;
+  if (memoryForm) {
+    if (!same(memoryForm.request?.binding, binding) || memoryForm.automaticImportAllowed !== false
+      || !Array.isArray(memoryForm.files) || memoryForm.files.length > 50) throw paused();
+    const { files: selected, captured, ...formMetadata } = memoryForm;
+    const metadata = JSON.stringify({ ...formMetadata, files: selected.map(({ fileName, file, thumb }) => ({
+      fileName, type: file?.type, size: file?.size, thumbType: thumb?.type, thumbSize: thumb?.size
+    })), dispatchable: false, warning: "Frozen UI draft, not a dispatchable operation or server confirmation." });
+    entries.push({ name: "opened-form/form.json", content: metadata });
+    totalBytes += new TextEncoder().encode(metadata).byteLength;
+    for (const [index, part] of selected.entries()) {
+      if (!(part.file instanceof Blob) || part.thumb !== null && !(part.thumb instanceof Blob)) throw paused();
+      totalBytes += part.file.size + (part.thumb?.size || 0);
+      if (totalBytes > 256 * 1024 * 1024) throw paused();
+      entries.push({ name: `opened-form/${index}/original.bin`, content: await part.file.arrayBuffer() }); assertCurrent();
+      if (part.thumb) { entries.push({ name: `opened-form/${index}/thumbnail.bin`, content: await part.thumb.arrayBuffer() }); assertCurrent(); }
+    }
+    memoryFormIncluded = true;
+  }
   // This in-memory ZIP is bounded. Refuse rather than produce a truncated
   // recovery copy or exceed classic ZIP limits; originals remain untouched.
   if (rows.length > 1000) throw paused();
@@ -75,7 +94,8 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   const afterIds = await store.ids(); assertCurrent();
   if (!same([...afterIds].sort(), rows.map(row => row.operationId).sort()) || frozenCopy !== JSON.stringify(getRecoveryCopy())) throw paused();
   const manifest = { format: "bike-packing-photo-recovery-v1", binding, automaticImportAllowed: false,
-    serverConfirmationIncluded: false, coverage: "current-list-local-photo-journal-only", files,
+    serverConfirmationIncluded: false, coverage: memoryFormIncluded ? "current-list-local-photo-journal-and-opened-form" : "current-list-local-photo-journal-only", files,
+    ...(memoryFormIncluded ? { openedFormIncluded: true, openedFormDispatchable: false } : {}),
     inventory: inventory?.binding && same(inventory.binding, binding) ? inventory : null,
     missingPhotoOperationIds: (inventory?.entries || []).filter(entry => entry.state === "missing-file").map(entry => entry.operationId),
     warning: "Local recovery evidence only. Do not import automatically, send publicly, delete originals or infer server confirmation." };

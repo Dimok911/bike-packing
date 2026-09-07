@@ -12,6 +12,7 @@ import {
 import { normalizeItemPhotos, normalizePhotoStatus, normalizePhotoUrlFields } from "../state/item-photos.js";
 import { nowIso } from "../utils/time.js";
 import { transportPhotoFetch } from "./experiment-transport.js";
+import { encodePhotoCacheBinary, decodePhotoCacheBinary } from "./photo-cache-binary.js";
 
 export function hasRemotePhotoUrl(photo) {
   normalizePhotoUrlFields(photo);
@@ -187,6 +188,7 @@ function photoCacheRecordForStorage(record, scopeKey = activePhotoCacheScopeKey)
 
 function photoCacheRecordForRuntime(record, fallbackId = "") {
   if (!record) return null;
+  record = decodePhotoCacheBinary(record);
   const logicalId = String(record.photoId || fallbackId || record.id || "").trim();
   return { ...record, id: logicalId, photoId: logicalId };
 }
@@ -229,7 +231,9 @@ export async function photoDbStore(mode, callback) {
   });
 }
 
-export function putCachedPhoto(record, scopeKey = activePhotoCacheScopeKey) {
+export function putCachedPhoto(record, scopeKey = activePhotoCacheScopeKey, { binary = false } = {}) {
+  if (binary) return encodePhotoCacheBinary(record).then(encoded =>
+    photoDbStore("readwrite", store => store.put(photoCacheRecordForStorage(encoded, scopeKey))));
   return photoDbStore("readwrite", (store) => store.put(photoCacheRecordForStorage(record, scopeKey)));
 }
 
