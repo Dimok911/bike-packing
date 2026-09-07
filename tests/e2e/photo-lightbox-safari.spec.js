@@ -82,8 +82,21 @@ test("adjacent previews are decoded before a swipe while original downloads are 
     });
     await expect.poll(() => images.nth(2).evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect(images.nth(2)).toHaveCSS("visibility", "visible");
+    await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
+    // The dot must follow the visible photo before touchend or the settle timer,
+    // and reverse immediately if the user changes direction mid-gesture.
+    const indicators = await page.evaluate(() => {
+      const track = document.querySelector(".photo-lightbox-track");
+      const sample = (fraction) => {
+        track.scrollLeft = track.clientWidth * fraction;
+        track.dispatchEvent(new Event("scroll"));
+        return Number(document.querySelector('.photo-lightbox-dot[aria-current="true"]').dataset.photoLightboxDot);
+      };
+      return [sample(0.35), sample(0.65)];
+    });
+    expect(indicators).toEqual([0, 1]);
     await page.waitForTimeout(240);
-    await expect(page.locator('[data-photo-lightbox-dot="0"]')).toHaveAttribute("aria-current", "true");
+    await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
     expect(await page.evaluate(() => window.lightboxScrollWrites)).toBe(0);
     expect(originals).toHaveLength(1);
     await page.evaluate(() => {
