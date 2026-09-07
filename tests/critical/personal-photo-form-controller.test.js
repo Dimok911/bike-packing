@@ -63,3 +63,26 @@ test("photo preparation freezes account cache scope and refuses late callbacks i
     assert.equal(f.events.includes("cache:id:other"), false); assert.equal(f.captured.length, 0);
   }
 });
+
+test("existing unchanged photos allow a DB field edit but file-only changes cannot poison the DB queue", () => {
+  for (const mutate of [photos => photos.reverse(), photos => photos.pop(), photos => { photos[0].assetId = "different"; }]) {
+    const f = fixture(), controller = createPersonalPhotoFormController(f.options);
+    f.view.source.photos = [{ id: "old-a", assetId: "asset-a", status: "synced" }, { id: "old-b", assetId: "asset-b", status: "synced" }];
+    f.view.draft.photos = structuredClone(f.view.source.photos);
+    assert.equal(controller.save("item"), false);
+    mutate(f.view.draft.photos);
+    assert.equal(controller.save("item"), true);
+    assert.equal(f.view.dialog.open, true); assert.equal(controller.busy("item"), false);
+    assert.equal(f.captured.length, 0); assert.deepEqual(f.events, ["error:photo-form-ui"]);
+  }
+});
+
+test("clipboard guard belongs to the opened form before its delayed permission/file read", () => {
+  for (const change of [f => { f.view.token = {}; }, f => { f.view.dialog.open = false; },
+    f => { f.context.actorId = "other"; f.context.scopeKey = "id:other"; }, f => { f.context.scope = "admin"; }]) {
+    const f = fixture(), controller = createPersonalPhotoFormController(f.options), isCurrent = controller.inputGuard("item");
+    f.view.signature = "fields edited while reading clipboard";
+    assert.equal(isCurrent(), true); change(f); assert.equal(isCurrent(), false);
+    assert.equal(f.captured.length, 0);
+  }
+});

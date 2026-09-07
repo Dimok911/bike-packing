@@ -2511,8 +2511,14 @@ function reportPersonalPhotoFormError(error, { recovery } = {}) {
       personalPhotoRecoverySource.memoryForm = recovery;
       // Recovery reads/explicit continuation must remain available after the
       // normal editor's outbox wrapper has latched a storage failure.
-      personalPhotoRecoverySource.outbox = createPersonalSaveOutbox({
-        ...personalPhotoRecoverySource.store.binding, storage: localStorage });
+      try {
+        personalPhotoRecoverySource.outbox = createPersonalSaveOutbox({
+          ...personalPhotoRecoverySource.store.binding, storage: localStorage });
+      } catch {
+        // A corrupt queue still permits a raw recovery export. Never let its
+        // failed reader hide the frozen form/bytes behind a second exception.
+        personalPhotoRecoverySource.outbox = null;
+      }
     }
     const blocked = Object.assign(new Error(error.message || "Форма с фото требует проверки."), {
       cause: error, code: "photo-recovery", isPersonalSaveBlocked: true,

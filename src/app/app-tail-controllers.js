@@ -8298,13 +8298,14 @@ function bindPhotoClipboardControls() {
 async function handleDialogPhotoPaste(event, kind = "item") {
   if (event.__bikePackingActivePhotoPaste) return;
   const request = activePhotoClipboardRequest?.kind === kind ? activePhotoClipboardRequest : null;
+  const isCurrent = request?.isCurrent || personalPhotoForms.inputGuard(kind);
   const directFiles = photoPasteEventImageFiles(event, { directReadPending: Boolean(request) });
   if (directFiles.length) event.preventDefault();
   const files = await readPhotoPasteEventImageFiles(event, {
     directReadPending: Boolean(request),
     fetchImpl: fetchClipboardImageSource
   });
-  if (!files.length) return;
+  if (!files.length || !isCurrent()) return;
   event.preventDefault();
   processDialogPhotoPasteFiles(files, kind, request);
 }
@@ -8326,6 +8327,7 @@ function handleActivePhotoClipboardPaste(event) {
 }
 
 function processDialogPhotoPasteFiles(files, kind, request = null) {
+  if (request?.isCurrent && !request.isCurrent()) return null;
   if (request?.handled) return request.processing;
   if (request) request.handled = true;
   const processing = kind === "container"
@@ -8344,7 +8346,8 @@ async function waitForPhotoPasteEventFallback(request, timeoutMs = 180) {
 async function handlePhotoPasteButtonClick(event, kind = "item") {
   const button = event.currentTarget;
   if (!button || button.disabled || button.getAttribute("aria-busy") === "true") return;
-  const request = { kind, handled: false, processing: null, pasteEventProcessing: null };
+  const request = { kind, handled: false, processing: null, pasteEventProcessing: null,
+    isCurrent: personalPhotoForms.inputGuard(kind) };
   const idleText = button.textContent;
   activePhotoClipboardRequest = request;
   button.setAttribute("aria-busy", "true");

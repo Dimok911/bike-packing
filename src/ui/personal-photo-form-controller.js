@@ -1,4 +1,5 @@
 import { createPersonalPhotoFormFiles } from "./personal-photo-form-files.js";
+import { canonicalListOperationJson } from "../sync/list-operation-queue.js";
 
 const fail = message => { throw Object.assign(new Error(message), { code: "photo-form-ui" }); };
 
@@ -32,6 +33,17 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
     if (ownerMatches(entry)) onError(error, { type: entry.type, recovery: entry.session?.recoveryCopy() || null });
   };
   return {
+    inputGuard(type) {
+      if (!isEnabled()) return () => true;
+      let entry;
+      try { entry = entryFor(type); } catch { return () => false; }
+      // Clipboard permission/read may resolve after this dialog was closed or
+      // the account changed. Bind before that await, not when bytes arrive.
+      return () => {
+        if (!isEnabled()) return false;
+        try { entry.files.assertCurrent(); return true; } catch { return false; }
+      };
+    },
     async preparePhotos(type, files) {
       if (!isEnabled()) return null;
       const entry = entryFor(type), selected = [...files];
@@ -62,7 +74,15 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
     save(type) {
       if (!isEnabled()) return false;
       const view = getView(type), selected = view?.draft?.photos || [];
-      if (!selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl)) return false;
+      if (!selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl)) {
+        if (view?.draft && (view.draft.deletedPhotos?.length
+          || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || []))) {
+          onError(Object.assign(new Error("Удаление и перестановка фото ещё подключаются к подтверждённому сохранению. Изменения остались в форме; ничего не отправлено."),
+            { code: "photo-form-ui" }), { type, recovery: null });
+          return true;
+        }
+        return false;
+      }
       const entry = entryFor(type);
       if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
       // Reentrant button/field callbacks cannot create a second session.

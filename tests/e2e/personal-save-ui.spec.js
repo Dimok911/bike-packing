@@ -635,6 +635,37 @@ for (const type of ["container", "item"]) for (const created of [false, true]) t
   expect(f.errors).toEqual([]);
 });
 
+for (const type of ["item", "container"]) for (const change of ["delete", "primary"]) test(`ordinary photo form keeps unsupported ${type} ${change} changes in the window`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type });
+  await submitForm(page, button); await expect(dialog).not.toBeVisible();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  const action = f.posts.at(-1), photos = structuredClone(f.payload[collection][action.body.entityId].photos);
+  const journal = () => page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:"))
+    .sort().map(key => [key, localStorage.getItem(key)])));
+  const beforeJournal = await journal();
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+  if (change === "delete") {
+    await page.locator(`#${prefix}PhotoRemoveBtn`).click();
+    await page.locator("#confirmOkBtn").click();
+    await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(1);
+  } else {
+    await page.locator(`#${prefix}PhotoPreview [data-photo-index="1"]`).click();
+    await expect(page.locator(`#${prefix}PhotoPrimaryBtn`)).toBeEnabled();
+    await page.locator(`#${prefix}PhotoPrimaryBtn`).click();
+  }
+  await expect(page.locator(button)).toBeEnabled(); await submitForm(page, button);
+  await expect(dialog).toBeVisible(); await expect(page.locator(button)).toBeEnabled();
+  await expect.poll(() => page.evaluate(() => globalThis.__personalTestPhotoFormError?.code)).toBe("photo-form-ui");
+  expect(await journal()).toEqual(beforeJournal);
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
+  expect(f.payload[collection][action.body.entityId].photos).toEqual(photos);
+  expect(f.errors).toEqual([]);
+});
+
 for (const scenario of ["lost-owner", "lost-last-file", "deleted-after-owner"]) test(`ordinary photo form recovery retains exact IDs through reload (${scenario})`, async ({ page, context }) => {
   test.setTimeout(120000);
   const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { created: scenario === "deleted-after-owner" });
@@ -669,7 +700,7 @@ for (const scenario of ["lost-owner", "lost-last-file", "deleted-after-owner"]) 
   expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toEqual(stageIds); expect(f.errors).toEqual([]);
 });
 
-for (const storage of ["native-files", "queue-link"]) test(`ordinary photo form quota keeps the window and exports all chosen bytes (${storage})`, async ({ page, context }) => {
+for (const storage of ["native-files", "queue-link", "corrupt-link"]) test(`ordinary photo form storage failure keeps the window and exports all chosen bytes (${storage})`, async ({ page, context }) => {
   test.setTimeout(120000);
   const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context);
   await page.evaluate(storage => {
@@ -687,6 +718,7 @@ for (const storage of ["native-files", "queue-link"]) test(`ordinary photo form 
       Storage.prototype.setItem = function (key, value) {
         if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.kind === "photos.mutate") {
           globalThis.__photoQuotaInjected = true;
+          if (storage === "corrupt-link") return original.call(this, key, '{"interrupted-photo-record":');
           throw new DOMException("Injected photo queue link quota", "QuotaExceededError");
         }
         return original.call(this, key, value);
@@ -710,9 +742,41 @@ for (const storage of ["native-files", "queue-link"]) test(`ordinary photo form 
     expect(entries.get(`opened-form/${index}/original.bin`).byteLength).toBeGreaterThan(0);
     expect(entries.get(`opened-form/${index}/thumbnail.bin`).byteLength).toBeGreaterThan(0);
   }
-  expect(manifest.files).toHaveLength(storage === "queue-link" ? 1 : 0);
+  expect(manifest.files).toHaveLength(storage === "native-files" ? 0 : 1);
+  if (storage === "corrupt-link") {
+    const queue = JSON.parse(zipText(entries.get("personal-queue.json")));
+    expect(queue.journalEntries.some(entry => entry.value === '{"interrupted-photo-record":')).toBe(true);
+  }
   await expect(recovery.locator("[data-resume-photo-upload]")).not.toBeVisible();
   expect(f.errors).toEqual([]);
+});
+
+for (const type of ["item", "container"]) test(`ordinary photo form ignores a late clipboard read after reopening ${type}`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context, { photoForm: true }), bag = await createRootContainer(page, "Буфер сумки");
+  if (type === "item") await createItemInContainer(page, bag, "Буфер вещи");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1 && (type !== "item" || Object.keys(f.payload.items).length === 1));
+  const before = f.posts.length, prefix = type === "item" ? "item" : "rootContainer";
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  const title = page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: type === "item" ? "Буфер вещи" : "Буфер сумки" });
+  await title.click();
+  await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+    const bytes = Uint8Array.from(atob(canvas.toDataURL("image/png").split(",")[1]), char => char.charCodeAt(0));
+    const file = new Blob([bytes], { type: "image/png" });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read() {
+      globalThis.__clipboardReadStarted = true;
+      return new Promise(resolve => { globalThis.__finishClipboardRead = () => resolve([{ types: ["image/png"], getType: async () => file }]); });
+    } } });
+  });
+  const paste = page.locator(`#${prefix}Dialog .photo-paste-hint`);
+  await paste.click(); await expect.poll(() => page.evaluate(() => globalThis.__clipboardReadStarted)).toBe(true);
+  await page.keyboard.press("Escape"); await expect(page.locator(`#${prefix}Dialog`)).not.toBeVisible();
+  await title.click(); await expect(page.locator(`#${prefix}Dialog`)).toBeVisible();
+  await page.evaluate(() => globalThis.__finishClipboardRead());
+  await expect(paste).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(0);
+  expect(f.posts).toHaveLength(before); expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]);
 });
 
 for (const type of ["item", "container"]) test(`actual ${type} editor and reload preserve a complete confirmed causal photo reference`, async ({ page, context }) => {
