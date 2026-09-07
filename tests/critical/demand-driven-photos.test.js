@@ -139,6 +139,37 @@ test("CRITICAL demand-driven photos: coordinator deduplicates identical URLs", a
   assert.equal(left, right);
 });
 
+test("CRITICAL demand-driven photos: selected offline previews prepare before intersection without network access", async () => {
+  const images = [fakeImage("saved"), fakeImage("missing"), fakeImage("stale"), fakeImage("not-selected")];
+  let reads = 0;
+  let downloads = 0;
+  let intersect;
+  const loader = createDemandDrivenPhotoPreviewLoader({
+    getPreparedPreviewKeys: () => new Set(["saved", "missing", "stale"]),
+    getCachedPhotoForPreview: async (id) => {
+      reads += 1;
+      return id === "missing" ? null : { id, sourceSignature: id === "stale" ? "old-version" : "full|thumb|v1", thumbBlob: new Blob(["preview"]) };
+    },
+    shouldPersistPreview: () => false,
+    downloadCoordinator: { download: async () => { downloads += 1; return new Blob(["preview"]); } },
+    intersectionObserverFactory: (callback) => {
+      intersect = callback;
+      return { observe() {}, unobserve() {}, disconnect() {} };
+    }
+  });
+  await loader.observe({ querySelectorAll: () => images });
+  await waitFor(() => images[0].dataset.photoLoadState === "ready" && loader.pendingCount() === 0);
+  assert.equal(reads, 3);
+  assert.equal(downloads, 0);
+  assert.ok(images[0].src);
+  assert.equal(images[1].src, "");
+  assert.equal(images[2].src, "");
+  assert.equal(images[3].src, "");
+  intersect([{ target: images[0], isIntersecting: true }, { target: images[1], isIntersecting: true }]);
+  await waitFor(() => images[1].dataset.photoLoadState === "ready");
+  assert.equal(downloads, 1);
+});
+
 test("CRITICAL demand-driven photos: fast previews never flash a loading notice and wait for decoding", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const image = fakeImage();

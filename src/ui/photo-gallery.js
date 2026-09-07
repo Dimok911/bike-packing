@@ -119,6 +119,7 @@ export function createDemandDrivenPhotoPreviewLoader({
   getCachedPhotoForPreview = getCachedPhoto,
   putCachedPhotoForPreview = putCachedPhoto,
   shouldPersistPreview = () => true,
+  getPreparedPreviewKeys = () => new Set(),
   getScopeKey = () => "",
   activateScope = (scopeKey) => photoObjectUrls?.activateScope?.(scopeKey),
   intersectionObserverFactory = typeof globalThis.IntersectionObserver === "function"
@@ -126,6 +127,9 @@ export function createDemandDrivenPhotoPreviewLoader({
     : null
 } = {}) {
   const pending = new Map();
+  const activeImages = new WeakMap();
+  const preparationQueue = new Set();
+  let preparingCount = 0;
   let observer = null;
 
   const registerRecord = (task, record) => {
@@ -139,7 +143,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     return blob ? getPhotoObjectUrl(task.key, task.sourceSignature, blob, photoObjectUrls) : "";
   };
 
-  const resolvePreview = async (task) => {
+  const resolvePreview = async (task, { cacheOnly = false } = {}) => {
     const existing = photoObjectUrls?.sources?.(task.key, task.sourceSignature)?.preview
       || photoObjectUrls?.get?.(task.key, task.sourceSignature)
       || "";
@@ -152,6 +156,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     const matching = cachedPhotoMatchesTask(cached, task);
     const cachedBlob = matching ? cachedPhotoPreview(cached, task) : null;
     if (cachedBlob) return registerRecord(task, cached);
+    if (cacheOnly) return "";
     if (!task.remoteThumbSrc) throw new Error("photo-preview-unavailable");
 
     const blob = await downloadCoordinator.download(task.remoteThumbSrc, {
@@ -184,7 +189,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     return registerRecord(task, record);
   };
 
-  const load = async (image) => {
+  const loadImage = async (image, { cacheOnly = false } = {}) => {
     const task = photoPreviewTaskFromImage(image);
     if (!task) return false;
     task.scopeKey = String(image.dataset.photoCacheScope || getScopeKey() || "");
@@ -204,11 +209,11 @@ export function createDemandDrivenPhotoPreviewLoader({
         return false;
       }
     }
-    setPhotoPreviewState(image, "loading");
-    const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}`;
+    if (!cacheOnly) setPhotoPreviewState(image, "loading");
+    const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}\u0000${cacheOnly}`;
     let request = pending.get(identity);
     if (!request) {
-      request = resolvePreview(task).finally(() => pending.delete(identity));
+      request = resolvePreview(task, { cacheOnly }).finally(() => pending.delete(identity));
       pending.set(identity, request);
     }
     try {
@@ -221,8 +226,31 @@ export function createDemandDrivenPhotoPreviewLoader({
       setPhotoPreviewState(image, "ready");
       return true;
     } catch {
-      if (image.isConnected) setPhotoPreviewState(image, "error");
+      if (!cacheOnly && image.isConnected) setPhotoPreviewState(image, "error");
       return false;
+    }
+  };
+
+  const load = (image, options = {}) => {
+    const active = activeImages.get(image);
+    if (active) return active.then((loaded) => (loaded || options.cacheOnly) ? loaded : load(image, options));
+    const request = loadImage(image, options).finally(() => activeImages.delete(image));
+    activeImages.set(image, request);
+    return request;
+  };
+
+  // Prepare only explicitly selected offline photos, using local records alone.
+  // Bound simultaneous reads/decodes so a large layout cannot stall interaction.
+  const prepareCached = () => {
+    while (preparingCount < 4 && preparationQueue.size) {
+      const image = preparationQueue.values().next().value;
+      preparationQueue.delete(image);
+      if (!image.isConnected) continue;
+      preparingCount += 1;
+      load(image, { cacheOnly: true }).finally(() => {
+        preparingCount -= 1;
+        prepareCached();
+      });
     }
   };
 
@@ -239,6 +267,14 @@ export function createDemandDrivenPhotoPreviewLoader({
     if (scopeKey && photoObjectUrls?.currentScope?.() !== scopeKey) activateScope(scopeKey);
     const images = [...(root?.querySelectorAll?.("img[data-photo-local-id]") || [])];
     if (!images.length) return Promise.resolve({ observed: 0 });
+    const preparedKeys = getPreparedPreviewKeys();
+    images.forEach((image) => {
+      image.dataset.photoCacheScope = scopeKey;
+      if (preparedKeys?.has(image.dataset.photoLocalId) && image.dataset.photoLoadState !== "ready") {
+        preparationQueue.add(image);
+      }
+    });
+    prepareCached();
     if (intersectionObserverFactory) {
       if (!observer) {
         observer = intersectionObserverFactory((entries) => {
@@ -251,19 +287,20 @@ export function createDemandDrivenPhotoPreviewLoader({
       }
       images.forEach((image) => {
         image.dataset.photoCacheScope = scopeKey;
-        if (image.src) setPhotoPreviewState(image, "ready");
+        if (image.src && !activeImages.has(image)) setPhotoPreviewState(image, "ready");
         else observer.observe(image);
       });
       return Promise.resolve({ observed: images.length });
     }
     images.forEach((image) => { image.dataset.photoCacheScope = scopeKey; });
-    return Promise.all(images.filter(isInViewport).map(load)).then(() => ({ observed: images.length }));
+    return Promise.all(images.filter(isInViewport).map((image) => load(image))).then(() => ({ observed: images.length }));
   };
 
   return {
     load,
     observe,
     disconnect: () => {
+      preparationQueue.clear();
       observer?.disconnect?.();
       observer = null;
     },
