@@ -222,6 +222,9 @@ function Assert-ProductionApiContract([string]$contractPath, [string]$temporaryD
 }
 
 $artifactFiles = @(Get-ChildItem -Path $ArtifactRoot -Recurse -File)
+if ($artifactFiles | Where-Object { $_.Extension -match '^\.(jpe?g|png|webp|gif|avif|heic|tiff?)$' }) {
+  throw "Code releases must reuse published photographs. This full-artifact script refuses image files; prepare a release from the deployed production baseline without photographs."
+}
 foreach ($requiredFile in @("app.js", "index.html", "index.php", "manifest.webmanifest", "release-contract.json", "styles.css", "sw.js")) {
   if (-not (Test-Path -LiteralPath (Join-Path $ArtifactRoot $requiredFile) -PathType Leaf)) {
     throw "Production artifact is incomplete; missing $requiredFile."

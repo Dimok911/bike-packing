@@ -24,7 +24,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      testMatch: ["**/view-scroll-tabs.spec.js", "**/photo-lightbox-sizing.spec.js"],
+      testMatch: ["**/view-scroll-tabs.spec.js", "**/photo-lightbox-sizing.spec.js", "**/photo-lightbox-safari.spec.js"],
       use: { ...devices["iPhone 15"] }
     }
   ]
