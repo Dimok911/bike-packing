@@ -5,7 +5,9 @@ import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILI
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
+export const LIST_OPERATION_CANCELLATION_ENABLED = false;
 export const LIST_OPERATION_CAPABILITY = "personalListCausalOperationsV1";
+export const LIST_OPERATION_CANCELLATION_CAPABILITY = "personalListOperationCancellationV1";
 export const LIST_OPERATION_QUEUE_LOCK = "bike-packing-list-operation-dispatch-v1";
 const environment = "bike-packing-experiment";
 const gateway = "/bike-packing/list-operations";
@@ -41,7 +43,12 @@ export function validateListReceipt(data, expected) {
   if (data?.ok !== true || !["committed", "rejected"].includes(op?.state)
     || op.id !== expected.operationId || op.environment !== environment || op.actorId !== expected.actorId
     || op.kind !== expected.kind || op.listId !== expected.listId || op.payloadDigest !== expected.payloadDigest) return false;
-  if (op.state === "rejected") return [400, 403, 404, 409, 413, 422].includes(result?.status) && result.payload?.ok === false;
+  if (op.state === "rejected") {
+    if (![400, 403, 404, 409, 413, 422].includes(result?.status) || result.payload?.ok !== false) return false;
+    const proof = result.payload.cancellation;
+    return result.payload.code !== "operation_cancelled" || result.status === 409 && proof?.version === 1
+      && proof.operationId === expected.operationId && proof.noBusinessEffects === true && proof.operationCannotApply === true;
+  }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
   if (expected.kind === "photos.mutate") return validatePersonalPhotoPublicationResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
@@ -81,7 +88,7 @@ const historicalProof = data => {
 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
-  photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false,
+  photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -144,6 +151,65 @@ export function createListOperationQueue({ transport, getContext = () => null,
     supports(path, method) {
       const route = listOperationRoute(path, method);
       return !readOnly && enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled);
+    },
+    supportsCancellation(path, method) { return cancellationEnabled && this.supports(path, method); },
+    // An explicit cancellation fences the ORIGINAL immutable intent. It never
+    // sends that intent to the execution endpoint, fabricates a fresh ID or
+    // adopts business state. A prior committed/rejected receipt wins unchanged.
+    async cancelExact({ path, method, body: bodyText, operationId }) {
+      if (!this.supportsCancellation(path, method) || !locks?.request) throw paused(operationId);
+      const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
+      const listId = route.listId || body.id;
+      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || initial.environment !== environment
+        || initial.listId !== listId || initial.scopeKey !== `id:${initial.actorId}`
+        || typeof listId !== "string" || !listId.trim() || listId !== listId.trim() || listId.length > 191
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(operationId || "")) throw paused(operationId);
+      const expected = { operationId, actorId: initial.actorId, kind: route.kind, listId, body,
+        payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
+      assertListOperationPayload(expected);
+      const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId, "Редактор изменился. Отмена остановлена; данные сохранены."); };
+      return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${listId}`, async () => {
+        assertCurrent(); await transport.prepare(); assertCurrent();
+        const me = await read("/auth/me"); assertCurrent();
+        if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
+        let entry = transport.writes.find(value => value.id === operationId);
+        if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
+          || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId || entry.recovery.payloadDigest !== expected.payloadDigest
+          || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
+        const terminal = data => {
+          assertCurrent(); if (!validateListReceipt(data, expected)) throw paused(operationId);
+          if (entry) recordReceipt({ ...entry, recovery: expected }, data);
+          assertCurrent(); return historicalProof(data);
+        };
+        const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
+        if (["committed", "rejected"].includes(known?.operation?.state)) return terminal(known);
+        const op = known?.operation;
+        if (entry?.confirmed || !(validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
+          && op.id === operationId && (op.actorId === undefined || op.actorId === initial.actorId)
+          && (op.environment === undefined || op.environment === environment) && (op.listId === undefined || op.listId === listId))) throw paused(operationId);
+        const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
+        if (![LIST_OPERATION_CAPABILITY, LIST_OPERATION_CANCELLATION_CAPABILITY].every(value => capabilities.capabilities?.includes(value))) throw paused(operationId,
+          "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
+        if (!entry) {
+          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
+          transport.assertWritable(path, method, protocol);
+          const generation = await sha(initial.generation);
+          const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
+          assertCurrent();
+          await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
+          entry = transport.writes.find(value => value.id === operationId);
+        }
+        assertCurrent();
+        try {
+          const response = await request(`${gateway}/${encodeURIComponent(operationId)}/cancel`, {
+            operationId, expectedActorId: initial.actorId, environment, kind: route.kind, listId, body });
+          if (response.status !== 200) throw paused(operationId);
+          return terminal(response.data);
+        } catch (error) {
+          if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
+          assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
+        }
+      });
     },
     // Read-only historical settlement. It never creates a transport intent,
     // dispatches a mutation or resumes a waiting operation. The proof deliberately

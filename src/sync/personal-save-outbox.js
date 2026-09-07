@@ -706,7 +706,22 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       assertCurrent();
       if (ownerReceipt && !validHistoricalProof(ownerReceipt, action)) throw blocked("receipt", "Подтверждение фотодействия не совпало.");
       if (ownerReceipt?.operation.state === "committed") return { historicalOnly: true, alreadyPublished: true, ownerReceipt, fileRetained: true };
-      const stageReceipt = await photoStaging.cancel(action.operationId); assertCurrent();
+      const request = operationRequest(action);
+      if (!ownerReceipt && queue.supportsCancellation?.(request.path, request.method)) {
+        ownerReceipt = await queue.cancelExact(request); assertCurrent();
+        if (!validHistoricalProof(ownerReceipt, action)) throw blocked("receipt", "Подтверждение отмены не совпало с исходным действием.");
+        if (ownerReceipt.operation.state === "committed") return { historicalOnly: true, alreadyPublished: true, ownerReceipt, fileRetained: true };
+      }
+      let stageReceipt;
+      try { stageReceipt = await photoStaging.cancel(action.operationId); }
+      catch (error) {
+        assertCurrent();
+        // A verified unavailable/retired stage does not undo the exact owner
+        // rejection. Retain that historical evidence and every local file.
+        if (ownerReceipt?.operation.state !== "rejected" || !error.isConfirmedAssetUnavailable || !error.stageReceipt) throw error;
+        stageReceipt = error.stageReceipt;
+      }
+      assertCurrent();
       if (ownerReceipt?.operation.state === "rejected") return { historicalOnly: true, ownerReceipt, stageReceipt, fileRetained: true };
       const fileHash = saved.fileMetadata?.hash, thumbHash = saved.thumbMetadata?.hash || fileHash;
       if (stageReceipt?.historicalStageOnly !== true || stageReceipt.actionOperationId !== action.operationId

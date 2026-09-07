@@ -61,6 +61,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       download.textContent = text("Скачать копию для восстановления", "Download recovery copy");
       const status = documentRef.createElement("p");
       status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
       const photoDownload = documentRef.createElement("button");
       photoDownload.type = "button"; photoDownload.dataset.downloadPhotoRecovery = "";
       photoDownload.textContent = text("Скачать очередь и доступные фото", "Download queue and available photos");
@@ -76,18 +77,27 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       let checkingResult = false;
       const resolvePhotoResult = async (action, startingMessage) => {
         if (checkingResult) return;
+        let verified = false;
         checkingResult = true; checkResult.disabled = true; cancelUpload.disabled = true;
         status.textContent = startingMessage;
+        status.scrollIntoView({ block: "nearest" });
         try {
           const result = await action();
           if (result?.verified !== true || result.fileRetained !== true || result.reloadRequired !== true) throw Error(text("Проверка не завершена. Данные сохранены.", "Check incomplete. Your data is retained."));
+          verified = true;
+          title.textContent = text("Проверка завершена", "Check complete");
+          reason.hidden = true;
+          guidance.textContent = text("При необходимости скачайте копию перед перезагрузкой. Не очищайте данные сайта и не публикуйте личный архив.",
+            "Download a copy before reloading if needed. Do not clear site data or share your private archive.");
           status.textContent = text("Подтверждения и актуальная версия сохранены на устройстве. Перезагрузите страницу, чтобы продолжить. Файлы фото не удалены.",
             "Receipts and the current version are saved on this device. Reload to continue. Photo files have not been deleted.");
         } catch (error) {
           status.textContent = error.message || text("Результат пока не подтверждён. Файлы сохранены.", "Outcome not confirmed yet. Files are retained.");
         } finally {
           checkingResult = false; checkResult.disabled = false; cancelUpload.disabled = false;
-          cancelUpload.hidden = !canCancelPhotos();
+          checkResult.hidden = verified || !canCheckPhotos();
+          cancelUpload.hidden = verified || !canCancelPhotos();
+          status.scrollIntoView({ block: "nearest" });
         }
       };
       checkResult.addEventListener("click", () => resolvePhotoResult(checkPhotoResult,
@@ -138,7 +148,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, reason, guidance, checkResult, cancelUpload, download, photoDownload, recover, status);
+      dialog.append(title, description, status, reason, guidance, checkResult, cancelUpload, download, photoDownload, recover);
       documentRef.body.append(dialog);
       dialog.showModal();
     },

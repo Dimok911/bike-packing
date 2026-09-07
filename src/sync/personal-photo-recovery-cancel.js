@@ -2,7 +2,7 @@ import { PERSONAL_PHOTO_ACTIONS_ENABLED } from "./personal-photo-action-store.js
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "./personal-photo-outbox-record.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED } from "./personal-photo-publication-protocol.js";
 import { createPersonalPhotoStaging, PERSONAL_PHOTO_STAGING_ENABLED, PERSONAL_PHOTO_CANCELLATION_ENABLED } from "./personal-photo-staging.js";
-import { createListOperationQueue, LIST_OPERATION_QUEUE_ENABLED } from "./list-operation-queue.js";
+import { createListOperationQueue, LIST_OPERATION_QUEUE_ENABLED, LIST_OPERATION_CANCELLATION_ENABLED } from "./list-operation-queue.js";
 import { validPersonalPhotoCancellation } from "./personal-photo-cancellation.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { checkPersonalPhotoRecoveryResult } from "./personal-photo-recovery-check.js";
@@ -17,7 +17,8 @@ export const personalPhotoRecoveryCancellationHead = record => record?.action?.k
 // stage/owner IDs stay fixed; only an explicit keep-current choice may create
 // a new list CAS action, whose own outcome must be confirmed too.
 export async function cancelPersonalPhotoRecovery({ outbox, store, transport, getContext, readRemote, makeSnapshot, makeBaselineMeta,
-  chooseCurrent, fetchImpl, locks = globalThis.navigator?.locks, enabled = personalPhotoRecoveryCancellationEnabled() }) {
+  chooseCurrent, fetchImpl, locks = globalThis.navigator?.locks, enabled = personalPhotoRecoveryCancellationEnabled(),
+  operationCancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED }) {
   if (!enabled || !locks?.request || typeof chooseCurrent !== "function") throw Error("Явная отмена фотодействий ещё не включена.");
   const binding = outbox.binding, initial = { ...getContext() };
   const assertContext = () => {
@@ -34,7 +35,8 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
     if (inventory.entries.every(entry => entry.state === "settled-retained")) return checkPersonalPhotoRecoveryResult(common);
     const head = outbox.recover();
     if (!personalPhotoRecoveryCancellationHead(head)) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
-    const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true });
+    const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true,
+      cancellationEnabled: operationCancellationEnabled });
     const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true });
     if (head.action.kind === "photos.mutate") {
       const cancelled = await outbox.cancelPhotoUpload({ queue, getContext, photoStore: store, photoStaging }); assertContext();

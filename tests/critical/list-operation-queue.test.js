@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createExperimentTransport, EXPERIMENT_FRONTEND_ORIGIN } from "../../src/sync/experiment-transport.js";
-import { createListOperationQueue, canonicalListOperationJson, validateListReceipt, LIST_OPERATION_QUEUE_ENABLED } from "../../src/sync/list-operation-queue.js";
+import { createListOperationQueue, canonicalListOperationJson, validateListReceipt, LIST_OPERATION_QUEUE_ENABLED,
+  LIST_OPERATION_CANCELLATION_ENABLED } from "../../src/sync/list-operation-queue.js";
 import { apiFetchRequest } from "../../src/sync/api-client.js";
 import { syncEntityBatchWithRevisionRetry } from "../../src/sync/entity-sync.js";
 import { assertListOperationPayload, MAX_LIST_OPERATION_PAYLOAD_BYTES } from "../../src/sync/list-operation-payload.js";
@@ -62,6 +63,87 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);
   const queue = createListOperationQueue({ transport: { experiment: true } });
   assert.equal(queue.supports(path, "PUT"), false);
+});
+
+function cancellationFixture() {
+  const f = fixture();
+  Object.assign(f.context, { listId: "list-a", environment: "bike-packing-experiment", scopeKey: "id:actor-a" });
+  f.input.operationId = crypto.randomUUID();
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalListOperationCancellationV1"];
+  f.state.rejection = { status: 409, payload: { ok: false, code: "operation_cancelled", stateRevision: 1,
+    cancellation: { version: 1, operationId: f.input.operationId, noBusinessEffects: true, operationCannotApply: true } } };
+  const fetchImpl = async (url, options) => {
+    if (options.method === "POST") assert.ok(url.endsWith(`/${f.input.operationId}/cancel`), "never execute the original mutation");
+    const response = await f.fetchImpl(url, options), data = await response.json();
+    if (data.operation?.state === "unknown") data.operation.id = url.split("/").at(-1);
+    f.state.afterRead?.(url, data);
+    return Response.json(data, { status: response.status });
+  };
+  const make = (options = {}) => { const { transport } = f.make(); return { transport,
+    queue: createListOperationQueue({ transport, getContext: () => f.context, enabled: true, cancellationEnabled: true,
+      locks: f.locks, fetchImpl, ...options }) }; };
+  return { ...f, make };
+}
+
+test("exact cancellation is separately gated and impossible through the read-only queue", async () => {
+  assert.equal(LIST_OPERATION_CANCELLATION_ENABLED, false);
+  for (const options of [{ cancellationEnabled: false }, { enabled: false }, { readOnly: true }, { locks: null }]) {
+    const f = cancellationFixture(); await assert.rejects(f.make(options).queue.cancelExact(f.input));
+    assert.equal(f.posts().length, 0); assert.equal(f.values.size, 0);
+  }
+});
+
+test("explicit cancellation retains the original UUID and frozen body across lost ACK and reload", async () => {
+  const f = cancellationFixture(); f.state.loseResponse = true;
+  const proof = await f.make().queue.cancelExact(f.input);
+  assert.equal(proof.operation.id, f.input.operationId); assert.equal(proof.operation.state, "rejected");
+  assert.equal(proof.rejectionCode, "operation_cancelled"); assert.equal(proof.historicalOnly, true);
+  assert.deepEqual(await f.make().queue.cancelExact(f.input), proof);
+  assert.deepEqual(await f.make().queue.inspect(f.input), proof);
+  assert.equal(f.posts().length, 1); assert.equal(f.make().transport.writes[0].confirmed, true);
+  assert.deepEqual(JSON.parse(f.posts()[0].options.body).body, JSON.parse(f.input.body));
+  await assert.rejects(f.make().queue.cancelExact({ ...f.input, body: JSON.stringify({ payload: { items: { changed: {} } } }) }));
+  assert.equal(f.posts().length, 1);
+});
+
+test("unknown cancellation ACK stays blocked and only another explicit cancellation retries the exact fence", async () => {
+  const f = cancellationFixture(); f.state.unknown = true; f.state.loseResponse = true;
+  await assert.rejects(f.make().queue.cancelExact(f.input));
+  assert.equal(f.posts().length, 1); assert.equal(Boolean(f.make().transport.writes[0].confirmed), false);
+  await assert.rejects(f.make().queue.cancelExact(f.input));
+  assert.equal(f.posts().length, 2); assert.equal(f.posts()[0].options.body, f.posts()[1].options.body);
+  f.state.unknown = false; assert.equal((await f.make().queue.cancelExact(f.input)).operation.state, "rejected");
+  assert.equal(f.posts().length, 2);
+});
+
+test("prior terminal receipts win cancellation unchanged, including a save completed during the cancellation request", async () => {
+  for (const kind of ["committed-before", "committed-race", "rejected-before"]) {
+    const f = cancellationFixture(), body = JSON.parse(f.input.body);
+    const binding = { environment: f.context.environment, actorId: f.context.actorId, kind: "list.update", listId: "list-a", body };
+    const data = { ok: true, operation: { ...binding, id: f.input.operationId,
+      payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex"), state: "committed" },
+      result: { status: 200, payload: { ok: true, list: { id: "list-a", stateRevision: 1 } } } };
+    if (kind === "rejected-before") { data.operation.state = "rejected"; data.result = { status: 409, payload: { ok: false, code: "stale_state_revision" } }; }
+    if (kind === "committed-race") f.state.rejection = null;
+    else f.receipts.set(f.input.operationId, data);
+    const proof = await f.make().queue.cancelExact(f.input);
+    assert.equal(proof.operation.state, kind === "rejected-before" ? "rejected" : "committed");
+    assert.notEqual(proof.rejectionCode, "operation_cancelled"); assert.equal(f.posts().length, kind === "committed-race" ? 1 : 0);
+  }
+});
+
+test("cancellation refuses changed scope, capability, auth and malformed no-effect proof without clearing the intent", async () => {
+  for (const change of [f => f.context.environment = "production", f => f.context.scopeKey = "id:foreign",
+    f => f.state.capabilities.pop(), f => f.state.afterRead = url => { if (url.endsWith("/auth/me")) f.context.generation = "changed"; },
+    f => f.state.afterRead = (_url, data) => { if (data.user) data.user.id = "foreign"; }]) {
+    const f = cancellationFixture(); change(f); await assert.rejects(f.make().queue.cancelExact(f.input)); assert.equal(f.posts().length, 0);
+  }
+  for (const change of [p => p.operationId = crypto.randomUUID(), p => p.noBusinessEffects = false,
+    p => p.operationCannotApply = false, p => p.version = 2]) {
+    const f = cancellationFixture(); change(f.state.rejection.payload.cancellation);
+    await assert.rejects(f.make().queue.cancelExact(f.input)); assert.equal(f.posts().length, 1);
+    assert.equal(Boolean(f.make().transport.writes[0].confirmed), false);
+  }
 });
 
 function photoPublicationFixture() {
