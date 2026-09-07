@@ -69,7 +69,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [] };
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
-    stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`, payload: state.payload });
+    stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`,
+    payload: state.serverMirrors ? { ...structuredClone(state.payload), activeLayoutId: "", packedItems: {} } : state.payload });
   page.on("pageerror", error => {
     // WebKit reports a cancelled injected receipt fetch during reload. Do not
     // confuse this deliberate fixture failure with a JavaScript application error.
@@ -271,6 +272,26 @@ test("actual sync reconciles different fields with a new ID and rechecks a secon
   await reloadApp(page);
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Новое название" })).toHaveCount(1);
   expect(f.payload.items[id].weight).toBe(200); expect(f.errors).toEqual([]);
+});
+
+test("actual reconciliation accepts assembled API display mirrors without treating them as business changes", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка ответа сервера");
+  const item = await createItemInContainer(page, bag, "Исходное имя сервера", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.allowConflicts = true; f.serverMirrors = true;
+  f.beforeUpdate = () => {
+    if (f.intervened) return;
+    f.intervened = true; f.payload = structuredClone(f.payload); f.payload.items[id].weight = 140; f.revision++;
+  };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Новое имя сервера");
+  await submitForm(page, "#saveItemBtn", "#itemName");
+  await synchronize(page, () => f.payload.items[id]?.name === "Новое имя сервера" && f.payload.items[id]?.weight === 140);
+  const changes = f.posts.slice(before); expect(changes).toHaveLength(2);
+  expect(changes.map(post => f.receipts.get(post.operationId).operation.state)).toEqual(["rejected", "committed"]);
+  expect(changes[1].body.payload.activeLayoutId).toBeUndefined(); expect(changes[1].body.payload.packedItems).toBeUndefined();
+  await reloadApp(page); expect(f.errors).toEqual([]);
 });
 
 test("actual sync retains the local version when the same field changed or the remote item was deleted", async ({ page, context }) => {

@@ -736,6 +736,7 @@ import { preparePersonalLayoutDeletion } from "./src/sync/personal-layout-deleti
 import { preparePersonalDictionaryMutation } from "./src/sync/personal-dictionary-mutation.js";
 import { preparePersonalPlacementMutation, personalPlacementIntent } from "./src/sync/personal-placement-mutation.js";
 import { preparePersonalHistoryRestore } from "./src/sync/personal-history-restore.js";
+import { personalBusinessPayload } from "./src/sync/personal-server-payload.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -8323,8 +8324,9 @@ function personalSaveContext() {
 
 function personalReconciledSnapshot(payload, previous) {
   // Restore only UI preferences/selection, never old business relationships.
-  const snapshot = normalizeRemoteState({ ...payload, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
-  if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), payload)) {
+  const business = personalBusinessPayload(payload);
+  const snapshot = normalizeRemoteState({ ...business, activeLayoutId: previous.activeLayoutId }, { repairCatalog: false });
+  if (!snapshot || !sameJson(cloneStateForSync(snapshot, { forSync: true }), business)) {
     throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");
   }
   return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
@@ -8408,7 +8410,9 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         const record = normalizeRemoteListRecord(data);
         if (blockRemoteIntegrityFailureIfNeeded(normalizeRemoteState(record.payload, { repairCatalog: false }),
           stateIntegrityMetaFromResponse(record, data), record.payload)) throw new Error("Серверная версия не прошла проверку целостности.");
-        return record;
+        // Compare the business representation, not the assembled API's display
+        // mirrors. Receipt bytes/IDs remain untouched in the durable journal.
+        return { ...record, payload: personalBusinessPayload(record.payload) };
       },
       makeSnapshot: personalReconciledSnapshot,
       makeBaselineMeta(record) {

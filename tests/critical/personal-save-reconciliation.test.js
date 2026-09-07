@@ -1,6 +1,57 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { planPersonalPayloadReconciliation } from "../../src/sync/personal-save-reconciliation.js";
+import { personalBusinessPayload } from "../../src/sync/personal-server-payload.js";
+import { cloneStateForSyncPayload } from "../../src/sync/serialize.js";
+import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
+
+test("actual reconciled snapshot still rejects business repairs after projecting display mirrors", () => {
+  const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function personalReconciledSnapshot\([^]*?\n\}/)[0];
+  const payload = { containers: { bag: { id: "bag", name: "Exact", weight: 10 } }, items: {}, layouts: {},
+    locations: ["Bike"], categories: ["Tools"], activeLayoutId: "", packedItems: {} };
+  for (const repair of ["none", "delete", "add", "edit", "dictionary"]) {
+    const deps = { personalBusinessPayload, cloneStateForSync: cloneStateForSyncPayload,
+      sameJson: (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b),
+      personalSnapshotWithUiPreferences: value => value,
+      normalizeRemoteState: value => {
+        const result = structuredClone(value); result.collapsedContainers = {};
+        if (repair === "delete") delete result.containers.bag;
+        if (repair === "add") result.items.added = { id: "added" };
+        if (repair === "edit") result.containers.bag.weight = 99;
+        if (repair === "dictionary") result.categories = [];
+        return result;
+      } };
+    const make = new Function(...Object.keys(deps), `return (${source});`)(...Object.values(deps));
+    if (repair === "none") assert.equal(make(payload, { activeLayoutId: "" }).containers.bag.weight, 10);
+    else assert.throws(() => make(payload, { activeLayoutId: "" }), /проверки структуры/);
+  }
+  assert.equal(payload.containers.bag.weight, 10);
+});
+
+test("assembled server projection removes only display mirrors and never rewrites arrangement, files or unknown data", () => {
+  const value = { activeLayoutId: "other", packedItems: {}, collapsedContainers: { bag: true }, showItemMeta: true,
+    locations: ["Bike"], categories: ["Tools"], customSetting: { retained: true },
+    items: { a: { id: "a", name: "Exact name", containerId: "wrong-mirror", quantity: 1, photos: [{ id: "file", localOnly: "keep" }] } },
+    containers: { bag: { id: "bag", parentId: "wrong-mirror", itemIds: ["wrong"], childIds: ["wrong"], order: [], weight: 10 } },
+    layouts: { l: { id: "l", arrangement: { rootContainerIds: ["bag"], containers: { bag: { parentId: "", itemIds: ["a"], childIds: [], order: [] } },
+      items: { a: "bag" }, itemQuantities: { a: 3 }, packedItems: { a: true } } } } };
+  const original = structuredClone(value), result = personalBusinessPayload(value);
+  assert.deepEqual(value, original); assert.equal(result.activeLayoutId, undefined); assert.equal(result.packedItems, undefined);
+  assert.equal(result.items.a.containerId, undefined); assert.equal(result.containers.bag.itemIds, undefined);
+  assert.deepEqual(result.layouts, original.layouts); assert.deepEqual(result.items.a.photos, original.items.a.photos);
+  assert.deepEqual(result.customSetting, original.customSetting); assert.deepEqual(result.categories, original.categories);
+  assert.equal(result.items.a.name, original.items.a.name); assert.equal(result.containers.bag.weight, 10);
+  assert.deepEqual(personalBusinessPayload(result), result);
+});
+
+test("server projection refuses missing authority and malformed maps instead of repairing or erasing them", () => {
+  const valid = { items: {}, containers: {}, layouts: {} };
+  for (const payload of [null, [], { ...valid, items: [] }, { ...valid, containers: { a: { id: "wrong" } } },
+    { ...valid, layouts: { l: { id: "l" } } }, { ...valid, layouts: { l: { id: "l", arrangement: { items: {}, containers: {}, packedItems: {}, rootContainerIds: {} } } } },
+    JSON.parse('{"items":{"__proto__":{}},"containers":{},"layouts":{}}')]) assert.throws(() => personalBusinessPayload(payload), /структуру/);
+  assert.deepEqual(personalBusinessPayload(valid), valid);
+});
 
 function fixture() {
   const payload = { containers: { bag: { id: "bag", name: "Bag", weight: 100, note: "" } }, items: {}, layouts: {}, categories: ["old"] };
