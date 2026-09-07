@@ -1386,6 +1386,7 @@ const photoPreviewLoader = createDemandDrivenPhotoPreviewLoader({
   shouldPersistPreview: (task) => (
     !isReadOnlyStateScope() && selectedOfflinePhotoKeySet().has(String(task?.key || ""))
   ),
+  getPreparedPreviewKeys: () => isReadOnlyStateScope() ? new Set() : selectedOfflinePhotoKeySet(),
   getScopeKey: () => isReadOnlyStateScope()
     ? `${localStorageScopeKey}|readonly:${activeReadOnlyLayoutId()}:${uiLanguage}`
     : localStorageScopeKey,
@@ -1446,7 +1447,10 @@ const offlinePhotoCacheController = createOfflinePhotoCacheController({
   ),
   getProgressMessage: () => t("sync.cachingPhotosOffline"),
   getFailureMessage: () => t("sync.photoOfflineCacheIncomplete"),
-  onChange: () => updateSyncUi(),
+  onChange: () => {
+    updateSyncUi();
+    if (!offlinePhotoCacheController.isRunning()) photoPreviewLoader.observe(document);
+  },
   getCacheOptions: () => {
     const scopeKey = getPhotoCacheScope();
     return {

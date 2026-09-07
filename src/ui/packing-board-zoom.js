@@ -5,8 +5,8 @@ export const PACKING_BOARD_ZOOM_MIN = 0.2;
 export const PACKING_BOARD_ZOOM_MAX = 1.6;
 export const PACKING_BOARD_ZOOM_ELASTIC_MAX = 1.8;
 export const PACKING_BOARD_ZOOM_SNAP_PERCENT = 100;
-export const PACKING_BOARD_ZOOM_SNAP_RADIUS_PERCENT = 2;
-export const PACKING_BOARD_ZOOM_SNAP_SPEED_PERCENT_PER_MS = 0.06;
+export const PACKING_BOARD_ZOOM_SNAP_RADIUS_PERCENT = 3;
+export const PACKING_BOARD_ZOOM_SNAP_RELEASE_RADIUS_PERCENT = 6;
 export const PACKING_BOARD_FIXED_SCROLLBAR_CLEARANCE = 52;
 export const PACKING_BOARD_POST_PINCH_PAN_DELAY_MS = 80;
 export const PACKING_BOARD_PAN_MAX_VELOCITY = 1.5;
@@ -77,22 +77,21 @@ export function clampPackingBoardZoom(value, {
 
 export function packingBoardSliderZoomPercent(value, {
   pointerActive = false,
-  gestureStartPercent = value,
-  elapsedMs = Number.POSITIVE_INFINITY,
+  snapped = false,
+  previousPercent = value,
   snapPercent = PACKING_BOARD_ZOOM_SNAP_PERCENT,
   snapRadiusPercent = PACKING_BOARD_ZOOM_SNAP_RADIUS_PERCENT,
-  snapSpeedPercentPerMs = PACKING_BOARD_ZOOM_SNAP_SPEED_PERCENT_PER_MS
+  releaseRadiusPercent = PACKING_BOARD_ZOOM_SNAP_RELEASE_RADIUS_PERCENT
 } = {}) {
   const percent = Number(value);
   if (!Number.isFinite(percent)) return snapPercent;
-  if (!pointerActive || Math.abs(percent - snapPercent) > snapRadiusPercent) return percent;
-  const startPercent = Number(gestureStartPercent);
-  if (!Number.isFinite(startPercent) || Math.abs(startPercent - snapPercent) <= snapRadiusPercent) {
-    return percent;
-  }
-  const duration = Math.max(1, Number(elapsedMs) || 0);
-  const speed = Math.abs(percent - startPercent) / duration;
-  return speed >= snapSpeedPercentPerMs ? snapPercent : percent;
+  if (!pointerActive) return percent;
+  const radius = snapped ? Math.max(snapRadiusPercent, releaseRadiusPercent) : snapRadiusPercent;
+  if (Math.abs(percent - snapPercent) <= radius) return snapPercent;
+  // Catch crossing gestures even when one input event skips the capture band.
+  const crossed = (Number(previousPercent) - snapPercent) * (percent - snapPercent) < 0;
+  if (!snapped && crossed) return snapPercent;
+  return percent;
 }
 
 export function packingBoardFitMaxZoom({
@@ -531,8 +530,8 @@ export function bindPackingBoardZoom(board, {
   ) || 78);
   const { button: resetButton, panel: zoomPanel, range: zoomRange } = ensureZoomControl(documentRef);
   let zoomRangePointerActive = false;
-  let zoomRangeGestureStartPercent = PACKING_BOARD_ZOOM_SNAP_PERCENT;
-  let zoomRangeGestureStartedAt = 0;
+  let zoomRangePreviousPercent = PACKING_BOARD_ZOOM_SNAP_PERCENT;
+  let zoomRangeSnapped = false;
   const desktopZoomControl = Boolean(
     zoomPanel &&
     zoomRange &&
@@ -1524,11 +1523,13 @@ export function bindPackingBoardZoom(board, {
     const rawPercent = Number(zoomRange?.value);
     const adjustedPercent = packingBoardSliderZoomPercent(rawPercent, {
       pointerActive: zoomRangePointerActive,
-      gestureStartPercent: zoomRangeGestureStartPercent,
-      elapsedMs: zoomRangePointerActive
-        ? Math.max(1, (Number(windowRef?.performance?.now?.()) || Date.now()) - zoomRangeGestureStartedAt)
-        : Number.POSITIVE_INFINITY
+      snapped: zoomRangeSnapped,
+      previousPercent: zoomRangePreviousPercent
     });
+    // Retain the raw pointer value before applyZoom moves the displayed thumb
+    // to 100%; otherwise the next input could never leave the detent.
+    zoomRangePreviousPercent = rawPercent;
+    zoomRangeSnapped = zoomRangePointerActive && adjustedPercent === PACKING_BOARD_ZOOM_SNAP_PERCENT;
     applyZoom(adjustedPercent / 100, {
       preserveScrollProgress: true,
       startMaxScrollLeft,
@@ -1541,12 +1542,13 @@ export function bindPackingBoardZoom(board, {
 
   const onZoomRangePointerDown = () => {
     zoomRangePointerActive = true;
-    zoomRangeGestureStartPercent = Number(zoomRange?.value) || PACKING_BOARD_ZOOM_SNAP_PERCENT;
-    zoomRangeGestureStartedAt = Number(windowRef?.performance?.now?.()) || Date.now();
+    zoomRangePreviousPercent = Number(zoomRange?.value) || PACKING_BOARD_ZOOM_SNAP_PERCENT;
+    zoomRangeSnapped = zoomRangePreviousPercent === PACKING_BOARD_ZOOM_SNAP_PERCENT;
   };
 
   const onZoomRangePointerEnd = () => {
     zoomRangePointerActive = false;
+    zoomRangeSnapped = false;
   };
 
   const onZoomControlPointerDown = (event) => {

@@ -6,6 +6,7 @@ param(
   [string]$ExpectedVersion = "",
   [string]$ArtifactRoot = "",
   [string]$IdentityFile = "",
+  [switch]$ApplicationOnly,
   [string]$PublicUrl = "https://experiment.vniipo-help.ru/",
   [string]$ApiCapabilitiesUrl = "https://experiment.vniipo-help.ru/letters-vniipo/api/bike-packing/capabilities"
 )
@@ -142,6 +143,12 @@ $activated = $false
 $rollbackVerified = $false
 
 try {
+  if ($ApplicationOnly) {
+    $workflowJson = & gh run list --repo Dimok911/bike-packing --workflow 'Frontend quality' --commit $ExpectedCommit --status success --limit 20 --json headSha,conclusion,status
+    if ($LASTEXITCODE -ne 0) { throw 'Could not verify the exact GitHub workflow.' }
+    $successful = @($workflowJson | ConvertFrom-Json | Where-Object { $_.headSha -eq $ExpectedCommit -and $_.conclusion -eq 'success' -and $_.status -eq 'completed' })
+    if ($successful.Count -eq 0) { throw 'No successful Frontend quality run for the exact application commit.' }
+  }
   $apiContractVerification = Assert-ExperimentApiContract `
     (Join-Path $ArtifactRoot "release-contract.json") `
     $temporaryRoot `
@@ -169,6 +176,17 @@ try {
   $reusedEntries = @($entries | Where-Object { $remoteHashes.ContainsKey($_.Path) -and $remoteHashes[$_.Path] -eq $_.Hash })
   $changedFrontend = @($changedEntries | Where-Object Path -notlike "$sharedPrefix*")
   $changedShared = @($changedEntries | Where-Object Path -like "$sharedPrefix*")
+  if ($ApplicationOnly) {
+    if ($changedShared.Count -ne 0) { throw 'Application-only publication requires every static asset to exist with its exact hash. No assets will be uploaded.' }
+    if (@($frontendEntries | Where-Object Path -notmatch '^(index\.(html|php)|app\.js|styles\.css|sw\.js|manifest\.webmanifest|release-contract\.json|chunks/[A-Za-z0-9._-]+\.js)$').Count) {
+      throw 'Application artifact contains a path outside the application file allowlist.'
+    }
+    # A fresh application directory needs every application file. Shared bytes
+    # remain at their existing paths; only their read-only hashes are sent.
+    $changedFrontend = $frontendEntries
+    Write-Utf8Lines (Join-Path $temporaryRoot 'baseline.paths') @($remoteHashes.Keys | Sort-Object)
+    Write-Utf8Lines (Join-Path $temporaryRoot 'baseline.sha256') @($remoteHashes.Keys | Sort-Object | ForEach-Object { "$($remoteHashes[$_])  $_" })
+  }
 
   Write-Utf8Lines (Join-Path $temporaryRoot "all.sha256") @($entries | ForEach-Object { "$($_.Hash)  $($_.Path)" })
   Write-Utf8Lines (Join-Path $temporaryRoot "all.paths") @($entries.Path)
@@ -180,8 +198,11 @@ try {
   Write-Utf8Lines (Join-Path $temporaryRoot "assets.changed") @($changedShared | ForEach-Object { $_.Path.Substring($sharedPrefix.Length) })
 
   Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "frontend.tar"), "-C", $ArtifactRoot, "-T", (Join-Path $temporaryRoot "frontend.changed")) "Could not create frontend delta."
-  Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "assets.tar"), "-C", (Join-Path $ArtifactRoot "assets"), "-T", (Join-Path $temporaryRoot "assets.changed")) "Could not create static asset delta."
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot "deploy-experiment-vps-remote.sh") -Destination (Join-Path $temporaryRoot "deploy-remote.sh")
+  if (-not $ApplicationOnly) {
+    Invoke-NativeChecked $tarPath @("-cf", (Join-Path $temporaryRoot "assets.tar"), "-C", (Join-Path $ArtifactRoot "assets"), "-T", (Join-Path $temporaryRoot "assets.changed")) "Could not create static asset delta."
+  }
+  $remoteEntryPoint = if ($ApplicationOnly) { 'deploy-experiment-application-remote.sh' } else { 'deploy-experiment-vps-remote.sh' }
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot $remoteEntryPoint) -Destination (Join-Path $temporaryRoot "deploy-remote.sh")
 
   $uploadPath = "/var/www/.experiment-upload-$releaseId"
   Invoke-NativeChecked $sshPath ($sshOptions + @($server, "mkdir", $uploadPath)) "Could not create the remote upload directory."
@@ -211,7 +232,10 @@ try {
   $indexName = Https-TemporaryFileName "index.html"
   $publicHtml = Get-Content -LiteralPath (Join-Path $publicDir $indexName) -Raw
   if ($publicHtml -notmatch ('app\.js\?v=' + [regex]::Escape($versionNumber))) { throw "Public Experiment exposes the wrong version." }
-  Invoke-SshChecked @("cleanup", $releaseId)
+  if ($ApplicationOnly) {
+    try { Invoke-SshChecked @("cleanup", $releaseId) }
+    catch { Write-Warning 'The application is verified; remote upload cleanup could not be confirmed.' }
+  } else { Invoke-SshChecked @("cleanup", $releaseId) }
 }
 catch {
   $deploymentError = $_
@@ -222,6 +246,9 @@ catch {
       New-Item -Path $rollbackDir -ItemType Directory -Force | Out-Null
       foreach ($relative in @("index.html", "app.js", "styles.css", "sw.js")) {
         Receive-HttpsFile $relative (Join-Path $rollbackDir $relative) "rollback-$timestamp"
+        if ((Get-FileHash -LiteralPath (Join-Path $rollbackDir $relative) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $remoteHashes[$relative]) {
+          throw "Rollback HTTPS hash mismatch: $relative"
+        }
       }
       Invoke-SshChecked @("cleanup-rollback", $releaseId)
       $rollbackVerified = $true
@@ -240,7 +267,15 @@ finally {
   if ($tempParent -ne ([IO.Path]::GetTempPath()).TrimEnd("\") -or (Split-Path $temporaryRoot -Leaf) -notlike "bike-packing-experiment-deploy-*") {
     throw "Unsafe temporary cleanup target."
   }
-  if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
+  if (Test-Path -LiteralPath $temporaryRoot) {
+    if ($ApplicationOnly) {
+      $evidenceDirectory = [IO.Path]::GetFullPath((Join-Path $projectRoot "ftp-upload\$releaseId"))
+      if (-not $evidenceDirectory.StartsWith("$projectRoot\ftp-upload\", [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe evidence directory.' }
+      New-Item -ItemType Directory -Force -Path (Split-Path $evidenceDirectory -Parent) | Out-Null
+      Copy-Item -LiteralPath $temporaryRoot -Destination $evidenceDirectory -Recurse
+    }
+    Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+  }
 }
 
 [pscustomobject]@{
@@ -249,7 +284,8 @@ finally {
   TotalFiles = $entries.Count
   TotalBytes = $allBytes
   ReusedFiles = $reusedEntries.Count
-  UploadedFiles = $changedEntries.Count
+  UploadedFiles = $changedFrontend.Count + $changedShared.Count
+  ApplicationOnly = [bool]$ApplicationOnly
   PersistentAssets = "/var/www/experiment-shared/assets"
   FrontendBackup = "/var/www/experiment-backup-before-$releaseId"
   FullSha256 = "verified"

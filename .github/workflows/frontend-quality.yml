@@ -37,6 +37,9 @@ jobs:
       - name: Experiment transport isolation
         run: npm run test:transport
 
+      - name: Application publication preserves photos
+        run: node --test tests/integration/experiment-application-deployment.test.js
+
       - name: Production build
         run: npm run build
 
