@@ -91,6 +91,38 @@ const historicalProof = data => {
     rejectionCode: op.state === "rejected" && typeof data.result.payload.code === "string" ? data.result.payload.code : null };
 };
 
+// A waiting grandchild must not block the ancestor it is waiting for. Walk
+// directed, locally known dependency paths in this exact actor/list namespace;
+// sharing an ancestor is NOT proof that two sibling actions are ordered.
+function relatedCausalOperationIds(writes, { actorId, listId, operationId, body }) {
+  const start = operationId || Symbol("new action"), bodies = new Map();
+  for (const entry of writes) {
+    const saved = entry.recovery;
+    if (saved?.type === "list" && saved.protocol === "causal-v1" && saved.actorId === actorId && saved.listId === listId && saved.body) {
+      bodies.set(entry.id, saved.body);
+    }
+  }
+  bodies.set(start, body);
+  const parents = new Map(), children = new Map();
+  for (const [id, value] of bodies) {
+    for (const dep of Array.isArray(value.causal?.dependsOn) ? value.causal.dependsOn : []) {
+      if (dep?.listId !== listId || typeof dep.operationId !== "string") continue;
+      if (!parents.has(id)) parents.set(id, []);
+      if (!children.has(dep.operationId)) children.set(dep.operationId, []);
+      parents.get(id).push(dep.operationId); children.get(dep.operationId).push(id);
+    }
+  }
+  const related = new Set();
+  for (const graph of [parents, children]) {
+    const seen = new Set([start]), pending = [start];
+    while (pending.length) for (const next of graph.get(pending.pop()) || []) {
+      if (seen.has(next)) continue;
+      seen.add(next); related.add(next); pending.push(next);
+    }
+  }
+  return related;
+}
+
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
@@ -426,13 +458,6 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
           await recover(entry);
         }
-        for (const entry of transport.writes.filter(entry => entry.recovery?.protocol === "causal-v1" && !entry.confirmed
-          && entry.recovery.requestKey !== requestKey && entry.recovery.listId === (route.listId || body.id))) {
-          if (entry.recovery.actorId !== initial.actorId) throw paused(entry.id);
-          const explicitlyRelated = body.causal?.dependsOn?.some(dep => dep.operationId === entry.id)
-            || (requestedId && entry.recovery.body?.causal?.dependsOn?.some(dep => dep.operationId === requestedId));
-          if (!explicitlyRelated) await recover(entry);
-        }
         let entry = requestedId ? transport.writes.find(entry => entry.id === requestedId)
           : transport.writes.find(entry => entry.recovery?.type === "list" && entry.recovery.requestKey === requestKey);
         if (entry && requestedId) {
@@ -441,6 +466,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
             || entry.recovery.kind !== route.kind || entry.recovery.listId !== listId
             || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
+        }
+        const related = relatedCausalOperationIds(transport.writes, { actorId: initial.actorId,
+          listId: route.listId || body.id, operationId: requestedId || entry?.id, body });
+        for (const other of transport.writes.filter(value => value.recovery?.protocol === "causal-v1" && !value.confirmed
+          && value.recovery.requestKey !== requestKey && value.recovery.listId === (route.listId || body.id))) {
+          if (other.recovery.actorId !== initial.actorId) throw paused(other.id);
+          if (!related.has(other.id)) await recover(other);
         }
         let data;
         // Terminal transport records omit their large body. Restore only the

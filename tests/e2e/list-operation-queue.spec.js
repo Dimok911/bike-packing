@@ -102,6 +102,35 @@ test("cold queue preserves the ID across lost ACK, page reload and direct/EU rou
   expect(await page.evaluate(() => window.entries()[0].id)).toBe(id);
 });
 
+test("reverse-delivered four-action chain releases its ancestor after reload and route change without bypassing unknown ACK", async ({ page, context }) => {
+  const f = await fixture(page, context);
+  const records = await page.evaluate(() => [100, 200, 300, 400].map(value => window.captureSave(value)));
+  const inputs = records.map(record => ({ path: "/bike-packing/lists/list-a", method: "PUT", receiptOnly: true,
+    operationId: record.action.operationId, body: JSON.stringify(record.action.body) }));
+  f.waiting = true;
+  for (const input of inputs.slice(1).reverse()) {
+    expect(await page.evaluate(input => window.runPhoto(input), input)).toEqual({ ok: false, ambiguous: true });
+    await page.reload(); await page.waitForFunction(() => Boolean(window.runPhoto));
+  }
+  expect(f.posts.map(post => post.body.operationId)).toEqual(inputs.slice(1).reverse().map(input => input.operationId));
+  await page.evaluate(() => sessionStorage.setItem("list-route", "eu"));
+  await page.reload(); await page.waitForFunction(() => Boolean(window.runPhoto));
+  f.waiting = false; f.lose = true; f.unknown = true;
+  expect(await page.evaluate(input => window.runPhoto(input), inputs[0])).toEqual({ ok: false, ambiguous: true });
+  expect(f.posts).toHaveLength(4);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.runPhoto));
+  expect(await page.evaluate(input => window.runPhoto(input), inputs[0])).toEqual({ ok: false, ambiguous: true });
+  expect(f.posts).toHaveLength(4);
+  f.lose = false; f.unknown = false;
+  for (const input of inputs) expect((await page.evaluate(input => window.runPhoto(input), input)).result.operation.state).toBe("committed");
+  expect(f.posts).toHaveLength(7);
+  for (const input of inputs) {
+    const sent = f.posts.filter(post => post.body.operationId === input.operationId);
+    expect(sent.length).toBe(input === inputs[0] ? 1 : 2);
+    for (const post of sent) expect(post.body.body).toEqual(JSON.parse(input.body));
+  }
+});
+
 test("photo batch queue survives cold lost ACK and route change, and rejects a partial receipt until all exact outcomes return", async ({ page, context }) => {
   const f = await fixture(page, context), operationId = "12345678-1234-4123-8123-123456789abc";
   const assetId = "22345678-1234-4123-8123-123456789abc", photoId = "browser-photo";

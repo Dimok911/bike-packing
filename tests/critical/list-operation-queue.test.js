@@ -65,6 +65,51 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(queue.supports(path, "PUT"), false);
 });
 
+test("reverse-delivered four-action chain does not let waiting descendants block their own ancestor after reload", async () => {
+  const f = fixture(), actions = [];
+  for (let i = 0; i < 4; i++) actions.push({ path, method: "PUT", receiptOnly: true, operationId: crypto.randomUUID(),
+    body: JSON.stringify({ payload: { items: {} }, causal: { dependsOn: i ? [{ operationId: actions[i - 1].operationId, listId: "list-a" }] : [] } }) });
+  f.state.waiting = true;
+  for (const input of actions.slice(1).reverse()) await assert.rejects(f.make().queue.run(input), { isOperationWaiting: true });
+  assert.equal(f.posts().length, 3, "every descendant reached the server as its exact waiting intent");
+  f.state.waiting = false;
+  for (const input of actions) assert.equal((await f.make().queue.run(input)).operation.state, "committed");
+  const sent = f.posts().map(call => JSON.parse(call.options.body));
+  assert.deepEqual(sent.map(row => row.operationId), [...actions.slice(1).reverse(), ...actions].map(row => row.operationId));
+  for (const input of actions) {
+    assert.ok(sent.filter(row => row.operationId === input.operationId).every(row => JSON.stringify(row.body) === input.body));
+    await f.make().queue.run(input);
+  }
+  assert.equal(f.posts().length, 7, "terminal retries only read receipts");
+});
+
+test("transitive scheduling does not bypass an unknown receipt, sibling branch or missing/cross-list bridge", async () => {
+  const input = (id, parent, listId = "list-a") => ({ path: `/bike-packing/lists/${listId}`, method: "PUT", receiptOnly: true, operationId: id,
+    body: JSON.stringify({ payload: { items: {} }, causal: { dependsOn: parent ? [{ operationId: parent, listId }] : [] } }) });
+  for (const bridge of ["missing", "other-list"]) {
+    const f = fixture(), ids = Array.from({ length: 3 }, () => crypto.randomUUID()); f.state.waiting = true;
+    await assert.rejects(f.make().queue.run(input(ids[2], ids[1])), { isOperationWaiting: true });
+    if (bridge === "other-list") await assert.rejects(f.make().queue.run(input(ids[1], ids[0], "other-list")), { isOperationWaiting: true });
+    const before = f.posts().length; f.state.waiting = false;
+    await assert.rejects(f.make().queue.run(input(ids[0], null)), { isOperationWaiting: true });
+    assert.equal(f.posts().length, before, "a missing same-list path cannot be invented from matching IDs");
+  }
+  const sibling = fixture(), parent = crypto.randomUUID(); sibling.state.waiting = true;
+  await assert.rejects(sibling.make().queue.run(input(crypto.randomUUID(), parent)), { isOperationWaiting: true });
+  await assert.rejects(sibling.make().queue.run(input(crypto.randomUUID(), parent)), { isOperationWaiting: true });
+  assert.equal(sibling.posts().length, 1, "common ancestry does not serialize a fork");
+  const f = fixture(), first = input(crypto.randomUUID(), null), second = input(crypto.randomUUID(), first.operationId), third = input(crypto.randomUUID(), second.operationId);
+  f.state.waiting = true;
+  await assert.rejects(f.make().queue.run(third), { isOperationWaiting: true });
+  f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.make().queue.run(second)); assert.equal(f.posts().length, 2);
+  f.state.waiting = false; f.state.loseResponse = false;
+  assert.equal((await f.make().queue.run(first)).operation.state, "committed");
+  await assert.rejects(f.make().queue.run(second)); assert.equal(f.posts().length, 3, "unknown never permits a blind resend");
+  const changed = { ...second, body: JSON.stringify({ payload: { items: { changed: {} } } }) };
+  await assert.rejects(f.make().queue.run(changed), /Номер действия/); assert.equal(f.posts().length, 3);
+});
+
 function migrationFixture() {
   const f = fixture(), payload = { locations: [], categories: [], containers: {}, items: {}, layouts: {} };
   Object.assign(f.context, { listId: "list-a", scopeKey: "id:actor-a", environment: "bike-packing-experiment" });
