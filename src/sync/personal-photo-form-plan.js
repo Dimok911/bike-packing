@@ -55,7 +55,6 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
   }
   const body = { version: 1, action: "form", entityType, entityId, baseEntityRevision, baseStateRevision, fields: frozenFields, changes };
   const owner = personalPhotoFormOwner(base, body); owner.photos = pending;
-  const payload = clone(base); payload[collection] ||= {}; payload[collection][entityId] = owner;
   frozen[collection] ||= {};
   if (baseEntityRevision === 0) frozen[collection][entityId] = clone(owner);
   else {
@@ -64,9 +63,9 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
     }
     frozen[collection][entityId].photos = clone(pending);
   }
+  const payload = snapshotToPayload(clone(frozen));
   assertPersonalPhotoFormCandidate({ body, basePayload: base, payload, listId: binding.listId });
-  if (!same(snapshotToPayload(clone(frozen)), payload)
-    || [frozen, payload].some(value => new TextEncoder().encode(JSON.stringify(value)).byteLength > 2 * 1024 * 1024)) fail();
+  if ([frozen, payload].some(value => new TextEncoder().encode(JSON.stringify(value)).byteLength > 2 * 1024 * 1024)) fail();
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body });
   return { version: 1, binding: clone(binding), operationId, body, snapshot: frozen, payload, files: parts };
 }

@@ -1,5 +1,6 @@
 import { nowIso } from "../utils/time.js";
 import { createEntityId } from "../utils/entity-id.js";
+import { causalPhotoReferenceForSync } from "./causal-photo-reference.js";
 
 export function normalizePhotoStatus(value) {
   return ["pending", "uploading", "synced", "error", "missing-local-file"].includes(value) ? value : "synced";
@@ -20,6 +21,16 @@ export function normalizeItemPhotos(item) {
   item.photos = item.photos
     .filter((photo) => photo && typeof photo === "object")
     .map((photo) => {
+      const causal = causalPhotoReferenceForSync(photo);
+      if (causal) {
+        // Local cache/progress hints belong to the view, not the immutable
+        // server reference. Keep them without adding legacy business defaults.
+        for (const key of ["localId", "error", "uploadProgress"]) if (Object.hasOwn(photo, key)) {
+          Object.defineProperty(causal, key, { value: photo[key], writable: true, configurable: true, enumerable: false });
+        }
+        copyPhotoUploadBatchMeta(photo, causal);
+        return causal;
+      }
       normalizePhotoUrlFields(photo);
       const normalized = {
         id: String(photo.id || photo.localId || `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`),

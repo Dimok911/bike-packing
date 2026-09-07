@@ -3,6 +3,7 @@ import {
   normalizePhotoUrlFields
 } from "../state/item-photos.js";
 import { normalizeCollectionModeState } from "../state/collection-mode.js";
+import { causalPhotoReferenceForSync } from "../state/causal-photo-reference.js";
 import {
   normalizeRemotePhotoUrl,
   syncSafePhotoUrl
@@ -89,6 +90,8 @@ export function prunePhotoPayloadForSync(cloned) {
 
 export function compactPhotoForSync(photo) {
   if (!photo || typeof photo !== "object") return null;
+  const causal = causalPhotoReferenceForSync(photo);
+  if (causal) return causal;
   normalizePhotoUrlFields(photo);
   if (photo._copyToCurrentList || photo.copyToCurrentList) return null;
   const id = String(photo.id || photo.photoId || "").trim();

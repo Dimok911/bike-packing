@@ -91,6 +91,12 @@ export function assertPersonalPhotoFormCandidate({ body, basePayload, payload, l
     } else owner.photos = entry.photoIds.map(photoId => photos.find(photo => photo.id === photoId));
   }
   candidate[collection] ||= {}; candidate[collection][body.entityId] = owner;
+  // Old retained records include empty display-placement mirrors on a newly
+  // created owner. The real UI's business projection omits them. Accept exactly
+  // those two representations, never a hidden placement or arbitrary deletion.
+  if (manifest.created) for (const key of body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) {
+    if (!Object.hasOwn(desired, key)) delete owner[key];
+  }
   if (!same(candidate, payload)) fail();
   return manifest;
 }

@@ -15,6 +15,7 @@ async function installFixture(page, context, variant) {
       import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
       import {preparePersonalPhotoAttachmentBatch} from '/src/sync/personal-photo-batch-plan.js';
       import {preparePersonalPhotoFormAttachments} from '/src/sync/personal-photo-form-plan.js';
+      import {createPersonalPhotoFormSubmitter} from '/src/sync/personal-photo-form-submit.js';
       import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
       import {createPersonalPhotoRecoveryArchive} from '/src/sync/personal-photo-recovery-archive.js';
       import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
@@ -54,6 +55,17 @@ async function installFixture(page, context, variant) {
         }
         current.outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
         const body={...input.action.body}; delete body.causal;
+        if(body.action==='form') {
+          const ids=[input.action.operationId,...body.changes.flatMap(change=>[change.assetId,change.photoId.slice('photo-'.length)])];
+          window.formSubmissionInput={binding,snapshot:base,basePayload:base,baseStateRevision:body.baseStateRevision,
+            entityType:body.entityType,entityId:body.entityId,baseEntityRevision:body.baseEntityRevision,fields:body.fields,
+            files:input.files.map(part=>({file:part.file,thumb:part.thumb,fileName:part.stage.fileName}))};
+          window.formViewApplications=0;
+          window.formSubmitter=createPersonalPhotoFormSubmitter({outbox:current.outbox,store:current.store,getContext:()=>editContext,
+            enabled:true,createUuid:()=>ids.shift(),onDurable:()=>{window.formViewApplications++;}});
+          window.formSubmissionPromise=formSubmitter.submit(formSubmissionInput);
+          return (await formSubmissionPromise).record;
+        }
         const plan=current.outbox.preparePhoto({snapshot:input.snapshot,payload:input.snapshot,body,operationId:input.action.operationId});
         await current.store[input.action.body.action==='form'?'captureForm':'captureBatch']({...input,...plan});
         return current.outbox.capturePhoto({plan,store:current.store,getContext:()=>editContext});
@@ -71,6 +83,29 @@ async function installFixture(page, context, variant) {
 
 for (const variant of ["batch", "form-edit", "form-create"]) test.describe(variant, () => {
 const fixture = (page, context) => installFixture(page, context, variant);
+
+if (variant !== "batch") test("native form submission latches repeated clicks before hashing and keeps its exact files through reload", async ({ page, context }) => {
+  await fixture(page, context);
+  const result = await page.evaluate(async () => {
+    const registered = registerBatch(), promise = formSubmissionPromise;
+    formSubmissionInput.fields.name = "Late button click";
+    formSubmissionInput.files.reverse();
+    const samePromise = formSubmitter.submit(formSubmissionInput) === promise;
+    const record = await registered;
+    return { samePromise, id: record.action.operationId, name: record.action.body.fields.name,
+      views: formViewApplications, state: formSubmitter.state(), entries: batchRuntime().outbox.list().length };
+  });
+  expect(result).toMatchObject({ samePromise: true, name: "Frozen owner", views: 1, entries: 1,
+    state: { phase: "durable", fileStored: true, linked: true } });
+  await page.reload(); await page.waitForFunction(() => window.batchReady);
+  const recovered = await page.evaluate(async id => {
+    const saved = await batchStore({ enabled: false, batchEnabled: false, formEnabled: false }).read(id);
+    return { name: saved.action.body.fields.name, bytes: await Promise.all(saved.files.map(part => part.file.text())),
+      inventory: await inspectBatch() };
+  }, result.id);
+  expect(recovered).toMatchObject({ name: "Frozen owner", bytes: ["full 1", "full 2"],
+    inventory: { entries: [{ operationId: result.id, state: "linked", dispatchAllowed: false }] } });
+});
 
 test("whole photo batch commits once with strict durability and exact files survive reload with writers disabled", async ({ page, context }) => {
   await fixture(page, context);

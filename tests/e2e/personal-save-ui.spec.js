@@ -506,6 +506,40 @@ async function synchronize(page, condition) {
   }), { timeout: 20000 }).toBe(true);
 }
 
+for (const type of ["item", "container"]) test(`actual ${type} editor and reload preserve a complete confirmed causal photo reference`, async ({ page, context }) => {
+  test.setTimeout(90000);
+  const payload = initialPayload(), photo = { id: "ui-photo", photoId: "ui-photo", assetId: "b3321f20-f66d-4394-a583-f905a645fa02",
+    listId: "list-a", status: "synced", url: `${origin}/photos/ui-photo/file`, thumbUrl: `${origin}/photos/ui-photo/thumb`,
+    fileName: "Сумка.png", type: "image/png", size: 100, width: 1, height: 1 };
+  payload.containers["ui-bag"] = { id: "ui-bag", name: "Сумка со связью фото", weight: 0, volume: 0, color: "",
+    location: "Велосипед", note: "", categories: [], category: "", nestable: false, photos: type === "container" ? [photo] : [] };
+  payload.layouts["layout-a"].rootContainerIds = ["ui-bag"];
+  payload.layouts["layout-a"].arrangement.rootContainerIds = ["ui-bag"];
+  payload.layouts["layout-a"].arrangement.containers["ui-bag"] = { parentId: null, childIds: [], itemIds: [], order: [] };
+  if (type === "item") {
+    payload.items["ui-item"] = { id: "ui-item", name: "Вещь со связью фото", quantity: 1, weight: 0, color: "",
+      location: "Велосипед", note: "", categories: [], category: "", photos: [photo] };
+    payload.layouts["layout-a"].arrangement.items["ui-item"] = "ui-bag";
+    payload.layouts["layout-a"].arrangement.containers["ui-bag"].itemIds = ["ui-item"];
+    payload.layouts["layout-a"].arrangement.containers["ui-bag"].order = [{ type: "item", id: "ui-item" }];
+  }
+  const f = await setup(page, context, { payload });
+  const collection = type === "item" ? "items" : "containers", id = type === "item" ? "ui-item" : "ui-bag";
+  const retained = () => page.evaluate(({ collection, id }) => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a"))[collection][id].photos,
+    { collection, id });
+  await expect.poll(retained).toEqual([photo]);
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  if (type === "item") await page.locator('#itemsView').getByText("Вещь со связью фото", { exact: true }).click();
+  else await page.locator('#bagsView [data-root-card="ui-bag"] [data-root-title]').click();
+  const dialog = page.locator(type === "item" ? "#itemDialog" : "#rootContainerDialog");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await reloadApp(page);
+  await expect.poll(retained).toEqual([photo]);
+  expect(f.errors).toEqual([]);
+});
+
 test("actual edit/delete dialogs, nested placement and confirmed compaction keep deleted entities absent", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);
