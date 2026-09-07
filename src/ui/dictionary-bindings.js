@@ -21,6 +21,7 @@ export function bindDictionaryControls(type, {
   markEdited,
   nowIso,
   onRenamed = () => {},
+  prepareDictionaryMutation = () => null,
   openConfirmDialog,
   removeCustomDictionaryValue,
   renameCustomDictionaryValue,
@@ -38,6 +39,12 @@ export function bindDictionaryControls(type, {
     const value = input.value.trim();
     if (!value || dictionaryOptionsForOwner(type, owner).includes(value)) return;
     if (!requireUsageCapacity(type === "location" ? "locations" : "categories")) return;
+    const prepared = prepareDictionaryMutation({ type, action: "add", value }, owner);
+    if (prepared === false) return;
+    if (prepared) {
+      if (prepared()) { setEditingDictionaryEntry(null); input.value = ""; render(); }
+      return;
+    }
     addCustomDictionaryValue(owner, type, value);
     setEditingDictionaryEntry(null);
     input.value = "";
@@ -60,6 +67,7 @@ export function bindDictionaryControls(type, {
       const oldValue = button.dataset[`save${capitalize(type)}`];
       const editInput = button.closest(".dictionary-chip")?.querySelector(`[data-dictionary-edit-input="${type}"]`);
       renameDictionaryEntry(type, oldValue, editInput?.value || "", {
+        prepareDictionaryMutation,
         addCustomDictionaryValue,
         containerCategories,
         dictionaryEditScope,
@@ -85,6 +93,7 @@ export function bindDictionaryControls(type, {
       if (event.key === "Enter") {
         event.preventDefault();
         renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value, {
+          prepareDictionaryMutation,
           containerCategories,
           dictionaryEditScope,
           dictionaryOptionsForOwner,
@@ -120,6 +129,8 @@ export function bindDictionaryControls(type, {
       });
       const affectedCount = usage.items.length + usage.containers.length;
       const fallback = dictionaryValues.find((item) => item !== value) || "";
+      const prepared = prepareDictionaryMutation({ type, action: "delete", value, fallback }, owner);
+      if (prepared === false) return;
       const title = type === "location"
         ? localText("Delete storage place?", "Удалить место хранения?")
         : localText("Delete category?", "Удалить категорию?");
@@ -142,6 +153,7 @@ export function bindDictionaryControls(type, {
         okText: localText("Delete", "Удалить"),
         tone: affectedCount ? "danger" : "safe",
         onConfirm: () => {
+          if (prepared) { if (prepared()) { setEditingDictionaryEntry(null); render(); } return; }
           const changedAt = nowIso();
           removeCustomDictionaryValue(owner, type, value);
           scope.items.forEach((item) => {
@@ -181,6 +193,7 @@ export function bindDictionaryControls(type, {
 }
 
 export function renameDictionaryEntry(type, oldValue, rawNewValue, {
+  prepareDictionaryMutation = () => null,
   containerCategories = () => [],
   dictionaryEditScope,
   dictionaryOptionsForOwner,
@@ -206,6 +219,12 @@ export function renameDictionaryEntry(type, oldValue, rawNewValue, {
   }
   if (dictionaryOptionsForOwner(type, owner).includes(newValue)) {
     showToast(localText("This value already exists.", "Такое значение уже есть."), "warning");
+    return;
+  }
+  const prepared = prepareDictionaryMutation({ type, action: "rename", value: oldValue, nextValue: newValue }, owner);
+  if (prepared === false) return;
+  if (prepared) {
+    if (prepared()) { onRenamed(type, oldValue, newValue); setEditingDictionaryEntry(null); render(); }
     return;
   }
   const changedAt = nowIso();

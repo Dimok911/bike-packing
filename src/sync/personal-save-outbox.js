@@ -454,6 +454,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         force: false, forceOverwrite: false, fullReplace: false };
       delete body.causal;
       delete body.userCopy; // A comparison is a new action, not another execution of the old copy manifest.
+      delete body.userDictionary;
       if (body.userDeletion) {
         body.userDeletion = retainedPersonalDeletionIntent(body.userDeletion, payload);
         if (!body.userDeletion) delete body.userDeletion;
@@ -551,6 +552,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // No force/delete override from a previous full save is inherited.
       delete action.body.userDeletion;
       delete action.body.userCopy;
+      delete action.body.userDictionary;
       const mergeBase = { payload: remote.payload, stateRevision: remote.stateRevision };
       const reconciliation = { version: 1, settled: settled.outcomes };
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };

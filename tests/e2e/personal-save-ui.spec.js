@@ -690,6 +690,66 @@ test("quota during layout deletion keeps its edit window open and exports the co
   expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
 });
 
+async function renameDictionaryInUi(page, type, from, to) {
+  await page.locator(`[data-edit-${type}="${from}"]`).click();
+  await page.locator(`[data-dictionary-edit-input="${type}"]`).fill(to);
+  await submitForm(page, `[data-save-${type}="${from}"]`, `[data-dictionary-edit-input="${type}"]`);
+}
+
+test("dictionary UI freezes add rename delete and every linked owner through lost ACK and reload", async ({ page, context }) => {
+  test.setTimeout(150000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка справочника");
+  await createItemInContainer(page, bag, "Вещь справочника");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const itemId = Object.keys(f.payload.items)[0], bagId = Object.keys(f.payload.containers)[0];
+  expect(f.payload.items[itemId].location).toBe("Велосипед"); expect(f.payload.containers[bagId].location).toBe("Велосипед");
+  await page.locator('[data-view="settings"]').click();
+  await page.locator("#locationInput").fill("Лагерь"); await submitForm(page, "#locationAdd", "#locationInput");
+  await synchronize(page, () => f.payload.locations.includes("Лагерь"));
+  expect(f.posts.at(-1).body.userDictionary.action).toBe("add");
+  const before = f.posts.length; f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await renameDictionaryInUi(page, "location", "Велосипед", "Байк");
+  await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 1); const rename = f.posts.at(-1);
+  expect(rename.body.userDictionary.items).toEqual([itemId]); expect(rename.body.userDictionary.containers).toEqual([bagId]);
+  expect(rename.body.payload.items[itemId].location).toBe("Байк"); expect(rename.body.payload.containers[bagId].location).toBe("Байк");
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => f.payload.locations.includes("Байк"));
+  expect(f.posts.filter(post => post.operationId === rename.operationId)).toHaveLength(1);
+  await page.locator('[data-view="settings"]').click(); await page.locator('[data-remove-location="Байк"]').click();
+  await expect(page.locator("#confirmDialog")).toContainText("Лагерь");
+  await page.locator("#confirmOkBtn").click(); await synchronize(page, () => !f.payload.locations.includes("Байк"));
+  expect(f.payload.items[itemId].location).toBe("Лагерь"); expect(f.payload.containers[bagId].location).toBe("Лагерь");
+  await page.locator("#categoryInput").fill("Питание"); await submitForm(page, "#categoryAdd", "#categoryInput");
+  await synchronize(page, () => f.payload.categories.includes("Питание"));
+  await renameDictionaryInUi(page, "category", "Питание", "Еда"); await synchronize(page, () => f.payload.categories.includes("Еда"));
+  await page.locator('[data-remove-category="Еда"]').click(); await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => !f.payload.categories.includes("Еда")); await reloadApp(page);
+  expect(f.payload.items[itemId].location).toBe("Лагерь"); expect(f.errors).toEqual([]);
+});
+
+test("quota during dictionary deletion preserves the entire linked-record draft and old queue", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка перед удалением места");
+  await createItemInContainer(page, bag, "Вещь перед удалением места");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  await page.locator('[data-view="settings"]').click(); await page.locator('[data-remove-location="Велосипед"]').click();
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  const copy = await downloadRecovery(page), draft = copy.unconfirmedMemoryDraft;
+  expect(draft.locations).toEqual([]); expect(Object.values(draft.items)[0].location).toBe(""); expect(Object.values(draft.containers)[0].location).toBe("");
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.posts.length).toBe(postsBefore); expect(f.payload.locations).toContain("Велосипед"); expect(f.errors).toEqual([]);
+});
+
 test("oversized layout notes stop before publication and remain complete in the recovery copy", async ({ page, context }) => {
   test.setTimeout(180000);
   const f = await setup(page, context);

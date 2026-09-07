@@ -377,7 +377,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
-    preparePersonalLayoutDeletionAction, saveStoredActiveLayoutChoice,
+    preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
@@ -5101,6 +5101,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
     cycleDictionarySortMode(type);
   });
   bindDictionaryControls(type, {
+    prepareDictionaryMutation: preparePersonalDictionaryAction,
     activeDictionaryOwner,
     addCustomDictionaryValue,
     capitalize,
@@ -5130,6 +5131,7 @@ function bindDictionary(type, owner = activeDictionaryOwner()) {
 
 function renameDictionaryEntry(type, oldValue, rawNewValue, owner = activeDictionaryOwner()) {
   return renameDictionaryEntryValue(type, oldValue, rawNewValue, {
+    prepareDictionaryMutation: preparePersonalDictionaryAction,
     dictionaryEditScope,
     dictionaryOptionsForOwner,
     containerCategories,

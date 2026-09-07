@@ -733,6 +733,7 @@ import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/ca
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
 import { personalCopyIntent, preparePersonalCopyBatch } from "./src/sync/personal-copy-intent.js";
 import { preparePersonalLayoutDeletion } from "./src/sync/personal-layout-deletion.js";
+import { preparePersonalDictionaryMutation } from "./src/sync/personal-dictionary-mutation.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -1867,7 +1868,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
-  preparePersonalLayoutDeletionAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
+  preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
@@ -2516,6 +2517,35 @@ function preparePersonalLayoutDeletionAction(layoutId) {
   };
 }
 
+function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner()) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  if (owner !== state) return false;
+  request = JSON.parse(JSON.stringify(request));
+  const initial = JSON.stringify(personalSaveContext()), scope = dictionaryEditScope(owner);
+  let prepared, used = false;
+  try {
+    prepared = preparePersonalDictionaryMutation(state, { ...request, values: dictionaryOptionsForOwner(request.type, owner),
+      itemIds: scope.items.map(record => record.id), containerIds: scope.containers.map(record => record.id) }, { changedAt: nowIso(), markEdited });
+  } catch (error) { showToast(error.message, "error"); return false; }
+  return () => {
+    if (used || initial !== JSON.stringify(personalSaveContext()) || owner !== state || activeDictionaryOwner() !== owner) {
+      showToast(localText("The dictionary changed. Confirm the action again.", "Справочник изменился. Подтвердите действие заново."), "error");
+      return false;
+    }
+    personalSaveRecovery.assertRunning();
+    if (request.action === "add" && !requireUsageCapacity(request.type === "location" ? "locations" : "categories")) return false;
+    used = true;
+    for (const key of ["items", "containers", "locations", "categories", "customLocations", "customCategories", "locationDictionary", "categoryDictionary"]) {
+      if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+      else delete state[key];
+    }
+    saveState({ personalMutation: prepared.intent });
+    return true;
+  };
+}
+
 function personalSaveOutboxForScope({ reload = false } = {}) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")) return null;
   personalSaveRecovery.assertRunning();
@@ -2542,7 +2572,8 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     historyAction: currentHistoryActionContext(), nowIso, syncDevice, syncMeta,
     serializeState: () => cloneStateForSync(snapshot, { forSync: true })
   });
-  if (personalMutation?.type === "copy") body.userCopy = personalCopyIntent(personalMutation);
+  if (personalMutation?.type === "dictionary") body.userDictionary = JSON.parse(JSON.stringify(personalMutation));
+  else if (personalMutation?.type === "copy") body.userCopy = personalCopyIntent(personalMutation);
   else if (personalMutation) body.userDeletion = personalDeletionIntent(personalMutation);
   if (!outbox && !currentPackingListId && personalInitialSaveOutbox
     && String(currentUser?.id || "") === personalInitialSaveOutbox.binding.actorId
