@@ -35,3 +35,24 @@ test("adopting a newer current snapshot finishes without dispatching or applying
   onAdopted(value) { assert.equal(value.adoptedBaseline, true); calls.push("current-ui"); return "adopted"; } });
   assert.equal(result, "adopted"); assert.deepEqual(calls, ["historical-stale", "atomic-adoption", "current-ui"]);
 });
+
+test("each immutable successor is checked before dispatch, including a freshly reconciled one", async () => {
+  const calls = [];
+  let candidate = "old";
+  await assert.rejects(drainPersonalSaveWithReconciliation({
+    beforeDrain() { calls.push(`check:${candidate}`); if (candidate === "new") throw Error("file mutation stopped"); },
+    outbox: {
+      async drain() { calls.push("drain"); throw { isOperationReceiptError: true }; },
+      async reconcile() { calls.push("reconcile"); candidate = "new"; return {}; }
+    }, onReconciled() { calls.push("ui"); }
+  }), /file mutation stopped/);
+  assert.deepEqual(calls, ["check:old", "drain", "reconcile", "ui", "check:new"]);
+});
+
+test("failed or asynchronous preflight cannot dispatch or reconcile", async () => {
+  for (const beforeDrain of [() => { throw Error("blocked"); }, async () => {}]) {
+    await assert.rejects(drainPersonalSaveWithReconciliation({ beforeDrain,
+      outbox: { drain() { assert.fail("must not dispatch"); }, reconcile() { assert.fail("must not reconcile"); } }
+    }));
+  }
+});

@@ -1,8 +1,13 @@
 // Reconciliation is not a transport retry. Every new action is published by
 // the outbox only after exact old receipts and a fresh three-way comparison.
 export async function drainPersonalSaveWithReconciliation({ outbox, queue, getContext,
-  readRemote, makeSnapshot, makeBaselineMeta, resolveConflicts, resolveRejectedRestore, onReconciled, onAdopted, onConfirmed, maxReconciliations = 2 }) {
+  readRemote, makeSnapshot, makeBaselineMeta, resolveConflicts, resolveRejectedRestore, onReconciled, onAdopted, onConfirmed,
+  beforeDrain = () => {}, maxReconciliations = 2 }) {
   for (let attempt = 0; ; attempt++) {
+    // Revalidate the current durable chain after reconciliation as well. A
+    // freshly merged successor must not inherit permission from its old body.
+    const checked = beforeDrain();
+    if (checked?.then) throw Error("Dispatch preflight must be synchronous");
     try { return await outbox.drain({ queue, getContext, onConfirmed }); }
     catch (error) {
       if (attempt >= maxReconciliations || !error.isOperationReceiptError || error.isPersonalSaveBlocked) throw error;

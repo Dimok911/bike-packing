@@ -590,7 +590,7 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   return { f, before, collection, prefix, button, dialog };
 }
 
-for (const type of ["container", "item"]) for (const created of [false, true]) test(`ordinary photo form ${type} ${created ? "create" : "edit"} saves fields and two native files once`, async ({ page, context }) => {
+for (const type of ["container", "item"]) for (const created of [false, true]) test(`ordinary photo form ${type} ${created ? "create" : "edit"} saves files once and follows with a field edit${created ? " after lost ACK" : ""}`, async ({ page, context }) => {
   test.setTimeout(120000);
   const { f, before, collection, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, created });
   await submitForm(page, button);
@@ -606,6 +606,32 @@ for (const type of ["container", "item"]) for (const created of [false, true]) t
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
   await reloadApp(page);
   expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
+  const photos = structuredClone(f.payload[collection][action.body.entityId].photos);
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+  const prefix = type === "item" ? "item" : "rootContainer";
+  await page.locator(`#${prefix}Name`).fill("Изменены только поля");
+  await page.locator(`#${prefix}Weight`).fill("123");
+  if (created) { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  await submitForm(page, button, `#${prefix}Weight`); await expect(dialog).not.toBeVisible();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 2);
+  const fieldAction = structuredClone(f.posts.at(-1));
+  expect(fieldAction.kind).toBe("list.update"); expect(fieldAction.operationId).not.toBe(action.operationId);
+  expect(fieldAction.body.payload[collection][action.body.entityId].photos).toEqual(photos);
+  if (created) {
+    await expect.poll(() => f.injectedFailure).toBe(true);
+    await reloadApp(page);
+    expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+    f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  }
+  await synchronize(page, () => f.payload[collection][action.body.entityId]?.name === "Изменены только поля");
+  expect(f.payload[collection][action.body.entityId].weight).toBe(123);
+  expect(f.payload[collection][action.body.entityId].photos).toEqual(photos);
+  expect(f.posts.at(-1)).toEqual(fieldAction); expect(f.stagePosts).toHaveLength(2);
+  await reloadApp(page);
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
   expect(f.errors).toEqual([]);
 });
 

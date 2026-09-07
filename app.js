@@ -740,6 +740,7 @@ import { createPersonalPhotoFormSession } from "./src/sync/personal-photo-form-s
 import { drainPersonalPhotoForm } from "./src/sync/personal-photo-form-drain.js";
 import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js";
 import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
+import { preservesConfirmedPersonalPhotoChain } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -8698,20 +8699,26 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       && (isSuspiciousEmptyPackingState(state) && !knownEmptyEdit || blockDestructiveLocalSave())) {
       throw new Error("Неполная локальная версия не отправлена на сервер.");
     }
-    // Until the file/owner adapter exists, even a deletion or reordering of
-    // existing photos cannot masquerade as a completed database-only action.
+    // Plain field/placement edits may retain confirmed photos exactly. Every
+    // queued step is checked, so an intermediate file mutation cannot hide
+    // behind a final snapshot which happens to restore the old references.
     const containsPhotos = value => value && typeof value === "object" && Object.entries(value)
       .some(([key, child]) => key === "photos" && Array.isArray(child) && child.length > 0 || containsPhotos(child));
-    if (containsPhotos(loadBaseState()) || outbox.list().some(record => containsPhotos(record.action.body.payload))) {
-      throw new Error("Сохранение с фотографиями ждёт подключения составных действий с файлами. Локальные данные сохранены.");
-    }
+    const beforeDrain = () => {
+      const records = outbox.list();
+      if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(record.action.body.payload)))
+        && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
+          operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId }))) {
+        throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");
+      }
+    };
     const getContext = () => {
       personalSaveRecovery.assertRunning();
       return personalSaveContext();
     };
     const queue = createListOperationQueue({ transport: experimentTransport, getContext });
     updateSyncUi("Отправляю сохранённые действия и проверяю подтверждения…");
-    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext,
+    await drainPersonalSaveWithReconciliation({ outbox, queue, getContext, beforeDrain,
       async readRemote() {
         const initial = personalSaveContext();
         const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(outbox.binding.listId)}/state`, {
