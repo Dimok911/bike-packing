@@ -77,7 +77,12 @@ release directory is also retained if a post-activation rollback was needed;
 never delete deployment directories using an unvalidated wildcard.
 
 The script retries transient upload and download failures for each individual
-file. Directory renames are deliberately single-attempt operations because an
+file. Artifact transfers run in batches of 64 with at most four concurrent curl
+connections, which curl can reuse within a batch. Every transfer repeats the
+TLS, public-key pin, passive-mode and hostname settings because `--next` resets
+local curl options. `--fail-early` makes any failed transfer fail the batch;
+downloaded batches must pass every SHA-256 comparison before continuing.
+Directory renames are deliberately single-attempt operations because an
 ambiguous retry after a connection reset could reverse or obscure the actual
 activation state.
 

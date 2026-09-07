@@ -38,6 +38,16 @@ function Curl-Line([string]$name, [string]$value) {
   return ('{0} = "{1}"' -f $name, (Escape-CurlConfigValue $value))
 }
 
+function Get-FtpsSecurityLines {
+  @(
+    "ssl-reqd"
+    "insecure"
+    "ftp-pasv"
+    (Curl-Line "pinnedpubkey" $ftpPinnedPublicKey)
+    (Curl-Line "resolve" "${ftpCanonicalHost}:${ftpPort}:${ftpFallbackIp}")
+  )
+}
+
 function Invoke-CurlConfig {
   param(
     [Parameter(Mandatory = $true)]
@@ -48,13 +58,7 @@ function Invoke-CurlConfig {
   )
   $effectiveLines = @($Lines)
   if ($Ftps) {
-    $effectiveLines = @(
-      "ssl-reqd"
-      "insecure"
-      "ftp-pasv"
-      (Curl-Line "pinnedpubkey" $ftpPinnedPublicKey)
-      (Curl-Line "resolve" "${ftpCanonicalHost}:${ftpPort}:${ftpFallbackIp}")
-    ) + $effectiveLines
+    $effectiveLines = @(Get-FtpsSecurityLines) + $effectiveLines
   }
   for ($attempt = 1; $attempt -le $Attempts; $attempt += 1) {
     (($effectiveLines -join "`n") + "`n") | & $curlPath --config -
@@ -153,6 +157,58 @@ function Get-RelativeArtifactPath([System.IO.FileInfo]$file) {
   return $file.FullName.Substring($ArtifactRoot.Length + 1).Replace("\", "/")
 }
 
+function Transfer-FtpArtifact {
+  param(
+    [string]$RemoteRoot,
+    [string]$DownloadRoot = "",
+    [System.IO.FileInfo[]]$Files = $artifactFiles
+  )
+  $download = -not [string]::IsNullOrWhiteSpace($DownloadRoot)
+  for ($offset = 0; $offset -lt $Files.Count; $offset += 64) {
+    $batch = @($Files | Select-Object -Skip $offset -First 64)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.AddRange([string[]]@("fail-early", "parallel", (Curl-Line "parallel-max" "4")))
+    foreach ($file in $batch) {
+      if ($file -ne $batch[0]) { $lines.Add("next") }
+      # --next resets local options: repeat the complete security contract per file.
+      $lines.AddRange([string[]]@(Get-FtpsSecurityLines))
+      $lines.AddRange([string[]]@(
+        "silent", "show-error", "fail", "globoff"
+        (Curl-Line "connect-timeout" "15")
+        (Curl-Line "max-time" "180")
+        (Curl-Line "retry" "4")
+        "retry-all-errors"
+        (Curl-Line "retry-delay" "2")
+        (Curl-Line "user" $credential)
+        (Curl-Line "url" (Get-FtpUrl "$RemoteRoot/$(Get-RelativeArtifactPath $file)"))
+      ))
+      if ($download) {
+        $destination = Join-Path $DownloadRoot (Get-RelativeArtifactPath $file)
+        $parent = Split-Path -Path $destination -Parent
+        if (-not (Test-Path -LiteralPath $parent)) {
+          New-Item -Path $parent -ItemType Directory -Force | Out-Null
+        }
+        $lines.Add((Curl-Line "output" $destination))
+      } else {
+        $lines.Add("ftp-create-dirs")
+        $lines.Add((Curl-Line "upload-file" $file.FullName))
+      }
+    }
+    # Transfers reuse up to four connections. Retries apply to individual files;
+    # fail-early prevents an earlier failure being hidden by a later success.
+    $exitCode = Invoke-CurlConfig -Lines $lines.ToArray()
+    if ($exitCode -ne 0) { throw "FTP artifact transfer failed at batch offset $offset." }
+    if ($download) {
+      foreach ($file in $batch) {
+        $relative = Get-RelativeArtifactPath $file
+        Assert-FilesEqual $file.FullName (Join-Path $DownloadRoot $relative) "$RemoteRoot/$relative"
+      }
+    }
+    $phase = if ($download) { "Verified" } else { "Uploaded" }
+    Write-Host "$phase $($offset + $batch.Count)/$($Files.Count) files: $RemoteRoot"
+  }
+}
+
 function Receive-HttpsFile([string]$url, [string]$localPath, [int]$attempts = 5) {
   $parent = Split-Path -Path $localPath -Parent
   if (-not (Test-Path -LiteralPath $parent)) {
@@ -229,16 +285,8 @@ $stageActivated = $false
 $rollbackCompleted = $false
 
 try {
-  foreach ($file in $artifactFiles) {
-    $relative = Get-RelativeArtifactPath $file
-    Send-FtpFile $file.FullName "$stageRemotePath/$relative"
-  }
-  foreach ($file in $artifactFiles) {
-    $relative = Get-RelativeArtifactPath $file
-    $downloadPath = Join-Path $temporaryRoot ("stage-ftp\" + $relative.Replace("/", "\"))
-    Receive-FtpFile "$stageRemotePath/$relative" $downloadPath
-    Assert-FilesEqual $file.FullName $downloadPath "staging FTP/$relative"
-  }
+  Transfer-FtpArtifact -RemoteRoot $stageRemotePath
+  Transfer-FtpArtifact -RemoteRoot $stageRemotePath -DownloadRoot (Join-Path $temporaryRoot "stage-ftp")
   Assert-PublicBuild $stagePublicUrl (Join-Path $temporaryRoot "stage-https") "$safeVersion-$timestamp"
 
   foreach ($relative in @("index.html", "app.js", "styles.css", "sw.js")) {
@@ -257,12 +305,7 @@ try {
     throw "FTP activation failed; the previous production directory was restored."
   }
 
-  foreach ($file in $artifactFiles) {
-    $relative = Get-RelativeArtifactPath $file
-    $downloadPath = Join-Path $temporaryRoot ("production-ftp\" + $relative.Replace("/", "\"))
-    Receive-FtpFile "$productionRemotePath/$relative" $downloadPath
-    Assert-FilesEqual $file.FullName $downloadPath "production FTP/$relative"
-  }
+  Transfer-FtpArtifact -RemoteRoot $productionRemotePath -DownloadRoot (Join-Path $temporaryRoot "production-ftp")
   Assert-PublicBuild $PublicUrl (Join-Path $temporaryRoot "production-https") "$safeVersion-$timestamp"
 }
 catch {
