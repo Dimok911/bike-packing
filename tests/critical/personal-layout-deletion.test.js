@@ -72,6 +72,8 @@ test("actual layout adapter records replacement before preference writes and kee
   const recovered = f.makeOutbox().recoverSnapshot(); assert.equal(Object.keys(recovered.layouts).length, 1); assert.ok(!recovered.layouts.a);
   assert.equal(confirm(), false);
   const stale = make(), attempt = stale.prepare("a"); stale.change(); assert.equal(attempt(), false); assert.ok(stale.state.layouts.a);
+  const switched = make(), previous = switched.prepare("a"); switched.state.activeLayoutId = "other";
+  assert.equal(previous(), false); assert.ok(switched.state.layouts.a); assert.equal(switched.values.size, 0);
   const quota = make(), failed = quota.prepare("a"); quota.storage.setItem = () => { throw Error("quota"); };
   assert.throws(failed, { code: "quota" }); assert.deepEqual(quota.events, []); assert.equal(quota.values.size, 0);
   assert.ok(!quota.state.layouts.a); assert.equal(Object.keys(quota.state.layouts).length, 1); assert.ok(quota.state.items.item);

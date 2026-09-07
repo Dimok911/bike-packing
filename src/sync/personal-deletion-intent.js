@@ -1,6 +1,7 @@
 import { deleteItemFromState } from "../state/item-ops.js";
 import { deleteRootContainerFromState } from "../state/container-ops.js";
 import { removeItemFromLayoutArrangement, touchLayoutsReferencingItemInState } from "../state/layout-ops.js";
+import { reducePersonalPlacementReference } from "./personal-placement-mutation.js";
 
 export function personalDeletionIntent(value) {
   if (value?.type === "batch") {
@@ -67,6 +68,10 @@ export function personalDeletionReference(base, records) {
   const reference = JSON.parse(JSON.stringify(base));
   let declared = false;
   for (const record of records) {
+    if (record.action?.body?.userPlacement) {
+      reducePersonalPlacementReference(reference, record.action.body.userPlacement, record.action.body.payload);
+      declared = true;
+    }
     const value = record.action?.body?.userDeletion;
     if (!value) continue;
     const intent = personalDeletionIntent(value);

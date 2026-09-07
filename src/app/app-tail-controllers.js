@@ -377,7 +377,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
-    preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, saveStoredActiveLayoutChoice,
+    preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
@@ -1083,6 +1083,8 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
     `Current layout: ${confirmLayoutNameHtml(layoutName)}`,
     `Текущая укладка: ${confirmLayoutNameHtml(layoutName)}`
   );
+  const prepared = preparePersonalPlacementAction({ layoutId: layout.id, action: "remove-container", ids: [containerId] });
+  if (prepared === false) return;
   const nestedSubject = localText(
     `This nested pouch will be deleted forever from the current layout ${layoutName}.`,
     `Этот вложенный пакет будет удалён навсегда из текущей укладки ${layoutName}.`
@@ -1128,10 +1130,15 @@ async function confirmRemoveEditingContainerFromActiveLayout(event) {
     okText: remainsInCatalog ? localText("Remove", "Убрать") : t("buttons.deleteForever"),
     hideClose: true
   });
-  if (confirmed) removeContainerFromLayoutWithAnimation(containerId);
+  if (confirmed) removeContainerFromLayoutWithAnimation(containerId, prepared);
 }
 
-function removeContainerFromLayoutWithAnimation(containerId) {
+function removeContainerFromLayoutWithAnimation(containerId, prepared = preparePersonalPlacementAction({ layoutId: getPublishedEditLayoutId(), action: "remove-container", ids: [containerId] })) {
+  if (prepared === false) return;
+  if (prepared) {
+    if (!prepared()) return false;
+    refs.rootContainerDialog?.close("cancel"); render(); return true;
+  }
   const element = findContainerElementInPacking(containerId);
   refs.rootContainerDialog?.close("cancel");
   if (!element) {
@@ -4121,6 +4128,9 @@ function startInlineItemTitleEdit(itemId) {
 function togglePacked(itemId) {
   if (!state.items[itemId]) return;
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId: state.activeLayoutId, action: "set-packed", ids: [itemId], packed: !state.packedItems?.[itemId] });
+  if (prepared === false) return;
+  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
   capturePackingScroll();
   const changedAt = nowIso();
   state.packedItems = state.packedItems || {};
@@ -4134,11 +4144,14 @@ function togglePacked(itemId) {
 function unpackAllItems() {
   if (!Object.values(state.packedItems || {}).some(Boolean)) return;
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId: state.activeLayoutId, action: "unpack-all", ids: Object.keys(state.packedItems).filter(id => state.packedItems[id]) });
+  if (prepared === false) return;
   openConfirmDialog({
     title: localText("Mark all items as unpacked?", "Разобрать все вещи?"),
     text: localText("All packed marks will be removed. The items and layout will stay in place.", "Все отметки «собрано» будут сняты. Сами вещи и укладка останутся на месте."),
     okText: localText("Mark as unpacked", "Разобрать"),
     onConfirm: () => {
+      if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
       capturePackingScroll();
       const changedAt = nowIso();
       Object.keys(state.packedItems || {}).forEach((itemId) => touchItem(itemId, changedAt));
@@ -5218,7 +5231,9 @@ function createGroupFromItems(itemId, targetItemId) {
   render();
 }
 
-function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId) {
+function removeItemFromActiveLayout(itemId, layoutId = state.activeLayoutId, prepared = preparePersonalPlacementAction({ layoutId, action: "remove-item", ids: [itemId] })) {
+  if (prepared === false) return false;
+  if (prepared) { capturePackingScroll(); if (!prepared()) return false; render(); return true; }
   if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
@@ -5300,6 +5315,8 @@ function confirmRemoveItemFromActiveLayout(itemId) {
   const layout = state.layouts?.[state.activeLayoutId];
   if (!item || !getItemContainerIdInLayout(layout, itemId)) return;
   if (warnLockedLayoutMutation(state.activeLayoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId: layout.id, action: "remove-item", ids: [itemId] });
+  if (prepared === false) return;
   openConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
     text: t("items.removeFromLayoutText", { name: item.name }),
@@ -5307,7 +5324,7 @@ function confirmRemoveItemFromActiveLayout(itemId) {
     okText: t("items.removeFromLayoutOk"),
     tone: "danger",
     hideClose: true,
-    onConfirm: () => removeItemFromActiveLayout(itemId)
+    onConfirm: () => removeItemFromActiveLayout(itemId, layout.id, prepared)
   });
 }
 
@@ -5319,6 +5336,8 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
   const layout = state.layouts?.[layoutId];
   if (!item || !layout || !getItemContainerIdInLayout(layout, itemId)) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId, action: "remove-item", ids: [itemId] });
+  if (prepared === false) return;
   const confirmed = await askConfirmDialog({
     title: t("items.removeFromLayoutTitle"),
     text: t("items.removeFromLayoutText", { name: item.name }),
@@ -5328,6 +5347,10 @@ async function confirmRemoveEditingItemFromActiveLayout(event) {
     hideClose: true
   });
   if (!confirmed) return;
+  if (prepared) {
+    if (removeItemFromActiveLayout(itemId, layoutId, prepared)) refs.dialog?.close("remove-from-layout");
+    return;
+  }
   refs.dialog?.close("remove-from-layout");
   removeItemFromActiveLayout(itemId, layoutId);
 }
@@ -5645,7 +5668,9 @@ function deleteRootContainer(containerId, personalDelete = preparePersonalCatalo
   return true;
 }
 
-function removeRootContainerFromActiveLayout(containerId) {
+function removeRootContainerFromActiveLayout(containerId, prepared = preparePersonalPlacementAction({ layoutId: getPublishedEditLayoutId(), action: "remove-container", ids: [containerId] })) {
+  if (prepared === false) return;
+  if (prepared) { if (!prepared()) return false; refs.rootContainerDialog?.close("cancel"); render(); return true; }
   const layoutId = getPublishedEditLayoutId();
   const layout = state.layouts[layoutId];
   const container = state.containers[containerId];
@@ -9925,7 +9950,7 @@ function applyRootContainerDimensions(container, dimensions = readRootContainerD
 }
 
   return {
-    openAddToContainerDialog, openNewItemForAddTarget, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
+    warnLockedLayoutMutation, openAddToContainerDialog, openNewItemForAddTarget, resolveEditableLayoutIdForContainer, renderAddToContainerResults, matchesAddToContainerSearch,
     clearAddToContainerSearch, togglePickerListPhotos, openLayoutRootDialog, openCreateRootContainerForCurrentLayout, renderLayoutRootResults, matchesLayoutRootSearch,
     clearLayoutRootSearch, updateRootContainerPlacementButton, updateRootContainerRemoveFromLayoutButton, updateRootContainerDeleteForeverButton,
     canRemoveContainerFromActiveLayout, confirmRemoveEditingContainerFromActiveLayout, removeContainerFromLayoutWithAnimation, findContainerElementInPacking,

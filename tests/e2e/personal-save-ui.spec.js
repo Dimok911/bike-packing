@@ -690,6 +690,80 @@ test("quota during layout deletion keeps its edit window open and exports the co
   expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
 });
 
+test("packing marks quantity and both item-removal buttons keep frozen actions through lost ACK", async ({ page, context }) => {
+  test.setTimeout(150000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка отметок");
+  const first = await createItemInContainer(page, bag, "Первая для отметок");
+  await createItemInContainer(page, bag, "Вторая для отметок");
+  await first.locator(".item-title-hitarea").click(); await page.locator("#itemQuantity").fill("3");
+  await submitForm(page, "#saveItemBtn", "#itemQuantity");
+  await synchronize(page, () => Object.values(f.payload.layouts["layout-a"].arrangement.itemQuantities).includes(3));
+  const firstId = Object.values(f.payload.items).find(item => item.name === "Первая для отметок").id;
+  const ids = Object.keys(f.payload.items), secondId = ids.find(id => id !== firstId);
+  await page.locator("#menuBtn").click(); await page.locator("#collectionMenuBtn").click();
+  for (const id of ids) {
+    await page.locator(`[data-toggle-packed="${id}"]`).click();
+    expect(f.errors).toEqual([]);
+    await expect(page.locator(`[data-toggle-packed="${id}"]`)).toHaveAttribute("title", "Собрано");
+  }
+  await synchronize(page, () => Object.keys(f.payload.layouts["layout-a"].arrangement.packedItems).length === 2);
+  const before = f.posts.length; f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await page.locator("#unpackAllBtn").click(); await page.locator("#confirmOkBtn").click(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true); expect(f.posts.length).toBe(before + 1);
+  const unpack = f.posts.at(-1); expect(unpack.body.userPlacement.packed).toBe(false);
+  expect(unpack.body.userPlacement.ids.sort()).toEqual(ids.sort()); expect(unpack.body.payload.layouts["layout-a"].arrangement.packedItems).toEqual({});
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => Object.keys(f.payload.layouts["layout-a"].arrangement.packedItems).length === 0);
+  expect(f.posts.filter(post => post.operationId === unpack.operationId)).toHaveLength(1);
+  expect(f.payload.layouts["layout-a"].arrangement.itemQuantities[firstId]).toBe(3);
+  await page.locator(`[data-item-id="${firstId}"] .item-title-hitarea`).click(); await page.locator("#itemRemoveFromLayoutBtn").click();
+  await page.locator("#confirmOkBtn").click(); await synchronize(page, () => !f.payload.layouts["layout-a"].arrangement.items[firstId]);
+  expect(f.payload.items[firstId]).toBeTruthy(); expect(f.posts.at(-1).body.userPlacement.ids).toEqual([firstId]);
+  await page.locator(`[data-remove-from-layout="${secondId}"]`).click(); await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.layouts["layout-a"].arrangement.items).length === 0);
+  expect(Object.keys(f.payload.items).sort()).toEqual(ids.sort()); await reloadApp(page); expect(f.errors).toEqual([]);
+});
+
+test("removing a populated root keeps ten items outside the layout without regression repair after reload", async ({ page, context }) => {
+  test.setTimeout(180000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка десяти вещей");
+  for (let i = 0; i < 10; i++) await createItemInContainer(page, bag, `Вещь размещения ${i + 1}`);
+  await synchronize(page, () => Object.keys(f.payload.items).length === 10);
+  const before = f.posts.length, bagId = Object.keys(f.payload.containers)[0], ids = Object.keys(f.payload.items).sort();
+  await bag.getByRole("heading", { name: "Сумка десяти вещей" }).click(); await page.locator("#rootContainerRemoveFromLayoutBtn").click();
+  await page.locator("#confirmOkBtn").click(); await synchronize(page, () => f.payload.layouts["layout-a"].arrangement.rootContainerIds.length === 0);
+  expect(f.posts.length).toBe(before + 1); const action = f.posts.at(-1);
+  expect(action.body.userPlacement.action).toBe("remove-container"); expect(action.body.userPlacement.removedItemIds.sort()).toEqual(ids);
+  expect(Object.keys(f.payload.items).sort()).toEqual(ids); expect(Object.keys(f.payload.containers)).toEqual([bagId]);
+  expect(f.payload.layouts["layout-a"].arrangement.items).toEqual({}); await reloadApp(page);
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(0);
+  await page.locator('[data-view="items"]').click(); await expect(page.locator("[data-list-item-id]")).toHaveCount(10);
+  expect(f.errors).toEqual([]);
+});
+
+test("quota removing a root leaves its dialog open and retains all items with the full placement draft", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка перед сбоем размещения");
+  await createItemInContainer(page, bag, "Сохраняемая вне укладки вещь"); await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  await bag.getByRole("heading", { name: "Сумка перед сбоем размещения" }).click(); await page.locator("#rootContainerRemoveFromLayoutBtn").click();
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#rootContainerDialog")).toBeVisible(); const copy = await downloadRecovery(page);
+  expect(copy.unconfirmedMemoryDraft.layouts["layout-a"].arrangement.items).toEqual({});
+  expect(Object.keys(copy.unconfirmedMemoryDraft.items)).toEqual(Object.keys(f.payload.items));
+  expect(Object.keys(copy.unconfirmedMemoryDraft.containers)).toEqual(Object.keys(f.payload.containers));
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
+
 async function renameDictionaryInUi(page, type, from, to) {
   await page.locator(`[data-edit-${type}="${from}"]`).click();
   await page.locator(`[data-dictionary-edit-input="${type}"]`).fill(to);
