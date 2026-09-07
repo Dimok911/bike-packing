@@ -150,6 +150,61 @@ test("invalid replacements and file-owning temporary pocket abort the whole froz
   assert.deepEqual(state, before);
 });
 
+test("link selections freeze existing IDs and the complete root read set without moving other placements", () => {
+  const state = initial();
+  state.items.c = { id: "c", containerId: "external", quantity: 4 };
+  state.items.d = { id: "d", containerId: "external-child", quantity: 2 };
+  state.items.free = { id: "free", containerId: "", quantity: 5 };
+  state.containers.empty = { id: "empty", nestable: true, childIds: [], itemIds: [] };
+  state.containers.external = { id: "external", childIds: ["external-child"], itemIds: ["c"], order: [{ type: "container", id: "external-child" }, { type: "item", id: "c" }] };
+  state.containers["external-child"] = { id: "external-child", parentId: "external", childIds: [], itemIds: ["d"], order: [] };
+  state.layouts.other = { ...structuredClone(state.layouts.l), id: "other" }; const before = structuredClone(state);
+  const run = request => preparePersonalPlacementMutation(state, { layoutId: "l", ...request });
+  const item = run({ action: "link-item", ids: ["free"], targetContainerId: "pocket", targetIndex: 0 });
+  assert.equal(item.snapshot.layouts.l.arrangement.items.free, "pocket"); assert.equal(item.snapshot.layouts.l.arrangement.itemQuantities.free, 5);
+  assert.deepEqual(item.intent.linkedItemIds, ["free"]); assert.deepEqual(item.intent.linkedContainerIds, []);
+  const nested = run({ action: "link-container", ids: ["empty"], targetContainerId: "bag", targetIndex: 0 });
+  assert.equal(nested.snapshot.layouts.l.arrangement.containers.empty.parentId, "bag"); assert.deepEqual(nested.intent.linkedContainerIds, ["empty"]);
+  const tree = run({ action: "link-root", ids: ["external"], targetIndex: 0, includeContents: true });
+  const placed = tree.snapshot.layouts.l.arrangement;
+  assert.deepEqual(placed.rootContainerIds, ["external", "bag"]); assert.equal(placed.containers["external-child"].parentId, "external");
+  assert.deepEqual(placed.items, { a: "bag", b: "pocket", c: "external", d: "external-child" });
+  assert.deepEqual(placed.itemQuantities, { a: 3, b: 2, c: 4, d: 2 });
+  assert.deepEqual(tree.intent.linkedItemIds, ["c", "d"]); assert.deepEqual(tree.intent.linkedContainerIds, ["external", "external-child"]);
+  assert.deepEqual(tree.snapshot.layouts.other, before.layouts.other); assert.deepEqual(state, before);
+  const empty = run({ action: "link-root", ids: ["external"], includeContents: false });
+  assert.deepEqual(empty.intent.linkedItemIds, []); assert.deepEqual(empty.intent.linkedContainerIds, ["external"]);
+  state.items.c.quantity = 99; state.containers.external.childIds = [];
+  assert.equal(placed.itemQuantities.c, 4); assert.deepEqual(placed.containers.external.childIds, ["external-child"]);
+});
+
+test("linking rejects already placed IDs, unavailable records, public sources and malformed cyclic trees without mutation", () => {
+  const make = () => {
+    const state = initial(); state.items.free = { id: "free", containerId: "external" };
+    state.containers.external = { id: "external", nestable: true, childIds: [], itemIds: ["free"] }; return state;
+  };
+  for (const mode of ["cycle", "missing-child", "public-child", "duplicate-item", "already-placed-item", "unavailable"]) {
+    const state = make();
+    if (mode === "cycle") state.containers.external.childIds = ["external"];
+    if (mode === "missing-child") state.containers.external.childIds = ["unknown"];
+    if (mode === "public-child" || mode === "duplicate-item") {
+      state.containers.external.childIds = ["child"];
+      state.containers.child = { id: "child", childIds: [], itemIds: mode === "duplicate-item" ? ["free"] : [], adminDemo: mode === "public-child" };
+    }
+    if (mode === "already-placed-item") state.containers.external.itemIds.push("a");
+    if (mode === "unavailable") state.items.free.availabilityStatus = "lost";
+    const before = structuredClone(state);
+    assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", action: "link-root", ids: ["external"], includeContents: true }));
+    assert.deepEqual(state, before);
+  }
+  const state = make(), before = structuredClone(state);
+  for (const request of [{ action: "link-item", ids: ["a"], targetContainerId: "bag" },
+    { action: "link-item", ids: ["free"], targetContainerId: "unknown" }, { action: "link-container", ids: ["bag"], targetContainerId: "pocket" },
+    { action: "link-root", ids: ["bag"] }, { action: "link-root", ids: ["external"], targetIndex: -1 }]) {
+    assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", ...request })); assert.deepEqual(state, before);
+  }
+});
+
 test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalPlacementAction\([^]*?\n\}/)[0];
   const make = () => {

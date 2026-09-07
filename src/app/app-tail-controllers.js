@@ -1318,13 +1318,18 @@ function applyRootContainerDialogPlacement() {
 function addRootContainerToActiveLayout(containerId, targetIndex = null, { closeDialog = true, renderAfter = true } = {}) {
   const layoutId = getLayoutRootTargetLayoutId();
   if (warnLockedLayoutMutation(layoutId)) return;
-  if (!addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
+  const action = state.layouts?.[layoutId]?.arrangement?.containers?.[containerId] ? "lift-container" : "link-root";
+  const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, includeContents: !pendingCopyTargetContainerSetup });
+  if (commit === false) return;
+  if (commit ? !commit() : !addRootContainerToLayoutInState(state, layoutId, containerId, targetIndex, {
     includeContents: !pendingCopyTargetContainerSetup,
     markRecordActivePublicCatalog,
     touchLayout
   })) return;
-  if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
-  saveLayoutMutation(layoutId, { publishDelay: 500 });
+  if (!commit) {
+    if (layoutId === state.activeLayoutId) applyLayoutArrangement(layoutId);
+    saveLayoutMutation(layoutId, { publishDelay: 500 });
+  }
   if (closeDialog && refs.layoutRootDialog.open) refs.layoutRootDialog.close();
   if (renderAfter) render();
 }
@@ -1372,14 +1377,16 @@ function addExistingItemToContainer(itemId) {
   const layoutId = runtime.addToContainerTargetLayoutId || state.activeLayoutId;
   const changedAt = nowIso();
   if (warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(itemId)) return;
-  if (!placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
+  const commit = preparePersonalPlacementAction({ layoutId, action: "link-item", ids: [itemId], targetContainerId: containerId });
+  if (commit === false) return;
+  if (commit ? !commit() : !placeExistingItemInLayout(itemId, containerId, layoutId, { changedAt })) {
     showToast(localText("Could not add the item to this layout.", "Не удалось добавить вещь в эту укладку."), "error");
     return;
   }
   state.collapsedContainers[containerId] = false;
   saveLocalUiState();
   markRecentlyAddedItem(itemId, layoutId);
-  saveLayoutMutation(layoutId);
+  if (!commit) saveLayoutMutation(layoutId);
   refs.addToContainerDialog.close();
   render();
   requestAnimationFrame(() => focusRecentlyAddedItem(itemId));
@@ -5302,11 +5309,10 @@ function placeExistingContainerInLayout(containerId, parentId, layoutId = state.
   if (parentId && container.nestable !== true) return false;
   if (!parentId && !currentParentId) return false;
   if (warnLockedLayoutMutation(layoutId)) return false;
-  if (!parentId) {
-    const commit = preparePersonalPlacementAction({ layoutId, action: "lift-container", ids: [containerId], targetIndex });
-    if (commit === false) return false;
-    if (commit) { const placed = commit(); if (placed && renderAfter) render(); return placed; }
-  }
+  const action = !parentId ? "lift-container" : layout.arrangement?.containers?.[containerId] ? "move-container" : "link-container";
+  const commit = preparePersonalPlacementAction({ layoutId, action, ids: [containerId], targetIndex, targetContainerId: parentId });
+  if (commit === false) return false;
+  if (commit) { const placed = commit(); if (placed && renderAfter) render(); return placed; }
   capturePackingScroll();
   const placed = placeExistingContainerInLayoutInState(state, containerId, parentId, layoutId, {
     activeLayoutId: state.activeLayoutId,

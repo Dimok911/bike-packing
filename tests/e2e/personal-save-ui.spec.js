@@ -813,6 +813,30 @@ test("actual replacement pickers freeze item bag and pocket swaps through lost A
   expect(Object.keys(f.payload.containers).sort()).toEqual(["bag", "newbag", "newpocket"]); expect(f.errors).toEqual([]);
 });
 
+test("existing record pickers and nested root selection retain exact actions through lost ACK and reload", async ({ page, context }) => {
+  test.setTimeout(180000);
+  const f = await setup(page, context, { payload: replacementPayload() });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const owners = Object.keys(f.payload.containers).sort();
+  for (const [id, action] of [["replacement", "link-item"], ["newpocket", "link-container"], ["newpocket", "lift-container"], ["newbag", "link-root"]]) {
+    const before = f.posts.length; f.lose = true; f.injectedFailure = false; f.beforeUpdate = () => { f.unknown = true; };
+    if (["link-item", "link-container"].includes(action)) {
+      await page.locator('#packingView [data-root-container-id="bag"] > .container-header [data-add-to-container]').click();
+      await page.locator(`[data-add-existing-${action === "link-item" ? "item" : "container"}="${id}"]`).click();
+    } else {
+      await page.locator("[data-add-packing-root]").click(); await page.locator(`[data-add-layout-root="${id}"]`).click();
+    }
+    await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+    expect(f.errors).toEqual([]); expect(f.posts.length).toBe(before + 1); const post = f.posts.at(-1);
+    expect(post.body.userPlacement.action).toBe(action); expect(post.body.userPlacement.ids).toEqual([id]);
+    f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+    await synchronize(page, () => f.receipts.has(post.operationId)); expect(f.posts.filter(entry => entry.operationId === post.operationId)).toHaveLength(1);
+  }
+  const placed = f.payload.layouts["layout-a"].arrangement;
+  expect(placed.rootContainerIds).toEqual(["bag", "newpocket", "newbag"]); expect(placed.items).toEqual({ source: "bag", inside: "pocket", replacement: "bag" });
+  expect(placed.itemQuantities).toEqual({ source: 3, inside: 2, replacement: 1 }); expect(placed.containers.newpocket.parentId).toBe("");
+  expect(Object.keys(f.payload.containers).sort()).toEqual(owners); expect(f.errors).toEqual([]);
+});
+
 test("quota in a replacement picker preserves its complete candidate and leaves the existing queue unchanged", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context, { payload: replacementPayload() });
