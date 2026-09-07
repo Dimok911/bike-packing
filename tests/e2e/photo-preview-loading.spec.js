@@ -59,9 +59,9 @@ test("desktop dot navigation hides empty image frames and only announces slow pr
 
 test("offline layout previews are decoded from local cache before their cards are scrolled into view", async ({ page, browserName }) => {
   await openPreviewFixture(page);
-  // Windows Playwright WebKit cannot store Blob records in IndexedDB. Chromium
-  // and Linux CI exercise real persistence; Windows WebKit checks presentation.
-  const useMemoryCache = process.platform === "win32" && browserName === "webkit";
+  // The isolated Playwright WebKit context rejects Blob writes in IndexedDB
+  // on Windows and Linux. Chromium tests persistence; WebKit tests presentation.
+  const useMemoryCache = browserName === "webkit";
   await page.evaluate(async (useMemoryCache) => {
     const { renderItemPhotoHtml, bindPhotoGalleries, createDemandDrivenPhotoPreviewLoader } = await import("./src/ui/photo-gallery.js");
     const { getCachedPhoto, putCachedPhoto, setPhotoCacheScope } = await import("./src/sync/photos.js");
