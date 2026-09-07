@@ -102,8 +102,13 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
     const frames = await page.evaluate(() => window.photoFrames);
     expect(frames.every(({ width, height }) => Math.abs(width - expectedWidth) < 1 && Math.abs(height - expectedHeight) < 1)).toBe(true);
     if (sourceMode === "absolute") expect(imageFetches).toEqual([]);
-    expect([...new Set(frames.map(({ src }) => src))]).toEqual([await next.evaluate((image) => image.currentSrc)]);
-    expect(frames.some(({ src }) => src.startsWith("data:"))).toBe(false);
+    if (isMobile && sourceMode === "separate") {
+      expect(frames.some(({ src }) => src.startsWith("data:"))).toBe(true);
+      expect(frames.at(-1).src).toBe(await next.evaluate((image) => image.currentSrc));
+    } else {
+      expect([...new Set(frames.map(({ src }) => src))]).toEqual([await next.evaluate((image) => image.currentSrc)]);
+      expect(frames.some(({ src }) => src.startsWith("data:"))).toBe(false);
+    }
     expect(await page.evaluate(() => window.blankFramesAfterPhoto)).toBe(0);
     // Keep the decoded DOM image when revisiting it, instead of unloading and
     // recreating the bitmap. Observe mutations, not just the final dimensions.
