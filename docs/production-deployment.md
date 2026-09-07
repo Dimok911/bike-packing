@@ -1,5 +1,18 @@
 # Production deployment
 
+## Photographs and release baseline
+
+For code and gallery fixes, reuse already published photographs. Do not upload
+them again, move their directories, or include a manufacturer catalog as part
+of an unrelated fix. Transfer new or changed images only when the user's task
+requires the image changes. Record the exact transfer list before publication.
+The full-artifact script refuses builds containing photographs.
+
+Identify the actual deployed commit first: the main hosting release can come
+from a production release branch that differs from `main` and GitHub Pages.
+Never replace it with a `main` artifact solely because its version is newer.
+Preserve the deployed API contract and scope when preparing the release.
+
 Frontend production is published through two independent channels. A release is
 complete only when both channels serve the same application version.
 

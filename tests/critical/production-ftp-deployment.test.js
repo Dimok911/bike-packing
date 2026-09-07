@@ -26,6 +26,8 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(script, /Curl-Line "pinnedpubkey" \$ftpPinnedPublicKey/);
   assert.match(script, /Curl-Line "resolve" "\$\{ftpCanonicalHost\}:\$\{ftpPort\}:\$\{ftpFallbackIp\}"/);
   assert.match(script, /Invoke-CurlConfig -Ftps -Lines/);
+  assert.match(script, /Code releases must reuse published photographs/);
+  assert.ok(script.indexOf("This full-artifact script refuses image files") < script.indexOf("  foreach ($file in $artifactFiles)"));
   assert.match(script, /function Send-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
   assert.match(script, /function Receive-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
 
