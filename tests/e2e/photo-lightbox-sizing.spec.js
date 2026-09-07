@@ -78,7 +78,9 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
         await expect(next).toHaveCSS("width", `${expectedWidth}px`);
         await expect(next).toHaveCSS("height", `${expectedHeight}px`);
       }
-      if (!knownDimensions || sourceMode === "separate") {
+      if (isMobile && sourceMode === "separate") {
+        await expect(next).toHaveCSS("visibility", "visible");
+      } else if (!knownDimensions || sourceMode === "separate") {
         await expect(next).toHaveCSS("visibility", "hidden");
       }
     } finally {
