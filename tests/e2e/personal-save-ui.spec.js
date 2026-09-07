@@ -1329,6 +1329,63 @@ for (const offline of [false, true]) test(`actual startup fences an unlinked pho
   await page.screenshot({ path: info.outputPath("personal-photo-recovery.png") });
 });
 
+for (const offline of [false, true]) test(`already settled retained photos do not reopen the startup recovery fence (${offline ? "offline" : "online"})`, async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Сумка с завершённой проверкой");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  await context.route(`${origin}/src/**/*.js`, async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid seed module path");
+    return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+  });
+  // Seed a previously completed no-effect/cancel decision with exact request
+  // digests. Actual SQL and lost ACK behaviour is covered by the paired API test.
+  const seeded = await page.evaluate(async ({ listId, base, revision, receipts, offline }) => {
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    const { createPersonalSaveOutbox } = await import("/src/sync/personal-save-outbox.js");
+    const { canonicalListOperationJson } = await import("/src/sync/list-operation-queue.js");
+    const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId, scopeKey: "id:actor-a" }, current = { ...binding, scope: "personal", generation: "completed-session" };
+    const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: true });
+    outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: revision });
+    const store = createPersonalPhotoActionStore({ ...binding, enabled: true, getContext: () => current });
+    const entityId = Object.keys(base.containers)[0], stage = { operationId: crypto.randomUUID(), photoId: "completed-photo", entityType: "container", entityId, fileName: "retained.png" };
+    const candidate = structuredClone(base); candidate.containers[entityId].photos = [{ id: stage.photoId, photoId: stage.photoId, assetId: stage.operationId, status: "pending" }];
+    const plan = outbox.preparePhoto({ snapshot: candidate, payload: candidate, body: { version: 1, action: "attach", entityType: stage.entityType, entityId,
+      photoId: stage.photoId, assetId: stage.operationId, baseStateRevision: revision, baseEntityRevision: revision, expectedPhotoIds: [], index: 0 } });
+    await store.capture({ action: plan.action, snapshot: plan.snapshot, stage, file: new Blob(["retained settled bytes"], { type: "image/png" }) });
+    await outbox.capturePhoto({ plan, store, getContext: () => current });
+    const digest = async action => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalListOperationJson({
+      environment: binding.environment, actorId: binding.actorId, kind: action.kind, listId, body: action.body }))))].map(value => value.toString(16).padStart(2, "0")).join("");
+    const proof = (action, payloadDigest, state, stateRevision, code = null) => ({ historicalOnly: true,
+      operation: { id: action.operationId, environment: binding.environment, actorId: binding.actorId, listId, kind: action.kind, state, payloadDigest },
+      stateRevision, resultStatus: state === "committed" ? 200 : 409, rejectionCode: code });
+    const known = new Map(receipts.map(([id, data]) => [id, { historicalOnly: true,
+      operation: Object.fromEntries(["id", "environment", "actorId", "listId", "kind", "state", "payloadDigest"].map(key => [key, data.operation[key]])),
+      stateRevision: data.result.payload.list?.stateRevision ?? data.result.payload.stateRevision ?? null, resultStatus: data.result.status, rejectionCode: data.result.payload.code || null }]));
+    known.set(plan.action.operationId, proof(plan.action, await digest(plan.action), "rejected", revision, "photo_asset_not_ready"));
+    const options = { queue: { inspect: async input => known.get(input.operationId) }, getContext: () => current,
+      readRemote: async () => ({ id: listId, ownerId: binding.actorId, stateRevision: revision, payload: base }) };
+    const decision = await outbox.reconcile({ ...options, resolveRejectedPhoto: async () => "keep-server" });
+    known.set(decision.action.operationId, proof(decision.action, await digest(decision.action), "committed", revision + 1));
+    await outbox.reconcile({ ...options, readRemote: async () => ({ id: listId, ownerId: binding.actorId, stateRevision: revision + 1, payload: base }) });
+    outbox.compact();
+    if (offline) localStorage.setItem("bike-packing-force-offline", "1");
+    return { id: plan.action.operationId, revision: revision + 1 };
+  }, { listId: f.listId, base: f.payload, revision: f.revision, receipts: [...f.receipts], offline });
+  f.revision = seeded.revision;
+  const posts = f.posts.length;
+  await reloadApp(page);
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+  await expect(page.locator("#packingView [data-root-container-id]").filter({ hasText: "Сумка с завершённой проверкой" })).toBeVisible();
+  expect(f.posts.length).toBe(posts);
+  expect(await page.evaluate(async id => {
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    return (await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id)).file.text();
+  }, seeded.id)).toBe("retained settled bytes");
+  expect(f.errors).toEqual([]);
+});
+
 test("corrupt journal at reload shows a blocking recovery dialog without empty-list fallback or POST", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);

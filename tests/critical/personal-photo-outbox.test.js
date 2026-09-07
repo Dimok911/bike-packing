@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "../../src/sync/personal-photo-outbox-record.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
@@ -309,7 +311,7 @@ test("photo inventory never silently accepts changing file/head sets or a switch
   }
 });
 
-test("compaction never turns a retained file into resend permission or claims its retired UUID alone is a server receipt", async () => {
+test("compaction never turns a retained file into resend permission or accepts an unbound receipt digest", async () => {
   const f = fixture(), plan = f.prepare(f.outbox, "attach"), file = f.fileFor(plan);
   const store = { binding: f.binding, ids: async () => [plan.action.operationId], read: async () => file };
   const record = await f.outbox.capturePhoto({ plan, store, getContext: f.getContext });
@@ -320,6 +322,29 @@ test("compaction never turns a retained file into resend permission or claims it
   const next = f.outbox.capture({ snapshot: remote, body: { payload: remote, baseStateRevision: 6 } });
   f.outbox.markApplied({ operationId: next.action.operationId, stateRevision: 7 }); f.outbox.compact();
   const inventory = await inspectPersonalPhotoRecovery({ outbox: f.outbox, store, getContext: f.getContext });
-  assert.equal(inventory.entries[0].state, "retired-needs-proof"); assert.equal(inventory.needsRecovery, true);
+  assert.equal(inventory.entries[0].state, "receipt-mismatch"); assert.equal(inventory.needsRecovery, true);
   assert.equal(inventory.automaticDispatchAllowed, false); assert.equal(file.file.size, 16);
+});
+
+test("exact persisted operation proof resolves a retained photo without replay deletion or a network requirement", async () => {
+  const f = await rejectedPhotoFixture(), originalProof = f.proofs.get(f.plan.action.operationId);
+  originalProof.operation.payloadDigest = createHash("sha256").update(canonicalListOperationJson({ environment: f.binding.environment,
+    actorId: f.binding.actorId, kind: f.plan.action.kind, listId: f.binding.listId, body: f.plan.action.body })).digest("hex");
+  const decision = await f.outbox.reconcile({ ...f.options, resolveRejectedPhoto: async () => "keep-server" });
+  const confirmed = f.proof(decision.action); confirmed.stateRevision = 7; f.proofs.set(decision.action.operationId, confirmed); f.remote.stateRevision = 7;
+  await f.outbox.reconcile(f.options); f.outbox.compact();
+  const store = { ...f.store, binding: f.binding, ids: async () => [f.plan.action.operationId] };
+  const before = [...f.values], result = await inspectPersonalPhotoRecovery({ outbox: f.make(false), store, getContext: f.getContext });
+  assert.equal(result.entries[0].state, "settled-retained"); assert.equal(result.entries[0].ownerOutcome, "rejected");
+  assert.equal(result.entries[0].exactReceiptCached, true); assert.equal(result.needsRecovery, false); assert.equal(result.automaticDispatchAllowed, false);
+  assert.deepEqual([...f.values], before); assert.equal(f.file.file.size, 16);
+  f.file.action.body.photoId = "different-photo";
+  const mismatch = await inspectPersonalPhotoRecovery({ outbox: f.make(false), store, getContext: f.getContext });
+  assert.equal(mismatch.entries[0].state, "receipt-mismatch"); assert.equal(mismatch.needsRecovery, true);
+  // A pre-upgrade checkpoint has only retired UUIDs. It must stay unresolved.
+  for (const [key, value] of f.values) if (key.includes(":checkpoint:")) {
+    const raw = JSON.parse(value); delete raw.photoReceipts; f.values.set(key, JSON.stringify(raw));
+  }
+  const legacy = await inspectPersonalPhotoRecovery({ outbox: f.make(false), store, getContext: f.getContext });
+  assert.equal(legacy.entries[0].state, "retired-needs-proof"); assert.equal(legacy.needsRecovery, true);
 });

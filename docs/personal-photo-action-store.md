@@ -256,3 +256,24 @@ survive reload after a later ordinary DB save in both browser engines. The sole
 skip remains the old Windows WebKit native-Blob cache. Final API diagnostics
 `data-cabed31327314c41a1f32deaf8d842f6`; disposable server shut down. No push,
 publication, live migration, Production change, byte deletion or gate activation.
+
+## Startup recognition of already settled retained files
+
+The inventory now validates a cached terminal OWNER receipt against the original
+file action's actor/environment/list/kind/UUID and recomputed canonical request
+digest. Only this full binding becomes `settled-retained`; photo equality or a
+retired UUID without its proof does not qualify. An absent old proof, changed
+action/digest, corrupt bytes or missing link stays unresolved. Every entry still
+has `dispatchAllowed=false`; files are retained and no old snapshot is installed.
+
+The app's startup fence permits these already-settled records in both online and
+remembered-offline sessions. The receipt was durably received earlier, so this
+check adds no network request. Pending/unlinked/damaged records still open the
+blocking recovery dialog and remain exportable. Explicit cancel/keep-current
+buttons and the actual file-upload UI adapter are still open work.
+
+Evidence: 261 transport, 889 critical, source check; real built-app UI **8/8**
+(1.0 minute), Chromium/mobile WebKit: both blocked drafts and already-settled
+retained bytes, online and offline. Paired real API/MySQL **66/66** verifies the
+actual cached rejection digest after compaction (`data-8b2e341083a84db1a07a4ca61706b027`,
+server shut down). No publication/Production/live migration or gate activation.

@@ -8360,9 +8360,9 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage });
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       personalSaveRecovery.assertRunning();
-      // No UI continuation may yet decide that a retained file is disposable
-      // or safe to re-upload merely because its outbox UUID was compacted.
-      if (source.inventory.entries.length) throw Error("Retained photo actions need explicit recovery");
+      // Only an exact retained terminal receipt, bound to the immutable action,
+      // clears this startup fence. It never permits byte cleanup or re-upload.
+      if (source.inventory.entries.some(entry => entry.state !== "settled-retained")) throw Error("Retained photo actions need explicit recovery");
       if (personalPhotoRecoveryCheck === pending) {
         personalPhotoRecoverySource = null;
         personalSaveRecoveryDialog?.finishChecking();

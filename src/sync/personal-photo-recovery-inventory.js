@@ -5,6 +5,20 @@ const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJ
 const paused = (code, cause) => Object.assign(new Error("Файлы и очередь требуют проверки. Ничего не удалено и не отправлено."),
   { code, cause, isPersonalPhotoRecoveryBlocked: true });
 
+async function exactCachedPhotoReceipt(proof, file, binding) {
+  const op = proof?.operation, action = file.action;
+  if (proof?.historicalOnly !== true || op?.id !== action.operationId || op.kind !== "photos.mutate" || action.kind !== op.kind
+    || action.listId !== binding.listId || Object.keys(binding).filter(key => key !== "scopeKey").some(key => op[key] !== binding[key])
+    || !["committed", "rejected"].includes(op.state) || !Number.isInteger(proof.resultStatus)
+    || (op.state === "committed" ? !(proof.resultStatus >= 200 && proof.resultStatus < 300) || !Number.isSafeInteger(proof.stateRevision) || proof.stateRevision < 1
+      : ![400, 403, 404, 409, 413, 422].includes(proof.resultStatus))) return false;
+  const expected = canonicalListOperationJson({ environment: binding.environment, actorId: binding.actorId,
+    kind: action.kind, listId: binding.listId, body: action.body });
+  const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(expected)))]
+    .map(value => value.toString(16).padStart(2, "0")).join("");
+  return op.payloadDigest === digest;
+}
+
 // Read-only startup/recovery primitive. Presence in IndexedDB is not dispatch
 // authority, and even a retired UUID is not itself a remote terminal receipt.
 export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }) {
@@ -22,6 +36,7 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
   const ids = await store.ids(); assertContext();
   if (!Array.isArray(ids) || new Set(ids).size !== ids.length) throw paused("photo-recovery-index");
   const byId = new Map(references.records.map(record => [record.action.operationId, record]));
+  const receipts = new Map((references.photoReceipts || []).map(proof => [proof.operation.id, proof]));
   const retired = new Set(references.retiredOperationIds), entries = [];
   for (const operationId of ids) {
     let file;
@@ -37,7 +52,13 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       try { assertPersonalPhotoFile(record, file, binding); state = "linked"; }
       catch { state = "link-mismatch"; }
     }
+    const proof = receipts.get(operationId);
+    if (proof && ["linked", "retired-needs-proof"].includes(state)) {
+      state = await exactCachedPhotoReceipt(proof, file, binding) ? "settled-retained" : "receipt-mismatch";
+      assertContext();
+    }
     entries.push({ operationId, stageOperationId: file.stage.operationId, intentHash: file.intentHash,
+      ...(state === "settled-retained" ? { ownerOutcome: proof.operation.state, exactReceiptCached: true } : {}),
       state, dispatchAllowed: false, entityType: file.stage.entityType, entityId: file.stage.entityId, photoId: file.stage.photoId });
   }
   for (const [operationId, record] of byId) {
@@ -47,5 +68,5 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
   // Sorting compares SETS for a stable scan; it never orders user actions.
   if (!same([...ids].sort(), [...afterIds].sort()) || !same(references, outbox.photoRecoveryReferences())) throw paused("photo-recovery-changed");
   return { version: 1, binding, readOnly: true, entries,
-    needsRecovery: entries.some(entry => entry.state !== "linked"), automaticDispatchAllowed: false };
+    needsRecovery: entries.some(entry => !["linked", "settled-retained"].includes(entry.state)), automaticDispatchAllowed: false };
 }
