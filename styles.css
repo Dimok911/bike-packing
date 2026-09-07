@@ -4231,6 +4231,16 @@ button.photo-gallery-slide.touch-feedback-active {
   pointer-events: none;
 }
 
+/* Empty image elements can paint a broken-image rectangle before a preview arrives. */
+.photo-gallery-slide img:not([src]),
+.photo-gallery-slide img[data-photo-load-state="loading"],
+.photo-gallery-slide img[data-photo-load-state="error"],
+.picker-list-thumbnail img:not([src]),
+.picker-list-thumbnail img[data-photo-load-state="loading"],
+.picker-list-thumbnail img[data-photo-load-state="error"] {
+  visibility: hidden;
+}
+
 .photo-preview-status {
   display: none;
 }

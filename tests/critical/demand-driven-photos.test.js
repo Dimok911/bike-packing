@@ -139,6 +139,52 @@ test("CRITICAL demand-driven photos: coordinator deduplicates identical URLs", a
   assert.equal(left, right);
 });
 
+test("CRITICAL demand-driven photos: fast previews never flash a loading notice and wait for decoding", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const image = fakeImage();
+  const decoding = deferred();
+  image.decode = () => decoding.promise;
+  const loader = createDemandDrivenPhotoPreviewLoader({
+    getCachedPhotoForPreview: async () => null,
+    shouldPersistPreview: () => false,
+    downloadCoordinator: { download: async () => new Blob(["preview"]) }
+  });
+  const loading = loader.load(image);
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+  assert.ok(image.src);
+  assert.equal(image.dataset.photoLoadState, "loading");
+  assert.equal(image.status.hidden, true);
+  decoding.resolve();
+  assert.equal(await loading, true);
+  t.mock.timers.tick(500);
+  assert.equal(image.dataset.photoLoadState, "ready");
+  assert.equal(image.status.hidden, true);
+  assert.equal(image.classes.has("photo-preview-loading"), false);
+});
+
+test("CRITICAL demand-driven photos: a slow preview shows feedback, then clears it on a decoding error", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const image = fakeImage();
+  const download = deferred();
+  image.decode = async () => { throw new Error("corrupt image"); };
+  const loader = createDemandDrivenPhotoPreviewLoader({
+    getCachedPhotoForPreview: async () => null,
+    shouldPersistPreview: () => false,
+    downloadCoordinator: { download: () => download.promise }
+  });
+  const loading = loader.load(image);
+  t.mock.timers.tick(299);
+  assert.equal(image.status.hidden, true);
+  t.mock.timers.tick(1);
+  assert.equal(image.status.hidden, false);
+  assert.equal(image.classes.has("photo-preview-loading"), true);
+  download.resolve(new Blob(["corrupt"]));
+  assert.equal(await loading, false);
+  assert.equal(image.dataset.photoLoadState, "error");
+  assert.equal(image.classes.has("photo-preview-loading"), false);
+  assert.equal(image.classes.has("photo-preview-error"), true);
+});
+
 test("CRITICAL demand-driven photos: opened photos overtake a one-file background queue", async () => {
   const started = [];
   const gates = new Map();

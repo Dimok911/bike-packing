@@ -49,6 +49,8 @@ let lightboxInertiaCancel = null;
 let lightboxSourceLifecycleCleanup = null;
 let lightboxOpenRequestId = 0;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
+const PHOTO_PREVIEW_LOADING_NOTICE_DELAY_MS = 300;
+const photoPreviewNoticeTimers = new WeakMap();
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
 const PHOTO_LIGHTBOX_INERTIA_DURATION_MS = 650;
@@ -72,16 +74,29 @@ function photoPreviewHost(image) {
 
 function setPhotoPreviewState(image, state) {
   if (!image) return;
+  clearTimeout(photoPreviewNoticeTimers.get(image));
+  photoPreviewNoticeTimers.delete(image);
   image.dataset.photoLoadState = state;
   image.setAttribute("aria-busy", state === "loading" ? "true" : "false");
   const host = photoPreviewHost(image);
-  host?.classList?.toggle("photo-preview-loading", state === "loading");
+  host?.classList?.toggle("photo-preview-loading", false);
   host?.classList?.toggle("photo-preview-error", state === "error");
   host?.classList?.toggle("photo-preview-ready", state === "ready");
   const status = host?.querySelector?.("[data-photo-preview-status]");
   if (status) {
-    status.hidden = state === "ready";
-    status.textContent = photoPreviewStateText(state);
+    status.hidden = state !== "error";
+    status.textContent = state === "error" ? photoPreviewStateText(state) : "";
+  }
+  if (state === "loading") {
+    photoPreviewNoticeTimers.set(image, setTimeout(() => {
+      photoPreviewNoticeTimers.delete(image);
+      if (!image.isConnected || image.dataset.photoLoadState !== "loading") return;
+      host?.classList?.toggle("photo-preview-loading", true);
+      if (status) {
+        status.textContent = photoPreviewStateText("loading");
+        status.hidden = false;
+      }
+    }, PHOTO_PREVIEW_LOADING_NOTICE_DELAY_MS));
   }
 }
 
@@ -178,9 +193,16 @@ export function createDemandDrivenPhotoPreviewLoader({
       || photoObjectUrls?.get?.(task.key, task.sourceSignature)
       || "";
     if (current) {
-      image.src = current;
-      setPhotoPreviewState(image, "ready");
-      return true;
+      try {
+        image.loading = "eager";
+        image.src = current;
+        await image.decode?.();
+        setPhotoPreviewState(image, "ready");
+        return true;
+      } catch {
+        setPhotoPreviewState(image, "error");
+        return false;
+      }
     }
     setPhotoPreviewState(image, "loading");
     const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}`;
@@ -191,8 +213,11 @@ export function createDemandDrivenPhotoPreviewLoader({
     }
     try {
       const src = await request;
-      if (!image.isConnected || !src) return false;
+      if (!image.isConnected || !src || task.scopeKey !== String(getScopeKey() || "")) return false;
+      image.loading = "eager";
       image.src = src;
+      await image.decode?.();
+      if (!image.isConnected) return false;
       setPhotoPreviewState(image, "ready");
       return true;
     } catch {
