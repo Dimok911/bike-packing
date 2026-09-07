@@ -1,5 +1,18 @@
 # Project routing
 
+## Incremental publication and photographs
+
+For application code, style, and gallery behavior updates, publish application
+files without photographs. Do not upload already published photographs again, include
+them in a full-artifact deployment, or move/delete their existing directories.
+Reuse the photographs already present on each destination. Transfer only new
+or changed images when the user's task actually requires those image changes.
+
+Before publication, compare the release with the deployed version and record
+the exact files to transfer. Preserve recoverable backups of replaced files
+and verify the changed files after upload. A deployment script's default full
+upload is not a reason to republish unchanged photographs.
+
 ## Shared Services boundary
 
 Work that changes a service or browser module shared by more than one VNIIPO

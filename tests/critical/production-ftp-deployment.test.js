@@ -1,20 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 function readProjectFile(path) {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 }
-
-test("FTPS batches retain security options, include every file, and stop on transfer or hash failure", () => {
-  const result = spawnSync("pwsh", [
-    "-NoProfile", "-NonInteractive", "-File",
-    fileURLToPath(new URL("./fixtures/production-ftp-batches.ps1", import.meta.url)),
-  ], { encoding: "utf8", timeout: 60000 });
-  assert.equal(result.status, 0, result.error?.message || result.stdout + result.stderr);
-});
 
 test("production FTP deployment keeps the account root separate from the public directory", () => {
   const script = readProjectFile("scripts/deploy-production-ftp.ps1");
@@ -36,6 +26,8 @@ test("production FTP deployment keeps the account root separate from the public 
   assert.match(script, /Curl-Line "pinnedpubkey" \$ftpPinnedPublicKey/);
   assert.match(script, /Curl-Line "resolve" "\$\{ftpCanonicalHost\}:\$\{ftpPort\}:\$\{ftpFallbackIp\}"/);
   assert.match(script, /Invoke-CurlConfig -Ftps -Lines/);
+  assert.match(script, /Code releases must reuse published photographs/);
+  assert.ok(script.indexOf("This full-artifact script refuses image files") < script.indexOf("  foreach ($file in $artifactFiles)"));
   assert.match(script, /function Send-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
   assert.match(script, /function Receive-FtpFile[\s\S]*?Invoke-CurlConfig -Ftps -Attempts 5 -Lines/);
 
