@@ -57,9 +57,12 @@ test("desktop dot navigation hides empty image frames and only announces slow pr
   expect(await page.evaluate(() => window.previewNoticeFlashes)).toEqual([]);
 });
 
-test("offline layout previews are decoded from IndexedDB before their cards are scrolled into view", async ({ page }) => {
+test("offline layout previews are decoded from local cache before their cards are scrolled into view", async ({ page, browserName }) => {
   await openPreviewFixture(page);
-  await page.evaluate(async () => {
+  // Windows Playwright WebKit cannot store Blob records in IndexedDB. Chromium
+  // and Linux CI exercise real persistence; Windows WebKit checks presentation.
+  const useMemoryCache = process.platform === "win32" && browserName === "webkit";
+  await page.evaluate(async (useMemoryCache) => {
     const { renderItemPhotoHtml, bindPhotoGalleries, createDemandDrivenPhotoPreviewLoader } = await import("./src/ui/photo-gallery.js");
     const { getCachedPhoto, putCachedPhoto, setPhotoCacheScope } = await import("./src/sync/photos.js");
     const { createPhotoObjectUrlRegistry } = await import("./src/ui/photo-object-url-registry.js");
@@ -67,9 +70,12 @@ test("offline layout previews are decoded from IndexedDB before their cards are 
     const items = Array.from({ length: 12 }, (_, index) => ({ photos: [{ id: `offline-${index}`, url: `${location.origin}/offline-${index}/full`, thumbUrl: `${location.origin}/offline-${index}/thumb` }] }));
     document.body.innerHTML = '<div id="offline-cards" style="height:300px;width:360px;overflow:auto">' + items.map((item) => renderItemPhotoHtml(item)).join("") + '</div>';
     const images = [...document.querySelectorAll("img")];
+    const cachedRecords = new Map();
     const preview = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180"><rect width="240" height="180" fill="blue"/></svg>'], { type: "image/svg+xml" });
     for (const image of images) {
-      await putCachedPhoto({ id: image.dataset.photoLocalId, sourceSignature: image.dataset.photoSourceSignature, thumbBlob: preview }, "guest");
+      const record = { id: image.dataset.photoLocalId, sourceSignature: image.dataset.photoSourceSignature, thumbBlob: preview };
+      if (useMemoryCache) cachedRecords.set(record.id, record);
+      else await putCachedPhoto(record, "guest");
     }
     // Start with a fresh in-memory registry, as after reopening the saved app.
     const photoObjectUrls = createPhotoObjectUrlRegistry();
@@ -78,12 +84,12 @@ test("offline layout previews are decoded from IndexedDB before their cards are 
     const loader = createDemandDrivenPhotoPreviewLoader({
       photoObjectUrls,
       getScopeKey: () => "guest",
-      getCachedPhotoForPreview: getCachedPhoto,
+      getCachedPhotoForPreview: useMemoryCache ? async (id) => cachedRecords.get(id) : getCachedPhoto,
       getPreparedPreviewKeys: () => new Set(images.map((image) => image.dataset.photoLocalId)),
       downloadCoordinator: { download: async () => { window.offlinePreviewNetworkCalls += 1; throw new Error("network unavailable"); } }
     });
     bindPhotoGalleries(document, { photoPreviewLoader: loader });
-  });
+  }, useMemoryCache);
   await expect(page.locator(".photo-preview-ready")).toHaveCount(12);
   expect(await page.locator("#offline-cards").evaluate((element) => element.scrollTop)).toBe(0);
   await expect(page.locator("img").last()).toHaveJSProperty("naturalWidth", 240);
