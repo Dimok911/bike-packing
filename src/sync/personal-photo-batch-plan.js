@@ -26,9 +26,12 @@ export function preparePersonalPhotoAttachmentBatch({ binding, snapshot, basePay
   const owner = payload?.[collection]?.[entityId], localOwner = frozen?.[collection]?.[entityId];
   if (!owner || owner.id !== entityId || !localOwner || localOwner.id !== entityId
     || owner.adminDemo || owner.adminSharedSourceId || owner.publicCatalogLayoutId || owner._publicCopySourceId || owner.sharedSourceId
-    || !same(snapshotToPayload(clone(frozen)), payload) || !Array.isArray(owner.photos)
-    || owner.photos.some(photo => !id(photo?.id) || !uuid(photo.assetId) || photo.status !== "synced" || photo.listId !== binding.listId)
-    || new Set(owner.photos.map(photo => photo.id)).size !== owner.photos.length) invalid();
+    || !same(snapshotToPayload(clone(frozen)), payload) || owner.photos !== undefined && !Array.isArray(owner.photos)
+    || (owner.photos || []).some(photo => !id(photo?.id) || !uuid(photo.assetId) || photo.status !== "synced" || photo.listId !== binding.listId)
+    || new Set((owner.photos || []).map(photo => photo.id)).size !== (owner.photos || []).length) invalid();
+  // A legitimate API owner without photos may omit the property. Only the
+  // new candidate gains it; the exact confirmed base remains untouched.
+  owner.photos ||= [];
   const at = index ?? owner.photos.length;
   if (!Number.isSafeInteger(at) || at < 0 || at > owner.photos.length) invalid();
   let bytes = 0;

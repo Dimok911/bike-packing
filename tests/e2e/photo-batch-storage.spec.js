@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 
 const origin = "https://experiment.vniipo-help.ru";
 async function fixture(page, context) {
@@ -15,6 +17,9 @@ async function fixture(page, context) {
       import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
       import {createPersonalPhotoRecoveryArchive} from '/src/sync/personal-photo-recovery-archive.js';
       import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
+      import {createExperimentTransport} from '/src/sync/experiment-transport.js';
+      import {createListOperationQueue} from '/src/sync/list-operation-queue.js';
+      import {createPersonalPhotoStaging} from '/src/sync/personal-photo-staging.js';
       import {readZipEntries,zipText} from '/src/utils/simple-zip.js';
       window.binding={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a'};
       window.editContext={...binding,scope:'personal',generation:'edit-1'};
@@ -33,6 +38,25 @@ async function fixture(page, context) {
       window.exportBatch=()=>createPersonalPhotoRecoveryArchive({store:batchStore(),getContext:()=>editContext,
         getRecoveryCopy:()=>({environment:binding.environment,scopeKey:binding.scopeKey,automaticImportAllowed:false})});
       window.readBatchZip=readZipEntries; window.batchZipText=zipText; window.batchReady=true;
+      window.batchRuntime=()=>{
+        const transport=createExperimentTransport({selection:'direct'}), store=batchStore();
+        return {store,outbox:createPersonalSaveOutbox({...binding,storage:localStorage,photoEnabled:true,photoBatchEnabled:true}),
+          queue:createListOperationQueue({transport,getContext:()=>editContext,enabled:true,photoEnabled:true}),
+          staging:createPersonalPhotoStaging({store,transport,getContext:()=>editContext,enabled:true,batchEnabled:true})};
+      };
+      window.registerBatch=async()=>{
+        const input=batchInput(), current=batchRuntime(), base=structuredClone(input.snapshot); base.items.item.photos=[];
+        current.outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
+        const body={...input.action.body}; delete body.causal;
+        const plan=current.outbox.preparePhoto({snapshot:input.snapshot,payload:input.snapshot,body,operationId:input.action.operationId});
+        await current.store.captureBatch({...input,...plan});
+        return current.outbox.capturePhoto({plan,store:current.store,getContext:()=>editContext});
+      };
+      window.drainBatch=async()=>{
+        const current=batchRuntime();
+        try {await current.outbox.drain({queue:current.queue,getContext:()=>editContext,photoStore:current.store,photoStaging:current.staging}); return 'confirmed';}
+        catch(error){return {blocked:true,message:error.message};}
+      };
     </script>` });
     return route.abort();
   });
@@ -136,4 +160,76 @@ test("damaged batch is fenced and raw export retains every available part and it
   expect(result.metadata.intentHash).toBe("damaged"); expect(result.metadata.dispatchClaims).toHaveLength(2);
   expect(result.manifest).toMatchObject({ automaticImportAllowed: false, serverConfirmationIncluded: false });
   expect(result.manifest.files[0].parts).toMatchObject([{ fullBytesIncluded: true }, { fullBytesIncluded: false, thumbnailBytesIncluded: true }]);
+});
+
+test("native batch queue loses file and owner ACKs then reloads their exact receipts without repeating either upload", async ({ page, context }) => {
+  await fixture(page, context);
+  const record = await page.evaluate(() => registerBatch()), stages = new Map(), posts = [];
+  // WebKit's intercepted postDataBuffer omits file bodies. Observe the actual
+  // native FormData before fetch, not an empty debug-protocol representation.
+  await page.addInitScript(() => {
+    window.batchSentFiles = {};
+    const original = window.fetch;
+    window.fetch = async (url, options) => {
+      if (options?.body instanceof FormData) {
+        const file = options.body.get("file"), thumb = options.body.get("thumb");
+        const hash = async blob => [...new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()))].map(byte => byte.toString(16).padStart(2, "0")).join("");
+        window.batchSentFiles[options.body.get("operationId")] = { fileHash: await hash(file), thumbHash: await hash(thumb), fileText: await file.text(), thumbText: await thumb.text() };
+      }
+      return original(url, options);
+    };
+  });
+  await page.reload(); await page.waitForFunction(() => window.batchReady);
+  let phase = "files", ownerReceipt;
+  await context.route("**/letters-vniipo/api/**", async route => {
+    const request = route.request(), url = new URL(request.url()), leaf = url.pathname.split("/").at(-1);
+    if (leaf === "me") return route.fulfill({ json: { user: { id: "actor-a" } } });
+    if (leaf === "capabilities") return route.fulfill({ json: { capabilities: ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1"] } });
+    if (leaf === "freshness") return route.fulfill({ json: { stateRevision: ownerReceipt ? 2 : 1 } });
+    if (request.method() === "POST" && leaf === "photo-assets") {
+      const multipart = await new Request(request.url(), { method: "POST", headers: request.headers(), body: request.postDataBuffer() }).formData();
+      const id = multipart.get("operationId"), change = record.action.body.changes.find(change => change.assetId === id);
+      expect(change).toBeTruthy(); expect(multipart.get("expectedActorId")).toBe("actor-a");
+      const sent = await page.evaluate(id => batchSentFiles[id], id), index = record.action.body.changes.indexOf(change) + 1;
+      expect(sent.fileText).toBe(`full ${index}`); expect(sent.thumbText).toBe(`thumb ${index}`);
+      const receipt = { ok: true, operation: { id, state: "committed", environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a",
+        entityType: change.entityType, entityId: change.entityId, photoId: change.photoId, payloadDigest: "a".repeat(64) },
+        asset: { id, state: "ready", publication: "not-published", fileHash: sent.fileHash, thumbHash: sent.thumbHash, storedFileHash: sent.fileHash, storedThumbHash: sent.thumbHash } };
+      posts.push(id); stages.set(id, receipt); return route.abort("failed");
+    }
+    if (request.method() === "POST" && leaf === "list-operations") {
+      const body = request.postDataJSON(); expect(stages.size).toBe(2); expect(body.body).toEqual(record.action.body);
+      const payload = structuredClone(record.photoState.payload), outcomes = [];
+      for (const [index, change] of body.body.changes.entries()) {
+        const photo = { ...payload.items.item.photos[index], status: "synced", url: `https://example.test/${change.photoId}`, thumbUrl: `https://example.test/thumb/${change.photoId}` };
+        payload.items.item.photos[index] = photo;
+        const photoIds = [...change.expectedPhotoIds]; photoIds.splice(change.index, 0, change.photoId);
+        outcomes.push({ index, action: "attach", entityType: "item", entityId: "item", photoId: change.photoId, assetId: change.assetId, photoIds, photo });
+      }
+      const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: "list-a", body: body.body };
+      ownerReceipt = { ok: true, operation: { ...binding, id: body.operationId, state: "committed",
+        payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex") },
+        result: { status: 200, payload: { ok: true, stateRevision: 2, list: { id: "list-a", stateRevision: 2, payload }, photoChanges: outcomes } } };
+      posts.push(body.operationId); return route.abort("failed");
+    }
+    if (url.pathname.includes("/photo-assets/")) {
+      const last = leaf === record.action.body.changes[1].assetId;
+      return route.fulfill({ json: phase === "files" && last ? { ok: true, operation: { state: "unknown" } } : stages.get(leaf) });
+    }
+    if (url.pathname.includes("/list-operations/")) return route.fulfill({ json: phase === "done" && ownerReceipt || { ok: true, operation: { state: "unknown" } } });
+    return route.abort();
+  });
+  expect(await page.evaluate(() => drainBatch())).toMatchObject({ blocked: true });
+  expect(posts).toEqual(record.action.body.changes.map(change => change.assetId));
+  expect(ownerReceipt).toBeUndefined(); phase = "owner";
+  await page.reload(); await page.waitForFunction(() => window.batchReady);
+  expect(await page.evaluate(() => drainBatch())).toMatchObject({ blocked: true });
+  expect(posts).toHaveLength(3); expect(posts[2]).toBe(record.action.operationId); phase = "done";
+  await page.reload(); await page.waitForFunction(() => window.batchReady);
+  expect(await page.evaluate(() => drainBatch())).toBe("confirmed");
+  expect(posts).toHaveLength(3);
+  const result = await page.evaluate(async id => ({ action: batchRuntime().outbox.recover().action,
+    files: await Promise.all((await batchStore().read(id)).files.map(part => part.file.text())),
+    claims: (await batchStore().recoveryRecords())[0].claims.length }), record.action.operationId);
+  expect(result).toEqual({ action: record.action, files: ["full 1", "full 2"], claims: 2 });
 });

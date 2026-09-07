@@ -5,7 +5,7 @@ import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliati
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
 import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
 import { personalListMigrationBody } from "./personal-list-migration.js";
-import { PERSONAL_PHOTO_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
+import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
   assertPersonalPhotoRecord, assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { validateCancelledStagedPhotoReceipt } from "./personal-photo-staging.js";
@@ -80,7 +80,8 @@ const preflight = (action, snapshot) => {
 // Each action has its own immutable storage key: two tabs cannot overwrite one
 // another's intent. A concurrent fork is retained and blocked, never date-sorted.
 export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
-  environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED } = {}) {
+  environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED,
+  photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
   }
@@ -383,7 +384,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const current = assertObserved();
       return clone({ binding, observation: observation(current), retiredOperationIds: current.anchor?.retired || [],
         photoReceipts: current.anchor?.photoReceipts || [],
-        records: [...current.records.values()].filter(record => record.action.kind === "photos.mutate" && record.action.body.action === "attach") });
+        records: [...current.records.values()].filter(record => record.action.kind === "photos.mutate" && record.photoState.fileIntentHash !== null) });
     },
     preparePhoto({ snapshot, payload, body, operationId = crypto.randomUUID() }) {
       const input = clone({ snapshot, payload, body }), current = assertObserved(), { head, applied, anchor, records } = current;
@@ -398,7 +399,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         || input.body.baseStateRevision !== base.stateRevision) throw blocked("photo-base", "Не подтверждена исходная версия фотодействия.");
       const manifest = assertPersonalPhotoCandidate({ body: input.body, basePayload: base.payload, payload: input.payload });
       const changes = input.body.action === "batch" ? input.body.changes : [input.body];
-      if (manifest.some(entry => entry.action === "attach") && manifest.length !== 1
+      if (manifest.some(entry => entry.action === "attach") && input.body.action === "batch"
+        && (!photoBatchEnabled || manifest.some(entry => entry.action !== "attach"))
         || changes.some(change => change.action === "copy" && change.source.listId !== listId)) {
         throw blocked("photo-composite", "Для этого фотопакета ещё нужен составной локальный адаптер.");
       }
@@ -420,11 +422,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (!getContext?.()?.generation) throw blocked("context", "Не определена локальная версия фотодействия.");
         const current = assertObserved(), assertCurrent = guardEditor(getContext, current.head);
         assertCurrent(); prepare();
-        const attachment = input.action.body.action === "attach";
+        const changes = input.action.body.action === "batch" ? input.action.body.changes : [input.action.body];
+        const attachment = changes.some(change => change.action === "attach"), batch = attachment && input.action.body.action === "batch";
         const file = attachment ? await store?.read(input.action.operationId) : null;
         assertCurrent(); prepare();
         const record = { version: 1, action: input.action, snapshot: input.snapshot, mergeBase: input.mergeBase,
-          photoState: { version: 1, payload: input.payload, fileIntentHash: attachment ? file?.intentHash : null } };
+          photoState: { version: 1, payload: input.payload, fileIntentHash: attachment ? file?.intentHash : null,
+            ...(batch ? { fileInventoryVersion: 2 } : {}) } };
         assertPersonalPhotoRecord(record);
         if (attachment) assertPersonalPhotoFile(record, file, binding);
         preflight(record.action, record.snapshot);
@@ -793,15 +797,19 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const action = record.action;
         if (action.kind === "photos.mutate") {
           if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
-          assertPersonalPhotoRecord(record);
-          if (action.body.action === "attach") {
+          const manifest = assertPersonalPhotoRecord(record), attachments = manifest.filter(entry => entry.action === "attach");
+          const batch = record.photoState.fileInventoryVersion === 2;
+          if (batch && !photoBatchEnabled) throw blocked("photo-batch-disabled", "Пакетная отправка фото ещё не включена.");
+          if (attachments.length) {
             if (!photoStore || !photoStaging) throw blocked("photo-file", "Не подключено подтверждение сохранённого файла.");
             const saved = await photoStore.read(action.operationId); assertContext();
             assertPersonalPhotoFile(record, saved, binding);
-            const stage = await photoStaging.stage(action.operationId); assertContext();
-            if (stage?.historicalStageOnly !== true || stage.actionOperationId !== action.operationId
-              || stage.operation?.id !== action.body.assetId || stage.asset?.id !== action.body.assetId || stage.asset.state !== "ready") {
-              throw blocked("photo-stage", "Файл ещё не подтверждён для этой карточки.");
+            for (const attachment of attachments) {
+              const stage = await photoStaging.stage(action.operationId, batch ? attachment.assetId : undefined); assertContext();
+              if (stage?.historicalStageOnly !== true || stage.actionOperationId !== action.operationId
+                || stage.operation?.id !== attachment.assetId || stage.asset?.id !== attachment.assetId || stage.asset.state !== "ready") {
+                throw blocked("photo-stage", "Файл ещё не подтверждён для этой карточки.");
+              }
             }
           }
         }

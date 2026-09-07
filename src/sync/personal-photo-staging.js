@@ -1,4 +1,5 @@
 export const PERSONAL_PHOTO_STAGING_ENABLED = false;
+export const PERSONAL_PHOTO_BATCH_STAGING_ENABLED = false;
 export const PERSONAL_PHOTO_CANCELLATION_ENABLED = false;
 export const STAGED_PHOTO_ASSET_CAPABILITY = "personalStagedPhotoAssetsV1";
 export const STAGED_PHOTO_CANCELLATION_CAPABILITY = "personalStagedPhotoCancellationV1";
@@ -39,7 +40,8 @@ const stageForm = (record, expected) => {
 
 export function createPersonalPhotoStaging({ store, transport, getContext,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args),
-  timeoutMs = 10000, enabled = PERSONAL_PHOTO_STAGING_ENABLED, cancellationEnabled = PERSONAL_PHOTO_CANCELLATION_ENABLED } = {}) {
+  timeoutMs = 10000, enabled = PERSONAL_PHOTO_STAGING_ENABLED, cancellationEnabled = PERSONAL_PHOTO_CANCELLATION_ENABLED,
+  batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED } = {}) {
   const request = async (path, form, json = false) => {
     const controller = new AbortController(); let timer;
     try {
@@ -57,8 +59,9 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
     actorId: record.binding.actorId, listId: record.binding.listId, entityType: record.stage.entityType,
     entityId: record.stage.entityId, photoId: record.stage.photoId, fileHash: record.fileMetadata.hash,
     thumbHash: record.thumbMetadata?.hash || record.fileMetadata.hash, actionOperationId: record.action.operationId, intentHash: record.intentHash });
-  const run = async (actionOperationId, inspectOnly, cancelOnly = false) => {
+  const run = async (actionOperationId, inspectOnly, cancelOnly = false, stageOperationId = null) => {
     if (!transport?.experiment || !inspectOnly && (cancelOnly ? !cancellationEnabled : !enabled)) throw paused(null, "Новый режим загрузки фото ещё не включён.");
+    if (stageOperationId !== null && !inspectOnly && !batchEnabled) throw paused(null, "Пакетная отправка фото ещё не включена.");
     const initial = { ...getContext?.() }, binding = store.binding;
     const assertCurrent = () => {
       const current = getContext?.();
@@ -68,8 +71,10 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
     assertCurrent();
     if (!locks?.request) throw paused(null, "Между вкладками недоступна блокировка. Фото не отправлено.");
     return locks.request(`bike-packing-photo-stage-v1:${binding.actorId}:${binding.listId}`, async () => {
-      assertCurrent(); const record = await store.read(actionOperationId); assertCurrent();
-      if (!record || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
+      assertCurrent();
+      const record = stageOperationId === null ? await store.read(actionOperationId) : await store.readStage(actionOperationId, stageOperationId);
+      assertCurrent();
+      if (!record?.stage || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
       const expected = scope(record), stageId = expected.operationId;
       const path = `/bike-packing/lists/${encodeURIComponent(binding.listId)}/photo-assets`;
       const statusPath = `${path}/${encodeURIComponent(stageId)}`;
@@ -107,7 +112,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
         if (entry?.confirmed || known?.ok !== true || op?.state !== "unknown" || op.id !== stageId
           || op.environment !== environment || op.actorId !== binding.actorId || op.listId !== binding.listId) throw paused(stageId);
         if (!entry) transport.assertWritable(path, "POST", expected);
-        const claim = await store.claimStage(actionOperationId); assertCurrent();
+        const claim = await store.claimStage(actionOperationId, stageOperationId); assertCurrent();
         if (claim.stageOperationId !== stageId || claim.intentHash !== record.intentHash) throw paused(stageId);
         // Preserve the ORIGINAL immutable transport/stage identity. This sends
         // only its explicit no-publication fence, never the original upload.
@@ -129,7 +134,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       // This immutable IDB claim survives clearing/replacing the transport
       // journal. Only the first claimant may POST; a reload is status-only,
       // including a crash between claim and request registration/dispatch.
-      const claim = await store.claimStage(actionOperationId); assertCurrent();
+      const claim = await store.claimStage(actionOperationId, stageOperationId); assertCurrent();
       if (claim.stageOperationId !== stageId || claim.intentHash !== record.intentHash) throw paused(stageId);
       if (!claim.fresh || entry) return acknowledge(await read(statusPath));
       transport.assertWritable(path, "POST", expected);
@@ -147,5 +152,6 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       }
     });
   };
-  return { stage: id => run(id, false), inspect: id => run(id, true), cancel: id => run(id, false, true) };
+  return { stage: (id, stageId) => run(id, false, false, stageId), inspect: (id, stageId) => run(id, true, false, stageId),
+    cancel: (id, stageId) => run(id, false, true, stageId) };
 }

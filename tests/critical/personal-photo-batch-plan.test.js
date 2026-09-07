@@ -43,3 +43,12 @@ test("attachment preparation is disabled and refuses incomplete, changed, foreig
   const repeated = crypto.randomUUID();
   assert.throws(() => preparePersonalPhotoAttachmentBatch(fixture(), { enabled: true, createUuid: () => repeated }), { code: "photo-batch-plan" });
 });
+
+test("an existing API owner with omitted empty photos can receive a batch without rewriting the confirmed base", () => {
+  const f = fixture(); delete f.basePayload.items.item.photos; delete f.snapshot.items.item.photos; f.index = null;
+  const before = structuredClone(f.basePayload), result = preparePersonalPhotoAttachmentBatch(f, { enabled: true });
+  assert.deepEqual(result.body.changes[0].expectedPhotoIds, []); assert.equal(result.payload.items.item.photos.length, 2);
+  assert.deepEqual(f.basePayload, before); assert.equal(Object.hasOwn(before.items.item, "photos"), false);
+  f.basePayload.items.item.photos = null; f.snapshot.items.item.photos = null;
+  assert.throws(() => preparePersonalPhotoAttachmentBatch(f, { enabled: true }), { code: "photo-batch-plan" });
+});
