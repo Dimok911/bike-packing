@@ -52,7 +52,7 @@ function fixture() {
   };
   const make = () => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
-    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled, locks, fetchImpl }) };
+    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -63,6 +63,47 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);
   const queue = createListOperationQueue({ transport: { experiment: true } });
   assert.equal(queue.supports(path, "PUT"), false);
+});
+
+function migrationFixture() {
+  const f = fixture(), payload = { locations: [], categories: [], containers: {}, items: {}, layouts: {} };
+  Object.assign(f.context, { listId: "list-a", scopeKey: "id:actor-a", environment: "bike-packing-experiment" });
+  f.state.migrationEnabled = true; f.state.revision = 2;
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalListInitialMigrationV1"];
+  const migration = { version: 1, legacyPayloadHash: "a".repeat(64), projectedPayloadHash: createHash("sha256").update(canonicalListOperationJson(payload)).digest("hex") };
+  f.input = { path: `${path}/migration`, method: "POST", operationId: crypto.randomUUID(), body: JSON.stringify({ baseStateRevision: 1, payload, migration, causal: { dependsOn: [], reads: [] } }) };
+  f.state.payload = { ok: true, list: { id: "list-a", stateRevision: 2, payload }, migration };
+  return f;
+}
+
+test("migration uses its frozen gateway envelope and reads the same receipt after lost ACK and reload", async () => {
+  const f = migrationFixture(); f.state.loseResponse = true;
+  const result = await f.make().queue.run(f.input); assert.equal(result.list.stateRevision, 2);
+  assert.deepEqual(await f.make().queue.run(f.input), result); assert.equal(f.posts().length, 1);
+  assert.equal(JSON.parse(f.posts()[0].options.body).kind, "list.migrate");
+  assert.ok(f.posts()[0].url.endsWith("/list-operations"));
+  const proof = await createListOperationQueue({ transport: f.make().transport, getContext: () => f.context,
+    readOnly: true, locks: f.locks, fetchImpl: f.fetchImpl }).inspect(f.input);
+  assert.equal(proof.operation.id, f.input.operationId); assert.equal(proof.operation.state, "committed"); assert.equal(f.posts().length, 1);
+});
+
+test("migration refuses missing capability, edited projection and incorrect context before registering a write", async () => {
+  for (const change of [
+    f => { f.state.capabilities = ["personalListCausalOperationsV1"]; },
+    f => { const body = JSON.parse(f.input.body); body.payload.items.changed = {}; f.input.body = JSON.stringify(body); },
+    f => { f.context.listId = "other"; }, f => { f.context.environment = "production"; },
+    f => { f.state.migrationEnabled = false; }
+  ]) {
+    const f = migrationFixture(); change(f); await assert.rejects(f.make().queue.run(f.input));
+    assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0);
+  }
+});
+
+test("migration with an unknown outcome never blindly resends or accepts a mismatched success projection", async () => {
+  const f = migrationFixture(); f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.make().queue.run(f.input)); await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.posts().length, 1);
+  const data = f.receipts.get(f.input.operationId); data.result.payload.list.payload = { wrong: true }; f.state.unknown = false;
+  await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.posts().length, 1); assert.equal(Boolean(f.make().transport.writes[0].confirmed), false);
 });
 
 function cancellationFixture() {

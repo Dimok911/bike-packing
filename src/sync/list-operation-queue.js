@@ -2,6 +2,8 @@ import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILITY } from "./personal-photo-staging.js";
+import { PERSONAL_LIST_MIGRATION_ENABLED, PERSONAL_LIST_MIGRATION_CAPABILITY,
+  assertPersonalListMigrationHash, validatePersonalListMigrationResult } from "./personal-list-migration.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -24,6 +26,8 @@ export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
   const restore = /^\/bike-packing\/lists\/([^/]+)\/restore$/.exec(path);
   if (restore && method === "POST") return { kind: "list.restore", listId: decodeURIComponent(restore[1]) };
+  const migration = /^\/bike-packing\/lists\/([^/]+)\/migration$/.exec(path);
+  if (migration && method === "POST") return { kind: "list.migrate", listId: decodeURIComponent(migration[1]) };
   // Virtual adapter path: only the operation gateway dispatches this mutation.
   const photos = /^\/bike-packing\/lists\/([^/]+)\/photos\/mutate$/.exec(path);
   if (photos && method === "POST") return { kind: "photos.mutate", listId: decodeURIComponent(photos[1]) };
@@ -51,6 +55,7 @@ export function validateListReceipt(data, expected) {
   }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
   if (expected.kind === "photos.mutate") return validatePersonalPhotoPublicationResult(result.payload, expected);
+  if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
   const type = expected.kind.split(".")[0];
@@ -89,6 +94,7 @@ const historicalProof = data => {
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
+  migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -150,7 +156,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
   return {
     supports(path, method) {
       const route = listOperationRoute(path, method);
-      return !readOnly && enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled);
+      return !readOnly && enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled)
+        && (route.kind !== "list.migrate" || migrationEnabled);
     },
     supportsCancellation(path, method) { return cancellationEnabled && this.supports(path, method); },
     // An explicit cancellation fences the ORIGINAL immutable intent. It never
@@ -394,6 +401,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
+      if (route.kind === "list.migrate") {
+        if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
+        await assertPersonalListMigrationHash(body);
+      }
       if (route.kind === "photos.mutate") {
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
         personalPhotoPublicationManifest(body);
@@ -441,6 +452,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
+          if (route.kind === "list.migrate" && !capabilities.capabilities?.includes(PERSONAL_LIST_MIGRATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подготовку старого списка. Запрос не отправлен.");
           if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает подтверждение фотодействий. Запрос не отправлен.");
           }

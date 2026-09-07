@@ -4,6 +4,7 @@ import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snaps
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
 import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
+import { personalListMigrationBody } from "./personal-list-migration.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
   assertPersonalPhotoRecord, assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
@@ -42,9 +43,9 @@ export function recoverPersonalSaveListId({ storage, actorId, scopeKey }) {
   return [...candidates][0] || "";
 }
 const environment = "bike-packing-experiment";
-const updateKind = kind => ["list.update", "list.restore", "photos.mutate"].includes(kind);
+const updateKind = kind => ["list.update", "list.restore", "photos.mutate", "list.migrate"].includes(kind);
 const operationRequest = action => ({ operationId: action.operationId,
-  path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "list.restore" ? "/restore" : action.kind === "photos.mutate" ? "/photos/mutate" : ""}`,
+  path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "list.restore" ? "/restore" : action.kind === "photos.mutate" ? "/photos/mutate" : action.kind === "list.migrate" ? "/migration" : ""}`,
   method: action.kind === "list.update" ? "PUT" : "POST", body: JSON.stringify(action.body) });
 const prefix = "bike-packing-personal-save-v1:";
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -124,6 +125,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (record.mergeBase && (!record.mergeBase.payload || !Number.isSafeInteger(record.mergeBase.stateRevision)
           || record.mergeBase.stateRevision < 1 || !updateKind(action.kind))) throw Error("Invalid merge base");
         if (action.kind === "list.restore") personalHistoryRestoreManifest(action.body.historyRestore);
+        if (action.kind === "list.migrate") {
+          personalListMigrationBody(action.body, { causal: true });
+          if (action.generation !== 1 || action.previousLocalOperationId || record.reconciliation || record.localReconciliation) throw Error("Migration is not initial");
+        }
         if (action.kind === "photos.mutate" || record.photoState) assertPersonalPhotoRecord(record);
         if (record.reconciliation && !action.previousLocalOperationId) throw Error("Reconciliation without predecessor");
         if (record.localReconciliation && (record.localReconciliation.version !== 1
@@ -431,20 +436,27 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         return clone(record);
       } catch (error) { error.unconfirmedMemoryDraft = input.snapshot; throw error; }
     },
-    capture({ snapshot, body, create = false, restore = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
+    capture({ snapshot, body, create = false, restore = false, migration = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
       const input = clone({ snapshot, body });
       let current;
       try { current = assertObserved(); }
       catch (error) {
         // Only a pre-publication stale-editor failure has a resumable memory
         // draft. Quota, corrupt journals and actual stored forks are separate.
-        if (error.code === "stale-tab" && !staleCapture && !restore) staleCapture = {
+        if (error.code === "stale-tab" && !staleCapture && !restore && !migration) staleCapture = {
           input, base: clone(observedPayload || initialMergeBase?.payload || null),
           sourceOperationId: JSON.parse(observed).operationId
         };
         throw error;
       }
       const { head, records, anchor, applied } = current;
+      if (migration) {
+        personalListMigrationBody(input.body);
+        if (create || restore || localReconciliation || head || anchor || records.size) throw blocked("migration-base", "Подготовка допустима только до первого защищённого действия списка.");
+      } else if (input.body?.migration) throw blocked("input", "Для подготовки старого списка нужна отдельная операция.");
+      if (head?.action.kind === "list.migrate" && !applied.has(head.action.operationId)) {
+        throw blocked("migration-pending", "Сначала подтвердите подготовку старого списка. Следующее изменение не отправлено.");
+      }
       if (head?.action.kind === "photos.mutate" && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
         throw blocked("photo-pending", "Сначала нужно подтвердить фото и сохранить актуальную версию карточки. Следующее изменение не отправлено.");
       }
@@ -478,7 +490,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}),
-        kind: create ? "list.create" : restore ? "list.restore" : "list.update", body: { ...input.body, ...(create ? { id: listId } : {}), causal } };
+        kind: create ? "list.create" : restore ? "list.restore" : migration ? "list.migrate" : "list.update", body: { ...input.body, ...(create ? { id: listId } : {}), causal } };
       if (localReconciliation && (localReconciliation.version !== 1 || !head
         || localReconciliation.targetOperationId !== head.action.operationId
         || localReconciliation.sourceOperationId !== null && !uuid(localReconciliation.sourceOperationId))) {
@@ -575,6 +587,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (rejectedPhoto && !photoEnabled) throw blocked("photo-disabled", "Явное разрешение фотодействий ещё не включено.");
       if (rejectedPhoto && typeof resolveRejectedPhoto !== "function") throw blocked("photo-reconciliation", "Фотодействие отклонено. Сохранённый файл нельзя автоматически привязать к другой версии карточки.");
       const rejectedRestore = !alreadyCommitted && [...settled.outcomes].reverse().find(proof => proof.operation.kind === "list.restore" && proof.operation.state === "rejected");
+      if (!alreadyCommitted && settled.outcomes.some(proof => proof.operation.kind === "list.migrate" && proof.operation.state === "rejected")) {
+        throw blocked("migration-reconciliation", "Подготовка старого списка отклонена. Её нельзя автоматически перенести на другую версию; требуется проверка исходных данных.");
+      }
       if (rejectedRestore && typeof resolveRejectedRestore !== "function") {
         throw blocked("restore-reconciliation", "Восстановление не применено. Его нельзя автоматически перенести на другую версию списка; требуется новый выбор из истории.");
       }

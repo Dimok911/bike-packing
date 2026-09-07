@@ -743,6 +743,7 @@ import { preparePersonalLayoutDeletion } from "./src/sync/personal-layout-deleti
 import { preparePersonalDictionaryMutation } from "./src/sync/personal-dictionary-mutation.js";
 import { preparePersonalPlacementMutation, personalPlacementIntent } from "./src/sync/personal-placement-mutation.js";
 import { preparePersonalHistoryRestore } from "./src/sync/personal-history-restore.js";
+import { preparePersonalListMigration, PERSONAL_LIST_MIGRATION_ENABLED } from "./src/sync/personal-list-migration.js";
 import { personalBusinessPayload } from "./src/sync/personal-server-payload.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
@@ -2642,7 +2643,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     throw new Error("Для причинного сохранения сначала нужен подтверждённый личный список и аккаунт.");
   }
   const latest = outbox.recover?.();
-  if (!personalMutation && latest?.action.kind === "list.restore"
+  if (!personalMutation && ["list.restore", "list.migrate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
   return outbox.capture({ snapshot, body });
 }
@@ -5768,7 +5769,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
     const pending = personalSaveOutboxForScope()?.recover();
-    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation || pending?.action.kind === "list.restore") || pending.action.operationId !== personalOperationId
+    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -7738,6 +7739,7 @@ async function fetchRemoteListStateSnapshot(listId) {
     });
     stateRecord = normalizeRemoteListRecord(data);
   } catch (stateError) {
+    if (personalSavePilotEnabled() && stateError?.data?.code === "causal_read_migration_required") throw stateError;
     try {
       const detailRecord = await fetchRemoteListDetailRecord(listId);
       const bestRecord = pickRicherRemoteListRecord(stateRecord, detailRecord);
@@ -7856,6 +7858,10 @@ async function fetchRemoteListStateRecord() {
       assertPersonalContext();
     } catch (error) {
       assertPersonalContext();
+      if (personalSavePilotEnabled() && error?.data?.code === "causal_read_migration_required") {
+        saveActivePackingListId(listId);
+        throw error; // The catalog's legacy payload is not a protected read.
+      }
       if (!snapshotRecord?.payload && !savedRecord?.payload) throw error;
     }
   }
@@ -8510,7 +8516,9 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       && !isDestructiveStateRegression(state, deletionReference)
       && (!isSuspiciousEmptyPackingState(state) || isSuspiciousEmptyPackingState(deletionReference));
     const initialEmptyCreate = outbox.recover()?.action.kind === "list.create" && !loadBaseState();
-    if (!knownDeletion && !initialEmptyCreate && (isSuspiciousEmptyPackingState(state) || blockDestructiveLocalSave())) {
+    const initialMigration = outbox.recover()?.action.kind === "list.migrate"
+      && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), serializeState({ forSync: true }));
+    if (!knownDeletion && !initialEmptyCreate && !initialMigration && (isSuspiciousEmptyPackingState(state) || blockDestructiveLocalSave())) {
       throw new Error("Неполная локальная версия не отправлена на сервер.");
     }
     // Until the file/owner adapter exists, even a deletion or reordering of
@@ -8826,6 +8834,54 @@ function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
   });
 }
 
+async function handleInitialListMigrationRequired(error) {
+  if (!PERSONAL_LIST_MIGRATION_ENABLED || !personalSavePilotEnabled() || error?.data?.code !== "causal_read_migration_required"
+    || !currentPackingListId || !currentUser || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return false;
+  // A failed read never starts a mutation. The candidate is SELECT-only and
+  // requires a fresh, explicit decision before entering the durable outbox.
+  try {
+    personalSaveRecovery.assertRunning();
+    const outbox = personalSaveOutboxForScope(), listId = currentPackingListId;
+    const confirm = await preparePersonalListMigration({ outbox,
+      getContext: () => { personalSaveRecovery.assertRunning(); return personalSaveContext(); },
+      getState: () => state,
+      hasLocalChanges: () => Boolean(syncMeta.dirty || isForeignLocalSyncState()),
+      readPreview: () => apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/migration`, {
+        timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+      }),
+      makeSnapshot: personalReconciledSnapshot,
+      onCaptured(saved) {
+        replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+        syncMeta.stateRevision = saved.action.body.baseStateRevision;
+        syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso();
+        persistStateSnapshot(state, { recordAction: false });
+        saveSyncMeta();
+        appUnlocked = true; initialRemoteLoadPending = false;
+        renderPreservingPackingScroll();
+        updateSyncUi("Подготовка списка сохранена на устройстве и ждёт подтверждения сервера.");
+      }
+    });
+    const approved = await askConfirmDialog({
+      title: localText("Prepare the saved list", "Подготовить сохранённый список"),
+      text: localText(
+        "This list uses the older storage format. Prepare its existing server data for confirmed saves? This does not upload local edits or add another list. If the source changed, preparation will stop. Nothing is changed until you confirm.",
+        "Этот список сохранён в прежнем формате. Подготовить уже имеющиеся серверные данные к сохранению с подтверждениями? Локальные правки не отправляются, второй список не создаётся. Если источник изменился, подготовка остановится. До вашего согласия ничего не меняется."),
+      okText: localText("Prepare list", "Подготовить список"), cancelText: localText("Later", "Позже")
+    });
+    if (approved !== true) {
+      setLayoutLoadStatus("warning", "Подготовка списка отложена. Данные не изменены; повторить можно после обновления страницы.");
+      updateSyncUi("Старый список ждёт подготовки. Серверные данные не изменены.");
+      return true;
+    }
+    confirm();
+    await saveRemoteState({ notify: true });
+  } catch (failure) {
+    setLayoutLoadStatus("error", `Подготовка списка остановлена: ${failure.message}`);
+    updateSyncUi(failure.message);
+  }
+  return true;
+}
+
 async function loadRemoteState(options = {}) {
   await checkPersonalPhotoRecoveryBeforeLoad();
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
@@ -8855,6 +8911,7 @@ async function loadRemoteState(options = {}) {
       currentPackingListId: () => currentPackingListId || remoteRecordId(currentPackingListMeta),
       fetchRemoteListFreshnessRecord,
       fetchRemoteStateRecord,
+      handleInitialListMigrationRequired,
       filterAutoResolvedMergeConflicts,
       formatMergeConflicts,
       hasLocalSavedState,

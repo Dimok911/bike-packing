@@ -397,6 +397,7 @@ export async function loadRemoteStateFlow({ runtime, dependencies }, { notifyDir
     setPersonalLayoutsLoadedStatus();
     updateSyncUi();
   } catch (error) {
+    if (await dependencies.handleInitialListMigrationRequired?.(error)) return;
     if (isTemporaryServerStorageError(error)) {
       runtime.appUnlocked = true;
       renderInitialLocalFallbackIfNeeded();

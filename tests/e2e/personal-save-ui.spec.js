@@ -21,6 +21,10 @@ test.beforeAll(async () => {
   }
 });
 test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) {
+    const difference = await page.evaluate(() => globalThis.__personalTestProjectionDifference).catch(() => null);
+    if (difference) await info.attach("personal-projection-difference", { body: JSON.stringify(difference, null, 2), contentType: "application/json" });
+  }
   if (info.status !== info.expectedStatus) await info.attach("personal-ui-errors", {
     body: JSON.stringify(page.personalFixture?.errors || []), contentType: "application/json"
   });
@@ -68,9 +72,21 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false } = {}) {
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, migration = false, migrationComplete = true } = {}) {
+  if (migration && migrationComplete) {
+    // A previously saved complete legacy list, not an intentionally incomplete
+    // fixture requiring unrelated structural/dictionary repair in the UI.
+    payload = structuredClone(payload);
+    payload.customLocations = [...payload.locations]; payload.customCategories = [...payload.categories];
+    payload.collapseDefaultsVersion = 2;
+    for (const layout of Object.values(payload.layouts)) {
+      layout.arrangement.itemQuantities ||= {};
+      layout.arrangement.itemQuantityMigrationVersion = 3;
+      Object.assign(layout, { customLocations: [], customCategories: [], locations: [], categories: [] });
+    }
+  }
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
-    posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [] };
+    posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
   const activeBundleRoot = photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
@@ -96,10 +112,22 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoRecovery ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
-      else if (path === `/bike-packing/lists/${state.listId}` || path === `/bike-packing/lists/${state.listId}/state`) data = { ok: true, list: record(), state: state.payload };
+      else if (path === `/bike-packing/lists/${state.listId}/migration`) {
+        expect(request.method()).toBe("GET");
+        const hash = value => createHash("sha256").update(canonicalListOperationJson(value)).digest("hex");
+        data = { ok: true, actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId,
+          migration: { baseStateRevision: state.revision, payload: structuredClone(state.payload), migration: {
+            version: 1, legacyPayloadHash: hash(state.payload), projectedPayloadHash: hash(state.payload)
+          } } };
+        state.migrationPreviews.push(structuredClone(data));
+      }
+      else if (path === `/bike-packing/lists/${state.listId}` || path === `/bike-packing/lists/${state.listId}/state`) {
+        if (state.migration) { status = 409; data = { ok: false, code: "causal_read_migration_required", message: "Initial preparation is required" }; }
+        else data = { ok: true, list: record(), state: state.payload };
+      }
       else if (path === `/bike-packing/lists/${state.listId}/freshness`) data = { ok: true, ...record(), payload: undefined };
       else if (path === `/bike-packing/lists/${state.listId}/history`) data = { ok: true, records: state.history || [], page: { hasMore: false } };
       else if (path === `/bike-packing/lists/${state.listId}/history/101/restore` && request.method() === "GET") {
@@ -158,9 +186,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             result: { status: 409, payload: { ok: false,
               code: predecessor?.operation.state === "rejected" ? "dependency_rejected" : "stale_state_revision", stateRevision: state.revision } } };
         } else {
+          if (body.kind === "list.migrate") {
+            expect(body.body).toEqual({ ...state.migrationPreviews.at(-1).migration, causal: { dependsOn: [], reads: [] } });
+            state.migration = false;
+          }
           state.listId = body.listId; state.payload = body.body.payload; state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
-            result: { status: 200, payload: { ok: true, list: structuredClone(record()) } } };
+            result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
         if (state.lose) { state.injectedFailure = true; return route.abort("failed"); }
@@ -180,13 +212,84 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
     catch (error) { if (error.code === "ENOENT") return route.fulfill({ status: 404, body: "Not in isolated fixture" }); throw error; }
   });
   await page.goto(origin);
-  await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
-  if (!fresh) {
+  if (migration && migrationComplete) await expect(page.locator("#confirmDialog")).toBeVisible({ timeout: 30000 });
+  else await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  if (!fresh && !migration) {
     await expect(page.locator("#layoutSelect option").filter({ hasText: "Личный тест" })).toBeAttached({ timeout: 20000 });
     await page.locator("#layoutSelect").selectOption("layout-a");
   }
   return state;
 }
+
+test("initial legacy list preparation requires an explicit real dialog and survives lost ACK without duplicate migration", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context, { migration: true, lose: true });
+  const dialog = page.locator("#confirmDialog");
+  await expect(dialog).toBeVisible(); await expect(dialog).toContainText("Подготовить сохранённый список");
+  expect(f.migrationPreviews.length).toBe(1); expect(f.posts).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Подготовить список", exact: true }).click();
+  await expect.poll(() => f.posts.length).toBe(1); expect(f.posts[0].kind).toBe("list.migrate");
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const original = structuredClone(f.posts[0]);
+  f.lose = false; f.unknown = false;
+  await reloadApp(page);
+  await synchronize(page, () => !f.migration);
+  expect(f.posts).toEqual([original]); expect(f.revision).toBe(2);
+  await createRootContainer(page, "После подготовки");
+  await synchronize(page, () => Object.values(f.payload.containers).some(entry => entry.name === "После подготовки"));
+  expect(f.posts.filter(post => post.kind === "list.migrate")).toEqual([original]);
+  expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.migration).toBeUndefined(); expect(f.errors).toEqual([]);
+});
+
+test("declining initial legacy list preparation leaves every server record and local action untouched", async ({ page, context }) => {
+  const f = await setup(page, context, { migration: true }), before = structuredClone(f.payload);
+  const dialog = page.locator("#confirmDialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Позже", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(f.posts).toHaveLength(0); expect(f.revision).toBe(1); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:")))).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
+
+test("initial legacy list preparation never rebases a rejected frozen source during reload or manual sync", async ({ page, context }) => {
+  const f = await setup(page, context, { migration: true });
+  f.allowConflicts = true; f.revision++; f.payload.layouts["layout-a"].name = "Изменено на сервере";
+  const current = structuredClone(f.payload);
+  await page.locator("#confirmDialog").getByRole("button", { name: "Подготовить список", exact: true }).click();
+  await expect.poll(() => f.posts.length).toBe(1);
+  const original = structuredClone(f.posts[0]);
+  expect(f.receipts.get(original.operationId).operation.state).toBe("rejected");
+  await reloadApp(page); await page.locator("#syncBtn").click();
+  await expect(page.locator("body")).toContainText("Подготовка старого списка отклонена");
+  expect(f.posts).toEqual([original]); expect(f.payload).toEqual(current); expect(f.revision).toBe(2); expect(f.errors).toEqual([]);
+});
+
+test("initial legacy list preparation quota retains the candidate without changing the displayed or server data", async ({ page, context }) => {
+  const f = await setup(page, context, { migration: true }), before = structuredClone(f.payload);
+  const mirror = await page.evaluate(() => localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a"));
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmDialog").getByRole("button", { name: "Подготовить список", exact: true }).click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  expect(f.posts).toHaveLength(0); expect(f.revision).toBe(1); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a"))).toBe(mirror);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:")))).toEqual([]);
+});
+
+test("initial legacy list preparation refuses unrelated structural repairs before confirmation and before any write", async ({ page, context }) => {
+  const f = await setup(page, context, { migration: true, migrationComplete: false }), before = structuredClone(f.payload);
+  await expect(page.locator("#confirmDialog")).not.toBeVisible();
+  await expect(page.locator("body")).toContainText("требует проверки структуры");
+  expect(f.posts).toHaveLength(0); expect(f.payload).toEqual(before); expect(f.revision).toBe(1);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:")))).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
 
 test("actual bag and item dialogs persist immutable actions and recover lost ACK after reload", async ({ page, context }) => {
   test.setTimeout(90000);
