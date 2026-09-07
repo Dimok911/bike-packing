@@ -1,6 +1,6 @@
 const environment = "bike-packing-experiment";
 const journalPrefix = "bike-packing-personal-save-v1:";
-const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selection", "payload-size", "payload-shape"]);
+const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selection", "payload-size", "payload-shape", "photo-recovery"]);
 
 // A storage failure is a latched stop for this editor, not an invitation to
 // retry a form which may already have changed its in-memory entities.

@@ -165,3 +165,31 @@ retains bytes through claim → reload → cancellation ACK loss → reload → 
 refusal. Paired real API/MySQL **65/65** uses a valid PNG claimed-record fixture,
 not native IDB; shutdown completed (`data-aa627443d0184f5fbc38da1a686ee184`).
 No publication, live migration, Production change or gate activation.
+
+## Startup fence and local recovery ZIP
+
+The full app now checks the known current personal list before remote load/save,
+and checks a remembered personal account on offline startup. The temporary top-
+layer dialog prevents editing during the asynchronous scan. Any retained file,
+missing file reference or unreadable journal stays blocked: rollback with all
+photo writers disabled still reads the records, never chooses upload/cleanup.
+This is a conservative startup fence, NOT finished resume/cancel UI. Discovering
+photo journals belonging to other/no-longer-selected lists remains open.
+
+The recovery dialog can download the personal queue plus available original and
+thumbnail bytes for the current list. One read-only IDB transaction copies raw
+records and dispatch claims, including damaged intent/hash fields, without
+decoding them into executable actions. The archive retains explicit missing/
+unverified-file information; it is not the ordinary backup format and has no
+automatic importer. It does not certify server acceptance or authorize deletion.
+Account/editor/queue/file-set guards cover asynchronous export. Archive assembly
+is bounded at 1000 records/256 MiB; larger recovery sets need a future paged export,
+not a truncated archive. Neither tokens nor unrelated storage keys are included.
+
+Local evidence: 246 transport, 889 critical, source check. A single combined
+browser run: **41 passed, 1 skipped**, 1.6 minutes. Includes real built-app startup,
+online unlinked draft and offline damaged record, actual download/read-back of
+original/thumbnail bytes and dispatch ID, no POST/deletion, plus the native IDB
+suite. The sole old native-Blob Windows WebKit cache skip is unchanged. This is
+Windows Chromium/mobile WebKit, not real-device Safari or full UI acceptance.
+No new API changes, push, publication, live migration or gate activation.

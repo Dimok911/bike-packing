@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
+import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
 // Full application, isolated browser/API fixture. Gates are changed only in
@@ -1266,6 +1267,66 @@ test("quota failure in a real form pauses editing and exports the unsaved draft 
   expect(box.height).toBeLessThanOrEqual(page.viewportSize().height);
   await page.screenshot({ path: info.outputPath("personal-save-quota.png") });
   expect(f.errors).toEqual([]);
+});
+
+for (const offline of [false, true]) test(`actual startup fences an unlinked photo draft and exports its original local bytes without upload or deletion (${offline ? "offline damaged record" : "online"})`, async ({ page, context }, info) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Сумка перед восстановлением фото");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  // Only the seed uses source modules; the recovery button belongs to the full
+  // built app with ALL photo writer gates still disabled.
+  await context.route(`${origin}/src/**/*.js`, async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid seed module path");
+    return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+  });
+  const seeded = await page.evaluate(async listId => {
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId, scopeKey: "id:actor-a" };
+    const current = { ...binding, scope: "personal", generation: "before-crash" };
+    const store = createPersonalPhotoActionStore({ ...binding, enabled: true, getContext: () => current });
+    const stage = { operationId: crypto.randomUUID(), photoId: "retained-photo", entityType: "item", entityId: "unlinked-owner", fileName: "original.png" };
+    const action = { operationId: crypto.randomUUID(), listId, kind: "photos.mutate", body: { version: 1, action: "attach", baseStateRevision: 1,
+      baseEntityRevision: 1, entityType: stage.entityType, entityId: stage.entityId, photoId: stage.photoId, assetId: stage.operationId, index: 0, expectedPhotoIds: [] } };
+    await store.capture({ stage, action, snapshot: { items: { "unlinked-owner": { id: "unlinked-owner", photos: [{ id: stage.photoId, status: "pending" }] } } },
+      file: new Blob(["original retained photo bytes"], { type: "image/png" }), thumb: new Blob(["retained thumbnail"], { type: "image/png" }) });
+    await store.claimStage(action.operationId); // Crash before outbox registration / network.
+    localStorage.setItem("fixture-auth-token", "never-export-this");
+    return { actionId: action.operationId, stageId: stage.operationId };
+  }, f.listId);
+  if (offline) await page.evaluate(async () => {
+    localStorage.setItem("bike-packing-force-offline", "1");
+    const open = indexedDB.open("bike-packing-personal-photo-actions-v1", 2);
+    const db = await new Promise((resolve, reject) => { open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("actions", "readwrite"), store = tx.objectStore("actions"), request = store.getAll();
+      request.onsuccess = () => { for (const row of request.result) store.put({ ...row, intentHash: "damaged but retained" }); };
+      tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+    }); db.close();
+  });
+  const posts = f.posts.length, server = structuredClone(f.payload);
+  await page.reload();
+  const dialog = page.locator("#personalSaveRecoveryDialog");
+  await expect(dialog).toBeVisible({ timeout: 20000 });
+  await expect(dialog).toContainText("Найдены сохранённые фотодействия");
+  const downloadPromise = page.waitForEvent("download");
+  await dialog.locator("[data-download-photo-recovery]").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("bike-packing-photo-recovery.zip");
+  const zip = await readZipEntries(new Blob([await readFile(await download.path())]));
+  expect(zipText(zip.get(`photos/${seeded.actionId}/original.bin`))).toBe("original retained photo bytes");
+  expect(zipText(zip.get(`photos/${seeded.actionId}/thumbnail.bin`))).toBe("retained thumbnail");
+  const record = JSON.parse(zipText(zip.get(`photos/${seeded.actionId}/record.json`)));
+  expect(record.dispatchClaim.stageOperationId).toBe(seeded.stageId);
+  const manifest = JSON.parse(zipText(zip.get("recovery-manifest.json")));
+  expect(manifest.inventory.entries[0].state).toBe(offline ? "corrupt-file" : "unlinked");
+  if (offline) expect(record.intentHash).toBe("damaged but retained");
+  expect(manifest.serverConfirmationIncluded).toBe(false);
+  expect(zipText(zip.get("personal-queue.json"))).not.toContain("never-export-this");
+  await page.keyboard.press("Escape"); await expect(dialog).toBeVisible();
+  expect(f.posts.length).toBe(posts); expect(f.payload).toEqual(server); expect(f.errors).toEqual([]);
+  await page.screenshot({ path: info.outputPath("personal-photo-recovery.png") });
 });
 
 test("corrupt journal at reload shows a blocking recovery dialog without empty-list fallback or POST", async ({ page, context }) => {

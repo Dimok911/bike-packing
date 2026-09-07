@@ -727,6 +727,9 @@ import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
+import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
+import { inspectPersonalPhotoRecovery } from "./src/sync/personal-photo-recovery-inventory.js";
+import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-recovery-archive.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -1174,6 +1177,7 @@ applyPublicTemplateLanguage();
 let localStorageScopeKey = GUEST_STORAGE_SCOPE;
 const personalSaveOutboxes = new Map();
 let personalInitialSaveOutbox = null;
+let personalPhotoRecoveryCheck = null, personalPhotoRecoverySource = null;
 const personalSaveRecovery = createPersonalSaveRecovery({
   isCurrentScope: scopeKey => scopeKey === localStorageScopeKey && scopeKey?.startsWith("id:"),
   onBlocked: failure => {
@@ -1187,7 +1191,10 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage),
   ownsError: error => personalSaveRecovery.owns(error),
   canRecoverDraft: () => personalSaveRecovery.canRecoverDraft(),
-  recoverDraft: () => recoverStalePersonalDraft()
+  recoverDraft: () => recoverStalePersonalDraft(),
+  canExportPhotos: () => Boolean(personalPhotoRecoverySource && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey),
+  getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
+    getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
 let applyingLayoutArrangement = false;
 let hadLocalStateAtStartup = hasLocalSavedState();
@@ -6244,6 +6251,10 @@ function activateOfflineRememberedSession(
   appUnlocked = true;
   activateLocalStorageScope(rememberedUser.scopeKey || userStorageScopeKey(rememberedUser));
   setActivePrivateScope();
+  // Starts the blocking read-only dialog synchronously; no network is needed.
+  checkPersonalPhotoRecoveryBeforeLoad().catch(error => {
+    if (!personalSaveRecovery.owns(error)) console.warn("Local photo recovery check stopped", error.code || "context");
+  });
   setOfflineRememberedLayoutLoadStatus(layoutStatusMessage || rememberedStatus.layout);
   const renderedFallback = renderInitialLocalFallbackIfNeeded();
   if (!renderedFallback) renderPreservingPackingScroll();
@@ -8322,6 +8333,62 @@ function personalSaveContext() {
   };
 }
 
+function personalPhotoRecoveryReadContext() {
+  const context = personalSaveContext();
+  // Local recovery is also available for the explicitly remembered offline
+  // account. This read context is NEVER passed to a server writer.
+  if (!context.actorId && isOfflineRememberedSession()) context.actorId = String(offlineRememberedUser.id || "");
+  return context;
+}
+
+async function checkPersonalPhotoRecoveryBeforeLoad() {
+  if (!personalSavePilotEnabled()) return;
+  personalSaveRecovery.assertRunning();
+  const initial = personalPhotoRecoveryReadContext();
+  if (!initial.actorId || !initial.listId || initial.scopeKey !== `id:${initial.actorId}` || initial.scope !== "personal") return;
+  const binding = { environment: initial.environment, actorId: initial.actorId, listId: initial.listId, scopeKey: initial.scopeKey };
+  const key = JSON.stringify(binding);
+  if (personalPhotoRecoveryCheck?.key === key) return personalPhotoRecoveryCheck.promise;
+  const source = { store: createPersonalPhotoActionStore({ ...binding, getContext: personalPhotoRecoveryReadContext }), inventory: null };
+  personalPhotoRecoverySource = source;
+  personalSaveRecoveryDialog?.showChecking();
+  const pending = { key, promise: null };
+  personalPhotoRecoveryCheck = pending;
+  pending.promise = (async () => {
+    try {
+      // Reader works with every photo writer gate off, including rollback.
+      const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage });
+      source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+      personalSaveRecovery.assertRunning();
+      // No UI continuation may yet decide that a retained file is disposable
+      // or safe to re-upload merely because its outbox UUID was compacted.
+      if (source.inventory.entries.length) throw Error("Retained photo actions need explicit recovery");
+      if (personalPhotoRecoveryCheck === pending) {
+        personalPhotoRecoverySource = null;
+        personalSaveRecoveryDialog?.finishChecking();
+      }
+    } catch (cause) {
+      // A concurrent storage failure owns its existing dialog and draft.
+      if (personalSaveRecovery.owns(cause)) throw cause;
+      const current = personalPhotoRecoveryReadContext();
+      if (Object.keys(binding).some(name => current[name] !== binding[name]) || current.scope !== "personal") {
+        if (personalPhotoRecoveryCheck === pending) {
+          personalPhotoRecoverySource = null;
+          personalSaveRecoveryDialog?.finishChecking();
+        }
+        throw cause; // Never expose/adopt a previous account's recovery result.
+      }
+      const error = Object.assign(new Error("Сохранённые фотографии требуют проверки. Данные не удалены и не отправлены повторно."),
+        { cause, code: "photo-recovery", isPersonalSaveBlocked: true });
+      personalSaveRecovery.report(error, { scopeKey: initial.scopeKey });
+      throw error;
+    } finally {
+      if (personalPhotoRecoveryCheck === pending) personalPhotoRecoveryCheck = null;
+    }
+  })();
+  return pending.promise;
+}
+
 function personalReconciledSnapshot(payload, previous) {
   // Restore only UI preferences/selection, never old business relationships.
   const business = personalBusinessPayload(payload);
@@ -8356,6 +8423,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   const owner = { actorId: String(currentUser?.id || ""), scopeKey: localStorageScopeKey, listId: currentPackingListId };
   try {
     personalSaveRecovery.assertRunning();
+    await checkPersonalPhotoRecoveryBeforeLoad();
     if (isForcedOffline()) {
       updateSyncUi("Офлайн · действия сохранены на устройстве и ждут отправки.");
       return;
@@ -8699,6 +8767,7 @@ function importGuestLocalLayouts(candidate, { renameConflicts = true } = {}) {
 }
 
 async function loadRemoteState(options = {}) {
+  await checkPersonalPhotoRecoveryBeforeLoad();
   if (remoteStateLoadPromise) return remoteStateLoadPromise;
   remoteStateLoadPromise = loadRemoteStateFlow({
     runtime: {

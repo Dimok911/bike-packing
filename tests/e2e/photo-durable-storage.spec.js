@@ -15,6 +15,8 @@ async function fixture(page, context) {
         import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
         import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
         import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
+        import {createPersonalPhotoRecoveryArchive} from '/src/sync/personal-photo-recovery-archive.js';
+        import {readZipEntries,zipText} from '/src/utils/simple-zip.js';
         import {createPersonalPhotoStaging} from '/src/sync/personal-photo-staging.js';
         import {createExperimentTransport} from '/src/sync/experiment-transport.js';
         window.photoContext={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a',scope:'personal',generation:'edit-1'};
@@ -26,6 +28,7 @@ async function fixture(page, context) {
             snapshot:{items:{'item-a':{id:'item-a',name:'Frozen owner',photos:[{id:'new-photo',status:'pending'}]}},containers:{},layouts:{}},
             file:new Blob(['full photo bytes'],{type:'image/png'}),thumb:new Blob(['thumbnail bytes'],{type:'image/png'})};};
         window.photos=photos;
+        window.photoRecoveryArchive=createPersonalPhotoRecoveryArchive;window.readPhotoZip=readZipEntries;window.photoZipText=zipText;
         window.photoOutbox=(extra={})=>createPersonalSaveOutbox({...window.photoContext,storage:localStorage,photoEnabled:true,...extra});
         window.inspectPhotoRecovery=()=>inspectPersonalPhotoRecovery({outbox:window.photoOutbox(),store:window.photoActions(),getContext:()=>window.photoContext});
         window.photoStaging=(extra={})=>createPersonalPhotoStaging({store:window.photoActions(),transport:createExperimentTransport({selection:'direct'}),
@@ -90,6 +93,48 @@ test("a local photo callback failure aborts its queued writes and the next trans
     return { rejected, persisted: Boolean(persisted), next: (await window.photos.getCachedPhoto("next", "id:actor-a")).id };
   });
   expect(outcome).toEqual({ rejected: true, persisted: false, next: "next" });
+});
+
+test("raw photo recovery export retains corrupted intent, original bytes and the exact dispatch claim after reload", async ({ page, context }) => {
+  await fixture(page, context);
+  const id = await page.evaluate(async () => {
+    const input = window.photoInput(), store = window.photoActions(); await store.capture(input); await store.claimStage(input.action.operationId);
+    return input.action.operationId;
+  });
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  const result = await page.evaluate(async operationId => {
+    const open = indexedDB.open("bike-packing-personal-photo-actions-v1", 2);
+    const db = await new Promise((resolve, reject) => { open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
+    const store = window.photoActions({ enabled: false }), original = (await store.recoveryRecords())[0];
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("actions", "readwrite"); tx.objectStore("actions").put({ ...original.record, intentJson: "{corrupt preserved" });
+      tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+    }); db.close();
+    let decodingBlocked = false; try { await store.read(operationId); } catch { decodingBlocked = true; }
+    const copy = { environment: store.binding.environment, scopeKey: store.binding.scopeKey, automaticImportAllowed: false };
+    const archive = await window.photoRecoveryArchive({ store, getContext: () => window.photoContext, getRecoveryCopy: () => copy });
+    const entries = await window.readPhotoZip(archive.blob), prefix = `photos/${operationId}`;
+    const raw = JSON.parse(window.photoZipText(entries.get(`${prefix}/record.json`)));
+    return { decodingBlocked, full: window.photoZipText(entries.get(`${prefix}/original.bin`)), thumb: window.photoZipText(entries.get(`${prefix}/thumbnail.bin`)),
+      rawIntent: raw.intentJson, claimId: raw.dispatchClaim.actionOperationId, stageId: raw.dispatchClaim.stageOperationId,
+      originalStageId: original.claim.stageOperationId, ids: await store.ids(), confirmed: archive.manifest.serverConfirmationIncluded };
+  }, id);
+  expect(result).toEqual({ decodingBlocked: true, full: "full photo bytes", thumb: "thumbnail bytes", rawIntent: "{corrupt preserved", claimId: id,
+    stageId: result.originalStageId, originalStageId: result.originalStageId, ids: [id], confirmed: false });
+});
+
+test("photo recovery raw reader rejects changed context during its transaction and never returns another actor's files", async ({ page, context }) => {
+  await fixture(page, context);
+  const result = await page.evaluate(async () => {
+    const store = window.photoActions(); await store.capture(window.photoInput());
+    const foreign = window.photoActions({ actorId: "actor-b", scopeKey: "id:actor-b", getContext: () => ({ ...window.photoContext, actorId: "actor-b", scopeKey: "id:actor-b" }) });
+    const foreignRows = await foreign.recoveryRecords();
+    const original = IDBIndex.prototype.getAll;
+    IDBIndex.prototype.getAll = function (...args) { const request = original.apply(this, args); request.addEventListener("success", () => window.photoContext.generation = "changed"); return request; };
+    let code; try { await store.recoveryRecords(); } catch (error) { code = error.code; } finally { IDBIndex.prototype.getAll = original; }
+    return { foreignCount: foreignRows.length, code, retained: (await store.ids()).length };
+  });
+  expect(result).toEqual({ foreignCount: 0, code: "context-changed", retained: 1 });
 });
 
 test("photo cache preserves actual Blob bytes and MIME through browser reload", async ({ page, context, browserName }) => {

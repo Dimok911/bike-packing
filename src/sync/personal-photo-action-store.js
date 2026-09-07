@@ -141,6 +141,35 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       const keys = await transaction("readonly", (store, finish) => { const request = store.index("binding").getAllKeys(bindingKey); request.onsuccess = () => finish(request.result); });
       return keys.map(value => JSON.parse(value)[1]);
     },
+    async recoveryRecords() {
+      // A read-only forensic copy, not decoded actions or dispatch authority.
+      // Preserve damaged intent/hash data and the available original bytes.
+      const initial = { ...getContext?.() }; assertContext(initial);
+      const records = await transaction("readonly", (store, finish, abort, tx) => {
+        const request = store.index("binding").getAll(bindingKey);
+        request.onsuccess = () => {
+          try {
+            assertContext(initial);
+            const rows = request.result, result = []; let remaining = rows.length;
+            if (!remaining) { finish(result); return; }
+            for (const row of rows) {
+              const operationId = JSON.parse(row.key)?.[1];
+              if (!uuid(operationId) || row.key !== key(operationId) || row.bindingKey !== bindingKey) throw blocked("recovery-binding");
+              const claim = tx.objectStore("stage-dispatches").get(row.key);
+              claim.onsuccess = () => {
+                try {
+                  assertContext(initial);
+                  if (claim.result && (claim.result.key !== row.key || claim.result.bindingKey !== bindingKey)) throw blocked("recovery-binding");
+                  result.push({ operationId, record: row, claim: claim.result || null });
+                  if (!--remaining) finish(result);
+                } catch (cause) { abort(cause); }
+              };
+            }
+          } catch (cause) { abort(cause); }
+        };
+      }, ["actions", "stage-dispatches"]);
+      assertContext(initial); return records;
+    },
     async claimStage(operationId) {
       if (!enabled) throw blocked("disabled");
       const initial = { ...getContext?.() }; assertContext(initial);

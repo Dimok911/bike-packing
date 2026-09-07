@@ -2,8 +2,9 @@
 // before the ordinary status controls exist. The native top layer also covers
 // the still-open form whose save failed, including on mobile.
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
-  getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft } = {}) {
-  let dialog;
+  getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
+  getPhotoRecoveryArchive, canExportPhotos = () => false } = {}) {
+  let dialog, checking = false;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
     if (!dialog?.open) return;
@@ -13,6 +14,20 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
   // Unrelated exceptions must remain visible to diagnostics.
   windowRef.addEventListener("error", event => { if (ownsError(event.error)) event.preventDefault(); });
   windowRef.addEventListener("unhandledrejection", event => { if (ownsError(event.reason)) event.preventDefault(); });
+  const renderChecking = active => {
+    checking = active;
+    if (!dialog) return;
+    dialog.querySelector("#personalSaveRecoveryTitle").textContent = active
+      ? text("Проверка сохранённых фотографий", "Checking retained photos") : text("Сохранение приостановлено", "Saving is paused");
+    dialog.querySelector("#personalSaveRecoveryDescription").textContent = active
+      ? text("Проверяем файлы и очередь на этом устройстве. Пока не закрывайте вкладку.", "Checking local files and the queue. Keep this tab open.")
+      : text("Не удалось надёжно сохранить или прочитать очередь изменений. Продолжать редактирование в этой вкладке пока нельзя. Не очищайте данные сайта.",
+        "The changes queue could not be saved or read reliably. Editing in this tab is paused. Do not clear this site's data.");
+    dialog.querySelectorAll("button").forEach(button => { button.disabled = active; });
+    dialog.querySelector("[data-recovery-guidance]").hidden = active;
+    dialog.querySelector("[data-recovery-reason]").hidden = active;
+    dialog.querySelector("[data-download-photo-recovery]").hidden = active || !canExportPhotos();
+  };
   return {
     show() {
       if (dialog) { if (!dialog.open) dialog.showModal(); return; }
@@ -34,6 +49,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       const reason = documentRef.createElement("p");
       reason.dataset.recoveryReason = "";
       const guidance = documentRef.createElement("p");
+      guidance.dataset.recoveryGuidance = "";
       guidance.textContent = text(
         "Перед перезагрузкой скачайте копию для восстановления. Она содержит доступную очередь и, если удалось получить, несохранённые изменения. Файлы фотографий в неё не входят. Это не обычная резервная копия: не импортируйте её автоматически и не отправляйте в общий доступ.",
         "Download a recovery copy before reloading. It contains the available queue and any captured unsaved changes, but not photo files. This is not a normal backup: do not import it automatically or share it publicly.");
@@ -42,6 +58,25 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       download.textContent = text("Скачать копию для восстановления", "Download recovery copy");
       const status = documentRef.createElement("p");
       status.setAttribute("role", "status");
+      const photoDownload = documentRef.createElement("button");
+      photoDownload.type = "button"; photoDownload.dataset.downloadPhotoRecovery = "";
+      photoDownload.textContent = text("Скачать очередь и доступные фото", "Download queue and available photos");
+      photoDownload.hidden = !canExportPhotos();
+      photoDownload.addEventListener("click", async () => {
+        photoDownload.disabled = true;
+        status.textContent = text("Собираю локальные файлы. Ничего не отправляется на сервер…", "Collecting local files. Nothing is sent to the server…");
+        try {
+          const archive = await getPhotoRecoveryArchive();
+          const url = windowRef.URL.createObjectURL(archive.blob), link = documentRef.createElement("a");
+          link.href = url; link.download = archive.fileName;
+          dialog.append(link); link.click(); link.remove();
+          windowRef.setTimeout(() => windowRef.URL.revokeObjectURL(url), 30000);
+          status.textContent = text("Загрузка архива запрошена. Проверьте файл в загрузках. Он содержит доступные локальные фото текущего списка, не подтверждает отправку и не разрешает очистку данных сайта.",
+            "Archive download requested. Check your downloads. It contains available local photos of this list, not server confirmation or permission to clear site data.");
+        } catch (error) {
+          status.textContent = error.message || text("Архив не готов. Не закрывайте вкладку и не очищайте данные сайта.", "Archive not ready. Keep this tab and its site data.");
+        } finally { photoDownload.disabled = false; }
+      });
       const recover = documentRef.createElement("button");
       recover.type = "button"; recover.dataset.recoverStaleDraft = "";
       recover.textContent = text("Сравнить с другой вкладкой", "Compare with the other tab");
@@ -71,20 +106,34 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, reason, guidance, download, recover, status);
+      dialog.append(title, description, reason, guidance, download, photoDownload, recover, status);
       documentRef.body.append(dialog);
       dialog.showModal();
     },
+    showChecking() { this.show(); renderChecking(true); },
+    finishChecking() { if (checking) { renderChecking(false); dialog?.close(); } },
     setReason(code) {
+      renderChecking(false);
       const messages = {
         quota: ["На устройстве не хватает места для сохранения.", "There is not enough storage space on this device."],
         storage: ["Локальная очередь недоступна или повреждена; её содержимое не удалено.", "The local queue is unavailable or damaged; its contents have not been deleted."],
         fork: ["Обнаружены разные изменения из двух вкладок. Ни одна ветвь не выбрана автоматически.", "Two tabs have different changes. Neither branch was selected automatically."],
         "stale-tab": ["Другая вкладка сохранила новую версию. Текущие изменения не будут молча записаны поверх неё.", "Another tab saved a newer version. This tab's changes will not silently overwrite it."],
-        selection: ["Найдено несколько локальных списков. Нужна проверка, какой список восстанавливать.", "Several local lists were found. The recovery target needs to be checked."]
+        selection: ["Найдено несколько локальных списков. Нужна проверка, какой список восстанавливать.", "Several local lists were found. The recovery target needs to be checked."],
+        "photo-recovery": ["Найдены сохранённые фотодействия либо их журнал недоступен. Их результат требует отдельной проверки. Файлы не удалены, повторная отправка не запущена. Можно скачать доступную локальную копию.",
+          "Retained photo actions were found or their journal is unavailable. Their outcome needs review. No files were deleted or uploads restarted. You can download the available local recovery copy."]
       };
       const message = messages[code] || messages.storage;
       if (dialog) {
+        if (code === "photo-recovery") {
+          dialog.querySelector("#personalSaveRecoveryTitle").textContent = text("Фото требуют проверки", "Photos need review");
+          dialog.querySelector("#personalSaveRecoveryDescription").textContent = text(
+            "Редактирование приостановлено, чтобы сохранить локальные данные. Не очищайте данные сайта.",
+            "Editing is paused to protect local data. Do not clear this site's data.");
+          dialog.querySelector("[data-recovery-guidance]").textContent = text(
+            "Скачайте очередь и доступные фото текущего списка. Это копия для восстановления, не подтверждение отправки. Не импортируйте её автоматически и не публикуйте.",
+            "Download the queue and available photos of this list. This is recovery evidence, not confirmation of upload. Do not import automatically or share publicly.");
+        }
         dialog.querySelector("[data-recovery-reason]").textContent = text(...message);
         dialog.querySelector("[data-recover-stale-draft]").hidden = !canRecoverDraft();
       }
