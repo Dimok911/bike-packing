@@ -4,6 +4,7 @@ import {
   uniqueLayoutIds
 } from "./layout-arrangement.js";
 import { ensureLayoutContainerPlacement } from "./layout-ops.js";
+import { normalizeContainerFields } from "./normalize.js";
 
 export async function createRootContainerDuplicateRecord(container, {
   changedAt = "",
@@ -120,6 +121,9 @@ export function createSubcontainerInLayoutState(targetState, parentId, targetLay
     weight: 0,
     ...currentCreateMeta(changedAt)
   };
+  // A newly created child must already have the same complete business fields
+  // as its reloaded projection. Do not normalize or change existing records.
+  normalizeContainerFields({ locations: targetState.locations, containers: { [id]: targetState.containers[id] } });
   markRecordActivePublicCatalog(targetState.containers[id]);
 
   layout.arrangement.containers[id] = {
@@ -155,6 +159,7 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
   copyContainerName = (name) => name,
   copyPhotos = async () => [],
   currentEditMeta = () => ({}),
+  idForRecord = kind => `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   mapPublicOrigin = () => {},
   mapRecordToTarget = () => {},
   normalizeContainerColor = (value) => value,
@@ -179,7 +184,7 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
   const copyItemTree = async (itemId, parentId) => {
     const item = sourceSnapshot.items?.[itemId];
     if (!item) return "";
-    const nextId = `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const nextId = idForRecord("item", itemId);
     const record = await createItemDuplicateRecord(item, {
       changedAt,
       cloneEntity,
@@ -201,7 +206,7 @@ export async function duplicateContainerSnapshotRecords(sourceSnapshot, {
   const copyContainerTree = async (sourceId, parentId, isTop = false) => {
     const container = sourceSnapshot.containers?.[sourceId];
     if (!container) return "";
-    const nextId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const nextId = idForRecord("container", sourceId);
     const record = await createContainerTreeDuplicateRecord(container, {
       changedAt,
       cloneEntity,

@@ -377,7 +377,7 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -2491,8 +2491,24 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     Object.values(sourceSnapshot.items || {}).some((item) => item?.publicCatalogLayoutId)
   );
   const crossesPublicNamespace = copyCrossesPublicNamespaceBoundary({ sourceIsPublic, targetIsPublic });
+  const personalCopy = await preparePersonalContainerTreeAction({ sourceSnapshot, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
+  if (personalCopy === false) return;
   const copyAction = await chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, state.containers?.[containerId]?.name || "");
   if (copyAction === "cancel") return;
+  if (personalCopy) {
+    const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
+    const route = privateContainerTreeCopyRoute({ copyAction, duplicateContainerIds: duplicates.containerIds, duplicateItemIds: duplicates.itemIds });
+    const rootId = personalCopy(route === "duplicate-explicit" ? "copy" : route === "link-existing" ? "link" : "unsupported");
+    if (!rootId) return;
+    markRecentlyAddedContainer(rootId, targetLayoutId);
+    openCopiedTargetLayout(targetLayoutId);
+    refs.containerPickerDialog.close();
+    closeSourceEditorAfterCopy("container", containerId);
+    render();
+    requestAnimationFrame(() => focusRecentlyAddedContainer(rootId));
+    showToast(route === "duplicate-explicit" ? "Копия сумки сохранена и ждёт подтверждения сервера." : "Связь с укладкой сохранена и ждёт подтверждения сервера.", "success");
+    return;
+  }
   if (copyAction === "copy-missing") {
     const copiedCount = await copyMissingPublicSnapshotItemsToLayout(sourceSnapshot, targetLayoutId);
     if (copiedCount) closeSourceEditorAfterCopy("container", sourceSnapshot.rootId || containerId);

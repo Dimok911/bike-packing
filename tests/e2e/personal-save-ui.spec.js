@@ -291,6 +291,130 @@ test("initial legacy list preparation refuses unrelated structural repairs befor
   expect(f.errors).toEqual([]);
 });
 
+for (const withContents of [false, true]) test(`personal tree picker freezes ${withContents ? "contents" : "empty bag"} copy and placement as one action across lost ACK`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const payload = initialPayload(); payload.layouts["layout-b"] = { ...structuredClone(payload.layouts["layout-a"]), id: "layout-b", name: "Цель копии" };
+  const f = await setup(page, context, { payload }), bag = await createRootContainer(page, "Сумка ветки");
+  let itemTarget = bag;
+  if (withContents) {
+    await bag.locator("[data-add-to-container]").click();
+    await page.locator("#newSubcontainerName").fill("Карман ветки");
+    await submitForm(page, "#createSubcontainerBtn", "#newSubcontainerName");
+    await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
+    itemTarget = bag.locator("[data-subcontainer-id]").filter({ hasText: "Карман ветки" });
+  }
+  await createItemInContainer(page, itemTarget, "Насос ветки", { weight: "123" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const rootId = Object.values(f.payload.containers).find(record => record.name === "Сумка ветки").id, itemId = Object.keys(f.payload.items)[0];
+  const sourceParentId = f.payload.layouts["layout-a"].arrangement.items[itemId];
+  const openPicker = async () => {
+    await page.locator("#layoutSelect").selectOption("layout-a");
+    if (withContents) { await page.locator('[data-view="packing"]').click(); await bag.getByText("Сумка ветки", { exact: true }).click(); }
+    else {
+      await page.locator('[data-view="bags"]').click();
+      await page.locator(`#bagsView [data-root-card="${rootId}"] [data-root-title]`).click();
+    }
+    await expect(page.locator("#rootContainerDialog")).toBeVisible();
+    await page.locator("#rootContainerCopyToContainerBtn").click();
+    await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await page.locator("#containerPickerLayoutSelect").selectOption("layout-b");
+  };
+  await openPicker();
+  await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+  await synchronize(page, () => f.payload.layouts["layout-b"].arrangement.rootContainerIds.includes(rootId));
+  const before = f.posts.length;
+  await openPicker();
+  await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  await expect(page.locator("#confirmDialog")).toContainText("Создать отдельные копии");
+  expect(f.posts.length).toBe(before);
+  f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+  await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 1);
+  const original = structuredClone(f.posts.at(-1)), intent = original.body.userContainerTree;
+  expect(intent.mode).toBe("copy"); expect(intent.rootId).toBe(rootId); expect(intent.targetLayoutId).toBe("layout-b");
+  expect(intent.containers).toHaveLength(withContents ? 2 : 1); expect(intent.items).toHaveLength(withContents ? 1 : 0);
+  const copyId = intent.containers.find(row => row.sourceId === rootId).targetId; expect(copyId).toMatch(/^container-[0-9a-f-]{36}$/);
+  expect(f.payload.layouts["layout-b"].arrangement.rootContainerIds).toEqual([rootId, copyId]);
+  expect(f.payload.layouts["layout-a"].arrangement.items[itemId]).toBe(sourceParentId);
+  if (withContents) {
+    const copiedParentId = intent.containers.find(row => row.sourceId === sourceParentId).targetId;
+    expect(f.payload.layouts["layout-b"].arrangement.items[intent.items[0].targetId]).toBe(copiedParentId);
+    expect(f.payload.layouts["layout-b"].arrangement.containers[copiedParentId].parentId).toBe(copyId);
+  }
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => Object.keys(f.payload.containers).length === (withContents ? 4 : 2));
+  await page.locator("#layoutSelect").selectOption("layout-b");
+  expect(f.posts.at(-1).body.payload).toEqual(original.body.payload);
+  expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(original);
+  await expect(page.locator(`#packingView [data-root-container-id="${copyId}"]`)).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("personal tree picker quota preserves the complete copy draft and original journal with no partial send", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const payload = initialPayload(); payload.layouts["layout-b"] = { ...structuredClone(payload.layouts["layout-a"]), id: "layout-b", name: "Цель копии" };
+  const f = await setup(page, context, { payload }), bag = await createRootContainer(page, "Сумка без места");
+  await createItemInContainer(page, bag, "Вещь без места");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const rootId = Object.keys(f.payload.containers)[0], itemId = Object.keys(f.payload.items)[0];
+  const pick = async () => {
+    await page.locator("#layoutSelect").selectOption("layout-a");
+    await bag.getByText("Сумка без места", { exact: true }).click();
+    await page.locator("#rootContainerCopyToContainerBtn").click();
+    await page.locator("#containerPickerLayoutSelect").selectOption("layout-b");
+    await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  };
+  await pick(); await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+  await synchronize(page, () => f.payload.layouts["layout-b"].arrangement.rootContainerIds.includes(rootId));
+  await pick(); await expect(page.locator("#confirmDialog")).toContainText("Создать отдельные копии");
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#rootContainerDialog")).toBeVisible();
+  const copy = await downloadRecovery(page), draft = copy.unconfirmedMemoryDraft;
+  expect(Object.keys(draft.containers)).toHaveLength(2); expect(Object.keys(draft.items)).toHaveLength(2);
+  const copiedRootId = Object.keys(draft.containers).find(id => id !== rootId), copiedItemId = Object.keys(draft.items).find(id => id !== itemId);
+  expect(draft.layouts["layout-b"].arrangement.items[copiedItemId]).toBe(copiedRootId);
+  expect(draft.layouts["layout-a"].arrangement.items[itemId]).toBe(rootId);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.posts).toHaveLength(postsBefore); expect(Object.keys(f.payload.containers)).toEqual([rootId]); expect(f.errors).toEqual([]);
+});
+
+test("personal tree picker links existing records to another layout without copying their IDs", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка связи");
+  await createItemInContainer(page, bag, "Вещь связи");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const rootId = Object.keys(f.payload.containers)[0], itemId = Object.keys(f.payload.items)[0];
+  await page.locator("#newLayoutBtn").click(); await page.locator("#layoutCreateMode").selectOption("empty");
+  await page.locator("#layoutName").fill("Цель связи"); await submitForm(page, "#saveLayoutBtn", "#layoutName");
+  await synchronize(page, () => Object.keys(f.payload.layouts).length === 2);
+  const targetId = Object.keys(f.payload.layouts).find(id => id !== "layout-a");
+  await page.locator("#layoutSelect").selectOption("layout-a");
+  await page.locator(`#packingView [data-root-container-id="${rootId}"]`).getByText("Сумка связи", { exact: true }).click();
+  await page.locator("#rootContainerCopyToContainerBtn").click();
+  await page.locator("#containerPickerLayoutSelect").selectOption(targetId);
+  const before = f.posts.length;
+  await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+  await synchronize(page, () => f.payload.layouts[targetId].arrangement.rootContainerIds.includes(rootId));
+  expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1).body.userContainerTree.mode).toBe("link");
+  expect(Object.keys(f.payload.containers)).toEqual([rootId]); expect(Object.keys(f.payload.items)).toEqual([itemId]);
+  expect(f.payload.layouts["layout-a"].arrangement.items[itemId]).toBe(rootId);
+  expect(f.payload.layouts[targetId].arrangement.items[itemId]).toBe(rootId); expect(f.errors).toEqual([]);
+});
+
 test("actual bag and item dialogs persist immutable actions and recover lost ACK after reload", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context, { lose: true });
