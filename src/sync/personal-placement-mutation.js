@@ -1,4 +1,5 @@
-import { getItemContainerIdInLayout, removeItemFromLayoutInState, removeContainerFromLayoutOnlyInState } from "../state/layout-ops.js";
+import { getItemContainerIdInLayout, removeItemFromLayoutInState, removeContainerFromLayoutOnlyInState,
+  moveItemInLayoutArrangement, moveContainerInLayoutArrangement, moveRootColumnInState, createGroupFromItemsInState } from "../state/layout-ops.js";
 import { deleteUnusedLayoutContainerEntityFromState } from "../state/container-ops.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -7,33 +8,44 @@ const validId = value => typeof value === "string" && value.length > 0 && value.
 const validIds = ids => Array.isArray(ids) && ids.every(validId) && new Set(ids).size === ids.length;
 const privateRecord = record => record && !record.adminDemo && !record.adminSharedSourceId && !record.publicCatalogLayoutId;
 const difference = (before, after) => Object.keys(before || {}).filter(id => !Object.hasOwn(after || {}, id));
+const actions = new Set(["remove-item", "remove-container", "set-packed", "move-item", "move-container", "move-root", "group-items"]);
+const moves = new Set(["move-item", "move-container", "move-root"]);
+const validIndex = index => index === null || Number.isSafeInteger(index) && index >= 0;
+const expectedCount = action => action === "group-items" ? 2 : 1;
 
 export function personalPlacementIntent(value) {
   if (value?.type !== "placement" || value.version !== 1 || !validId(value.layoutId)
-    || !["remove-item", "remove-container", "set-packed"].includes(value.action)
-    || !validIds(value.ids) || !value.ids.length || value.action !== "set-packed" && value.ids.length !== 1
+    || !actions.has(value.action)
+    || !validIds(value.ids) || !value.ids.length || value.action !== "set-packed" && value.ids.length !== expectedCount(value.action)
     || value.action === "set-packed" && typeof value.packed !== "boolean"
+    || moves.has(value.action) && (!validIndex(value.targetIndex) || value.action !== "move-root" && !validId(value.targetContainerId))
+    || value.action === "group-items" && !validId(value.groupId)
     || ![value.removedItemIds, value.removedContainerIds, value.deletedContainerIds].every(validIds)
-    || value.action === "set-packed" && (value.removedItemIds.length || value.removedContainerIds.length || value.deletedContainerIds.length)
+    || !value.action.startsWith("remove-") && (value.removedItemIds.length || value.removedContainerIds.length || value.deletedContainerIds.length)
     || value.action === "remove-item" && (value.removedItemIds.length !== 1 || value.removedItemIds[0] !== value.ids[0] || value.deletedContainerIds.length)
     || value.action === "remove-container" && !value.removedContainerIds.includes(value.ids[0])
     || value.deletedContainerIds.some(id => !value.removedContainerIds.includes(id))) throw Error("Не подтверждён состав изменения укладки.");
   return clone({ type: "placement", version: 1, layoutId: value.layoutId, action: value.action, ids: value.ids,
-    ...(value.action === "set-packed" ? { packed: value.packed } : {}), removedItemIds: value.removedItemIds,
+    ...(value.action === "set-packed" ? { packed: value.packed } : {}),
+    ...(moves.has(value.action) ? { targetIndex: value.targetIndex, ...(value.action !== "move-root" ? { targetContainerId: value.targetContainerId } : {}) } : {}),
+    ...(value.action === "group-items" ? { groupId: value.groupId } : {}), removedItemIds: value.removedItemIds,
     removedContainerIds: value.removedContainerIds, deletedContainerIds: value.deletedContainerIds });
 }
 
-export function preparePersonalPlacementMutation(state, { layoutId, action, ids, packed },
+export function preparePersonalPlacementMutation(state, { layoutId, action, ids, packed, targetContainerId, targetIndex = null, groupId },
   { changedAt = "", markEdited = () => {}, hasPhotos = record => Boolean(record.photos?.length) } = {}) {
   const unpackAll = action === "unpack-all";
   if (unpackAll) { action = "set-packed"; packed = false; }
   const layout = state?.layouts?.[layoutId];
   if (!validId(layoutId) || !privateRecord(layout) || layoutId !== state.activeLayoutId || !layout.arrangement
-    || !validIds(ids) || !ids.length || !["remove-item", "remove-container", "set-packed"].includes(action)
-    || action !== "set-packed" && ids.length !== 1 || action === "set-packed" && typeof packed !== "boolean") {
+    || !validIds(ids) || !ids.length || !actions.has(action)
+    || action !== "set-packed" && ids.length !== expectedCount(action) || action === "set-packed" && typeof packed !== "boolean"
+    || moves.has(action) && (!validIndex(targetIndex) || action !== "move-root" && (!validId(targetContainerId)
+      || !privateRecord(state.containers?.[targetContainerId]) || !layout.arrangement.containers?.[targetContainerId]))
+    || action === "group-items" && (!validId(groupId) || Object.hasOwn(state.containers || {}, groupId))) {
     throw Error("Укладка изменилась. Повторите выбор.");
   }
-  const field = action === "remove-container" ? "containers" : "items";
+  const field = ["remove-container", "move-container", "move-root"].includes(action) ? "containers" : "items";
   if (ids.some(id => !privateRecord(state[field]?.[id]) || (field === "items"
     ? !getItemContainerIdInLayout(state, layout, id)
     : !layout.arrangement.containers?.[id]))) {
@@ -48,6 +60,18 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
       else delete next.arrangement.packedItems[id];
       markEdited(snapshot.items[id], changedAt);
     }
+  } else if (moves.has(action)) {
+    const moved = action === "move-item" ? moveItemInLayoutArrangement(snapshot, next, ids[0], targetContainerId, targetIndex)
+      : action === "move-container" ? moveContainerInLayoutArrangement(snapshot, next, ids[0], targetContainerId, targetIndex)
+      : moveRootColumnInState(snapshot, layoutId, ids[0], targetIndex);
+    if (!moved) throw Error("Не удалось подготовить выбранное перемещение.");
+  } else if (action === "group-items") {
+    // Grouping moves existing records; their placement quantities must not be
+    // reset by the remove/reinsert implementation.
+    const quantities = Object.fromEntries(ids.map(id => [id, next.arrangement.itemQuantities?.[id] ?? 1]));
+    if (!createGroupFromItemsInState(snapshot, layoutId, ids[0], ids[1], { groupId, changedAt })) throw Error("Не удалось подготовить группу.");
+    Object.assign(next.arrangement.itemQuantities ||= {}, quantities);
+    markEdited(snapshot.containers[groupId], changedAt);
   } else if (action === "remove-item") {
     if (!removeItemFromLayoutInState(snapshot, layoutId, ids[0])) throw Error("Не удалось подготовить удаление из укладки.");
   } else if (!removeContainerFromLayoutOnlyInState(snapshot, next, ids[0], { changedAt, markEdited,
@@ -58,7 +82,7 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
     }) })) throw Error("Не удалось подготовить удаление сумки из укладки.");
   markEdited(next, changedAt);
   snapshot.packedItems = clone(next.arrangement.packedItems || {});
-  const intent = personalPlacementIntent({ type: "placement", version: 1, layoutId, action, ids, packed,
+  const intent = personalPlacementIntent({ type: "placement", version: 1, layoutId, action, ids, packed, targetContainerId, targetIndex, groupId,
     removedItemIds: difference(layout.arrangement.items, next.arrangement.items),
     removedContainerIds: difference(layout.arrangement.containers, next.arrangement.containers),
     deletedContainerIds: difference(state.containers, snapshot.containers) });

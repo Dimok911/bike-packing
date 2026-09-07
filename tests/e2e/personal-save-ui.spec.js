@@ -693,6 +693,102 @@ test("quota during layout deletion keeps its edit window open and exports the co
   expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
 });
 
+async function dispatchPackingDrop(page, handle, containerId) {
+  // Exercise the application's actual HTML5 drag handlers, not an exposed
+  // mutation hook. Pointer/touch gesture coverage remains a separate check.
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await handle.dispatchEvent("dragstart", { dataTransfer: transfer });
+  const zone = page.locator(`.dropzone[data-container-id="${containerId}"]`).first();
+  await zone.scrollIntoViewIfNeeded(); const box = await zone.boundingBox();
+  const point = { clientX: box.x + box.width / 2, clientY: box.y + box.height - 2, dataTransfer: transfer };
+  await zone.dispatchEvent("dragover", point); await expect(zone.locator(":scope > .drop-placeholder")).toHaveCount(1);
+  await zone.dispatchEvent("drop", point); await transfer.dispose();
+}
+
+test("drag drop item and pocket keep frozen targets through lost ACK and reload", async ({ page, context }) => {
+  test.setTimeout(150000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Исходная для перемещения");
+  const item = await createItemInContainer(page, bag, "Три вещи для перемещения");
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemQuantity").fill("3"); await submitForm(page, "#saveItemBtn", "#itemQuantity");
+  await bag.locator("[data-add-to-container]").click(); await page.locator("#newSubcontainerName").fill("Перемещаемый карман");
+  await submitForm(page, "#createSubcontainerBtn", "#newSubcontainerName");
+  await createRootContainer(page, "Целевая для перемещения"); await synchronize(page, () => Object.keys(f.payload.containers).length === 3);
+  const itemId = Object.keys(f.payload.items)[0], pocketId = Object.values(f.payload.containers).find(record => record.name === "Перемещаемый карман").id;
+  const targetId = Object.values(f.payload.containers).find(record => record.name === "Целевая для перемещения").id;
+  const before = f.posts.length; f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await dispatchPackingDrop(page, page.locator(`[data-item-drag="${itemId}"]`), targetId);
+  expect(f.errors).toEqual([]); await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 1); const move = f.posts.at(-1);
+  expect(move.body.userPlacement.action).toBe("move-item"); expect(move.body.userPlacement.targetContainerId).toBe(targetId);
+  expect(move.body.payload.layouts["layout-a"].arrangement.itemQuantities[itemId]).toBe(3);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+  await synchronize(page, () => f.payload.layouts["layout-a"].arrangement.items[itemId] === targetId);
+  expect(f.posts.filter(post => post.operationId === move.operationId)).toHaveLength(1);
+  await dispatchPackingDrop(page, page.locator(`[data-subcontainer-id="${pocketId}"] .subcontainer-title`).first(), targetId);
+  await synchronize(page, () => f.payload.layouts["layout-a"].arrangement.containers[pocketId].parentId === targetId);
+  expect(f.posts.at(-1).body.userPlacement.action).toBe("move-container");
+  await reloadApp(page); expect(Object.keys(f.payload.items)).toEqual([itemId]); expect(Object.keys(f.payload.containers)).toHaveLength(3);
+  expect(f.payload.layouts["layout-a"].arrangement.itemQuantities[itemId]).toBe(3); expect(f.errors).toEqual([]);
+});
+
+test("pointer grouping reserves one group and preserves quantity through lost ACK", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка группировки");
+  const first = await createItemInContainer(page, bag, "Первый для группы"); await createItemInContainer(page, bag, "Второй для группы");
+  await first.locator(".item-title-hitarea").click(); await page.locator("#itemQuantity").fill("3"); await submitForm(page, "#saveItemBtn", "#itemQuantity");
+  await synchronize(page, () => Object.values(f.payload.layouts["layout-a"].arrangement.itemQuantities).includes(3));
+  const firstId = Object.values(f.payload.items).find(record => record.name === "Первый для группы").id;
+  const secondId = Object.keys(f.payload.items).find(id => id !== firstId), before = f.posts.length;
+  f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  const handle = page.locator(`#packingView [data-item-drag="${firstId}"]`); await handle.scrollIntoViewIfNeeded();
+  const target = page.locator(`#packingView [data-item-id="${secondId}"]`), start = await handle.boundingBox();
+  if (test.info().project.name === "mobile-webkit") {
+    // iPhone uses the held touch path, not the desktop mouse path. Dispatch
+    // touch events through that actual handler and release on its live target.
+    await handle.evaluate((element, point) => {
+      const touch = { identifier: 1, target: element, clientX: point.x, clientY: point.y };
+      const event = new Event("touchstart", { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { touches: { value: [touch] }, targetTouches: { value: [touch] }, changedTouches: { value: [touch] } });
+      element.dispatchEvent(event);
+    }, { x: start.x + start.width / 2, y: start.y + start.height / 2 });
+    await expect(page.locator("body")).toHaveClass(/dragging-ui/);
+    await expect.poll(async () => {
+      const current = await target.boundingBox();
+      return handle.evaluate((element, point) => {
+        const touch = { identifier: 1, target: element, clientX: point.x, clientY: point.y };
+        const dispatch = (type, touches) => {
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, { touches: { value: touches }, targetTouches: { value: touches }, changedTouches: { value: [touch] } });
+          element.dispatchEvent(event);
+        };
+        dispatch("touchmove", [touch]);
+        if (!document.querySelector(".item-card.group-target")) return false;
+        dispatch("touchend", []);
+        return true;
+      }, { x: current.x + current.width / 2, y: current.y + current.height / 2 });
+    }).toBe(true);
+  } else {
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2); await page.mouse.down();
+    await page.mouse.move(start.x + start.width / 2 + 20, start.y + start.height / 2 + 20, { steps: 5 });
+    await expect.poll(async () => {
+      const current = await target.boundingBox();
+      await page.mouse.move(current.x + current.width / 2, current.y + current.height / 2);
+      return (await target.getAttribute("class")).includes("group-target");
+    }).toBe(true);
+    await page.mouse.up();
+  }
+  await expect(page.locator("[data-subcontainer-id]")).toHaveCount(1);
+  expect(f.errors).toEqual([]); await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 1); const group = f.posts.at(-1), groupId = group.body.userPlacement.groupId;
+  expect(group.body.userPlacement.action).toBe("group-items"); expect(groupId).toMatch(/^container-[0-9a-f-]{36}$/);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+  await synchronize(page, () => Boolean(f.payload.containers[groupId]));
+  expect(f.posts.filter(post => post.operationId === group.operationId)).toHaveLength(1);
+  expect(f.payload.layouts["layout-a"].arrangement.items).toEqual({ [firstId]: groupId, [secondId]: groupId });
+  expect(f.payload.layouts["layout-a"].arrangement.itemQuantities[firstId]).toBe(3); expect(Object.keys(f.payload.containers)).toHaveLength(2);
+  expect(f.errors).toEqual([]);
+});
+
 test("packing marks quantity and both item-removal buttons keep frozen actions through lost ACK", async ({ page, context }) => {
   test.setTimeout(150000);
   const f = await setup(page, context), bag = await createRootContainer(page, "Сумка отметок");

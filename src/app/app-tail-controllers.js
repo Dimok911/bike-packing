@@ -5169,6 +5169,9 @@ function moveItem(itemId, targetContainerId, targetIndex = null, options = {}) {
   const layout = state.layouts?.[layoutId];
   if (!state.items[itemId] || !layout || !state.containers[targetContainerId]) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId, action: "move-item", ids: [itemId], targetContainerId, targetIndex });
+  if (prepared === false) return;
+  if (prepared) { if (options.captureScroll !== false) capturePackingScroll(); if (prepared()) render(); return; }
   if (options.captureScroll !== false) capturePackingScroll();
   const changedAt = nowIso();
   if (!moveItemInLayoutArrangement(layout, itemId, targetContainerId, targetIndex)) return;
@@ -5184,6 +5187,9 @@ function moveContainer(containerId, targetParentId, targetIndex = null) {
   const layout = state.layouts?.[layoutId];
   if (!layout || !state.containers[containerId] || !state.containers[targetParentId]) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId, action: "move-container", ids: [containerId], targetContainerId: targetParentId, targetIndex });
+  if (prepared === false) return;
+  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
   capturePackingScroll();
   const changedAt = nowIso();
   if (!moveContainerInLayoutArrangement(layout, containerId, targetParentId, targetIndex)) return;
@@ -5217,6 +5223,9 @@ function createGroupFromItems(itemId, targetItemId) {
   capturePackingScroll();
   const changedAt = nowIso();
   const groupId = createEntityId("container");
+  const prepared = preparePersonalPlacementAction({ layoutId, action: "group-items", ids: [itemId, targetItemId], groupId });
+  if (prepared === false) return;
+  if (prepared) { if (prepared()) { runtime.editingContainerId = groupId; render(); } return; }
   const created = createGroupFromItemsInState(state, layoutId, itemId, targetItemId, {
     changedAt,
     currentEditMeta,
@@ -5764,6 +5773,9 @@ function moveRootColumn(containerId, targetIndex) {
   const layoutId = getPublishedEditLayoutId();
   if (!state.layouts[layoutId]?.rootContainerIds?.includes(containerId)) return;
   if (warnLockedLayoutMutation(layoutId)) return;
+  const prepared = preparePersonalPlacementAction({ layoutId, action: "move-root", ids: [containerId], targetIndex });
+  if (prepared === false) return;
+  if (prepared) { capturePackingScroll(); if (prepared()) render(); return; }
   capturePackingScroll();
   moveRootColumnInState(state, layoutId, containerId, targetIndex, { touchLayout });
   saveState({ captureArrangement: false });

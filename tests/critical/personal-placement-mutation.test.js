@@ -68,6 +68,47 @@ test("item removal drops only its placement, quantity and mark; changed selectio
   assert.throws(() => personalPlacementIntent({ ...intent, action: "set-packed", packed: false }));
 });
 
+test("moves and grouping freeze destinations, order, existing owners and quantities without changing other layouts", () => {
+  let state = initial();
+  state.containers.otherbag = { id: "otherbag", parentId: null, childIds: [], itemIds: [], order: [] };
+  state.layouts.l.rootContainerIds.push("otherbag"); state.layouts.l.arrangement.rootContainerIds.push("otherbag");
+  state.layouts.l.arrangement.containers.otherbag = { parentId: "", childIds: [], itemIds: [], order: [] };
+  state.layouts.other = { ...structuredClone(state.layouts.l), id: "other" };
+  const other = structuredClone(state.layouts.other), items = Object.keys(state.items);
+  const run = request => {
+    const before = structuredClone(state), result = preparePersonalPlacementMutation(state, { layoutId: "l", ...request });
+    assert.deepEqual(state, before); assert.deepEqual(result.intent.removedItemIds, []); assert.deepEqual(result.intent.deletedContainerIds, []);
+    assert.deepEqual(result.snapshot.layouts.other, other); assert.deepEqual(Object.keys(result.snapshot.items), items);
+    state = result.snapshot; return result;
+  };
+  const item = run({ action: "move-item", ids: ["a"], targetContainerId: "otherbag", targetIndex: 0 });
+  assert.equal(item.intent.targetContainerId, "otherbag"); assert.equal(state.layouts.l.arrangement.items.a, "otherbag");
+  assert.equal(state.layouts.l.arrangement.itemQuantities.a, 3);
+  run({ action: "move-container", ids: ["pocket"], targetContainerId: "otherbag", targetIndex: 0 });
+  assert.equal(state.layouts.l.arrangement.containers.pocket.parentId, "otherbag");
+  run({ action: "move-root", ids: ["otherbag"], targetIndex: 0 });
+  assert.deepEqual(state.layouts.l.rootContainerIds, ["otherbag", "bag"]);
+  const grouped = run({ action: "group-items", ids: ["a", "b"], groupId: "group-fixed" });
+  assert.equal(grouped.intent.groupId, "group-fixed");
+  assert.deepEqual(state.layouts.l.arrangement.items, { a: "group-fixed", b: "group-fixed" });
+  assert.deepEqual(state.layouts.l.arrangement.itemQuantities, { a: 3, b: 2 });
+  assert.ok(state.containers["group-fixed"]); assert.equal(state.layouts.l.arrangement.containers["group-fixed"].parentId, "pocket");
+});
+
+test("invalid move/group target, cycle, collision or index leaves the whole source untouched", () => {
+  const state = initial(), before = structuredClone(state);
+  for (const request of [
+    { action: "move-item", ids: ["a"], targetContainerId: "unknown" },
+    { action: "move-container", ids: ["bag"], targetContainerId: "pocket" },
+    { action: "move-container", ids: ["pocket"], targetContainerId: "pocket" },
+    { action: "move-root", ids: ["pocket"], targetIndex: 0 },
+    { action: "move-root", ids: ["bag"], targetIndex: -1 },
+    { action: "move-item", ids: ["a"], targetContainerId: "pocket", targetIndex: 0.5 },
+    { action: "group-items", ids: ["a", "a"], groupId: "new" },
+    { action: "group-items", ids: ["a", "b"], groupId: "bag" }
+  ]) { assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", ...request })); assert.deepEqual(state, before); }
+});
+
 test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalPlacementAction\([^]*?\n\}/)[0];
   const make = () => {
