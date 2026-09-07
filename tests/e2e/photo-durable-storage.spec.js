@@ -119,6 +119,31 @@ test("explicit rejected-photo decision reloads as a new CAS action while its ori
     photos: [], full: "full photo bytes", thumb: "thumbnail bytes", sourceRetained: true, pending: true });
 });
 
+test("native photo bytes keep their exact terminal owner receipt through atomic adoption compaction and browser reload", async ({ page, context }) => {
+  await fixture(page, context);
+  const initial = await page.evaluate(async () => {
+    const { outbox, input, plan, base } = window.preparePhotoBridge(), store = window.photoActions();
+    await store.capture(input); await outbox.capturePhoto({ plan, store, getContext: () => window.photoContext });
+    const proof = { historicalOnly: true, operation: { id: plan.action.operationId, environment: window.photoContext.environment,
+      actorId: window.photoContext.actorId, listId: window.photoContext.listId, kind: "photos.mutate", state: "committed", payloadDigest: "a".repeat(64) },
+      resultStatus: 200, stateRevision: 2, rejectionCode: null };
+    const adopted = await outbox.reconcile({ queue: { inspect: async () => proof }, getContext: () => window.photoContext,
+      readRemote: async () => ({ id: window.photoContext.listId, ownerId: window.photoContext.actorId, stateRevision: 2, payload: base }) });
+    outbox.compact();
+    const next = structuredClone(adopted.snapshot); next.items["item-a"].name = "Later DB edit";
+    const record = outbox.capture({ snapshot: next, body: { baseStateRevision: 2, payload: next } });
+    outbox.markApplied({ operationId: record.action.operationId, stateRevision: 3 }); outbox.compact();
+    return { id: plan.action.operationId, proof };
+  });
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  const result = await page.evaluate(async id => {
+    const outbox = window.photoOutbox({ photoEnabled: false }), file = await window.photoActions({ enabled: false }).read(id);
+    return { proofs: outbox.photoRecoveryReferences().photoReceipts, oldSnapshotRetained: outbox.list().some(record => record.action.operationId === id),
+      full: await file.file.text(), thumb: await file.thumb.text(), currentName: outbox.recoverSnapshot().items["item-a"].name };
+  }, initial.id);
+  expect(result).toEqual({ proofs: [initial.proof], oldSnapshotRetained: false, full: "full photo bytes", thumb: "thumbnail bytes", currentName: "Later DB edit" });
+});
+
 test("raw photo recovery export retains corrupted intent, original bytes and the exact dispatch claim after reload", async ({ page, context }) => {
   await fixture(page, context);
   const id = await page.evaluate(async () => {

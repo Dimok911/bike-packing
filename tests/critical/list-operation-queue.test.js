@@ -143,6 +143,18 @@ test("an unknown no-effect ACK remains unresolved; an explicit same-body retry n
   assert.equal(f.posts().length, 2);
 });
 
+test("read-only queue verifies historical photo proof with all writer gates off and cannot run either settlement writer", async () => {
+  const f = cancelledPhotoFixture(), proof = await f.make().queue.settleCancelledPhotoStage(f.input), count = f.posts().length;
+  const readOnly = createListOperationQueue({ transport: f.make().transport, readOnly: true, enabled: false, photoEnabled: false,
+    getContext: () => f.context, locks: f.locks, fetchImpl: f.fetchImpl });
+  assert.deepEqual(await readOnly.inspect(f.input), proof);
+  assert.equal(readOnly.supports(f.input.path, f.input.method), false);
+  await assert.rejects(readOnly.run(f.input));
+  await assert.rejects(readOnly.settleCancelledPhotoStage(f.input));
+  await assert.rejects(readOnly.settleRejectedDependency(f.input));
+  assert.equal(f.posts().length, count);
+});
+
 test("photo mutation queue needs its separate release gate and server capability before durable dispatch", async () => {
   assert.equal(PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, false);
   const f = photoPublicationFixture();

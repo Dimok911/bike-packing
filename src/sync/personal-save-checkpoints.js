@@ -3,6 +3,22 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const revision = value => Number.isSafeInteger(value) && value > 0;
 
+export function mergePersonalPhotoReceipts(...groups) {
+  const receipts = new Map();
+  for (const group of groups) for (const proof of group || []) {
+    const op = proof?.operation;
+    if (proof?.historicalOnly !== true || !uuid(op?.id || "") || op.kind !== "photos.mutate"
+      || !["committed", "rejected"].includes(op.state) || !/^[a-f0-9]{64}$/.test(op.payloadDigest || "")
+      || !Number.isInteger(proof.resultStatus)
+      || (op.state === "committed" ? !revision(proof.stateRevision) || !(proof.resultStatus >= 200 && proof.resultStatus < 300)
+        : ![400, 403, 404, 409, 413, 422].includes(proof.resultStatus))) throw Error("Invalid retained photo receipt");
+    if (receipts.has(op.id) && canonicalListOperationJson(receipts.get(op.id)) !== canonicalListOperationJson(proof)) throw Error("Conflicting retained photo receipts");
+    receipts.set(op.id, proof);
+  }
+  // Stable certificate serialization, not the operation's execution order.
+  return [...receipts.values()].sort((a, b) => a.operation.id.localeCompare(b.operation.id));
+}
+
 // localStorage enumeration is not a transaction. Retry a changing scan rather
 // than interpreting a mixture of pre/post-compaction keys as corruption.
 // This is a stable observation, NOT a CAS or a lock against subsequent writes.
@@ -46,6 +62,11 @@ export function readPersonalCheckpoints(entries, prefix) {
       || entry.confirmation.operation?.state !== "committed" || entry.confirmation.operation.id !== entry.operationId
       || entry.confirmation.stateRevision !== entry.stateRevision
       || !(entry.confirmation.resultStatus >= 200 && entry.confirmation.resultStatus < 300))) throw Error("Invalid inline confirmation");
+    if (entry.photoReceipts !== undefined) {
+      if (!Array.isArray(entry.photoReceipts) || mergePersonalPhotoReceipts(entry.photoReceipts).length !== entry.photoReceipts.length
+        || entry.photoReceipts.some(proof => proof.operation.id !== entry.operationId && !entry.retired.includes(proof.operation.id)
+          || proof.stateRevision !== null && proof.stateRevision !== undefined && (!revision(proof.stateRevision) || proof.stateRevision > entry.stateRevision))) throw Error("Unrelated retained photo receipt");
+    }
     checkpoints.set(key, entry);
   }
   if (!checkpoints.size) return { anchor: null, checkpoints };
@@ -70,6 +91,8 @@ export function readPersonalCheckpoints(entries, prefix) {
     const baseline = checkpoint.baseline;
     if (baseline && (!previous.baseline || baseline.stateRevision > previous.baseline.stateRevision)) previous.baseline = baseline;
     previous.retired = [...new Set([...previous.retired, ...checkpoint.retired])];
+    const photoReceipts = mergePersonalPhotoReceipts(previous.photoReceipts, checkpoint.photoReceipts);
+    if (photoReceipts.length) previous.photoReceipts = photoReceipts;
   }
   const ordered = [...groups.values()].sort((a, b) => b.generation - a.generation);
   const anchor = ordered[0];
@@ -80,10 +103,12 @@ export function readPersonalCheckpoints(entries, prefix) {
       || !retired.has(earlier.operationId) || earlier.retired.includes(anchor.operationId)) throw Error("Unrelated checkpoint branches");
     for (const id of earlier.retired) retired.add(id);
   }
+  const photoReceipts = mergePersonalPhotoReceipts(...ordered.map(entry => entry.photoReceipts));
   // A refresh prepared against an older local head can still describe a later
   // SERVER state than the newest local receipt. Local generation cannot erase
   // that knowledge. Carry it forward only after proving the heads are related.
   return { anchor: { ...anchor, retired: [...retired],
+    ...(photoReceipts.length ? { photoReceipts } : {}),
     ...(latestBaseline?.stateRevision >= anchor.stateRevision ? { baseline: latestBaseline } : {}) }, checkpoints };
 }
 

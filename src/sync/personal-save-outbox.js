@@ -10,7 +10,7 @@ import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./pers
 import { validateCancelledStagedPhotoReceipt } from "./personal-photo-staging.js";
 import { validPersonalPhotoCancellation } from "./personal-photo-cancellation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
-  retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
+  retireObservedPersonalCheckpoints, mergePersonalPhotoReceipts } from "./personal-save-checkpoints.js";
 
 // Separate rollout gate. Local capture is not permission to enable networking.
 export const PERSONAL_SAVE_OUTBOX_ENABLED = false;
@@ -143,6 +143,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           version: 1, operationId: anchor.operationId, stateRevision: anchor.stateRevision, inline: true
         });
       }
+      if (anchor?.photoReceipts?.some(proof => Object.keys(binding).filter(key => key !== "scopeKey")
+        .some(key => proof.operation[key] !== binding[key]))) throw Error("Foreign retained photo receipt");
       if (anchor && (records.get(anchor.operationId)?.action.generation !== anchor.generation
         || applied.get(anchor.operationId)?.stateRevision !== anchor.stateRevision)) throw Error("Anchor without confirmed action");
       for (const id of applied.keys()) if (!records.has(id)) throw Error("Checkpoint without action");
@@ -294,6 +296,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const next = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
         stateRevision: confirmedRevision, baseline,
+        ...(anchor?.photoReceipts?.length ? { photoReceipts: anchor.photoReceipts } : {}),
         ...(applied.get(head.action.operationId)?.inline ? { confirmation: anchor.confirmation } : {}),
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
       try { publishPersonalCheckpoint(storage, keyPrefix, next); }
@@ -346,6 +349,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const retired = [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== operationId);
       const nextAnchor = { version: 1, operationId, generation: head.action.generation,
         stateRevision: applied.get(operationId).stateRevision, retired,
+        ...(anchor?.photoReceipts?.length ? { photoReceipts: anchor.photoReceipts } : {}),
         ...(anchor?.operationId === operationId && anchor.baseline ? { baseline: anchor.baseline } : {}) };
       // Commit the exact retirement set BEFORE deleting anything. An interrupted
       // cleanup is recoverable and may only delete these immutable old keys.
@@ -373,6 +377,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     photoRecoveryReferences() {
       const current = assertObserved();
       return clone({ binding, observation: observation(current), retiredOperationIds: current.anchor?.retired || [],
+        photoReceipts: current.anchor?.photoReceipts || [],
         records: [...current.records.values()].filter(record => record.action.kind === "photos.mutate" && record.action.body.action === "attach") });
     },
     preparePhoto({ snapshot, payload, body, operationId = crypto.randomUUID() }) {
@@ -607,6 +612,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const checkpoint = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
           stateRevision: headProof.stateRevision, confirmation: headProof, baseline,
           retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
+        const photoReceipts = mergePersonalPhotoReceipts(anchor?.photoReceipts,
+          settled.outcomes.filter(proof => proof.operation.kind === "photos.mutate"));
+        if (photoReceipts.length) checkpoint.photoReceipts = photoReceipts;
         // ONE atomic record closes the old outcome and owns the new remote
         // snapshot. Writing an applied marker first could recover stale UI data
         // after a crash; this does neither a business write nor intent replay.

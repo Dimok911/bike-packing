@@ -228,3 +228,31 @@ Combined queue/native-storage browsers after this continuation: **61 passed,
 1 skipped**, 1.3 minutes. A new native-IDB scenario reloads the explicit new CAS
 decision with its writer disabled while retaining the original photo action,
 full bytes and thumbnail. The skip is only the same old Windows WebKit Blob cache.
+
+## Retaining exact photo outcomes through journal compaction
+
+The atomic current-state checkpoint now retains compact `photoReceipts`, not
+only retired UUIDs. Baseline refresh, ordinary DB saves and compaction carry
+them forward. Related late certificates merge identical proofs; contradictory
+proofs, foreign bindings, unrelated IDs, impossible revisions and malformed
+terminal status stop recovery without erasing the journal. A quota failure
+cannot publish only half of the baseline/receipt certificate. Old checkpoints
+without this optional field still read, but their UUIDs do not imply receipts.
+
+`photoRecoveryReferences()` exposes these exact cached outcomes for the upcoming
+startup resolution adapter. The inventory/startup dialog does NOT yet use them
+to release its conservative photo fence. Original IDB files remain retained;
+physical deletion/GC is not implemented. Rollback should keep this reader/writer
+pair so old compaction does not drop the new optional proof cache.
+
+The queue also has an explicit `readOnly` mode: historical GET inspection works
+with every writer gate disabled, while normal dispatch and both no-effect
+settlement methods are unavailable. This does not enable any release gate.
+
+Evidence: 260 transport, 889 critical, source check; queue/native-IDB browsers
+**63 passed, 1 skipped** (1.2 minutes); paired API/MySQL **66/66**. Actual original
+owner proof survives compaction in the paired test; native file bytes and proof
+survive reload after a later ordinary DB save in both browser engines. The sole
+skip remains the old Windows WebKit native-Blob cache. Final API diagnostics
+`data-cabed31327314c41a1f32deaf8d842f6`; disposable server shut down. No push,
+publication, live migration, Production change, byte deletion or gate activation.

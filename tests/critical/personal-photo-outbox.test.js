@@ -230,6 +230,54 @@ test("tampered photo cancellation decisions cannot smuggle a pending photo or ch
   }
 });
 
+test("exact terminal photo proof survives compaction later DB saves and a late older certificate without keeping old full snapshots", async () => {
+  const f = await rejectedPhotoFixture();
+  const decision = await f.outbox.reconcile({ ...f.options, resolveRejectedPhoto: async () => "keep-server" });
+  const confirmed = f.proof(decision.action); confirmed.stateRevision = 7; f.proofs.set(decision.action.operationId, confirmed); f.remote.stateRevision = 7;
+  await f.outbox.reconcile(f.options);
+  const older = [...f.values].find(([key]) => key.includes(":checkpoint:"));
+  const expected = f.proofs.get(f.plan.action.operationId);
+  assert.deepEqual(f.outbox.photoRecoveryReferences().photoReceipts, [expected]);
+  f.outbox.compact();
+  assert.equal(f.outbox.list().some(record => record.action.operationId === f.plan.action.operationId), false);
+  assert.deepEqual(f.make(false).photoRecoveryReferences().photoReceipts, [expected]);
+  const next = structuredClone(f.remote.payload); next.items.a.name = "Later ordinary DB edit";
+  const db = f.outbox.capture({ snapshot: next, body: { baseStateRevision: 7, payload: next } });
+  f.outbox.markApplied({ operationId: db.action.operationId, stateRevision: 8 }); f.outbox.compact();
+  f.values.set(older[0], older[1]);
+  const reload = f.make(); assert.deepEqual(reload.photoRecoveryReferences().photoReceipts, [expected]);
+  assert.equal(reload.recoverSnapshot().items.a.name, "Later ordinary DB edit");
+  const raw = JSON.parse(older[1]); raw.photoReceipts[0].operation.payloadDigest = "b".repeat(64); f.values.set(older[0], JSON.stringify(raw));
+  assert.throws(() => f.make().recover(), { code: "storage" });
+});
+
+test("photo receipt storage failure leaves the original action pending without half a terminal certificate", async () => {
+  const f = await rejectedPhotoFixture();
+  const decision = await f.outbox.reconcile({ ...f.options, resolveRejectedPhoto: async () => "keep-server" });
+  const confirmed = f.proof(decision.action); confirmed.stateRevision = 7; f.proofs.set(decision.action.operationId, confirmed); f.remote.stateRevision = 7;
+  const before = [...f.values]; f.storage.setItem = () => { throw Error("quota"); };
+  await assert.rejects(f.outbox.reconcile(f.options), { code: "quota" });
+  assert.deepEqual([...f.values], before); assert.equal(f.make().hasPending(), true);
+  assert.deepEqual(f.make().photoRecoveryReferences().photoReceipts, []);
+});
+
+test("cached photo proof rejects foreign scope a future revision and malformed terminal status without erasing the journal", async () => {
+  for (const mode of ["actor", "environment", "future", "status", "unrelated"]) {
+    const f = await rejectedPhotoFixture();
+    const decision = await f.outbox.reconcile({ ...f.options, resolveRejectedPhoto: async () => "keep-server" });
+    const confirmed = f.proof(decision.action); confirmed.stateRevision = 7; f.proofs.set(decision.action.operationId, confirmed); f.remote.stateRevision = 7;
+    await f.outbox.reconcile(f.options);
+    const [key, value] = [...f.values].find(([key]) => key.includes(":checkpoint:")), raw = JSON.parse(value), proof = raw.photoReceipts[0];
+    if (mode === "actor") proof.operation.actorId = "other";
+    if (mode === "environment") proof.operation.environment = "production";
+    if (mode === "future") proof.stateRevision = 999;
+    if (mode === "status") proof.resultStatus = "409";
+    if (mode === "unrelated") proof.operation.id = crypto.randomUUID();
+    f.values.set(key, JSON.stringify(raw)); const before = [...f.values];
+    assert.throws(() => f.make().recover(), { code: "storage" }); assert.deepEqual([...f.values], before);
+  }
+});
+
 test("read-only photo inventory separates unlinked files from matching pending actions without giving dispatch authority", async () => {
   const f = fixture(), plan = f.prepare(f.outbox, "attach"), file = f.fileFor(plan);
   const store = { binding: f.binding, ids: async () => [plan.action.operationId], read: async () => file };

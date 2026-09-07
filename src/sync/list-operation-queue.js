@@ -81,7 +81,7 @@ const historicalProof = data => {
 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
-  photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED,
+  photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -143,13 +143,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
   return {
     supports(path, method) {
       const route = listOperationRoute(path, method);
-      return enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled);
+      return !readOnly && enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled);
     },
     // Read-only historical settlement. It never creates a transport intent,
     // dispatches a mutation or resumes a waiting operation. The proof deliberately
     // excludes business payloads: it is NOT authority to apply an old snapshot.
     async inspect({ path, method, body: bodyText, operationId }) {
-      if (!this.supports(path, method)) throw Error("Unsupported list queue request");
+      if (!this.supports(path, method) && !(readOnly && transport.experiment && listOperationRoute(path, method))) throw Error("Unsupported list queue request");
       if (!locks?.request) throw paused(operationId, "Блокировка между вкладками недоступна. Сверка остановлена.");
       const initial = { ...getContext() };
       if (!initial.actorId || !initial.generation || initial.scope !== "personal"
