@@ -90,3 +90,35 @@ route change, partial receipt, reload and stale historical response. Real paired
 API/MySQL **59/59** checks actual batch attachment, order, deletion and tombstones
 through the frontend queue. Native file persistence is still a separate suite.
 No push/deploy/live migration, Production change or release-gate activation.
+
+## Bridge into the existing personal outbox (not yet UI)
+
+`PERSONAL_PHOTO_OUTBOX_ENABLED=false`. `preparePhoto` freezes an exact confirmed
+base, full candidate, owner manifest and the SAME personal predecessor/generation
+as ordinary DB saves. Photo-only changes cannot drop/smuggle another business edit.
+It supports a single file attachment and metadata-only order/delete/same-list copy;
+multi-file registration and cross-list UI read sets deliberately remain blocked.
+
+After the file/action transaction commits, `capturePhoto` rechecks the editor and
+observed outbox head, reads/verifies that exact stored action/bytes and publishes
+one immutable v3 personal record referencing its intent hash. Snapshot differences
+are still encoded once. A crash or quota BETWEEN the two stores leaves the original
+file/action as an unlinked recovery draft, NEVER authority to dispatch. Startup
+orphan inventory/explicit recovery and actual UI adapters are still required.
+Old DB-only records are unchanged; the new reader also reads photos with gate off.
+
+The dispatcher verifies the file binding, obtains the exact stage receipt and only
+then dispatches the frozen owner action. While it is unresolved, later ordinary
+saves cannot overtake it or send pending local photo URLs. Merely writing an
+`applied` marker for a photo is forbidden: historical receipts and the current
+server snapshot are adopted through the existing ONE-record baseline certificate.
+Then the next DB save continues from that exact baseline. Rejected photo actions
+are not automatically rebased/reissued; explicit photo-conflict recovery is open.
+
+Local evidence: 232 transport, 889 critical and source check; native storage
+**25 passed, 1 skipped** (31.2s), including real IDB → personal outbox → reload,
+quota between stores and another tab's DB change. The skip remains only the old
+native-Blob Windows WebKit cache test. Real paired API/MySQL **60/60** verifies
+DB edit → stage → photo publication → atomic current-state adoption → next DB edit,
+lost ACK, reload, exactly one upload and one photo row. Its byte-record fixture
+is explicit; this is not yet a combined real mobile UI-to-MySQL test.

@@ -13,6 +13,7 @@ async function fixture(page, context) {
       `<script type="module">
         import * as photos from '/src/sync/photos.js';
         import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
+        import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
         window.photoContext={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a',scope:'personal',generation:'edit-1'};
         window.photoActions=(extra={})=>createPersonalPhotoActionStore({...window.photoContext,environmentId:window.photoContext.environment,
           enabled:true,getContext:()=>({...window.photoContext}),...extra});
@@ -22,6 +23,14 @@ async function fixture(page, context) {
             snapshot:{items:{'item-a':{id:'item-a',name:'Frozen owner',photos:[{id:'new-photo',status:'pending'}]}},containers:{},layouts:{}},
             file:new Blob(['full photo bytes'],{type:'image/png'}),thumb:new Blob(['thumbnail bytes'],{type:'image/png'})};};
         window.photos=photos;
+        window.photoOutbox=(extra={})=>createPersonalSaveOutbox({...window.photoContext,storage:localStorage,photoEnabled:true,...extra});
+        window.preparePhotoBridge=()=>{
+          const input=window.photoInput(),outbox=window.photoOutbox(),base=structuredClone(input.snapshot);
+          base.items['item-a'].photos=[];outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
+          Object.assign(input.snapshot.items['item-a'].photos[0],{photoId:input.stage.photoId,assetId:input.stage.operationId});
+          const plan=outbox.preparePhoto({body:input.action.body,payload:input.snapshot,snapshot:input.snapshot,operationId:input.action.operationId});
+          input.action=plan.action;input.snapshot=plan.snapshot;return {outbox,input,plan,base};
+        };
       </script>` });
     return route.abort();
   });
@@ -206,4 +215,59 @@ test("additive photo journal upgrade preserves version-one action and exact byte
     const record = await window.photoActions().read(id), claim = await window.photoActions().claimStage(id);
     return { hash: record.intentHash, full: await record.file.text(), thumb: await record.thumb.text(), fresh: claim.fresh };
   }, original.id)).toEqual({ hash: original.intentHash, full: "full photo bytes", thumb: "thumbnail bytes", fresh: true });
+});
+
+test("native file transaction and personal outbox share one exact photo action after reload and block an overtaking DB save", async ({ page, context }) => {
+  await fixture(page, context);
+  const id = await page.evaluate(async () => {
+    const { outbox, input, plan } = window.preparePhotoBridge(), store = window.photoActions();
+    await store.capture(input);
+    const record = await outbox.capturePhoto({ plan, store, getContext: () => window.photoContext });
+    return record.action.operationId;
+  });
+  await page.reload(); await page.waitForFunction(() => window.photoOutbox);
+  expect(await page.evaluate(async id => {
+    const outbox = window.photoOutbox({ photoEnabled: false }), record = outbox.recover(), file = await window.photoActions().read(id);
+    let blocked;
+    try { outbox.capture({ snapshot: record.snapshot, body: { baseStateRevision: 1, payload: record.photoState.payload } }); }
+    catch (error) { blocked = error.code; }
+    return { id: record.action.operationId, hash: record.photoState.fileIntentHash === file.intentHash,
+      action: JSON.stringify(record.action) === JSON.stringify(file.action), bytes: await file.file.text(), blocked };
+  }, id)).toEqual({ id, hash: true, action: true, bytes: "full photo bytes", blocked: "photo-pending" });
+});
+
+test("crash or quota after native file capture retains an unlinked original action and never invents a published queue entry", async ({ page, context }) => {
+  await fixture(page, context);
+  const retained = await page.evaluate(async () => {
+    const { outbox, input, plan } = window.preparePhotoBridge(), store = window.photoActions();
+    await store.capture(input);
+    const native = Storage.prototype.setItem; let draft;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith('bike-packing-personal-save-v1:')) throw new DOMException('quota', 'QuotaExceededError');
+      return native.call(this, key, value);
+    };
+    try { await outbox.capturePhoto({ plan, store, getContext: () => window.photoContext }); }
+    catch (error) { draft = error.unconfirmedMemoryDraft; }
+    finally { Storage.prototype.setItem = native; }
+    return { id: input.action.operationId, draft: draft.items['item-a'].photos[0].id, queued: outbox.recover() };
+  });
+  expect(retained.queued).toBeNull(); expect(retained.draft).toBe("new-photo");
+  await page.reload(); await page.waitForFunction(() => window.photoOutbox);
+  expect(await page.evaluate(async id => ({ queued: window.photoOutbox().recover(), ids: await window.photoActions().ids(),
+    bytes: await (await window.photoActions().read(id)).file.text() }), retained.id)).toEqual({ queued: null, ids: [retained.id], bytes: "full photo bytes" });
+});
+
+test("another real tab between file commit and personal queue registration keeps both the new DB action and old photo draft", async ({ page, context }) => {
+  await fixture(page, context);
+  const id = await page.evaluate(async () => {
+    window.bridge = window.preparePhotoBridge(); await window.photoActions().capture(window.bridge.input); return window.bridge.plan.action.operationId;
+  });
+  const second = await context.newPage(); await fixture(second, context);
+  await second.evaluate(() => window.photoOutbox().capture({ snapshot: { items: {} }, body: { baseStateRevision: 1, payload: { items: {} } } }));
+  expect(await page.evaluate(async () => {
+    try { await window.bridge.outbox.capturePhoto({ plan: window.bridge.plan, store: window.photoActions(), getContext: () => window.photoContext }); }
+    catch (error) { return { code: error.code, photo: error.unconfirmedMemoryDraft.items['item-a'].photos[0].id }; }
+  })).toEqual({ code: "stale-tab", photo: "new-photo" });
+  expect(await page.evaluate(async id => ({ head: window.photoOutbox().recover().action.kind, bytes: await (await window.photoActions().read(id)).file.text() }), id))
+    .toEqual({ head: "list.update", bytes: "full photo bytes" });
 });
