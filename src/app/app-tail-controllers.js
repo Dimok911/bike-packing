@@ -82,6 +82,7 @@ import { bindCatalogBackToTop } from "../ui/catalog-back-to-top.js";
 import { scrollElementBelowStickyHeader } from "../ui/sticky-scroll.js";
 import { scrollViewportTo, viewportScrollTop } from "../ui/viewport-scroll-host.js";
 import { focusRecentlyAddedPackingCard } from "../ui/packing-created-focus.js";
+import { createEntityId } from "../utils/entity-id.js";
 import {
   manufacturerBagSourceMeta,
   mergeManufacturerBagCatalogOverrides
@@ -1466,7 +1467,7 @@ function createSubcontainerFromAddDialog(event) {
   if (warnLockedLayoutMutation(layoutId)) return;
   if (!requireUsageCapacity("containers")) return;
   const changedAt = nowIso();
-  const id = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const id = createEntityId("container");
   const created = createSubcontainerInLayoutState(state, parentId, layoutId, {
     changedAt,
     currentCreateMeta,
@@ -5215,7 +5216,7 @@ function createGroupFromItems(itemId, targetItemId) {
   if (warnLockedLayoutMutation(layoutId)) return;
   capturePackingScroll();
   const changedAt = nowIso();
-  const groupId = `container-${Date.now()}`;
+  const groupId = createEntityId("container");
   const created = createGroupFromItemsInState(state, layoutId, itemId, targetItemId, {
     changedAt,
     currentEditMeta,

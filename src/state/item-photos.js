@@ -1,4 +1,5 @@
 import { nowIso } from "../utils/time.js";
+import { createEntityId } from "../utils/entity-id.js";
 
 export function normalizePhotoStatus(value) {
   return ["pending", "uploading", "synced", "error", "missing-local-file"].includes(value) ? value : "synced";
@@ -201,15 +202,13 @@ export function photoDraftEntityId(draft) {
 }
 
 export function ensurePhotoDraftEntityId(draft, entityType = "item", {
-  now = Date.now,
-  random = Math.random
+  createId = createEntityId
 } = {}) {
   if (!draft || typeof draft !== "object") return "";
   const existingId = photoDraftEntityId(draft);
   if (existingId) return existingId;
   const prefix = entityType === "container" ? "container" : "item";
-  const suffix = Math.max(0, Math.trunc(Number(random()) * 0x100000000)).toString(16);
-  draft.uploadEntityId = `${prefix}-${Number(now()) || Date.now()}-${suffix}`;
+  draft.uploadEntityId = createId(prefix);
   return draft.uploadEntityId;
 }
 

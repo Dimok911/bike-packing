@@ -544,7 +544,7 @@ export function createGroupFromItemsInState(targetState, layoutId, itemId, targe
   markRecordActivePublicCatalog = () => {},
   touchLayout = () => {}
 } = {}) {
-  if (!groupId || itemId === targetItemId) return null;
+  if (!groupId || Object.hasOwn(targetState?.containers || {}, groupId) || itemId === targetItemId) return null;
   const layout = targetState?.layouts?.[layoutId];
   const item = targetState?.items?.[itemId];
   const targetItem = targetState?.items?.[targetItemId];

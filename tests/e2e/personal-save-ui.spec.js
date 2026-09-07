@@ -154,6 +154,8 @@ test("actual bag and item dialogs persist immutable actions and recover lost ACK
   await expect.poll(() => Object.values(f.payload.items || {}).some(item => item.name === "Насос очереди"), { timeout: 20000 }).toBe(true);
   expect(f.posts.filter(post => post.operationId === firstId)).toHaveLength(1);
   expect(new Set(f.posts.map(post => post.operationId)).size).toBe(f.posts.length);
+  expect(Object.keys(f.payload.items)[0]).toMatch(/^item-[0-9a-f-]{36}$/);
+  expect(Object.keys(f.payload.containers)[0]).toMatch(/^container-[0-9a-f-]{36}$/);
   expect(f.errors).toEqual([]);
 });
 
@@ -178,6 +180,7 @@ test("actual edit/delete dialogs, nested placement and confirmed compaction keep
   await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
   await synchronize(page, () => Object.values(f.payload.containers).some(entry => entry.name === "Внутренний карман"));
   const nested = Object.values(f.payload.containers).find(entry => entry.name === "Внутренний карман");
+  expect(nested.id).toMatch(/^container-[0-9a-f-]{36}$/);
   expect(f.payload.layouts["layout-a"].arrangement.containers[nested.id].parentId).toBeTruthy();
   await item.locator(".item-title-hitarea").click();
   await page.locator("#itemName").fill("Изменённая вещь");

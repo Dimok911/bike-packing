@@ -1,3 +1,5 @@
+import { createEntityId } from "../utils/entity-id.js";
+
 export const NEW_ITEM_PLACEMENT_PICKER_MODE = "item-new-placement";
 
 export function itemDialogContainerPickerMode(editingItemId = "") {
@@ -27,7 +29,7 @@ export function saveRootContainerDialogAction({
   closeDialogWithoutRestoringFocus = () => {},
   currentCreateMeta = () => ({}),
   rootContainerSourceMeta = () => ({}),
-  createRootContainerId = () => `container-${Date.now()}`,
+  createRootContainerId = () => createEntityId("container"),
   defaultRootContainerLocation = () => "",
   editingRootContainerId = "",
   getRootContainerSelectedCategories = () => [],
@@ -58,6 +60,7 @@ export function saveRootContainerDialogAction({
   const selectedCategories = getRootContainerSelectedCategories();
   if (!container) {
     const id = createRootContainerId();
+    if (!id || Object.hasOwn(state.containers, id)) throw new Error("ID новой сумки уже занят. Существующие данные не изменены.");
     state.containers[id] = {
       id,
       name,
@@ -119,7 +122,7 @@ export function saveItemDialogAction({
   cleanupEmptyContainersInLayoutArrangement = () => {},
   closeDialogWithoutRestoringFocus = () => {},
   currentEditMeta = () => ({}),
-  createItemId = () => `item-${Date.now()}`,
+  createItemId = () => createEntityId("item"),
   editingItemId = "",
   getDialogSelectedCategories = () => [],
   getItemContainerIdInLayout = () => "",
@@ -212,6 +215,7 @@ export function saveItemDialogAction({
   } else {
     if (!requireUsageCapacity("items")) return;
     const id = createItemId();
+    if (!id || Object.hasOwn(state.items, id)) throw new Error("ID новой вещи уже занят. Существующие данные не изменены.");
     savedItemId = id;
     created = true;
     state.items[id] = {
