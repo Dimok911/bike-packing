@@ -57,9 +57,11 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       state = await exactCachedPhotoReceipt(proof, file, binding) ? "settled-retained" : "receipt-mismatch";
       assertContext();
     }
-    entries.push({ operationId, stageOperationId: file.stage.operationId, intentHash: file.intentHash,
+    const parts = file.files || [file], first = parts[0].stage;
+    entries.push({ operationId, stageOperationId: first.operationId, intentHash: file.intentHash,
+      ...(file.files ? { batch: true, stageOperationIds: parts.map(part => part.stage.operationId), photoCount: parts.length } : {}),
       ...(state === "settled-retained" ? { ownerOutcome: proof.operation.state, exactReceiptCached: true } : {}),
-      state, dispatchAllowed: false, entityType: file.stage.entityType, entityId: file.stage.entityId, photoId: file.stage.photoId });
+      state, dispatchAllowed: false, entityType: first.entityType, entityId: first.entityId, photoId: first.photoId });
   }
   for (const [operationId, record] of byId) {
     if (!ids.includes(operationId)) entries.push({ operationId, stageOperationId: record.action.body.assetId, state: "missing-file", dispatchAllowed: false });

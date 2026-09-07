@@ -1,6 +1,8 @@
 import { assertListOperationPayload } from "./list-operation-payload.js";
+import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "./personal-photo-batch-record.js";
 
 export const PERSONAL_PHOTO_ACTIONS_ENABLED = false;
+export const PERSONAL_PHOTO_BATCH_STORAGE_ENABLED = false;
 const environment = "bike-packing-experiment", databaseName = "bike-packing-personal-photo-actions-v1";
 const uuid = id => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 const id = value => typeof value === "string" && value.length > 0 && value.length <= 191 && value === value.trim()
@@ -17,7 +19,8 @@ const sameBytes = (a, b) => {
 // Separate from the evictable thumbnail/offline cache. No delete, overwrite or
 // expiry API: an unfinished user action owns both its immutable intent and bytes.
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
-  indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED } = {}) {
+  indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
+  batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -61,6 +64,10 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   const decode = async (record, operationId) => {
     if (!record) return null;
+    if (record.version === 2) {
+      try { return await decodePersonalPhotoBatchRecord(record, binding, operationId); }
+      catch (cause) { throw blocked("corrupt-batch", cause); }
+    }
     if (record.key !== key(operationId) || record.bindingKey !== bindingKey || record.version !== 1) throw blocked("corrupt-record");
     if (await sha(new TextEncoder().encode(record.intentJson)) !== record.intentHash) throw blocked("corrupt-intent");
     const intent = JSON.parse(record.intentJson);
@@ -75,6 +82,40 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    async captureBatch({ action, snapshot, files }) {
+      const selected = files?.map(part => ({ ...part, stage: clone(part.stage), file: part.file, thumb: part.thumb ?? null }));
+      const frozen = { binding, action: clone(action), snapshot: clone(snapshot), files: selected };
+      const initial = { ...getContext?.() };
+      try {
+        if (!enabled || !batchEnabled) throw blocked("batch-disabled");
+        assertContext(initial);
+        const record = await encodePersonalPhotoBatchRecord(frozen); assertContext(initial);
+        await transaction("readwrite", (store, finish, abort) => {
+          assertContext(initial);
+          const lookup = store.get(record.key);
+          lookup.onsuccess = () => {
+            try {
+              assertContext(initial);
+              const old = lookup.result;
+              if (old) {
+                if (old.version !== 2 || old.intentJson !== record.intentJson || old.intentHash !== record.intentHash
+                  || old.files?.length !== record.files.length || record.files.some((part, index) => {
+                    const prior = old.files[index];
+                    return prior?.stageOperationId !== part.stageOperationId || !sameBytes(prior.file, part.file)
+                      || (part.thumb ? !sameBytes(prior.thumb, part.thumb) : prior.thumb !== null);
+                  })) throw blocked("operation-id-reused");
+              } else store.add(record);
+              finish(frozen.action.operationId);
+            } catch (cause) { abort(cause); }
+          };
+        });
+        assertContext(initial);
+        const saved = await decode(record, frozen.action.operationId); assertContext(initial); return saved;
+      } catch (cause) {
+        const error = cause.isPersonalPhotoStorageBlocked ? cause : blocked("batch-storage", cause);
+        error.unconfirmedPhotoDraft = frozen; throw error;
+      }
+    },
     async capture({ action, stage, snapshot, file, thumb = null }) {
       // Freeze metadata and desired state before hash preparation yields to UI.
       const frozen = clone({ binding, action, stage: { ...stage, fileName: stage?.fileName || file?.name || "photo" }, snapshot });
@@ -137,6 +178,14 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       const record = await transaction("readonly", (store, finish) => { const request = store.get(key(operationId)); request.onsuccess = () => finish(request.result); });
       return decode(record, operationId);
     },
+    async readStage(operationId, stageOperationId) {
+      if (!uuid(stageOperationId)) throw blocked("invalid-stage-id");
+      const action = await this.read(operationId);
+      if (!action) return null;
+      const part = action.files?.find(value => value.stage.operationId === stageOperationId);
+      if (!part) throw blocked("missing-batch-stage");
+      return { ...action, ...part };
+    },
     async ids() {
       const keys = await transaction("readonly", (store, finish) => { const request = store.index("binding").getAllKeys(bindingKey); request.onsuccess = () => finish(request.result); });
       return keys.map(value => JSON.parse(value)[1]);
@@ -150,33 +199,44 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         request.onsuccess = () => {
           try {
             assertContext(initial);
-            const rows = request.result, result = []; let remaining = rows.length;
-            if (!remaining) { finish(result); return; }
-            for (const row of rows) {
-              const operationId = JSON.parse(row.key)?.[1];
-              if (!uuid(operationId) || row.key !== key(operationId) || row.bindingKey !== bindingKey) throw blocked("recovery-binding");
-              const claim = tx.objectStore("stage-dispatches").get(row.key);
-              claim.onsuccess = () => {
+            const rows = request.result;
+            // Scan claims independently of the manifest: even a damaged file
+            // array must not make an already-recorded dispatch disappear.
+            const claims = tx.objectStore("stage-dispatches").getAll();
+            claims.onsuccess = () => {
                 try {
                   assertContext(initial);
-                  if (claim.result && (claim.result.key !== row.key || claim.result.bindingKey !== bindingKey)) throw blocked("recovery-binding");
-                  result.push({ operationId, record: row, claim: claim.result || null });
-                  if (!--remaining) finish(result);
+                  const result = rows.map(row => {
+                    const operationId = JSON.parse(row.key)?.[1];
+                    if (!uuid(operationId) || row.key !== key(operationId) || row.bindingKey !== bindingKey) throw blocked("recovery-binding");
+                    const owned = claims.result.filter(claim => {
+                      try { const parts = JSON.parse(claim.key); return parts[0] === bindingKey && parts[1] === operationId; }
+                      catch { return false; }
+                    });
+                    if (owned.some(claim => claim.bindingKey !== bindingKey || claim.actionOperationId !== operationId || claim.key !== (claim.version === 2
+                      ? JSON.stringify([bindingKey, operationId, claim.stageOperationId]) : row.key))) throw blocked("recovery-binding");
+                    return { operationId, record: row, claim: owned.find(claim => claim.version === 1) || null,
+                      ...(row.version === 2 || owned.some(claim => claim.version === 2) ? { claims: owned } : {}) };
+                  });
+                  finish(result);
                 } catch (cause) { abort(cause); }
-              };
-            }
+            };
           } catch (cause) { abort(cause); }
         };
       }, ["actions", "stage-dispatches"]);
       assertContext(initial); return records;
     },
-    async claimStage(operationId) {
+    async claimStage(operationId, stageOperationId = null) {
       if (!enabled) throw blocked("disabled");
       const initial = { ...getContext?.() }; assertContext(initial);
       const action = await this.read(operationId); assertContext(initial);
       if (!action) throw blocked("missing-action");
-      const claim = { version: 1, key: key(operationId), bindingKey, actionOperationId: operationId,
-        stageOperationId: action.stage.operationId, intentHash: action.intentHash };
+      const batch = Array.isArray(action.files);
+      if (batch && (!batchEnabled || !uuid(stageOperationId))) throw blocked("batch-stage-disabled-or-missing");
+      const stage = batch ? action.files.find(part => part.stage.operationId === stageOperationId)?.stage : action.stage;
+      if (!stage || !batch && stageOperationId !== null) throw blocked("invalid-stage-id");
+      const claim = { version: batch ? 2 : 1, key: batch ? JSON.stringify([bindingKey, operationId, stageOperationId]) : key(operationId),
+        bindingKey, actionOperationId: operationId, stageOperationId: stage.operationId, intentHash: action.intentHash };
       const result = await transaction("readwrite", (store, finish, abort, tx) => {
         assertContext(initial);
         const original = store.get(key(operationId));

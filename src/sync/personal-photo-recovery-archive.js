@@ -26,9 +26,38 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   // recovery copy or exceed classic ZIP limits; originals remain untouched.
   if (rows.length > 1000) throw paused();
   // UUID sorting here only stabilizes archive filenames; it is NOT action order.
-  for (const { operationId, record, claim } of [...rows].sort((a, b) => a.operationId.localeCompare(b.operationId))) {
+  for (const { operationId, record, claim, claims } of [...rows].sort((a, b) => a.operationId.localeCompare(b.operationId))) {
     if (!/^[a-f0-9-]{36}$/.test(operationId) || record?.key !== JSON.stringify([JSON.stringify(binding), operationId])
       || record.bindingKey !== JSON.stringify(binding)) throw paused();
+    if (record.version === 2) {
+      const { files: parts, ...raw } = record, prefix = `photos/${operationId}`;
+      const metadataParts = [], included = [];
+      if (Array.isArray(parts) && parts.length > 50) throw paused();
+      for (const [index, part] of (Array.isArray(parts) ? parts : []).entries()) {
+        const { file, thumb, ...partMetadata } = part || {};
+        // Index-based names preserve even a malformed/duplicate stage ID
+        // without letting an untrusted ID change the archive path.
+        const partPrefix = `${prefix}/parts/${index}`;
+        const saved = { index, stageOperationId: part?.stageOperationId ?? null,
+          fullBytesIncluded: file instanceof ArrayBuffer, thumbnailBytesIncluded: thumb instanceof ArrayBuffer,
+          thumbnailAbsent: thumb === null, intentVerified: false };
+        metadataParts.push({ ...partMetadata,
+          ...(saved.fullBytesIncluded ? {} : { unreadableOriginalValue: file ?? null }),
+          ...(saved.thumbnailBytesIncluded || thumb === null ? {} : { unreadableThumbnailValue: thumb ?? null }) });
+        totalBytes += (saved.fullBytesIncluded ? file.byteLength : 0) + (saved.thumbnailBytesIncluded ? thumb.byteLength : 0);
+        if (totalBytes > 256 * 1024 * 1024) throw paused();
+        if (saved.fullBytesIncluded) entries.push({ name: `${partPrefix}/original.bin`, content: file });
+        if (saved.thumbnailBytesIncluded) entries.push({ name: `${partPrefix}/thumbnail.bin`, content: thumb });
+        included.push(saved);
+      }
+      const metadata = JSON.stringify({ ...raw, files: metadataParts, dispatchClaim: claim, dispatchClaims: claims || [],
+        ...(Array.isArray(parts) ? {} : { unreadableFilesValue: parts ?? null }) });
+      totalBytes += new TextEncoder().encode(metadata).byteLength;
+      if (totalBytes > 256 * 1024 * 1024) throw paused();
+      entries.push({ name: `${prefix}/record.json`, content: metadata });
+      files.push({ operationId, batch: true, parts: included, intentVerified: false, fileInventoryReadable: Array.isArray(parts) });
+      continue;
+    }
     const { file, thumb, ...raw } = record, prefix = `photos/${operationId}`;
     const metadata = JSON.stringify({ ...raw, dispatchClaim: claim,
       ...(file instanceof ArrayBuffer ? {} : { unreadableOriginalValue: file ?? null }),
