@@ -15,6 +15,8 @@ async function fixture(page, context) {
         import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
         import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
         import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
+        import {createPersonalPhotoStaging} from '/src/sync/personal-photo-staging.js';
+        import {createExperimentTransport} from '/src/sync/experiment-transport.js';
         window.photoContext={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a',scope:'personal',generation:'edit-1'};
         window.photoActions=(extra={})=>createPersonalPhotoActionStore({...window.photoContext,environmentId:window.photoContext.environment,
           enabled:true,getContext:()=>({...window.photoContext}),...extra});
@@ -26,6 +28,8 @@ async function fixture(page, context) {
         window.photos=photos;
         window.photoOutbox=(extra={})=>createPersonalSaveOutbox({...window.photoContext,storage:localStorage,photoEnabled:true,...extra});
         window.inspectPhotoRecovery=()=>inspectPersonalPhotoRecovery({outbox:window.photoOutbox(),store:window.photoActions(),getContext:()=>window.photoContext});
+        window.photoStaging=(extra={})=>createPersonalPhotoStaging({store:window.photoActions(),transport:createExperimentTransport({selection:'direct'}),
+          enabled:true,cancellationEnabled:true,getContext:()=>window.photoContext,...extra});
         window.preparePhotoBridge=()=>{
           const input=window.photoInput(),outbox=window.photoOutbox(),base=structuredClone(input.snapshot);
           base.items['item-a'].photos=[];outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
@@ -288,4 +292,39 @@ test("native startup inventory identifies an unlinked file and its later exact o
   expect(linked.entries).toMatchObject([{ operationId: id, state: "linked", dispatchAllowed: false }]);
   expect(linked.needsRecovery).toBe(false); expect(linked.readOnly).toBe(true);
   expect(await page.evaluate(async id => (await window.photoActions().read(id)).file.text(), id)).toBe("full photo bytes");
+});
+
+test("native pre-dispatch claim cancellation survives a lost response and reload without uploading or losing the file", async ({ page, context }) => {
+  await fixture(page, context);
+  let receipt = null, hidden = true; const posts = [];
+  await context.route("**/letters-vniipo/api/**", async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.pathname.endsWith("/auth/me")) return route.fulfill({ json: { user: { id: "actor-a" } } });
+    if (url.pathname.endsWith("/capabilities")) return route.fulfill({ json: { capabilities: ["personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1"] } });
+    if (request.method() === "POST") {
+      posts.push(url.pathname); expect(url.pathname.endsWith("/cancel")).toBe(true);
+      const body = request.postDataJSON(), operationId = url.pathname.split("/").at(-2);
+      receipt = { ok: true, operation: { id: operationId, state: "cancelled", environment: body.environment, actorId: body.expectedActorId,
+        listId: "list-a", entityType: body.entityType, entityId: body.entityId, photoId: body.photoId, payloadDigest: "a".repeat(64) },
+        cancellation: { version: 1, stageOperationId: operationId, fileHash: body.fileHash, thumbHash: body.thumbHash, noAssetPublished: true, stageCannotPublish: true } };
+      return route.abort("failed");
+    }
+    const operationId = url.pathname.split("/").at(-1);
+    return route.fulfill({ json: !hidden && receipt || { ok: true, operation: { id: operationId, state: "unknown",
+      environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a" } } });
+  });
+  const id = await page.evaluate(async () => {
+    const record = await window.photoActions().capture(window.photoInput()); await window.photoActions().claimStage(record.action.operationId);
+    return record.action.operationId;
+  });
+  await page.reload(); await page.waitForFunction(() => window.photoStaging);
+  expect(await page.evaluate(async id => { try { await window.photoStaging().cancel(id); return false; } catch (error) { return error.isAmbiguousMutation; } }, id)).toBe(true);
+  expect(posts).toHaveLength(1); hidden = false;
+  await page.reload(); await page.waitForFunction(() => window.photoStaging);
+  const proof = await page.evaluate(id => window.photoStaging({ enabled: false }).cancel(id), id);
+  expect(proof.operation.state).toBe("cancelled"); expect(proof.asset).toBeUndefined(); expect(proof.actionOperationId).toBe(id);
+  expect(await page.evaluate(async id => { try { await window.photoStaging().stage(id); return false; } catch (error) { return error.isConfirmedStageCancellation; } }, id)).toBe(true);
+  expect((await page.evaluate(id => window.photoStaging({ enabled: false, cancellationEnabled: false }).inspect(id), id)).operation.state).toBe("cancelled");
+  expect(await page.evaluate(async id => (await window.photoActions().read(id)).file.text(), id)).toBe("full photo bytes");
+  expect(posts).toHaveLength(1);
 });

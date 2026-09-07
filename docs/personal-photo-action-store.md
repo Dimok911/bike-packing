@@ -142,3 +142,26 @@ Evidence: 236 transport, 889 critical, source check; native storage **27 passed,
 1 skipped** (38.9s). The full **161 passed/1 skipped** browser run belongs to
 `e190dde`, before this inventory/wrapper continuation. The same old Windows WebKit
 native-Blob cache skip remains. New modes/gates have not been activated.
+
+## Explicit stage cancellation client (not an owner-action cancellation)
+
+`PERSONAL_PHOTO_CANCELLATION_ENABLED=false`. The explicit `cancel(actionId)`
+checks the original scoped stage GET, both server capabilities, immutable local
+file hashes and current editor. Only exact `unknown` permits the narrow JSON
+no-publication fence. It preserves the original stage UUID/claim/transport
+identity; no photo bytes or fresh upload are sent. Lost cancellation ACK uses
+the same GET; it never automatically retries the POST. An explicit subsequent
+attempt may repeat only that same fence, not the original upload.
+
+A committed uploader wins unchanged. A cancelled stage has no invented asset:
+its exact proof stops ordinary `stage()` before owner publication and survives
+reload. Stage/cancellation share one list lock across tabs. Neither outcome
+settles or discards the owner action, installs a snapshot or deletes local files.
+Startup/dialog wiring and explicit owner-action resolution remain open.
+
+Evidence: 242 transport; 889 critical and source check from the same runtime
+slice; native storage **29 passed, 1 skipped** (48.7s). The new actual-IDB case
+retains bytes through claim → reload → cancellation ACK loss → reload → stage
+refusal. Paired real API/MySQL **65/65** uses a valid PNG claimed-record fixture,
+not native IDB; shutdown completed (`data-aa627443d0184f5fbc38da1a686ee184`).
+No publication, live migration, Production change or gate activation.
