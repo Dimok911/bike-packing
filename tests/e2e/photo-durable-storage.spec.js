@@ -156,7 +156,7 @@ test("photo journal verifies stored bytes and intent without erasing damaged or 
     catch (error) { return { code: error.code, recovered: recovered.action.operationId }; }
   }, id)).toEqual({ code: "disabled", recovered: id });
   await page.evaluate(() => new Promise((resolve, reject) => {
-    const open = indexedDB.open("bike-packing-personal-photo-actions-v1", 1);
+    const open = indexedDB.open("bike-packing-personal-photo-actions-v1", 2);
     open.onsuccess = () => {
       const db = open.result, tx = db.transaction("actions", "readwrite"), store = tx.objectStore("actions"), request = store.openCursor();
       request.onsuccess = () => { const cursor = request.result; if (cursor) { const record = cursor.value;
@@ -169,4 +169,41 @@ test("photo journal verifies stored bytes and intent without erasing damaged or 
     try { await window.photoActions().read(id); return "unexpected-success"; } catch (error) { return error.code; }
   }, id)).toBe("missing-or-corrupt-bytes");
   expect(await page.evaluate(() => window.photoActions().ids())).toEqual([id]);
+});
+
+test("durable stage claim survives reload and only one of two tabs receives first-dispatch authority", async ({ page, context }) => {
+  await fixture(page, context); const id = await page.evaluate(async () => (await window.photoActions().capture(window.photoInput())).action.operationId);
+  const second = await context.newPage(); await fixture(second, context);
+  const claims = await Promise.all([page.evaluate(id => window.photoActions().claimStage(id), id), second.evaluate(id => window.photoActions().claimStage(id), id)]);
+  expect(claims.filter(claim => claim.fresh)).toHaveLength(1);
+  expect(claims[0].stageOperationId).toBe(claims[1].stageOperationId); expect(claims[0].intentHash).toBe(claims[1].intentHash);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload(); await page.waitForFunction(() => window.photoActions);
+  expect((await page.evaluate(id => window.photoActions().claimStage(id), id)).fresh).toBe(false);
+  expect(await page.evaluate(async id => (await window.photoActions().read(id)).file.text(), id)).toBe("full photo bytes");
+});
+
+test("additive photo journal upgrade preserves version-one action and exact bytes before adding its dispatch claim", async ({ page, context }) => {
+  await fixture(page, context);
+  const original = await page.evaluate(async () => {
+    const input = window.photoInput(), binding = window.photoActions().binding, bindingKey = JSON.stringify(binding);
+    const full = await input.file.arrayBuffer(), thumb = await input.thumb.arrayBuffer();
+    const hash = async bytes => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(value => value.toString(16).padStart(2, "0")).join("");
+    const intentJson = JSON.stringify({ binding, action: input.action, stage: input.stage, snapshot: input.snapshot,
+      file: { size: full.byteLength, type: input.file.type, hash: await hash(full) }, thumb: { size: thumb.byteLength, type: input.thumb.type, hash: await hash(thumb) } });
+    const record = { version: 1, key: JSON.stringify([bindingKey, input.action.operationId]), bindingKey, intentJson,
+      intentHash: await hash(new TextEncoder().encode(intentJson)), file: full, thumb };
+    await new Promise((resolve, reject) => {
+      const open = indexedDB.open("bike-packing-personal-photo-actions-v1", 1);
+      open.onupgradeneeded = () => { const store = open.result.createObjectStore("actions", { keyPath: "key" }); store.createIndex("binding", "bindingKey"); };
+      open.onsuccess = () => { const db = open.result, tx = db.transaction("actions", "readwrite"); tx.objectStore("actions").add(record);
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => { db.close(); reject(tx.error); }; };
+      open.onerror = () => reject(open.error);
+    });
+    return { id: input.action.operationId, intentHash: record.intentHash };
+  });
+  expect(await page.evaluate(async id => {
+    const record = await window.photoActions().read(id), claim = await window.photoActions().claimStage(id);
+    return { hash: record.intentHash, full: await record.file.text(), thumb: await record.thumb.text(), fresh: claim.fresh };
+  }, original.id)).toEqual({ hash: original.intentHash, full: "full photo bytes", thumb: "thumbnail bytes", fresh: true });
 });

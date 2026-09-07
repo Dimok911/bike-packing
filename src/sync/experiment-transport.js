@@ -287,7 +287,7 @@ export function createExperimentTransport({
     try {
       // Persist protected results before a caller applies them to local state.
       // A restarted queue must recover the same ID, not blindly send again.
-      if (committed && (entry?.identity || entry?.recovery?.type === "list")) {
+      if (committed && (entry?.identity || ["list", "photo-stage"].includes(entry?.recovery?.type))) {
         storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${id}`, JSON.stringify({ ...entry, confirmed: true, uncertain: false,
           ...(entry?.recovery?.type === "list" ? { recovery: { ...entry.recovery, body: undefined } } : {}),
           ...(receipt ? { receipt } : {}) }));

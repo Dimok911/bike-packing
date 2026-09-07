@@ -29,10 +29,14 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   const open = () => new Promise((resolve, reject) => {
     if (!indexedDB) { reject(blocked("storage-unavailable")); return; }
     let abandoned = false;
-    const request = indexedDB.open(databaseName, 1);
+    const request = indexedDB.open(databaseName, 2);
     request.onupgradeneeded = () => {
-      const store = request.result.createObjectStore("actions", { keyPath: "key" });
-      store.createIndex("binding", "bindingKey", { unique: false });
+      const db = request.result;
+      if (!db.objectStoreNames.contains("actions")) {
+        const store = db.createObjectStore("actions", { keyPath: "key" });
+        store.createIndex("binding", "bindingKey", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("stage-dispatches")) db.createObjectStore("stage-dispatches", { keyPath: "key" });
     };
     request.onerror = () => reject(blocked("open", request.error));
     request.onblocked = () => { abandoned = true; reject(blocked("open-blocked")); };
@@ -41,17 +45,17 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       if (abandoned) db.close(); else resolve(db);
     };
   });
-  const transaction = async (mode, run) => {
+  const transaction = async (mode, run, stores = ["actions"]) => {
     const db = await open();
     return new Promise((resolve, reject) => {
       let tx, result, error;
-      try { tx = db.transaction("actions", mode, mode === "readwrite" ? { durability: "strict" } : undefined); }
+      try { tx = db.transaction(stores, mode, mode === "readwrite" ? { durability: "strict" } : undefined); }
       catch (cause) { db.close(); reject(blocked("transaction", cause)); return; }
       tx.oncomplete = () => { db.close(); resolve(result); };
       tx.onabort = () => { db.close(); reject(error || blocked("transaction-aborted", tx.error)); };
       tx.onerror = () => { error ||= blocked("transaction-failed", tx.error); };
       const abort = cause => { error = cause; try { tx.abort(); } catch { db.close(); reject(cause); } };
-      try { run(tx.objectStore("actions"), value => { result = value; }, abort); }
+      try { run(tx.objectStore("actions"), value => { result = value; }, abort, tx); }
       catch (cause) { abort(blocked("transaction-failed", cause)); }
     });
   };
@@ -65,7 +69,7 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       if (!expected) { if (record[name] !== null) throw blocked("corrupt-bytes"); continue; }
       if (!(record[name] instanceof ArrayBuffer) || record[name].byteLength !== expected.size || await sha(record[name]) !== expected.hash) throw blocked("missing-or-corrupt-bytes");
     }
-    return { ...intent, file: new Blob([record.file], { type: intent.file.type }),
+    return { ...intent, intentHash: record.intentHash, file: new Blob([record.file], { type: intent.file.type }),
       thumb: intent.thumb ? new Blob([record.thumb], { type: intent.thumb.type }) : null,
       fileMetadata: intent.file, thumbMetadata: intent.thumb };
   };
@@ -136,6 +140,34 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
     async ids() {
       const keys = await transaction("readonly", (store, finish) => { const request = store.index("binding").getAllKeys(bindingKey); request.onsuccess = () => finish(request.result); });
       return keys.map(value => JSON.parse(value)[1]);
+    },
+    async claimStage(operationId) {
+      if (!enabled) throw blocked("disabled");
+      const initial = { ...getContext?.() }; assertContext(initial);
+      const action = await this.read(operationId); assertContext(initial);
+      if (!action) throw blocked("missing-action");
+      const claim = { version: 1, key: key(operationId), bindingKey, actionOperationId: operationId,
+        stageOperationId: action.stage.operationId, intentHash: action.intentHash };
+      const result = await transaction("readwrite", (store, finish, abort, tx) => {
+        assertContext(initial);
+        const original = store.get(key(operationId));
+        original.onsuccess = () => {
+          try {
+            assertContext(initial);
+            if (original.result?.intentHash !== claim.intentHash) throw blocked("action-changed");
+            const claims = tx.objectStore("stage-dispatches"), lookup = claims.get(claim.key);
+            lookup.onsuccess = () => {
+              try {
+                assertContext(initial);
+                if (lookup.result && Object.keys(claim).some(name => lookup.result[name] !== claim[name])) throw blocked("dispatch-claim-changed");
+                if (!lookup.result) claims.add(claim);
+                finish({ ...claim, fresh: !lookup.result });
+              } catch (cause) { abort(cause); }
+            };
+          } catch (cause) { abort(cause); }
+        };
+      }, ["actions", "stage-dispatches"]);
+      assertContext(initial); return result;
     },
   };
 }
