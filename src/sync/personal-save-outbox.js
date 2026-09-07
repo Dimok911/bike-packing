@@ -560,15 +560,16 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     inspect,
     async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore, resolveRejectedPhoto,
-      operationId = crypto.randomUUID() }) {
+      operationId = crypto.randomUUID(), adoptCommittedOnly = false }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
       const assertCurrent = guardEditor(getContext, head);
-      const settled = await settle({ queue, getContext }, true);
+      const settled = await settle({ queue, getContext }, !adoptCommittedOnly);
       assertCurrent();
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
       const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
+      if (adoptCommittedOnly && !alreadyCommitted) throw blocked("unconfirmed-owner", "Сервер ещё не подтвердил завершение всей очереди. Повторная отправка не выполнялась.");
       const lastCommittedIndex = settled.outcomes.findLastIndex(proof => proof.operation.state === "committed");
       const rejectedPhoto = !alreadyCommitted && settled.outcomes.slice(lastCommittedIndex + 1).findLast(proof => proof.operation.kind === "photos.mutate" && proof.operation.state === "rejected");
       if (rejectedPhoto && !photoEnabled) throw blocked("photo-disabled", "Явное разрешение фотодействий ещё не включено.");

@@ -3,7 +3,7 @@
 // the still-open form whose save failed, including on mobile.
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
   getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
-  getPhotoRecoveryArchive, canExportPhotos = () => false } = {}) {
+  getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false } = {}) {
   let dialog, checking = false;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
@@ -27,6 +27,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
     dialog.querySelector("[data-recovery-guidance]").hidden = active;
     dialog.querySelector("[data-recovery-reason]").hidden = active;
     dialog.querySelector("[data-download-photo-recovery]").hidden = active || !canExportPhotos();
+    dialog.querySelector("[data-check-photo-result]").hidden = active || !canCheckPhotos();
   };
   return {
     show() {
@@ -62,6 +63,24 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       photoDownload.type = "button"; photoDownload.dataset.downloadPhotoRecovery = "";
       photoDownload.textContent = text("Скачать очередь и доступные фото", "Download queue and available photos");
       photoDownload.hidden = !canExportPhotos();
+      const checkResult = documentRef.createElement("button");
+      checkResult.type = "button"; checkResult.dataset.checkPhotoResult = "";
+      checkResult.textContent = text("Проверить результат отправки", "Check upload outcome");
+      checkResult.hidden = !canCheckPhotos();
+      let checkingResult = false;
+      checkResult.addEventListener("click", async () => {
+        if (checkingResult) return;
+        checkingResult = true; checkResult.disabled = true;
+        status.textContent = text("Проверяю подтверждения сервера. Фото повторно не отправляются…", "Checking server receipts. Photos are not uploaded again…");
+        try {
+          const result = await checkPhotoResult();
+          if (result?.verified !== true || result.fileRetained !== true || result.reloadRequired !== true) throw Error(text("Проверка не завершена. Данные сохранены.", "Check incomplete. Your data is retained."));
+          status.textContent = text("Подтверждения и актуальная версия сохранены на устройстве. Перезагрузите страницу, чтобы продолжить. Файлы фото не удалены.",
+            "Receipts and the current version are saved on this device. Reload to continue. Photo files have not been deleted.");
+        } catch (error) {
+          status.textContent = error.message || text("Результат пока не подтверждён. Файлы сохранены.", "Outcome not confirmed yet. Files are retained.");
+        } finally { checkingResult = false; checkResult.disabled = false; }
+      });
       photoDownload.addEventListener("click", async () => {
         photoDownload.disabled = true;
         status.textContent = text("Собираю локальные файлы. Ничего не отправляется на сервер…", "Collecting local files. Nothing is sent to the server…");
@@ -106,7 +125,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, reason, guidance, download, photoDownload, recover, status);
+      dialog.append(title, description, reason, guidance, checkResult, download, photoDownload, recover, status);
       documentRef.body.append(dialog);
       dialog.showModal();
     },

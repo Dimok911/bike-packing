@@ -31,6 +31,42 @@ function fixture() {
   return { values, binding, context, storage, make, outbox, base, prepare, fileFor, proof, getContext: () => context };
 }
 
+test("read-only committed adoption cannot turn a rejection into a new action or a server settlement", async () => {
+  for (const committed of [true, false]) {
+    const f = fixture(), plan = f.prepare(), record = await f.outbox.capturePhoto({ plan, getContext: f.getContext });
+    const before = [...f.values]; let reads = 0;
+    const proof = f.proof(record.action);
+    if (!committed) { proof.operation.state = "rejected"; proof.resultStatus = 409; }
+    const options = { adoptCommittedOnly: true, getContext: f.getContext,
+      queue: { inspect: async () => proof, settleRejectedDependency: () => assert.fail("no mutation"), run: () => assert.fail("no mutation") },
+      readRemote: async () => { reads++; return { id: "list-a", ownerId: "actor-a", stateRevision: 6, payload: plan.payload }; },
+      resolveRejectedPhoto: () => assert.fail("no new decision"), resolveConflicts: () => assert.fail("no new merge") };
+    if (committed) {
+      assert.equal((await f.make(false).reconcile(options)).adoptedBaseline, true);
+      assert.equal(f.make(false).hasPending(), false); assert.equal(f.make(false).recover().action.operationId, record.action.operationId);
+      assert.equal(reads, 1);
+    } else {
+      await assert.rejects(f.make(false).reconcile(options), { code: "unconfirmed-owner" });
+      assert.deepEqual([...f.values], before); assert.equal(reads, 0);
+    }
+  }
+});
+
+test("read-only adoption never terminalizes an unknown child of a rejected dependency", async () => {
+  const f = fixture();
+  const first = f.outbox.capture({ snapshot: f.base, body: { baseStateRevision: 5, payload: f.base } });
+  const second = structuredClone(f.base); second.items.a.weight++;
+  f.outbox.capture({ snapshot: second, body: { payload: second } });
+  const before = [...f.values], unknown = Object.assign(Error("unknown child"), { isOperationReceiptError: true });
+  await assert.rejects(f.outbox.reconcile({ adoptCommittedOnly: true, getContext: f.getContext,
+    queue: { inspect: async input => {
+      if (input.operationId !== first.action.operationId) throw unknown;
+      const proof = f.proof(first.action); proof.operation.state = "rejected"; proof.resultStatus = 409; return proof;
+    }, settleRejectedDependency: () => assert.fail("read-only recovery must not POST") },
+    readRemote: () => assert.fail("no state adoption") }), error => error === unknown);
+  assert.deepEqual([...f.values], before);
+});
+
 test("photo outbox is gated and a pure photo candidate cannot include an unrelated edit or a cross-list copy", async () => {
   assert.equal(PERSONAL_PHOTO_OUTBOX_ENABLED, false);
   const f = fixture(); assert.throws(() => f.prepare(f.make(false)), { code: "photo-disabled" });

@@ -730,6 +730,7 @@ import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recover
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
 import { inspectPersonalPhotoRecovery } from "./src/sync/personal-photo-recovery-inventory.js";
 import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-recovery-archive.js";
+import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-recovery-check.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -1193,6 +1194,9 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   canRecoverDraft: () => personalSaveRecovery.canRecoverDraft(),
   recoverDraft: () => recoverStalePersonalDraft(),
   canExportPhotos: () => Boolean(personalPhotoRecoverySource && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey),
+  canCheckPhotos: () => Boolean(personalPhotoRecoverySource && currentUser && !isForcedOffline()
+    && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey),
+  checkPhotoResult: () => checkRetainedPersonalPhotoResult(),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
@@ -8358,6 +8362,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
     try {
       // Reader works with every photo writer gate off, including rollback.
       const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage });
+      source.outbox = outbox; // Preserve the observed head while the dialog is open.
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       personalSaveRecovery.assertRunning();
       // Only an exact retained terminal receipt, bound to the immutable action,
@@ -8387,6 +8392,29 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
     }
   })();
   return pending.promise;
+}
+
+async function checkRetainedPersonalPhotoResult() {
+  const source = personalPhotoRecoverySource;
+  if (!source?.outbox || !currentUser || isForcedOffline()) throw Error("Для проверки нужен вход в тот же аккаунт и доступ к серверу. Файлы сохранены.");
+  return checkPersonalPhotoRecoveryResult({ outbox: source.outbox, store: source.store, transport: experimentTransport,
+    getContext: personalSaveContext, makeSnapshot: personalReconciledSnapshot,
+    async readRemote() {
+      const initial = personalSaveContext();
+      const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(source.outbox.binding.listId)}/state`, {
+        timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+      });
+      const current = personalSaveContext();
+      if (source !== personalPhotoRecoverySource || Object.keys(initial).some(key => initial[key] !== current[key])) throw Error("Редактор изменился. Проверка остановлена.");
+      if (data?.ok !== true) throw Error("Не удалось прочитать актуальную серверную версию.");
+      const record = normalizeRemoteListRecord(data);
+      if (blockRemoteIntegrityFailureIfNeeded(normalizeRemoteState(record.payload, { repairCatalog: false }),
+        stateIntegrityMetaFromResponse(record, data), record.payload)) throw Error("Серверная версия требует проверки целостности.");
+      return { ...record, payload: personalBusinessPayload(record.payload) };
+    },
+    makeBaselineMeta: record => ({ ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
+      serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false })
+  });
 }
 
 function personalReconciledSnapshot(payload, previous) {
