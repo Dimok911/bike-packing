@@ -31,7 +31,8 @@ function fixture() {
     let data;
     if (url.endsWith("/auth/me")) data = { user: { id: state.actor } };
     else if (url.endsWith("/capabilities")) data = { capabilities: state.capability ? ["personalStagedPhotoAssetsV1",
-      ...(state.cancellationCapability === false ? [] : ["personalStagedPhotoCancellationV1"])] : [] };
+      ...(state.cancellationCapability === false ? [] : ["personalStagedPhotoCancellationV1"]),
+      ...(state.formCapability ? ["personalCausalPhotoFormV1"] : [])] : [] };
     else if (url.endsWith("/cancel") && options.method === "POST") {
       assert.equal(options.headers["Content-Type"], "application/json");
       assert.deepEqual(JSON.parse(options.body), { expectedActorId: binding.actorId, environment: binding.environment,
@@ -54,6 +55,26 @@ function fixture() {
   };
   return { ...make(), make, store, state, record, binding, context, values, storage, proof, cancelled, receipts, calls, posts: () => calls.filter(call => call.options.method === "POST") };
 }
+
+test("form staging needs whole-form authority before claiming or uploading and can inspect with that authority off", async () => {
+  for (const mode of ["gate", "capability", "ready"]) {
+    const f = fixture(); f.record.action.body = { action: "form" };
+    f.store.readStage = async (id, stageId) => { assert.equal(stageId, f.record.stage.operationId); return f.store.read(id); };
+    f.state.formCapability = mode !== "capability";
+    const staging = f.make({ batchEnabled: true, formEnabled: mode !== "gate" }).staging;
+    if (mode !== "ready") {
+      await assert.rejects(staging.stage(f.record.action.operationId, f.record.stage.operationId));
+      assert.equal(f.state.claimed, false); assert.equal(f.posts().length, 0);
+    } else {
+      f.state.lose = true;
+      assert.equal((await staging.stage(f.record.action.operationId, f.record.stage.operationId)).asset.state, "ready");
+      const readOnly = f.make({ enabled: false, batchEnabled: false, formEnabled: false }).staging;
+      f.state.formCapability = false;
+      assert.equal((await readOnly.inspect(f.record.action.operationId, f.record.stage.operationId)).historicalStageOnly, true);
+      assert.equal(f.posts().length, 1);
+    }
+  }
+});
 
 test("staging release gate and absent capability/actor/bytes stop before a dispatch claim or upload", async () => {
   assert.equal(PERSONAL_PHOTO_STAGING_ENABLED, false);

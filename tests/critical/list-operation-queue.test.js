@@ -52,7 +52,8 @@ function fixture() {
   };
   const make = () => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
-    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
+    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
+      photoFormEnabled: state.photoFormEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -248,6 +249,48 @@ function photoPublicationFixture() {
   f.input = { path: `${path}/photos/mutate`, method: "POST", operationId: crypto.randomUUID(), body: JSON.stringify(body) };
   return { ...f, body };
 }
+
+function photoFormQueueFixture(created = false) {
+  const f = photoPublicationFixture();
+  f.state.photoFormEnabled = true; f.state.capabilities.push("personalCausalPhotoFormV1");
+  Object.assign(f.body, { action: "form", entityType: "item", entityId: "item-a", baseEntityRevision: created ? 0 : 1,
+    fields: { name: "Saved with both photos", note: "Same immutable action" } });
+  for (const change of f.body.changes) change.baseEntityRevision = f.body.baseEntityRevision;
+  Object.assign(f.state.payload.list.payload.items["item-a"], f.body.fields);
+  f.state.payload.photoForm = { entityType: "item", entityId: "item-a", created };
+  f.input.body = JSON.stringify(f.body);
+  return f;
+}
+
+test("form queue separately gates publication and checks form capability before registering any write", async () => {
+  for (const mode of ["gate", "capability"]) {
+    const f = photoFormQueueFixture();
+    if (mode === "gate") f.state.photoFormEnabled = false; else f.state.capabilities.pop();
+    await assert.rejects(f.make().queue.run(f.input));
+    assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0);
+  }
+});
+
+test("new and edited form lost ACKs recover exact fields and photos with gates off for read-only settlement", async () => {
+  for (const created of [false, true]) {
+    const f = photoFormQueueFixture(created); f.state.loseResponse = true; f.state.unknown = true;
+    await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.posts().length, 1);
+    f.state.unknown = false;
+    const reader = () => createListOperationQueue({ transport: f.make().transport, getContext: () => f.context,
+      readOnly: true, enabled: false, photoEnabled: false, photoFormEnabled: false, locks: f.locks, fetchImpl: f.fetchImpl });
+    const proof = await reader().inspect(f.input);
+    assert.equal(proof.operation.state, "committed"); assert.equal(proof.historicalOnly, true);
+    await reader().inspect(f.input); await f.make().queue.run(f.input);
+    assert.equal(f.posts().length, 1);
+    assert.deepEqual(JSON.parse(f.posts()[0].options.body).body, f.body);
+    const receipt = f.receipts.get(f.input.operationId), good = structuredClone(receipt);
+    for (const mutate of [r => { delete r.result.payload.photoForm; }, r => { r.result.payload.photoForm.created = !created; },
+      r => { r.result.payload.list.payload.items["item-a"].name = "Old title"; }, r => { r.result.payload.photoChanges.pop(); }]) {
+      const wrong = structuredClone(good); mutate(wrong); f.receipts.set(f.input.operationId, wrong);
+      await assert.rejects(reader().inspect(f.input)); assert.equal(f.posts().length, 1);
+    }
+  }
+});
 
 function cancelledPhotoFixture() {
   const f = photoPublicationFixture(), body = { ...f.body.changes[0], baseStateRevision: 1, causal: { dependsOn: [], reads: [] } };

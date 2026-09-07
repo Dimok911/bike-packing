@@ -4,6 +4,8 @@ import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CA
 import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILITY } from "./personal-photo-staging.js";
 import { PERSONAL_LIST_MIGRATION_ENABLED, PERSONAL_LIST_MIGRATION_CAPABILITY,
   assertPersonalListMigrationHash, validatePersonalListMigrationResult } from "./personal-list-migration.js";
+import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
+  personalPhotoFormManifest, validatePersonalPhotoFormResult } from "./personal-photo-form-protocol.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -54,7 +56,8 @@ export function validateListReceipt(data, expected) {
       && proof.operationId === expected.operationId && proof.noBusinessEffects === true && proof.operationCannotApply === true;
   }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
-  if (expected.kind === "photos.mutate") return validatePersonalPhotoPublicationResult(result.payload, expected);
+  if (expected.kind === "photos.mutate") return expected.body?.action === "form"
+    ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
@@ -127,6 +130,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
+  photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -439,7 +443,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       }
       if (route.kind === "photos.mutate") {
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
-        personalPhotoPublicationManifest(body);
+        if (body.action === "form") {
+          if (!photoFormEnabled) throw paused(requestedId, "Сохранение карточки вместе с фото ещё не включено.");
+          personalPhotoFormManifest(body);
+        } else personalPhotoPublicationManifest(body);
       }
       const generation = await sha(initial.generation);
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
@@ -487,6 +494,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "list.migrate" && !capabilities.capabilities?.includes(PERSONAL_LIST_MIGRATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подготовку старого списка. Запрос не отправлен.");
           if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает подтверждение фотодействий. Запрос не отправлен.");
+          }
+          if (route.kind === "photos.mutate" && body.action === "form" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает сохранение карточки вместе с фото. Запрос не отправлен.");
           }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();

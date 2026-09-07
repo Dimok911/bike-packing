@@ -5,23 +5,30 @@ import { PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED } from "../../src/sync/personal-pho
 import { preparePersonalPhotoAttachmentBatch } from "../../src/sync/personal-photo-batch-plan.js";
 import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "../../src/sync/personal-photo-batch-record.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { preparePersonalPhotoFormAttachments } from "../../src/sync/personal-photo-form-plan.js";
+import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
 
-async function fixture() {
+async function makeFixture(variant) {
   const binding = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor" };
   const context = { ...binding, scope: "personal", generation: "edit" }, values = new Map();
   const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
-  const base = { items: { item: { id: "item", name: "Unchanged", photos: [] } }, containers: {}, layouts: {} };
-  const make = (batch = true) => createPersonalSaveOutbox({ storage, ...binding, photoEnabled: true, photoBatchEnabled: batch });
+  const created = variant === "form-create", form = variant !== "batch";
+  const base = { items: created ? {} : { item: { id: "item", name: "Unchanged", photos: [] } }, containers: {}, layouts: {} };
+  const make = (batch = true, photoFormEnabled = true) => createPersonalSaveOutbox({ storage, ...binding, photoEnabled: true, photoBatchEnabled: batch, photoFormEnabled });
   const outbox = make(); outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 5 });
-  const prepared = preparePersonalPhotoAttachmentBatch({ binding, snapshot: base, basePayload: base, baseStateRevision: 5,
-    entityType: "item", entityId: "item", baseEntityRevision: 3,
+  const prepared = (form ? preparePersonalPhotoFormAttachments : preparePersonalPhotoAttachmentBatch)({ binding, snapshot: base, basePayload: base, baseStateRevision: 5,
+    entityType: "item", entityId: "item", baseEntityRevision: created ? 0 : 3, ...(form ? { fields: { name: "Changed with files", note: "Both parts frozen" } } : {}),
     files: [1, 2].map(i => ({ fileName: `photo-${i}.png`, file: new Blob([`bytes-${i}`], { type: "image/png" }), thumb: null })) }, { enabled: true });
   const plan = outbox.preparePhoto(prepared);
-  const encoded = await encodePersonalPhotoBatchRecord({ binding, ...plan, files: prepared.files });
-  const store = { binding, ids: async () => [plan.action.operationId], read: id => decodePersonalPhotoBatchRecord(encoded, binding, id) };
-  return { binding, context, getContext: () => context, values, storage, base, prepared, plan, encoded, store, make, outbox };
+  const decode = form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord;
+  const encoded = await (form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)({ binding, ...plan, files: prepared.files });
+  const store = { binding, ids: async () => [plan.action.operationId], read: id => decode(encoded, binding, id) };
+  return { binding, context, getContext: () => context, values, storage, base, prepared, plan, encoded, store, make, outbox, decode };
 }
+
+for (const variant of ["batch", "form-edit", "form-create"]) test.describe(variant, () => {
+const fixture = () => makeFixture(variant);
 
 test("one gated photo batch binds all files to one causal owner action and blocks an overtaking DB save", async () => {
   assert.equal(PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, false);
@@ -82,14 +89,32 @@ test("quota or a competing tab after batch file commit retains the entire packag
       const original = f.store.read;
       f.store.read = async id => {
         const saved = await original(id), competitor = f.make(); competitor.adoptRemoteBaseline({ snapshot: f.base, payload: f.base, stateRevision: 5 });
-        const snapshot = structuredClone(f.base); snapshot.items.item.name = "Other tab";
+        const snapshot = structuredClone(f.base); snapshot.items.other = { id: "other", name: "Other tab" };
         competitor.capture({ snapshot, body: { baseStateRevision: 5, payload: snapshot } }); return saved;
       };
     }
     await assert.rejects(f.outbox.capturePhoto({ plan: f.plan, store: f.store, getContext: f.getContext }),
       error => error.isPersonalSaveBlocked && error.unconfirmedMemoryDraft.items.item.photos.length === 2);
-    assert.equal((await decodePersonalPhotoBatchRecord(f.encoded, f.binding, f.plan.action.operationId)).files.length, 2);
+    assert.equal((await f.decode(f.encoded, f.binding, f.plan.action.operationId)).files.length, 2);
     if (mode === "quota") assert.deepEqual([...f.values], before);
     else { assert.equal(f.make().recover().action.kind, "list.update"); assert.equal(f.values.size, 1); }
   }
+});
+
+if (variant !== "batch") test("form gates block capture and drain but preserve the readable full queue and file inventory", async () => {
+  const f = await fixture(), disabled = f.make(true, false);
+  disabled.adoptRemoteBaseline({ snapshot: f.base, payload: f.base, stateRevision: 5 });
+  assert.throws(() => disabled.preparePhoto(f.prepared), { code: "photo-form-disabled" });
+  for (const target of ["body", "snapshot", "payload"]) {
+    const input = structuredClone(f.prepared);
+    if (target === "body") input.body.fields.dimensions = NaN; else input[target].items.item.dimensions = NaN;
+    assert.throws(() => f.outbox.preparePhoto(input), { code: "payload-shape" });
+  }
+  const record = await f.outbox.capturePhoto({ plan: f.plan, store: f.store, getContext: f.getContext });
+  const restored = f.make(true, false);
+  assert.deepEqual(restored.recover(), record);
+  assert.equal((await inspectPersonalPhotoRecovery({ outbox: restored, store: f.store, getContext: f.getContext })).entries[0].state, "linked");
+  await assert.rejects(restored.drain({ getContext: f.getContext, queue: { run: () => assert.fail("no owner POST") },
+    photoStaging: { stage: () => assert.fail("no file POST") }, photoStore: f.store }), { code: "photo-form-disabled" });
+});
 });

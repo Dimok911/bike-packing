@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 
 const origin = "https://experiment.vniipo-help.ru";
-async function fixture(page, context) {
+async function installFixture(page, context, variant) {
   await context.route("**/*", async route => {
     const url = new URL(route.request().url());
     if (url.origin === origin && /^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(url.pathname)) {
@@ -14,6 +14,7 @@ async function fixture(page, context) {
     if (url.origin === origin && url.pathname === "/__batch-test") return route.fulfill({ contentType: "text/html", body: `<script type="module">
       import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
       import {preparePersonalPhotoAttachmentBatch} from '/src/sync/personal-photo-batch-plan.js';
+      import {preparePersonalPhotoFormAttachments} from '/src/sync/personal-photo-form-plan.js';
       import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
       import {createPersonalPhotoRecoveryArchive} from '/src/sync/personal-photo-recovery-archive.js';
       import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
@@ -24,11 +25,12 @@ async function fixture(page, context) {
       window.binding={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a'};
       window.editContext={...binding,scope:'personal',generation:'edit-1'};
       window.batchStore=(options={})=>createPersonalPhotoActionStore({...binding,environmentId:binding.environment,
-        getContext:()=>editContext,enabled:true,batchEnabled:true,...options});
+        getContext:()=>editContext,enabled:true,batchEnabled:true,formEnabled:true,...options});
       window.batchInput=()=>{
-        const payload={items:{item:{id:'item',name:'Frozen owner',photos:[]}},containers:{},layouts:{}};
-        const plan=preparePersonalPhotoAttachmentBatch({binding,snapshot:payload,basePayload:payload,baseStateRevision:1,
-          entityType:'item',entityId:'item',baseEntityRevision:1,
+        const variant=${JSON.stringify(variant)}, form=variant!=='batch', created=variant==='form-create';
+        const payload={items:created?{}:{item:{id:'item',name:form?'Original owner':'Frozen owner',photos:[]}},containers:{},layouts:{}};
+        const plan=(form?preparePersonalPhotoFormAttachments:preparePersonalPhotoAttachmentBatch)({binding,snapshot:payload,basePayload:payload,baseStateRevision:1,
+          entityType:'item',entityId:'item',baseEntityRevision:created?0:1,...(form?{fields:{name:'Frozen owner',note:'Frozen with both files'}}:{}),
           files:[1,2].map(i=>({fileName:'selected-'+i+'.png',file:new Blob(['full '+i],{type:'image/png'}),
             thumb:new Blob(['thumb '+i],{type:'image/png'})}))},{enabled:true});
         return {snapshot:plan.snapshot,files:plan.files,action:{...binding,operationId:plan.operationId,kind:'photos.mutate',
@@ -40,16 +42,20 @@ async function fixture(page, context) {
       window.readBatchZip=readZipEntries; window.batchZipText=zipText; window.batchReady=true;
       window.batchRuntime=()=>{
         const transport=createExperimentTransport({selection:'direct'}), store=batchStore();
-        return {store,outbox:createPersonalSaveOutbox({...binding,storage:localStorage,photoEnabled:true,photoBatchEnabled:true}),
-          queue:createListOperationQueue({transport,getContext:()=>editContext,enabled:true,photoEnabled:true}),
-          staging:createPersonalPhotoStaging({store,transport,getContext:()=>editContext,enabled:true,batchEnabled:true})};
+        return {store,outbox:createPersonalSaveOutbox({...binding,storage:localStorage,photoEnabled:true,photoBatchEnabled:true,photoFormEnabled:true}),
+          queue:createListOperationQueue({transport,getContext:()=>editContext,enabled:true,photoEnabled:true,photoFormEnabled:true}),
+          staging:createPersonalPhotoStaging({store,transport,getContext:()=>editContext,enabled:true,batchEnabled:true,formEnabled:true})};
       };
       window.registerBatch=async()=>{
         const input=batchInput(), current=batchRuntime(), base=structuredClone(input.snapshot); base.items.item.photos=[];
+        if(input.action.body.action==='form') {
+          if(input.action.body.baseEntityRevision===0) delete base.items.item;
+          else {base.items.item.name='Original owner'; delete base.items.item.note;}
+        }
         current.outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
         const body={...input.action.body}; delete body.causal;
         const plan=current.outbox.preparePhoto({snapshot:input.snapshot,payload:input.snapshot,body,operationId:input.action.operationId});
-        await current.store.captureBatch({...input,...plan});
+        await current.store[input.action.body.action==='form'?'captureForm':'captureBatch']({...input,...plan});
         return current.outbox.capturePhoto({plan,store:current.store,getContext:()=>editContext});
       };
       window.drainBatch=async()=>{
@@ -62,6 +68,9 @@ async function fixture(page, context) {
   });
   await page.goto(`${origin}/__batch-test`); await page.waitForFunction(() => window.batchReady);
 }
+
+for (const variant of ["batch", "form-edit", "form-create"]) test.describe(variant, () => {
+const fixture = (page, context) => installFixture(page, context, variant);
 
 test("whole photo batch commits once with strict durability and exact files survive reload with writers disabled", async ({ page, context }) => {
   await fixture(page, context);
@@ -82,7 +91,7 @@ test("whole photo batch commits once with strict durability and exact files surv
   expect(initial).toMatchObject({ strict: true, completed: true, name: "Frozen owner", count: 2 });
   await page.reload(); await page.waitForFunction(() => window.batchReady);
   const restored = await page.evaluate(async id => {
-    const saved = await batchStore({ enabled: false, batchEnabled: false }).read(id);
+    const saved = await batchStore({ enabled: false, batchEnabled: false, formEnabled: false }).read(id);
     return { hash: saved.intentHash, bytes: await Promise.all(saved.files.map(async part => [await part.file.text(), await part.thumb.text()])),
       inventory: await inspectBatch() };
   }, initial.id);
@@ -184,7 +193,7 @@ test("native batch queue loses file and owner ACKs then reloads their exact rece
   await context.route("**/letters-vniipo/api/**", async route => {
     const request = route.request(), url = new URL(request.url()), leaf = url.pathname.split("/").at(-1);
     if (leaf === "me") return route.fulfill({ json: { user: { id: "actor-a" } } });
-    if (leaf === "capabilities") return route.fulfill({ json: { capabilities: ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1"] } });
+    if (leaf === "capabilities") return route.fulfill({ json: { capabilities: ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalCausalPhotoFormV1"] } });
     if (leaf === "freshness") return route.fulfill({ json: { stateRevision: ownerReceipt ? 2 : 1 } });
     if (request.method() === "POST" && leaf === "photo-assets") {
       const multipart = await new Request(request.url(), { method: "POST", headers: request.headers(), body: request.postDataBuffer() }).formData();
@@ -209,7 +218,8 @@ test("native batch queue loses file and owner ACKs then reloads their exact rece
       const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: "list-a", body: body.body };
       ownerReceipt = { ok: true, operation: { ...binding, id: body.operationId, state: "committed",
         payloadDigest: createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex") },
-        result: { status: 200, payload: { ok: true, stateRevision: 2, list: { id: "list-a", stateRevision: 2, payload }, photoChanges: outcomes } } };
+        result: { status: 200, payload: { ok: true, stateRevision: 2, list: { id: "list-a", stateRevision: 2, payload }, photoChanges: outcomes,
+          ...(body.body.action === "form" ? { photoForm: { entityType: "item", entityId: "item", created: body.body.baseEntityRevision === 0 } } : {}) } } };
       posts.push(body.operationId); return route.abort("failed");
     }
     if (url.pathname.includes("/photo-assets/")) {
@@ -232,4 +242,22 @@ test("native batch queue loses file and owner ACKs then reloads their exact rece
     files: await Promise.all((await batchStore().read(id)).files.map(part => part.file.text())),
     claims: (await batchStore().recoveryRecords())[0].claims.length }), record.action.operationId);
   expect(result).toEqual({ action: record.action, files: ["full 1", "full 2"], claims: 2 });
+});
+
+if (variant !== "batch") test("form native capture and stage claims are separately gated while recovery stays readable", async ({ page, context }) => {
+  await fixture(page, context);
+  const result = await page.evaluate(async () => {
+    const input = batchInput(), store = batchStore({ formEnabled: false });
+    let captureCode, claimCode;
+    try { await store.captureForm(input); } catch (error) { captureCode = error.code; }
+    const before = await store.ids();
+    await batchStore().captureForm(input);
+    try { await store.claimStage(input.action.operationId, input.files[0].stage.operationId); } catch (error) { claimCode = error.code; }
+    const retained = await store.read(input.action.operationId), raw = await store.recoveryRecords();
+    return { captureCode, before, claimCode, claims: raw[0].claims.length, fields: retained.action.body.fields,
+      text: await retained.files[1].file.text() };
+  });
+  expect(result).toEqual({ captureCode: "form-disabled", before: [], claimCode: "form-disabled", claims: 0,
+    fields: { name: "Frozen owner", note: "Frozen with both files" }, text: "full 2" });
+});
 });

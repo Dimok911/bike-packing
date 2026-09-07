@@ -8,19 +8,22 @@ import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "
 import { cancelPersonalPhotoBatch, PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } from "../../src/sync/personal-photo-batch-cancellation.js";
 import { personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-photo-recovery-cancel.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { preparePersonalPhotoFormAttachments } from "../../src/sync/personal-photo-form-plan.js";
+import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
 
-async function fixture() {
+async function makeFixture(form) {
   const binding = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor" }, entries = new Map();
   const storage = { get length() { return entries.size; }, key: i => [...entries.keys()][i], getItem: key => entries.get(key) ?? null,
     setItem: (key, value) => entries.set(key, value), removeItem: key => entries.delete(key) };
-  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoBatchCancellationEnabled: true });
+  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoBatchCancellationEnabled: true, photoFormEnabled: true });
   const base = { items: { item: { id: "item", name: "Frozen", photos: [] } }, containers: {}, layouts: {} };
   outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 1 });
-  const prepared = preparePersonalPhotoAttachmentBatch({ binding, snapshot: base, basePayload: base, baseStateRevision: 1,
+  const prepared = (form ? preparePersonalPhotoFormAttachments : preparePersonalPhotoAttachmentBatch)({ binding, snapshot: base, basePayload: base, baseStateRevision: 1,
     entityType: "item", entityId: "item", baseEntityRevision: 1,
+    ...(form ? { fields: { name: "New form title", note: "Must retain with photos" } } : {}),
     files: [1, 2].map(i => ({ file: new Blob([`original${i}`], { type: "image/png" }), thumb: null })) }, { enabled: true });
-  const plan = outbox.preparePhoto(prepared), encoded = await encodePersonalPhotoBatchRecord({ binding, ...plan, files: prepared.files });
-  const store = { read: id => decodePersonalPhotoBatchRecord(encoded, binding, id) }, calls = [], state = { changed: false, owner: "unknown", secondUnknown: false };
+  const plan = outbox.preparePhoto(prepared), encoded = await (form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)({ binding, ...plan, files: prepared.files });
+  const store = { read: id => (form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(encoded, binding, id) }, calls = [], state = { changed: false, owner: "unknown", secondUnknown: false };
   const record = await outbox.capturePhoto({ plan, store, getContext: () => ({ ...binding, scope: "personal", generation: "editor" }) });
   const digest = createHash("sha256").update(canonicalListOperationJson({ environment: binding.environment, actorId: binding.actorId,
     kind: plan.action.kind, listId: binding.listId, body: plan.action.body })).digest("hex");
@@ -32,7 +35,7 @@ async function fixture() {
       operation: { ...binding, ...part.stage, id, state: "cancelled", payloadDigest: "d".repeat(64) },
       cancellation: { version: 1, stageOperationId: id, fileHash: part.fileMetadata.hash, thumbHash: part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } };
   };
-  const options = { enabled: true, record, binding, store, assertCurrent: () => { if (state.changed) throw Error("editor changed"); },
+  const options = { enabled: true, formEnabled: true, record, binding, store, assertCurrent: () => { if (state.changed) throw Error("editor changed"); },
     queue: { inspect: async () => { calls.push("inspect"); if (state.owner === "unknown") throw Object.assign(Error("unknown"), { isOperationReceiptError: true }); return ownerProof(); },
       supportsCancellation: () => true, cancelExact: async request => { calls.push("cancel-owner"); assert.equal(request.operationId, record.action.operationId);
         assert.deepEqual(JSON.parse(request.body), record.action.body); state.owner = "rejected"; return ownerProof(); } },
@@ -40,6 +43,9 @@ async function fixture() {
       if (state.secondUnknown && stageId === record.action.body.changes[1].assetId) throw Error("lost cancellation ACK"); return stageProof(stageId); } } };
   return { options, outbox, binding, storage, record, state, calls, entries, store, ownerProof, stageProof };
 }
+
+for (const form of [false, true]) test.describe(form ? "card form" : "photo-only batch", () => {
+const fixture = () => makeFixture(form);
 
 test("batch cancellation is separately gated and fences the exact owner before settling every unchanged stage", async () => {
   assert.equal(PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, false);
@@ -83,7 +89,8 @@ test("wrong owner proof, missing part, changed editor and unavailable cancellati
 test("real outbox cancellation adapter remains gated and preserves its pending batch until an explicit new decision", async () => {
   const f = await fixture(), before = [...f.entries];
   assert.equal(Boolean(personalPhotoRecoveryCancellationHead(f.record)), false);
-  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(f.record, { batchEnabled: true })), true);
+  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(f.record, { batchEnabled: true })), !form);
+  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(f.record, { batchEnabled: true, formEnabled: true })), true);
   const options = { queue: f.options.queue, photoStore: f.store, photoStaging: f.options.staging,
     getContext: () => ({ ...f.binding, scope: "personal", generation: "editor" }) };
   const disabled = createPersonalSaveOutbox({ ...f.binding, storage: f.storage, photoEnabled: true, photoBatchEnabled: true });
@@ -114,4 +121,26 @@ test("applied keep-current decision carries exact photo proof through compact ba
     assert.equal(inventory.entries[0].state, "settled-retained", mode);
     assert.deepEqual(recovered.photoRecoveryReferences().photoReceipts, [f.ownerProof()]);
   }
+});
+
+if (form) test("form cancellation requires its own authority and the keep-current choice identifies discarded fields", async () => {
+  const f = await fixture(), getContext = () => ({ ...f.binding, scope: "personal", generation: "editor" });
+  await assert.rejects(cancelPersonalPhotoBatch({ ...f.options, formEnabled: false }), { code: "photo-batch-cancellation" });
+  assert.deepEqual(f.calls, []);
+  await cancelPersonalPhotoBatch(f.options);
+  const disabled = createPersonalSaveOutbox({ ...f.binding, storage: f.storage, photoEnabled: true, photoBatchEnabled: true });
+  const readRemote = async () => ({ id: f.binding.listId, ownerId: f.binding.actorId, stateRevision: 1, payload: f.record.mergeBase.payload });
+  await assert.rejects(disabled.reconcile({ queue: f.options.queue, getContext, readRemote,
+    resolveRejectedPhoto: () => assert.fail("a gated form cannot ask for a destructive choice") }), { code: "photo-form-disabled" });
+  const decision = await f.outbox.reconcile({ queue: f.options.queue, getContext, readRemote, resolveRejectedPhoto: async details => {
+    assert.equal(details.action, "form"); assert.equal(details.photoOperationId, f.record.action.operationId);
+    assert.equal(details.localFilesRetained, true); return "keep-server";
+  } });
+  assert.notEqual(decision.action.operationId, f.record.action.operationId);
+  assert.equal(decision.action.body.payload.items.item.name, "Frozen");
+  const original = await f.store.read(f.record.action.operationId);
+  assert.equal(original.snapshot.items.item.name, "New form title");
+  assert.equal(original.snapshot.items.item.note, "Must retain with photos");
+  assert.equal(original.files.length, 2);
+});
 });

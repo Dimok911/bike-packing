@@ -1,5 +1,7 @@
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "./personal-photo-batch-record.js";
+import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "./personal-photo-form-record.js";
+import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 
 export const PERSONAL_PHOTO_ACTIONS_ENABLED = false;
 export const PERSONAL_PHOTO_BATCH_STORAGE_ENABLED = false;
@@ -20,7 +22,7 @@ const sameBytes = (a, b) => {
 // expiry API: an unfinished user action owns both its immutable intent and bytes.
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
-  batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED } = {}) {
+  batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -65,7 +67,13 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   const decode = async (record, operationId) => {
     if (!record) return null;
     if (record.version === 2) {
-      try { return await decodePersonalPhotoBatchRecord(record, binding, operationId); }
+      try {
+        // Select a grammar only; each decoder still verifies the complete
+        // hash-bound intent and every byte before returning an action.
+        if (typeof record.intentJson !== "string" || new TextEncoder().encode(record.intentJson).byteLength > 6 * 1024 * 1024) throw blocked("corrupt-intent");
+        const form = JSON.parse(record.intentJson)?.action?.body?.action === "form";
+        return await (form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
+      }
       catch (cause) { throw blocked("corrupt-batch", cause); }
     }
     if (record.key !== key(operationId) || record.bindingKey !== bindingKey || record.version !== 1) throw blocked("corrupt-record");
@@ -82,14 +90,26 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    async captureForm(input) {
+      if (input?.action?.body?.action !== "form") throw blocked("invalid-form");
+      return this.captureBatch(input);
+    },
     async captureBatch({ action, snapshot, files }) {
+      // Reject non-JSON numbers before cloning (NaN must not become an
+      // intentional null/delete field in a frozen form).
+      if (action?.body?.action === "form") {
+        assertListOperationPayload({ ...binding, ...action });
+        assertListOperationPayload({ ...binding, kind: "photos.mutate", body: snapshot });
+      }
       const selected = files?.map(part => ({ ...part, stage: clone(part.stage), file: part.file, thumb: part.thumb ?? null }));
       const frozen = { binding, action: clone(action), snapshot: clone(snapshot), files: selected };
       const initial = { ...getContext?.() };
       try {
         if (!enabled || !batchEnabled) throw blocked("batch-disabled");
+        const form = frozen.action?.body?.action === "form";
+        if (form && !formEnabled) throw blocked("form-disabled");
         assertContext(initial);
-        const record = await encodePersonalPhotoBatchRecord(frozen); assertContext(initial);
+        const record = await (form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
         await transaction("readwrite", (store, finish, abort) => {
           assertContext(initial);
           const lookup = store.get(record.key);
@@ -231,6 +251,7 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       const initial = { ...getContext?.() }; assertContext(initial);
       const action = await this.read(operationId); assertContext(initial);
       if (!action) throw blocked("missing-action");
+      if (action.action.body?.action === "form" && !formEnabled) throw blocked("form-disabled");
       const batch = Array.isArray(action.files);
       if (batch && (!batchEnabled || !uuid(stageOperationId))) throw blocked("batch-stage-disabled-or-missing");
       const stage = batch ? action.files.find(part => part.stage.operationId === stageOperationId)?.stage : action.stage;

@@ -1,7 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 
-// Protocol/preparation only. Not imported by the application writer yet.
+// Separate rollout gate. Storage/queue integration does not enable the UI writer.
 export const PERSONAL_PHOTO_FORM_ENABLED = false;
 export const PERSONAL_PHOTO_FORM_CAPABILITY = "personalCausalPhotoFormV1";
 const clone = value => JSON.parse(JSON.stringify(value));

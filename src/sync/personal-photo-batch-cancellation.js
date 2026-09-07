@@ -1,6 +1,7 @@
 import { assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { validateCancelledStagedPhotoReceipt, validateStagedPhotoReceipt } from "./personal-photo-staging.js";
+import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 
 export const PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED = false;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -11,8 +12,9 @@ const paused = () => Object.assign(new Error("Отмена всего фотоп
 // transaction, then settle each immutable stage ID without sending any bytes.
 // A lost child ACK leaves the original batch intact for exact receipt recovery.
 export async function cancelPersonalPhotoBatch({ record, binding, queue, store, staging, assertCurrent,
-  enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED }) {
+  enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED }) {
   if (!enabled || typeof assertCurrent !== "function" || record?.photoState?.fileInventoryVersion !== 2
+    || record?.action?.body?.action === "form" && !formEnabled
     || !queue?.inspect || !store?.read || !staging?.cancel) throw paused();
   assertCurrent(); record = clone(record); binding = clone(binding);
   const action = record.action;

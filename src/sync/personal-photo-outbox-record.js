@@ -1,4 +1,5 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
+import { assertPersonalPhotoFormRecord, assertPersonalPhotoFormFile } from "./personal-photo-form-outbox-record.js";
 import { personalPhotoPublicationManifest } from "./personal-photo-publication-protocol.js";
 
 export const PERSONAL_PHOTO_OUTBOX_ENABLED = false;
@@ -32,6 +33,7 @@ export function assertPersonalPhotoCandidate({ body, basePayload, payload }) {
 }
 
 export function assertPersonalPhotoRecord(record) {
+  if (record?.action?.body?.action === "form") return assertPersonalPhotoFormRecord(record).photos;
   const photo = record.photoState, action = record.action;
   if (action?.kind !== "photos.mutate" || photo?.version !== 1 || !record.mergeBase
     || record.mergeBase.stateRevision !== action.body.baseStateRevision
@@ -50,6 +52,7 @@ export function assertPersonalPhotoRecord(record) {
 }
 
 export function assertPersonalPhotoFile(record, saved, binding) {
+  if (record?.action?.body?.action === "form") { assertPersonalPhotoFormFile(record, saved, binding); return; }
   const manifest = assertPersonalPhotoRecord(record);
   if (!saved || saved.intentHash !== record.photoState.fileIntentHash
     || !same(saved.binding, binding) || !same(saved.action, record.action) || !same(saved.snapshot, record.snapshot)) fail();
