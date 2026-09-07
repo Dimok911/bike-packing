@@ -624,6 +624,72 @@ test("deleting the last bag and its inner pocket keeps the items outside all lay
   expect(f.errors).toEqual([]);
 });
 
+async function confirmActiveLayoutDeletion(page) {
+  await page.locator("#editLayoutBtn").click();
+  await expect(page.locator("#layoutEditDialog")).toBeVisible();
+  await page.locator("#deleteEditedLayoutBtn").click();
+  await expect(page.locator("#confirmDialog")).toContainText("Удалить укладку");
+}
+
+test("actual layout deletion fixes one empty replacement through lost ACK and later uses an existing layout", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Оставляемая сумка");
+  await createItemInContainer(page, bag, "Оставляемая вещь");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const before = f.posts.length, itemIds = Object.keys(f.payload.items), bagIds = Object.keys(f.payload.containers);
+  f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await confirmActiveLayoutDeletion(page); await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#layoutEditDialog")).not.toBeVisible();
+  await page.locator("#syncBtn").click(); await expect.poll(() => f.posts.length).toBe(before + 1);
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const action = f.posts.at(-1), replacementId = Object.keys(action.body.payload.layouts)[0];
+  expect(action.body.userDeletion).toEqual({ type: "layout", id: "layout-a" });
+  expect(Object.keys(action.body.payload.layouts)).toEqual([replacementId]); expect(replacementId).not.toBe("layout-a");
+  expect(Object.keys(action.body.payload.items)).toEqual(itemIds); expect(Object.keys(action.body.payload.containers)).toEqual(bagIds);
+  expect(action.body.payload.layouts[replacementId].arrangement.items).toEqual({});
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => !f.payload.layouts["layout-a"]);
+  await expect(page.locator("#layoutSelect")).toHaveValue(replacementId);
+  expect(f.posts.filter(post => post.operationId === action.operationId)).toHaveLength(1);
+  await page.locator("#newLayoutBtn").click(); await page.locator("#layoutCreateMode").selectOption("empty");
+  await page.locator("#layoutName").fill("Вторая для удаления"); await submitForm(page, "#saveLayoutBtn", "#layoutName");
+  await synchronize(page, () => Object.keys(f.payload.layouts).length === 2);
+  const secondId = Object.keys(f.payload.layouts).find(id => id !== replacementId), beforeSecond = f.posts.length;
+  await confirmActiveLayoutDeletion(page); await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => !f.payload.layouts[secondId]);
+  expect(f.posts.length).toBe(beforeSecond + 1); expect(Object.keys(f.payload.layouts)).toEqual([replacementId]);
+  expect(Object.keys(f.payload.items)).toEqual(itemIds); expect(Object.keys(f.payload.containers)).toEqual(bagIds);
+  await reloadApp(page); await expect(page.locator("#layoutSelect")).toHaveValue(replacementId); expect(f.errors).toEqual([]);
+});
+
+test("quota during layout deletion keeps its edit window open and exports the complete replacement draft", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Укладка сбой сумка");
+  await createItemInContainer(page, bag, "Укладка сбой вещь");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  await confirmActiveLayoutDeletion(page);
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#layoutEditDialog")).toBeVisible();
+  const copy = await downloadRecovery(page), draft = copy.unconfirmedMemoryDraft;
+  expect(draft.layouts["layout-a"]).toBeUndefined(); expect(Object.keys(draft.layouts)).toHaveLength(1);
+  const replacementId = Object.keys(draft.layouts)[0];
+  expect(replacementId).toMatch(/^layout-[0-9a-f-]{36}$/); expect(draft.layouts[replacementId].id).toBe(replacementId);
+  expect(draft.layouts[replacementId].arrangement.rootContainerIds).toEqual([]);
+  expect(Object.keys(draft.items)).toEqual(Object.keys(f.payload.items)); expect(Object.keys(draft.containers)).toEqual(Object.keys(f.payload.containers));
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
+
 test("quota during real bulk deletion preserves the entire unsaved selection draft and the old queue", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);

@@ -732,6 +732,7 @@ import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-dr
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
 import { personalCopyIntent, preparePersonalCopyBatch } from "./src/sync/personal-copy-intent.js";
+import { preparePersonalLayoutDeletion } from "./src/sync/personal-layout-deletion.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -1865,7 +1866,8 @@ const appTailControllerDeps = {
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
-  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
+  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
+  preparePersonalLayoutDeletionAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
@@ -2477,6 +2479,39 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
     if (keepPlacement) applyLayoutArrangement(state.activeLayoutId);
     saveState({ personalMutation: prepared.intent });
+    return true;
+  };
+}
+
+function preparePersonalLayoutDeletionAction(layoutId) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  if (layoutId !== state.activeLayoutId || !canDeleteActiveLayout()) return false;
+  const initial = JSON.stringify(personalSaveContext()), eligible = userEditableLayouts().map(layout => layout.id);
+  const nextLayoutId = eligible.find(id => id !== layoutId) || `layout-${crypto.randomUUID()}`;
+  let prepared, used = false;
+  try {
+    let replacement = null;
+    if (!eligible.some(id => id !== layoutId)) {
+      const dictionaries = ensureLayoutDictionaries(JSON.parse(JSON.stringify(state.layouts[layoutId])));
+      replacement = { id: nextLayoutId, name: uniqueLayoutName(), rootContainerIds: [],
+        arrangement: createEmptyLayoutArrangement(), locations: [...(dictionaries?.locations || locations)],
+        categories: [...(dictionaries?.categories || categories)], ...currentCreateMeta(nowIso()) };
+    }
+    prepared = preparePersonalLayoutDeletion(state, { layoutId, eligibleLayoutIds: eligible, nextLayoutId, replacement });
+  } catch (error) { showToast(error.message, "error"); return false; }
+  return () => {
+    if (used || initial !== JSON.stringify(personalSaveContext()) || !canDeleteActiveLayout()) {
+      showToast(localText("The layout changed. Confirm deletion again.", "Укладка изменилась. Подтвердите удаление заново."), "error");
+      return false;
+    }
+    personalSaveRecovery.assertRunning(); used = true;
+    for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
+    state.activeLayoutId = prepared.nextLayoutId;
+    setActivePrivateScope(); applyLayoutArrangement(prepared.nextLayoutId);
+    saveState({ personalMutation: prepared.intent });
+    rememberActiveLayoutChoice(prepared.nextLayoutId);
     return true;
   };
 }

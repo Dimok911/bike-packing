@@ -14,14 +14,14 @@ export function personalDeletionIntent(value) {
     });
     return { type: "batch", operations };
   }
-  if (!["item", "container"].includes(value?.type) || typeof value.id !== "string" || !value.id
+  if (!["item", "container", "layout"].includes(value?.type) || typeof value.id !== "string" || !value.id
     || value.id !== value.id.trim() || value.id.length > 191
     || ["__proto__", "prototype", "constructor"].includes(value.id)) throw Error("Неизвестное действие удаления.");
   return { type: value.type, id: value.id };
 }
 
 const entries = intent => intent.type === "batch" ? intent.operations : [intent];
-const field = intent => intent.type === "item" ? "items" : "containers";
+const field = intent => ({ item: "items", container: "containers", layout: "layouts" })[intent.type];
 
 // A later explicit comparison can retain some deleted records. Only the
 // deletions still present in the NEW snapshot belong to its NEW action.
@@ -36,6 +36,7 @@ export function retainedPersonalDeletionIntent(value, payload) {
 // aborts the whole preparation, without touching live state, cache or network.
 export function preparePersonalDeletionBatch(state, value, { changedAt = "", markEdited = () => {}, hasPhotos = () => false } = {}) {
   const intent = personalDeletionIntent(value), operations = entries(intent);
+  if (operations.some(entry => entry.type === "layout")) throw Error("Для удаления укладки нужен отдельный подготовленный снимок.");
   for (const entry of operations) {
     const record = state?.[field(entry)]?.[entry.id];
     if (!record || entry.type === "container" && record.parentId && record.nestable !== true) {
@@ -74,7 +75,8 @@ export function personalDeletionReference(base, records) {
       if (!entities || Object.hasOwn(entities, entry.id)) throw Error("Снимок не соответствует заявленному удалению.");
       declared = true;
       if (entry.type === "item") deleteItemFromState(reference, entry.id, { removeItemFromLayoutArrangement });
-      else deleteRootContainerFromState(reference, entry.id);
+      else if (entry.type === "container") deleteRootContainerFromState(reference, entry.id);
+      else delete reference.layouts?.[entry.id];
     }
   }
   return declared ? reference : null;

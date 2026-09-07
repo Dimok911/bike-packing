@@ -376,7 +376,8 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, saveStoredActiveLayoutChoice,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy,
+    preparePersonalLayoutDeletionAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
@@ -7679,6 +7680,8 @@ async function confirmDeleteEditedLayout() {
 async function confirmDeleteEditableLayout(layoutId) {
   const layout = state.layouts?.[layoutId];
   if (!layout || layoutId !== state.activeLayoutId || !canDeleteActiveLayout()) return;
+  const personalDelete = preparePersonalLayoutDeletionAction(layoutId);
+  if (personalDelete === false) return;
   const containerCount = getLayoutContainerIdSet(layout).size;
   const itemCount = getLayoutItemIdSet(layout).size;
   const isLastLayout = userEditableLayouts().length <= 1;
@@ -7689,8 +7692,7 @@ async function confirmDeleteEditableLayout(layoutId) {
     isLastLayout
   }));
   if (!confirmed) return;
-  refs.layoutEditDialog.close();
-  deleteActiveLayout();
+  if (deleteActiveLayout(personalDelete)) refs.layoutEditDialog.close();
 }
 
 async function confirmDeleteManagedPublicLayout(layoutId) {
@@ -7877,10 +7879,16 @@ function canDeleteActiveLayout() {
   });
 }
 
-function deleteActiveLayout() {
+function deleteActiveLayout(personalDelete = preparePersonalLayoutDeletionAction(state.activeLayoutId)) {
   const layoutId = state.activeLayoutId;
   const layout = state.layouts?.[layoutId];
   if (!canDeleteActiveLayout() || !layout) return;
+  if (personalDelete === false) return;
+  if (personalDelete) {
+    if (!personalDelete()) return false;
+    render(); showToast(localText("Layout deleted.", "Укладка удалена."), "success");
+    return true;
+  }
   captureActiveLayoutArrangement();
   const remainingLayouts = userEditableLayouts().filter((entry) => entry.id !== layoutId);
   let nextLayoutId = remainingLayouts[0]?.id || "";
@@ -7909,6 +7917,7 @@ function deleteActiveLayout() {
   saveState();
   render();
   showToast(localText("Layout deleted.", "Укладка удалена."), "success");
+  return true;
 }
 
 function handleRootContainerFormSubmit(event) {
