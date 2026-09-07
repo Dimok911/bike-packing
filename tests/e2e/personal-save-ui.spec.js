@@ -12,10 +12,13 @@ import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../
 // an isolated test bundle; source/publication flags and live services stay off.
 const origin = "https://experiment.vniipo-help.ru";
 const bundleRoot = path.resolve("test-results/personal-ui-build");
+const photoRecoveryBundleRoot = path.resolve("test-results/personal-photo-cancel-ui-build");
 test.beforeAll(async () => {
+  for (const mode of ["production", "photo-recovery"]) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)),
-    "build", "--config", "tests/e2e/personal-ui.vite.config.js"], { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
+    "build", "--config", "tests/e2e/personal-ui.vite.config.js", "--mode", mode], { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
+  }
 });
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) await info.attach("personal-ui-errors", {
@@ -65,9 +68,10 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false, payload = initialPayload() } = {}) {
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false } = {}) {
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
-    posts: [], receipts: new Map(), lose, unknown: lose, errors: [] };
+    posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [] };
+  const activeBundleRoot = photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
     stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`,
@@ -92,7 +96,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1"] };
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoRecovery ?
+          ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}` || path === `/bike-packing/lists/${state.listId}/state`) data = { ok: true, list: record(), state: state.payload };
       else if (path === `/bike-packing/lists/${state.listId}/freshness`) data = { ok: true, ...record(), payload: undefined };
@@ -107,6 +112,22 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           restore: { payload, baseStateRevision: state.revision, historyRestore: { version: 1, historyId: 101,
             historyPayloadHash: hash(source.payload), payloadHash: hash(payload), layoutIds, targetStateRevision: state.revision } } };
       }
+      else if (photoRecovery && path.startsWith(`/bike-packing/lists/${state.listId}/photo-assets/`)) {
+        const id = path.split("/photo-assets/")[1].split("/")[0];
+        if (request.method() === "POST") {
+          expect(path.endsWith("/cancel")).toBe(true); // No multipart file upload endpoint in this fixture.
+          const body = request.postDataJSON();
+          expect(request.headers()["content-type"]).toContain("application/json");
+          const expected = state.cancellationReceipt;
+          expect(id).toBe(expected.operation.id);
+          expect(body).toEqual({ expectedActorId: "actor-a", environment: "bike-packing-experiment", entityType: expected.operation.entityType,
+            entityId: expected.operation.entityId, photoId: expected.operation.photoId,
+            fileHash: expected.cancellation.fileHash, thumbHash: expected.cancellation.thumbHash });
+          state.cancellationPosts.push({ id, body }); state.stageReceipts.set(id, expected);
+        }
+        data = state.stageReceipts.get(id) || { ok: true, operation: { id, state: "unknown",
+          actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId } };
+      }
       else if (path === "/bike-packing/list-operations" && request.method() === "POST") {
         const body = request.postDataJSON(); state.posts.push(body);
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
@@ -116,7 +137,12 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
-        if (predecessor?.operation.state === "rejected" || body.kind !== "list.create" && base !== state.revision) {
+        if (photoRecovery && body.kind === "photos.mutate") {
+          expect(body.operationId).toBe(state.cancelPhotoAction.operationId); expect(body.body).toEqual(state.cancelPhotoAction.body);
+          expect(state.stageReceipts.get(body.body.assetId)?.operation.state).toBe("cancelled");
+          data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "rejected" },
+            result: { status: 409, payload: { ok: false, code: "photo_asset_not_ready", stateRevision: state.revision } } };
+        } else if (predecessor?.operation.state === "rejected" || body.kind !== "list.create" && base !== state.revision) {
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "rejected" },
             result: { status: 409, payload: { ok: false,
               code: predecessor?.operation.state === "rejected" ? "dependency_rejected" : "stale_state_revision", stateRevision: state.revision } } };
@@ -135,8 +161,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       return route.fulfill({ status, headers, json: data || { ok: false } });
     }
     if (url.origin !== origin) return route.abort();
-    const target = path.resolve(bundleRoot, `.${url.pathname === "/" ? "/index.html" : url.pathname}`);
-    if (!target.startsWith(bundleRoot + path.sep)) throw Error("Fixture path escaped its build directory");
+    const target = path.resolve(activeBundleRoot, `.${url.pathname === "/" ? "/index.html" : url.pathname}`);
+    if (!target.startsWith(activeBundleRoot + path.sep)) throw Error("Fixture path escaped its build directory");
     const mime = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json",
       ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp" };
     try { return await route.fulfill({ body: await readFile(target), contentType: mime[path.extname(target)] || "application/octet-stream" }); }
@@ -1383,6 +1409,81 @@ for (const offline of [false, true]) test(`already settled retained photos do no
     const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
     return (await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id)).file.text();
   }, seeded.id)).toBe("retained settled bytes");
+  expect(f.errors).toEqual([]);
+});
+
+for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack"]) test(`explicit photo cancellation preserves the file and separately confirms the keep-current decision (${outcome})`, async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context, { photoRecovery: true });
+  await createRootContainer(page, "Сумка отмены фото");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  await context.route(`${origin}/src/**/*.js`, async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid seed module path");
+    return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+  });
+  const seeded = await page.evaluate(async ({ base, revision }) => {
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    const { createPersonalSaveOutbox } = await import("/src/sync/personal-save-outbox.js");
+    const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+    const getContext = () => ({ ...binding, scope: "personal", generation: "photo-cancel-seed" });
+    const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: true });
+    outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: revision });
+    const store = createPersonalPhotoActionStore({ ...binding, enabled: true, getContext });
+    const entityId = Object.keys(base.containers)[0], stage = { operationId: crypto.randomUUID(), photoId: "cancel-ui-photo", entityType: "container", entityId, fileName: "cancel-ui.png" };
+    const candidate = structuredClone(base); candidate.containers[entityId].photos = [{ id: stage.photoId, photoId: stage.photoId, assetId: stage.operationId, status: "pending" }];
+    const plan = outbox.preparePhoto({ snapshot: candidate, payload: candidate, body: { version: 1, action: "attach", entityType: "container", entityId,
+      photoId: stage.photoId, assetId: stage.operationId, baseStateRevision: revision, baseEntityRevision: revision, expectedPhotoIds: [], index: 0 } });
+    await store.capture({ action: plan.action, snapshot: plan.snapshot, stage, file: new Blob(["cancel UI original file"], { type: "image/png" }) });
+    await outbox.capturePhoto({ plan, store, getContext });
+    const file = await store.read(plan.action.operationId), hash = file.fileMetadata.hash;
+    return { action: plan.action, cancellationReceipt: { ok: true, operation: { id: stage.operationId, actorId: binding.actorId,
+      environment: binding.environment, listId: binding.listId, entityType: stage.entityType, entityId, photoId: stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+      cancellation: { version: 1, stageOperationId: stage.operationId, fileHash: hash, thumbHash: hash, noAssetPublished: true, stageCannotPublish: true } } };
+  }, { base: f.payload, revision: f.revision });
+  f.cancelPhotoAction = seeded.action; f.cancellationReceipt = seeded.cancellationReceipt;
+  const beforePosts = f.posts.length, beforePayload = structuredClone(f.payload), beforeRevision = f.revision;
+  const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const beforeJournal = await journal();
+  await reloadApp(page);
+  const dialog = page.locator("#personalSaveRecoveryDialog"), cancel = dialog.locator("[data-cancel-photo-upload]");
+  await expect(dialog).toBeVisible(); await expect(cancel).toBeVisible(); await cancel.click();
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await expect(page.locator("#confirmTitle")).toHaveText("Фото не добавлено");
+  expect(f.cancellationPosts).toHaveLength(1); expect(f.posts.length).toBe(beforePosts + 1);
+  expect(f.payload).toEqual(beforePayload); expect(f.revision).toBe(beforeRevision);
+  if (outcome === "postpone") {
+    await page.locator("#confirmCancelBtn").click();
+    await expect(dialog.getByRole("status")).toContainText("Выбор отложен");
+    expect(await journal()).toEqual(beforeJournal);
+  } else {
+    if (outcome === "remote-change") {
+      f.allowConflicts = true;
+      f.beforeUpdate = () => {
+        f.payload = structuredClone(f.payload); f.revision++;
+        Object.values(f.payload.containers)[0].name = "Изменение другой вкладки"; f.beforeUpdate = null;
+      };
+    }
+    if (outcome === "lost-decision-ack") f.lose = true;
+    await page.locator("#confirmOkBtn").click();
+    if (outcome === "remote-change") {
+      await expect(cancel).toBeEnabled(); await expect(dialog.getByRole("status")).not.toContainText("Перезагрузите страницу");
+      await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+      await page.locator("#confirmOkBtn").click();
+    }
+    await expect(dialog.getByRole("status")).toContainText("Перезагрузите страницу");
+    expect(f.posts.length).toBe(beforePosts + (outcome === "remote-change" ? 3 : 2));
+    if (outcome === "keep") await page.screenshot({ path: test.info().outputPath("photo-cancel-ready.png") });
+    f.lose = false; page.once("dialog", event => event.accept()); await reloadApp(page);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator("#packingView [data-root-container-id]").filter({ hasText:
+      outcome === "remote-change" ? "Изменение другой вкладки" : "Сумка отмены фото" })).toBeVisible();
+  }
+  expect(f.cancellationPosts).toHaveLength(1);
+  expect(f.posts.filter(post => post.kind === "photos.mutate").map(post => post.operationId)).toEqual([seeded.action.operationId]);
+  expect(await page.evaluate(async id => {
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    return (await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id)).file.text();
+  }, seeded.action.operationId)).toBe("cancel UI original file");
   expect(f.errors).toEqual([]);
 });
 

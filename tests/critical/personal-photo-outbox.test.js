@@ -6,6 +6,8 @@ import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "../../src/sync/personal-photo-outbox-record.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
+  personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-photo-recovery-cancel.js";
 
 const photo = (id, status = "synced") => ({ id, photoId: id, assetId: crypto.randomUUID(), status });
 function fixture() {
@@ -30,6 +32,17 @@ function fixture() {
     kind: action.kind, listId: binding.listId, state: "committed", payloadDigest: "d".repeat(64) }, stateRevision: 6, resultStatus: 200, rejectionCode: null });
   return { values, binding, context, storage, make, outbox, base, prepare, fileFor, proof, getContext: () => context };
 }
+
+test("recovery cancellation is off in shipped source and cannot start after an account switch while acquiring its lock", async () => {
+  assert.equal(personalPhotoRecoveryCancellationEnabled(), false);
+  await assert.rejects(cancelPersonalPhotoRecovery({}), /ещё не включена/);
+  for (const head of [null, {}, { action: { kind: "list.update", body: {} } }]) assert.equal(Boolean(personalPhotoRecoveryCancellationHead(head)), false);
+  const f = fixture(); let inspected = false;
+  await assert.rejects(cancelPersonalPhotoRecovery({ enabled: true, outbox: f.outbox, getContext: f.getContext,
+    chooseCurrent: () => assert.fail("no choice"), store: { ids: () => { inspected = true; } },
+    locks: { request: async (_key, run) => { f.context.actorId = "someone-else"; return run(); } } }), /Редактор изменился/);
+  assert.equal(inspected, false); assert.equal(f.values.size, 0);
+});
 
 test("read-only committed adoption cannot turn a rejection into a new action or a server settlement", async () => {
   for (const committed of [true, false]) {

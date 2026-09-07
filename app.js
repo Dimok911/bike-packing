@@ -731,6 +731,9 @@ import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action
 import { inspectPersonalPhotoRecovery } from "./src/sync/personal-photo-recovery-inventory.js";
 import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-recovery-archive.js";
 import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-recovery-check.js";
+import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
+  personalPhotoRecoveryCancellationHead } from "./src/sync/personal-photo-recovery-cancel.js";
+import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "./src/sync/personal-photo-outbox-record.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -1197,6 +1200,8 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   canCheckPhotos: () => Boolean(personalPhotoRecoverySource && currentUser && !isForcedOffline()
     && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey),
   checkPhotoResult: () => checkRetainedPersonalPhotoResult(),
+  canCancelPhotos: () => canCancelRetainedPersonalPhoto(),
+  cancelPhotoUpload: () => cancelRetainedPersonalPhoto(),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
@@ -8361,7 +8366,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
   pending.promise = (async () => {
     try {
       // Reader works with every photo writer gate off, including rollback.
-      const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage });
+      const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
       source.outbox = outbox; // Preserve the observed head while the dialog is open.
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       personalSaveRecovery.assertRunning();
@@ -8394,10 +8399,10 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
   return pending.promise;
 }
 
-async function checkRetainedPersonalPhotoResult() {
+function personalPhotoRecoveryOptions() {
   const source = personalPhotoRecoverySource;
   if (!source?.outbox || !currentUser || isForcedOffline()) throw Error("Для проверки нужен вход в тот же аккаунт и доступ к серверу. Файлы сохранены.");
-  return checkPersonalPhotoRecoveryResult({ outbox: source.outbox, store: source.store, transport: experimentTransport,
+  return { outbox: source.outbox, store: source.store, transport: experimentTransport,
     getContext: personalSaveContext, makeSnapshot: personalReconciledSnapshot,
     async readRemote() {
       const initial = personalSaveContext();
@@ -8414,7 +8419,34 @@ async function checkRetainedPersonalPhotoResult() {
     },
     makeBaselineMeta: record => ({ ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
       serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false })
-  });
+  };
+}
+
+async function checkRetainedPersonalPhotoResult() {
+  return checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
+}
+
+function canCancelRetainedPersonalPhoto() {
+  if (!personalPhotoRecoveryCancellationEnabled() || !currentUser || isForcedOffline()) return false;
+  try {
+    const source = personalPhotoRecoverySource;
+    return source?.outbox?.binding.scopeKey === localStorageScopeKey && personalPhotoRecoveryCancellationHead(source.outbox.recover());
+  } catch { return false; }
+}
+
+async function cancelRetainedPersonalPhoto() {
+  if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
+  return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount }) => {
+    const confirmed = await askConfirmDialog({
+      title: localText("Photo was not added", "Фото не добавлено"),
+      text: localText(
+        `The server did not apply the photo action. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original file remains available for recovery.`,
+        `Сервер не применил фотодействие. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Исходный файл останется для восстановления.`),
+      okText: localText("Keep server version", "Оставить серверную версию"),
+      cancelText: localText("Decide later", "Решить позже"), tone: "danger"
+    });
+    return confirmed === true ? "keep-server" : "cancel";
+  } });
 }
 
 function personalReconciledSnapshot(payload, previous) {

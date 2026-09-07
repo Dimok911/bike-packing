@@ -3,7 +3,8 @@
 // the still-open form whose save failed, including on mobile.
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
   getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
-  getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false } = {}) {
+  getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false,
+  cancelPhotoUpload, canCancelPhotos = () => false } = {}) {
   let dialog, checking = false;
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
@@ -28,6 +29,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
     dialog.querySelector("[data-recovery-reason]").hidden = active;
     dialog.querySelector("[data-download-photo-recovery]").hidden = active || !canExportPhotos();
     dialog.querySelector("[data-check-photo-result]").hidden = active || !canCheckPhotos();
+    dialog.querySelector("[data-cancel-photo-upload]").hidden = active || !canCancelPhotos();
   };
   return {
     show() {
@@ -67,20 +69,31 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       checkResult.type = "button"; checkResult.dataset.checkPhotoResult = "";
       checkResult.textContent = text("Проверить результат отправки", "Check upload outcome");
       checkResult.hidden = !canCheckPhotos();
+      const cancelUpload = documentRef.createElement("button");
+      cancelUpload.type = "button"; cancelUpload.dataset.cancelPhotoUpload = "";
+      cancelUpload.textContent = text("Остановить отправку / выбрать версию", "Stop upload / choose version");
+      cancelUpload.hidden = !canCancelPhotos();
       let checkingResult = false;
-      checkResult.addEventListener("click", async () => {
+      const resolvePhotoResult = async (action, startingMessage) => {
         if (checkingResult) return;
-        checkingResult = true; checkResult.disabled = true;
-        status.textContent = text("Проверяю подтверждения сервера. Фото повторно не отправляются…", "Checking server receipts. Photos are not uploaded again…");
+        checkingResult = true; checkResult.disabled = true; cancelUpload.disabled = true;
+        status.textContent = startingMessage;
         try {
-          const result = await checkPhotoResult();
+          const result = await action();
           if (result?.verified !== true || result.fileRetained !== true || result.reloadRequired !== true) throw Error(text("Проверка не завершена. Данные сохранены.", "Check incomplete. Your data is retained."));
           status.textContent = text("Подтверждения и актуальная версия сохранены на устройстве. Перезагрузите страницу, чтобы продолжить. Файлы фото не удалены.",
             "Receipts and the current version are saved on this device. Reload to continue. Photo files have not been deleted.");
         } catch (error) {
           status.textContent = error.message || text("Результат пока не подтверждён. Файлы сохранены.", "Outcome not confirmed yet. Files are retained.");
-        } finally { checkingResult = false; checkResult.disabled = false; }
-      });
+        } finally {
+          checkingResult = false; checkResult.disabled = false; cancelUpload.disabled = false;
+          cancelUpload.hidden = !canCancelPhotos();
+        }
+      };
+      checkResult.addEventListener("click", () => resolvePhotoResult(checkPhotoResult,
+        text("Проверяю подтверждения сервера. Фото повторно не отправляются…", "Checking server receipts. Photos are not uploaded again…")));
+      cancelUpload.addEventListener("click", () => resolvePhotoResult(cancelPhotoUpload,
+        text("Уточняю результат и останавливаю непринятую отправку. Файл остаётся на устройстве…", "Checking the outcome and stopping an unaccepted upload. The file stays on this device…")));
       photoDownload.addEventListener("click", async () => {
         photoDownload.disabled = true;
         status.textContent = text("Собираю локальные файлы. Ничего не отправляется на сервер…", "Collecting local files. Nothing is sent to the server…");
@@ -125,7 +138,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, reason, guidance, checkResult, download, photoDownload, recover, status);
+      dialog.append(title, description, reason, guidance, checkResult, cancelUpload, download, photoDownload, recover, status);
       documentRef.body.append(dialog);
       dialog.showModal();
     },
