@@ -1555,6 +1555,7 @@ const appTailRuntime = {
   get containerPickerTargetContainerId() { return containerPickerTargetContainerId; },
   set containerPickerTargetContainerId(value) { containerPickerTargetContainerId = value; },
   get currentUser() { return currentUser; },
+  get currentPackingListId() { return currentPackingListId; },
   set currentUser(value) { currentUser = value; },
   get currentAuthorization() { return currentAuthorization; },
   set currentAuthorization(value) { currentAuthorization = value; },

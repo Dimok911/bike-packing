@@ -1455,6 +1455,38 @@ async function renameDictionaryInUi(page, type, from, to) {
   await submitForm(page, `[data-save-${type}="${from}"]`, `[data-dictionary-edit-input="${type}"]`);
 }
 
+test("dictionary UI keeps unsent inputs through rerender and clears only an explicitly saved or cancelled draft", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Сумка перед вводом справочника");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  await page.locator('[data-view="settings"]').click();
+  const before = f.posts.length;
+  await page.locator("#categoryInput").fill("Черновик категории");
+  await page.locator("#locationInput").fill("Черновик места");
+  // A real UI rerender, with neither add button submitted.
+  await page.locator('[data-dictionary-sort="category"]').click();
+  await expect(page.locator("#categoryInput")).toHaveValue("Черновик категории");
+  await expect(page.locator("#locationInput")).toHaveValue("Черновик места");
+  expect(f.posts.length).toBe(before);
+  await page.locator('[data-edit-category="Ремонт"]').click();
+  await page.locator('[data-dictionary-edit-input="category"]').fill("Новый ремонт");
+  await page.locator('[data-dictionary-sort="location"]').click();
+  await expect(page.locator('[data-dictionary-edit-input="category"]')).toHaveValue("Новый ремонт");
+  await page.locator('[data-cancel-category="Ремонт"]').click();
+  await page.locator('[data-edit-category="Ремонт"]').click();
+  await expect(page.locator('[data-dictionary-edit-input="category"]')).toHaveValue("Ремонт");
+  await page.locator('[data-cancel-category="Ремонт"]').click();
+  await submitForm(page, "#categoryAdd", "#categoryInput");
+  await expect(page.locator("#categoryInput")).toHaveValue("");
+  await synchronize(page, () => f.payload.categories.includes("Черновик категории"));
+  await expect(page.locator("#locationInput")).toHaveValue("Черновик места");
+  await page.locator('[data-dictionary-sort="category"]').click();
+  await expect(page.locator("#categoryInput")).toHaveValue("");
+  expect(f.posts.filter(post => post.body.userDictionary?.value === "Черновик категории")).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});
+
 test("dictionary UI freezes add rename delete and every linked owner through lost ACK and reload", async ({ page, context }) => {
   test.setTimeout(150000);
   const f = await setup(page, context), bag = await createRootContainer(page, "Сумка справочника");

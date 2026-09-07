@@ -21,6 +21,7 @@ import {
   setLayoutNotesCollapsed
 } from "../ui/layout-notes-collapse.js";
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
+import { captureSettingsDictionaryDrafts, restoreSettingsDictionaryDrafts } from "../ui/settings-dictionary-drafts.js";
 import { moveOrderedPhoto, photoOrderIdentity, renderPhotoOrderRows } from "../ui/photo-order-dialog.js";
 import {
   photoPasteEventImageFiles,
@@ -4879,10 +4880,14 @@ function bindEmptyContentFilterReset(root) {
 
 function renderSettings() {
   if (isSharedLayoutView()) {
+    restoreSettingsDictionaryDrafts(refs.settingsView, null, []);
     renderSharedSettingsView();
     return;
   }
   const dictionaryOwner = activeDictionaryOwner();
+  const draftScope = JSON.stringify([runtime.currentUser?.id || "guest", runtime.currentPackingListId,
+    dictionaryOwner === state ? "personal" : dictionaryOwner?.id || null]);
+  const dictionaryDrafts = captureSettingsDictionaryDrafts(refs.settingsView, draftScope);
   refs.settingsView.innerHTML = `
     ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
     ${renderOfflineLayoutSettingsHtml()}
@@ -4897,6 +4902,7 @@ function renderSettings() {
   bindProfileSettingsControls();
   bindOfflineLayoutSettingsControls();
   bindExperimentTransportSettings(refs.settingsView, { language: uiLanguage });
+  restoreSettingsDictionaryDrafts(refs.settingsView, draftScope, dictionaryDrafts);
 }
 
 function bindProfileSettingsControls() {
