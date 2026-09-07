@@ -731,6 +731,7 @@ import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
 import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
+import { personalCopyIntent, preparePersonalCopyBatch } from "./src/sync/personal-copy-intent.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -1864,7 +1865,7 @@ const appTailControllerDeps = {
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
-  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
+  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
@@ -2447,6 +2448,39 @@ function preparePersonalCatalogDeletion(value) {
   };
 }
 
+function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, addToLayoutId = "" } = {}) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  if (addToLayoutId) {
+    showToast(localText("Copying a bag into a layout needs a separate queue adapter.", "Для копирования сумки в укладку ещё нужен отдельный обработчик очереди."), "error");
+    return false;
+  }
+  if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
+  const initial = JSON.stringify(personalSaveContext());
+  let prepared, used = false;
+  try {
+    prepared = preparePersonalCopyBatch(state, { type: "copy", version: 1, keepPlacement,
+      layoutId: keepPlacement ? state.activeLayoutId : "",
+      entries: sourceIds.map(sourceId => ({ type, sourceId, targetId: `${type}-${crypto.randomUUID()}` }))
+    }, { changedAt: nowIso(), currentEditMeta, normalizeContainerColor, markEdited,
+      hasPhotos: record => normalizeItemPhotos(record).length > 0 });
+  } catch (error) { showToast(error.message, "error"); return false; }
+  return () => {
+    if (used || initial !== JSON.stringify(personalSaveContext())) {
+      showToast(localText("The list changed. Select the copy sources again.", "Список изменился. Выберите источники копирования заново."), "error");
+      return false;
+    }
+    personalSaveRecovery.assertRunning();
+    if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
+    used = true;
+    for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
+    if (keepPlacement) applyLayoutArrangement(state.activeLayoutId);
+    saveState({ personalMutation: prepared.intent });
+    return true;
+  };
+}
+
 function personalSaveOutboxForScope({ reload = false } = {}) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")) return null;
   personalSaveRecovery.assertRunning();
@@ -2473,7 +2507,8 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     historyAction: currentHistoryActionContext(), nowIso, syncDevice, syncMeta,
     serializeState: () => cloneStateForSync(snapshot, { forSync: true })
   });
-  if (personalMutation) body.userDeletion = personalDeletionIntent(personalMutation);
+  if (personalMutation?.type === "copy") body.userCopy = personalCopyIntent(personalMutation);
+  else if (personalMutation) body.userDeletion = personalDeletionIntent(personalMutation);
   if (!outbox && !currentPackingListId && personalInitialSaveOutbox
     && String(currentUser?.id || "") === personalInitialSaveOutbox.binding.actorId
     && userStorageScopeKey(currentUser) === localStorageScopeKey

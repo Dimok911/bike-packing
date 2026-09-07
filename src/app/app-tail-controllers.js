@@ -376,7 +376,7 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, saveStoredActiveLayoutChoice,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
@@ -4659,6 +4659,8 @@ async function copyCatalogItems(itemIds) {
     if (ids[0]) copyItem(ids[0], { keepPlacement: false });
     return;
   }
+  const personalCopy = preparePersonalCatalogCopy("item", ids);
+  if (personalCopy === false) return;
   const confirmed = await askConfirmDialog({
     title: localText("Copy selected items?", "Скопировать выбранные вещи?"),
     text: localText(`${ids.length} item copies will be created on the Items tab.`, `Будет создано ${formatThingCount(ids.length)} во вкладке «Вещи».`),
@@ -4667,6 +4669,13 @@ async function copyCatalogItems(itemIds) {
     tone: "safe"
   });
   if (!confirmed) return;
+  if (personalCopy) {
+    if (!personalCopy()) return;
+    runtime.selectedCatalogItemIds = new Set();
+    runtime.selectedCatalogItemAnchorId = "";
+    render();
+    return;
+  }
   for (const id of ids) await copyItem(id, { keepPlacement: false, confirm: false });
   runtime.selectedCatalogItemIds = new Set();
   runtime.selectedCatalogItemAnchorId = "";
@@ -4712,6 +4721,8 @@ async function copyCatalogRootContainers(containerIds) {
     if (ids[0]) copyRootContainer(ids[0]);
     return;
   }
+  const personalCopy = preparePersonalCatalogCopy("container", ids);
+  if (personalCopy === false) return;
   const confirmed = await askConfirmDialog({
     title: localText("Copy selected bags and places?", "Скопировать выбранные сумки и места?"),
     text: localText(`${ids.length} bag/place copies will be created without their contents.`, `Будет создано ${formatRootContainerCount(ids.length)} без вещей внутри.`),
@@ -4720,6 +4731,13 @@ async function copyCatalogRootContainers(containerIds) {
     tone: "safe"
   });
   if (!confirmed) return;
+  if (personalCopy) {
+    if (!personalCopy()) return;
+    runtime.selectedCatalogRootIds = new Set();
+    runtime.selectedCatalogRootAnchorId = "";
+    render();
+    return;
+  }
   for (const id of ids) await duplicateRootContainer(id);
   runtime.selectedCatalogRootIds = new Set();
   runtime.selectedCatalogRootAnchorId = "";
@@ -5409,6 +5427,16 @@ async function copyItem(itemId, options = {}) {
   if (!requireUsageCapacity("items")) return;
   const keepPlacement = Boolean(options.keepPlacement);
   if (keepPlacement && warnLockedLayoutMutation(state.activeLayoutId)) return;
+  const personalCopy = preparePersonalCatalogCopy("item", [itemId], { keepPlacement });
+  if (personalCopy === false) return;
+  if (personalCopy) {
+    const copyPlaced = keepPlacement && isItemInActiveLayout(item);
+    if (options.confirm !== false && !await askConfirmDialog(itemCopyConfirm({ item, keepPlacement, t }))) return;
+    if (!personalCopy()) return;
+    render();
+    showToast(copyPlaced ? t("items.copyPlaced") : t("items.copyOutside"), "success");
+    return;
+  }
   const offlineCopy = isForcedOffline() || !runtime.currentUser;
   let cachedFallbackSourceIds = offlineCopy
     ? normalizeItemPhotos(item).map((photo) => String(photo.localId || photo.id || "").trim()).filter(Boolean)
@@ -5489,15 +5517,25 @@ async function copyItem(itemId, options = {}) {
 async function copyRootContainer(containerId) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
+  const personalCopy = preparePersonalCatalogCopy("container", [containerId]);
+  if (personalCopy === false) return;
   const confirmed = await askConfirmDialog(rootContainerCopyConfirm({ container, inLayout: false, t }));
   if (!confirmed) return;
-  await duplicateRootContainer(containerId);
+  await duplicateRootContainer(containerId, { personalCopy });
 }
 
-async function duplicateRootContainer(containerId, { addToLayoutId = "" } = {}) {
+async function duplicateRootContainer(containerId, { addToLayoutId = "",
+  personalCopy = preparePersonalCatalogCopy("container", [containerId], { addToLayoutId }) } = {}) {
   const container = state.containers[containerId];
   if (!container || container.parentId) return;
   if (!requireUsageCapacity("containers")) return;
+  if (personalCopy === false) return;
+  if (personalCopy) {
+    if (!personalCopy()) return;
+    render();
+    showToast(t("rootContainers.copyOutside"), "success");
+    return;
+  }
   const changedAt = nowIso();
   const copyId = `container-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const copied = await duplicateRootContainerInState(state, containerId, {

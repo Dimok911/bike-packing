@@ -457,15 +457,109 @@ async function downloadRecovery(page) {
   return JSON.parse(await readFile(await file.path(), "utf8"));
 }
 
-async function selectCatalogBatch(page, type, names) {
+async function selectCatalogBatch(page, type, names, { action = "delete", ids = null } = {}) {
   await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
   const selector = type === "item" ? "#itemsView [data-list-item-id]" : "#bagsView [data-root-card]";
-  for (const name of names) {
-    await page.locator(selector).filter({ hasText: name }).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
+  const card = index => ids ? page.locator(`${selector}[${type === "item" ? "data-list-item-id" : "data-root-card"}="${ids[index]}"]`)
+    : page.locator(selector).filter({ hasText: names[index] });
+  for (let index = 0; index < (ids || names).length; index++) {
+    await card(index).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
   }
-  await page.locator(selector).filter({ hasText: names[0] }).locator(type === "item" ? "[data-delete-item]" : "[data-delete-root]").click();
+  await card(0).locator(`[data-${action}-${type === "item" ? "item" : "root"}]`).click();
   await expect(page.locator("#confirmDialog")).toContainText(type === "item" ? "выбранные вещи" : "выбранные сумки");
 }
+
+test("actual catalog bulk copies preserve all target IDs through lost ACK and later deletion of the sources", async ({ page, context }) => {
+  test.setTimeout(150000);
+  const f = await setup(page, context);
+  const bag = await createRootContainer(page, "Источник сумка первая");
+  await createItemInContainer(page, bag, "Источник вещь первая", { weight: "123" });
+  await createItemInContainer(page, bag, "Источник вещь вторая", { weight: "234" });
+  await createRootContainer(page, "Источник сумка вторая");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 2 && Object.keys(f.payload.containers).length === 2);
+  const sourceIds = Object.keys(f.payload.items).sort(), before = f.posts.length;
+  f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await selectCatalogBatch(page, "item", [], { action: "copy", ids: sourceIds });
+  await page.locator("#confirmOkBtn").click(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1); await expect.poll(() => f.injectedFailure).toBe(true);
+  const copy = f.posts.at(-1), frozen = JSON.stringify(copy), mapping = copy.body.userCopy.entries;
+  expect(mapping.map(entry => entry.sourceId).sort()).toEqual(sourceIds);
+  expect(new Set(mapping.map(entry => entry.targetId)).size).toBe(2);
+  for (const entry of mapping) {
+    expect(copy.body.payload.items[entry.targetId].weight).toBe(copy.body.payload.items[entry.sourceId].weight);
+    expect(copy.body.payload.items[entry.targetId].containerId).toBeUndefined();
+    for (const layout of Object.values(copy.body.payload.layouts)) expect(layout.arrangement.items).not.toHaveProperty(entry.targetId);
+  }
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => Object.keys(f.payload.items).length === 4);
+  expect(f.posts.filter(post => post.operationId === copy.operationId)).toHaveLength(1); expect(JSON.stringify(copy)).toBe(frozen);
+  await selectCatalogBatch(page, "item", [], { ids: sourceIds });
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => sourceIds.every(id => !f.payload.items[id]));
+  expect(Object.keys(f.payload.items).sort()).toEqual(mapping.map(entry => entry.targetId).sort());
+  const bagIds = Object.keys(f.payload.containers), beforeBags = f.posts.length;
+  await selectCatalogBatch(page, "container", [], { action: "copy", ids: bagIds });
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 4);
+  expect(f.posts.length).toBe(beforeBags + 1);
+  const bagCopies = f.posts.at(-1).body.userCopy.entries;
+  for (const entry of bagCopies) {
+    expect(f.payload.containers[entry.targetId].childIds).toBeUndefined();
+    expect(f.payload.containers[entry.targetId].itemIds).toBeUndefined();
+    for (const layout of Object.values(f.payload.layouts)) {
+      expect(layout.arrangement.containers).not.toHaveProperty(entry.targetId);
+      expect(layout.arrangement.rootContainerIds).not.toContain(entry.targetId);
+    }
+  }
+  await reloadApp(page);
+  expect(Object.keys(f.payload.items).sort()).toEqual(mapping.map(entry => entry.targetId).sort());
+  expect(new Set(f.posts.map(post => post.operationId)).size).toBe(f.posts.length);
+  expect(f.errors).toEqual([]);
+});
+
+test("single item and empty bag catalog copy buttons use the same frozen personal queue", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Одиночная сумка");
+  await createItemInContainer(page, bag, "Одиночная вещь");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const itemId = Object.keys(f.payload.items)[0], bagId = Object.keys(f.payload.containers)[0], before = f.posts.length;
+  await page.locator('[data-view="items"]').click();
+  await page.locator(`[data-copy-item="${itemId}"]`).click();
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.items).length === 2);
+  expect(f.posts.length).toBe(before + 1);
+  expect(f.posts.at(-1).body.userCopy.entries).toEqual([{ type: "item", sourceId: itemId, targetId: expect.any(String) }]);
+  await page.locator('[data-view="bags"]').click();
+  await page.locator(`[data-copy-root="${bagId}"]`).click();
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  expect(f.posts.length).toBe(before + 2);
+  expect(f.posts.at(-1).body.userCopy.entries).toEqual([{ type: "container", sourceId: bagId, targetId: expect.any(String) }]);
+  expect(f.errors).toEqual([]);
+});
+
+test("quota during real bulk copy retains every new ID in the recovery draft without a partial queue", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка копирования");
+  await createItemInContainer(page, bag, "Копирование первая"); await createItemInContainer(page, bag, "Копирование вторая");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 2);
+  await selectCatalogBatch(page, "item", [], { action: "copy", ids: Object.keys(f.payload.items) });
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(Object.keys(copy.unconfirmedMemoryDraft.items)).toHaveLength(4);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(Object.keys(f.payload.items)).toHaveLength(2); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
 
 test("actual catalog bulk deletes use one frozen action per selection and recover lost ACK without partial replay", async ({ page, context }) => {
   test.setTimeout(120000);
