@@ -843,27 +843,19 @@ test("CRITICAL packing zoom: horizontal range follows transformed card edges ins
   assert.equal(packingBoardHorizontalGeometry(board, { includeRetainedGutter: false }).maxScroll, 44);
 });
 
-test("CRITICAL packing zoom: fast slider movement snaps to 100 without blocking nearby exact values", () => {
-  assert.equal(packingBoardSliderZoomPercent(98, {
-    pointerActive: true,
-    gestureStartPercent: 70,
-    elapsedMs: 200
-  }), 100);
-  assert.equal(packingBoardSliderZoomPercent(102, {
-    pointerActive: true,
-    gestureStartPercent: 130,
-    elapsedMs: 200
-  }), 100);
-  assert.equal(packingBoardSliderZoomPercent(101, {
-    pointerActive: true,
-    gestureStartPercent: 70,
-    elapsedMs: 900
-  }), 101);
-  assert.equal(packingBoardSliderZoomPercent(102, {
-    pointerActive: true,
-    gestureStartPercent: 100,
-    elapsedMs: 10
-  }), 102);
+test("CRITICAL packing zoom: 100% detent captures both directions and holds until pulled past its release band", () => {
+  let previousPercent = 80;
+  let snapped = false;
+  const outputs = [80, 96, 97, 103, 106, 107, 105, 103, 94, 93].map((percent) => {
+    const result = packingBoardSliderZoomPercent(percent, { pointerActive: true, previousPercent, snapped });
+    previousPercent = percent;
+    snapped = result === 100;
+    return result;
+  });
+  assert.deepEqual(outputs, [80, 96, 100, 100, 100, 107, 105, 100, 100, 93]);
+  assert.equal(packingBoardSliderZoomPercent(110, { pointerActive: true, previousPercent: 70 }), 100);
+  assert.equal(packingBoardSliderZoomPercent(90, { pointerActive: true, previousPercent: 130 }), 100);
+  assert.equal(packingBoardSliderZoomPercent(102, { pointerActive: true, snapped: true, previousPercent: 100 }), 100);
   assert.equal(packingBoardSliderZoomPercent(101), 101);
 });
 

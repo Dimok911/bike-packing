@@ -49,6 +49,8 @@ let lightboxInertiaCancel = null;
 let lightboxSourceLifecycleCleanup = null;
 let lightboxOpenRequestId = 0;
 const PHOTO_LIGHTBOX_LOADING_NOTICE_DELAY_MS = 450;
+const PHOTO_PREVIEW_LOADING_NOTICE_DELAY_MS = 300;
+const photoPreviewNoticeTimers = new WeakMap();
 const PHOTO_GALLERY_TAP_MOVE_LIMIT_PX = 10;
 const PHOTO_GALLERY_SYNTHETIC_CLICK_SUPPRESSION_MS = 700;
 const PHOTO_LIGHTBOX_INERTIA_DURATION_MS = 650;
@@ -72,16 +74,29 @@ function photoPreviewHost(image) {
 
 function setPhotoPreviewState(image, state) {
   if (!image) return;
+  clearTimeout(photoPreviewNoticeTimers.get(image));
+  photoPreviewNoticeTimers.delete(image);
   image.dataset.photoLoadState = state;
   image.setAttribute("aria-busy", state === "loading" ? "true" : "false");
   const host = photoPreviewHost(image);
-  host?.classList?.toggle("photo-preview-loading", state === "loading");
+  host?.classList?.toggle("photo-preview-loading", false);
   host?.classList?.toggle("photo-preview-error", state === "error");
   host?.classList?.toggle("photo-preview-ready", state === "ready");
   const status = host?.querySelector?.("[data-photo-preview-status]");
   if (status) {
-    status.hidden = state === "ready";
-    status.textContent = photoPreviewStateText(state);
+    status.hidden = state !== "error";
+    status.textContent = state === "error" ? photoPreviewStateText(state) : "";
+  }
+  if (state === "loading") {
+    photoPreviewNoticeTimers.set(image, setTimeout(() => {
+      photoPreviewNoticeTimers.delete(image);
+      if (!image.isConnected || image.dataset.photoLoadState !== "loading") return;
+      host?.classList?.toggle("photo-preview-loading", true);
+      if (status) {
+        status.textContent = photoPreviewStateText("loading");
+        status.hidden = false;
+      }
+    }, PHOTO_PREVIEW_LOADING_NOTICE_DELAY_MS));
   }
 }
 
@@ -104,6 +119,7 @@ export function createDemandDrivenPhotoPreviewLoader({
   getCachedPhotoForPreview = getCachedPhoto,
   putCachedPhotoForPreview = putCachedPhoto,
   shouldPersistPreview = () => true,
+  getPreparedPreviewKeys = () => new Set(),
   getScopeKey = () => "",
   activateScope = (scopeKey) => photoObjectUrls?.activateScope?.(scopeKey),
   intersectionObserverFactory = typeof globalThis.IntersectionObserver === "function"
@@ -111,6 +127,9 @@ export function createDemandDrivenPhotoPreviewLoader({
     : null
 } = {}) {
   const pending = new Map();
+  const activeImages = new WeakMap();
+  const preparationQueue = new Set();
+  let preparingCount = 0;
   let observer = null;
 
   const registerRecord = (task, record) => {
@@ -124,7 +143,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     return blob ? getPhotoObjectUrl(task.key, task.sourceSignature, blob, photoObjectUrls) : "";
   };
 
-  const resolvePreview = async (task) => {
+  const resolvePreview = async (task, { cacheOnly = false } = {}) => {
     const existing = photoObjectUrls?.sources?.(task.key, task.sourceSignature)?.preview
       || photoObjectUrls?.get?.(task.key, task.sourceSignature)
       || "";
@@ -137,6 +156,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     const matching = cachedPhotoMatchesTask(cached, task);
     const cachedBlob = matching ? cachedPhotoPreview(cached, task) : null;
     if (cachedBlob) return registerRecord(task, cached);
+    if (cacheOnly) return "";
     if (!task.remoteThumbSrc) throw new Error("photo-preview-unavailable");
 
     const blob = await downloadCoordinator.download(task.remoteThumbSrc, {
@@ -169,7 +189,7 @@ export function createDemandDrivenPhotoPreviewLoader({
     return registerRecord(task, record);
   };
 
-  const load = async (image) => {
+  const loadImage = async (image, { cacheOnly = false } = {}) => {
     const task = photoPreviewTaskFromImage(image);
     if (!task) return false;
     task.scopeKey = String(image.dataset.photoCacheScope || getScopeKey() || "");
@@ -178,26 +198,59 @@ export function createDemandDrivenPhotoPreviewLoader({
       || photoObjectUrls?.get?.(task.key, task.sourceSignature)
       || "";
     if (current) {
-      image.src = current;
-      setPhotoPreviewState(image, "ready");
-      return true;
+      try {
+        image.loading = "eager";
+        image.src = current;
+        await image.decode?.();
+        setPhotoPreviewState(image, "ready");
+        return true;
+      } catch {
+        setPhotoPreviewState(image, "error");
+        return false;
+      }
     }
-    setPhotoPreviewState(image, "loading");
-    const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}`;
+    if (!cacheOnly) setPhotoPreviewState(image, "loading");
+    const identity = `${task.scopeKey}\u0000${task.key}\u0000${task.sourceSignature}\u0000${cacheOnly}`;
     let request = pending.get(identity);
     if (!request) {
-      request = resolvePreview(task).finally(() => pending.delete(identity));
+      request = resolvePreview(task, { cacheOnly }).finally(() => pending.delete(identity));
       pending.set(identity, request);
     }
     try {
       const src = await request;
-      if (!image.isConnected || !src) return false;
+      if (!image.isConnected || !src || task.scopeKey !== String(getScopeKey() || "")) return false;
+      image.loading = "eager";
       image.src = src;
+      await image.decode?.();
+      if (!image.isConnected) return false;
       setPhotoPreviewState(image, "ready");
       return true;
     } catch {
-      if (image.isConnected) setPhotoPreviewState(image, "error");
+      if (!cacheOnly && image.isConnected) setPhotoPreviewState(image, "error");
       return false;
+    }
+  };
+
+  const load = (image, options = {}) => {
+    const active = activeImages.get(image);
+    if (active) return active.then((loaded) => (loaded || options.cacheOnly) ? loaded : load(image, options));
+    const request = loadImage(image, options).finally(() => activeImages.delete(image));
+    activeImages.set(image, request);
+    return request;
+  };
+
+  // Prepare only explicitly selected offline photos, using local records alone.
+  // Bound simultaneous reads/decodes so a large layout cannot stall interaction.
+  const prepareCached = () => {
+    while (preparingCount < 4 && preparationQueue.size) {
+      const image = preparationQueue.values().next().value;
+      preparationQueue.delete(image);
+      if (!image.isConnected) continue;
+      preparingCount += 1;
+      load(image, { cacheOnly: true }).finally(() => {
+        preparingCount -= 1;
+        prepareCached();
+      });
     }
   };
 
@@ -214,6 +267,14 @@ export function createDemandDrivenPhotoPreviewLoader({
     if (scopeKey && photoObjectUrls?.currentScope?.() !== scopeKey) activateScope(scopeKey);
     const images = [...(root?.querySelectorAll?.("img[data-photo-local-id]") || [])];
     if (!images.length) return Promise.resolve({ observed: 0 });
+    const preparedKeys = getPreparedPreviewKeys();
+    images.forEach((image) => {
+      image.dataset.photoCacheScope = scopeKey;
+      if (preparedKeys?.has(image.dataset.photoLocalId) && image.dataset.photoLoadState !== "ready") {
+        preparationQueue.add(image);
+      }
+    });
+    prepareCached();
     if (intersectionObserverFactory) {
       if (!observer) {
         observer = intersectionObserverFactory((entries) => {
@@ -226,19 +287,20 @@ export function createDemandDrivenPhotoPreviewLoader({
       }
       images.forEach((image) => {
         image.dataset.photoCacheScope = scopeKey;
-        if (image.src) setPhotoPreviewState(image, "ready");
+        if (image.src && !activeImages.has(image)) setPhotoPreviewState(image, "ready");
         else observer.observe(image);
       });
       return Promise.resolve({ observed: images.length });
     }
     images.forEach((image) => { image.dataset.photoCacheScope = scopeKey; });
-    return Promise.all(images.filter(isInViewport).map(load)).then(() => ({ observed: images.length }));
+    return Promise.all(images.filter(isInViewport).map((image) => load(image))).then(() => ({ observed: images.length }));
   };
 
   return {
     load,
     observe,
     disconnect: () => {
+      preparationQueue.clear();
       observer?.disconnect?.();
       observer = null;
     },
@@ -1027,6 +1089,7 @@ export async function openPhotoLightbox(sourceImage, {
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
     directDesktop: !touchCarousel,
+    canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch,
     waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
@@ -1055,6 +1118,8 @@ export async function openPhotoLightbox(sourceImage, {
   let pendingScrollIndex = null;
   let scrollFrame = 0;
   let lightboxSettleTimer = null;
+  let trackTouchActive = false;
+  let trackWidth = track.clientWidth;
   let scale = 1;
   let panX = 0;
   let panY = 0;
@@ -1191,6 +1256,22 @@ export async function openPhotoLightbox(sourceImage, {
     };
     inertiaFrame = requestAnimationFrame(step);
   };
+  let indicatedIndex = initialIndex;
+  const updateLightboxDots = (visibleIndex) => {
+    if (visibleIndex === indicatedIndex) return;
+    indicatedIndex = visibleIndex;
+    lightboxDots.forEach((dot, dotIndex) => {
+      const active = dotIndex === visibleIndex;
+      dot.classList.toggle("active", active);
+      if (active) dot.setAttribute("aria-current", "true");
+      else dot.removeAttribute("aria-current");
+    });
+  };
+  const visibleTouchIndex = () => resolvePhotoGallerySnapIndex({
+    scrollLeft: track.scrollLeft,
+    trackWidth: track.clientWidth,
+    slideCount: entries.length
+  });
   const updateNavigation = () => {
     fullscreenSwitcher?.render(activeIndex, false);
     if (prevButton) {
@@ -1201,12 +1282,7 @@ export async function openPhotoLightbox(sourceImage, {
       nextButton.disabled = activeIndex >= entries.length - 1;
       nextButton.setAttribute("aria-disabled", nextButton.disabled ? "true" : "false");
     }
-    lightboxDots.forEach((dot, dotIndex) => {
-      const active = dotIndex === activeIndex;
-      dot.classList.toggle("active", active);
-      if (active) dot.setAttribute("aria-current", "true");
-      else dot.removeAttribute("aria-current");
-    });
+    updateLightboxDots(touchCarousel ? visibleTouchIndex() : activeIndex);
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
@@ -1258,6 +1334,21 @@ export async function openPhotoLightbox(sourceImage, {
   bindPhotoLightboxNavButton(nextButton, (event) => activateNavigation(event, 1));
   const boundLightboxImages = new WeakSet();
   let bindImageInteractions = () => {};
+  const prepareVisiblePreviews = (centerIndex) => {
+    if (!touchCarousel) return;
+    for (let index = Math.max(0, centerIndex - 1); index <= Math.min(entries.length - 1, centerIndex + 1); index += 1) {
+      const previewImage = lightboxImages[index];
+      if (!previewImage || previewImage.getAttribute("src")) continue;
+      // Populate the actual slide before native scrolling reveals it. Full-size
+      // hydration remains demand driven through the active source controller.
+      const src = entries[index]?.previewSrc;
+      if (!src) continue;
+      previewImage.src = src;
+      void decodeSharedFullscreenImage(previewImage)
+        .then(() => settleImagePresentation(previewImage))
+        .catch(() => {});
+    }
+  };
   const entryExpectsFullSize = (entry) => Boolean(
     entry?.localId
     || (entry?.fullSrc && entry.fullSrc !== entry.previewSrc)
@@ -1268,6 +1359,7 @@ export async function openPhotoLightbox(sourceImage, {
     const entryIndex = Number(targetImage.closest?.("[data-photo-lightbox-index]")?.dataset?.photoLightboxIndex);
     const entry = Number.isInteger(entryIndex) ? entries[entryIndex] : null;
     const ready = force
+      || touchCarousel
       || targetImage.dataset?.photoLightboxQuality === "full"
       || !entryExpectsFullSize(entry);
     if (ready) targetImage.classList?.remove("photo-lightbox-image-awaiting-size");
@@ -1326,10 +1418,21 @@ export async function openPhotoLightbox(sourceImage, {
       return true;
     }
     if (!replacement) return false;
-    const shouldCommit = () => (
+    const stillCurrent = () => (
       sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
+    const shouldCommit = async ({ phase }) => {
+      // A decoded original can arrive while the user is dragging its preview.
+      // Keep the same DOM image through the gesture and the edge return.
+      if (touchCarousel && phase === "before-replace") {
+        while (stillCurrent() && (trackTouchActive || lightboxSettleTimer !== null
+          || currentImage.classList.contains("vpg-edge-content-returning"))) {
+          await new Promise((resolve) => setTimeout(resolve, 32));
+        }
+      }
+      return stillCurrent();
+    };
     let visibleImage = replacement;
     try {
       await replacePhotoLightboxImageSource(currentImage, src, {
@@ -1343,6 +1446,7 @@ export async function openPhotoLightbox(sourceImage, {
           // first paint (the shared helper waits for paint before resolving).
           nextImage.dataset.photoLightboxQuality = "full";
           settleImagePresentation(nextImage, { force: true });
+          if (activeIndex === entryIndex) apply();
           bindImageInteractions(nextImage);
         },
         onRollback: (restoredImage) => {
@@ -1428,6 +1532,7 @@ export async function openPhotoLightbox(sourceImage, {
     if (image !== targetImage) image.style.removeProperty("transform");
     activeIndex = nextIndex;
     image = targetImage;
+    prepareVisiblePreviews(nextIndex);
     if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
     image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
     updateNavigation();
@@ -1514,7 +1619,7 @@ export async function openPhotoLightbox(sourceImage, {
     const targetLeft = track.clientWidth * safeIndex;
     if (safeIndex === activeIndex && (
       directDesktop
-      || (!pendingScrollIndex && Math.abs(track.scrollLeft - targetLeft) <= 1)
+      || (pendingScrollIndex === null && Math.abs(track.scrollLeft - targetLeft) <= 1)
     )) return false;
     pendingScrollIndex = !directDesktop && behavior === "smooth" ? safeIndex : null;
     if (safeIndex !== activeIndex) showPhoto(safeIndex);
@@ -1538,6 +1643,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const settleTouchCarouselTrack = () => {
     cancelTrackSettle();
+    if (trackTouchActive || scale > 1 || !overlay.isConnected) return;
     if (scrollFrame) {
       cancelAnimationFrame(scrollFrame);
       scrollFrame = 0;
@@ -1548,11 +1654,14 @@ export async function openPhotoLightbox(sourceImage, {
       slideCount: entries.length
     });
     pendingScrollIndex = null;
+    updateLightboxDots(snapIndex);
     if (snapIndex !== activeIndex) showPhoto(snapIndex);
-    fullscreenSwitcher?.goTo(snapIndex, "auto", false);
+    // Native scroll-snap owns the position, including the edge bounce. Writing
+    // scrollLeft here interrupts WebKit's compositor and can restart settling.
   };
   const scheduleTrackSettle = () => {
     cancelTrackSettle();
+    if (trackTouchActive || !overlay.isConnected) return;
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
       if (touchCarousel) {
@@ -1569,8 +1678,18 @@ export async function openPhotoLightbox(sourceImage, {
   };
   track.addEventListener("scroll", () => {
     suppressImageCloseUntil = Date.now() + 300;
+    if (touchCarousel) {
+      const visibleIndex = visibleTouchIndex();
+      // The indicator follows the visible slide immediately. Source activation
+      // still waits for settling so it cannot disrupt the native swipe.
+      updateLightboxDots(visibleIndex);
+      prepareVisiblePreviews(visibleIndex);
+    }
     if (!touchCarousel && !scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
     scheduleTrackSettle();
+  }, { passive: true });
+  track.addEventListener("scrollend", () => {
+    if (touchCarousel) settleTouchCarouselTrack();
   }, { passive: true });
   track.addEventListener("pointerdown", () => {
     if (scale <= 1) {
@@ -1704,6 +1823,11 @@ export async function openPhotoLightbox(sourceImage, {
     }
     updatePhotoLightboxAutoSize(image, overlay);
     apply();
+    // Safari's browser chrome changes viewport height while a swipe is still
+    // moving. Only a width change requires repositioning the horizontal track.
+    const widthChanged = track.clientWidth !== trackWidth;
+    trackWidth = track.clientWidth;
+    if (trackTouchActive || !widthChanged) return;
     fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
   window.addEventListener("resize", lightboxResizeHandler);
@@ -1730,6 +1854,8 @@ export async function openPhotoLightbox(sourceImage, {
   overlay.addEventListener("touchstart", (event) => {
     cancelPanInertia();
     if (isPhotoLightboxControlTarget(event.target)) return;
+    trackTouchActive = true;
+    cancelTrackSettle();
     if (event.touches.length === 1) {
       cancelTrackSettle();
       const touch = event.touches[0];
@@ -1809,6 +1935,8 @@ export async function openPhotoLightbox(sourceImage, {
     apply();
   }, { passive: false });
   overlay.addEventListener("touchend", (event) => {
+    trackTouchActive = event.touches.length > 0;
+    if (!trackTouchActive && touchCarousel) scheduleTrackSettle();
     if (isPhotoLightboxControlTarget(event.target)) return;
     if (event.touches.length === 1) {
       const touch = event.touches[0];
@@ -1855,6 +1983,7 @@ export async function openPhotoLightbox(sourceImage, {
     touchStartedWithPinch = false;
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
+    trackTouchActive = false;
     cancelPanInertia();
     pinchDistance = 0;
     pinching = false;

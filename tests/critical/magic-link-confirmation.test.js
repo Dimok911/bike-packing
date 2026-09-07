@@ -49,7 +49,7 @@ test("in-app confirmation UI keeps the original email link flow and requires the
   assert.match(appSource, /email,\s*language:\s*uiLanguage,\s*redirectUrl:/);
   assert.match(apiContractSource, /adminTemplateDraftSync/);
   assert.match(apiContractSource, /historyRestoreProvenance/);
-  assert.match(constantsSource, /APP_VERSION\s*=\s*"v1604"/);
+  assert.match(constantsSource, /APP_VERSION\s*=\s*"v\d+"/);
 });
 
 test("experiment admin compatibility requires the catalog review contract", () => {

@@ -59,7 +59,7 @@ test("desktop zoom indicator opens a vertical slider and applies its value", asy
   await expect(page.locator("#packingBoardZoomPanel")).toBeHidden();
 });
 
-test("desktop zoom slider snaps fast movement to 100% but keeps 101% and 102% selectable", async ({ page }) => {
+test("desktop zoom slider holds exactly 100% until a further pull releases it", async ({ page }) => {
   await openApp(page);
   await createEmptyLayout(page, "Магнит масштаба");
   await createRootContainer(page, "Сумка для магнита");
@@ -70,7 +70,7 @@ test("desktop zoom slider snaps fast movement to 100% but keeps 101% and 102% se
     input.value = "70";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
-    input.value = "102";
+    input.value = "97";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
   });
@@ -82,13 +82,49 @@ test("desktop zoom slider snaps fast movement to 100% but keeps 101% and 102% se
     input.dispatchEvent(new Event("input", { bubbles: true }));
     document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 2 }));
   });
-  await expect(page.locator("#packingBoardZoomReset")).toHaveText("101%");
+  await expect(page.locator("#packingBoardZoomReset")).toHaveText("100%");
+
+  const trace = await range.evaluate((input) => {
+    input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 3 }));
+    const values = [103, 106, 107, 105, 103, 94, 93].map((value) => {
+      input.value = String(value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return Number(input.value);
+    });
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 3 }));
+    return values;
+  });
+  expect(trace).toEqual([100, 100, 107, 105, 100, 100, 93]);
 
   await range.evaluate((input) => {
     input.value = "102";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await expect(page.locator("#packingBoardZoomReset")).toHaveText("102%");
+
+  // Exercise the native range thumb too: writing its displayed value must not
+  // trap a real mouse drag inside the detent.
+  await range.evaluate((input) => {
+    input.value = "100";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const geometry = await range.evaluate((input) => {
+    const rect = input.getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + 8 + (Number(input.max) - 100) / (Number(input.max) - Number(input.min)) * (rect.height - 16) };
+  });
+  await page.mouse.move(geometry.x, geometry.y);
+  await page.mouse.down();
+  await page.mouse.move(geometry.x, geometry.y - 3, { steps: 3 });
+  await expect(range).toHaveValue("100");
+  await page.mouse.move(geometry.x, geometry.y - 15, { steps: 12 });
+  expect(Number(await range.inputValue())).toBeGreaterThan(106);
+  await page.mouse.move(geometry.x, geometry.y, { steps: 15 });
+  await expect(range).toHaveValue("100");
+  await page.mouse.move(geometry.x, geometry.y + 3, { steps: 3 });
+  await expect(range).toHaveValue("100");
+  await page.mouse.move(geometry.x, geometry.y + 15, { steps: 12 });
+  expect(Number(await range.inputValue())).toBeLessThan(94);
+  await page.mouse.up();
 });
 
 test("zooming out at the right keeps the focused card still until the user pans away", async ({ page }) => {
