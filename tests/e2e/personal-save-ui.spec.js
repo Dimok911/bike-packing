@@ -1455,6 +1455,44 @@ async function renameDictionaryInUi(page, type, from, to) {
   await submitForm(page, `[data-save-${type}="${from}"]`, `[data-dictionary-edit-input="${type}"]`);
 }
 
+for (const lose of [false, true]) test(`first dictionary edit in an empty personal list enters the durable queue before clearing its input (${lose ? "lost ACK" : "normal ACK"})`, async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  // Lose this business action's ACK, not an earlier layout-selection save.
+  if (lose) f.beforeUpdate = async body => {
+    if (body.body.userDictionary?.value === "Первая категория") { f.lose = true; f.unknown = true; }
+  };
+  await page.locator('[data-view="settings"]').click();
+  await page.locator("#categoryInput").fill("Первая категория");
+  await submitForm(page, "#categoryAdd", "#categoryInput");
+  const journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")));
+  await test.info().attach("first-dictionary-journal", { body: JSON.stringify({ journal, errors: f.errors }), contentType: "application/json" });
+  expect(journal.length).toBeGreaterThan(0);
+  await expect(page.locator("#categoryInput")).toHaveValue("");
+  if (lose) {
+    await page.locator("#syncBtn").click();
+    await expect.poll(() => f.payload.categories.includes("Первая категория")).toBe(true);
+  } else await synchronize(page, () => f.payload.categories.includes("Первая категория"));
+  expect(f.posts.filter(post => post.body.userDictionary?.value === "Первая категория")).toHaveLength(1);
+  if (lose) await expect.poll(() => f.injectedFailure).toBe(true);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page);
+  await synchronize(page, () => f.payload.categories.includes("Первая категория"));
+  await page.locator('[data-view="settings"]').click();
+  await expect(page.locator('[data-edit-category="Первая категория"]')).toBeVisible();
+  expect(f.posts.filter(post => post.body.userDictionary?.value === "Первая категория")).toHaveLength(1);
+  await page.locator("#locationInput").fill("Первое место");
+  await submitForm(page, "#locationAdd", "#locationInput");
+  await synchronize(page, () => f.payload.locations.includes("Первое место"));
+  await renameDictionaryInUi(page, "category", "Первая категория", "Категория без вещей");
+  await synchronize(page, () => f.payload.categories.includes("Категория без вещей"));
+  await page.locator('[data-remove-category="Категория без вещей"]').click();
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => !f.payload.categories.includes("Категория без вещей"));
+  expect(Object.keys(f.payload.items)).toHaveLength(0); expect(Object.keys(f.payload.containers)).toHaveLength(0);
+  expect(f.errors).toEqual([]);
+});
+
 test("dictionary UI keeps unsent inputs through rerender and clears only an explicitly saved or cancelled draft", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);

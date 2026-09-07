@@ -725,6 +725,7 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
+import { isKnownEmptyPersonalSave } from "./src/sync/personal-empty-save.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
@@ -8555,7 +8556,10 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
     const initialEmptyCreate = outbox.recover()?.action.kind === "list.create" && !loadBaseState();
     const initialMigration = outbox.recover()?.action.kind === "list.migrate"
       && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), serializeState({ forSync: true }));
-    if (!knownDeletion && !initialEmptyCreate && !initialMigration && (isSuspiciousEmptyPackingState(state) || blockDestructiveLocalSave())) {
+    const knownEmptyEdit = isKnownEmptyPersonalSave({ records: outbox.list(), operationId: outbox.recover()?.action.operationId,
+      payload: serializeState({ forSync: true }) });
+    if (!knownDeletion && !initialEmptyCreate && !initialMigration
+      && (isSuspiciousEmptyPackingState(state) && !knownEmptyEdit || blockDestructiveLocalSave())) {
       throw new Error("Неполная локальная версия не отправлена на сервер.");
     }
     // Until the file/owner adapter exists, even a deletion or reordering of

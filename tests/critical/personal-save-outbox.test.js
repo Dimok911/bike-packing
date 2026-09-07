@@ -8,6 +8,7 @@ import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEn
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import { saveRootContainerDialogAction, saveItemDialogAction } from "../../src/ui/item-dialog-save.js";
 import { resolveSyncVisualState } from "../../src/ui/sync-visual-state.js";
+import { isKnownEmptyPersonalSave } from "../../src/sync/personal-empty-save.js";
 
 const appSource = readFileSync(new URL("../../app.js", import.meta.url), "utf8");
 function appFunction(name, dependencies) {
@@ -27,6 +28,35 @@ function fixture() {
     body: { baseStateRevision: 5, payload: { items: { a: { weight: value } } } } });
   return { values, storage, context, make, input, outbox: make() };
 }
+
+test("confirmed empty list edits survive reload and follow causal ancestry rather than dates or storage order", () => {
+  const f = fixture(), base = { items: {}, containers: {}, layouts: { layout: { id: "layout", name: "Empty" } }, categories: [] };
+  f.outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 5 });
+  const payload = { ...structuredClone(base), categories: ["First category"] };
+  const first = f.outbox.capture({ snapshot: payload, body: { baseStateRevision: 5, payload } });
+  assert.equal(isKnownEmptyPersonalSave({ records: f.make().list(), operationId: first.action.operationId, payload }), true);
+  const next = { ...structuredClone(payload), locations: ["First location"] };
+  const second = f.outbox.capture({ snapshot: next, body: { baseStateRevision: 5, payload: next } });
+  assert.equal(isKnownEmptyPersonalSave({ records: f.make().list().reverse(), operationId: second.action.operationId, payload: next }), true);
+  assert.equal(isKnownEmptyPersonalSave({ records: [second], operationId: second.action.operationId, payload: next }), false);
+});
+
+test("empty-state heuristic exception cannot authorize lost owners, layouts, missing baseline or different intent", () => {
+  const f = fixture(), base = { items: {}, containers: {}, layouts: { layout: { id: "layout", name: "Keep" } } };
+  f.outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 5 });
+  const payload = { ...structuredClone(base), categories: ["First"] };
+  const original = f.outbox.capture({ snapshot: payload, body: { baseStateRevision: 5, payload } });
+  for (const mutate of [r => { delete r.mergeBase; }, r => { r.mergeBase.stateRevision++; },
+    r => { r.mergeBase.payload.items.lost = { id: "lost" }; }, r => { r.mergeBase.payload.containers.lost = { id: "lost" }; },
+    r => { r.mergeBase.payload.layouts.lost = { id: "lost" }; }, r => { r.action.body.forceOverwrite = true; },
+    r => { r.action.kind = "photos.mutate"; }, r => { r.reconciliation = {}; }, r => { r.action.body.payload.items = null; }]) {
+    const record = structuredClone(original); mutate(record);
+    assert.equal(isKnownEmptyPersonalSave({ records: [record], operationId: record.action.operationId, payload: record.action.body.payload }), false);
+  }
+  assert.equal(isKnownEmptyPersonalSave({ records: [original], operationId: original.action.operationId,
+    payload: { ...payload, categories: ["Later unsaved value"] } }), false);
+  assert.equal(isKnownEmptyPersonalSave({ records: [original, original], operationId: original.action.operationId, payload }), false);
+});
 
 test("outbox remains disabled; atomic action plus local data survive a crash before the mirror write", () => {
   assert.equal(PERSONAL_SAVE_OUTBOX_ENABLED, false);
