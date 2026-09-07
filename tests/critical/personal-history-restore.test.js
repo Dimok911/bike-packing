@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { preparePersonalHistoryRestore } from "../../src/sync/personal-history-restore.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
+import { validPersonalRestoreCancellation } from "../../src/sync/personal-restore-cancellation.js";
+import { personalDeletionReference, preservesUndeletedEntities } from "../../src/sync/personal-deletion-intent.js";
 
 function fixture() {
   const context = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor", scope: "personal", generation: "before", activeLayoutId: "one" };
@@ -90,6 +92,100 @@ test("real outbox does not attach a restore to pending changes or change its pre
   outbox.markApplied({ operationId: parent.action.operationId, stateRevision: 6 });
   assert.throws(() => outbox.capture({ restore: true, snapshot: f.payload, body: f.result.restore }), { code: "restore-base" });
   assert.equal(outbox.recover().action.operationId, parent.action.operationId);
+});
+
+async function rejectedRestoreFixture() {
+  const f = fixture(), values = new Map();
+  const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  const make = () => createPersonalSaveOutbox({ storage, ...f.context }), outbox = make();
+  f.options.outbox = outbox; const restored = (await preparePersonalHistoryRestore(f.options))();
+  const remote = { id: "list", ownerId: "actor", stateRevision: 6, payload: { items: { serverOnly: { id: "serverOnly", weight: 3 } }, containers: {}, layouts: {} } };
+  const proof = record => ({ historicalOnly: true, resultStatus: 409, rejectionCode: "stale_state_revision", stateRevision: remote.stateRevision,
+    operation: { ...outbox.binding, id: record.action.operationId, kind: record.action.kind, state: "rejected", payloadDigest: "1".repeat(64) } });
+  const proofs = new Map([[restored.action.operationId, proof(restored)]]), calls = [];
+  const queue = { inspect: async input => { calls.push(input); return structuredClone(proofs.get(input.operationId)); },
+    run: async input => { calls.push(input); return { list: { stateRevision: remote.stateRevision + 1 } }; } };
+  const options = { queue, getContext: () => f.context, readRemote: async () => remote, makeSnapshot: payload => payload };
+  return { ...f, storage, values, make, outbox, restored, remote, proof, proofs, calls, options };
+}
+
+test("rejected restore requires an explicit keep-current decision and retains exact old bytes until its successor confirms", async () => {
+  const f = await rejectedRestoreFixture(), original = [...f.values];
+  await assert.rejects(f.outbox.reconcile(f.options), { code: "restore-reconciliation" });
+  await assert.rejects(f.outbox.reconcile({ ...f.options, resolveRejectedRestore: async () => "cancel" }), { code: "reconciliation-cancelled" });
+  assert.deepEqual([...f.values], original);
+  const saved = await f.outbox.reconcile({ ...f.options, resolveRejectedRestore: async details => {
+    assert.equal(details.historyId, 12); assert.equal(details.stateRevision, 6); assert.equal(details.discardedOperationCount, 1); return "keep-server";
+  } });
+  assert.equal(saved.action.kind, "list.update"); assert.equal(saved.action.body.historyRestore, undefined); assert.equal(saved.action.body.force, false);
+  assert.equal(saved.action.body.baseStateRevision, 6); assert.deepEqual(saved.action.body.causal, { dependsOn: [], reads: [] });
+  assert.deepEqual(saved.snapshot, f.remote.payload); assert.deepEqual(saved.action.body.payload, f.remote.payload);
+  assert.notEqual(saved.action.operationId, f.restored.action.operationId); assert.equal(validPersonalRestoreCancellation(saved), true);
+  assert.deepEqual([...f.values].slice(0, original.length), original); assert.deepEqual(f.make().recover(), saved);
+  const reference = personalDeletionReference(f.state, [f.restored, saved]);
+  assert.equal(preservesUndeletedEntities(saved.snapshot, reference), true);
+  assert.equal(preservesUndeletedEntities({ ...saved.snapshot, items: {} }, reference), false, "later unrelated losses remain guarded");
+  const tampered = structuredClone(saved); tampered.action.body.payload.items = {};
+  assert.equal(validPersonalRestoreCancellation(tampered), false); assert.throws(() => personalDeletionReference(f.state, [tampered]));
+  f.calls.length = 0;
+  await f.make().drain({ queue: f.options.queue, getContext: f.options.getContext });
+  assert.equal(f.calls[0].operationId, f.restored.action.operationId);
+  assert.ok(f.calls.slice(1).every(input => input.operationId === saved.action.operationId));
+  assert.ok(f.calls.slice(1).every(input => JSON.stringify(JSON.parse(input.body)) === JSON.stringify(saved.action.body)));
+});
+
+test("a restore decision waits for the exact no-effect outcome of an unsent dependent and retains both IDs", async () => {
+  const f = await rejectedRestoreFixture();
+  const payload = structuredClone(f.restored.snapshot); payload.items.later = { id: "later" };
+  const child = f.outbox.capture({ snapshot: payload, body: { payload, baseStateRevision: 5 } });
+  const inspect = f.options.queue.inspect; let terminalized = 0;
+  f.options.queue.inspect = async input => {
+    if (input.operationId === child.action.operationId && !f.proofs.has(input.operationId)) throw Object.assign(Error("unknown child"), { isOperationReceiptError: true });
+    return inspect(input);
+  };
+  f.options.queue.settleRejectedDependency = async input => {
+    assert.equal(input.operationId, child.action.operationId); assert.equal(input.predecessor.operationId, f.restored.action.operationId);
+    assert.equal(JSON.parse(input.body).causal.baseOperationId, f.restored.action.operationId); terminalized++;
+    const proof = { ...f.proof(child), rejectionCode: "dependency_rejected" }; f.proofs.set(child.action.operationId, proof); return proof;
+  };
+  const saved = await f.outbox.reconcile({ ...f.options, resolveRejectedRestore: async details => {
+    assert.equal(terminalized, 1); assert.equal(details.discardedOperationCount, 2); return "keep-server";
+  } });
+  assert.equal(saved.action.previousLocalOperationId, child.action.operationId); assert.equal(saved.snapshot.items.later, undefined);
+  assert.deepEqual(saved.reconciliation.settled.map(proof => proof.operation.id), [f.restored.action.operationId, child.action.operationId]);
+  assert.deepEqual(f.make().recover(), saved); assert.equal(f.values.size, 3);
+});
+
+test("unknown outcomes, files, a changed editor, quota and refused choices cannot discard a rejected restore", async () => {
+  for (const mode of ["unknown", "files", "actor", "generation", "quota", "choice", "owner", "structure"]) {
+    const f = await rejectedRestoreFixture(), before = [...f.values]; let choices = 0;
+    if (mode === "unknown") f.options.queue.inspect = async () => { throw Error("unknown receipt"); };
+    if (mode === "files") f.remote.payload.items.serverOnly.photos = [{ id: "file" }];
+    if (mode === "owner") f.remote.ownerId = "other";
+    if (mode === "structure") f.options.makeSnapshot = () => { throw Error("structural repair"); };
+    if (mode === "quota") f.storage.setItem = () => { throw Error("quota"); };
+    await assert.rejects(f.outbox.reconcile({ ...f.options, resolveRejectedRestore: async () => {
+      choices++;
+      if (mode === "actor") f.context.actorId = "other";
+      if (mode === "generation") f.context.generation = "changed";
+      return mode === "choice" ? "reapply-restore" : "keep-server";
+    } }));
+    assert.deepEqual([...f.values], before, mode);
+    if (["unknown", "files", "owner"].includes(mode)) assert.equal(choices, 0, mode);
+  }
+});
+
+test("a keep-current decision is asked again after another server change and cannot reuse its earlier base", async () => {
+  const f = await rejectedRestoreFixture(), choices = [];
+  const options = { ...f.options, resolveRejectedRestore: async details => { choices.push(details.stateRevision); return "keep-server"; } };
+  const first = await f.outbox.reconcile(options);
+  f.remote.stateRevision = 7; f.remote.payload.items.serverOnly.weight = 8;
+  f.proofs.set(first.action.operationId, f.proof(first));
+  const next = await f.outbox.reconcile(options);
+  assert.deepEqual(choices, [6, 7]); assert.equal(next.action.body.baseStateRevision, 7); assert.equal(next.snapshot.items.serverOnly.weight, 8);
+  assert.notEqual(next.action.operationId, first.action.operationId); assert.deepEqual(f.make().recover(), next);
+  assert.equal(next.reconciliation.decision.restoreOperationId, f.restored.action.operationId);
 });
 
 test("actual app deduplication compares the adopted current baseline, not an old restore snapshot", async () => {

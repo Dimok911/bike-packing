@@ -8422,6 +8422,16 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       // Autosave pauses without stealing focus. The explicit sync button opens
       // the decision UI; server CAS still checks the version after that choice.
       resolveConflicts: notify ? (conflicts, details) => askConflictResolution(conflicts, details) : undefined,
+      resolveRejectedRestore: notify ? async ({ discardedOperationCount }) => {
+        const confirmed = await askConfirmDialog({
+          title: localText("Restore was not applied", "Восстановление не применено"),
+          text: localText(
+            `The server rejected the restore. Keep its current version and discard this restore and the later unconfirmed local changes (${discardedOperationCount} actions)? You can then choose a history point again. Cancel keeps both versions and the queue.`,
+            `Сервер отклонил восстановление. Оставить актуальную серверную версию и отменить это восстановление вместе с последующими неподтверждёнными локальными изменениями (действий: ${discardedOperationCount})? После этого можно заново выбрать точку истории. Отмена сохраняет обе версии и очередь.`),
+          okText: localText("Keep server version", "Оставить серверную версию"), tone: "danger"
+        });
+        return confirmed === true ? "keep-server" : "cancel";
+      } : undefined,
       onReconciled(record) {
         personalSaveRecovery.assertRunning();
         replaceState(record.snapshot, { personalOperationId: record.action.operationId });

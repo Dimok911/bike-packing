@@ -765,6 +765,76 @@ for (const scoped of [false, true]) test(`actual ${scoped ? "scoped" : "full"} h
   expect(f.errors).toEqual([]);
 });
 
+test("rejected history restore offers cancellation then rechecks a changed server and recovers the kept version after lost ACK", async ({ page, context }) => {
+  test.setTimeout(180000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "До отклонённой истории");
+  await createItemInContainer(page, bag, "Серверная вещь", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const snapshot = structuredClone(f.payload), itemId = Object.keys(snapshot.items)[0];
+  await createRootContainer(page, "Актуальная вторая сумка"); await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  const before = f.posts.length; f.allowConflicts = true; f.serverMirrors = true;
+  await openPreparedHistoryRestore(page, f, snapshot);
+  f.beforeUpdate = body => {
+    if (body.kind !== "list.restore" || f.restoreRejected) return;
+    f.restoreRejected = true; f.payload = structuredClone(f.payload); f.payload.items[itemId].weight = 500; f.revision++;
+  };
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#historyDialog")).not.toBeVisible();
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmTitle")).toHaveText("Восстановление не применено");
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmCancelBtn").click();
+  expect(f.posts.length).toBe(before + 1); expect(Object.keys(f.payload.containers)).toHaveLength(2);
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(1);
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+  f.beforeUpdate = body => {
+    if (body.kind !== "list.update" || f.keepRejected) return;
+    f.keepRejected = true; f.payload = structuredClone(f.payload); f.payload.items[itemId].weight = 900; f.revision++;
+  };
+  await page.locator("#confirmOkBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 2);
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await expect(page.locator("#confirmTitle")).toHaveText("Восстановление не применено");
+  const rejectedKeep = f.posts.at(-1); expect(f.receipts.get(rejectedKeep.operationId).operation.state).toBe("rejected");
+  f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
+  await page.locator("#confirmOkBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 3); const kept = f.posts.at(-1);
+  expect(kept.kind).toBe("list.update"); expect(kept.body.historyRestore).toBeUndefined(); expect(kept.body.force).toBe(false);
+  expect(kept.body.payload.items[itemId].weight).toBe(900); expect(Object.keys(kept.body.payload.containers)).toHaveLength(2);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 2 && f.payload.items[itemId].weight === 900);
+  expect(f.posts.length).toBe(before + 3); expect(new Set(f.posts.slice(before).map(post => post.operationId)).size).toBe(3);
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(2);
+  await openPreparedHistoryRestore(page, f, snapshot); await page.locator("#confirmCancelBtn").click(); expect(f.errors).toEqual([]);
+});
+
+test("quota keeping current data after a rejected history restore exports the chosen candidate and retains old operations", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка для отказа истории");
+  await createItemInContainer(page, bag, "Сохранённая сервером вещь", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const snapshot = structuredClone(f.payload), itemId = Object.keys(snapshot.items)[0];
+  await createRootContainer(page, "Не отменяемая серверная сумка"); await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  f.allowConflicts = true;
+  await openPreparedHistoryRestore(page, f, snapshot);
+  f.beforeUpdate = body => {
+    if (body.kind !== "list.restore" || f.restoreRejected) return;
+    f.restoreRejected = true; f.payload = structuredClone(f.payload); f.payload.items[itemId].weight = 600; f.revision++;
+  };
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#historyDialog")).not.toBeVisible();
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmTitle")).toHaveText("Восстановление не применено");
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(Object.keys(copy.unconfirmedMemoryDraft.containers)).toHaveLength(2); expect(copy.unconfirmedMemoryDraft.items[itemId].weight).toBe(600);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
+
 test("quota before history restore keeps the history window and complete recovery candidate without changing the list", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context), snapshot = structuredClone(f.payload);

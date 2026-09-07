@@ -2,6 +2,7 @@ import { deleteItemFromState } from "../state/item-ops.js";
 import { deleteRootContainerFromState } from "../state/container-ops.js";
 import { removeItemFromLayoutArrangement, touchLayoutsReferencingItemInState } from "../state/layout-ops.js";
 import { reducePersonalPlacementReference } from "./personal-placement-mutation.js";
+import { validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 
 export function personalDeletionIntent(value) {
   if (value?.type === "batch") {
@@ -68,6 +69,10 @@ export function personalDeletionReference(base, records) {
   let reference = JSON.parse(JSON.stringify(base));
   let declared = false;
   for (const record of [...records].sort((a, b) => (a.action?.generation || 0) - (b.action?.generation || 0))) {
+    if (record.reconciliation?.decision) {
+      if (!validPersonalRestoreCancellation(record)) throw Error("Не подтверждён отказ от отклонённого восстановления.");
+      reference = JSON.parse(JSON.stringify(record.snapshot)); declared = true;
+    }
     if (record.action?.kind === "list.restore") {
       // A prepared restore is an explicit replacement, not permission for
       // unrelated losses in a later save. The server still validates its hash,

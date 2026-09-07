@@ -4,6 +4,7 @@ import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snaps
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
 import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
+import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
@@ -159,7 +160,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               || record.mergeBase.stateRevision !== action.body.baseStateRevision
               || !Array.isArray(settled) || settled.length !== ancestors.length || !settled.length
               || settled.some((proof, index) => !validHistoricalProof(proof, ancestors[index].action))
-              || settled.at(-1).operation.id !== parentId || !revisionConflictChain(parent, records, settled)) throw Error("Invalid reconciled successor");
+              || settled.at(-1).operation.id !== parentId
+              || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) : !revisionConflictChain(parent, records, settled))) throw Error("Invalid reconciled successor");
             parents.add(parentId);
             continue;
           }
@@ -482,7 +484,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
     },
     inspect,
-    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts,
+    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore,
       operationId = crypto.randomUUID() }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
@@ -492,10 +494,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
       const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
-      if (!alreadyCommitted && settled.outcomes.some(proof => proof.operation.kind === "list.restore" && proof.operation.state !== "committed")) {
+      const rejectedRestore = !alreadyCommitted && [...settled.outcomes].reverse().find(proof => proof.operation.kind === "list.restore" && proof.operation.state === "rejected");
+      if (rejectedRestore && typeof resolveRejectedRestore !== "function") {
         throw blocked("restore-reconciliation", "Восстановление не применено. Его нельзя автоматически перенести на другую версию списка; требуется новый выбор из истории.");
       }
-      if (!alreadyCommitted && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
+      if (!alreadyCommitted && !rejectedRestore && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
       // previously committed edit is not replayed over a later remote edit.
@@ -506,7 +509,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         if (record.mergeBase) { base = record.mergeBase; break; }
       }
-      if (!base && !alreadyCommitted) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
+      if (!base && !alreadyCommitted && !rejectedRestore) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
       const remote = clone(await readRemote());
       assertCurrent();
       if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
@@ -540,7 +543,20 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         return { adoptedBaseline: true, snapshot, baseline: clone(baseline), historicalConfirmation: clone(headProof),
           serverRecord: remote, action: clone(head.action) };
       }
-      let plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
+      let plan, decision = null;
+      if (rejectedRestore) {
+        if (containsPersonalPhotos(remote.payload) || [...records.values()].some(record => containsPersonalPhotos(record.snapshot) || containsPersonalPhotos(record.action.body.payload))) {
+          throw blocked("restore-files", "Сверка восстановления с фото ждёт файлового адаптера. Обе версии сохранены.");
+        }
+        const restoreRecord = records.get(rejectedRestore.operation.id);
+        const choice = await resolveRejectedRestore({ restoreOperationId: rejectedRestore.operation.id,
+          historyId: restoreRecord.action.body.historyRestore.historyId, stateRevision: remote.stateRevision,
+          discardedOperationCount: settled.outcomes.filter(proof => proof.operation.state === "rejected").length });
+        assertCurrent();
+        if (choice !== "keep-server") throw blocked("reconciliation-cancelled", "Выбор отложен. Восстановление и последующие локальные изменения сохранены, сервер не перезаписан.");
+        decision = { version: 1, type: "keep-server-after-rejected-restore", restoreOperationId: rejectedRestore.operation.id, stateRevision: remote.stateRevision };
+        plan = { payload: remote.payload, conflicts: [] };
+      } else plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
       if (!plan.blocked && plan.conflicts?.length && typeof resolveConflicts === "function") {
         // The dialog gets copies, never mutable authority over the frozen
         // comparison or journal. A changed editor/account invalidates a choice.
@@ -571,13 +587,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       delete action.body.userPlacement;
       delete action.body.historyRestore;
       const mergeBase = { payload: remote.payload, stateRevision: remote.stateRevision };
-      const reconciliation = { version: 1, settled: settled.outcomes };
+      const reconciliation = { version: 1, settled: settled.outcomes, ...(decision ? { decision } : {}) };
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
       preflight(action, snapshot);
       try {
         storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
           snapshotPatch: encodePersonalSnapshot(payload, snapshot) }));
-      } catch { throw blocked("quota", "Не хватает места для объединённого действия. Прежние версии сохранены."); }
+      } catch { throw Object.assign(blocked("quota", "Не хватает места для объединённого действия. Прежние версии сохранены."), { unconfirmedMemoryDraft: snapshot }); }
       observe({ head: record, anchor });
       assertObserved();
       return clone(record);
