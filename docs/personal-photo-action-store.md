@@ -122,3 +122,23 @@ native-Blob Windows WebKit cache test. Real paired API/MySQL **60/60** verifies
 DB edit → stage → photo publication → atomic current-state adoption → next DB edit,
 lost ACK, reload, exactly one upload and one photo row. Its byte-record fixture
 is explicit; this is not yet a combined real mobile UI-to-MySQL test.
+
+## Read-only recovery inventory
+
+`inspectPersonalPhotoRecovery` compares a stable IDB inventory with the exact
+personal outbox binding/head and verifies pending action/file hashes. It labels
+linked, unlinked, missing, corrupt and mismatched files separately. A compacted
+UUID is `retired-needs-proof`, not an invented server confirmation. Every result
+has `dispatchAllowed=false`: no automatic POST, re-registration, deletion or
+snapshot installation. Account/generation or file/head changes abort the scan.
+
+An actual integration defect was reproduced and fixed in the existing recovery
+wrapper: detached method calls lost the outbox receiver used by `capturePhoto`.
+The wrapper now preserves it; a regression test calls the real wrapper, not only
+the bare outbox. Native IDB tests verify unlinked → linked → reload with exact
+bytes; this helper is NOT yet wired into full app startup or a recovery dialog.
+
+Evidence: 236 transport, 889 critical, source check; native storage **27 passed,
+1 skipped** (38.9s). The full **161 passed/1 skipped** browser run belongs to
+`e190dde`, before this inventory/wrapper continuation. The same old Windows WebKit
+native-Blob cache skip remains. New modes/gates have not been activated.

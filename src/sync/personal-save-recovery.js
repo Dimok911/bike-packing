@@ -56,7 +56,7 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
     outbox(factory, scopeKey) {
       const outbox = run(factory, { scopeKey });
       return Object.fromEntries(Object.entries(outbox).map(([name, value]) => [name,
-        typeof value !== "function" ? value : (...args) => run(() => value(...args), {
+        typeof value !== "function" ? value : (...args) => run(() => value.apply(outbox, args), {
           scopeKey, snapshot: name === "capture" ? args[0]?.snapshot : undefined,
           recoverDraft: name === "capture" ? options => {
             if (!outbox.canReconcileStaleCapture?.()) throw Error("No frozen common base for this draft");

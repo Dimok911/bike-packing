@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "../../src/sync/personal-photo-outbox-record.js";
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
+import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
 
 const photo = (id, status = "synced") => ({ id, photoId: id, assetId: crypto.randomUUID(), status });
 function fixture() {
@@ -36,6 +38,9 @@ test("photo outbox is gated and a pure photo candidate cannot include an unrelat
     assert.throws(() => f.outbox.preparePhoto({ snapshot: payload, payload, body }), { code: "photo-record" });
   }
   assert.equal(f.values.size, 0);
+  const copied = photo("copied", "pending"), copyPayload = structuredClone(f.base); copyPayload.items.a.photos.push(copied);
+  assert.throws(() => f.outbox.preparePhoto({ snapshot: copyPayload, payload: copyPayload, body: { ...body, action: "copy", photoId: copied.id,
+    assetId: copied.assetId, index: 2, source: { listId: "other-list", photoId: "original", assetId: crypto.randomUUID(), photoRevision: 4 } } }), { code: "photo-composite" });
 });
 
 test("photo order joins the DB predecessor and blocks later saves until an atomic current-state certificate is stored", async () => {
@@ -117,4 +122,56 @@ test("photo baseline quota is atomic and corrupt local photo manifest stops reco
   assert.deepEqual([...f.values], before); assert.equal(f.make().hasPending(), true);
   const [key, value] = before[0], bad = JSON.parse(value); bad.photoState.payload.items.a.weight++;
   f.values.set(key, JSON.stringify(bad)); assert.throws(f.make, { code: "photo-record" }); assert.equal(f.values.size, 1);
+});
+
+test("the real recovery wrapper preserves the outbox receiver for photo preparation and atomic capture", async () => {
+  const f = fixture(), wrapped = createPersonalSaveRecovery().outbox(() => f.outbox, f.binding.scopeKey), plan = f.prepare(wrapped);
+  const record = await wrapped.capturePhoto({ plan, getContext: f.getContext });
+  assert.equal(record.action.kind, "photos.mutate"); assert.deepEqual(wrapped.recover(), record);
+});
+
+test("read-only photo inventory separates unlinked files from matching pending actions without giving dispatch authority", async () => {
+  const f = fixture(), plan = f.prepare(f.outbox, "attach"), file = f.fileFor(plan);
+  const store = { binding: f.binding, ids: async () => [plan.action.operationId], read: async () => file };
+  const inspect = () => inspectPersonalPhotoRecovery({ outbox: f.outbox, store, getContext: f.getContext });
+  const before = [...f.values], orphan = await inspect();
+  assert.equal(orphan.entries[0].state, "unlinked"); assert.equal(orphan.needsRecovery, true); assert.deepEqual([...f.values], before);
+  await f.outbox.capturePhoto({ plan, store, getContext: f.getContext });
+  const linked = await inspect(); assert.equal(linked.entries[0].state, "linked"); assert.equal(linked.needsRecovery, false);
+  assert.equal(linked.automaticDispatchAllowed, false); assert.equal(linked.entries[0].dispatchAllowed, false);
+  file.intentHash = "b".repeat(64);
+  assert.equal((await inspect()).entries[0].state, "link-mismatch");
+  store.read = async () => { throw Object.assign(Error("bad bytes"), { code: "missing-or-corrupt-bytes" }); };
+  assert.equal((await inspect()).entries[0].state, "corrupt-file");
+  store.ids = async () => [];
+  assert.equal((await inspect()).entries[0].state, "missing-file"); assert.equal(f.outbox.hasPending(), true);
+});
+
+test("photo inventory never silently accepts changing file/head sets or a switched account during its asynchronous scan", async () => {
+  for (const change of ["ids", "head", "context"]) {
+    const f = fixture(), plan = f.prepare(f.outbox, "attach"), file = f.fileFor(plan); let scanned = false;
+    const store = { binding: f.binding, ids: async () => scanned && change === "ids" ? [] : [plan.action.operationId], read: async () => {
+      scanned = true;
+      if (change === "head") f.make().capture({ snapshot: f.base, body: { baseStateRevision: 5, payload: f.base } });
+      if (change === "context") f.context.actorId = "other";
+      return file;
+    } };
+    await assert.rejects(inspectPersonalPhotoRecovery({ outbox: f.outbox, store, getContext: f.getContext }));
+    assert.equal(file.file.size, 16);
+  }
+});
+
+test("compaction never turns a retained file into resend permission or claims its retired UUID alone is a server receipt", async () => {
+  const f = fixture(), plan = f.prepare(f.outbox, "attach"), file = f.fileFor(plan);
+  const store = { binding: f.binding, ids: async () => [plan.action.operationId], read: async () => file };
+  const record = await f.outbox.capturePhoto({ plan, store, getContext: f.getContext });
+  const remote = structuredClone(plan.payload); remote.items.a.photos.at(-1).status = "synced";
+  await f.outbox.reconcile({ queue: { inspect: async () => f.proof(record.action) }, getContext: f.getContext,
+    readRemote: async () => ({ id: "list-a", ownerId: "actor-a", stateRevision: 6, payload: remote }) });
+  remote.items.a.weight++;
+  const next = f.outbox.capture({ snapshot: remote, body: { payload: remote, baseStateRevision: 6 } });
+  f.outbox.markApplied({ operationId: next.action.operationId, stateRevision: 7 }); f.outbox.compact();
+  const inventory = await inspectPersonalPhotoRecovery({ outbox: f.outbox, store, getContext: f.getContext });
+  assert.equal(inventory.entries[0].state, "retired-needs-proof"); assert.equal(inventory.needsRecovery, true);
+  assert.equal(inventory.automaticDispatchAllowed, false); assert.equal(file.file.size, 16);
 });

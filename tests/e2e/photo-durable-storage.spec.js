@@ -14,6 +14,7 @@ async function fixture(page, context) {
         import * as photos from '/src/sync/photos.js';
         import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
         import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
+        import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
         window.photoContext={environment:'bike-packing-experiment',actorId:'actor-a',listId:'list-a',scopeKey:'id:actor-a',scope:'personal',generation:'edit-1'};
         window.photoActions=(extra={})=>createPersonalPhotoActionStore({...window.photoContext,environmentId:window.photoContext.environment,
           enabled:true,getContext:()=>({...window.photoContext}),...extra});
@@ -24,6 +25,7 @@ async function fixture(page, context) {
             file:new Blob(['full photo bytes'],{type:'image/png'}),thumb:new Blob(['thumbnail bytes'],{type:'image/png'})};};
         window.photos=photos;
         window.photoOutbox=(extra={})=>createPersonalSaveOutbox({...window.photoContext,storage:localStorage,photoEnabled:true,...extra});
+        window.inspectPhotoRecovery=()=>inspectPersonalPhotoRecovery({outbox:window.photoOutbox(),store:window.photoActions(),getContext:()=>window.photoContext});
         window.preparePhotoBridge=()=>{
           const input=window.photoInput(),outbox=window.photoOutbox(),base=structuredClone(input.snapshot);
           base.items['item-a'].photos=[];outbox.adoptRemoteBaseline({snapshot:base,payload:base,stateRevision:1});
@@ -270,4 +272,20 @@ test("another real tab between file commit and personal queue registration keeps
   })).toEqual({ code: "stale-tab", photo: "new-photo" });
   expect(await page.evaluate(async id => ({ head: window.photoOutbox().recover().action.kind, bytes: await (await window.photoActions().read(id)).file.text() }), id))
     .toEqual({ head: "list.update", bytes: "full photo bytes" });
+});
+
+test("native startup inventory identifies an unlinked file and its later exact outbox binding without posting or deleting anything", async ({ page, context }) => {
+  await fixture(page, context);
+  const id = await page.evaluate(async () => {
+    window.bridge = window.preparePhotoBridge(); await window.photoActions().capture(window.bridge.input); return window.bridge.plan.action.operationId;
+  });
+  const unlinked = await page.evaluate(() => window.inspectPhotoRecovery());
+  expect(unlinked.entries).toMatchObject([{ operationId: id, state: "unlinked", dispatchAllowed: false }]);
+  expect(unlinked.automaticDispatchAllowed).toBe(false); expect(unlinked.needsRecovery).toBe(true);
+  await page.evaluate(() => window.bridge.outbox.capturePhoto({ plan: window.bridge.plan, store: window.photoActions(), getContext: () => window.photoContext }));
+  await page.reload(); await page.waitForFunction(() => window.inspectPhotoRecovery);
+  const linked = await page.evaluate(() => window.inspectPhotoRecovery());
+  expect(linked.entries).toMatchObject([{ operationId: id, state: "linked", dispatchAllowed: false }]);
+  expect(linked.needsRecovery).toBe(false); expect(linked.readOnly).toBe(true);
+  expect(await page.evaluate(async id => (await window.photoActions().read(id)).file.text(), id)).toBe("full photo bytes");
 });

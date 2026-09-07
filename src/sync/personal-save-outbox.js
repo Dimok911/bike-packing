@@ -367,6 +367,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
     },
     list() { return clone([...read().records.values()]); },
+    photoRecoveryReferences() {
+      const current = assertObserved();
+      return clone({ binding, observation: observation(current), retiredOperationIds: current.anchor?.retired || [],
+        records: [...current.records.values()].filter(record => record.action.kind === "photos.mutate" && record.action.body.action === "attach") });
+    },
     preparePhoto({ snapshot, payload, body, operationId = crypto.randomUUID() }) {
       const input = clone({ snapshot, payload, body }), current = assertObserved(), { head, applied, anchor, records } = current;
       if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
