@@ -1194,6 +1194,22 @@ export async function openPhotoLightbox(sourceImage, {
     };
     inertiaFrame = requestAnimationFrame(step);
   };
+  let indicatedIndex = initialIndex;
+  const updateLightboxDots = (visibleIndex) => {
+    if (visibleIndex === indicatedIndex) return;
+    indicatedIndex = visibleIndex;
+    lightboxDots.forEach((dot, dotIndex) => {
+      const active = dotIndex === visibleIndex;
+      dot.classList.toggle("active", active);
+      if (active) dot.setAttribute("aria-current", "true");
+      else dot.removeAttribute("aria-current");
+    });
+  };
+  const visibleTouchIndex = () => resolvePhotoGallerySnapIndex({
+    scrollLeft: track.scrollLeft,
+    trackWidth: track.clientWidth,
+    slideCount: entries.length
+  });
   const updateNavigation = () => {
     fullscreenSwitcher?.render(activeIndex, false);
     if (prevButton) {
@@ -1204,12 +1220,7 @@ export async function openPhotoLightbox(sourceImage, {
       nextButton.disabled = activeIndex >= entries.length - 1;
       nextButton.setAttribute("aria-disabled", nextButton.disabled ? "true" : "false");
     }
-    lightboxDots.forEach((dot, dotIndex) => {
-      const active = dotIndex === activeIndex;
-      dot.classList.toggle("active", active);
-      if (active) dot.setAttribute("aria-current", "true");
-      else dot.removeAttribute("aria-current");
-    });
+    updateLightboxDots(touchCarousel ? visibleTouchIndex() : activeIndex);
   };
   const updateLoadStatus = (state = "idle") => {
     if (!loadStatus || !loadStatusText) return;
@@ -1581,6 +1592,7 @@ export async function openPhotoLightbox(sourceImage, {
       slideCount: entries.length
     });
     pendingScrollIndex = null;
+    updateLightboxDots(snapIndex);
     if (snapIndex !== activeIndex) showPhoto(snapIndex);
     // Native scroll-snap owns the position, including the edge bounce. Writing
     // scrollLeft here interrupts WebKit's compositor and can restart settling.
@@ -1604,11 +1616,13 @@ export async function openPhotoLightbox(sourceImage, {
   };
   track.addEventListener("scroll", () => {
     suppressImageCloseUntil = Date.now() + 300;
-    if (touchCarousel) prepareVisiblePreviews(resolvePhotoGallerySnapIndex({
-      scrollLeft: track.scrollLeft,
-      trackWidth: track.clientWidth,
-      slideCount: entries.length
-    }));
+    if (touchCarousel) {
+      const visibleIndex = visibleTouchIndex();
+      // The indicator follows the visible slide immediately. Source activation
+      // still waits for settling so it cannot disrupt the native swipe.
+      updateLightboxDots(visibleIndex);
+      prepareVisiblePreviews(visibleIndex);
+    }
     if (!touchCarousel && !scrollFrame) scrollFrame = requestAnimationFrame(syncTrackActivePhoto);
     scheduleTrackSettle();
   }, { passive: true });
