@@ -599,6 +599,31 @@ test("actual catalog bulk deletes use one frozen action per selection and recove
   expect(f.errors).toEqual([]);
 });
 
+test("deleting the last bag and its inner pocket keeps the items outside all layouts through reload", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Последняя сумка");
+  await createItemInContainer(page, bag, "Оставленная вещь");
+  await bag.locator("[data-add-to-container]").click();
+  await page.locator("#newSubcontainerName").fill("Удаляемый карман");
+  await submitForm(page, "#createSubcontainerBtn", "#newSubcontainerName");
+  await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  const itemId = Object.keys(f.payload.items)[0], rootId = f.payload.layouts["layout-a"].arrangement.rootContainerIds[0];
+  const before = f.posts.length;
+  await bag.getByRole("heading", { name: "Последняя сумка" }).click();
+  await page.locator("#rootContainerDeleteForeverBtn").click();
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 0);
+  expect(f.posts.length).toBe(before + 1);
+  expect(f.posts.at(-1).body.userDeletion).toEqual({ type: "container", id: rootId });
+  expect(f.posts.at(-1).body.force).not.toBe(true); expect(f.posts.at(-1).body.forceOverwrite).not.toBe(true);
+  expect(f.payload.items[itemId].name).toBe("Оставленная вещь");
+  expect(f.payload.layouts["layout-a"].arrangement.items).toEqual({});
+  await reloadApp(page); await page.locator('[data-view="items"]').click();
+  await expect(page.locator(`[data-list-item-id="${itemId}"]`)).toContainText("Оставленная вещь");
+  expect(f.errors).toEqual([]);
+});
+
 test("quota during real bulk deletion preserves the entire unsaved selection draft and the old queue", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);
