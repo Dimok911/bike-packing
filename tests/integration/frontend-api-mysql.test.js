@@ -54,6 +54,11 @@ function assertSafeTestDatabase() {
   assert.notEqual(dbConfig.host, "90.156.128.115", "Production server is forbidden");
 }
 
+function isProxyCancellationError(error) {
+  return /request context disposed|fetch response has been disposed|target page, context or browser has been closed/i
+    .test(error?.message || "");
+}
+
 async function reservePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -204,7 +209,7 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, session, req
     try {
       response = await route.fetch({ url: localUrl.toString(), headers });
     } catch (error) {
-      if (/request context disposed|target page, context or browser has been closed/i.test(error.message)) {
+      if (isProxyCancellationError(error)) {
         requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> cancelled while closing browser`);
         return;
       }
@@ -247,8 +252,17 @@ async function installApiProxy(context, apiBaseUrl, frontendOrigin, session, req
         responseSummary = ` (item sync response could not be decoded: ${error.message})`;
       }
     }
-    requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${response.status()}${responseSummary}`);
-    await route.fulfill({ response });
+    const responseStatus = response.status();
+    try {
+      await route.fulfill({ response });
+    } catch (error) {
+      if (isProxyCancellationError(error)) {
+        requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> response discarded while closing browser`);
+        return;
+      }
+      throw error;
+    }
+    requestLog.push(`${request.method()} ${productionUrl.pathname}${productionUrl.search} -> ${responseStatus}${responseSummary}`);
   });
 }
 
