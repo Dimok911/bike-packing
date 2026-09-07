@@ -594,7 +594,7 @@ async function synchronize(page, condition) {
   }), { timeout: 20000 }).toBe(true);
 }
 
-async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false } = {}) {
+async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2 } = {}) {
   const f = await setup(page, context, { photoForm: true, photoEdit }), bag = await createRootContainer(page, "База фотоформы");
   if (type === "item" && !created) await createItemInContainer(page, bag, "Вещь фотоформы");
   await synchronize(page, () => Object.keys(f.payload.containers).length === 1 && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
@@ -611,8 +611,8 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
     const paint = canvas.getContext("2d"); paint.fillStyle = "red"; paint.fillRect(0, 0, 2, 2);
     return canvas.toDataURL("image/png").split(",")[1];
   }), "base64");
-  await page.locator(`#${prefix}PhotoInput`).setInputFiles([1, 2].map(index => ({ name: `фото-${index}.png`, mimeType: "image/png", buffer: image })));
-  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(2);
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles(Array.from({ length: photoCount }, (_, index) => ({ name: `фото-${index + 1}.png`, mimeType: "image/png", buffer: image })));
+  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(photoCount);
   await expect(page.locator(`#${prefix}PhotoStatus`)).toContainText("Отправятся после сохранения карточки");
   await expect(page.locator(button)).toBeEnabled();
   expect(f.stagePosts).toHaveLength(0); expect(f.posts).toHaveLength(before);
@@ -698,7 +698,7 @@ for (const type of ["item", "container"]) for (const change of ["delete", "prima
 });
 
 async function prepareExistingPhotoEdit(page, context, { type = "container", change = "delete" } = {}) {
-  const form = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true }), { f, before, collection, prefix, button, dialog } = form;
+  const form = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true, photoCount: change === "delete-order" ? 3 : 2 }), { f, before, collection, prefix, button, dialog } = form;
   await submitForm(page, button); await expect(dialog).not.toBeVisible();
   await page.locator("#syncBtn").click();
   await expect.poll(() => f.posts.length).toBe(before + 1);
@@ -714,15 +714,16 @@ async function prepareExistingPhotoEdit(page, context, { type = "container", cha
       if (event.target.closest?.(`#${prefix}PhotoPrimaryBtn`)) globalThis.__photoEditEvents.push({ name, disabled: event.target.disabled });
     }, true);
   }, prefix);
-  if (change === "delete") {
+  if (change !== "order") {
     await page.locator(`#${prefix}PhotoRemoveBtn`).click(); await page.locator("#confirmOkBtn").click();
-    await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(1);
-  } else {
+    await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(originalPhotos.length - 1);
+  }
+  if (change !== "delete") {
     // WebKit mouse emulation can produce down/up without a click on this
     // touch surface. Exercise a real tap and verify the chosen result before SAVE.
     await submitForm(page, `#${prefix}PhotoPreview [data-photo-index="1"]`);
     await expect(page.locator(`#${prefix}PhotoPrimaryBtn`)).toBeEnabled(); await submitForm(page, `#${prefix}PhotoPrimaryBtn`);
-    await expect(page.locator(`#${prefix}PhotoPreview img`).first()).toHaveAttribute("data-photo-local-id", originalPhotos[1].id);
+    await expect(page.locator(`#${prefix}PhotoPreview img`).first()).toHaveAttribute("data-photo-local-id", originalPhotos.at(-1).id);
     expect(await page.evaluate(() => globalThis.__photoEditEvents.some(event => event.name === "click"))).toBe(true);
   }
   await page.locator(`#${prefix}Name`).fill("Фотографии изменены");
@@ -731,7 +732,7 @@ async function prepareExistingPhotoEdit(page, context, { type = "container", cha
   return { ...form, ownerId, originalPhotos };
 }
 
-for (const type of ["item", "container"]) for (const change of ["delete", "order"]) for (const lost of [false, true]) {
+for (const type of ["item", "container"]) for (const change of ["delete", "order", "delete-order"]) for (const lost of [false, true]) {
   test(`existing photo ${type} ${change} is one durable form without upload (${lost ? "lost ACK" : "normal ACK"})`, async ({ page, context }) => {
     test.setTimeout(120000);
     const { f, before, collection, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type, change });
@@ -740,21 +741,23 @@ for (const type of ["item", "container"]) for (const change of ["delete", "order
     await page.locator("#syncBtn").click(); await expect.poll(() => f.posts.length).toBe(before + 2);
     const action = structuredClone(f.posts.at(-1));
     expect(action.body.action).toBe("form"); expect(action.body.fields.name).toBe("Фотографии изменены");
-    expect(action.body.fields.weight).toBe(321); expect(action.body.changes.map(entry => entry.action)).toEqual([change]);
-    if (change === "delete") expect(action.body.changes[0].basePhotoRevision).toBe(f.photoRevisions.get(originalPhotos[0].id));
-    expect(f.stagePosts).toHaveLength(2); // Only the original two attachments.
+    expect(action.body.fields.weight).toBe(321); expect(action.body.changes.map(entry => entry.action)).toEqual(change === "delete-order" ? ["delete", "order"] : [change]);
+    if (change !== "order") expect(action.body.changes[0].basePhotoRevision).toBe(f.photoRevisions.get(originalPhotos[0].id));
+    if (change === "delete-order") expect(action.body.changes[1].expectedPhotoIds).toEqual(originalPhotos.slice(1).map(photo => photo.id));
+    expect(f.stagePosts).toHaveLength(originalPhotos.length); // Only the original attachments.
     if (lost) {
       await expect.poll(() => f.injectedFailure).toBe(true); await reloadApp(page, { recovery: true });
       const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
       await expect(recovery).toBeVisible(); await expect(resume).toBeVisible();
       await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts.at(-1)).toEqual(action);
-      expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+      expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(originalPhotos.length);
       f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
       await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
     } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
     await reloadApp(page); await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
-    expect(f.payload[collection][ownerId].photos).toEqual(change === "delete" ? originalPhotos.slice(1) : [...originalPhotos].reverse());
-    expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2); expect(f.errors).toEqual([]);
+    expect(f.payload[collection][ownerId].photos).toEqual(change === "delete" ? originalPhotos.slice(1)
+      : change === "delete-order" ? originalPhotos.slice(1).reverse() : [...originalPhotos].reverse());
+    expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(originalPhotos.length); expect(f.errors).toEqual([]);
   });
 }
 

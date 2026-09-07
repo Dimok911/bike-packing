@@ -9,6 +9,8 @@ import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-reco
 import { drainPersonalPhotoForm } from "../../src/sync/personal-photo-form-drain.js";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalPhotoEditSelection } from "../../src/ui/personal-photo-form-files.js";
+import { personalPhotoPublicationManifest } from "../../src/sync/personal-photo-publication-protocol.js";
+import { personalPhotoFormManifest, validatePersonalPhotoFormResult } from "../../src/sync/personal-photo-form-protocol.js";
 
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 function fixture(type = "item", mode = "delete") {
@@ -28,7 +30,7 @@ function fixture(type = "item", mode = "delete") {
     photos: photos.map((photo, index) => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: index + 2 })) };
   const request = { binding, snapshot: structuredClone(base), basePayload: structuredClone(base), baseStateRevision: 7,
     created: false, entityType: type, entityId: "owner", fields: { name: "Chosen", weight: 23 },
-    photoIds: mode === "order" ? photos.map(photo => photo.id).reverse() : [photos[2].id] };
+    photoIds: mode === "order" ? photos.map(photo => photo.id).reverse() : mode === "delete-order" ? [photos[2].id, photos[1].id] : [photos[2].id] };
   const events = [], options = { outbox, store, getContext: () => context, enabled: true,
     readOwner: async path => { events.push(path); return response; }, onDurable: () => { events.push("view"); } };
   return { binding, context, values, storage, outboxOptions, outbox, store, response, request, options, events, collection, base };
@@ -53,7 +55,7 @@ test("owner reader refuses wrong scope, newer lists, altered owners, duplicate h
   const read = readPersonalPhotoOwnerState(f.request, f.options); f.context.form = "reopened"; wait.resolve(); await assert.rejects(read);
 });
 
-for (const type of ["item", "container"]) for (const mode of ["delete", "order"]) test(`fileless ${type} ${mode} freezes once, links before view and survives a reader-only reload`, async () => {
+for (const type of ["item", "container"]) for (const mode of ["delete", "order", "delete-order"]) test(`fileless ${type} ${mode} freezes once, links before view and survives a reader-only reload`, async () => {
   const f = fixture(type, mode), scan = deferred(); f.store.ids = async () => { await scan.promise; return []; };
   let uuids = 0;
   const session = createPersonalPhotoEditFormSession({ ...f.options, createUuid: () => { uuids++; return randomUUID(); } });
@@ -66,6 +68,13 @@ for (const type of ["item", "container"]) for (const mode of ["delete", "order"]
   assert.equal(record.action.body.baseEntityRevision, 5); assert.equal(record.action.body.fields.name, "Chosen");
   assert.deepEqual(record.photoState.payload[f.collection].owner.photos.map(photo => photo.id), desired);
   if (mode === "delete") assert.deepEqual(record.action.body.changes.map(change => change.basePhotoRevision), [2, 3]);
+  if (mode === "delete-order") {
+    assert.deepEqual(record.action.body.changes.map(change => change.action), ["delete", "order"]);
+    assert.deepEqual(record.action.body.changes[1].expectedPhotoIds, ["photo-2", "photo-3"]);
+    assert.deepEqual(record.action.body.changes[1].photoIds, desired);
+    const corrupt = structuredClone(record); corrupt.action.body.changes[1].expectedPhotoIds = ["photo-1", "photo-2", "photo-3"];
+    assert.throws(() => assertPersonalPhotoFormRecord(corrupt));
+  }
   assertPersonalPhotoFormRecord(record); assert.throws(() => assertPersonalPhotoFormFile(record, {}, f.binding));
   assert.equal(f.events.at(-1), "view"); assert.deepEqual(session.recoveryCopy().files, []);
   const reloaded = createPersonalSaveOutbox({ ...f.outboxOptions, photoEnabled: false, photoEditEnabled: false });
@@ -75,9 +84,27 @@ for (const type of ["item", "container"]) for (const mode of ["delete", "order"]
   await assert.rejects(reloaded.drain({ getContext: f.options.getContext, queue: { run: () => { throw Error("must not send"); } } }));
 });
 
-test("fileless form cannot disguise new bytes or mix removal and reordering; every missing photo is explicit", async () => {
+test("mixed form requires every intermediate receipt and cannot enable mixed photo-only batches", async () => {
+  const f = fixture("item", "delete-order"), { record } = await createPersonalPhotoEditFormSession(f.options).submit(f.request);
+  const body = record.action.body, manifest = personalPhotoFormManifest(body);
+  assert.throws(() => personalPhotoPublicationManifest({ version: 1, action: "batch", changes: body.changes, allowDeleteThenOrder: true }));
+  const result = { stateRevision: 8, list: { id: "list", stateRevision: 8, payload: record.photoState.payload },
+    photoForm: { entityType: "item", entityId: "owner", created: false }, photoChanges: manifest.photos };
+  const expected = { listId: "list", body };
+  assert.equal(validatePersonalPhotoFormResult(result, expected), true);
+  for (const index of [0, 1]) {
+    const changed = structuredClone(result); changed.photoChanges[index].photoIds.reverse();
+    assert.equal(validatePersonalPhotoFormResult(changed, expected), false);
+  }
+  const after = structuredClone(body); after.changes.push({ ...after.changes[0], photoId: "photo-2", expectedPhotoIds: ["photo-3", "photo-2"] });
+  assert.throws(() => personalPhotoFormManifest(after));
+  const repeated = structuredClone(body); repeated.changes.push({ ...repeated.changes[1], expectedPhotoIds: ["photo-3", "photo-2"] });
+  assert.throws(() => personalPhotoFormManifest(repeated));
+});
+
+test("fileless form cannot disguise new bytes or invent a survivor; every missing photo is explicit", async () => {
   const f = fixture(), versions = await readPersonalPhotoOwnerState(f.request, f.options);
-  for (const change of [r => { r.photoIds = ["foreign"]; }, r => { r.photoIds = ["photo-3", "photo-2"]; },
+  for (const change of [r => { r.photoIds = ["foreign"]; }, r => { r.photoIds = ["photo-3", "photo-2", "foreign"]; },
     r => { r.photoIds = ["photo-3", "photo-3"]; }, r => { r.fields.photos = []; }, r => { r.fields.parentId = "other"; }]) {
     const request = structuredClone(f.request); change(request);
     assert.throws(() => preparePersonalPhotoEditForm({ ...request, ...versions, operationId: randomUUID() }, { enabled: true }));

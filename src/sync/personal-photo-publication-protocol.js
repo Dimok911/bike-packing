@@ -11,7 +11,9 @@ const equal = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.l
 const invalid = () => { throw Object.assign(new Error("Состав фотодействия изменён или неполон. Отправка остановлена."),
   { code: "photo-manifest", isOperationPreflightError: true }); };
 
-export function personalPhotoPublicationManifest(body) {
+export function personalPhotoPublicationManifest(body, { allowDeleteThenOrder = false } = {}) {
+  // Only the form validator opts in through a call argument. Wire flags never
+  // broaden the photo-only batch grammar; an order remains terminal per owner.
   if (body?.version !== 1 || body.payload !== undefined || body.force || body.forceOverwrite) invalid();
   const batch = body.action === "batch", changes = batch ? body.changes : [body];
   if (!Array.isArray(changes) || !changes.length || changes.length > 50) invalid();
@@ -23,7 +25,7 @@ export function personalPhotoPublicationManifest(body) {
       || change.payload !== undefined || change.force || change.forceOverwrite
       || batch && (change.causal !== undefined || change.baseStateRevision !== undefined)) invalid();
     const ownerKey = `${change.entityType}:${change.entityId}`, previous = owners.get(ownerKey);
-    if (previous && (change.action === "order" || previous.action === "order"
+    if (previous && (change.action === "order" && !(allowDeleteThenOrder && previous.onlyDeletes) || previous.action === "order"
       || change.baseEntityRevision !== previous.baseEntityRevision || !equal(change.expectedPhotoIds, previous.photoIds))) invalid();
     let photoIds;
     if (change.action === "order") {
@@ -47,14 +49,15 @@ export function personalPhotoPublicationManifest(body) {
     }
     const outcome = { index, action: change.action, entityType: change.entityType, entityId: change.entityId,
       ...(change.action === "order" ? {} : { photoId: change.photoId, assetId: change.assetId }), photoIds };
-    owners.set(ownerKey, { ...outcome, baseEntityRevision: change.baseEntityRevision });
+    owners.set(ownerKey, { ...outcome, baseEntityRevision: change.baseEntityRevision,
+      onlyDeletes: change.action === "delete" && (!previous || previous.onlyDeletes) });
     return outcome;
   });
 }
 
-export function validatePersonalPhotoPublicationResult(payload, expected) {
+export function validatePersonalPhotoPublicationResult(payload, expected, options) {
   try {
-    const manifest = personalPhotoPublicationManifest(expected.body), list = payload?.list;
+    const manifest = personalPhotoPublicationManifest(expected.body, options), list = payload?.list;
     if (list?.id !== expected.listId || !revision(payload.stateRevision) || list.stateRevision !== payload.stateRevision) return false;
     const batch = expected.body.action === "batch", outcomes = batch ? payload.photoChanges : [payload];
     if (!Array.isArray(outcomes) || outcomes.length !== manifest.length || !list.payload) return false;

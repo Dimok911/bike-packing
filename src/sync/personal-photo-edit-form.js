@@ -9,9 +9,9 @@ const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJ
 const uuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const fail = message => { throw Object.assign(new Error(message || "Не удалось зафиксировать изменение фотографий. Форма сохранена."), { code: "photo-edit-form" }); };
 
-// Existing private owner only, no file staging. Deletion preserves survivor
-// order; reordering is an exact permutation. A combined delete+reorder or new
-// attachment requires a later composite adapter and cannot fall through to SAVE.
+// Existing private owner only, no file staging. Delete each missing reference
+// against the preceding child result, then reorder the exact survivors. The
+// complete form is one atomic action, never independently dispatched children.
 export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, baseStateRevision, entityType, entityId,
   fields, photoIds, baseEntityRevision, photoRevisions, operationId }, { enabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, snapshotToPayload = value => value } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || binding.scopeKey !== `id:${binding.actorId}`
@@ -35,16 +35,15 @@ export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, b
   }
   if (photoIds.some(id => !previousIds.includes(id)) || same(photoIds, previousIds)) fail();
   const removed = photos.filter(photo => !photoIds.includes(photo.id));
-  if (removed.length > 50 || removed.length && !same(previousIds.filter(id => photoIds.includes(id)), photoIds)) {
-    fail("Удаление и перестановку одновременно пока нужно выполнять отдельно. Изменения остались в форме.");
-  }
   const common = { version: 1, entityType, entityId, baseEntityRevision };
   let expected = previousIds;
-  const changes = removed.length ? removed.map(photo => {
+  const changes = removed.map(photo => {
     const change = { ...common, action: "delete", expectedPhotoIds: [...expected], photoId: photo.id,
       assetId: photo.assetId, basePhotoRevision: revisions.get(photo.id).photoRevision };
     expected = expected.filter(id => id !== photo.id); return change;
-  }) : [{ ...common, action: "order", expectedPhotoIds: previousIds, photoIds }];
+  });
+  if (!same(expected, photoIds)) changes.push({ ...common, action: "order", expectedPhotoIds: [...expected], photoIds });
+  if (!changes.length || changes.length > 50) fail("Слишком много изменений фото для одной формы. Изменения остались в форме.");
   const body = { ...common, action: "form", baseStateRevision, fields, changes };
   const owner = personalPhotoFormOwner(basePayload, body);
   owner.photos = photoIds.map(id => clone(photos.find(photo => photo.id === id)));
