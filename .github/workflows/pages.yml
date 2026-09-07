@@ -9,6 +9,7 @@ on:
       - docs/**
       - tests/**
       - scripts/deploy-production-ftp.ps1
+      - .github/workflows/**
   workflow_dispatch:
 
 permissions:
