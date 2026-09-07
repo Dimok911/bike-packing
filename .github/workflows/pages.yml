@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - AGENTS.md
+      - docs/**
+      - tests/**
+      - scripts/deploy-production-ftp.ps1
   workflow_dispatch:
 
 permissions:
