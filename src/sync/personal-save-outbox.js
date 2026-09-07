@@ -10,6 +10,7 @@ import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, per
 import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { validateCancelledStagedPhotoReceipt } from "./personal-photo-staging.js";
 import { validPersonalPhotoCancellation } from "./personal-photo-cancellation.js";
+import { cancelPersonalPhotoBatch, PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } from "./personal-photo-batch-cancellation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints, mergePersonalPhotoReceipts } from "./personal-save-checkpoints.js";
 
@@ -49,6 +50,11 @@ const operationRequest = action => ({ operationId: action.operationId,
   method: action.kind === "list.update" ? "PUT" : "POST", body: JSON.stringify(action.body) });
 const prefix = "bike-packing-personal-save-v1:";
 const clone = value => JSON.parse(JSON.stringify(value));
+// Keep-current decisions already contain exact terminal photo receipts. They
+// must survive retirement even when a normal applied marker (rather than the
+// read-only adoption path) confirmed that decision or a later DB successor.
+const retainedPhotoProofs = (records, anchor) => mergePersonalPhotoReceipts(anchor?.photoReceipts,
+  ...[...records.values()].map(record => (record.reconciliation?.settled || []).filter(proof => proof.operation.kind === "photos.mutate")));
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const validId = value => typeof value === "string" && value.length > 0 && value.length <= 191
   && value === value.trim() && !["__proto__", "prototype", "constructor"].includes(value);
@@ -81,7 +87,8 @@ const preflight = (action, snapshot) => {
 // another's intent. A concurrent fork is retained and blocked, never date-sorted.
 export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   environmentId = environment, photoEnabled = PERSONAL_PHOTO_OUTBOX_ENABLED,
-  photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED } = {}) {
+  photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
+  photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
   }
@@ -302,9 +309,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const next = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
         stateRevision: confirmedRevision, baseline,
-        ...(anchor?.photoReceipts?.length ? { photoReceipts: anchor.photoReceipts } : {}),
         ...(applied.get(head.action.operationId)?.inline ? { confirmation: anchor.confirmation } : {}),
         retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
+      const photoReceipts = retainedPhotoProofs(records, anchor);
+      if (photoReceipts.length) next.photoReceipts = photoReceipts;
       try { publishPersonalCheckpoint(storage, keyPrefix, next); }
       catch { throw blocked("quota", "Не хватило места для серверной версии. Текущая версия не заменена."); }
       retireObservedPersonalCheckpoints(storage, checkpoints, keyPrefix);
@@ -355,8 +363,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const retired = [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== operationId);
       const nextAnchor = { version: 1, operationId, generation: head.action.generation,
         stateRevision: applied.get(operationId).stateRevision, retired,
-        ...(anchor?.photoReceipts?.length ? { photoReceipts: anchor.photoReceipts } : {}),
         ...(anchor?.operationId === operationId && anchor.baseline ? { baseline: anchor.baseline } : {}) };
+      const photoReceipts = retainedPhotoProofs(records, anchor);
+      if (photoReceipts.length) nextAnchor.photoReceipts = photoReceipts;
       // Commit the exact retirement set BEFORE deleting anything. An interrupted
       // cleanup is recoverable and may only delete these immutable old keys.
       try { publishPersonalCheckpoint(storage, keyPrefix, nextAnchor); }
@@ -632,7 +641,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const checkpoint = { version: 1, operationId: head.action.operationId, generation: head.action.generation,
           stateRevision: headProof.stateRevision, confirmation: headProof, baseline,
           retired: [...new Set([...(anchor?.retired || []), ...records.keys()])].filter(id => id !== head.action.operationId) };
-        const photoReceipts = mergePersonalPhotoReceipts(anchor?.photoReceipts,
+        const photoReceipts = mergePersonalPhotoReceipts(retainedPhotoProofs(records, anchor),
           settled.outcomes.filter(proof => proof.operation.kind === "photos.mutate"));
         if (photoReceipts.length) checkpoint.photoReceipts = photoReceipts;
         // ONE atomic record closes the old outcome and owns the new remote
@@ -712,6 +721,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
       const { head } = assertObserved();
+      if (head?.photoState?.fileInventoryVersion === 2) return cancelPersonalPhotoBatch({ record: head, binding, queue,
+        store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
+        enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled });
       if (!photoEnabled || head?.action.kind !== "photos.mutate" || head.action.body.action !== "attach"
         || !photoStore || !photoStaging?.cancel || !queue?.settleCancelledPhotoStage) throw blocked("photo-cancellation", "Отмена этого фотодействия ещё не подключена.");
       assertPersonalPhotoRecord(head);

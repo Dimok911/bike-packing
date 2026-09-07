@@ -146,7 +146,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           expect(path.endsWith("/cancel")).toBe(true); // No multipart file upload endpoint in this fixture.
           const body = request.postDataJSON();
           expect(request.headers()["content-type"]).toContain("application/json");
-          const expected = state.cancellationReceipt;
+          const expected = state.cancellationReceipts?.get(id) || state.cancellationReceipt;
           expect(id).toBe(expected.operation.id);
           expect(body).toEqual({ expectedActorId: "actor-a", environment: "bike-packing-experiment", entityType: expected.operation.entityType,
             entityId: expected.operation.entityId, photoId: expected.operation.photoId,
@@ -1711,7 +1711,9 @@ for (const offline of [false, true]) test(`already settled retained photos do no
   expect(f.errors).toEqual([]);
 });
 
-for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack", "ready-file", "lost-cancel-ack"]) test(`explicit photo cancellation preserves the file and separately confirms the keep-current decision (${outcome})`, async ({ page, context }) => {
+for (const scenario of ["keep", "postpone", "remote-change", "lost-decision-ack", "ready-file", "lost-cancel-ack",
+  "batch-keep", "batch-postpone", "batch-ready-file", "batch-lost-cancel-ack"]) test(`explicit photo cancellation preserves the file and separately confirms the keep-current decision (${scenario})`, async ({ page, context }) => {
+  const batch = scenario.startsWith("batch-"), outcome = batch ? scenario.slice(6) : scenario;
   test.setTimeout(90000);
   const f = await setup(page, context, { photoRecovery: true });
   await createRootContainer(page, "Сумка отмены фото");
@@ -1721,14 +1723,28 @@ for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack",
     if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid seed module path");
     return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
   });
-  const seeded = await page.evaluate(async ({ base, revision }) => {
+  const seeded = await page.evaluate(async ({ base, revision, batch }) => {
     const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
     const { createPersonalSaveOutbox } = await import("/src/sync/personal-save-outbox.js");
     const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
     const getContext = () => ({ ...binding, scope: "personal", generation: "photo-cancel-seed" });
-    const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: true });
+    const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: true, photoBatchEnabled: true });
     outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: revision });
-    const store = createPersonalPhotoActionStore({ ...binding, enabled: true, getContext });
+    const store = createPersonalPhotoActionStore({ ...binding, enabled: true, batchEnabled: true, getContext });
+    if (batch) {
+      const { preparePersonalPhotoAttachmentBatch } = await import("/src/sync/personal-photo-batch-plan.js");
+      const prepared = preparePersonalPhotoAttachmentBatch({ binding, snapshot: base, basePayload: base, baseStateRevision: revision,
+        entityType: "container", entityId: Object.keys(base.containers)[0], baseEntityRevision: revision,
+        files: [1, 2].map(index => ({ fileName: `cancel-batch-${index}.png`, file: new Blob([`cancel UI original file ${index}`], { type: "image/png" }), thumb: null })) }, { enabled: true });
+      const plan = outbox.preparePhoto(prepared);
+      const saved = await store.captureBatch({ ...plan, files: prepared.files });
+      await outbox.capturePhoto({ plan, store, getContext });
+      return { action: plan.action, cancellationReceipts: saved.files.map(part => ({ ok: true,
+        operation: { id: part.stage.operationId, actorId: binding.actorId, environment: binding.environment, listId: binding.listId,
+          entityType: part.stage.entityType, entityId: part.stage.entityId, photoId: part.stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+        cancellation: { version: 1, stageOperationId: part.stage.operationId, fileHash: part.fileMetadata.hash,
+          thumbHash: part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } })) };
+    }
     const entityId = Object.keys(base.containers)[0], stage = { operationId: crypto.randomUUID(), photoId: "cancel-ui-photo", entityType: "container", entityId, fileName: "cancel-ui.png" };
     const candidate = structuredClone(base); candidate.containers[entityId].photos = [{ id: stage.photoId, photoId: stage.photoId, assetId: stage.operationId, status: "pending" }];
     const plan = outbox.preparePhoto({ snapshot: candidate, payload: candidate, body: { version: 1, action: "attach", entityType: "container", entityId,
@@ -1739,14 +1755,16 @@ for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack",
     return { action: plan.action, cancellationReceipt: { ok: true, operation: { id: stage.operationId, actorId: binding.actorId,
       environment: binding.environment, listId: binding.listId, entityType: stage.entityType, entityId, photoId: stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
       cancellation: { version: 1, stageOperationId: stage.operationId, fileHash: hash, thumbHash: hash, noAssetPublished: true, stageCannotPublish: true } } };
-  }, { base: f.payload, revision: f.revision });
+  }, { base: f.payload, revision: f.revision, batch });
   f.cancelPhotoAction = seeded.action; f.cancellationReceipt = seeded.cancellationReceipt;
+  if (batch) f.cancellationReceipts = new Map(seeded.cancellationReceipts.map(proof => [proof.operation.id, proof]));
   f.loseCancellation = outcome === "lost-cancel-ack";
   if (outcome === "ready-file") {
-    const { operation, cancellation } = seeded.cancellationReceipt;
+    for (const { operation, cancellation } of batch ? seeded.cancellationReceipts : [seeded.cancellationReceipt]) {
     f.stageReceipts.set(operation.id, { ok: true, operation: { ...operation, state: "committed" },
       asset: { id: operation.id, publication: "not-published", state: "ready", fileHash: cancellation.fileHash,
         thumbHash: cancellation.thumbHash, storedFileHash: cancellation.fileHash, storedThumbHash: cancellation.thumbHash } });
+    }
   }
   const beforePosts = f.posts.length, beforePayload = structuredClone(f.payload), beforeRevision = f.revision;
   const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
@@ -1754,8 +1772,9 @@ for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack",
   await reloadApp(page);
   const dialog = page.locator("#personalSaveRecoveryDialog"), cancel = dialog.locator("[data-cancel-photo-upload]");
   await expect(dialog).toBeVisible(); await expect(cancel).toBeVisible(); await cancel.click();
-  await expect(page.locator("#confirmDialog")).toBeVisible(); await expect(page.locator("#confirmTitle")).toHaveText("Фото не добавлено");
-  expect(f.cancellationPosts).toHaveLength(outcome === "ready-file" ? 0 : 1); expect(f.posts.length).toBe(beforePosts + 1);
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await expect(page.locator("#confirmTitle")).toHaveText(batch ? "Фото не добавлены" : "Фото не добавлено");
+  if (batch) await expect(page.locator("#confirmDialog")).toContainText("Все исходные файлы останутся");
+  expect(f.cancellationPosts).toHaveLength(outcome === "ready-file" ? 0 : batch ? 2 : 1); expect(f.posts.length).toBe(beforePosts + 1);
   expect(f.payload).toEqual(beforePayload); expect(f.revision).toBe(beforeRevision);
   if (outcome === "postpone") {
     await page.locator("#confirmCancelBtn").click();
@@ -1786,12 +1805,13 @@ for (const outcome of ["keep", "postpone", "remote-change", "lost-decision-ack",
     await expect(page.locator("#packingView [data-root-container-id]").filter({ hasText:
       outcome === "remote-change" ? "Изменение другой вкладки" : "Сумка отмены фото" })).toBeVisible();
   }
-  expect(f.cancellationPosts).toHaveLength(outcome === "ready-file" ? 0 : 1);
+  expect(f.cancellationPosts).toHaveLength(outcome === "ready-file" ? 0 : batch ? 2 : 1);
   expect(f.posts.filter(post => post.kind === "photos.mutate").map(post => post.operationId)).toEqual([seeded.action.operationId]);
   expect(await page.evaluate(async id => {
     const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
-    return (await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id)).file.text();
-  }, seeded.action.operationId)).toBe("cancel UI original file");
+    const saved = await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id);
+    return saved.files ? Promise.all(saved.files.map(part => part.file.text())) : saved.file.text();
+  }, seeded.action.operationId)).toEqual(batch ? ["cancel UI original file 1", "cancel UI original file 2"] : "cancel UI original file");
   expect(f.errors).toEqual([]);
 });
 

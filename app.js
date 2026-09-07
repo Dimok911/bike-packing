@@ -8474,10 +8474,14 @@ function canCancelRetainedPersonalPhoto() {
 
 async function cancelRetainedPersonalPhoto() {
   if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
-  return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount }) => {
+  return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
+    const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
+    const photoCount = original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: localText("Photo was not added", "Фото не добавлено"),
-      text: localText(
+      title: photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
+      text: photoCount > 1 ? localText(
+        `The server did not add ${photoCount} photos. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. All original files remain available for recovery.`,
+        `Сервер не добавил ${photoCount} фото. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Все исходные файлы останутся для восстановления.`) : localText(
         `The server did not apply the photo action. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original file remains available for recovery.`,
         `Сервер не применил фотодействие. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Исходный файл останется для восстановления.`),
       okText: localText("Keep server version", "Оставить серверную версию"),

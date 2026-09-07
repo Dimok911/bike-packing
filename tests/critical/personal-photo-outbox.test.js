@@ -9,6 +9,30 @@ import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-reco
 import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
   personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-photo-recovery-cancel.js";
 
+test("ordinary applied checkpoints retain the original single-photo rejection through compaction and baseline adoption", async () => {
+  for (const mode of ["compact", "adopt", "quota"]) {
+    const f = fixture(), plan = f.prepare(f.outbox, "attach"), saved = f.fileFor(plan);
+    await f.outbox.capturePhoto({ plan, store: { read: async () => saved }, getContext: f.getContext });
+    const proof = f.proof(plan.action); proof.operation.state = "rejected"; proof.resultStatus = 409; proof.stateRevision = 5;
+    proof.operation.payloadDigest = createHash("sha256").update(canonicalListOperationJson({ environment: f.binding.environment,
+      actorId: f.binding.actorId, listId: f.binding.listId, kind: plan.action.kind, body: plan.action.body })).digest("hex");
+    const decision = await f.outbox.reconcile({ queue: { inspect: async () => proof }, getContext: f.getContext,
+      readRemote: async () => ({ id: f.binding.listId, ownerId: f.binding.actorId, stateRevision: 5, payload: f.base }), resolveRejectedPhoto: async () => "keep-server" });
+    f.outbox.markApplied({ operationId: decision.action.operationId, stateRevision: 6 });
+    if (mode === "adopt") f.outbox.adoptRemoteBaseline({ snapshot: f.base, payload: f.base, stateRevision: 6 });
+    if (mode === "quota") {
+      const before = [...f.values], write = f.storage.setItem; f.storage.setItem = () => { throw Error("quota"); };
+      assert.equal(f.outbox.compact().pending, true); assert.deepEqual([...f.values], before);
+      assert.equal(f.outbox.list().some(record => record.action.operationId === plan.action.operationId), true); f.storage.setItem = write;
+    }
+    f.outbox.compact();
+    assert.deepEqual(f.make(false).photoRecoveryReferences().photoReceipts, [proof]);
+    const inventory = await inspectPersonalPhotoRecovery({ outbox: f.make(false),
+      store: { binding: f.binding, ids: async () => [plan.action.operationId], read: async () => saved }, getContext: f.getContext });
+    assert.equal(inventory.entries[0].state, "settled-retained");
+  }
+});
+
 const photo = (id, status = "synced") => ({ id, photoId: id, assetId: crypto.randomUUID(), status });
 function fixture() {
   const values = new Map(), binding = { actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a", environment: "bike-packing-experiment" };
