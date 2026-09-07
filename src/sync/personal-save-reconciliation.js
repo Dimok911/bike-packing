@@ -15,7 +15,7 @@ const containsPhotos = value => object(value) || Array.isArray(value)
 // Pure DB-only three-way comparison. This prepares a candidate, not a receipt
 // or permission to abandon/rewrite an old action. The caller must settle exact
 // old IDs and publish a NEW revision-checked action before applying this result.
-export function planPersonalPayloadReconciliation({ base, local, remote } = {}) {
+export function planPersonalPayloadReconciliation({ base, local, remote, choices } = {}) {
   if (!base || !revision(base.stateRevision) || !object(base.payload)) return { blocked: "missing-base" };
   if (!remote || !revision(remote.stateRevision) || !object(remote.payload)) return { blocked: "remote-unavailable" };
   if (remote.stateRevision < base.stateRevision || !object(local)) return { blocked: "revision" };
@@ -27,7 +27,9 @@ export function planPersonalPayloadReconciliation({ base, local, remote } = {}) 
       if ([before, local, after].some(value => has(value, key) && !validMap(value[key]))) return { blocked: "invalid-map" };
       Object.defineProperty(payload, key, { enumerable: true, configurable: true, writable: true,
         value: mergeRecordMap(maps[key], before[key] || {}, local[key] || {}, after[key] || {}, conflicts,
-          { valuesEqual: equal, mergeIndependentRecordFields: true }) });
+          { valuesEqual: equal, mergeIndependentRecordFields: true,
+            conflictLabel: (_type, id, localValue, remoteValue, baseValue) =>
+              localValue?.name || remoteValue?.name || baseValue?.name || id }) });
       continue;
     }
     const same = (a, b) => has(a, key) === has(b, key) && equal(a[key], b[key]);
@@ -45,5 +47,23 @@ export function planPersonalPayloadReconciliation({ base, local, remote } = {}) 
   }
   // In particular, dictionary removals are not a union of old/new arrays, and
   // a deleted entity is never implicitly recreated to resolve a conflict.
-  return conflicts.length ? { conflicts } : { payload, conflicts: [] };
+  if (!conflicts.length) return { payload, conflicts: [] };
+  if (choices === undefined) return { conflicts };
+  // This is the explicitly labelled whole-server choice, including otherwise
+  // compatible local edits. Per-record choices retain compatible changes.
+  if (choices === "server") return { payload: clone(after), conflicts: [], resolved: conflicts.length };
+  if (!object(choices) || Object.keys(choices).length !== conflicts.length
+    || conflicts.some((_conflict, index) => !has(choices, index) || !["local", "remote"].includes(choices[index]))) {
+    return { blocked: "incomplete-choices", conflicts };
+  }
+  for (const [index, conflict] of conflicts.entries()) {
+    const side = choices[index], exists = conflict[`${side}Has`], value = conflict[`${side}Value`];
+    const target = conflict.type === "setting" ? payload
+      : payload[Object.keys(maps).find(key => maps[key] === conflict.type)];
+    if (exists) Object.defineProperty(target, conflict.id, { value: clone(value), enumerable: true, configurable: true, writable: true });
+    else delete target[conflict.id];
+  }
+  // Structural validation remains the adapter's responsibility. No missing
+  // record/setting is implicitly restored and no old action is rewritten.
+  return { payload, conflicts: [], resolved: conflicts.length };
 }

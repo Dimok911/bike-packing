@@ -81,3 +81,38 @@ test("personal reconciliation rejects unsafe IDs, mismatched identities and non-
     assert.equal(f.plan().blocked, "invalid-map");
   }
 });
+
+test("explicit record choices retain independent changes and never mutate the comparison", () => {
+  for (const side of ["local", "remote"]) {
+    const f = fixture(); f.local.containers.bag.name = "Local"; f.remote.payload.containers.bag.name = "Remote";
+    f.local.items.local = { id: "local", name: "Independent local" };
+    f.remote.payload.items.remote = { id: "remote", name: "Independent remote" };
+    const before = JSON.stringify(f);
+    const result = planPersonalPayloadReconciliation({ ...f, choices: { 0: side } });
+    assert.equal(result.payload.containers.bag.name, side === "local" ? "Local" : "Remote");
+    assert.equal(result.resolved, 1); assert.deepEqual(Object.keys(result.payload.items).sort(), ["local", "remote"]);
+    assert.equal(JSON.stringify(f), before);
+    assert.equal(f.plan().conflicts[0].label, "Local");
+  }
+});
+
+test("only complete explicit choices authorize a candidate; the whole-server choice is distinct", () => {
+  const f = fixture(); f.local.containers.bag.name = "Local"; f.remote.payload.containers.bag.name = "Remote";
+  for (const choices of [{}, [], null, { 0: "latest" }, { 0: "local", 1: "remote" }, Object.create({ 0: "local" })]) {
+    const result = planPersonalPayloadReconciliation({ ...f, choices });
+    assert.equal(result.blocked, "incomplete-choices"); assert.equal(result.payload, undefined);
+  }
+  f.local.categories.push("local-only");
+  const result = planPersonalPayloadReconciliation({ ...f, choices: "server" });
+  assert.deepEqual(result.payload, f.remote.payload); assert.notEqual(result.payload, f.remote.payload);
+});
+
+test("explicit deletion and restoration choices preserve missing records and missing settings", () => {
+  for (const side of ["local", "remote"]) {
+    const f = fixture(); f.local.containers.bag.name = "Local"; delete f.remote.payload.containers.bag;
+    f.base.payload.extra = "old"; f.local.extra = "local";
+    const result = planPersonalPayloadReconciliation({ ...f, choices: { 0: side, 1: side } });
+    assert.equal(Object.hasOwn(result.payload.containers, "bag"), side === "local");
+    assert.equal(Object.hasOwn(result.payload, "extra"), side === "local");
+  }
+});

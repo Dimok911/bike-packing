@@ -270,16 +270,64 @@ test("actual sync retains the local version when the same field changed or the r
   await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("На этом устройстве");
   await submitForm(page, "#saveItemBtn", "#itemName");
   await page.locator("#syncBtn").click();
-  await expect(page.locator("#syncStatus")).toContainText("по-разному", { timeout: 20000 });
+  await expect(page.locator("#conflictDialog")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#conflictApplyBtn")).toBeDisabled();
+  await expect(page.locator("#conflictList input:checked")).toHaveCount(0);
+  await page.locator("#conflictCancelBtn").click();
+  await expect(page.locator("#syncStatus")).toContainText("Выбор отложен");
   expect(f.posts.slice(before)).toHaveLength(1);
   expect(f.payload.items[id].name).toBe("На другом устройстве");
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "На этом устройстве" })).toHaveCount(1);
   delete f.payload.items[id]; f.revision++;
   await page.locator("#syncBtn").click();
-  await expect(page.locator("#syncStatus")).toContainText("по-разному");
+  await expect(page.locator("#conflictDialog")).toBeVisible();
+  await expect(page.locator("#conflictList")).toContainText("Удалено");
+  await page.locator("#conflictCancelBtn").click();
+  await expect(page.locator("#syncStatus")).toContainText("Выбор отложен");
   expect(f.posts.slice(before)).toHaveLength(1); expect(f.payload.items[id]).toBeUndefined();
   await reloadApp(page);
   await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "На этом устройстве" })).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("explicit UI conflict choices recompare another server edit and recover a lost chosen ACK", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка выбора");
+  const item = await createItemInContainer(page, bag, "До выбора", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const id = Object.keys(f.payload.items)[0], before = f.posts.length;
+  f.allowConflicts = true;
+  let attempt = 0;
+  f.beforeUpdate = () => {
+    attempt++;
+    if (attempt <= 2) {
+      f.payload = structuredClone(f.payload); f.payload.items[id].name = `Серверный вариант ${attempt}`; f.revision++;
+    } else { f.lose = true; f.unknown = true; f.beforeUpdate = null; }
+  };
+  await item.locator(".item-title-hitarea").click(); await page.locator("#itemName").fill("Мой вариант");
+  await submitForm(page, "#saveItemBtn", "#itemName"); await page.locator("#syncBtn").click();
+  await expect(page.locator("#conflictDialog")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#conflictList")).toContainText("Серверный вариант 1");
+  await expect(page.locator("#conflictApplyBtn")).toBeDisabled();
+  await page.locator('#conflictList input[value="local"]').check();
+  await page.locator("#conflictApplyBtn").click();
+  await expect(page.locator("#conflictList")).toContainText("Серверный вариант 2", { timeout: 20000 });
+  await expect(page.locator("#conflictList input:checked")).toHaveCount(0);
+  await expect(page.locator("#conflictApplyBtn")).toBeDisabled();
+  await page.locator('#conflictList input[value="remote"]').check();
+  await page.locator("#conflictApplyBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const changes = f.posts.slice(before);
+  expect(changes).toHaveLength(3); expect(new Set(changes.map(post => post.operationId)).size).toBe(3);
+  expect(changes.map(post => f.receipts.get(post.operationId).operation.state)).toEqual(["rejected", "rejected", "committed"]);
+  expect(changes[1].body.payload.items[id].name).toBe("Мой вариант");
+  expect(changes[2].body.payload.items[id].name).toBe("Серверный вариант 2");
+  expect(changes.slice(1).every(post => !post.body.force && !post.body.forceOverwrite)).toBe(true);
+  f.lose = false; f.unknown = false;
+  await reloadApp(page); await synchronize(page, () => f.payload.items[id]?.name === "Серверный вариант 2");
+  expect(f.posts.slice(before)).toHaveLength(3);
+  await expect(page.locator("#conflictDialog")).not.toBeVisible();
+  await expect(page.locator("#packingView [data-item-id]").filter({ hasText: "Серверный вариант 2" })).toHaveCount(1);
   expect(f.errors).toEqual([]);
 });
 

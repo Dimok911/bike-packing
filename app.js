@@ -5860,9 +5860,15 @@ function applyConflictChoices(mergedState, conflicts, choices) {
   });
 }
 
-function askConflictResolution(conflicts) {
-  refs.conflictList.innerHTML = `${renderConflictSyncContext()}${conflicts.map((conflict, index) => {
-    const defaultChoice = conflictDefaultChoice(conflict);
+function askConflictResolution(conflicts, { stateRevision } = {}) {
+  if (refs.conflictDialog.open) return Promise.resolve("cancel");
+  const explicit = Number.isSafeInteger(stateRevision) && stateRevision > 0;
+  const context = explicit
+    ? `<p class="dialog-note">${escapeHtml(localText(`Comparing with server version ${stateRevision}. Choose each version explicitly. Restoring a deleted record needs your choice; device clocks do not decide.`,
+      `Сравнение с серверной версией ${stateRevision}. Выберите вариант для каждого элемента. Возврат удалённого элемента требует вашего выбора; время на устройствах не определяет результат.`))}</p>`
+    : renderConflictSyncContext();
+  refs.conflictList.innerHTML = `${context}${conflicts.map((conflict, index) => {
+    const defaultChoice = explicit ? "" : conflictDefaultChoice(conflict);
     return `
     <section class="conflict-card">
       <h3>${escapeHtml(conflict.label)}</h3>
@@ -5873,12 +5879,12 @@ function askConflictResolution(conflicts) {
         <label>
           <input type="radio" name="conflict-${index}" value="local"${defaultChoice === "local" ? " checked" : ""} />
           <span>${escapeHtml(localText("Mine", "Моё"))}</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, localText("not available locally", "нет локально")))}</small>
+          <small>${escapeHtml(explicit ? (conflict.localHas ? localText("Local version", "Локальная версия") : localText("Deleted", "Удалено")) : conflictVersionStamp(conflict.localValue, conflict.localHas, syncDevice.name, localText("not available locally", "нет локально")))}</small>
         </label>
         <label>
           <input type="radio" name="conflict-${index}" value="remote"${defaultChoice === "remote" ? " checked" : ""} />
           <span>${escapeHtml(localText("Server", "С сервера"))}</span>
-          <small>${escapeHtml(conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке")))}</small>
+          <small>${escapeHtml(explicit ? (conflict.remoteHas ? localText("Server version", "Серверная версия") : localText("Deleted", "Удалено")) : conflictVersionStamp(conflict.remoteValue, conflict.remoteHas, localText("server", "сервер"), localText("not in the server layout", "нет в серверной укладке")))}</small>
         </label>
       </div>
     </section>
@@ -5890,10 +5896,12 @@ function askConflictResolution(conflicts) {
       refs.conflictDialog.removeEventListener("close", handleClose);
       refs.conflictServerBtn.onclick = null;
       refs.conflictApplyBtn.onclick = null;
+      refs.conflictApplyBtn.disabled = false;
+      refs.conflictList.onchange = null;
     };
     const readChoices = () => Object.fromEntries(conflicts.map((conflict, index) => {
       const selected = refs.conflictList.querySelector(`input[name="conflict-${index}"]:checked`);
-      return [index, selected?.value || conflictDefaultChoice(conflict)];
+      return [index, selected?.value || (explicit ? undefined : conflictDefaultChoice(conflict))];
     }));
     const handleClose = () => {
       const returnValue = refs.conflictDialog.returnValue || "cancel";
@@ -5907,7 +5915,12 @@ function askConflictResolution(conflicts) {
     };
     refs.conflictApplyBtn.onclick = (event) => {
       event.preventDefault();
+      if (explicit && Object.values(readChoices()).some(value => !["local", "remote"].includes(value))) return;
       refs.conflictDialog.close("default");
+    };
+    refs.conflictApplyBtn.disabled = explicit;
+    refs.conflictList.onchange = () => {
+      refs.conflictApplyBtn.disabled = explicit && Object.values(readChoices()).some(value => !["local", "remote"].includes(value));
     };
     refs.conflictDialog.addEventListener("close", handleClose);
     openModalDialog(refs.conflictDialog);
@@ -8206,12 +8219,15 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         return { ...syncMeta, ...stateIntegrityMetaFromResponse(record), stateRevision: record.stateRevision,
           serverUpdatedAt: remoteUpdatedAt(record), lastSyncedLocalUpdatedAt: syncMeta.localUpdatedAt, dirty: false };
       },
+      // Autosave pauses without stealing focus. The explicit sync button opens
+      // the decision UI; server CAS still checks the version after that choice.
+      resolveConflicts: notify ? (conflicts, details) => askConflictResolution(conflicts, details) : undefined,
       onReconciled(record) {
         personalSaveRecovery.assertRunning();
         replaceState(record.snapshot, { personalOperationId: record.action.operationId });
         syncMeta.dirty = true;
         renderPreservingPackingScroll();
-        updateSyncUi("Совместимые изменения объединены. Проверяю подтверждение нового действия…");
+        updateSyncUi("Изменения согласованы. Проверяю подтверждение нового действия…");
       },
       onAdopted(record) {
         personalSaveRecovery.assertRunning();

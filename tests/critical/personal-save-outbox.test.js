@@ -152,6 +152,57 @@ function reconciliationFixture() {
   return { ...f, first, remote, proofs, queue, calls, options };
 }
 
+test("explicit conflicting choices are frozen into a new action without changing rejected bytes", async () => {
+  const f = reconciliationFixture(); f.remote.payload.items.a.name = "Remote";
+  const before = [...f.values]; let called = 0;
+  const next = await f.outbox.reconcile({ ...f.options, resolveConflicts: async (conflicts, details) => {
+    called++; assert.equal(conflicts[0].localValue.name, "Local"); assert.equal(details.stateRevision, 6);
+    conflicts[0].localValue.name = "Mutated dialog copy";
+    return { 0: "local" };
+  } });
+  assert.equal(called, 1); assert.equal(next.action.body.payload.items.a.name, "Local");
+  assert.equal(next.action.body.baseStateRevision, 6); assert.equal(next.action.body.force, false);
+  assert.notEqual(next.action.operationId, f.first.action.operationId);
+  assert.deepEqual([...f.values].slice(0, before.length), before);
+  assert.equal(f.make().recover().action.operationId, next.action.operationId);
+});
+
+test("cancel, incomplete choices, changed editor and structural validation never publish a chosen action", async () => {
+  for (const mode of ["cancel", "missing", "actor", "generation", "new-action", "structure"]) {
+    const f = reconciliationFixture(); f.remote.payload.items.a.name = "Remote";
+    const before = [...f.values];
+    await assert.rejects(f.outbox.reconcile({ ...f.options,
+      makeSnapshot: mode === "structure" ? () => { throw Error("invalid related placements"); } : f.options.makeSnapshot,
+      resolveConflicts: async () => {
+        if (mode === "cancel") return "cancel";
+        if (mode === "missing") return {};
+        if (mode === "actor") f.context.actorId = "other";
+        if (mode === "generation") f.context.generation = "changed";
+        if (mode === "new-action") f.outbox.capture(f.input(300));
+        return { 0: "local" };
+      }
+    }));
+    assert.deepEqual([...f.values].slice(0, before.length), before, mode);
+    assert.equal(f.values.size, before.length + (mode === "new-action" ? 1 : 0), mode);
+    assert.ok(f.calls.every(call => !Object.hasOwn(call, "receiptOnly")), "no dispatch while choosing");
+  }
+});
+
+test("a second server conflict is compared afresh instead of reusing the first user choice", async () => {
+  const f = reconciliationFixture(); f.remote.payload.items.a.name = "Remote";
+  const choices = [];
+  const options = { ...f.options, resolveConflicts: async (conflicts, details) => {
+    choices.push([conflicts[0].remoteValue.name, details.stateRevision]); return { 0: "local" };
+  } };
+  const first = await f.outbox.reconcile(options);
+  f.proofs.set(first.action.operationId, { ...historicalProof(f, first, "rejected"), rejectionCode: "stale_state_revision", stateRevision: 7 });
+  f.remote.stateRevision = 7; f.remote.payload.items.a.name = "Newer remote";
+  const second = await f.outbox.reconcile(options);
+  assert.deepEqual(choices, [["Remote", 6], ["Newer remote", 7]]);
+  assert.notEqual(first.action.operationId, second.action.operationId);
+  assert.equal(second.action.body.baseStateRevision, 7);
+});
+
 test("reconciliation publishes a new immutable action and snapshot atomically, then rechecks old receipts after reload", async () => {
   const f = reconciliationFixture(), before = [...f.values];
   const next = await f.outbox.reconcile(f.options);

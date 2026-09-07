@@ -196,3 +196,30 @@ API/MySQL cases (no skips), including crash immediately after publication and
 the next save. Full browser regression passed 78/78 Chromium/mobile WebKit
 without retries; ordinary and isolated builds passed. The test's lost-ACK injection
 starts at the outgoing request, not before the older predecessor receipt reads.
+
+## Explicit decisions for incompatible changes
+
+The disabled personal adapter can now ask for a complete per-record decision
+after exact terminal settlement. There is no clock-based default, implicit
+"local" fallback, partial decision, or reuse of a previous dialog's choice.
+Missing records/settings remain missing when that side is chosen. Compatible
+edits elsewhere are preserved; the separately labelled whole-server choice
+explicitly selects the entire current server payload instead.
+
+The dialog receives copies of the conflict data. On return the adapter rechecks
+the account, list, editor generation and exact local head. Structural validation
+precedes atomic publication of a NEW action. Old UUIDs/bytes stay unchanged, and
+the new action still carries the compared server revision with no force flag.
+Another server edit causes a new comparison/decision, not a revision-only retry.
+Lost ACK of the chosen action is recovered by its exact receipt after reload.
+
+Only explicit synchronization opens the decision UI; autosave pauses without
+stealing focus. "Postpone" leaves both versions intact and sends no chosen
+action. This does not unlock true local forks, missing common bases, corrupt
+journals, file workflows or inconsistent combinations of related placements.
+
+Verification: 162 transport and 887 critical tests, source check, four targeted
+desktop/mobile dialog scenarios and the real API/MySQL choice/lost-ACK scenario
+passed. Full browser regression passed 80/80 without retries, both builds
+passed, and all 24 real API/MySQL cases completed successfully. All gates
+remain disabled; no new push, live migration, deployment or Production transfer.

@@ -226,6 +226,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   return {
     binding: clone(binding),
     supportsCommittedBaseline: true,
+    supportsConflictChoices: true,
     recover() { return clone(read().head); },
     recoverSnapshot() {
       const { head, anchor } = read();
@@ -376,7 +377,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(record);
     },
     inspect,
-    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}),
+    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts,
       operationId = crypto.randomUUID() }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
@@ -431,7 +432,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         return { adoptedBaseline: true, snapshot, baseline: clone(baseline), historicalConfirmation: clone(headProof),
           serverRecord: remote, action: clone(head.action) };
       }
-      const plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
+      let plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote });
+      if (!plan.blocked && plan.conflicts?.length && typeof resolveConflicts === "function") {
+        // The dialog gets copies, never mutable authority over the frozen
+        // comparison or journal. A changed editor/account invalidates a choice.
+        const choices = await resolveConflicts(clone(plan.conflicts), { stateRevision: remote.stateRevision });
+        assertCurrent();
+        if (choices === "cancel" || choices == null) throw blocked("reconciliation-cancelled", "Выбор отложен. Обе версии сохранены; сервер не перезаписан.");
+        plan = planPersonalPayloadReconciliation({ base, local: head.action.body.payload, remote, choices });
+      }
       if (plan.blocked || plan.conflicts?.length) {
         throw Object.assign(blocked("reconciliation-conflict", plan.conflicts?.length
           ? "Одни и те же данные изменены по-разному. Локальная версия сохранена, серверная не перезаписана."
