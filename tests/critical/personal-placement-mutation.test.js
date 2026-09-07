@@ -109,6 +109,47 @@ test("invalid move/group target, cycle, collision or index leaves the whole sour
   ]) { assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", ...request })); assert.deepEqual(state, before); }
 });
 
+test("frozen replacements preserve quantities, children and owners; a detachable pocket can become one root", () => {
+  const state = initial();
+  state.items.replacement = { id: "replacement", containerId: "" };
+  state.containers.replacement = { id: "replacement", nestable: true, parentId: null, childIds: [], itemIds: [], order: [] };
+  state.layouts.other = { ...structuredClone(state.layouts.l), id: "other" };
+  const original = structuredClone(state);
+  const item = preparePersonalPlacementMutation(state, { layoutId: "l", action: "replace-item", ids: ["a"], replacementId: "replacement" });
+  assert.equal(item.snapshot.layouts.l.arrangement.items.a, undefined); assert.equal(item.snapshot.layouts.l.arrangement.items.replacement, "bag");
+  assert.equal(item.snapshot.layouts.l.arrangement.itemQuantities.replacement, 3);
+  assert.deepEqual(item.intent.removedItemIds, ["a"]); assert.equal(item.intent.replacementId, "replacement");
+  assert.ok(item.snapshot.items.a); assert.deepEqual(item.snapshot.layouts.other, original.layouts.other);
+  const bag = preparePersonalPlacementMutation(state, { layoutId: "l", action: "replace-container", ids: ["bag"], replacementId: "replacement" });
+  assert.equal(bag.snapshot.layouts.l.arrangement.items.a, "replacement"); assert.equal(bag.snapshot.layouts.l.arrangement.containers.pocket.parentId, "replacement");
+  assert.deepEqual(bag.snapshot.layouts.l.rootContainerIds, ["replacement"]); assert.ok(bag.snapshot.containers.bag);
+  const sharedPocket = preparePersonalPlacementMutation(state, { layoutId: "l", action: "replace-container", ids: ["pocket"], replacementId: "replacement" });
+  assert.ok(sharedPocket.snapshot.containers.pocket, "other layout still owns a placement");
+  const unique = structuredClone(state); delete unique.layouts.other;
+  const pocket = preparePersonalPlacementMutation(unique, { layoutId: "l", action: "replace-container", ids: ["pocket"], replacementId: "replacement" });
+  assert.equal(pocket.snapshot.containers.pocket, undefined); assert.deepEqual(pocket.intent.deletedContainerIds, ["pocket"]);
+  assert.equal(pocket.snapshot.layouts.l.arrangement.itemQuantities.b, 2); assert.ok(pocket.snapshot.items.b);
+  unique.containers.pocket.nestable = true;
+  const lift = preparePersonalPlacementMutation(unique, { layoutId: "l", action: "lift-container", ids: ["pocket"], targetIndex: 0 });
+  assert.deepEqual(lift.snapshot.layouts.l.rootContainerIds, ["pocket", "bag"]); assert.equal(lift.snapshot.layouts.l.arrangement.items.b, "pocket");
+  assert.deepEqual(lift.snapshot.layouts.l.arrangement.itemQuantities, { a: 3, b: 2 });
+  assert.deepEqual(state, original);
+});
+
+test("invalid replacements and file-owning temporary pocket abort the whole frozen change", () => {
+  const state = initial(); state.items.next = { id: "next" }; state.containers.next = { id: "next", nestable: true };
+  for (const request of [
+    { action: "replace-item", ids: ["a"], replacementId: "b" },
+    { action: "replace-item", ids: ["a"], replacementId: "a" },
+    { action: "replace-container", ids: ["bag"], replacementId: "pocket" },
+    { action: "replace-container", ids: ["pocket"], replacementId: "missing" },
+    { action: "lift-container", ids: ["pocket"], targetIndex: 0 },
+  ]) { const before = structuredClone(state); assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", ...request })); assert.deepEqual(state, before); }
+  state.containers.pocket.photos = [{ id: "file" }]; const before = structuredClone(state);
+  assert.throws(() => preparePersonalPlacementMutation(state, { layoutId: "l", action: "replace-container", ids: ["pocket"], replacementId: "next" }), /фото/);
+  assert.deepEqual(state, before);
+});
+
 test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalPlacementAction\([^]*?\n\}/)[0];
   const make = () => {

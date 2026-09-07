@@ -64,8 +64,8 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false } = {}) {
-  const state = { listId: fresh ? null : "list-a", payload: initialPayload(), revision: fresh ? 0 : 1,
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload() } = {}) {
+  const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [] };
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
@@ -764,6 +764,78 @@ test("quota before history restore keeps the history window and complete recover
   const copy = await downloadRecovery(page);
   expect(copy.unconfirmedMemoryDraft.containers).toEqual({}); expect(copy.unconfirmedMemoryDraft.items).toEqual({});
   expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server); expect(f.errors).toEqual([]);
+});
+
+function replacementPayload() {
+  const payload = initialPayload(), layout = payload.layouts["layout-a"];
+  payload.items = { source: { id: "source", name: "Исходная вещь", containerId: "bag", quantity: 1 },
+    replacement: { id: "replacement", name: "Вещь для замены", containerId: "", quantity: 1 },
+    inside: { id: "inside", name: "Вещь в кармане", containerId: "pocket", quantity: 1 } };
+  payload.containers = Object.fromEntries(["bag", "pocket", "newbag", "newpocket"].map(id => [id, {
+    id, name: { bag: "Исходная сумка", pocket: "Временный карман", newbag: "Сумка для замены", newpocket: "Съёмная сумка" }[id],
+    parentId: id === "pocket" ? "bag" : null, nestable: id === "newpocket", childIds: [], itemIds: [], order: []
+  }]));
+  Object.assign(payload.containers.bag, { childIds: ["pocket"], itemIds: ["source"], order: [{ type: "item", id: "source" }, { type: "container", id: "pocket" }] });
+  Object.assign(payload.containers.pocket, { itemIds: ["inside"], order: [{ type: "item", id: "inside" }] });
+  layout.rootContainerIds = ["bag"];
+  layout.arrangement = { rootContainerIds: ["bag"], containers: Object.fromEntries(["bag", "pocket"].map(id => {
+    const { parentId, childIds, itemIds, order } = payload.containers[id]; return [id, { parentId: parentId || "", childIds, itemIds, order }];
+  })), items: { source: "bag", inside: "pocket" }, itemQuantities: { source: 3, inside: 2 }, packedItems: {} };
+  return payload;
+}
+
+test("actual replacement pickers freeze item bag and pocket swaps through lost ACK without losing quantities", async ({ page, context }) => {
+  test.setTimeout(180000);
+  const f = await setup(page, context, { payload: replacementPayload() });
+  await synchronize(page, () => Boolean(f.payload.items.source));
+  for (const [source, replacement, action] of [["source", "replacement", "replace-item"], ["bag", "newbag", "replace-container"], ["pocket", "newpocket", "replace-container"]]) {
+    const before = f.posts.length; f.lose = true; f.injectedFailure = false; f.beforeUpdate = () => { f.unknown = true; };
+    if (action === "replace-item") {
+      await page.locator(`#packingView [data-item-id="${source}"] .item-title-hitarea`).click();
+      await page.locator("#itemReplaceBtn").click(); await page.locator(`[data-add-existing-item="${replacement}"]`).click();
+    } else {
+      if (source === "bag") await page.locator('#packingView [data-root-container-id="bag"]').getByRole("heading", { name: "Исходная сумка" }).click();
+      else await page.locator('#packingView [data-subcontainer-id="pocket"] .subcontainer-title').click();
+      await page.locator("#rootContainerReplaceBtn").click(); await page.locator(`[data-add-layout-root="${replacement}"]`).click();
+    }
+    await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+    expect(f.errors).toEqual([]); expect(f.posts.length).toBe(before + 1); const post = f.posts.at(-1);
+    expect(post.body.userPlacement.action).toBe(action); expect(post.body.userPlacement.ids).toEqual([source]);
+    expect(post.body.userPlacement.replacementId).toBe(replacement);
+    f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+    await synchronize(page, () => f.receipts.has(post.operationId));
+    expect(f.posts.filter(entry => entry.operationId === post.operationId)).toHaveLength(1);
+  }
+  const placed = f.payload.layouts["layout-a"].arrangement;
+  expect(placed.rootContainerIds).toEqual(["newbag"]); expect(placed.items).toEqual({ replacement: "newbag", inside: "newpocket" });
+  expect(placed.itemQuantities).toEqual({ replacement: 3, inside: 2 }); expect(placed.containers.newpocket.parentId).toBe("newbag");
+  expect(f.payload.items.source).toBeTruthy(); expect(f.payload.containers.bag).toBeTruthy(); expect(f.payload.containers.pocket).toBeUndefined();
+  expect(Object.keys(f.payload.containers).sort()).toEqual(["bag", "newbag", "newpocket"]); expect(f.errors).toEqual([]);
+});
+
+test("quota in a replacement picker preserves its complete candidate and leaves the existing queue unchanged", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context, { payload: replacementPayload() });
+  await synchronize(page, () => Boolean(f.payload.items.source));
+  await page.locator('#packingView [data-subcontainer-id="pocket"] .subcontainer-title').click();
+  await page.locator("#rootContainerReplaceBtn").click();
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator('[data-add-layout-root="newpocket"]').click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible(); await expect(page.locator("#layoutRootDialog")).toBeVisible();
+  const copy = await downloadRecovery(page), draft = copy.unconfirmedMemoryDraft;
+  expect(draft.containers.pocket).toBeUndefined(); expect(draft.layouts["layout-a"].arrangement.items.inside).toBe("newpocket");
+  expect(draft.layouts["layout-a"].arrangement.itemQuantities).toEqual({ source: 3, inside: 2 });
+  expect(Object.keys(draft.items).sort()).toEqual(Object.keys(f.payload.items).sort());
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.payload.containers.pocket).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
 });
 
 async function dispatchPackingDrop(page, handle, containerId) {

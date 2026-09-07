@@ -1338,7 +1338,9 @@ function replaceExistingContainerInLayout(replacementContainerId) {
   const temporaryNestedSource = isTemporaryContainerInLayoutState(state, layout, sourceContainerId);
   const changedAt = nowIso();
   if (!source || !replacement || warnLockedLayoutMutation(layoutId)) return;
-  const replaced = replaceContainerInLayoutState(state, layoutId, sourceContainerId, replacementContainerId, {
+  const commit = preparePersonalPlacementAction({ layoutId, action: "replace-container", ids: [sourceContainerId], replacementId: replacementContainerId });
+  if (commit === false) return;
+  const replaced = commit ? commit() : replaceContainerInLayoutState(state, layoutId, sourceContainerId, replacementContainerId, {
     activeLayoutId: state.activeLayoutId,
     applyLayoutArrangement,
     beforeRemoveSource: deleteContainerPhotos,
@@ -1351,7 +1353,7 @@ function replaceExistingContainerInLayout(replacementContainerId) {
     return;
   }
   replacingPackingContainerId = "";
-  saveLayoutMutation(layoutId);
+  if (!commit) saveLayoutMutation(layoutId);
   if (refs.layoutRootDialog.open) refs.layoutRootDialog.close();
   if (refs.rootContainerDialog.open) refs.rootContainerDialog.close("cancel");
   renderPreservingPackingScroll();
@@ -1410,7 +1412,9 @@ function replaceExistingItemInLayout(replacementItemId) {
   const replacement = state.items?.[replacementItemId];
   const changedAt = nowIso();
   if (!source || !replacement || warnLockedLayoutMutation(layoutId) || warnUnavailableItemPlacement(replacementItemId)) return;
-  const replaced = replaceItemInLayoutState(state, layoutId, sourceItemId, replacementItemId, {
+  const commit = preparePersonalPlacementAction({ layoutId, action: "replace-item", ids: [sourceItemId], replacementId: replacementItemId });
+  if (commit === false) return;
+  const replaced = commit ? commit() : replaceItemInLayoutState(state, layoutId, sourceItemId, replacementItemId, {
     activeLayoutId: state.activeLayoutId,
     applyLayoutArrangement,
     changedAt,
@@ -1421,7 +1425,7 @@ function replaceExistingItemInLayout(replacementItemId) {
     return;
   }
   replacingPackingItemId = "";
-  saveLayoutMutation(layoutId);
+  if (!commit) saveLayoutMutation(layoutId);
   if (refs.addToContainerDialog.open) refs.addToContainerDialog.close();
   if (refs.dialog.open) refs.dialog.close("cancel");
   renderPreservingPackingScroll();
@@ -5298,6 +5302,11 @@ function placeExistingContainerInLayout(containerId, parentId, layoutId = state.
   if (parentId && container.nestable !== true) return false;
   if (!parentId && !currentParentId) return false;
   if (warnLockedLayoutMutation(layoutId)) return false;
+  if (!parentId) {
+    const commit = preparePersonalPlacementAction({ layoutId, action: "lift-container", ids: [containerId], targetIndex });
+    if (commit === false) return false;
+    if (commit) { const placed = commit(); if (placed && renderAfter) render(); return placed; }
+  }
   capturePackingScroll();
   const placed = placeExistingContainerInLayoutInState(state, containerId, parentId, layoutId, {
     activeLayoutId: state.activeLayoutId,

@@ -1,6 +1,8 @@
 import { getItemContainerIdInLayout, removeItemFromLayoutInState, removeContainerFromLayoutOnlyInState,
-  moveItemInLayoutArrangement, moveContainerInLayoutArrangement, moveRootColumnInState, createGroupFromItemsInState } from "../state/layout-ops.js";
+  moveItemInLayoutArrangement, moveContainerInLayoutArrangement, moveRootColumnInState, createGroupFromItemsInState,
+  placeExistingContainerInLayoutInState } from "../state/layout-ops.js";
 import { deleteUnusedLayoutContainerEntityFromState } from "../state/container-ops.js";
+import { replaceItemInLayoutState, replaceContainerInLayoutState, isTemporaryContainerInLayoutState } from "../state/layout-replace.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const validId = value => typeof value === "string" && value.length > 0 && value.length <= 191
@@ -8,8 +10,10 @@ const validId = value => typeof value === "string" && value.length > 0 && value.
 const validIds = ids => Array.isArray(ids) && ids.every(validId) && new Set(ids).size === ids.length;
 const privateRecord = record => record && !record.adminDemo && !record.adminSharedSourceId && !record.publicCatalogLayoutId;
 const difference = (before, after) => Object.keys(before || {}).filter(id => !Object.hasOwn(after || {}, id));
-const actions = new Set(["remove-item", "remove-container", "set-packed", "move-item", "move-container", "move-root", "group-items"]);
+const actions = new Set(["remove-item", "remove-container", "set-packed", "move-item", "move-container", "move-root", "group-items", "replace-item", "replace-container", "lift-container"]);
 const moves = new Set(["move-item", "move-container", "move-root"]);
+const replacements = new Set(["replace-item", "replace-container"]);
+const removals = new Set(["remove-item", "remove-container", "replace-item", "replace-container", "lift-container"]);
 const validIndex = index => index === null || Number.isSafeInteger(index) && index >= 0;
 const expectedCount = action => action === "group-items" ? 2 : 1;
 
@@ -20,19 +24,26 @@ export function personalPlacementIntent(value) {
     || value.action === "set-packed" && typeof value.packed !== "boolean"
     || moves.has(value.action) && (!validIndex(value.targetIndex) || value.action !== "move-root" && !validId(value.targetContainerId))
     || value.action === "group-items" && !validId(value.groupId)
+    || replacements.has(value.action) && (!validId(value.replacementId) || value.ids.includes(value.replacementId))
+    || value.action === "lift-container" && !validIndex(value.targetIndex)
     || ![value.removedItemIds, value.removedContainerIds, value.deletedContainerIds].every(validIds)
-    || !value.action.startsWith("remove-") && (value.removedItemIds.length || value.removedContainerIds.length || value.deletedContainerIds.length)
+    || !removals.has(value.action) && (value.removedItemIds.length || value.removedContainerIds.length || value.deletedContainerIds.length)
     || value.action === "remove-item" && (value.removedItemIds.length !== 1 || value.removedItemIds[0] !== value.ids[0] || value.deletedContainerIds.length)
     || value.action === "remove-container" && !value.removedContainerIds.includes(value.ids[0])
+    || value.action === "replace-item" && (value.removedItemIds.length !== 1 || value.removedItemIds[0] !== value.ids[0] || value.deletedContainerIds.length)
+    || value.action === "replace-container" && (value.removedContainerIds.length !== 1 || value.removedContainerIds[0] !== value.ids[0] || value.removedItemIds.length)
+    || value.action === "lift-container" && (value.removedItemIds.length || value.deletedContainerIds.length || value.removedContainerIds.includes(value.ids[0]))
     || value.deletedContainerIds.some(id => !value.removedContainerIds.includes(id))) throw Error("Не подтверждён состав изменения укладки.");
   return clone({ type: "placement", version: 1, layoutId: value.layoutId, action: value.action, ids: value.ids,
     ...(value.action === "set-packed" ? { packed: value.packed } : {}),
     ...(moves.has(value.action) ? { targetIndex: value.targetIndex, ...(value.action !== "move-root" ? { targetContainerId: value.targetContainerId } : {}) } : {}),
     ...(value.action === "group-items" ? { groupId: value.groupId } : {}), removedItemIds: value.removedItemIds,
+    ...(replacements.has(value.action) ? { replacementId: value.replacementId } : {}),
+    ...(value.action === "lift-container" ? { targetIndex: value.targetIndex } : {}),
     removedContainerIds: value.removedContainerIds, deletedContainerIds: value.deletedContainerIds });
 }
 
-export function preparePersonalPlacementMutation(state, { layoutId, action, ids, packed, targetContainerId, targetIndex = null, groupId },
+export function preparePersonalPlacementMutation(state, { layoutId, action, ids, packed, targetContainerId, targetIndex = null, groupId, replacementId },
   { changedAt = "", markEdited = () => {}, hasPhotos = record => Boolean(record.photos?.length) } = {}) {
   const unpackAll = action === "unpack-all";
   if (unpackAll) { action = "set-packed"; packed = false; }
@@ -45,12 +56,17 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
     || action === "group-items" && (!validId(groupId) || Object.hasOwn(state.containers || {}, groupId))) {
     throw Error("Укладка изменилась. Повторите выбор.");
   }
-  const field = ["remove-container", "move-container", "move-root"].includes(action) ? "containers" : "items";
+  const field = ["remove-container", "move-container", "move-root", "replace-container", "lift-container"].includes(action) ? "containers" : "items";
   if (ids.some(id => !privateRecord(state[field]?.[id]) || (field === "items"
     ? !getItemContainerIdInLayout(state, layout, id)
     : !layout.arrangement.containers?.[id]))) {
     throw Error("Выбранная запись больше не находится в этой укладке.");
   }
+  if (replacements.has(action) && (!validId(replacementId) || ids.includes(replacementId) || !privateRecord(state[field]?.[replacementId]))) {
+    throw Error("Не подтверждена выбранная замена.");
+  }
+  if (action === "lift-container" && (!validIndex(targetIndex) || state.containers[ids[0]].nestable !== true
+    || !layout.arrangement.containers[ids[0]].parentId)) throw Error("Нельзя вынести выбранный контейнер в отдельную колонку.");
   const snapshot = clone(state), next = snapshot.layouts[layoutId];
   if (unpackAll) snapshot.showOnlyUnpacked = false;
   if (action === "set-packed") {
@@ -59,6 +75,18 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
       if (packed) next.arrangement.packedItems[id] = true;
       else delete next.arrangement.packedItems[id];
       markEdited(snapshot.items[id], changedAt);
+    }
+  } else if (replacements.has(action)) {
+    const replaced = action === "replace-item" ? replaceItemInLayoutState(snapshot, layoutId, ids[0], replacementId, { changedAt })
+      : replaceContainerInLayoutState(snapshot, layoutId, ids[0], replacementId, { changedAt,
+        removeSourceRecord: isTemporaryContainerInLayoutState(snapshot, next, ids[0]),
+        beforeRemoveSource: record => {
+          if (hasPhotos(record)) throw Error("Замена вложенного контейнера с фото ждёт файлового адаптера. Данные оставлены без изменений.");
+        } });
+    if (!replaced) throw Error("Не удалось подготовить выбранную замену.");
+  } else if (action === "lift-container") {
+    if (!placeExistingContainerInLayoutInState(snapshot, ids[0], "", layoutId, { changedAt, targetIndex })) {
+      throw Error("Не удалось подготовить отдельную колонку.");
     }
   } else if (moves.has(action)) {
     const moved = action === "move-item" ? moveItemInLayoutArrangement(snapshot, next, ids[0], targetContainerId, targetIndex)
@@ -82,7 +110,7 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
     }) })) throw Error("Не удалось подготовить удаление сумки из укладки.");
   markEdited(next, changedAt);
   snapshot.packedItems = clone(next.arrangement.packedItems || {});
-  const intent = personalPlacementIntent({ type: "placement", version: 1, layoutId, action, ids, packed, targetContainerId, targetIndex, groupId,
+  const intent = personalPlacementIntent({ type: "placement", version: 1, layoutId, action, ids, packed, targetContainerId, targetIndex, groupId, replacementId,
     removedItemIds: difference(layout.arrangement.items, next.arrangement.items),
     removedContainerIds: difference(layout.arrangement.containers, next.arrangement.containers),
     deletedContainerIds: difference(state.containers, snapshot.containers) });
