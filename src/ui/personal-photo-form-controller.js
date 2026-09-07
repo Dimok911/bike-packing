@@ -1,4 +1,4 @@
-import { createPersonalPhotoFormFiles } from "./personal-photo-form-files.js";
+import { createPersonalPhotoFormFiles, personalPhotoEditSelection } from "./personal-photo-form-files.js";
 import { canonicalListOperationJson } from "../sync/list-operation-queue.js";
 
 const fail = message => { throw Object.assign(new Error(message), { code: "photo-form-ui" }); };
@@ -7,7 +7,7 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // One entry belongs to its initial-snapshot object, not just the reusable DOM
 // dialog or entity ID. Closing/reopening the same bag creates a different form.
 export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
-  createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
+  createEditSession, isEditEnabled = () => false, createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
     const context = getContext();
@@ -74,14 +74,16 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
     save(type) {
       if (!isEnabled()) return false;
       const view = getView(type), selected = view?.draft?.photos || [];
-      if (!selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl)) {
-        if (view?.draft && (view.draft.deletedPhotos?.length
-          || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || []))) {
+      const fresh = selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl);
+      const edit = !fresh && Boolean(view?.draft && (view.draft.deletedPhotos?.length
+        || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
+      if (!fresh) {
+        if (edit && (!isEditEnabled() || typeof createEditSession !== "function")) {
           onError(Object.assign(new Error("Удаление и перестановка фото ещё подключаются к подтверждённому сохранению. Изменения остались в форме; ничего не отправлено."),
             { code: "photo-form-ui" }), { type, recovery: null });
           return true;
         }
-        return false;
+        if (!edit) return false;
       }
       const entry = entryFor(type);
       if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
@@ -92,9 +94,10 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
         if (placementChanged !== false || availabilityChanged !== false || catalogSource !== false) {
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
-        const files = entry.files.selection({ draft: view.draft, basePhotos: view.source?.photos || [] });
-        entry.session = createSession({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
-        const pending = entry.session.submit({ ...request, files });
+        const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
+        const values = edit ? { photoIds: personalPhotoEditSelection(selection) } : { files: entry.files.selection(selection) };
+        entry.session = (edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
+        const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);
         pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))
           .catch(error => errorFor(entry, error));

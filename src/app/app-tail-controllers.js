@@ -380,7 +380,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
-    personalPhotoFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -8126,6 +8126,7 @@ function openedFormPhotoStatus(photos) {
 
 const personalPhotoForms = createPersonalPhotoFormController({
   isEnabled: personalPhotoFormUiEnabled,
+  isEditEnabled: personalPhotoEditFormUiEnabled,
   getContext: personalSaveContext,
   getView(type) {
     const item = type === "item";
@@ -8157,6 +8158,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       catalogSource: Boolean(!item && rootContainerCatalogSelection) };
   },
   createSession: personalPhotoFormSession,
+  createEditSession: options => personalPhotoFormSession({ ...options, editExistingPhotos: true }),
   createPhoto: createItemPhotoFromFile,
   cachePhoto: (record, scopeKey) => putCachedPhoto(record, scopeKey, { binary: true }),
   onDurable(record, { type, view }) {

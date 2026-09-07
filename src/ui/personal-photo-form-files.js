@@ -8,6 +8,20 @@ const fail = () => { throw Object.assign(new Error("Не удалось связ
 const file = value => value instanceof Blob && value.size > 0 && value.size <= 10 * 1024 * 1024
   && ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"].includes(value.type);
 
+export function personalPhotoEditSelection({ draft, basePhotos, binding }) {
+  if (!Array.isArray(draft?.photos) || !Array.isArray(draft.deletedPhotos) || !Array.isArray(basePhotos) || !basePhotos.length) fail();
+  const originals = new Map(basePhotos.map(photo => [photo.id, causalPhotoReferenceForSync(photo)]));
+  if (originals.size !== basePhotos.length) fail();
+  const photoIds = [], removed = [];
+  for (const [entries, target] of [[draft.photos, photoIds], [draft.deletedPhotos, removed]]) for (const photo of entries) {
+    const original = originals.get(photo?.id), selected = causalPhotoReferenceForSync(photo);
+    if (!original || original.status !== "synced" || original.listId !== binding.listId || !same(original, selected) || target.includes(photo.id)) fail();
+    target.push(photo.id);
+  }
+  if (removed.some(id => photoIds.includes(id)) || basePhotos.some(photo => !photoIds.includes(photo.id) && !removed.includes(photo.id))) fail();
+  return photoIds;
+}
+
 // Per-opened-form immutable Blob handles, acquired from the image preparation
 // callback. Never re-read a mutable thumbnail cache at Save. This is NOT the
 // durable action store: submit still needs its atomic full-file IDB commit.

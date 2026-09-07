@@ -1,5 +1,5 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
-import { assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
+import { assertPersonalPhotoFile, assertPersonalPhotoRecord } from "./personal-photo-outbox-record.js";
 
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const paused = (code, cause) => Object.assign(new Error("Файлы и очередь требуют проверки. Ничего не удалено и не отправлено."),
@@ -64,6 +64,20 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       state, dispatchAllowed: false, entityType: first.entityType, entityId: first.entityId, photoId: first.photoId });
   }
   for (const [operationId, record] of byId) {
+    if (record.action.body.action === "form" && record.photoState.fileIntentHash === null) {
+      if (ids.includes(operationId)) continue; // Already classified as link-mismatch; never discard unexpected bytes.
+      let state = "linked";
+      try { assertPersonalPhotoRecord(record); } catch { state = "link-mismatch"; }
+      const proof = receipts.get(operationId);
+      if (proof && state === "linked") {
+        state = await exactCachedPhotoReceipt(proof, record, binding) ? "settled-retained" : "receipt-mismatch";
+        assertContext();
+      }
+      entries.push({ operationId, fileless: true, photoCount: record.action.body.changes.length,
+        entityType: record.action.body.entityType, entityId: record.action.body.entityId,
+        ...(state === "settled-retained" ? { ownerOutcome: proof.operation.state, exactReceiptCached: true } : {}), state, dispatchAllowed: false });
+      continue;
+    }
     if (!ids.includes(operationId)) entries.push({ operationId, stageOperationId: record.action.body.assetId,
       ...(record.photoState.fileInventoryVersion === 2 ? { batch: true,
         stageOperationIds: record.action.body.changes.map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });

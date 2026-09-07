@@ -10,18 +10,21 @@ const fail = () => { throw Object.assign(new Error("Карточка, очере
 export function assertPersonalPhotoFormRecord(record) {
   const action = record?.action, photo = record?.photoState;
   if (action?.kind !== "photos.mutate" || action.body?.action !== "form" || photo?.version !== 1
-    || photo.fileInventoryVersion !== 2 || !/^[a-f0-9]{64}$/.test(photo.fileIntentHash || "")
     || !record.mergeBase || record.mergeBase.stateRevision !== action.body.baseStateRevision
     || record.reconciliation || record.localReconciliation) fail();
   const manifest = assertPersonalPhotoFormCandidate({ body: action.body, basePayload: record.mergeBase.payload,
     payload: photo.payload, listId: action.listId });
-  if (manifest.photos.some(entry => entry.action !== "attach")) fail();
+  if (manifest.photos.some(entry => entry.action === "attach")) {
+    if (manifest.photos.some(entry => entry.action !== "attach") || photo.fileInventoryVersion !== 2
+      || !/^[a-f0-9]{64}$/.test(photo.fileIntentHash || "")) fail();
+  } else if (manifest.created || manifest.photos.some(entry => !["delete", "order"].includes(entry.action))
+    || photo.fileIntentHash !== null || photo.fileInventoryVersion !== undefined) fail();
   return manifest;
 }
 
 export function assertPersonalPhotoFormFile(record, saved, binding) {
   const manifest = assertPersonalPhotoFormRecord(record);
-  if (!saved || !same(saved.binding, binding) || !same(saved.action, record.action) || !same(saved.snapshot, record.snapshot)
+  if (manifest.photos.some(entry => entry.action !== "attach") || !saved || !same(saved.binding, binding) || !same(saved.action, record.action) || !same(saved.snapshot, record.snapshot)
     || saved.intentHash !== record.photoState.fileIntentHash || !Array.isArray(saved.files) || saved.files.length !== manifest.photos.length) fail();
   for (const [index, part] of saved.files.entries()) {
     const entry = manifest.photos[index];

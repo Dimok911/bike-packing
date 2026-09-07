@@ -15,7 +15,7 @@ const origin = "https://experiment.vniipo-help.ru";
 const bundleRoot = path.resolve("test-results/personal-ui-build");
 const photoRecoveryBundleRoot = path.resolve("test-results/personal-photo-cancel-ui-build");
 test.beforeAll(async () => {
-  for (const mode of ["production", "photo-recovery", "photo-form"]) {
+  for (const mode of ["production", "photo-recovery", "photo-form", "photo-edit"]) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)),
     "build", "--config", "tests/e2e/personal-ui.vite.config.js", "--mode", mode], { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
@@ -27,6 +27,8 @@ test.afterEach(async ({ page }, info) => {
     if (formError) { console.log("PHOTO FORM FAILURE", JSON.stringify(formError)); await info.attach("photo-form-failure", { body: JSON.stringify(formError), contentType: "application/json" }); }
     const difference = await page.evaluate(() => globalThis.__personalTestProjectionDifference).catch(() => null);
     if (difference) await info.attach("personal-projection-difference", { body: JSON.stringify(difference, null, 2), contentType: "application/json" });
+    const photoEvents = await page.evaluate(() => globalThis.__photoEditEvents).catch(() => null);
+    if (photoEvents) await info.attach("photo-edit-events", { body: JSON.stringify(photoEvents), contentType: "application/json" });
   }
   if (info.status !== info.expectedStatus) await info.attach("personal-ui-errors", {
     body: JSON.stringify(page.personalFixture?.errors || []), contentType: "application/json"
@@ -39,11 +41,12 @@ async function submitForm(page, button, input) {
   else await page.locator(button).click();
 }
 
-async function reloadApp(page) {
+async function reloadApp(page, { recovery = false } = {}) {
   page.personalFixture.reloading = true;
   try {
     await page.reload();
-    await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    if (recovery) await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible({ timeout: 30000 });
+    else await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
   } finally { page.personalFixture.reloading = false; }
 }
 
@@ -75,7 +78,8 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, migration = false, migrationComplete = true } = {}) {
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true } = {}) {
+  photoForm ||= photoEdit;
   if (migration && migrationComplete) {
     // A previously saved complete legacy list, not an intentionally incomplete
     // fixture requiring unrelated structural/dictionary repair in the UI.
@@ -90,7 +94,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   }
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
-  const activeBundleRoot = photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  const activeBundleRoot = photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  state.photoRevisions = new Map();
   state.stagePosts = [];
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
@@ -156,6 +161,16 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           restore: { payload, baseStateRevision: state.revision, historyRestore: { version: 1, historyId: 101,
             historyPayloadHash: hash(source.payload), payloadHash: hash(payload), layoutIds, targetStateRevision: state.revision } } };
       }
+      else if (photoEdit && path === `/bike-packing/lists/${state.listId}/photo-owner-state`) {
+        expect(request.method()).toBe("GET");
+        const entityType = url.searchParams.get("entityType"), entityId = url.searchParams.get("entityId");
+        const owner = state.payload[entityType === "item" ? "items" : "containers"][entityId];
+        data = { ok: true, version: 1, readOnly: true, environment: "bike-packing-experiment", actorId: "actor-a", listId: state.listId,
+          stateRevision: state.revision, owner: { entityType, entityId, entityRevision: state.revision, payload: structuredClone(owner) },
+          photos: owner.photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: state.photoRevisions.get(photo.id) })) };
+        state.ownerRead = structuredClone(data);
+        if (state.afterOwnerRead) await state.afterOwnerRead(data);
+      }
       else if (photoForm && ["items", "containers"].some(collection => path === `/bike-packing/lists/${state.listId}/${collection}`)) {
         const collection = path.split("/").at(-1);
         data = { ok: true, listId: state.listId, stateRevision: state.revision,
@@ -189,7 +204,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         data = (id !== state.hiddenStage && state.stageReceipts.get(id)) || { ok: true, operation: { id, state: "unknown",
           actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId } };
       }
-      else if (photoRecovery && /^\/bike-packing\/list-operations\/[^/]+\/cancel$/.test(path) && request.method() === "POST") {
+      else if ((photoRecovery || photoEdit) && /^\/bike-packing\/list-operations\/[^/]+\/cancel$/.test(path) && request.method() === "POST") {
         const body = request.postDataJSON(), id = path.split("/").at(-2);
         expect(id).toBe(state.cancelPhotoAction.operationId); expect(body.operationId).toBe(id);
         expect(body.expectedActorId).toBe("actor-a"); expect(body.environment).toBe("bike-packing-experiment");
@@ -216,11 +231,27 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           expect(body.body.action).toBe("form");
           const owner = personalPhotoFormOwner(state.payload, body.body), changes = [];
           for (const [index, change] of body.body.changes.entries()) {
+            expect(change.expectedPhotoIds).toEqual(owner.photos.map(photo => photo.id));
+            if (change.action !== "attach") {
+              expect(photoEdit).toBe(true);
+              if (change.action === "delete") {
+                expect(change.basePhotoRevision).toBe(state.photoRevisions.get(change.photoId));
+                expect(owner.photos.find(photo => photo.id === change.photoId)?.assetId).toBe(change.assetId);
+                owner.photos = owner.photos.filter(photo => photo.id !== change.photoId);
+              } else {
+                expect(change.action).toBe("order");
+                owner.photos = change.photoIds.map(id => owner.photos.find(photo => photo.id === id));
+              }
+              changes.push({ index, action: change.action, entityType: change.entityType, entityId: change.entityId,
+                ...(change.action === "delete" ? { photoId: change.photoId, assetId: change.assetId } : {}), photoIds: owner.photos.map(photo => photo.id) });
+              continue;
+            }
             expect(state.stageReceipts.has(change.assetId)).toBe(true);
             const photo = { id: change.photoId, photoId: change.photoId, assetId: change.assetId, listId: state.listId, status: "synced",
               url: `${origin}/photo/${change.photoId}.png`, thumbUrl: `${origin}/thumb/${change.photoId}.png`,
               fileName: "prepared.png", type: "image/png", size: 68, width: 1, height: 1 };
             owner.photos.splice(change.index, 0, photo);
+            state.photoRevisions.set(change.photoId, state.revision + 1);
             changes.push({ index, action: "attach", entityType: change.entityType, entityId: change.entityId, photoId: change.photoId,
               assetId: change.assetId, photoIds: owner.photos.map(photo => photo.id), photo });
           }
@@ -563,8 +594,8 @@ async function synchronize(page, condition) {
   }), { timeout: 20000 }).toBe(true);
 }
 
-async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false } = {}) {
-  const f = await setup(page, context, { photoForm: true }), bag = await createRootContainer(page, "База фотоформы");
+async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false } = {}) {
+  const f = await setup(page, context, { photoForm: true, photoEdit }), bag = await createRootContainer(page, "База фотоформы");
   if (type === "item" && !created) await createItemInContainer(page, bag, "Вещь фотоформы");
   await synchronize(page, () => Object.keys(f.payload.containers).length === 1 && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
   const before = f.posts.length, collection = type === "item" ? "items" : "containers";
@@ -664,6 +695,115 @@ for (const type of ["item", "container"]) for (const change of ["delete", "prima
   expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
   expect(f.payload[collection][action.body.entityId].photos).toEqual(photos);
   expect(f.errors).toEqual([]);
+});
+
+async function prepareExistingPhotoEdit(page, context, { type = "container", change = "delete" } = {}) {
+  const form = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true }), { f, before, collection, prefix, button, dialog } = form;
+  await submitForm(page, button); await expect(dialog).not.toBeVisible();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  const ownerId = f.posts.at(-1).body.entityId, originalPhotos = structuredClone(f.payload[collection][ownerId].photos);
+  await reloadApp(page);
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+  await expect(dialog).toBeVisible();
+  await page.evaluate(prefix => {
+    globalThis.__photoEditEvents = [];
+    for (const name of ["pointerdown", "mousedown", "mouseup", "click", "touchend"]) document.addEventListener(name, event => {
+      if (event.target.closest?.(`#${prefix}PhotoPrimaryBtn`)) globalThis.__photoEditEvents.push({ name, disabled: event.target.disabled });
+    }, true);
+  }, prefix);
+  if (change === "delete") {
+    await page.locator(`#${prefix}PhotoRemoveBtn`).click(); await page.locator("#confirmOkBtn").click();
+    await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(1);
+  } else {
+    // WebKit mouse emulation can produce down/up without a click on this
+    // touch surface. Exercise a real tap and verify the chosen result before SAVE.
+    await submitForm(page, `#${prefix}PhotoPreview [data-photo-index="1"]`);
+    await expect(page.locator(`#${prefix}PhotoPrimaryBtn`)).toBeEnabled(); await submitForm(page, `#${prefix}PhotoPrimaryBtn`);
+    await expect(page.locator(`#${prefix}PhotoPreview img`).first()).toHaveAttribute("data-photo-local-id", originalPhotos[1].id);
+    expect(await page.evaluate(() => globalThis.__photoEditEvents.some(event => event.name === "click"))).toBe(true);
+  }
+  await page.locator(`#${prefix}Name`).fill("Фотографии изменены");
+  await page.locator(`#${prefix}Weight`).fill("321"); await page.locator(`#${prefix}Weight`).blur();
+  await expect(page.locator(button)).toBeEnabled();
+  return { ...form, ownerId, originalPhotos };
+}
+
+for (const type of ["item", "container"]) for (const change of ["delete", "order"]) for (const lost of [false, true]) {
+  test(`existing photo ${type} ${change} is one durable form without upload (${lost ? "lost ACK" : "normal ACK"})`, async ({ page, context }) => {
+    test.setTimeout(120000);
+    const { f, before, collection, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type, change });
+    f.loseFormOwner = lost;
+    await submitForm(page, button); await expect(dialog).not.toBeVisible();
+    await page.locator("#syncBtn").click(); await expect.poll(() => f.posts.length).toBe(before + 2);
+    const action = structuredClone(f.posts.at(-1));
+    expect(action.body.action).toBe("form"); expect(action.body.fields.name).toBe("Фотографии изменены");
+    expect(action.body.fields.weight).toBe(321); expect(action.body.changes.map(entry => entry.action)).toEqual([change]);
+    if (change === "delete") expect(action.body.changes[0].basePhotoRevision).toBe(f.photoRevisions.get(originalPhotos[0].id));
+    expect(f.stagePosts).toHaveLength(2); // Only the original two attachments.
+    if (lost) {
+      await expect.poll(() => f.injectedFailure).toBe(true); await reloadApp(page, { recovery: true });
+      const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+      await expect(recovery).toBeVisible(); await expect(resume).toBeVisible();
+      await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts.at(-1)).toEqual(action);
+      expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+      f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+    await reloadApp(page); await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+    expect(f.payload[collection][ownerId].photos).toEqual(change === "delete" ? originalPhotos.slice(1) : [...originalPhotos].reverse());
+    expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2); expect(f.errors).toEqual([]);
+  });
+}
+
+for (const type of ["item", "container"]) for (const failure of ["quota", "stale-owner"]) test(`existing photo ${type} ${failure} retains the complete unsent form`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, prefix, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type });
+  const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const saved = await journal(), server = structuredClone(f.payload);
+  if (failure === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && !String(key).includes(":checkpoint:")) throw new DOMException("Injected fileless form quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  else f.afterOwnerRead = data => { data.stateRevision++; data.owner.payload.name = "Newer server owner"; };
+  await submitForm(page, button);
+  const recovery = page.locator("#personalSaveRecoveryDialog"); await expect(recovery).toBeVisible(); await expect(dialog).toBeVisible();
+  await expect(page.locator(`#${prefix}Name`)).toHaveValue("Фотографии изменены");
+  const copy = await downloadRecovery(page);
+  expect(copy.unconfirmedMemoryDraft[collection][ownerId].name).toBe("Фотографии изменены");
+  expect(copy.unconfirmedMemoryDraft[collection][ownerId].photos.map(photo => photo.id)).toEqual(originalPhotos.slice(1).map(photo => photo.id));
+  expect(await journal()).toEqual(saved); expect(f.payload).toEqual(server);
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2); expect(f.errors).toEqual([]);
+});
+
+for (const type of ["item", "container"]) test(`existing photo ${type} cancellation survives reload and a postponed version choice without staging`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type });
+  const server = structuredClone(f.payload);
+  await submitForm(page, button); await expect(dialog).not.toBeVisible();
+  f.cancelPhotoAction = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(record => record.action?.kind === "photos.mutate" && record.photoState?.fileIntentHash === null)?.action);
+  expect(f.cancelPhotoAction.body.action).toBe("form");
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+  await expect(recovery).toBeVisible(); await expect(cancel).toBeVisible(); await cancel.click();
+  await expect(page.locator("#confirmTitle")).toHaveText("Изменения фото не применены");
+  await expect(page.locator("#confirmDialog")).toContainText("поля и изменения фото");
+  await page.locator("#confirmCancelBtn").click(); await expect(recovery.getByRole("status")).toContainText("Выбор отложен");
+  expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+  await reloadApp(page, { recovery: true }); await expect(recovery).toBeVisible(); await cancel.click();
+  await expect(page.locator("#confirmTitle")).toHaveText("Изменения фото не применены");
+  await page.locator("#confirmOkBtn").click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.posts).toHaveLength(before + 3); expect(f.stagePosts).toHaveLength(2);
+  expect(f.payload[collection][ownerId].photos).toEqual(originalPhotos); expect(f.payload[collection][ownerId].name).toBe(server[collection][ownerId].name);
+  expect(f.posts.at(-1).operationId).not.toBe(f.cancelPhotoAction.operationId);
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  expect(f.posts).toHaveLength(before + 3); expect(f.errors).toEqual([]);
 });
 
 for (const scenario of ["lost-owner", "lost-last-file", "deleted-after-owner"]) test(`ordinary photo form recovery retains exact IDs through reload (${scenario})`, async ({ page, context }) => {

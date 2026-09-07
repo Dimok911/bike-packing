@@ -740,6 +740,8 @@ import { createPersonalPhotoFormSession } from "./src/sync/personal-photo-form-s
 import { drainPersonalPhotoForm } from "./src/sync/personal-photo-form-drain.js";
 import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js";
 import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
+import { createPersonalPhotoEditFormSession } from "./src/sync/personal-photo-edit-form.js";
+import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
@@ -1900,7 +1902,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
-  personalPhotoFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2458,6 +2460,10 @@ function personalPhotoFormUiEnabled() {
     && localStorageScopeKey === `id:${currentUser.id}` && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState);
 }
 
+function personalPhotoEditFormUiEnabled() {
+  return PERSONAL_PHOTO_EDIT_FORM_ENABLED && personalPhotoFormUiEnabled();
+}
+
 function personalPhotoFormRequest(values) {
   personalSaveRecovery.assertRunning();
   const outbox = personalSaveOutboxForScope(), baseline = outbox?.confirmedBase();
@@ -2475,12 +2481,14 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const session = createPersonalPhotoFormSession({ ...options, outbox, store,
+  const createSession = options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
+  const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
     readEntities: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
+    readOwner: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
     onDurable(record) {
       personalSaveRecovery.assertRunning();
-      // The file transaction AND the list journal already own this exact form.
+      // The journal owns this exact form; any new bytes were committed first.
       assertPersonalPhotoFormRecord(record);
       personalReconciledSnapshot(record.photoState.payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
@@ -8566,10 +8574,15 @@ async function cancelRetainedPersonalPhoto() {
   if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
+    const fileless = original?.action?.body?.action === "form" && original.photoState?.fileIntentHash === null;
     const photoCount = original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
-      text: photoCount > 1 ? localText(
+      title: fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
+        : photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
+      text: fileless ? localText(
+        `The server did not apply the fields and photo changes from this form. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original form and receipts remain available for recovery.`,
+        `Сервер не применил поля и изменения фото из этой формы. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Исходная форма и подтверждения останутся для восстановления.`)
+        : photoCount > 1 ? localText(
         `The server did not add ${photoCount} photos. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. All original files remain available for recovery.`,
         `Сервер не добавил ${photoCount} фото. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Все исходные файлы останутся для восстановления.`) : localText(
         `The server did not apply the photo action. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original file remains available for recovery.`,

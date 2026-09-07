@@ -3,6 +3,7 @@ import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResul
 
 // Separate rollout gate. Storage/queue integration does not enable the UI writer.
 export const PERSONAL_PHOTO_FORM_ENABLED = false;
+export const PERSONAL_PHOTO_EDIT_FORM_ENABLED = false;
 export const PERSONAL_PHOTO_FORM_CAPABILITY = "personalCausalPhotoFormV1";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
