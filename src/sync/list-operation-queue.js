@@ -1,6 +1,7 @@
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
+import { validateCancelledStagedPhotoReceipt, STAGED_PHOTO_CANCELLATION_CAPABILITY } from "./personal-photo-staging.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -251,6 +252,71 @@ export function createListOperationQueue({ transport, getContext = () => null,
           // no loop and no replacement ID, even for this no-effect rejection.
           assertCurrent();
           return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
+        }
+      });
+    },
+    // Explicit no-effect settlement of ONE frozen attach whose exact staged
+    // asset is permanently cancelled. Never general retry, batch or new UUID.
+    async settleCancelledPhotoStage({ path, method, body: bodyText, operationId, fileHash, thumbHash }) {
+      if (!this.supports(path, method) || !locks?.request) throw paused(operationId);
+      const initial = { ...getContext() }, route = listOperationRoute(path, method), body = JSON.parse(bodyText || "{}");
+      if (route.kind !== "photos.mutate" || body.action !== "attach" || initial.scope !== "personal" || !initial.generation
+        || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(operationId || "")
+        || ![fileHash, thumbHash].every(value => /^[a-f0-9]{64}$/.test(value || ""))) throw paused(operationId);
+      personalPhotoPublicationManifest(body);
+      const expected = { operationId, actorId: initial.actorId, listId: route.listId, kind: route.kind, body, children: [],
+        payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId: route.listId, body })) };
+      assertListOperationPayload(expected);
+      const stageExpected = { operationId: body.assetId, actorId: initial.actorId, listId: route.listId,
+        entityType: body.entityType, entityId: body.entityId, photoId: body.photoId, fileHash, thumbHash };
+      const assertCurrent = () => { if (!contextMatches(initial)) throw paused(operationId); };
+      return locks.request(`${LIST_OPERATION_QUEUE_LOCK}:${initial.actorId}:${route.listId}`, async () => {
+        assertCurrent(); await transport.prepare(); assertCurrent();
+        const me = await read("/auth/me"); assertCurrent();
+        if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
+        // Re-read the immutable stage decision; a supplied/local proof or a
+        // hash match alone is never authority for another network request.
+        const stage = await read(`/bike-packing/lists/${encodeURIComponent(route.listId)}/photo-assets/${encodeURIComponent(body.assetId)}`);
+        assertCurrent(); if (!validateCancelledStagedPhotoReceipt(stage, stageExpected)) throw paused(operationId);
+        let entry = transport.writes.find(value => value.id === operationId);
+        if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
+          || entry.recovery.listId !== route.listId || entry.recovery.kind !== route.kind || entry.recovery.payloadDigest !== expected.payloadDigest
+          || !entry.confirmed && canonicalListOperationJson(entry.recovery.body) !== canonicalListOperationJson(body))) throw paused(operationId);
+        const terminal = data => {
+          assertCurrent();
+          // Any exact durable rejection proves no owner effects. A committed
+          // owner contradicts the stage fence and must remain blocked.
+          if (!validateListReceipt(data, expected) || data.operation.state !== "rejected") throw paused(operationId);
+          if (entry) recordReceipt({ ...entry, recovery: expected }, data);
+          return historicalProof(data);
+        };
+        const known = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertCurrent();
+        if (["committed", "rejected"].includes(known?.operation?.state)) return terminal(known);
+        const op = known?.operation;
+        if (entry?.confirmed || !(validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
+          && op.id === operationId && (op.environment === undefined || op.environment === environment)
+          && (op.actorId === undefined || op.actorId === initial.actorId) && (op.listId === undefined || op.listId === route.listId))) throw paused(operationId);
+        const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
+        if (![LIST_OPERATION_CAPABILITY, PERSONAL_PHOTO_PUBLICATION_CAPABILITY, STAGED_PHOTO_CANCELLATION_CAPABILITY]
+          .every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
+        if (!entry) {
+          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
+          transport.assertWritable(path, method, protocol);
+          const generation = await sha(initial.generation);
+          const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
+          assertCurrent();
+          await transport.beginWrite(path, method, bodyText, { ...expected, ...protocol, generation, requestKey });
+          entry = transport.writes.find(value => value.id === operationId);
+        }
+        assertCurrent();
+        try {
+          const response = await dispatch(entry);
+          if (response.status !== 200) throw paused(operationId);
+          return terminal(response.data);
+        } catch (error) {
+          if (!transport.writes.find(value => value.id === operationId)?.confirmed) transport.noteFailure(error, path, method, operationId);
+          assertCurrent(); return terminal(await read(`${gateway}/${encodeURIComponent(operationId)}`));
         }
       });
     },

@@ -81,6 +81,68 @@ function photoPublicationFixture() {
   return { ...f, body };
 }
 
+function cancelledPhotoFixture() {
+  const f = photoPublicationFixture(), body = { ...f.body.changes[0], baseStateRevision: 1, causal: { dependsOn: [], reads: [] } };
+  f.input.body = JSON.stringify(body); f.input.fileHash = "a".repeat(64); f.input.thumbHash = "b".repeat(64);
+  f.state.capabilities.push("personalStagedPhotoCancellationV1");
+  f.state.rejection = { status: 409, payload: { ok: false, code: "photo_asset_not_ready", stateRevision: 1 } };
+  const stage = { ok: true, operation: { id: body.assetId, state: "cancelled", environment: f.context.environment,
+    actorId: f.context.actorId, listId: "list-a", entityId: body.entityId, entityType: body.entityType, photoId: body.photoId, payloadDigest: "c".repeat(64) },
+    cancellation: { version: 1, stageOperationId: body.assetId, fileHash: f.input.fileHash, thumbHash: f.input.thumbHash, noAssetPublished: true, stageCannotPublish: true } };
+  const fetchImpl = async (url, options) => {
+    if (url.includes("/photo-assets/")) { f.calls.push({ url, options }); f.state.stageRead?.(); return Response.json(stage); }
+    const response = await f.fetchImpl(url, options), data = await response.json();
+    if (data.operation?.state === "unknown" && !data.operation.id) data.operation.id = url.split("/").at(-1);
+    return Response.json(data, { status: response.status });
+  };
+  const make = () => { const { transport } = f.make(); return { transport,
+    queue: createListOperationQueue({ transport, enabled: true, photoEnabled: f.state.photoEnabled, getContext: () => f.context, locks: f.locks, fetchImpl }) }; };
+  return { ...f, body, stage, make };
+}
+
+test("cancelled staged photo terminalizes only its original owner UUID and recovers a lost rejection ACK by exact GET", async () => {
+  const f = cancelledPhotoFixture(); f.state.loseResponse = true;
+  const first = await f.make().queue.settleCancelledPhotoStage(f.input);
+  assert.equal(first.operation.state, "rejected"); assert.equal(first.operation.id, f.input.operationId);
+  assert.equal(first.rejectionCode, "photo_asset_not_ready"); assert.equal(first.historicalOnly, true);
+  assert.equal(f.posts().length, 1); assert.equal(JSON.parse(f.posts()[0].options.body).body.assetId, f.body.assetId);
+  assert.deepEqual(await f.make().queue.settleCancelledPhotoStage(f.input), first);
+  assert.equal(f.posts().length, 1); assert.equal(f.make().transport.writes[0].confirmed, true);
+  assert.equal(f.make().transport.writes[0].recovery.body, undefined);
+});
+
+test("no-effect photo settlement refuses missing scope hashes cancellation proof gates and a changed editor before POST", async () => {
+  for (const change of [f => f.stage.operation.state = "unknown", f => f.stage.operation.id = crypto.randomUUID(),
+    f => f.stage.cancellation.fileHash = "d".repeat(64), f => f.stage.cancellation.stageCannotPublish = false,
+    f => f.stage.asset = { state: "ready" }, f => f.context.environment = "production",
+    f => f.state.photoEnabled = false, f => f.state.capabilities.pop(),
+    f => f.state.stageRead = () => { f.context.generation = "different"; }]) {
+    const f = cancelledPhotoFixture(); change(f);
+    await assert.rejects(f.make().queue.settleCancelledPhotoStage(f.input)); assert.equal(f.posts().length, 0);
+  }
+});
+
+test("photo no-effect settlement cannot claim a committed owner rejected and will not rewrite a different action", async () => {
+  const f = cancelledPhotoFixture(); await f.make().queue.settleCancelledPhotoStage(f.input);
+  const original = structuredClone(f.receipts.get(f.input.operationId));
+  f.receipts.get(f.input.operationId).operation.state = "committed";
+  await assert.rejects(f.make().queue.settleCancelledPhotoStage(f.input));
+  f.receipts.set(f.input.operationId, original);
+  await assert.rejects(f.make().queue.settleCancelledPhotoStage({ ...f.input, body: JSON.stringify({ ...f.body, index: 1 }) }));
+  assert.equal(f.posts().length, 1);
+});
+
+test("an unknown no-effect ACK remains unresolved; an explicit same-body retry never creates a new UUID or upload", async () => {
+  const f = cancelledPhotoFixture(); f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.make().queue.settleCancelledPhotoStage(f.input)); assert.equal(f.posts().length, 1);
+  assert.equal(Boolean(f.make().transport.writes[0].confirmed), false);
+  await assert.rejects(f.make().queue.settleCancelledPhotoStage(f.input)); assert.equal(f.posts().length, 2);
+  assert.deepEqual(f.posts()[0].options.body, f.posts()[1].options.body);
+  f.state.unknown = false;
+  assert.equal((await f.make().queue.settleCancelledPhotoStage(f.input)).operation.state, "rejected");
+  assert.equal(f.posts().length, 2);
+});
+
 test("photo mutation queue needs its separate release gate and server capability before durable dispatch", async () => {
   assert.equal(PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, false);
   const f = photoPublicationFixture();

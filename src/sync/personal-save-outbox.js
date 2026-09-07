@@ -7,6 +7,8 @@ import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
   assertPersonalPhotoRecord, assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { containsPersonalPhotos, validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
+import { validateCancelledStagedPhotoReceipt } from "./personal-photo-staging.js";
+import { validPersonalPhotoCancellation } from "./personal-photo-cancellation.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
@@ -166,7 +168,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               || !Array.isArray(settled) || settled.length !== ancestors.length || !settled.length
               || settled.some((proof, index) => !validHistoricalProof(proof, ancestors[index].action))
               || settled.at(-1).operation.id !== parentId
-              || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) : !revisionConflictChain(parent, records, settled))) throw Error("Invalid reconciled successor");
+              || (record.reconciliation.decision ? !validPersonalRestoreCancellation(record) && !validPersonalPhotoCancellation(record)
+                : !revisionConflictChain(parent, records, settled))) throw Error("Invalid reconciled successor");
             parents.add(parentId);
             continue;
           }
@@ -551,7 +554,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
     },
     inspect,
-    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore,
+    async reconcile({ queue, getContext, readRemote, makeSnapshot = payload => payload, makeBaselineMeta = () => ({}), resolveConflicts, resolveRejectedRestore, resolveRejectedPhoto,
       operationId = crypto.randomUUID() }) {
       const { head, records, applied, anchor } = assertObserved();
       if (!head || applied.has(head.action.operationId)) throw blocked("reconciliation", "Нет отклонённого действия для сверки.");
@@ -561,12 +564,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
       const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
-      if (head.action.kind === "photos.mutate" && !alreadyCommitted) throw blocked("photo-reconciliation", "Фотодействие отклонено. Сохранённый файл нельзя автоматически привязать к другой версии карточки.");
+      const lastCommittedIndex = settled.outcomes.findLastIndex(proof => proof.operation.state === "committed");
+      const rejectedPhoto = !alreadyCommitted && settled.outcomes.slice(lastCommittedIndex + 1).findLast(proof => proof.operation.kind === "photos.mutate" && proof.operation.state === "rejected");
+      if (rejectedPhoto && !photoEnabled) throw blocked("photo-disabled", "Явное разрешение фотодействий ещё не включено.");
+      if (rejectedPhoto && typeof resolveRejectedPhoto !== "function") throw blocked("photo-reconciliation", "Фотодействие отклонено. Сохранённый файл нельзя автоматически привязать к другой версии карточки.");
       const rejectedRestore = !alreadyCommitted && [...settled.outcomes].reverse().find(proof => proof.operation.kind === "list.restore" && proof.operation.state === "rejected");
       if (rejectedRestore && typeof resolveRejectedRestore !== "function") {
         throw blocked("restore-reconciliation", "Восстановление не применено. Его нельзя автоматически перенести на другую версию списка; требуется новый выбор из истории.");
       }
-      if (!alreadyCommitted && !rejectedRestore && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
+      if (!alreadyCommitted && !rejectedRestore && !rejectedPhoto && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
       // previously committed edit is not replayed over a later remote edit.
@@ -577,7 +583,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         if (record.mergeBase) { base = record.mergeBase; break; }
       }
-      if (!base && !alreadyCommitted && !rejectedRestore) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
+      if (!base && !alreadyCommitted && !rejectedRestore && !rejectedPhoto) throw blocked("reconciliation", "Не сохранена общая исходная версия. Автоматическое объединение остановлено.");
       const remote = clone(await readRemote());
       assertCurrent();
       if (remote?.id !== listId || remote.ownerId !== actorId || remote.deleted === true
@@ -612,7 +618,17 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           serverRecord: remote, action: clone(head.action) };
       }
       let plan, decision = null;
-      if (rejectedRestore) {
+      if (rejectedPhoto) {
+        const choice = await resolveRejectedPhoto({ photoOperationId: rejectedPhoto.operation.id,
+          action: records.get(rejectedPhoto.operation.id).action.body.action, stateRevision: remote.stateRevision,
+          discardedOperationCount: settled.outcomes.slice(lastCommittedIndex + 1).filter(proof => proof.operation.state === "rejected").length,
+          localFilesRetained: true });
+        assertCurrent();
+        if (choice !== "keep-server") throw blocked("reconciliation-cancelled", "Выбор отложен. Файл и исходное фотодействие сохранены, сервер не перезаписан.");
+        decision = { version: 1, type: "keep-server-after-rejected-photo", photoOperationId: rejectedPhoto.operation.id,
+          stateRevision: remote.stateRevision, localFilesRetained: true };
+        plan = { payload: remote.payload, conflicts: [] };
+      } else if (rejectedRestore) {
         if (containsPersonalPhotos(remote.payload) || [...records.values()].some(record => containsPersonalPhotos(record.snapshot) || containsPersonalPhotos(record.action.body.payload))) {
           throw blocked("restore-files", "Сверка восстановления с фото ждёт файлового адаптера. Обе версии сохранены.");
         }
@@ -644,7 +660,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         || !snapshot || typeof snapshot !== "object") throw blocked("input", "Не удалось зарегистрировать объединённое действие.");
       const action = { ...head.action, operationId, generation: head.action.generation + 1,
         previousLocalOperationId: head.action.operationId, kind: "list.update",
-        body: { ...head.action.body, payload, baseStateRevision: remote.stateRevision,
+        body: { ...(rejectedPhoto ? {} : head.action.body), payload, baseStateRevision: remote.stateRevision,
           stateRevision: remote.stateRevision, baseServerUpdatedAt: remote.updatedAt || null,
           force: false, forceOverwrite: false, fullReplace: false,
           causal: { dependsOn: [], reads: [] } } };
@@ -665,6 +681,35 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       observe({ head: record, anchor });
       assertObserved();
       return clone(record);
+    },
+    async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
+      const { head } = assertObserved();
+      if (!photoEnabled || head?.action.kind !== "photos.mutate" || head.action.body.action !== "attach"
+        || !photoStore || !photoStaging?.cancel || !queue?.settleCancelledPhotoStage) throw blocked("photo-cancellation", "Отмена этого фотодействия ещё не подключена.");
+      assertPersonalPhotoRecord(head);
+      const assertCurrent = guardEditor(getContext, head), action = head.action;
+      assertCurrent();
+      const saved = await photoStore.read(action.operationId); assertCurrent();
+      assertPersonalPhotoFile(head, saved, binding);
+      let ownerReceipt;
+      try { ownerReceipt = await queue.inspect(operationRequest(action)); }
+      catch (error) { assertCurrent(); if (!error.isOperationReceiptError) throw error; }
+      assertCurrent();
+      if (ownerReceipt && !validHistoricalProof(ownerReceipt, action)) throw blocked("receipt", "Подтверждение фотодействия не совпало.");
+      if (ownerReceipt?.operation.state === "committed") return { historicalOnly: true, alreadyPublished: true, ownerReceipt, fileRetained: true };
+      const stageReceipt = await photoStaging.cancel(action.operationId); assertCurrent();
+      if (ownerReceipt?.operation.state === "rejected") return { historicalOnly: true, ownerReceipt, stageReceipt, fileRetained: true };
+      const fileHash = saved.fileMetadata?.hash, thumbHash = saved.thumbMetadata?.hash || fileHash;
+      if (stageReceipt?.historicalStageOnly !== true || stageReceipt.actionOperationId !== action.operationId
+        || !validateCancelledStagedPhotoReceipt(stageReceipt, { operationId: action.body.assetId, actorId, listId,
+          entityType: action.body.entityType, entityId: action.body.entityId, photoId: action.body.photoId, fileHash, thumbHash })) {
+        throw blocked("photo-cancellation", "Файл уже принят либо его отмена не подтверждена. Результат добавления в карточку нужно уточнить отдельно.");
+      }
+      ownerReceipt = await queue.settleCancelledPhotoStage({ ...operationRequest(action), fileHash, thumbHash }); assertCurrent();
+      if (!validHistoricalProof(ownerReceipt, action) || ownerReceipt.operation.state !== "rejected") throw blocked("receipt", "Не подтверждено отклонение исходного фотодействия.");
+      // Both exact receipts are historical evidence, NOT an applied marker or
+      // permission to drop the draft. Adopting current state requires a choice.
+      return { historicalOnly: true, ownerReceipt, stageReceipt, fileRetained: true };
     },
     async drain({ queue, getContext, photoStore, photoStaging, onConfirmed = () => {} }) {
       const { records, head } = assertObserved();

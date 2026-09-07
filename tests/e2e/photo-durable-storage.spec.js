@@ -95,6 +95,30 @@ test("a local photo callback failure aborts its queued writes and the next trans
   expect(outcome).toEqual({ rejected: true, persisted: false, next: "next" });
 });
 
+test("explicit rejected-photo decision reloads as a new CAS action while its original native file and photo action remain retained", async ({ page, context }) => {
+  await fixture(page, context);
+  const ids = await page.evaluate(async () => {
+    const { outbox, input, plan, base } = window.preparePhotoBridge(), store = window.photoActions();
+    await store.capture(input); await outbox.capturePhoto({ plan, store, getContext: () => window.photoContext });
+    const queue = { inspect: async request => ({ historicalOnly: true, operation: { id: request.operationId,
+      environment: window.photoContext.environment, actorId: window.photoContext.actorId, listId: window.photoContext.listId,
+      kind: "photos.mutate", state: "rejected", payloadDigest: "a".repeat(64) }, resultStatus: 409, rejectionCode: "photo_asset_not_ready", stateRevision: 1 }) };
+    const result = await outbox.reconcile({ queue, getContext: () => window.photoContext,
+      readRemote: async () => ({ id: window.photoContext.listId, ownerId: window.photoContext.actorId, stateRevision: 1, payload: base }),
+      resolveRejectedPhoto: async () => "keep-server" });
+    return { oldId: plan.action.operationId, newId: result.action.operationId };
+  });
+  await page.reload(); await page.waitForFunction(() => window.photos);
+  const recovered = await page.evaluate(async ({ oldId }) => {
+    const outbox = window.photoOutbox({ photoEnabled: false }), record = outbox.recover(), file = await window.photoActions({ enabled: false }).read(oldId);
+    return { id: record.action.operationId, kind: record.action.kind, predecessor: record.action.previousLocalOperationId,
+      chosen: record.reconciliation.decision.photoOperationId, photos: record.snapshot.items["item-a"].photos,
+      full: await file.file.text(), thumb: await file.thumb.text(), sourceRetained: outbox.list().some(value => value.action.operationId === oldId), pending: outbox.hasPending() };
+  }, ids);
+  expect(recovered).toEqual({ id: ids.newId, kind: "list.update", predecessor: ids.oldId, chosen: ids.oldId,
+    photos: [], full: "full photo bytes", thumb: "thumbnail bytes", sourceRetained: true, pending: true });
+});
+
 test("raw photo recovery export retains corrupted intent, original bytes and the exact dispatch claim after reload", async ({ page, context }) => {
   await fixture(page, context);
   const id = await page.evaluate(async () => {

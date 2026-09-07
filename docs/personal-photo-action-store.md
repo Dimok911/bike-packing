@@ -193,3 +193,38 @@ original/thumbnail bytes and dispatch ID, no POST/deletion, plus the native IDB
 suite. The sole old native-Blob Windows WebKit cache skip is unchanged. This is
 Windows Chromium/mobile WebKit, not real-device Safari or full UI acceptance.
 No new API changes, push, publication, live migration or gate activation.
+
+## Owner settlement and explicit keep-current decision (UI wiring still open)
+
+`cancelPhotoUpload` first checks the frozen owner action. A committed owner is
+never called cancelled. Otherwise explicit stage cancellation can be followed by
+`settleCancelledPhotoStage`: the queue itself re-reads the exact permanent stage
+fence, original owner UUID/body, account, capabilities and file hashes. Only then
+may that original single attach obtain its no-effect rejection. There is at most
+one POST per explicit invocation, no automatic retry, replacement UUID or upload.
+Waiting/unknown outcomes remain unresolved; a contradictory committed owner is
+not accepted as a rejection. No outbox-applied marker or file deletion occurs.
+
+Once all exact original receipts are terminal, `resolveRejectedPhoto` may ask to
+keep the currently read server version. Consent registers a NEW CAS action with
+that exact baseline and an explicit local decision certificate. The photo
+manifest is not copied into it; neither file nor pending photo is reattached.
+Cancel, unknown receipts, changed account/editor, invalid owner and quota retain
+the original draft. A competing server change rejects the decision; another
+keep-current choice must refer to the newly read revision. A previously committed
+decision does not make later ordinary edits re-cancel that old photo.
+
+Unit/source evidence: 256 transport, 889 critical, source check. Real paired
+API/MySQL **66/66** covers stage and owner ACK loss, reload, original delayed
+delivery, a competing edit while the question is open, two distinct explicit
+CAS decisions and atomic current-state adoption without one photo upload. The
+first extended test exposed a test assertion that assumed absent `photos` was
+an empty array; it now checks preservation of the original absent field instead.
+Final diagnostics `data-eee89f50cafb4c19ae52b487e3f85ebc`; server shut down.
+The explicit cancel/keep-current buttons are NOT yet connected to the blocking
+startup dialog. Its read-only export continues to work. No gates were activated.
+
+Combined queue/native-storage browsers after this continuation: **61 passed,
+1 skipped**, 1.3 minutes. A new native-IDB scenario reloads the explicit new CAS
+decision with its writer disabled while retaining the original photo action,
+full bytes and thumbnail. The skip is only the same old Windows WebKit Blob cache.
