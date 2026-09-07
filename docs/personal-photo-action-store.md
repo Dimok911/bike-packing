@@ -63,3 +63,30 @@ as one combined mobile-to-MySQL test. No gates/publication/Production changes.
 Next: matching owner-publication queue/UI adapters. Uploading a staged
 file must not label its owner action confirmed. Source snapshots and pending
 files must remain retained through rejection, account change and lost ACK.
+
+## Owner-publication queue protocol
+
+`personal-photo-publication-protocol.js` adds a separate false queue gate. The
+virtual `/lists/:id/photos/mutate` adapter sends ONLY through the existing causal
+list-operation gateway, with both server capabilities required. It validates the
+exact attach/copy/delete/order manifest and sequential batch photo order before
+dispatch; metadata-only recovery never starts another photo upload.
+
+Committed responses must contain every indexed child outcome and the final photo
+order on every owner, with exact new photo/asset bindings. A partial/mismatched
+receipt does not release the write barrier. After confirmation the transport
+still drops its large body; recovery restores only the caller's hash-bound body
+for validation and uses GET. Historical inspection is not permission to apply a
+snapshot after the server advances. Account/list/environment guards remain.
+
+The generic DAG primitive accepts both `list.restore` and `photos.mutate`, so an
+explicit cross-list read also delays subsequent source modification/deletion.
+This does NOT yet connect the separate file journal to the real personal outbox
+or UI. That bridge and startup orphan recovery remain the next prerequisite.
+
+Local verification: 226 transport, 889 critical, source check; queue browsers
+**26/26**, Chromium + mobile WebKit (46.9s), including cold lost ACK, direct/EU
+route change, partial receipt, reload and stale historical response. Real paired
+API/MySQL **59/59** checks actual batch attachment, order, deletion and tombstones
+through the frontend queue. Native file persistence is still a separate suite.
+No push/deploy/live migration, Production change or release-gate activation.

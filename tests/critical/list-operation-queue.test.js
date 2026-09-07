@@ -6,6 +6,8 @@ import { createListOperationQueue, canonicalListOperationJson, validateListRecei
 import { apiFetchRequest } from "../../src/sync/api-client.js";
 import { syncEntityBatchWithRevisionRetry } from "../../src/sync/entity-sync.js";
 import { assertListOperationPayload, MAX_LIST_OPERATION_PAYLOAD_BYTES } from "../../src/sync/list-operation-payload.js";
+import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult,
+  PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED } from "../../src/sync/personal-photo-publication-protocol.js";
 
 const path = "/bike-packing/lists/list-a";
 function fixture() {
@@ -24,7 +26,7 @@ function fixture() {
     calls.push({ url, options });
     let data, status = 200;
     if (url.endsWith("/auth/me")) data = { user: { id: context.actorId } };
-    else if (url.endsWith("/capabilities")) data = { capabilities: ["personalListCausalOperationsV1"] };
+    else if (url.endsWith("/capabilities")) data = { capabilities: state.capabilities || ["personalListCausalOperationsV1"] };
     else if (url.endsWith("/freshness")) { status = state.deleted ? 404 : 200; data = { stateRevision: state.revision }; }
     else if (options.method === "POST") {
       const envelope = JSON.parse(options.body);
@@ -34,6 +36,7 @@ function fixture() {
       const payloadDigest = createHash("sha256").update(canonicalListOperationJson(expected)).digest("hex");
       data = { ok: true, operation: { ...expected, id: envelope.operationId, payloadDigest, state: state.rejection ? "rejected" : "committed" },
         result: state.rejection || { status: 200, payload: { ok: true, list: { id: envelope.listId, stateRevision: 1 } } } };
+      if (!state.rejection && state.payload) data.result.payload = structuredClone(state.payload);
       if (state.waiting) {
         data.operation.state = "waiting"; data.result = null;
         data.waiting = { code: "dependency_not_committed", retrySameOperation: true,
@@ -48,7 +51,7 @@ function fixture() {
   };
   const make = () => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
-    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, locks, fetchImpl }) };
+    return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -59,6 +62,85 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);
   const queue = createListOperationQueue({ transport: { experiment: true } });
   assert.equal(queue.supports(path, "PUT"), false);
+});
+
+function photoPublicationFixture() {
+  const f = fixture();
+  Object.assign(f.context, { environment: "bike-packing-experiment", listId: "list-a", scopeKey: "id:actor-a" });
+  f.state.photoEnabled = true; f.state.capabilities = ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1"];
+  const first = { version: 1, action: "attach", entityType: "item", entityId: "item-a", baseEntityRevision: 1,
+    assetId: crypto.randomUUID(), photoId: "photo-a", expectedPhotoIds: [], index: 0 };
+  const second = { ...first, assetId: crypto.randomUUID(), photoId: "photo-b", expectedPhotoIds: ["photo-a"], index: 0 };
+  const body = { version: 1, action: "batch", changes: [first, second], baseStateRevision: 1, causal: { dependsOn: [], reads: [] } };
+  const manifest = personalPhotoPublicationManifest(body);
+  const photos = [first, second].map(change => ({ id: change.photoId, photoId: change.photoId, assetId: change.assetId,
+    listId: "list-a", status: "synced", url: `https://example.test/${change.photoId}`, thumbUrl: `https://example.test/${change.photoId}/thumb` }));
+  f.state.payload = { ok: true, stateRevision: 1, photoChanges: manifest.map((entry, index) => ({ ...entry, photo: photos[index] })),
+    list: { id: "list-a", stateRevision: 1, payload: { items: { "item-a": { id: "item-a", photos: [...photos].reverse() } }, containers: {} } } };
+  f.input = { path: `${path}/photos/mutate`, method: "POST", operationId: crypto.randomUUID(), body: JSON.stringify(body) };
+  return { ...f, body };
+}
+
+test("photo mutation queue needs its separate release gate and server capability before durable dispatch", async () => {
+  assert.equal(PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, false);
+  const f = photoPublicationFixture();
+  assert.equal(f.queue.supports(f.input.path, "POST"), false);
+  f.state.photoEnabled = false; assert.equal(f.make().queue.supports(f.input.path, "POST"), false);
+  f.state.photoEnabled = true; f.state.capabilities = ["personalListCausalOperationsV1"];
+  await assert.rejects(f.make().queue.run(f.input));
+  assert.equal(f.posts().length, 0); assert.equal(f.transport.writes.length, 0);
+  f.state.capabilities.push("personalCausalPhotoPublicationV1");
+  const malformed = structuredClone(f.body); malformed.changes[1].expectedPhotoIds = [];
+  await assert.rejects(f.make().queue.run({ ...f.input, body: JSON.stringify(malformed) }), { isOperationPreflightError: true });
+  assert.equal(f.posts().length, 0); assert.equal(f.transport.writes.length, 0);
+});
+
+test("photo batch lost ACK and reload confirm every child and recover a compact terminal transport record without re-POST", async () => {
+  const f = photoPublicationFixture(); f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.posts().length, 1);
+  f.state.unknown = false;
+  assert.deepEqual(await f.make().queue.run(f.input), f.state.payload);
+  assert.equal(f.make().transport.writes[0].recovery.body, undefined, "confirmed transport does not retain another manifest copy");
+  assert.deepEqual(await f.make().queue.run(f.input), f.state.payload); assert.equal(f.posts().length, 1);
+  const proof = await f.make().queue.inspect(f.input); assert.equal(proof.historicalOnly, true);
+  assert.equal(proof.operation.kind, "photos.mutate"); assert.equal(proof.stateRevision, 1); assert.equal(proof.list, undefined);
+  f.state.revision = 2;
+  await assert.rejects(f.make().queue.run(f.input), { isAmbiguousMutation: true });
+  assert.equal((await f.make().queue.inspect(f.input)).historicalOnly, true); assert.equal(f.posts().length, 1);
+});
+
+test("photo receipt rejects partial wrong-owner wrong-asset and inconsistent final order without releasing the write barrier", async () => {
+  const f = photoPublicationFixture(), expected = { listId: "list-a", body: f.body };
+  assert.equal(validatePersonalPhotoPublicationResult(f.state.payload, expected), true);
+  for (const mutate of [p => p.photoChanges.pop(), p => p.photoChanges.reverse(), p => p.photoChanges[1].entityId = "other",
+    p => p.photoChanges[1].assetId = crypto.randomUUID(), p => p.photoChanges[1].photo.assetId = crypto.randomUUID(),
+    p => p.photoChanges[1].photoIds.reverse(), p => p.list.payload.items["item-a"].photos.reverse(),
+    p => p.list.payload.items["item-a"].photos[0].url = "different", p => p.list.id = "other", p => p.stateRevision++,
+    p => p.photoChanges.push(p.photoChanges[0]), p => delete p.list.payload]) {
+    const altered = JSON.parse(JSON.stringify(f.state.payload)); mutate(altered);
+    assert.equal(validatePersonalPhotoPublicationResult(altered, expected), false);
+  }
+  const good = structuredClone(f.state.payload); f.state.payload.photoChanges.pop();
+  await assert.rejects(f.make().queue.run(f.input)); assert.equal(f.make().transport.writes[0].confirmed, undefined);
+  f.receipts.get(f.input.operationId).result.payload = good;
+  assert.deepEqual(await f.make().queue.run(f.input), good); assert.equal(f.posts().length, 1);
+});
+
+test("photo manifests preserve ordered delete/copy changes and reject ambiguous child dependencies or identity reuse", () => {
+  const f = photoPublicationFixture();
+  for (const mutate of [b => b.changes[1].photoId = b.changes[0].photoId, b => b.changes[1].assetId = b.changes[0].assetId,
+    b => b.changes[1].baseEntityRevision++, b => b.changes[0].causal = {}, b => b.changes[0].baseStateRevision = 1,
+    b => b.changes[0].force = true, b => b.changes = [], b => b.changes[0].index = 4]) {
+    const altered = structuredClone(f.body); mutate(altered);
+    assert.throws(() => personalPhotoPublicationManifest(altered), { isOperationPreflightError: true });
+  }
+  const remove = { ...f.body.changes[0], action: "delete", expectedPhotoIds: ["photo-a", "other"], basePhotoRevision: 2 };
+  assert.deepEqual(personalPhotoPublicationManifest(remove)[0].photoIds, ["other"]);
+  const copy = { ...f.body.changes[0], action: "copy", source: { listId: "source", photoId: "original", assetId: crypto.randomUUID(), photoRevision: 9 } };
+  assert.deepEqual(personalPhotoPublicationManifest(copy)[0].photoIds, ["photo-a"]);
+  copy.source.photoRevision = 0; assert.throws(() => personalPhotoPublicationManifest(copy));
+  const order = { ...remove, action: "order", photoIds: ["other", "photo-a"] };
+  assert.deepEqual(personalPhotoPublicationManifest(order)[0].photoIds, order.photoIds);
 });
 
 test("history restore has a separate gateway kind and exact receipt recovery without a second POST", async () => {

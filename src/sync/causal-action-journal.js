@@ -27,7 +27,7 @@ export function createCausalActionJournal({ storage, locks = globalThis.navigato
     async enqueue({ operationId = crypto.randomUUID(), kind, listId, body = {}, sourceReads = [] }) {
       // Snapshot BEFORE waiting for another tab. No later copy from live state.
       const input = clone({ operationId, kind, listId, body, sourceReads });
-      if (!uuid(operationId) || !["list.create", "list.update", "list.delete", "items.sync", "containers.sync", "layouts.sync", "dictionaries.sync"].includes(kind)
+      if (!uuid(operationId) || !["list.create", "list.update", "list.restore", "list.delete", "items.sync", "containers.sync", "layouts.sync", "dictionaries.sync", "photos.mutate"].includes(kind)
         || !target(listId) || !body || typeof body !== "object" || Array.isArray(body) || body.causal !== undefined
         || !Array.isArray(sourceReads) || sourceReads.length > 32) fail("Invalid causal action");
       if (!locks?.request) fail("Cross-tab action lock unavailable");

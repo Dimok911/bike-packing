@@ -40,6 +40,16 @@ test("two tabs persist each action once with per-object generation; no timestamp
   await assert.rejects(one.enqueue({ ...JSON.parse(a.inputJson), body: { different: true } }), /reused/);
 });
 
+test("photo publication and history restore use the same dependency DAG as DB changes and cross-list readers", async () => {
+  const f = fixture(), journal = f.make();
+  const source = await journal.enqueue({ kind: "photos.mutate", listId: "a", body: { baseStateRevision: 1, action: "attach" } });
+  const copy = await f.make().enqueue({ kind: "photos.mutate", listId: "b", body: { baseStateRevision: 4, action: "copy" }, sourceReads: [{ listId: "a", revision: 1 }] });
+  const restore = await journal.enqueue({ kind: "list.restore", listId: "a", body: { historyRestore: { historyId: 123 } } });
+  assert.deepEqual(copy.body.causal.reads, [{ listId: "a", operationId: source.operationId }]);
+  assert.deepEqual(restore.body.causal.dependsOn, [{ operationId: source.operationId, listId: "a" }, { operationId: copy.operationId, listId: "b" }]);
+  assert.deepEqual(f.make().list(), [source, copy, restore]);
+});
+
 test("storage, source version and scope failures prevent action registration", async () => {
   const f = fixture();
   await assert.rejects(f.make().enqueue({ kind: "list.create", listId: "b", sourceReads: [{ listId: "a" }] }), /revision/);

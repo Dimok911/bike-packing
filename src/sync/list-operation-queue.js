@@ -1,4 +1,6 @@
 import { assertListOperationPayload } from "./list-operation-payload.js";
+import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
+  personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -19,6 +21,9 @@ export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
   const restore = /^\/bike-packing\/lists\/([^/]+)\/restore$/.exec(path);
   if (restore && method === "POST") return { kind: "list.restore", listId: decodeURIComponent(restore[1]) };
+  // Virtual adapter path: only the operation gateway dispatches this mutation.
+  const photos = /^\/bike-packing\/lists\/([^/]+)\/photos\/mutate$/.exec(path);
+  if (photos && method === "POST") return { kind: "photos.mutate", listId: decodeURIComponent(photos[1]) };
   const match = /^\/bike-packing\/lists\/([^/]+)(?:\/(items|containers|layouts|dictionaries)\/sync)?$/.exec(path);
   if (!match) return null;
   const kind = match[2] ? method === "POST" && `${match[2]}.sync`
@@ -37,6 +42,7 @@ export function validateListReceipt(data, expected) {
     || op.kind !== expected.kind || op.listId !== expected.listId || op.payloadDigest !== expected.payloadDigest) return false;
   if (op.state === "rejected") return [400, 403, 404, 409, 413, 422].includes(result?.status) && result.payload?.ok === false;
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
+  if (expected.kind === "photos.mutate") return validatePersonalPhotoPublicationResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
   const type = expected.kind.split(".")[0];
@@ -74,6 +80,7 @@ const historicalProof = data => {
 
 export function createListOperationQueue({ transport, getContext = () => null,
   enabled = LIST_OPERATION_QUEUE_ENABLED, locks = globalThis.navigator?.locks,
+  photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -133,7 +140,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
   };
 
   return {
-    supports(path, method) { return enabled && transport.experiment && Boolean(listOperationRoute(path, method)); },
+    supports(path, method) {
+      const route = listOperationRoute(path, method);
+      return enabled && transport.experiment && Boolean(route) && (route.kind !== "photos.mutate" || photoEnabled);
+    },
     // Read-only historical settlement. It never creates a transport intent,
     // dispatches a mutation or resumes a waiting operation. The proof deliberately
     // excludes business payloads: it is NOT authority to apply an old snapshot.
@@ -146,13 +156,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method), listId = route.listId || body.id;
       if (typeof listId !== "string" || !listId.trim() || listId !== listId.trim() || listId.length > 191) throw paused(operationId);
+      if (route.kind === "photos.mutate" && (initial.environment !== environment || initial.listId !== listId || initial.scopeKey !== `id:${initial.actorId}`)) throw paused(operationId);
       const children = route.kind.endsWith(".sync") ? (body[route.kind.split(".")[0]] || []).map(entry => entry.id || entry.payload?.id) : [];
       if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(operationId);
       const expected = { operationId, actorId: initial.actorId, kind: route.kind, listId, body, children,
         payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
       const assertContext = () => {
         const current = getContext();
-        if (["actorId", "generation", "scope", "scopeKey", "listId"].some(key => current?.[key] !== initial[key])) {
+        if (["actorId", "generation", "scope", "scopeKey", "listId", "environment"].some(key => current?.[key] !== initial[key])) {
           throw paused(operationId, "Аккаунт или локальные данные изменились. Результат сверки не применён.");
         }
       };
@@ -168,7 +179,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         const data = await read(`${gateway}/${encodeURIComponent(operationId)}`); assertContext();
         if (validateWaitingOperation(data, expected)) throw waitingError(operationId);
         if (!validateListReceipt(data, expected)) throw paused(operationId);
-        if (entry) recordReceipt(entry, data);
+        if (entry) recordReceipt({ ...entry, recovery: expected }, data);
         assertContext();
         return historicalProof(data);
       });
@@ -251,6 +262,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
+      if (route.kind === "photos.mutate") {
+        if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
+        personalPhotoPublicationManifest(body);
+      }
       const generation = await sha(initial.generation);
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
       const requestKey = await sha(canonicalListOperationJson({ path, method, body, ...(!requestedId ? { generation } : {}), actorId: initial.actorId,
@@ -285,13 +300,18 @@ export function createListOperationQueue({ transport, getContext = () => null,
             || entry.recovery.payloadDigest !== digest) throw paused(requestedId, "Номер действия уже связан с другими данными. Отправка остановлена.");
         }
         let data;
-        if (entry) data = await recover(entry, { resumeWaiting: true,
+        // Terminal transport records omit their large body. Restore only the
+        // caller's exact hash-bound immutable manifest for result validation.
+        if (entry) data = await recover({ ...entry, recovery: { ...entry.recovery, body } }, { resumeWaiting: true,
           assertBeforeDispatch: () => { if (!contextMatches(initial)) throw paused(entry.id); } });
         else {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
           transport.assertWritable(path, method, protocol);
           const capabilities = await read("/bike-packing/capabilities");
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
+          if (route.kind === "photos.mutate" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_PUBLICATION_CAPABILITY)) {
+            throw paused(null, "Сервер ещё не поддерживает подтверждение фотодействий. Запрос не отправлен.");
+          }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();
           assertListOperationPayload({ environment, actorId: initial.actorId, kind: route.kind, listId, body });

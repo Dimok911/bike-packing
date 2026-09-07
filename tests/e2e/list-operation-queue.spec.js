@@ -24,7 +24,10 @@ async function fixture(page, context) {
       import {apiFetchRequest} from '/src/sync/api-client.js';
       window.generation='generation-1'; window.actorId='actor-a';
       const transport=createExperimentTransport({selection:sessionStorage.getItem('list-route')||'direct',euEnabled:true});
-      const queue=createListOperationQueue({transport,enabled:true,getContext:()=>({actorId:window.actorId,generation:window.generation,scope:'personal'})});
+      const queue=createListOperationQueue({transport,enabled:true,photoEnabled:true,getContext:()=>({actorId:window.actorId,generation:window.generation,scope:'personal',
+        environment:'bike-packing-experiment',listId:'list-a',scopeKey:'id:'+window.actorId})});
+      window.runPhoto=async(input,inspect=false)=>{try{return {ok:true,result:await queue[inspect?'inspect':'run'](input)};}
+        catch(error){return {ok:false,ambiguous:!!error.isAmbiguousMutation};}};
       window.run=async()=>{try {const result=await apiFetchRequest('/bike-packing/lists/list-a',{method:'PUT',body:JSON.stringify({payload:{items:{}}})},{transport,listQueue:queue});return {ok:true,id:result.list.id};}
         catch(error){return {ok:false,ambiguous:!!error.isAmbiguousMutation};}};
       window.entries=()=>transport.writes;
@@ -59,7 +62,7 @@ async function fixture(page, context) {
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers });
     let data;
     if (url.pathname.endsWith("/capabilities")) data = { apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-      capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1"] };
+      capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalPhotoPublicationV1"] };
     else if (url.pathname.endsWith("/auth/me")) data = { user: { id: "actor-a" } };
     else if (url.pathname.endsWith("/freshness")) data = { stateRevision: state.revision };
     else if (route.request().method() === "POST") {
@@ -68,6 +71,7 @@ async function fixture(page, context) {
       const payloadDigest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
       data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest, state: "committed" },
         result: { status: 200, payload: { ok: true, list: { id: body.listId, stateRevision: 1 } } } };
+      if (body.kind === "photos.mutate") data.result.payload = structuredClone(state.photoPayload);
       if (state.rejection) { data.operation.state = "rejected"; data.result = state.rejection; }
       if (state.waiting) {
         data.operation.state = "waiting"; data.result = null;
@@ -96,6 +100,35 @@ test("cold queue preserves the ID across lost ACK, page reload and direct/EU rou
   expect(await page.evaluate(() => window.run())).toEqual({ ok: true, id: "list-a" });
   expect(f.posts).toHaveLength(1);
   expect(await page.evaluate(() => window.entries()[0].id)).toBe(id);
+});
+
+test("photo batch queue survives cold lost ACK and route change, and rejects a partial receipt until all exact outcomes return", async ({ page, context }) => {
+  const f = await fixture(page, context), operationId = "12345678-1234-4123-8123-123456789abc";
+  const assetId = "22345678-1234-4123-8123-123456789abc", photoId = "browser-photo";
+  const photo = { id: photoId, photoId, assetId, listId: "list-a", status: "synced", url: "https://example.test/photo", thumbUrl: "https://example.test/thumb" };
+  const body = { version: 1, action: "batch", baseStateRevision: 1, causal: { dependsOn: [], reads: [] }, changes: [{
+    version: 1, action: "attach", entityType: "item", entityId: "a", baseEntityRevision: 1, photoId, assetId, expectedPhotoIds: [], index: 0 }] };
+  const input = { path: "/bike-packing/lists/list-a/photos/mutate", method: "POST", operationId, body: JSON.stringify(body) };
+  f.photoPayload = { ok: true, stateRevision: 1, photoChanges: [{ index: 0, action: "attach", entityType: "item", entityId: "a", photoId, assetId, photoIds: [photoId], photo }],
+    list: { id: "list-a", stateRevision: 1, payload: { items: { a: { id: "a", photos: [photo] } } } } };
+  f.lose = true; f.unknown = true;
+  expect(await page.evaluate(input => window.runPhoto(input), input)).toEqual({ ok: false, ambiguous: true });
+  expect(f.posts).toHaveLength(1);
+  await page.evaluate(() => sessionStorage.setItem("list-route", "eu"));
+  f.unknown = false; f.receipts.get(operationId).result.payload.photoChanges = [];
+  await page.reload(); await page.waitForFunction(() => Boolean(window.runPhoto));
+  expect(await page.evaluate(input => window.runPhoto(input), input)).toEqual({ ok: false, ambiguous: true });
+  expect(await page.evaluate(() => window.entries()[0].confirmed ?? false)).toBe(false);
+  f.receipts.get(operationId).result.payload = structuredClone(f.photoPayload);
+  expect((await page.evaluate(input => window.runPhoto(input), input)).result).toEqual(f.photoPayload);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.runPhoto));
+  expect((await page.evaluate(input => window.runPhoto(input), input)).result).toEqual(f.photoPayload);
+  expect(f.posts).toHaveLength(1);
+  f.revision = 2;
+  expect(await page.evaluate(input => window.runPhoto(input), input)).toEqual({ ok: false, ambiguous: true });
+  const proof = await page.evaluate(input => window.runPhoto(input, true), input);
+  expect(proof.result.historicalOnly).toBe(true); expect(proof.result.operation.id).toBe(operationId);
+  expect(proof.result.list).toBeUndefined(); expect(f.posts).toHaveLength(1);
 });
 
 test("initial create recovers after lost ACK and route change using one UUID and one POST", async ({ page, context }) => {
