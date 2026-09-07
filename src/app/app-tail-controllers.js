@@ -376,7 +376,7 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, saveStoredActiveLayoutChoice,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
     scheduleSearchContextCommit, scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage,
@@ -4679,6 +4679,8 @@ async function confirmDeleteCatalogItems(itemIds) {
     if (ids[0]) confirmDeleteItem(ids[0]);
     return;
   }
+  if (ids.some(id => warnLockedItemDelete(id))) return;
+  const personalDelete = preparePersonalCatalogDeletion({ type: "batch", operations: ids.map(id => ({ type: "item", id })) });
   const confirmed = await askConfirmDialog({
     title: localText("Delete selected items forever?", "Удалить выбранные вещи навсегда?"),
     text: localText(`${ids.length} items will be removed from the item list and every layout. Bags and places will remain. This cannot be undone.`, `${formatThingCount(ids.length)} будут удалены из списка вещей и из всех укладок. Сумки и места останутся. Это действие нельзя отменить.`),
@@ -4688,6 +4690,14 @@ async function confirmDeleteCatalogItems(itemIds) {
     hideClose: true
   });
   if (!confirmed) return;
+  if (ids.some(id => warnLockedItemDelete(id))) return;
+  if (personalDelete) {
+    if (!personalDelete()) return;
+    runtime.selectedCatalogItemIds = new Set();
+    runtime.selectedCatalogItemAnchorId = "";
+    render();
+    return;
+  }
   ids.forEach((id) => deleteItemForever(id, { cleanupContainers: false, renderAfter: false }));
   runtime.selectedCatalogItemIds = new Set();
   runtime.selectedCatalogItemAnchorId = "";
@@ -4722,6 +4732,8 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
     if (ids[0]) confirmDeleteRootContainer(ids[0]);
     return;
   }
+  if (ids.some(id => warnLockedContainerDelete(id))) return;
+  const personalDelete = preparePersonalCatalogDeletion({ type: "batch", operations: ids.map(id => ({ type: "container", id })) });
   const confirmed = await askConfirmDialog({
     title: localText("Delete selected bags and places?", "Удалить выбранные сумки и места?"),
     text: localText(`${ids.length} bags/places will be removed from the bag list and every layout.`, `${formatRootContainerCount(ids.length)} будут удалены из списка сумок и мест и из всех укладок.`),
@@ -4731,6 +4743,14 @@ async function confirmDeleteCatalogRootContainers(containerIds) {
     hideClose: true
   });
   if (!confirmed) return;
+  if (ids.some(id => warnLockedContainerDelete(id))) return;
+  if (personalDelete) {
+    if (!personalDelete()) return;
+    runtime.selectedCatalogRootIds = new Set();
+    runtime.selectedCatalogRootAnchorId = "";
+    render();
+    return;
+  }
   ids.forEach((id) => deleteRootContainer(id));
   runtime.selectedCatalogRootIds = new Set();
   runtime.selectedCatalogRootAnchorId = "";
@@ -5304,6 +5324,7 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
   const item = state.items[itemId];
   if (!item) return;
   if (warnLockedItemDelete(itemId)) return;
+  const personalDelete = preparePersonalCatalogDeletion({ type: "item", id: itemId });
   const placements = describeVisibleItemLayoutPlacementRows(item);
   const placementText = placements.length
     ? `${t("items.deleteUsedNow")}\n${placements.map((placement) => `- ${placement.label}`).join("\n")}`
@@ -5322,8 +5343,7 @@ function confirmDeleteItem(itemId, { afterConfirm = null } = {}) {
     ...itemDeleteConfirm({ item, placementText, hasPlacements: Boolean(placements.length), t }),
     highlightHtml: placementHtml,
     onConfirm: () => {
-      deleteItemForever(itemId);
-      afterConfirm?.();
+      if (deleteItemForever(itemId, { personalDelete })) afterConfirm?.();
     }
   });
 }
@@ -5358,8 +5378,14 @@ function deleteItemPhotos(item, itemId) {
   });
 }
 
-function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = true } = {}) {
+function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = true,
+  personalDelete = preparePersonalCatalogDeletion({ type: "item", id: itemId }) } = {}) {
   if (warnLockedItemDelete(itemId)) return;
+  if (personalDelete) {
+    if (!personalDelete()) return false;
+    if (renderAfter) render();
+    return true;
+  }
   const changedAt = nowIso();
   const deleted = deleteItemFromState(state, itemId, {
     beforeDeleteItem: deleteItemPhotos,
@@ -5373,6 +5399,7 @@ function deleteItemForever(itemId, { cleanupContainers = true, renderAfter = tru
   saveState({ personalMutation: { type: "item", id: itemId } });
   scheduleActivePublishedEditSave();
   if (renderAfter) render();
+  return true;
 }
 
 async function copyItem(itemId, options = {}) {
@@ -5513,6 +5540,7 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
   const container = state.containers[containerId];
   if (!container || (container.parentId && container.nestable !== true)) return;
   if (warnLockedContainerDelete(containerId)) return;
+  const personalDelete = preparePersonalCatalogDeletion({ type: "container", id: containerId });
   const itemCount = getContainerItemIdsDeep(containerId).length;
   const layoutRows = Object.values(state.layouts)
     .filter((layout) => getLayoutContainerIdSet(layout).has(containerId))
@@ -5550,14 +5578,18 @@ function confirmDeleteRootContainer(containerId, { afterConfirm = null } = {}) {
       t
     }),
     onConfirm: () => {
-      deleteRootContainer(containerId);
-      afterConfirm?.();
+      if (deleteRootContainer(containerId, personalDelete)) afterConfirm?.();
     }
   });
 }
 
-function deleteRootContainer(containerId) {
+function deleteRootContainer(containerId, personalDelete = preparePersonalCatalogDeletion({ type: "container", id: containerId })) {
   if (warnLockedContainerDelete(containerId)) return;
+  if (personalDelete) {
+    if (!personalDelete()) return false;
+    render();
+    return true;
+  }
   const changedAt = nowIso();
   const deleted = deleteRootContainerFromState(state, containerId, {
     beforeDeleteContainer: deleteContainerPhotos,
@@ -5569,6 +5601,7 @@ function deleteRootContainer(containerId) {
   saveState({ personalMutation: { type: "container", id: containerId } });
   scheduleActivePublishedEditSave();
   render();
+  return true;
 }
 
 function removeRootContainerFromActiveLayout(containerId) {

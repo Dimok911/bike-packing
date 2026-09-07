@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createPersonalSaveOutbox, PERSONAL_SAVE_OUTBOX_ENABLED } from "../../src/sync/personal-save-outbox.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot, personalSnapshotWithUiPreferences } from "../../src/sync/personal-snapshot-codec.js";
-import { personalDeletionReference, preservesUndeletedEntities } from "../../src/sync/personal-deletion-intent.js";
+import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities,
+  preparePersonalDeletionBatch, retainedPersonalDeletionIntent } from "../../src/sync/personal-deletion-intent.js";
 import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import { saveRootContainerDialogAction, saveItemDialogAction } from "../../src/ui/item-dialog-save.js";
 import { resolveSyncVisualState } from "../../src/ui/sync-visual-state.js";
@@ -1173,4 +1174,81 @@ test("confirmed root deletion accounts for nested placements without authorizing
   assert.deepEqual(Object.keys(reference.containers), []);
   assert.ok(reference.items.a); assert.equal(reference.items.a.containerId, "");
   assert.equal(preservesUndeletedEntities({ ...reference, items: {} }, reference), false);
+});
+
+function deletionBatchFixture() {
+  return { items: { a: { id: "a", containerId: "bag" }, b: { id: "b", containerId: "child" }, kept: { id: "kept" } },
+    containers: { bag: { id: "bag", childIds: ["child", "nested"], itemIds: ["a"], order: [{ type: "item", id: "a" }] },
+      child: { id: "child", parentId: "bag", itemIds: ["b"] }, nested: { id: "nested", parentId: "bag", nestable: true } },
+    layouts: { layout: { rootContainerIds: ["bag"], arrangement: { rootContainerIds: ["bag"],
+      containers: { bag: { childIds: ["child", "nested"], itemIds: ["a"], order: [{ type: "item", id: "a" }] },
+        child: { parentId: "bag", itemIds: ["b"] }, nested: { parentId: "bag" } },
+      items: { a: "bag", b: "child" }, itemQuantities: { a: 2, b: 3 }, packedItems: { a: true, b: true } } } },
+    packedItems: { a: true, b: true }, collapsedContainers: { bag: true, child: true, nested: false } };
+}
+
+test("batch deletion prepares a frozen complete candidate, declares only its IDs and retains unrelated data", () => {
+  const state = deletionBatchFixture(), before = structuredClone(state);
+  const intent = { type: "batch", operations: ["a", "b"].map(id => ({ type: "item", id })) };
+  const { snapshot, intent: frozen } = preparePersonalDeletionBatch(state, intent, {
+    changedAt: "test-date", markEdited: (record, date) => { record.updatedAt = date; }
+  });
+  assert.deepEqual(state, before); assert.deepEqual(frozen, intent);
+  assert.deepEqual(Object.keys(snapshot.items), ["kept"]);
+  assert.deepEqual(snapshot.layouts.layout.arrangement.items, {});
+  assert.deepEqual(snapshot.layouts.layout.arrangement.itemQuantities, {});
+  assert.deepEqual(snapshot.packedItems, {}); assert.equal(snapshot.layouts.layout.updatedAt, "test-date");
+  const reference = personalDeletionReference(state, [{ action: { body: { userDeletion: frozen, payload: snapshot } } }]);
+  assert.equal(preservesUndeletedEntities(snapshot, reference), true);
+  assert.equal(preservesUndeletedEntities({ ...snapshot, items: {} }, reference), false);
+  intent.operations[0].id = "kept"; assert.equal(frozen.operations[0].id, "a");
+  assert.throws(() => personalDeletionReference(state, [{ action: { body: { userDeletion: frozen, payload: before } } }]), /Снимок/);
+});
+
+test("whole batch preparation aborts for malformed targets or any deleted photo owner without touching the original", () => {
+  const state = deletionBatchFixture(); state.containers.child.photos = [{ id: "cached-child" }];
+  const before = structuredClone(state), intent = { type: "batch", operations: [{ type: "item", id: "a" }, { type: "container", id: "bag" }] };
+  assert.throws(() => preparePersonalDeletionBatch(state, intent, { hasPhotos: record => Boolean(record.photos?.length) }), /фото/);
+  assert.deepEqual(state, before);
+  for (const invalid of [[], [{ type: "item", id: "a" }, { type: "item", id: "a" }],
+    [{ type: "batch", operations: [{ type: "item", id: "a" }] }], [{ type: "item", id: " a " }],
+    [{ type: "item", id: "__proto__" }], [{ type: "item", id: "missing" }], [{ type: "container", id: "child" }]]) {
+    assert.throws(() => preparePersonalDeletionBatch(state, { type: "batch", operations: invalid }));
+    assert.deepEqual(state, before);
+  }
+  delete state.containers.child.photos; state.containers.nested.photos = [{ id: "retained" }];
+  const prepared = preparePersonalDeletionBatch(state, intent, { hasPhotos: record => Boolean(record.photos?.length) });
+  assert.deepEqual(Object.keys(prepared.snapshot.containers), ["nested"]);
+  assert.equal(prepared.snapshot.containers.nested.photos[0].id, "retained");
+  assert.equal(prepared.snapshot.items.b.containerId, "");
+});
+
+test("a later explicit choice filters only retained deletions from a new batch intent", () => {
+  const value = { type: "batch", operations: [{ type: "item", id: "a" }, { type: "container", id: "bag" }] };
+  assert.deepEqual(retainedPersonalDeletionIntent(value, { items: { a: {} }, containers: {} }),
+    { type: "batch", operations: [{ type: "container", id: "bag" }] });
+  assert.equal(retainedPersonalDeletionIntent(value, { items: { a: {} }, containers: { bag: {} } }), null);
+  assert.equal(value.operations.length, 2);
+});
+
+test("actual deletion adapter publishes one whole action and binds confirmation to its editor version", () => {
+  const state = deletionBatchFixture(), f = fixture(), warnings = [], saved = [];
+  let context = { actorId: "actor-a", generation: 1, scope: "personal" };
+  const prepare = appFunction("preparePersonalCatalogDeletion", {
+    personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a", isReadOnlyBikePackingContext: () => false,
+    isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
+    personalDeletionIntent, personalSaveContext: () => context, showToast: message => warnings.push(message),
+    localText: (en, ru) => ru, preparePersonalDeletionBatch, state, nowIso: () => "test-date", markEdited() {},
+    normalizeItemPhotos: record => record.photos || [], editingRootContainerId: null,
+    saveState: ({ personalMutation }) => saved.push(f.outbox.capture({ snapshot: state,
+      body: { baseStateRevision: 5, payload: state, userDeletion: personalMutation } }))
+  });
+  const intent = { type: "batch", operations: ["a", "b"].map(id => ({ type: "item", id })) };
+  const stale = prepare(intent); context = { ...context, generation: 2 };
+  assert.equal(stale(), false); assert.ok(state.items.a); assert.equal(saved.length, 0);
+  const commit = prepare(intent); assert.equal(commit(), true); assert.equal(commit(), false);
+  assert.equal(saved.length, 1); assert.equal(f.values.size, 1);
+  assert.deepEqual(f.make().recover().action.body.userDeletion, intent);
+  assert.deepEqual(Object.keys(f.make().recover().snapshot.items), ["kept"]);
+  assert.equal(warnings.length, 2);
 });

@@ -1,6 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
+import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
@@ -442,8 +443,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         baseStateRevision: baseline?.stateRevision || target.action.body.baseStateRevision,
         force: false, forceOverwrite: false, fullReplace: false };
       delete body.causal;
-      if (body.userDeletion && Object.hasOwn(payload[body.userDeletion.type === "item" ? "items" : "containers"] || {}, body.userDeletion.id)) {
-        delete body.userDeletion; // The user chose to retain this entity.
+      if (body.userDeletion) {
+        body.userDeletion = retainedPersonalDeletionIntent(body.userDeletion, payload);
+        if (!body.userDeletion) delete body.userDeletion;
       }
       try {
         return latest.capture({ snapshot, body, localReconciliation: {

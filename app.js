@@ -730,7 +730,7 @@ import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recover
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
-import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities } from "./src/sync/personal-deletion-intent.js";
+import { personalDeletionIntent, personalDeletionReference, preservesUndeletedEntities, preparePersonalDeletionBatch } from "./src/sync/personal-deletion-intent.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -1864,7 +1864,7 @@ const appTailControllerDeps = {
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
-  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
+  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
@@ -2414,6 +2414,37 @@ function writeLargeScopedLocalValue(key, value, { clearBase = false, clearRecove
 
 function personalSavePilotEnabled() {
   return PERSONAL_SAVE_OUTBOX_ENABLED && experimentTransport.experiment;
+}
+
+function preparePersonalCatalogDeletion(value) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  const intent = personalDeletionIntent(value), initial = JSON.stringify(personalSaveContext());
+  let used = false;
+  // Bind the confirmation to the visible version, not just the selected IDs.
+  return () => {
+    if (used || initial !== JSON.stringify(personalSaveContext())) {
+      showToast(localText("The list changed. Select the records again.", "Список изменился. Выберите записи заново."), "error");
+      return false;
+    }
+    personalSaveRecovery.assertRunning();
+    let prepared;
+    try {
+      prepared = preparePersonalDeletionBatch(state, intent, {
+        changedAt: nowIso(), markEdited, hasPhotos: record => normalizeItemPhotos(record).length > 0
+      });
+    } catch (error) { showToast(error.message, "error"); return false; }
+    used = true;
+    // Keep the runtime active-layout accessor/UI state; one complete business
+    // candidate and one durable action, before rendering or file cleanup.
+    for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers"]) {
+      if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+    }
+    saveState({ personalMutation: prepared.intent });
+    if (editingRootContainerId && !state.containers[editingRootContainerId]) editingRootContainerId = null;
+    return true;
+  };
 }
 
 function personalSaveOutboxForScope({ reload = false } = {}) {

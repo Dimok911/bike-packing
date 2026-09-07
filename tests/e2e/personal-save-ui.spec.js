@@ -457,6 +457,82 @@ async function downloadRecovery(page) {
   return JSON.parse(await readFile(await file.path(), "utf8"));
 }
 
+async function selectCatalogBatch(page, type, names) {
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  const selector = type === "item" ? "#itemsView [data-list-item-id]" : "#bagsView [data-root-card]";
+  for (const name of names) {
+    await page.locator(selector).filter({ hasText: name }).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
+  }
+  await page.locator(selector).filter({ hasText: names[0] }).locator(type === "item" ? "[data-delete-item]" : "[data-delete-root]").click();
+  await expect(page.locator("#confirmDialog")).toContainText(type === "item" ? "выбранные вещи" : "выбранные сумки");
+}
+
+test("actual catalog bulk deletes use one frozen action per selection and recover lost ACK without partial replay", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context);
+  const first = await createRootContainer(page, "Пакет сумка первая");
+  await createItemInContainer(page, first, "Пакет вещь первая");
+  await createItemInContainer(page, first, "Пакет вещь вторая");
+  await createRootContainer(page, "Пакет сумка вторая");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 2 && Object.keys(f.payload.containers).length === 2);
+  const itemIds = Object.keys(f.payload.items).sort(), bagIds = Object.keys(f.payload.containers).sort();
+  const before = f.posts.length; f.lose = true;
+  f.beforeUpdate = async () => { f.unknown = true; };
+  await selectCatalogBatch(page, "item", ["Пакет вещь первая", "Пакет вещь вторая"]);
+  await page.locator("#confirmOkBtn").click();
+  await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1);
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const deleted = f.posts.at(-1), frozen = JSON.stringify(deleted);
+  expect(deleted.body.userDeletion).toEqual({ type: "batch", operations: itemIds.map(() => ({ type: "item", id: expect.any(String) })) });
+  expect(deleted.body.userDeletion.operations.map(entry => entry.id).sort()).toEqual(itemIds);
+  expect(deleted.body.payload.items).toEqual({});
+  expect(Object.keys(deleted.body.payload.containers).sort()).toEqual(bagIds);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page);
+  await synchronize(page, () => Object.keys(f.payload.items).length === 0);
+  expect(f.posts.filter(post => post.operationId === deleted.operationId)).toHaveLength(1);
+  expect(JSON.stringify(deleted)).toBe(frozen);
+  const afterItems = f.posts.length;
+  await selectCatalogBatch(page, "container", ["Пакет сумка первая", "Пакет сумка вторая"]);
+  await page.locator("#confirmOkBtn").click();
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 0);
+  expect(f.posts.length).toBe(afterItems + 1);
+  expect(f.posts.at(-1).body.userDeletion.operations.map(entry => entry.id).sort()).toEqual(bagIds);
+  expect(f.payload.layouts["layout-a"].arrangement.rootContainerIds).toEqual([]);
+  await reloadApp(page);
+  expect(f.payload.items).toEqual({}); expect(f.payload.containers).toEqual({});
+  expect(f.errors).toEqual([]);
+});
+
+test("quota during real bulk deletion preserves the entire unsaved selection draft and the old queue", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context);
+  const bag = await createRootContainer(page, "Сумка до пакетного сбоя");
+  await createItemInContainer(page, bag, "Удаление первая");
+  await createItemInContainer(page, bag, "Удаление вторая");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 2);
+  await selectCatalogBatch(page, "item", ["Удаление первая", "Удаление вторая"]);
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length;
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(copy.unconfirmedMemoryDraft.items).toEqual({});
+  expect(Object.keys(copy.unconfirmedMemoryDraft.containers)).toHaveLength(1);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(Object.keys(f.payload.items)).toHaveLength(2); expect(f.posts.length).toBe(postsBefore);
+  // The async bulk handler must absorb the already surfaced latch failure.
+  expect(f.errors).toEqual([]);
+});
+
 test("quota failure in a real form pauses editing and exports the unsaved draft without rewriting the queue", async ({ page, context }, info) => {
   test.setTimeout(90000);
   const f = await setup(page, context);
