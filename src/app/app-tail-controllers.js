@@ -2498,7 +2498,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (personalCopy) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     const route = privateContainerTreeCopyRoute({ copyAction, duplicateContainerIds: duplicates.containerIds, duplicateItemIds: duplicates.itemIds });
-    const rootId = personalCopy(route === "duplicate-explicit" ? "copy" : route === "link-existing" ? "link" : "unsupported");
+    const rootId = personalCopy(copyAction === "copy-missing-local" ? "missing" : route === "duplicate-explicit" ? "copy" : route === "link-existing" ? "link" : "unsupported");
     if (!rootId) return;
     markRecentlyAddedContainer(rootId, targetLayoutId);
     openCopiedTargetLayout(targetLayoutId);
@@ -2506,7 +2506,8 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
     closeSourceEditorAfterCopy("container", containerId);
     render();
     requestAnimationFrame(() => focusRecentlyAddedContainer(rootId));
-    showToast(route === "duplicate-explicit" ? "Копия сумки сохранена и ждёт подтверждения сервера." : "Связь с укладкой сохранена и ждёт подтверждения сервера.", "success");
+    showToast(copyAction === "copy-missing-local" ? "Добавление недостающих элементов сохранено и ждёт подтверждения сервера."
+      : route === "duplicate-explicit" ? "Копия сумки сохранена и ждёт подтверждения сервера." : "Связь с укладкой сохранена и ждёт подтверждения сервера.", "success");
     return;
   }
   if (copyAction === "copy-missing") {

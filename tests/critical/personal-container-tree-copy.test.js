@@ -67,6 +67,34 @@ test("a duplicate never rewrites source placements; linking an already placed tr
   assert.equal(prepared.copy.snapshot.layouts.to.arrangement.items.pump, "pouch");
 });
 
+test("missing-only freezes the exact additions, keeps existing placement/quantity/packed flags and uses no new entity IDs", async () => {
+  const f = fixture(); f.state.items.keep = { id: "keep", name: "Keep", quantity: 7 };
+  f.state.items.pump.quantity = 9; // source layout snapshot deliberately has 2
+  f.state.layouts.to.rootContainerIds = ["root"];
+  f.state.layouts.to.arrangement = { rootContainerIds: ["root"], containers: {
+    root: { parentId: "", childIds: [], itemIds: ["keep"], order: [{ type: "item", id: "keep" }] }
+  }, items: { keep: "root" }, itemQuantities: { keep: 7 }, packedItems: { keep: true }, itemQuantityMigrationVersion: 3 };
+  const before = structuredClone(f.state), pending = preparePersonalContainerTreeCopy(f.state, f.request, f.options);
+  f.source.items.pump.quantity = 999; f.state.items.keep.name = "Changed while choosing";
+  const { missing, link } = await pending;
+  assert.equal(link, null); assert.equal(missing.intent.mode, "missing");
+  assert.deepEqual(missing.intent.additions, { containers: [{ id: "pouch", parentId: "root" }], items: [{ id: "pump", parentId: "pouch" }] });
+  assert.deepEqual(missing.snapshot.items, before.items); assert.deepEqual(missing.snapshot.containers, before.containers);
+  assert.deepEqual(missing.snapshot.layouts.from, before.layouts.from);
+  const arrangement = missing.snapshot.layouts.to.arrangement;
+  assert.deepEqual(arrangement.items, { keep: "root", pump: "pouch" }); assert.deepEqual(arrangement.itemQuantities, { keep: 7, pump: 2 });
+  assert.deepEqual(arrangement.packedItems, { keep: true });
+  assert.deepEqual(arrangement.containers.root.order, [{ type: "item", id: "keep" }, { type: "container", id: "pouch" }]);
+  assert.deepEqual(personalContainerTreeIntent(missing.intent), missing.intent);
+  const complete = await preparePersonalContainerTreeCopy(missing.snapshot, { ...f.request, sourceSnapshot: { rootId: "root", containers: before.containers, items: { pump: before.items.pump } } }, f.options);
+  assert.equal(complete.missing, null, "already present records never become a new missing-only action");
+  for (const change of [value => { value.additions.items[0].id = "unknown"; }, value => { value.additions.containers[0].parentId = "unknown"; },
+    value => { value.additions.items.push(value.additions.items[0]); }, value => { value.additions = { containers: [], items: [] }; },
+    value => { value.mode = "link"; }]) {
+    const corrupt = structuredClone(missing.intent); change(corrupt); assert.throws(() => personalContainerTreeIntent(corrupt));
+  }
+});
+
 test("invalid trees, photos, missing/locked/public targets and colliding IDs reject without partial state changes", async () => {
   for (const change of [
     f => { f.source.containers.pouch.childIds = ["root"]; },

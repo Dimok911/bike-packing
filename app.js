@@ -2523,7 +2523,7 @@ async function preparePersonalContainerTreeAction(request) {
       showToast("Список изменился. Выберите источники копирования заново.", "error"); return false;
     }
     personalSaveRecovery.assertRunning();
-    const selected = mode === "copy" ? prepared.copy : mode === "link" ? prepared.link : null;
+    const selected = mode === "copy" ? prepared.copy : mode === "link" ? prepared.link : mode === "missing" ? prepared.missing : null;
     if (!selected) { showToast("Для этого варианта копирования ещё нужен отдельный обработчик очереди.", "error"); return false; }
     if (mode === "copy" && (!requireUsageCapacity("containers", selected.intent.containers.length)
       || !requireUsageCapacity("items", selected.intent.items.length))) return false;

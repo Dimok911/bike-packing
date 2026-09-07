@@ -1,5 +1,8 @@
 import { duplicateContainerSnapshotRecords, placeDuplicatedContainerSnapshotInLayoutState } from "../state/container-ops.js";
-import { linkExistingContainerTreeToLayoutState } from "../public/copy-public-layout-target.js";
+import { linkExistingContainerTreeToLayoutState, linkMissingContainerTreeToLayoutState } from "../public/copy-public-layout-target.js";
+import { planLayoutTreeMissingItems } from "../public/copy-duplicates.js";
+import { getLayoutContainerIdSet, getLayoutItemIdSet } from "../state/layout-ops.js";
+import { normalizeItemQuantity } from "../state/normalize.js";
 import { normalizeLayoutArrangement } from "../state/layout-normalize.js";
 import { isItemUnavailableForPacking } from "../state/layout-locks.js";
 
@@ -12,7 +15,7 @@ const privateRecord = record => plain(record) && !record.adminDemo && !record.ad
 const arrayOfIds = ids => Array.isArray(ids) && ids.every(validId) && new Set(ids).size === ids.length;
 
 export function personalContainerTreeIntent(value) {
-  if (value?.type !== "container-tree" || value.version !== 1 || !["copy", "link"].includes(value.mode)
+  if (value?.type !== "container-tree" || value.version !== 1 || !["copy", "link", "missing"].includes(value.mode)
     || !validId(value.rootId) || !validId(value.targetLayoutId) || typeof value.sourceLayoutId !== "string"
     || value.sourceLayoutId && !validId(value.sourceLayoutId) || typeof value.targetParentId !== "string"
     || value.targetParentId && !validId(value.targetParentId)
@@ -23,12 +26,55 @@ export function personalContainerTreeIntent(value) {
     const sources = new Set();
     for (const row of rows) {
       if (!validId(row?.sourceId) || !validId(row.targetId) || sources.has(row.sourceId) || targets.has(row.targetId)
-        || (value.mode === "link" ? row.sourceId !== row.targetId : row.sourceId === row.targetId)) throw Error("Неоднозначные номера копируемых записей.");
+        || (value.mode === "copy" ? row.sourceId === row.targetId : row.sourceId !== row.targetId)) throw Error("Неоднозначные номера копируемых записей.");
       sources.add(row.sourceId); targets.add(row.targetId);
     }
   }
   if (!value.containers.some(row => row.sourceId === value.rootId)) throw Error("Не найдена исходная сумка.");
+  if (value.mode === "missing") {
+    const additions = value.additions;
+    if (!plain(additions) || !Array.isArray(additions.containers) || !Array.isArray(additions.items)
+      || !additions.containers.length && !additions.items.length) throw Error("Не подтверждён состав недостающих записей.");
+    for (const type of ["containers", "items"]) {
+      const seen = new Set();
+      for (const row of additions[type]) {
+        if (!value[type].some(entry => entry.sourceId === row?.id) || seen.has(row.id)
+          || !value.containers.some(entry => entry.sourceId === row.parentId)) throw Error("Не подтверждены места недостающих записей.");
+        seen.add(row.id);
+      }
+    }
+  } else if (Object.hasOwn(value, "additions")) throw Error("Неожиданный состав недостающих записей.");
   return clone(value);
+}
+
+function prepareMissingTree(frozen, source, common, changedAt, markEdited) {
+  const layout = frozen.layouts[common.targetLayoutId];
+  const plan = planLayoutTreeMissingItems({ sourceSnapshot: source, targetLayout: layout,
+    getLayoutContainerIdSet: target => getLayoutContainerIdSet(frozen, target), getLayoutItemIdSet: target => getLayoutItemIdSet(frozen, target) });
+  if (!plan.canCopyMissingItems) return null;
+  const snapshot = clone(frozen), additions = {
+    containers: plan.missingContainers.map(row => ({ id: row.sourceContainerId, parentId: row.targetParentId })),
+    items: plan.missingItems.map(row => ({ id: row.sourceItemId, parentId: row.targetContainerId }))
+  };
+  const restored = linkMissingContainerTreeToLayoutState(snapshot, source, common.targetLayoutId, {
+    changedAt, missingContainers: plan.missingContainers, missingItems: plan.missingItems,
+    normalizeLayoutArrangement: (target, state) => {
+      target.arrangement.itemQuantities ||= {};
+      for (const row of additions.items) target.arrangement.itemQuantities[row.id] = normalizeItemQuantity(source.items[row.id].quantity);
+      normalizeLayoutArrangement(target, state);
+    }, touchLayout: id => markEdited(snapshot.layouts[id], changedAt)
+  });
+  const target = snapshot.layouts[common.targetLayoutId].arrangement;
+  if (restored.containerCount !== additions.containers.length || restored.itemCount !== additions.items.length
+    || additions.containers.some(row => target.containers[row.id]?.parentId !== row.parentId)
+    || additions.items.some(row => target.items[row.id] !== row.parentId)) throw Error("Не весь недостающий состав удалось подготовить. Добавление остановлено.");
+  for (const [id, containerId] of Object.entries(layout.arrangement.items)) {
+    if (target.items[id] !== containerId || target.itemQuantities?.[id] !== layout.arrangement.itemQuantities?.[id]
+      || target.packedItems?.[id] !== layout.arrangement.packedItems?.[id]) throw Error("Добавление изменяет уже размещённую вещь.");
+  }
+  return { snapshot, rootId: source.rootId, intent: personalContainerTreeIntent({ ...common, mode: "missing", additions,
+    containers: Object.keys(source.containers).map(id => ({ sourceId: id, targetId: id })),
+    items: Object.keys(source.items).map(id => ({ sourceId: id, targetId: id })) }) };
 }
 
 function validateSource(state, source, hasPhotos) {
@@ -58,8 +104,8 @@ function validateSource(state, source, hasPhotos) {
 }
 
 // Both possible results are detached from the live editor before any await or
-// confirmation. Only a same-list private snapshot is supported here. Files,
-// public origins and 'missing only' need their own explicitly frozen adapters.
+// confirmation. Only a same-list private snapshot is supported here. Files
+// and public origins need their own explicitly frozen adapters.
 export async function preparePersonalContainerTreeCopy(state, request, {
   changedAt = "", currentEditMeta = () => ({}), markEdited = () => {},
   normalizeContainerColor = value => value, copyContainerName = name => `${name} копия`,
@@ -84,6 +130,7 @@ export async function preparePersonalContainerTreeCopy(state, request, {
     }
   }
   const common = { type: "container-tree", version: 1, rootId: source.rootId, sourceLayoutId, targetLayoutId, targetParentId, targetIndex };
+  const missing = prepareMissingTree(frozen, source, common, changedAt, markEdited);
   const intent = personalContainerTreeIntent({ ...common, mode: "copy", ...mapping });
   const snapshot = clone(frozen);
   const copied = await duplicateContainerSnapshotRecords(source, { targetState: snapshot, changedAt,
@@ -109,5 +156,5 @@ export async function preparePersonalContainerTreeCopy(state, request, {
       containers: Object.keys(source.containers).map(id => ({ sourceId: id, targetId: id })),
       items: Object.keys(source.items).map(id => ({ sourceId: id, targetId: id })) }) };
   }
-  return { copy: { snapshot, rootId: copied.rootId, intent }, link };
+  return { copy: { snapshot, rootId: copied.rootId, intent }, link, missing };
 }
