@@ -203,22 +203,29 @@ export function getPhotoCacheScope() {
 export async function photoDbStore(mode, callback) {
   const db = await openPhotoDb();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(PHOTO_STORE, mode);
+    let transaction;
+    try { transaction = db.transaction(PHOTO_STORE, mode); }
+    catch (error) { db.close(); reject(error); return; }
     const store = transaction.objectStore(PHOTO_STORE);
-    let request;
+    let request, result, failure;
+    // Request success is only an intermediate event: the transaction may still
+    // abort (quota, shutdown or a later write). Never publish a durable photo
+    // confirmation before the browser commits the entire transaction.
+    transaction.oncomplete = () => { db.close(); resolve(result); };
+    transaction.onabort = () => {
+      db.close(); reject(failure || transaction.error || new Error("Запись фото отменена"));
+    };
+    transaction.onerror = () => { failure ||= transaction.error || new Error("Ошибка хранилища фото"); };
     try {
       request = callback(store);
+      if (!request || !("onsuccess" in request)) throw new Error("Операция хранилища фото не возвращает запрос");
     } catch (error) {
-      reject(error);
+      failure = error;
+      try { transaction.abort(); } catch { db.close(); reject(error); }
       return;
     }
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Не удалось прочитать фото"));
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error || new Error("Ошибка хранилища фото"));
-    };
+    request.onsuccess = () => { result = request.result; };
+    request.onerror = () => { failure = request.error || new Error("Не удалось прочитать фото"); };
   });
 }
 
