@@ -1,0 +1,98 @@
+import { createPersonalPhotoFormFiles } from "./personal-photo-form-files.js";
+
+const fail = message => { throw Object.assign(new Error(message), { code: "photo-form-ui" }); };
+
+// The application supplies its actual opened dialog and existing field readers.
+// One entry belongs to its initial-snapshot object, not just the reusable DOM
+// dialog or entity ID. Closing/reopening the same bag creates a different form.
+export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
+  createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
+  const entries = new WeakMap();
+  const ownerMatches = entry => {
+    const context = getContext();
+    return context?.scope === "personal" && Object.keys(entry.binding).every(key => context[key] === entry.binding[key]);
+  };
+  const contextFor = entry => {
+    const view = getView(entry.type), context = getContext();
+    return { ...context, form: view?.token === entry.token && view.dialog?.open ? entry.formId : "closed",
+      formDraft: view?.signature || "" };
+  };
+  const entryFor = type => {
+    const view = getView(type);
+    if (!view?.token || typeof view.token !== "object" || !view.dialog?.open) fail("Эта форма уже закрыта. Фото не отправлены.");
+    if (!entries.has(view.token)) {
+      const context = getContext(), binding = Object.fromEntries(["environment", "actorId", "listId", "scopeKey"].map(key => [key, context[key]]));
+      const entry = { type, token: view.token, binding, formId: crypto.randomUUID(), preparing: false, saving: false, session: null };
+      entry.files = createPersonalPhotoFormFiles({ binding, getContext: () => contextFor(entry) });
+      entries.set(view.token, entry);
+    }
+    return entries.get(view.token);
+  };
+  const errorFor = (entry, error) => {
+    if (ownerMatches(entry)) onError(error, { type: entry.type, recovery: entry.session?.recoveryCopy() || null });
+  };
+  return {
+    async preparePhotos(type, files) {
+      if (!isEnabled()) return null;
+      const entry = entryFor(type), selected = [...files];
+      if (entry.preparing || entry.saving) fail("Дождитесь завершения подготовки или сохранения этой формы.");
+      entry.preparing = true; onBusy(type, true);
+      try {
+        const photos = [];
+        for (const file of selected) {
+          entry.files.assertCurrent();
+          photos.push(await createPhoto(file, { cachePhoto: async record => {
+            entry.files.assertCurrent();
+            // Freeze the cache namespace too: account switching during image
+            // resizing must not store the previous user's file in the new scope.
+            await cachePhoto(record, entry.binding.scopeKey);
+            entry.files.assertCurrent(); entry.files.capture(record);
+          } }));
+          entry.files.assertCurrent();
+        }
+        return photos;
+      } catch (error) {
+        if (getView(type)?.token !== entry.token || !ownerMatches(entry)) error.isStalePhotoForm = true;
+        throw error;
+      } finally {
+        entry.preparing = false;
+        if (getView(type)?.token === entry.token && ownerMatches(entry)) onBusy(type, entry.saving);
+      }
+    },
+    save(type) {
+      if (!isEnabled()) return false;
+      const view = getView(type), selected = view?.draft?.photos || [];
+      if (!selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl)) return false;
+      const entry = entryFor(type);
+      if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
+      // Reentrant button/field callbacks cannot create a second session.
+      entry.saving = true;
+      try {
+        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type);
+        if (placementChanged !== false || availabilityChanged !== false || catalogSource !== false) {
+          fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
+        }
+        const files = entry.files.selection({ draft: view.draft, basePhotos: view.source?.photos || [] });
+        entry.session = createSession({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
+        const pending = entry.session.submit({ ...request, files });
+        onBusy(type, true);
+        pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))
+          .catch(error => errorFor(entry, error));
+      } catch (error) {
+        // Validation before session creation did not own an operation. The user
+        // may correct the same form. A started session keeps its immutable latch.
+        if (!entry.session) entry.saving = false;
+        errorFor(entry, error); onBusy(type, entry.saving);
+      }
+      return true;
+    },
+    busy(type) {
+      const token = getView(type)?.token, entry = token && entries.get(token);
+      return Boolean(entry && (entry.preparing || entry.saving));
+    },
+    recoveryCopy(type) {
+      const token = getView(type)?.token, entry = token && entries.get(token);
+      return entry && ownerMatches(entry) ? entry.session?.recoveryCopy() || null : null;
+    }
+  };
+}
