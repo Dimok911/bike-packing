@@ -50,3 +50,13 @@ test("storage, source version and scope failures prevent action registration", a
   assert.equal(f.make().list().length, 0);
   assert.throws(() => createCausalActionJournal({ ...f, actorId: "actor-a", environmentId: "production" }), /scope/);
 });
+
+test("oversized copy does not persist an action or add a phantom reader dependency", async () => {
+  const f = fixture(), journal = f.make();
+  const source = await journal.enqueue({ kind: "list.create", listId: "a", body: { payload: {} } });
+  await assert.rejects(journal.enqueue({ kind: "list.create", listId: "b", body: { payload: { notes: "я".repeat(1600000) } },
+    sourceReads: [{ listId: "a", revision: 1 }] }), { code: "payload-size" });
+  assert.deepEqual(f.make().list(), [source]);
+  const deletion = await f.make().enqueue({ kind: "list.delete", listId: "a" });
+  assert.deepEqual(deletion.body.causal.dependsOn, [{ operationId: source.operationId, listId: "a" }]);
+});

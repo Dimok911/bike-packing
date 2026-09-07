@@ -1,6 +1,6 @@
 const environment = "bike-packing-experiment";
 const journalPrefix = "bike-packing-personal-save-v1:";
-const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selection"]);
+const blockingCodes = new Set(["quota", "storage", "fork", "stale-tab", "selection", "payload-size", "payload-shape"]);
 
 // A storage failure is a latched stop for this editor, not an invitation to
 // retry a form which may already have changed its in-memory entities.
@@ -12,6 +12,7 @@ export function createPersonalSaveRecovery({ onBlocked = () => {}, isCurrentScop
     if (!isCurrentScope(scopeKey)) return false;
     if (!failure) failure = { error, scopeKey, draft: null, draftAvailable: false };
     if (failure.error !== error) return false;
+    snapshot ||= error.unconfirmedMemoryDraft;
     if (snapshot && !failure.draftAvailable) {
       try { failure.draft = JSON.parse(JSON.stringify(snapshot)); failure.draftAvailable = true; }
       catch { /* The journal can still be exported when the memory copy fails. */ }

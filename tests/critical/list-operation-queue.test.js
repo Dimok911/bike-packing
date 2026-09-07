@@ -5,6 +5,7 @@ import { createExperimentTransport, EXPERIMENT_FRONTEND_ORIGIN } from "../../src
 import { createListOperationQueue, canonicalListOperationJson, validateListReceipt, LIST_OPERATION_QUEUE_ENABLED } from "../../src/sync/list-operation-queue.js";
 import { apiFetchRequest } from "../../src/sync/api-client.js";
 import { syncEntityBatchWithRevisionRetry } from "../../src/sync/entity-sync.js";
+import { assertListOperationPayload, MAX_LIST_OPERATION_PAYLOAD_BYTES } from "../../src/sync/list-operation-payload.js";
 
 const path = "/bike-packing/lists/list-a";
 function fixture() {
@@ -58,6 +59,29 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(LIST_OPERATION_QUEUE_ENABLED, false);
   const queue = createListOperationQueue({ transport: { experiment: true } });
   assert.equal(queue.supports(path, "PUT"), false);
+});
+
+test("operation preflight counts the complete UTF-8 binding at the exact API limit", () => {
+  const binding = { actorId: "actor-a", kind: "list.update", listId: "list-a", body: { value: "" } };
+  const available = MAX_LIST_OPERATION_PAYLOAD_BYTES - assertListOperationPayload(binding);
+  binding.body.value = "я".repeat(Math.floor(available / 2)) + "x".repeat(available % 2);
+  assert.equal(assertListOperationPayload(binding), MAX_LIST_OPERATION_PAYLOAD_BYTES);
+  binding.body.value += "x";
+  assert.throws(() => assertListOperationPayload(binding), { code: "payload-size", isOperationPreflightError: true });
+  for (const value of [undefined, NaN, new Date(), { value: Infinity }]) {
+    assert.throws(() => assertListOperationPayload({ ...binding, body: { value } }), { code: "payload-shape" });
+  }
+  let nested = null;
+  for (let i = 0; i < 101; i++) nested = { nested };
+  assert.throws(() => assertListOperationPayload({ ...binding, body: { nested } }), { code: "payload-shape" });
+});
+
+test("oversized new requests never become ambiguous writes or reach the mutation endpoint", async () => {
+  const f = fixture(), before = [...f.values];
+  await assert.rejects(f.queue.run({ ...f.input, body: JSON.stringify({ payload: { notes: "🚲".repeat(800000) } }) }),
+    error => error.code === "payload-size" && error.isOperationPreflightError && !error.isAmbiguousMutation);
+  assert.equal(f.posts().length, 0); assert.equal(f.transport.writes.length, 0);
+  assert.deepEqual([...f.values], before);
 });
 
 async function rejectedDependencyFixture() {

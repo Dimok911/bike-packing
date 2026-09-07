@@ -1,3 +1,5 @@
+import { assertListOperationPayload } from "./list-operation-payload.js";
+
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
 export const LIST_OPERATION_CAPABILITY = "personalListCausalOperationsV1";
@@ -216,6 +218,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
+        assertListOperationPayload(expected);
         if (!entry) {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
           transport.assertWritable(path, method, protocol);
@@ -289,6 +292,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(null, "Сервер ещё не поддерживает подтверждение этой операции. Запрос не отправлен.");
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();
+          assertListOperationPayload({ environment, actorId: initial.actorId, kind: route.kind, listId, body });
           const payloadDigest = await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body }));
           const children = route.kind.endsWith(".sync") ? (body[route.kind.split(".")[0]] || []).map(entry => entry.id || entry.payload?.id) : [];
           if (children.some(id => typeof id !== "string" || !id) || new Set(children).size !== children.length) throw paused(null, "В пакете повторяются или отсутствуют номера элементов. Запрос не отправлен.");

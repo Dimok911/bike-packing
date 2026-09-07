@@ -1,4 +1,5 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
+import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
@@ -56,6 +57,14 @@ const revisionConflictChain = (action, records, outcomes) => {
 const blocked = (code, message) => Object.assign(new Error(message), {
   code, isPersonalSaveBlocked: true, isOperationReceiptError: true
 });
+const preflight = (action, snapshot) => {
+  try { assertListOperationPayload(action); }
+  catch (error) {
+    if (!error.isOperationPreflightError) throw error;
+    throw Object.assign(blocked(error.code, error.message), { unconfirmedMemoryDraft: snapshot,
+      payloadBytes: error.payloadBytes, maxPayloadBytes: error.maxPayloadBytes });
+  }
+};
 
 // Each action has its own immutable storage key: two tabs cannot overwrite one
 // another's intent. A concurrent fork is retained and blocked, never date-sorted.
@@ -393,6 +402,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           : !head && initialMergeBase?.stateRevision === input.body.baseStateRevision ? initialMergeBase : null;
       const record = { version: 1, snapshot: input.snapshot, action, ...(mergeBase ? { mergeBase: clone(mergeBase) } : {}),
         ...(localReconciliation ? { localReconciliation: clone(localReconciliation) } : {}) };
+      preflight(action, input.snapshot);
       try {
         // The recoverable local data AND operation are one atomic setItem.
         // No await, network, mirror update, or older-record deletion precedes it.
@@ -544,6 +554,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const mergeBase = { payload: remote.payload, stateRevision: remote.stateRevision };
       const reconciliation = { version: 1, settled: settled.outcomes };
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
+      preflight(action, snapshot);
       try {
         storage.setItem(keyPrefix + operationId, JSON.stringify({ version: 2, action, mergeBase, reconciliation,
           snapshotPatch: encodePersonalSnapshot(payload, snapshot) }));

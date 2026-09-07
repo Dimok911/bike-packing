@@ -690,6 +690,23 @@ test("quota during layout deletion keeps its edit window open and exports the co
   expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
 });
 
+test("oversized layout notes stop before publication and remain complete in the recovery copy", async ({ page, context }) => {
+  test.setTimeout(180000);
+  const f = await setup(page, context);
+  await createRootContainer(page, "Сумка перед большим изменением");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  const before = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const postsBefore = f.posts.length, notes = "я".repeat(1600000);
+  await page.locator("#editLayoutBtn").click(); await page.locator("#layoutEditNotes").fill(notes);
+  await submitForm(page, "#saveEditedLayoutBtn", "#layoutEditNotes");
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#layoutEditDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(copy.reasonCode).toBe("payload-size"); expect(copy.unconfirmedMemoryDraft.layouts["layout-a"].notes).toBe(notes);
+  expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
+  expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
+
 test("quota during real bulk deletion preserves the entire unsaved selection draft and the old queue", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);

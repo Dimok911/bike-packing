@@ -1,3 +1,5 @@
+import { assertListOperationPayload } from "./list-operation-payload.js";
+
 // Action-creation primitive for the disabled causal pilot. UI adapters must
 // explicitly use it; legacy saveState does NOT yet record a complete user DAG.
 const environment = "bike-packing-experiment";
@@ -70,6 +72,7 @@ export function createCausalActionJournal({ storage, locks = globalThis.navigato
         if (kind !== "list.create" && !head.writer && (!Number.isSafeInteger(input.body.baseStateRevision) || input.body.baseStateRevision < 1)) fail("Target base revision required");
         const action = { operationId, actorId, environment, kind, listId, generation: head.generation + 1,
           body: { ...input.body, causal }, inputJson };
+        assertListOperationPayload(action);
         journal.actions[operationId] = action;
         journal.heads[listId] = { generation: action.generation, writer: operationId, readers: [], deleted: kind === "list.delete" };
         // One synchronous replacement under a short lock, before any dispatch.

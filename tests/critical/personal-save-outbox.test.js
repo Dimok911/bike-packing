@@ -64,6 +64,21 @@ test("quota never deletes prior intents; malformed or incomplete journals fail c
   assert.throws(bad.make, { code: "storage" });
 });
 
+test("oversized capture blocks before publication and exports the whole memory draft with the previous journal", () => {
+  for (const create of [false, true]) {
+    const f = fixture();
+    if (!create) f.outbox.capture(f.input(1));
+    const before = [...f.values], recovery = createPersonalSaveRecovery();
+    const guarded = recovery.outbox(f.make, f.context.scopeKey), input = f.input("я".repeat(1600000));
+    assert.throws(() => guarded.capture({ ...input, create }), { code: "payload-size" });
+    assert.deepEqual([...f.values], before);
+    const copy = recovery.recoveryCopy(f.storage);
+    assert.equal(copy.reasonCode, "payload-size"); assert.deepEqual(copy.unconfirmedMemoryDraft, input.snapshot);
+    assert.deepEqual(copy.journalEntries.map(({ key, value }) => [key, value]), before);
+    assert.throws(() => guarded.capture(f.input(2)), { code: "payload-size" });
+  }
+});
+
 test("stale tabs cannot acquire an unobserved predecessor; true concurrent forks keep both versions", () => {
   const f = fixture(), other = f.make();
   f.outbox.capture(f.input(100));
@@ -166,6 +181,18 @@ test("explicit conflicting choices are frozen into a new action without changing
   assert.notEqual(next.action.operationId, f.first.action.operationId);
   assert.deepEqual([...f.values].slice(0, before.length), before);
   assert.equal(f.make().recover().action.operationId, next.action.operationId);
+});
+
+test("oversized reconciliation retains the chosen merged draft without publishing a successor", async () => {
+  const f = reconciliationFixture(), before = [...f.values], recovery = createPersonalSaveRecovery();
+  f.remote.payload.items.b = { id: "b", name: "я".repeat(1600000) };
+  await assert.rejects(recovery.run(() => f.outbox.reconcile(f.options), { scopeKey: f.context.scopeKey }), { code: "payload-size" });
+  assert.deepEqual([...f.values], before);
+  const copy = recovery.recoveryCopy(f.storage);
+  assert.deepEqual(copy.unconfirmedMemoryDraft.items.b, f.remote.payload.items.b);
+  assert.equal(copy.unconfirmedMemoryDraft.items.a.name, "Local");
+  assert.equal(copy.unconfirmedMemoryDraft.items.a.weight, 200);
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, "receiptOnly")), "no successor dispatch");
 });
 
 test("cancel, incomplete choices, changed editor and structural validation never publish a chosen action", async () => {
