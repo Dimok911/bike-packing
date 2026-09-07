@@ -17,6 +17,8 @@ export function canonicalListOperationJson(value) {
 
 export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
+  const restore = /^\/bike-packing\/lists\/([^/]+)\/restore$/.exec(path);
+  if (restore && method === "POST") return { kind: "list.restore", listId: decodeURIComponent(restore[1]) };
   const match = /^\/bike-packing\/lists\/([^/]+)(?:\/(items|containers|layouts|dictionaries)\/sync)?$/.exec(path);
   if (!match) return null;
   const kind = match[2] ? method === "POST" && `${match[2]}.sync`
@@ -35,7 +37,7 @@ export function validateListReceipt(data, expected) {
     || op.kind !== expected.kind || op.listId !== expected.listId || op.payloadDigest !== expected.payloadDigest) return false;
   if (op.state === "rejected") return [400, 403, 404, 409, 413, 422].includes(result?.status) && result.payload?.ok === false;
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
-  if (expected.kind === "list.create" || expected.kind === "list.update") return result.payload.list?.id === expected.listId;
+  if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
   const type = expected.kind.split(".")[0];
   const payload = result.payload;
@@ -182,9 +184,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const parentRoute = listOperationRoute(parent.path, parent.method), parentBody = JSON.parse(parent.body || "{}");
       const validUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id || "");
       const listId = route.listId;
-      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || route.kind !== "list.update"
+      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore"].includes(route.kind)
         || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
-        || !["list.create", "list.update"].includes(parentRoute?.kind)
+        || !["list.create", "list.update", "list.restore"].includes(parentRoute?.kind)
         || (parentRoute.listId || parentBody.id) !== listId
         || body.causal?.baseOperationId !== parent.operationId
         || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson([{ operationId: parent.operationId, listId }])

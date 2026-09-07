@@ -61,6 +61,20 @@ test("list queue is release-gated; legacy API remains untouched when off", () =>
   assert.equal(queue.supports(path, "PUT"), false);
 });
 
+test("history restore has a separate gateway kind and exact receipt recovery without a second POST", async () => {
+  const f = fixture();
+  const input = { path: "/bike-packing/lists/list-a/restore", method: "POST", body: JSON.stringify({ payload: { items: {} }, historyRestore: { historyId: 10 } }) };
+  f.state.loseResponse = true;
+  const accepted = await f.queue.run(input);
+  assert.equal(accepted.list.id, "list-a"); assert.equal(f.posts().length, 1);
+  const envelope = JSON.parse(f.posts()[0].options.body); assert.equal(envelope.kind, "list.restore");
+  assert.deepEqual(await f.make().queue.run(input), accepted); assert.equal(f.posts().length, 1);
+  const saved = f.receipts.get(envelope.operationId);
+  assert.equal(validateListReceipt(saved, { operationId: envelope.operationId, actorId: "actor-a", kind: "list.restore", listId: "list-a", payloadDigest: saved.operation.payloadDigest }), true);
+  const tampered = structuredClone(saved); tampered.result.payload.list.id = "other";
+  assert.equal(validateListReceipt(tampered, { operationId: envelope.operationId, actorId: "actor-a", kind: "list.restore", listId: "list-a", payloadDigest: saved.operation.payloadDigest }), false);
+});
+
 test("operation preflight counts the complete UTF-8 binding at the exact API limit", () => {
   const binding = { actorId: "actor-a", kind: "list.update", listId: "list-a", body: { value: "" } };
   const available = MAX_LIST_OPERATION_PAYLOAD_BYTES - assertListOperationPayload(binding);

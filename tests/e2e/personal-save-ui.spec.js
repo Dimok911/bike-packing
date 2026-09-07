@@ -94,12 +94,23 @@ async function setup(page, context, { fresh = false, lose = false } = {}) {
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}` || path === `/bike-packing/lists/${state.listId}/state`) data = { ok: true, list: record(), state: state.payload };
       else if (path === `/bike-packing/lists/${state.listId}/freshness`) data = { ok: true, ...record(), payload: undefined };
+      else if (path === `/bike-packing/lists/${state.listId}/history`) data = { ok: true, records: state.history || [], page: { hasMore: false } };
+      else if (path === `/bike-packing/lists/${state.listId}/history/101/restore` && request.method() === "GET") {
+        const source = state.history[0], layoutIds = url.searchParams.getAll("layoutId");
+        const payload = structuredClone(layoutIds.length ? state.payload : source.payload);
+        if (layoutIds.length) for (const id of layoutIds) payload.layouts[id] = structuredClone(source.payload.layouts[id]);
+        payload.activeLayoutId ||= "layout-a"; payload.packedItems ||= {};
+        const hash = value => createHash("sha256").update(canonicalListOperationJson(value)).digest("hex");
+        data = { ok: true, actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId,
+          restore: { payload, baseStateRevision: state.revision, historyRestore: { version: 1, historyId: 101,
+            historyPayloadHash: hash(source.payload), payloadHash: hash(payload), layoutIds, targetStateRevision: state.revision } } };
+      }
       else if (path === "/bike-packing/list-operations" && request.method() === "POST") {
         const body = request.postDataJSON(); state.posts.push(body);
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
-        if (body.kind === "list.update" && state.beforeUpdate) await state.beforeUpdate(body);
+        if (["list.update", "list.restore"].includes(body.kind) && state.beforeUpdate) await state.beforeUpdate(body);
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
@@ -691,6 +702,68 @@ test("quota during layout deletion keeps its edit window open and exports the co
   expect(Object.keys(draft.items)).toEqual(Object.keys(f.payload.items)); expect(Object.keys(draft.containers)).toEqual(Object.keys(f.payload.containers));
   expect(copy.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(before);
   expect(f.payload.layouts["layout-a"]).toBeTruthy(); expect(f.posts.length).toBe(postsBefore); expect(f.errors).toEqual([]);
+});
+
+async function openPreparedHistoryRestore(page, f, snapshot, scoped = false) {
+  f.history = [{ id: 101, listId: f.listId, source: "bike_packing_list_history", createdAt: "2026-09-05T10:00:00Z",
+    snapshotKind: scoped ? "undo" : "daily", changeScope: scoped ? "layout" : "global", affectedLayoutIds: scoped ? ["layout-a"] : [],
+    action: { type: "layout_change" }, payload: structuredClone(snapshot) }];
+  await page.locator("#menuBtn").click(); await page.locator("#historyBtn").click();
+  await expect(page.locator("#historyDialog [data-restore-history]")).toHaveCount(1);
+  await page.locator("#historyDialog [data-restore-history]").click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+}
+
+for (const scoped of [false, true]) test(`actual ${scoped ? "scoped" : "full"} history restore survives lost ACK and reload with one fixed action`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context), bag = await createRootContainer(page, "До восстановления");
+  await createItemInContainer(page, bag, "Сохранённая вещь");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const snapshot = structuredClone(f.payload), originalId = Object.keys(snapshot.containers)[0];
+  await createRootContainer(page, "После точки истории");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  const extraId = Object.keys(f.payload.containers).find(id => id !== originalId), before = f.posts.length;
+  await openPreparedHistoryRestore(page, f, snapshot, scoped);
+  f.lose = true; f.beforeUpdate = async () => { f.unknown = true; };
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#historyDialog")).not.toBeVisible();
+  await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts).toHaveLength(before + 1);
+  const restored = f.posts.at(-1); expect(restored.kind).toBe("list.restore");
+  expect(restored.body.historyRestore.historyId).toBe(101);
+  expect(restored.body.historyRestore.layoutIds).toEqual(scoped ? ["layout-a"] : []);
+  expect(restored.body.payload.layouts["layout-a"].arrangement.rootContainerIds).toEqual([originalId]);
+  expect(Boolean(restored.body.payload.containers[extraId])).toBe(scoped);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page); await synchronize(page, () => f.payload.layouts["layout-a"].arrangement.rootContainerIds.length === 1);
+  expect(f.posts).toHaveLength(before + 1); expect(f.posts.filter(post => post.operationId === restored.operationId)).toHaveLength(1);
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(1);
+  await createRootContainer(page, "Следующая после восстановления");
+  await synchronize(page, () => f.payload.layouts["layout-a"].arrangement.rootContainerIds.length === 2);
+  expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.historyRestore).toBeUndefined();
+  expect(f.errors).toEqual([]);
+});
+
+test("quota before history restore keeps the history window and complete recovery candidate without changing the list", async ({ page, context }) => {
+  test.setTimeout(90000);
+  const f = await setup(page, context), snapshot = structuredClone(f.payload);
+  await createRootContainer(page, "Не теряем при отказе");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+  await openPreparedHistoryRestore(page, f, snapshot);
+  const before = f.posts.length, server = structuredClone(f.payload);
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#historyDialog")).toBeVisible();
+  const copy = await downloadRecovery(page);
+  expect(copy.unconfirmedMemoryDraft.containers).toEqual({}); expect(copy.unconfirmedMemoryDraft.items).toEqual({});
+  expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server); expect(f.errors).toEqual([]);
 });
 
 async function dispatchPackingDrop(page, handle, containerId) {

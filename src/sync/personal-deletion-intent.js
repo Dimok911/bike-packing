@@ -65,9 +65,16 @@ export function preparePersonalDeletionBatch(state, value, { changedAt = "", mar
 // force save: unrelated losses must still pass the ordinary regression guard.
 export function personalDeletionReference(base, records) {
   if (!base) return null;
-  const reference = JSON.parse(JSON.stringify(base));
+  let reference = JSON.parse(JSON.stringify(base));
   let declared = false;
-  for (const record of records) {
+  for (const record of [...records].sort((a, b) => (a.action?.generation || 0) - (b.action?.generation || 0))) {
+    if (record.action?.kind === "list.restore") {
+      // A prepared restore is an explicit replacement, not permission for
+      // unrelated losses in a later save. The server still validates its hash,
+      // history provenance and numeric target revision inside the transaction.
+      reference = JSON.parse(JSON.stringify(record.snapshot));
+      declared = true;
+    }
     if (record.action?.body?.userPlacement) {
       reducePersonalPlacementReference(reference, record.action.body.userPlacement, record.action.body.payload);
       declared = true;

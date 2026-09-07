@@ -3,6 +3,7 @@ import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
+import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
 import { readStablePersonalEntries, readPersonalCheckpoints, publishPersonalCheckpoint,
   retireObservedPersonalCheckpoints } from "./personal-save-checkpoints.js";
 
@@ -36,6 +37,10 @@ export function recoverPersonalSaveListId({ storage, actorId, scopeKey }) {
   return [...candidates][0] || "";
 }
 const environment = "bike-packing-experiment";
+const updateKind = kind => ["list.update", "list.restore"].includes(kind);
+const operationRequest = action => ({ operationId: action.operationId,
+  path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(action.listId)}${action.kind === "list.restore" ? "/restore" : ""}`,
+  method: action.kind === "list.update" ? "PUT" : "POST", body: JSON.stringify(action.body) });
 const prefix = "bike-packing-personal-save-v1:";
 const clone = value => JSON.parse(JSON.stringify(value));
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -104,13 +109,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (record?.version !== 1 || !action || !uuid(action.operationId)
           || key !== keyPrefix + action.operationId
           || Object.keys(binding).some(field => action[field] !== binding[field])
-          || !["list.create", "list.update"].includes(action.kind)
+          || action.kind !== "list.create" && !updateKind(action.kind)
           || !record.snapshot || typeof record.snapshot !== "object"
           || !action.body?.payload || action.body.causal?.reads?.length !== 0
           || !Array.isArray(action.body.causal?.dependsOn)
           || !Number.isSafeInteger(action.generation) || action.generation < 1) throw Error("Invalid record");
         if (record.mergeBase && (!record.mergeBase.payload || !Number.isSafeInteger(record.mergeBase.stateRevision)
-          || record.mergeBase.stateRevision < 1 || action.kind !== "list.update")) throw Error("Invalid merge base");
+          || record.mergeBase.stateRevision < 1 || !updateKind(action.kind))) throw Error("Invalid merge base");
+        if (action.kind === "list.restore") personalHistoryRestoreManifest(action.body.historyRestore);
         if (record.reconciliation && !action.previousLocalOperationId) throw Error("Reconciliation without predecessor");
         if (record.localReconciliation && (record.localReconciliation.version !== 1
           || !uuid(record.localReconciliation.targetOperationId)
@@ -157,14 +163,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
             parents.add(parentId);
             continue;
           }
-          if (!parent || action.kind !== "list.update" || parent.generation + 1 !== action.generation
+          if (!parent || !updateKind(action.kind) || parent.generation + 1 !== action.generation
             || anchor?.operationId !== parentId || !anchor.baseline
             || action.body.baseStateRevision !== anchor.baseline.stateRevision
             || action.body.causal.baseOperationId || action.body.causal.dependsOn.length) throw Error("Invalid baseline successor");
           parents.add(parentId);
           continue;
         }
-        if (!parent || action.kind !== "list.update" || parent.generation + 1 !== action.generation
+        if (!parent || !updateKind(action.kind) || parent.generation + 1 !== action.generation
           || canonicalListOperationJson(action.body.causal.dependsOn)
             !== canonicalListOperationJson([{ operationId: parentId, listId }])) throw Error("Missing or invalid predecessor");
         parents.add(parentId);
@@ -220,9 +226,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     const assertCurrent = guardEditor(getContext, head), outcomes = [];
     for (const { action } of [...records.values()].sort((a, b) => a.action.generation - b.action.generation)) {
       assertCurrent();
-      const input = { operationId: action.operationId,
-        path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-        method: action.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(action.body) };
+      const input = operationRequest(action);
       let proof;
       try { proof = await queue.inspect(input); }
       catch (error) {
@@ -231,9 +235,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const parentProof = outcomes.find(value => value.operation.id === parentId);
         if (!terminalizeRejectedDependencies || !error.isOperationReceiptError || typeof queue.settleRejectedDependency !== "function"
           || !parent || parentProof?.operation.state !== "rejected") throw error;
-        proof = await queue.settleRejectedDependency({ ...input, predecessor: { operationId: parentId,
-          path: parent.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-          method: parent.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(parent.body) } });
+        proof = await queue.settleRejectedDependency({ ...input, predecessor: operationRequest(parent) });
       }
       assertCurrent();
       if (!validHistoricalProof(proof, action)) {
@@ -355,20 +357,28 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return { removed, pending: [...cleanupKeys, ...checkpoints.keys()].some(key => key !== `${keyPrefix}anchor` && storage.getItem(key) !== null) };
     },
     list() { return clone([...read().records.values()]); },
-    capture({ snapshot, body, create = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
+    capture({ snapshot, body, create = false, restore = false, operationId = crypto.randomUUID(), localReconciliation = null }) {
       const input = clone({ snapshot, body });
       let current;
       try { current = assertObserved(); }
       catch (error) {
         // Only a pre-publication stale-editor failure has a resumable memory
         // draft. Quota, corrupt journals and actual stored forks are separate.
-        if (error.code === "stale-tab" && !staleCapture) staleCapture = {
+        if (error.code === "stale-tab" && !staleCapture && !restore) staleCapture = {
           input, base: clone(observedPayload || initialMergeBase?.payload || null),
           sourceOperationId: JSON.parse(observed).operationId
         };
         throw error;
       }
       const { head, records, anchor, applied } = current;
+      if (restore) {
+        const manifest = personalHistoryRestoreManifest(input.body?.historyRestore);
+        const confirmedRevision = anchor?.baseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision || initialMergeBase?.stateRevision || input.body.baseStateRevision;
+        if (create || localReconciliation || head && !applied.has(head.action.operationId)
+          || input.body.baseStateRevision !== manifest.targetStateRevision || confirmedRevision !== manifest.targetStateRevision) {
+          throw blocked("restore-base", "Восстановление требует подтверждённой текущей версии списка.");
+        }
+      } else if (input.body?.historyRestore) throw blocked("input", "Для восстановления нужна отдельная операция.");
       if (!uuid(operationId) || !input.snapshot || typeof input.snapshot !== "object"
         || !input.body?.payload || input.body.causal !== undefined || records.has(operationId)
         || anchor?.retired.includes(operationId) || storage.getItem(keyPrefix + operationId) !== null) {
@@ -377,7 +387,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // UI-only changes don't create another business operation. The ordinary
       // local mirror may still persist those UI preferences.
       const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
-      if (head && !localReconciliation && canonicalListOperationJson(baseline?.payload || head.action.body.payload) === canonicalListOperationJson(input.body.payload)) return clone(head);
+      if (head && !restore && !localReconciliation && canonicalListOperationJson(baseline?.payload || head.action.body.payload) === canonicalListOperationJson(input.body.payload)) return clone(head);
       if (create && head) throw blocked("create", "Повторное создание списка запрещено.");
       if (!head && !create && (!Number.isSafeInteger(input.body.baseStateRevision) || input.body.baseStateRevision < 1)) {
         throw blocked("revision", "Перед первым сохранением нужна подтверждённая версия списка.");
@@ -391,7 +401,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}),
-        kind: create ? "list.create" : "list.update", body: { ...input.body, ...(create ? { id: listId } : {}), causal } };
+        kind: create ? "list.create" : restore ? "list.restore" : "list.update", body: { ...input.body, ...(create ? { id: listId } : {}), causal } };
       if (localReconciliation && (localReconciliation.version !== 1 || !head
         || localReconciliation.targetOperationId !== head.action.operationId
         || localReconciliation.sourceOperationId !== null && !uuid(localReconciliation.sourceOperationId))) {
@@ -456,6 +466,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       delete body.userCopy; // A comparison is a new action, not another execution of the old copy manifest.
       delete body.userDictionary;
       delete body.userPlacement;
+      delete body.historyRestore;
       if (body.userDeletion) {
         body.userDeletion = retainedPersonalDeletionIntent(body.userDeletion, payload);
         if (!body.userDeletion) delete body.userDeletion;
@@ -481,6 +492,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // Unknown/waiting never reach this point. Other business rejections and
       // an already committed-but-stale head need their own recovery decisions.
       const headProof = settled.outcomes.at(-1), alreadyCommitted = headProof?.operation.state === "committed";
+      if (!alreadyCommitted && settled.outcomes.some(proof => proof.operation.kind === "list.restore" && proof.operation.state !== "committed")) {
+        throw blocked("restore-reconciliation", "Восстановление не применено. Его нельзя автоматически перенести на другую версию списка; требуется новый выбор из истории.");
+      }
       if (!alreadyCommitted && !revisionConflictChain(head.action, records, settled.outcomes)) throw blocked("reconciliation", "Сервер не подтвердил конфликт версии этого действия.");
       let base = null;
       // Use the newest actual base of THIS intent chain. In particular, a
@@ -555,6 +569,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       delete action.body.userCopy;
       delete action.body.userDictionary;
       delete action.body.userPlacement;
+      delete action.body.historyRestore;
       const mergeBase = { payload: remote.payload, stateRevision: remote.stateRevision };
       const reconciliation = { version: 1, settled: settled.outcomes };
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
@@ -599,9 +614,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
               && current.anchor.retired.includes(proof.operation.id)) continue;
             throw blocked("receipt", "Не найдены исходные действия объединения.");
           }
-          const actual = await queue.inspect({ operationId: prior.action.operationId,
-            path: prior.action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-            method: prior.action.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(prior.action.body) });
+          const actual = await queue.inspect(operationRequest(prior.action));
           assertContext();
           if (canonicalListOperationJson(actual) !== canonicalListOperationJson(proof)) throw blocked("receipt", "Подтверждение исходного действия изменилось.");
         }
@@ -612,17 +625,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const action = record.action;
         // Receipt-only settlement allows a historical predecessor to finish
         // without installing its payload as current UI state.
-        result = await queue.run({ operationId: action.operationId,
-          path: action.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-          method: action.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(action.body), receiptOnly: true });
+        result = await queue.run({ ...operationRequest(action), receiptOnly: true });
         assertContext();
       }
       // Re-read the last receipt with the queue's server-freshness guard before
       // allowing the UI to mark this exact local generation synchronized.
       const last = head.action;
-      result = await queue.run({ operationId: last.operationId,
-        path: last.kind === "list.create" ? "/bike-packing/lists" : `/bike-packing/lists/${encodeURIComponent(listId)}`,
-        method: last.kind === "list.create" ? "POST" : "PUT", body: JSON.stringify(last.body) });
+      result = await queue.run(operationRequest(last));
       assertContext();
       onConfirmed(result, clone(head));
       return result;

@@ -735,6 +735,7 @@ import { personalCopyIntent, preparePersonalCopyBatch } from "./src/sync/persona
 import { preparePersonalLayoutDeletion } from "./src/sync/personal-layout-deletion.js";
 import { preparePersonalDictionaryMutation } from "./src/sync/personal-dictionary-mutation.js";
 import { preparePersonalPlacementMutation, personalPlacementIntent } from "./src/sync/personal-placement-mutation.js";
+import { preparePersonalHistoryRestore } from "./src/sync/personal-history-restore.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
 import { installExperimentBanner } from "./src/ui/experiment-banner.js";
@@ -2623,6 +2624,9 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     || userStorageScopeKey(currentUser) !== localStorageScopeKey || outbox.binding.listId !== currentPackingListId) {
     throw new Error("Для причинного сохранения сначала нужен подтверждённый личный список и аккаунт.");
   }
+  const latest = outbox.recover?.();
+  if (!personalMutation && latest?.action.kind === "list.restore"
+    && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
   return outbox.capture({ snapshot, body });
 }
 
@@ -5747,7 +5751,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
     const pending = personalSaveOutboxForScope()?.recover();
-    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation) || pending.action.operationId !== personalOperationId
+    if (!personalOperationId || !(pending?.reconciliation || pending?.localReconciliation || pending?.action.kind === "list.restore") || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -11007,6 +11011,42 @@ function historySourceLabel(source = activeHistorySource) {
   return t("history.sourceMine");
 }
 
+async function preparePersonalHistoryRestoreAction(record, layoutIds) {
+  personalSaveRecovery.assertRunning();
+  const listId = String(record?.listId || record?.list_id || "");
+  if (activeHistorySource !== "private" || record?.source !== "bike_packing_list_history"
+    || listId !== currentPackingListId || isAdminPublicEditScope(modeState) || isReadOnlyBikePackingContext()) {
+    throw Error("Восстановление доступно только для истории текущего личного списка.");
+  }
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox) throw Error("Сначала подтвердите личный список.");
+  return preparePersonalHistoryRestore({ historyId: Number(record.id), layoutIds, outbox,
+    getContext: () => { personalSaveRecovery.assertRunning(); return { ...personalSaveContext(), activeLayoutId: state.activeLayoutId, historySource: activeHistorySource }; },
+    getState: () => ({ ...state, activeLayoutId: state.activeLayoutId }), getRevision: () => Number(syncMeta.stateRevision),
+    readPreview(historyId, selected) {
+      const params = new URLSearchParams(); selected.forEach(id => params.append("layoutId", id));
+      return apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history/${historyId}/restore?${params}`, {
+        timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
+      });
+    },
+    makeSnapshot(payload, previous) {
+      const activeLayoutId = payload.layouts?.[previous.activeLayoutId] ? previous.activeLayoutId : payload.activeLayoutId;
+      const snapshot = normalizeRemoteState({ ...payload, activeLayoutId }, { repairCatalog: false });
+      if (!snapshot) throw Error("Не удалось прочитать подготовленную версию истории.");
+      applyLayoutArrangement(activeLayoutId, snapshot);
+      return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+    },
+    onCaptured(saved) {
+      replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+      syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso();
+      saveSyncMeta();
+      renderPreservingPackingScroll();
+      updateSyncUi("Восстановление сохранено на устройстве и ждёт подтверждения сервера.");
+      scheduleRemoteSave();
+    }
+  });
+}
+
 async function restoreHistoryRecord(recordKey) {
   const { record, index, records } = findHistoryRecordByKey(recordKey);
   if (!record) {
@@ -11038,6 +11078,11 @@ async function restoreHistoryRecord(recordKey) {
   const restoredLayoutName = restoreLayoutIds.length
     ? String(affectedLayout?.name || state.layouts?.[restoreLayoutIds[0]]?.name || restoreLayoutIds[0])
     : "";
+  let commitPersonalRestore = null;
+  if (personalSavePilotEnabled()) {
+    try { commitPersonalRestore = await preparePersonalHistoryRestoreAction(record, restoreLayoutIds); }
+    catch (error) { showToast(error.message, "error"); return; }
+  }
   const confirmed = await askConfirmDialog(historyUndoConfirmation({
     actionText: historyUndoActionText(record, index, records),
     ...impact,
@@ -11046,6 +11091,14 @@ async function restoreHistoryRecord(recordKey) {
     quantityStorageScope: historyQuantityStorageScope(record)
   }));
   if (!confirmed) return;
+  if (commitPersonalRestore) {
+    try {
+      if (!commitPersonalRestore()) return;
+      refs.historyDialog.close(); refs.historyDetailDialog?.close();
+      showToast("Восстановление записано в очередь. Проверяем подтверждение сервера.", "success");
+    } catch (error) { showToast(error.message, "error"); }
+    return;
+  }
   refs.historyDialog.close();
   refs.historyDetailDialog?.close();
   updateSyncUi(localText("Undoing the action on the server...", "Отменяю действие на сервере..."));
