@@ -486,6 +486,72 @@ test("rejected-dependency settlement freezes the exact child, obtains a no-effec
   assert.equal(f.posts().length - before, 1);
 });
 
+test("a rejected photo form can terminalize its exact DB child only with both photo gates and matching rejection proof", async () => {
+  for (const mode of ["enabled", "photo-off", "form-off", "committed", "unknown", "changed-body"]) {
+    const f = fixture(); f.state.photoEnabled = true; f.state.photoFormEnabled = true;
+    Object.assign(f.context, { environment: "bike-packing-experiment", listId: "list-a", scopeKey: "id:actor-a" });
+    f.state.capabilities = ["personalListCausalOperationsV1", "personalCausalPhotoPublicationV1", "personalCausalPhotoFormV1"];
+    const predecessor = { path: `${path}/photos/mutate`, method: "POST", operationId: crypto.randomUUID(),
+      body: JSON.stringify({ version: 1, action: "form", entityType: "item", entityId: "item", baseStateRevision: 1, baseEntityRevision: 1,
+        fields: { name: "Frozen form" }, changes: [{ version: 1, action: "delete", entityType: "item", entityId: "item", baseEntityRevision: 1,
+          basePhotoRevision: 1, expectedPhotoIds: ["photo"], photoId: "photo", assetId: crypto.randomUUID() }] }) };
+    f.state.rejection = { status: 409, payload: { ok: false, code: "stale_photo_owner_revision", stateRevision: 1 } };
+    await assert.rejects(f.make().queue.run(predecessor), { isConfirmedOperationRejection: true });
+    const input = { ...f.input, operationId: crypto.randomUUID(), predecessor, body: JSON.stringify({ payload: { items: {}, containers: {} },
+      userDeletion: { type: "item", id: "item" }, causal: { baseOperationId: predecessor.operationId,
+        dependsOn: [{ operationId: predecessor.operationId, listId: "list-a" }], reads: [] } }) };
+    if (mode === "photo-off") f.state.photoEnabled = false;
+    if (mode === "form-off") f.state.photoFormEnabled = false;
+    if (mode === "committed") f.receipts.get(predecessor.operationId).operation.state = "committed";
+    if (mode === "unknown") f.receipts.delete(predecessor.operationId);
+    if (mode === "changed-body") { const body = JSON.parse(predecessor.body); body.fields.name = "Changed"; predecessor.body = JSON.stringify(body); }
+    f.state.rejection = { status: 409, payload: { ok: false, code: "dependency_rejected", stateRevision: 1 } };
+    const before = f.posts().length;
+    if (mode !== "enabled") {
+      await assert.rejects(f.make().queue.settleRejectedDependency(input)); assert.equal(f.posts().length, before, mode);
+    } else {
+      const proof = await f.make().queue.settleRejectedDependency(input);
+      assert.equal(proof.rejectionCode, "dependency_rejected"); assert.equal(f.posts().length, before + 1);
+      await f.make().queue.settleRejectedDependency(input); assert.equal(f.posts().length, before + 1);
+    }
+  }
+});
+
+test("lost form cancellation ACK never permits resuming the business POST from a waiting receipt", async () => {
+  const f = fixture(); f.state.photoEnabled = true; f.state.photoFormEnabled = true;
+  Object.assign(f.context, { environment: "bike-packing-experiment", listId: "list-a", scopeKey: "id:actor-a" });
+  f.state.capabilities = ["personalListCausalOperationsV1", "personalListOperationCancellationV1", "personalCausalPhotoPublicationV1", "personalCausalPhotoFormV1"];
+  const parentId = crypto.randomUUID(), operationId = crypto.randomUUID();
+  const input = { path: `${path}/photos/mutate`, method: "POST", operationId,
+    body: JSON.stringify({ version: 1, action: "form", entityType: "item", entityId: "item", baseStateRevision: 1, baseEntityRevision: 1,
+      causal: { baseOperationId: parentId, dependsOn: [{ operationId: parentId, listId: "list-a" }], reads: [] }, fields: { name: "Frozen" },
+      changes: [{ version: 1, action: "attach", entityType: "item", entityId: "item", baseEntityRevision: 1,
+        expectedPhotoIds: [], photoId: "photo", assetId: crypto.randomUUID(), index: 0 }] }) };
+  const fetchImpl = async (url, options) => {
+    const response = await f.fetchImpl(url, options);
+    if (options.method === "GET" && url.endsWith(`/list-operations/${operationId}`) && f.state.unknown) {
+      return new Response(JSON.stringify({ ok: true, operation: { id: operationId, state: "unknown",
+        actorId: "actor-a", environment: "bike-packing-experiment", listId: "list-a" } }));
+    }
+    return response;
+  };
+  const make = () => createListOperationQueue({ transport: f.make().transport, getContext: () => f.context, locks: f.locks,
+    fetchImpl, enabled: true, photoEnabled: true, photoFormEnabled: true, cancellationEnabled: true });
+  f.state.waiting = true; f.state.loseResponse = true; f.state.unknown = true;
+  await assert.rejects(make().cancelExact(input));
+  assert.equal(f.make().transport.writes.find(entry => entry.id === operationId).recovery.cancellationOnly, true);
+  f.state.loseResponse = false; f.state.unknown = false;
+  await assert.rejects(make().run(input), { isOperationWaiting: true });
+  assert.equal(f.posts().length, 1); assert.ok(f.posts()[0].url.endsWith(`/${operationId}/cancel`));
+  f.state.waiting = false;
+  f.state.rejection = { status: 409, payload: { ok: false, code: "operation_cancelled", stateRevision: 1,
+    cancellation: { version: 1, operationId, noBusinessEffects: true, operationCannotApply: true } } };
+  const proof = await make().cancelExact(input);
+  assert.equal(proof.operation.state, "rejected"); assert.equal(f.posts().length, 2);
+  await assert.rejects(make().run(input), { isConfirmedOperationRejection: true });
+  assert.equal(f.posts().length, 2); assert.ok(f.posts().every(post => post.url.endsWith(`/${operationId}/cancel`)));
+});
+
 test("rejected-dependency settlement can finish an unknown exact child after lost ACK without replacing its ID", async () => {
   const f = await rejectedDependencyFixture();
   f.state.loseResponse = true; f.state.unknown = true;

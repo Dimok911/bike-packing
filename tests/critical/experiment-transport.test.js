@@ -48,6 +48,31 @@ test("transport: IP is anonymous diagnostic only, even with an enabled gate", as
   assert.throws(() => resolveApiBase({ hostname: "api-eu.vniipo-help.ru" }), /not a frontend/);
 });
 
+test("a cancellation-only form journal may pass only its own exact uncertain stage; ordinary and foreign writes remain blocked", async () => {
+  const storage = storageMock(), assetId = crypto.randomUUID(), ownerId = crypto.randomUUID();
+  const stagePath = "/bike-packing/lists/list/photo-assets", formPath = "/bike-packing/lists/list/photos/mutate";
+  const stage = { id: assetId, path: stagePath, method: "POST", mode: "direct", uncertain: true,
+    recovery: { type: "photo-stage", protocol: "staging-v1", operationId: assetId, actorId: "actor", listId: "list",
+      actionOperationId: ownerId, entityType: "item", entityId: "item", photoId: "photo" } };
+  storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${assetId}`, JSON.stringify(stage));
+  const transport = createExperimentTransport({ locationLike, selection: "direct", locks, storage });
+  const recovery = { type: "list", protocol: "causal-v1", operationId: ownerId, kind: "photos.mutate", actorId: "actor", listId: "list",
+    cancellationOnly: true, body: { action: "form", entityType: "item", entityId: "item", changes: [
+      { action: "attach", entityType: "item", entityId: "item", photoId: "photo", assetId }] } };
+  assert.doesNotThrow(() => transport.assertWritable(formPath, "POST", recovery));
+  for (const mutate of [r => { delete r.cancellationOnly; }, r => { r.operationId = crypto.randomUUID(); },
+    r => { r.actorId = "other"; }, r => { r.listId = "other"; }, r => { r.body.changes[0].photoId = "other"; },
+    r => { r.body.changes[0].assetId = crypto.randomUUID(); }, r => { r.body.entityId = "other"; }, r => { r.body.action = "batch"; }]) {
+    const invalid = structuredClone(recovery); mutate(invalid);
+    assert.throws(() => transport.assertWritable(formPath, "POST", invalid), /unknown outcome/);
+  }
+  assert.throws(() => transport.assertWritable("/auth/logout", "POST", recovery), /unknown outcome/);
+  assert.throws(() => transport.assertWritable(formPath, "PUT", recovery), /unknown outcome/);
+  const id = await transport.beginWrite(formPath, "POST", JSON.stringify(recovery.body), recovery);
+  assert.equal(id, ownerId); assert.equal(transport.writes.find(entry => entry.id === id).recovery.cancellationOnly, true);
+  assert.equal(transport.writes.find(entry => entry.id === assetId).confirmed, undefined);
+});
+
 test("transport: gate and identity are fail-closed, preparation deduplicates and cannot reach Production", async () => {
   for (const [gate, identity] of [["read-only", "bike-packing-experiment"], ["enabled", "bike-packing"], ["", ""]]) {
     const requests = [];

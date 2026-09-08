@@ -242,8 +242,23 @@ export function createExperimentTransport({
     validateApiPath(path);
     refreshJournal();
     const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
+    // Cancelling a frozen form can fence its owner even if one of its own
+    // stage ACKs is unknown. This marker is local transport metadata; the
+    // queue forbids dispatch/resume of a business write from such an entry.
+    // Every unrelated stage/legacy write remains a barrier.
+    const ownCancelledFormStage = entry => causal && recovery.cancellationOnly === true
+      && method === "POST" && path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/photos/mutate`
+      && recovery.kind === "photos.mutate" && recovery.body?.action === "form"
+      && entry.path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/photo-assets` && entry.method === "POST"
+      && entry.recovery?.type === "photo-stage" && entry.recovery.protocol === "staging-v1"
+      && entry.recovery.actorId === recovery.actorId && entry.recovery.listId === recovery.listId
+      && entry.recovery.actionOperationId === recovery.operationId && entry.recovery.operationId === entry.id
+      && Array.isArray(recovery.body.changes) && recovery.body.changes.some(change => change.action === "attach"
+        && change.assetId === entry.id && change.photoId === entry.recovery.photoId
+        && change.entityType === entry.recovery.entityType && change.entityId === entry.recovery.entityId
+        && change.entityType === recovery.body.entityType && change.entityId === recovery.body.entityId);
     if (journal.some((entry) => entry.uncertain && !(causal && entry.recovery?.type === "list"
-      && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId)) && !isReadOnlyRequest(path, method)) {
+      && entry.recovery.protocol === "causal-v1" && entry.recovery.actorId === recovery.actorId) && !ownCancelledFormStage(entry)) && !isReadOnlyRequest(path, method)) {
       const error = transportError("Previous write has an unknown outcome; reconcile server state before retrying");
       error.isAmbiguousMutation = true;
       throw error;

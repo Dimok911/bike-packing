@@ -10,12 +10,14 @@ import { personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-p
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
 import { preparePersonalPhotoFormAttachments } from "../../src/sync/personal-photo-form-plan.js";
 import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
+import { preparePersonalDeletionBatch } from "../../src/sync/personal-deletion-intent.js";
 
 async function makeFixture(form) {
   const binding = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor" }, entries = new Map();
   const storage = { get length() { return entries.size; }, key: i => [...entries.keys()][i], getItem: key => entries.get(key) ?? null,
     setItem: (key, value) => entries.set(key, value), removeItem: key => entries.delete(key) };
-  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoBatchCancellationEnabled: true, photoFormEnabled: true });
+  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoBatchCancellationEnabled: true,
+    photoFormEnabled: true, pendingPhotoOwnerDeletionEnabled: true });
   const base = { items: { item: { id: "item", name: "Frozen", photos: [] } }, containers: {}, layouts: {} };
   outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 1 });
   const prepared = (form ? preparePersonalPhotoFormAttachments : preparePersonalPhotoAttachmentBatch)({ binding, snapshot: base, basePayload: base, baseStateRevision: 1,
@@ -121,6 +123,26 @@ test("applied keep-current decision carries exact photo proof through compact ba
     assert.equal(inventory.entries[0].state, "settled-retained", mode);
     assert.deepEqual(recovered.photoRecoveryReferences().photoReceipts, [f.ownerProof()]);
   }
+});
+
+if (form) test("pending owner deletion cancellation fences its exact predecessor and preserves both actions through lost ACK", async () => {
+  const f = await fixture(), getContext = () => ({ ...f.binding, scope: "personal", generation: "editor" });
+  const prepared = preparePersonalDeletionBatch(f.record.snapshot, { type: "item", id: "item" });
+  const deletion = f.outbox.capture({ snapshot: prepared.snapshot, body: { payload: prepared.snapshot, userDeletion: prepared.intent, baseStateRevision: 1 } });
+  const before = [...f.entries], flags = { batchEnabled: true, formEnabled: true, records: f.outbox.list() };
+  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(deletion, { ...flags, pendingOwnerDeletionEnabled: false })), false);
+  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(deletion, { ...flags, pendingOwnerDeletionEnabled: true })), true);
+  f.state.secondUnknown = true;
+  const options = { queue: f.options.queue, photoStore: f.store, photoStaging: f.options.staging, getContext };
+  await assert.rejects(f.outbox.cancelPhotoUpload(options), /lost cancellation ACK/);
+  assert.deepEqual([...f.entries], before); assert.deepEqual(f.outbox.recover(), deletion);
+  f.state.secondUnknown = false;
+  const restarted = createPersonalSaveOutbox({ ...f.binding, storage: f.storage, photoEnabled: true, photoBatchEnabled: true,
+    photoBatchCancellationEnabled: true, photoFormEnabled: true, pendingPhotoOwnerDeletionEnabled: true });
+  const proof = await restarted.cancelPhotoUpload(options);
+  assert.equal(proof.ownerReceipt.operation.id, f.record.action.operationId); assert.equal(proof.ownerReceipt.operation.state, "rejected");
+  assert.equal(f.calls.filter(call => call === "cancel-owner").length, 1); assert.deepEqual([...f.entries], before);
+  assert.deepEqual(restarted.recover(), deletion); assert.equal((await f.store.read(f.record.action.operationId)).files.length, 2);
 });
 
 if (form) test("form cancellation requires its own authority and the keep-current choice identifies discarded fields", async () => {

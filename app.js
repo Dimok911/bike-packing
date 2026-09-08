@@ -725,6 +725,8 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
+import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
+  personalPendingPhotoOwnerDeletionForm } from "./src/sync/personal-pending-photo-owner-deletion.js";
 import { isKnownEmptyPersonalSave } from "./src/sync/personal-empty-save.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
@@ -2563,7 +2565,14 @@ function preparePersonalCatalogDeletion(value) {
         hasPhotos: record => !allowPhotoOwners && normalizeItemPhotos(record).length > 0
       });
       if (allowPhotoOwners && !preservesConfirmedPersonalPhotos(state, prepared.snapshot, currentPackingListId,
-        { userDeletion: prepared.intent })) throw Error("Удаление требует подтверждённых фото текущего списка. Исходные данные сохранены.");
+        { userDeletion: prepared.intent })) {
+        const parent = personalSaveOutboxForScope()?.recover();
+        if (!PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED || !sameJson(parent?.photoState?.payload, serializeState({ forSync: true }))
+          || !isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
+            userDeletion: prepared.intent, listId: currentPackingListId })) {
+          throw Error("Удаление требует подтверждённых фото либо точно сохранённой формы этого владельца. Исходные данные сохранены.");
+        }
+      }
       // Publish the complete intent before replacing live state. A storage
       // failure leaves the visible owner and its photos in their original place.
       used = true;
@@ -8578,7 +8587,8 @@ function canCancelRetainedPersonalPhoto() {
   if (!personalPhotoRecoveryCancellationEnabled() || !currentUser || isForcedOffline()) return false;
   try {
     const source = personalPhotoRecoverySource;
-    return source?.outbox?.binding.scopeKey === localStorageScopeKey && personalPhotoRecoveryCancellationHead(source.outbox.recover());
+    return source?.outbox?.binding.scopeKey === localStorageScopeKey && personalPhotoRecoveryCancellationHead(source.outbox.recover(),
+      { records: source.outbox.list() });
   } catch { return false; }
 }
 
@@ -8641,7 +8651,9 @@ function canResumeRetainedPersonalPhotoForm() {
   try {
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && outbox.recover()?.action.body.action === "form");
+      && outbox.hasPending() && (outbox.recover()?.action.body.action === "form"
+        || PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
+          operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })));
   } catch { return false; }
 }
 
@@ -8840,6 +8852,10 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;
+    if (error.code === "photo-form-superseded") {
+      scheduleRemoteSave();
+      return;
+    }
     personalSaveRecovery.report(error, { scopeKey: owner.scopeKey });
     syncMeta.dirty = true;
     saveSyncMeta();

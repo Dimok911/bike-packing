@@ -186,6 +186,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           asset: { id, state: "ready", publication: "not-published", fileHash: sent.fileHash, thumbHash: sent.thumbHash,
             storedFileHash: sent.fileHash, storedThumbHash: sent.thumbHash || sent.fileHash } };
         state.stagePosts.push(id); state.stageReceipts.set(id, data);
+        if (state.beforeStageAck) await state.beforeStageAck(id);
         if (state.loseStage || state.loseStageAt === state.stagePosts.length) { state.hiddenStage = id; return route.abort("failed"); }
       }
       else if ((photoRecovery || photoForm) && path.startsWith(`/bike-packing/lists/${state.listId}/photo-assets/`)) {
@@ -216,7 +217,10 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           result: { status: 409, payload: { ok: false, code: "operation_cancelled", stateRevision: state.revision,
             cancellation: { version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } } };
         state.receipts.set(id, data);
-        if (state.loseCancellation) return route.abort("failed");
+        if (state.loseCancellation) {
+          if (state.hideCancellationReceipt) state.hiddenFormOwner = id;
+          return route.abort("failed");
+        }
       }
       else if (path === "/bike-packing/list-operations" && request.method() === "POST") {
         const body = request.postDataJSON(); state.posts.push(body);
@@ -1014,6 +1018,138 @@ for (const type of ["item", "container"]) test(`actual ${type} editor and reload
   await reloadApp(page);
   await expect.poll(retained).toEqual([photo]);
   expect(f.errors).toEqual([]);
+});
+
+for (const type of ["item", "container"]) for (const outcome of ["file in flight", "lost owner", "lost deletion", "quota"]) test(`pending photo owner ${type} deletion follows its durable form (${outcome})`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context,
+    { type, created: outcome === "file in flight", photoEdit: true });
+  let release;
+  if (outcome === "lost owner") f.loseFormOwner = true;
+  else f.beforeStageAck = () => new Promise(resolve => { release = resolve; });
+  await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  if (outcome === "lost owner") await expect.poll(() => f.injectedFailure).toBe(true);
+  else await expect.poll(() => Boolean(release)).toBe(true);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  const originalRecords = await records(), form = originalRecords.find(record => record.action.kind === "photos.mutate");
+  const ownerId = form.action.body.entityId, originalForm = structuredClone(form);
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+  await expect(dialog).toBeVisible(); await page.locator(`#${prefix}DeleteForeverBtn`).click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Pending owner deletion quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  if (outcome === "lost deletion") { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  try {
+    await submitForm(page, "#confirmOkBtn");
+    if (outcome === "quota") {
+      await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+      expect(await records()).toEqual(originalRecords);
+      const local = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")));
+      expect(local[collection][ownerId].photos.map(photo => photo.status)).toEqual(["pending", "pending"]);
+      expect(f.posts).toHaveLength(before);
+    } else {
+      await expect(dialog).not.toBeVisible();
+      const saved = await records(), deletion = saved.find(record => record.action.body.userDeletion?.id === ownerId);
+      expect(deletion).toBeTruthy(); expect(saved.find(record => record.action.operationId === form.action.operationId)).toEqual(originalForm);
+      expect(deletion.action.body.causal.baseOperationId).toBe(form.action.operationId);
+      expect(deletion.action.body.causal.dependsOn).toEqual([{ operationId: form.action.operationId, listId: "list-a" }]);
+      expect(deletion.action.body.payload[collection][ownerId]).toBeUndefined();
+      f.beforeStageAck = null; release?.();
+      if (outcome === "lost owner" || outcome === "lost deletion") {
+        if (outcome === "lost deletion") await expect.poll(() => f.posts.some(post => post.operationId === deletion.action.operationId)).toBe(true);
+        await reloadApp(page, { recovery: true });
+        const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+        await expect(resume).toBeVisible(); await resume.click(); await expect(resume).toBeEnabled();
+        const beforeRecovery = f.posts.length, stageIds = [...f.stagePosts];
+        f.lose = false; f.unknown = false; f.beforeUpdate = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+        await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+        expect(f.posts).toHaveLength(beforeRecovery + (outcome === "lost owner" ? 1 : 0)); expect(f.stagePosts).toEqual(stageIds);
+        await reloadApp(page);
+      } else {
+        await expect.poll(() => f.posts.some(post => post.operationId === deletion.action.operationId), { timeout: 20000 }).toBe(true);
+        await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+        await reloadApp(page);
+      }
+      const local = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")));
+      expect(local[collection][ownerId]).toBeUndefined(); expect(f.payload[collection][ownerId]).toBeUndefined();
+      expect(f.posts.slice(before).map(post => post.operationId)).toEqual([form.action.operationId, deletion.action.operationId]);
+      expect(f.posts.at(-1).body).toEqual(deletion.action.body); expect(f.stagePosts).toHaveLength(2);
+      await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
+    }
+  } finally { f.beforeStageAck = null; release?.(); }
+  expect(f.errors).toEqual([]);
+});
+
+for (const type of ["item", "container"]) for (const lost of [false, true]) test(`pending photo deletion ${type} cancellation retains files and allows a postponed choice${lost ? " after lost cancellation ACK" : ""}`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true });
+  const server = structuredClone(f.payload);
+  let release;
+  f.beforeStageAck = () => new Promise(resolve => { release = resolve; });
+  f.loseStageAt = 1;
+  try {
+    await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+    await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+    await page.locator(`#${prefix}DeleteForeverBtn`).click(); await submitForm(page, "#confirmOkBtn");
+    await expect(dialog).not.toBeVisible();
+    await context.route(`${origin}/src/**/*.js`, async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid native-file reader path");
+      return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+    });
+    const retained = await page.evaluate(async () => {
+      const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+      const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+      const records = Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+        .map(([, value]) => JSON.parse(value));
+      const action = records.find(record => record.action?.kind === "photos.mutate").action;
+      const saved = await createPersonalPhotoActionStore(binding).read(action.operationId);
+      return { action, deletion: records.find(record => record.action?.body.userDeletion)?.action,
+        cancellationReceipts: saved.files.map(part => ({ ok: true,
+          operation: { id: part.stage.operationId, actorId: binding.actorId, environment: binding.environment, listId: binding.listId,
+            entityType: part.stage.entityType, entityId: part.stage.entityId, photoId: part.stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+          cancellation: { version: 1, stageOperationId: part.stage.operationId, fileHash: part.fileMetadata.hash,
+            thumbHash: part.thumbMetadata?.hash || part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } })) };
+    });
+    f.cancelPhotoAction = retained.action;
+    f.cancellationReceipts = new Map(retained.cancellationReceipts.map(proof => [proof.operation.id, proof]));
+    f.beforeStageAck = null; release();
+    await expect.poll(() => f.hiddenStage).toBe(f.stagePosts[0]);
+    await reloadApp(page, { recovery: true }); f.hiddenStage = null;
+    const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+    await expect(cancel).toBeVisible();
+    if (lost) {
+      f.loseCancellation = true; f.hideCancellationReceipt = true;
+      await cancel.click(); await expect(cancel).toBeEnabled();
+      expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 1);
+      await reloadApp(page, { recovery: true });
+      f.loseCancellation = false; f.hiddenFormOwner = null;
+    }
+    await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await expect(page.locator("#confirmDialog")).toContainText("действий: 2");
+    await page.locator("#confirmCancelBtn").click(); await expect(recovery.getByRole("status")).toContainText("Выбор отложен");
+    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(1);
+    expect(f.receipts.get(retained.deletion.operationId).result.payload.code).toBe("dependency_rejected");
+    await reloadApp(page, { recovery: true }); await cancel.click();
+    await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    expect(f.posts).toHaveLength(before + 3); expect(f.stagePosts).toHaveLength(1); expect(f.cancellationPosts).toHaveLength(1);
+    expect(f.payload[collection][retained.action.body.entityId]).toEqual(server[collection][retained.action.body.entityId]);
+    expect(await page.evaluate(async id => {
+      const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+      return (await createPersonalPhotoActionStore({ actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" }).read(id)).files.length;
+    }, retained.action.operationId)).toBe(2);
+    await reloadApp(page); await expect(recovery).not.toBeVisible(); expect(f.errors).toEqual([]);
+  } finally { f.beforeStageAck = null; release?.(); }
 });
 
 for (const type of ["item", "container"]) for (const outcome of ["confirmed", "lost ACK", "quota"]) test(`confirmed photo owner ${type} deletion preserves other files (${outcome})`, async ({ page, context }) => {

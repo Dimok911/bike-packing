@@ -5,6 +5,8 @@ import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliati
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
 import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
 import { personalListMigrationBody } from "./personal-list-migration.js";
+import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
+  personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_EDIT_FORM_ENABLED, assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
   assertPersonalPhotoRecord, assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
@@ -91,6 +93,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   photoEditEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED,
+  pendingPhotoOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
@@ -498,7 +501,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         throw blocked("migration-pending", "Сначала подтвердите подготовку старого списка. Следующее изменение не отправлено.");
       }
       if (head?.action.kind === "photos.mutate" && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
-        throw blocked("photo-pending", "Сначала нужно подтвердить фото и сохранить актуальную версию карточки. Следующее изменение не отправлено.");
+        if (!pendingPhotoOwnerDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoBatchEnabled
+          || create || restore || migration || localReconciliation
+          || !isPersonalPendingPhotoOwnerDeletion({ parent: head, payload: input.body?.payload, userDeletion: input.body?.userDeletion, listId })) {
+          throw blocked("photo-pending", "Сначала нужно подтвердить фото и сохранить актуальную версию карточки. Следующее изменение не отправлено.");
+        }
       }
       if (restore) {
         const manifest = personalHistoryRestoreManifest(input.body?.historyRestore);
@@ -750,7 +757,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(record);
     },
     async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
-      const { head } = assertObserved();
+      const { head, records } = assertObserved();
+      const pendingForm = pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({
+        records: [...records.values()], operationId: head?.action.operationId, listId });
+      if (pendingForm) return cancelPersonalPhotoBatch({ record: pendingForm, binding, queue,
+        store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
+        formEnabled: photoFormEnabled,
+        enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled && photoFormEnabled });
       if (head?.action?.body?.action === "form" && head.photoState?.fileIntentHash === null) {
         if (!photoEnabled || !photoFormEnabled || !photoEditEnabled || !photoBatchCancellationEnabled) {
           throw blocked("photo-cancellation", "Отмена изменения существующих фото ещё не включена.");
@@ -834,6 +847,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const chain = [];
       for (let record = head; record; record = records.get(record.action.body.causal.baseOperationId)) chain.push(record);
       const root = chain.at(-1);
+      const dependentForm = chain.find((record, index) => record.action.kind === "photos.mutate" && index > 0);
+      if (dependentForm && (!pendingPhotoOwnerDeletionEnabled
+        || personalPendingPhotoOwnerDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId })?.action.operationId !== dependentForm.action.operationId)) {
+        throw blocked("photo-pending", "Продолжение формы не подтверждено как удаление её владельца. Исходные действия сохранены.");
+      }
       if (root.reconciliation) {
         // A local checkpoint is not a replacement for exact server evidence.
         // Recheck the old terminal operations after a crash/reload too. No old
@@ -864,7 +882,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           if (action.body.action === "form" && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled) throw blocked("photo-edit-disabled", "Изменение существующих фото ещё не включено.");
           const batch = record.photoState.fileInventoryVersion === 2;
           if (batch && !photoBatchEnabled) throw blocked("photo-batch-disabled", "Пакетная отправка фото ещё не включена.");
-          if (attachments.length) {
+          let terminal = false;
+          if (dependentForm?.action.operationId === action.operationId) {
+            try {
+              const proof = await queue.inspect(operationRequest(action)); assertContext();
+              if (!validHistoricalProof(proof, action)) throw blocked("receipt", "Не подтверждено точное исходное фотодействие.");
+              terminal = true;
+            } catch (error) { assertContext(); if (!error.isOperationReceiptError || error.isPersonalSaveBlocked) throw error; }
+          }
+          if (attachments.length && !terminal) {
             if (!photoStore || !photoStaging) throw blocked("photo-file", "Не подключено подтверждение сохранённого файла.");
             const saved = await photoStore.read(action.operationId); assertContext();
             assertPersonalPhotoFile(record, saved, binding);

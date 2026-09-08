@@ -168,6 +168,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   };
   const dispatch = entry => {
     const saved = entry.recovery;
+    if (saved.cancellationOnly === true) throw paused(entry.id, "Для этого номера сохранена отмена. Исходное действие не отправлено заново.");
     return request(gateway, { operationId: entry.id, expectedActorId: saved.actorId, environment,
       kind: saved.kind, listId: saved.listId, body: saved.body });
   };
@@ -175,7 +176,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
     const data = await read(`${gateway}/${encodeURIComponent(entry.id)}`);
     // ONLY an exact server-bound waiting intent permits another POST of the
     // frozen manifest. Unknown/timeout/404 never means permission to resend.
-    if (resumeWaiting && validateWaitingOperation(data, entry.recovery)) {
+    if (resumeWaiting && !entry.recovery.cancellationOnly && validateWaitingOperation(data, entry.recovery)) {
       assertBeforeDispatch();
       try {
         const response = await dispatch(entry);
@@ -234,8 +235,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (![LIST_OPERATION_CAPABILITY, LIST_OPERATION_CANCELLATION_CAPABILITY].every(value => capabilities.capabilities?.includes(value))) throw paused(operationId,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
         if (!entry) {
-          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
-          transport.assertWritable(path, method, protocol);
+          const cancellationOnly = route.kind === "photos.mutate" && body.action === "form" && photoEnabled && photoFormEnabled;
+          if (cancellationOnly) personalPhotoFormManifest(body);
+          const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId, ...(cancellationOnly ? { cancellationOnly: true } : {}) };
+          transport.assertWritable(path, method, { ...expected, ...protocol });
           const generation = await sha(initial.generation);
           const requestKey = await sha(canonicalListOperationJson({ path, method, body, actorId: initial.actorId, operationId }));
           assertCurrent();
@@ -303,15 +306,18 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
       const parent = JSON.parse(JSON.stringify(predecessor || {}));
       const parentRoute = listOperationRoute(parent.path, parent.method), parentBody = JSON.parse(parent.body || "{}");
+      const rejectedFormParent = photoEnabled && photoFormEnabled && parentRoute?.kind === "photos.mutate"
+        && parentBody.action === "form" && route.kind === "list.update";
       const validUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id || "");
       const listId = route.listId;
       if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore"].includes(route.kind)
         || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
-        || !["list.create", "list.update", "list.restore"].includes(parentRoute?.kind)
+        || !["list.create", "list.update", "list.restore"].includes(parentRoute?.kind) && !rejectedFormParent
         || (parentRoute.listId || parentBody.id) !== listId
         || body.causal?.baseOperationId !== parent.operationId
         || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson([{ operationId: parent.operationId, listId }])
         || canonicalListOperationJson(body.causal.reads) !== "[]") throw paused(operationId);
+      if (rejectedFormParent) personalPhotoFormManifest(parentBody);
       const expected = { operationId, actorId: initial.actorId, listId, kind: route.kind, body, children: [],
         payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
       const parentExpected = { operationId: parent.operationId, actorId: initial.actorId, listId, kind: parentRoute.kind,
