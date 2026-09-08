@@ -8,7 +8,7 @@ import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
   personalPhotoFormManifest, validatePersonalPhotoFormResult } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED, PERSONAL_PHOTO_COPY_FORM_CAPABILITY } from "./personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, PERSONAL_PHOTO_COPY_BATCH_CAPABILITY,
-  PERSONAL_PHOTO_TREE_COPY_ENABLED, PERSONAL_PHOTO_TREE_COPY_CAPABILITY,
+  PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED, PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY, PERSONAL_PHOTO_TREE_COPY_ENABLED, PERSONAL_PHOTO_TREE_COPY_CAPABILITY,
   personalPhotoCopyBatchManifest, validatePersonalPhotoCopyBatchResult } from "./personal-photo-copy-batch-protocol.js";
 import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY,
   PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY,
@@ -142,6 +142,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
+  photoCopyPlacementEnabled = PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED,
   photoTreeCopyEnabled = PERSONAL_PHOTO_TREE_COPY_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
@@ -249,6 +250,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
           "Отмена копии дерева с фото ещё не включена. Исходная копия сохранена.");
+        if (body.copyPlacement && (!photoCopyPlacementEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY))) throw paused(operationId,
+          "Отмена копии вещи в сумку с фото ещё не включена. Исходная копия сохранена.");
         if (!entry) {
           const cancellationOnly = route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
             && (body.action === "form" || body.action === "copy-batch" && photoCopyBatchEnabled && photoCopyEnabled);
@@ -494,6 +497,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (body.action === "copy-batch") {
           if (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled) throw paused(requestedId, "Массовое копирование с фото ещё не включено.");
           if (body.copyTree && !photoTreeCopyEnabled) throw paused(requestedId, "Копирование дерева с фото ещё не включено.");
+          if (body.copyPlacement && !photoCopyPlacementEnabled) throw paused(requestedId, "Копирование вещи в сумку с фото ещё не включено.");
           personalPhotoCopyBatchManifest(body);
         } else if (body.action === "form") {
           if (!photoFormEnabled) throw paused(requestedId, "Сохранение карточки вместе с фото ещё не включено.");
@@ -563,6 +567,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (route.kind === "photos.mutate" && body.copyTree && !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает копирование дерева с фото. Запрос не отправлен.");
+          }
+          if (route.kind === "photos.mutate" && body.copyPlacement && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает копирование вещи в сумку с фото. Запрос не отправлен.");
           }
           if (body.photoResults && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");

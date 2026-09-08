@@ -41,7 +41,7 @@ export function isPersonalPendingPhotoCopyDeletion({ form, basePayload, payload,
     const reference = personalPhotoCopyResultReference(form);
     if (form.action.listId !== listId || !userDeletion) return false;
     const expected = preparePersonalDeletionBatch(basePayload, userDeletion).snapshot, actual = clone(payload);
-    const tree = Boolean(form.action.body.copyTree);
+    const tree = Boolean(form.action.body.copyTree || form.action.body.copyPlacement);
     // A tree already owns its frozen placement. An explicit deletion may
     // reduce that placement, but cannot relocate survivors or change a layout.
     if (tree && !same(expected.layouts, actual.layouts)) return false;

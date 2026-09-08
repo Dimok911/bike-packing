@@ -766,6 +766,8 @@ import { preparePersonalHistoryRestore } from "./src/sync/personal-history-resto
 import { preparePersonalListMigration, PERSONAL_LIST_MIGRATION_ENABLED } from "./src/sync/personal-list-migration.js";
 import { preparePersonalContainerTreeCopy, personalContainerTreeIntent } from "./src/sync/personal-container-tree-copy.js";
 import { preparePersonalLayoutCopy, personalLayoutCopyIntent, PERSONAL_PHOTO_LAYOUT_COPY_ENABLED } from "./src/sync/personal-layout-copy.js";
+import { preparePersonalItemCopyPlacement, personalItemCopyPlacementIntent, createPersonalPhotoItemCopyPlacementSession } from "./src/sync/personal-item-copy-placement.js";
+import { PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED } from "./src/sync/personal-photo-copy-batch-protocol.js";
 import { personalBusinessPayload } from "./src/sync/personal-server-payload.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
@@ -1917,7 +1919,7 @@ const appTailControllerDeps = {
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
-  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction,
+  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
   personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
@@ -2497,7 +2499,7 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
@@ -2718,6 +2720,53 @@ async function preparePersonalContainerTreeAction(request) {
   };
 }
 
+function preparePersonalItemCopyPlacementAction({ sourceId, targetContainerId, targetLayoutId }) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  if (!requireUsageCapacity("items")) return false;
+  const initial = JSON.stringify(personalSaveContext()), changedAt = nowIso();
+  let prepared, session, operationId, used = false;
+  try {
+    if (normalizeItemPhotos(state.items[sourceId]).length) {
+      if (!PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED || !personalPhotoFormUiEnabled() || !PERSONAL_PHOTO_COPY_BATCH_ENABLED) {
+        throw Error("Копирование вещи с фото в сумку ещё не включено. Источник сохранён.");
+      }
+      session = personalPhotoFormSession({ copyPlacement: true, getContext: personalSaveContext, onDurable: () => {} });
+      session.prepare(personalPhotoFormRequest({ request: { sourceId, targetContainerId, targetLayoutId }, changedAt, editMeta: currentEditMeta(changedAt) }));
+    } else {
+      operationId = crypto.randomUUID();
+      prepared = preparePersonalItemCopyPlacement(state, { type: "item-copy-placement", version: 1, sourceId,
+        targetId: `item-${crypto.randomUUID()}`, targetContainerId, targetLayoutId }, {
+        listId: personalSaveContext().listId, changedAt, currentEditMeta,
+        snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true })
+      });
+    }
+  } catch (error) { showToast(error.message, "error"); return false; }
+  return async () => {
+    if (used || initial !== JSON.stringify(personalSaveContext())) {
+      showToast("Список изменился. Выберите вещь и сумку заново.", "error"); return false;
+    }
+    personalSaveRecovery.assertRunning();
+    if (!requireUsageCapacity("items")) return false;
+    used = true;
+    try {
+      if (session) {
+        const { record } = await session.submit(); scheduleRemoteSave();
+        return record.action.body.owners[0].entityId;
+      }
+      persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId });
+      for (const key of ["items", "layouts", "packedItems"]) if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
+      applyLayoutArrangement(state.activeLayoutId);
+      saveState({ captureArrangement: false, recordAction: false }); scheduleRemoteSave(); return prepared.itemId;
+    } catch (error) {
+      if (session) reportPersonalPhotoFormError(error, { recovery: session.recoveryCopy() });
+      else showToast(error.message, "error");
+      return false;
+    }
+  };
+}
+
 function preparePersonalLayoutCopyAction({ sourceLayoutId = "", requestedName, activate = true }) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
@@ -2870,6 +2919,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
   if (personalMutation?.type === "placement") body.userPlacement = personalPlacementIntent(personalMutation);
   else if (personalMutation?.type === "container-tree") body.userContainerTree = personalContainerTreeIntent(personalMutation);
   else if (personalMutation?.type === "layout-copy") body.userLayoutCopy = personalLayoutCopyIntent(personalMutation);
+  else if (personalMutation?.type === "item-copy-placement") body.userItemCopyPlacement = personalItemCopyPlacementIntent(personalMutation);
   else if (personalMutation?.type === "dictionary") body.userDictionary = JSON.parse(JSON.stringify(personalMutation));
   else if (personalMutation?.type === "copy") body.userCopy = personalCopyIntent(personalMutation);
   else if (personalMutation) body.userDeletion = personalDeletionIntent(personalMutation);

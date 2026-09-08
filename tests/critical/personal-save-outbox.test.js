@@ -238,8 +238,8 @@ test("explicit conflicting choices are frozen into a new action without changing
   assert.equal(f.make().recover().action.operationId, next.action.operationId);
 });
 
-test("server reconciliation cannot inherit a previous tree or layout copy marker", async () => {
-  for (const marker of ["userLayoutCopy", "userContainerTree"]) {
+test("server reconciliation cannot inherit a previous tree, layout or placed item copy marker", async () => {
+  for (const marker of ["userLayoutCopy", "userContainerTree", "userItemCopyPlacement"]) {
     const f = reconciliationFixture({ [marker]: { version: 1, sourceLayoutId: "source", targetLayoutId: "copy" } }), before = [...f.values];
     const next = await f.outbox.reconcile(f.options);
     assert.equal(Object.hasOwn(next.action.body, marker), false);

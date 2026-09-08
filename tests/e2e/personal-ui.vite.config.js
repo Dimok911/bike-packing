@@ -32,7 +32,8 @@ export default defineConfig(({ mode }) => ({
       "PERSONAL_PHOTO_COPY_FORM_ENABLED = false", "PERSONAL_PHOTO_COPY_FORM_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-batch-protocol.js")) return code.replace(
       "PERSONAL_PHOTO_COPY_BATCH_ENABLED = false", "PERSONAL_PHOTO_COPY_BATCH_ENABLED = true")
-      .replace("PERSONAL_PHOTO_TREE_COPY_ENABLED = false", "PERSONAL_PHOTO_TREE_COPY_ENABLED = true");
+      .replace("PERSONAL_PHOTO_TREE_COPY_ENABLED = false", "PERSONAL_PHOTO_TREE_COPY_ENABLED = true")
+      .replace("PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED = false", "PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-photo-copy-deletion.js")) return code.replace(
       "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = true")
       .replace("PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = true");

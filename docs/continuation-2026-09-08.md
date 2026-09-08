@@ -4,6 +4,23 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+- Завершён локально item-copy-placement (API `aab9df3`): 20/20 UI, 5,3 минуты
+  (`item-placement-ui-2.log`); 158/158 API/MySQL, 166,28 с, bundled Node 24.19.0
+  (`item-placement-mysql-3.log`). 481 transport / 895 critical / 60 operation /
+  74 source/service, source checks. Новый gate false. Полные frozen source/target,
+  durable-before-view, копия с фото в корневую/вложенную сумку, pending удаления
+  source/copy/target, отмена, lost ACK/restart/replay. Подробности:
+  `personal-item-copy-placement.md`. Исправлена серверная проекция двух derived
+  placement-полей перед точным сравнением, SQL source/revision guard сохранён.
+  Все процессы API/UI/диагностической MySQL завершены.
+- Следующий участок уже начат локально: пять старых personal DB callbacks в
+  app.js (catalog copy, tree copy/link/missing, layout deletion, dictionary,
+  placement) теперь вызывают persistStateSnapshot до изменения state; operationId
+  фиксируется до подтверждения. Это ещё НЕ приёмка: адаптированные 39 unit прошли,
+  нужны полный transport и реальные UI/quota/lost-ACK регрессии. Следующий этап
+  не входит в коммит item-copy-placement. Продолжать без публикации.
+
+
 - Завершён локально: независимая копия дерева с фото, `copyTree` внутри
   copy-batch. API `45dcd06`, frontend `7cdbc2d`.
   147/147 API/MySQL, 154,49 с, bundled Node 24.19.0; `tree-copy-mysql-6.log`.

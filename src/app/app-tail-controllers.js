@@ -379,7 +379,7 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
     personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
@@ -2309,6 +2309,8 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   });
   if (!crossesPublicNamespace) {
     if (layoutContainsItem(targetLayoutId, itemId)) {
+      const personalCopy = preparePersonalItemCopyPlacementAction({ sourceId: itemId, targetContainerId, targetLayoutId });
+      if (personalCopy === false) return;
       const duplicate = await askConfirmDialog({
         title: localText("The item is already in this layout", "Вещь уже есть в этой укладке"),
         text: localText(
@@ -2320,6 +2322,15 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
         tone: "safe"
       });
       if (duplicate) {
+        if (personalCopy) {
+          const copyId = await personalCopy();
+          if (!copyId) return;
+          markRecentlyAddedItem(copyId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
+          const focused = closeDialogsThenFocus({ closeDialog: closeDialogWithoutRestoringFocus,
+            dialogs: [refs.containerPickerDialog, runtime.editingItemId === itemId ? refs.dialog : null],
+            focus: onSettled => focusRecentlyAddedItem(copyId, { onSettled }) });
+          render(); await focused; return;
+        }
         await duplicateItemToContainerInLayout(itemId, targetContainerId, targetLayoutId);
         return;
       }

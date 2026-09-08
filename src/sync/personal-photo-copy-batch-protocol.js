@@ -4,6 +4,10 @@ import { personalPhotoCopyOwner } from "./personal-photo-copy-source.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { personalPhotoTreeCopyLayout } from "./personal-photo-tree-copy-layout.js";
 
+import { personalPhotoCopyPlacementLayout } from "./personal-photo-copy-placement-layout.js";
+
+export const PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED = false;
+export const PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY = "personalCausalPhotoCopyPlacementV1";
 export const PERSONAL_PHOTO_COPY_BATCH_ENABLED = false;
 export const PERSONAL_PHOTO_COPY_BATCH_CAPABILITY = "personalCausalPhotoCopyBatchV1";
 export const PERSONAL_PHOTO_TREE_COPY_ENABLED = false;
@@ -21,7 +25,7 @@ const placementKeys = type => type === "item" ? ["containerId", "parentContainer
 export function personalPhotoCopyBatchManifest(body) {
   if (!plain(body) || body.version !== 1 || body.action !== "copy-batch"
     || !Number.isSafeInteger(body.baseStateRevision) || body.baseStateRevision < 1
-    || Object.keys(body).some(key => !["version", "action", "baseStateRevision", "causal", "owners", "changes", "copyTree"].includes(key))
+    || Object.keys(body).some(key => !["version", "action", "baseStateRevision", "causal", "owners", "changes", "copyTree", "copyPlacement"].includes(key))
     || !Array.isArray(body.owners) || !body.owners.length || body.owners.length > 50
     || !Array.isArray(body.changes) || !body.changes.length || body.changes.length > 50) fail();
   const targets = new Set(), sources = new Set(), flattened = [];
@@ -40,7 +44,8 @@ export function personalPhotoCopyBatchManifest(body) {
   if (!same(flattened, body.changes) || forms.some(form => targets.has(form.copySource.entityId))) fail();
   const photos = personalPhotoPublicationManifest(validationView(body));
   const tree = Object.hasOwn(body, "copyTree") ? personalPhotoTreeCopyLayout(body) : null;
-  return { forms, photos, tree, owners: forms.map(form => ({ entityType: form.entityType, entityId: form.entityId })) };
+  const placement = Object.hasOwn(body, "copyPlacement") ? personalPhotoCopyPlacementLayout(body) : null;
+  return { forms, photos, tree, placement, owners: forms.map(form => ({ entityType: form.entityType, entityId: form.entityId })) };
 }
 
 export function assertPersonalPhotoCopyBatchCandidate({ body, basePayload, payload, listId }) {
@@ -66,6 +71,10 @@ export function assertPersonalPhotoCopyBatchCandidate({ body, basePayload, paylo
     const tree = personalPhotoTreeCopyLayout(body, basePayload);
     candidate.layouts[tree.targetLayoutId] = tree.layout;
   }
+  if (manifest.placement) {
+    const placement = personalPhotoCopyPlacementLayout(body, basePayload);
+    candidate.layouts[placement.targetLayoutId] = placement.layout;
+  }
   if (!same(candidate, payload)) fail();
   return manifest;
 }
@@ -85,6 +94,10 @@ export function validatePersonalPhotoCopyBatchResult(result, expected) {
       || !validatePersonalPhotoPublicationResult(result, { ...expected, body: validationView(expected.body) })) return false;
     if (manifest.tree && (!same(result.photoCopyTree, { version: 1, rootId: manifest.tree.rootId, targetLayoutId: manifest.tree.targetLayoutId })
       || !same(result.list.payload.layouts?.[manifest.tree.targetLayoutId], manifest.tree.layout))) return false;
+    if (manifest.placement && (!same(result.photoCopyPlacement, { version: 1, itemId: manifest.placement.itemId,
+      targetLayoutId: manifest.placement.targetLayoutId, targetContainerId: manifest.placement.targetContainerId })
+      || !same(result.list.payload.layouts?.[manifest.placement.targetLayoutId], manifest.placement.layout))) return false;
+    const placedCopy = manifest.tree || manifest.placement;
     for (const form of manifest.forms) {
       if (form.copySource.listId !== expected.listId) return false;
       const owner = result.list.payload[form.entityType === "item" ? "items" : "containers"]?.[form.entityId];
@@ -92,11 +105,11 @@ export function validatePersonalPhotoCopyBatchResult(result, expected) {
       const copied = personalPhotoCopyOwner(form); Object.assign(copied, form.fields);
       const actual = { ...owner, photos: [] };
       for (const key of placementKeys(form.entityType)) {
-        if (manifest.tree) {
+        if (placedCopy) {
           if (Object.hasOwn(actual, key)) {
             const value = actual[key], empty = value === null || value === "" || Array.isArray(value) && !value.length;
-            const placed = form.entityType === "item" ? manifest.tree.layout.arrangement.items[form.entityId]
-              : manifest.tree.layout.arrangement.containers[form.entityId]?.[key];
+            const placed = form.entityType === "item" ? placedCopy.layout.arrangement.items[form.entityId]
+              : placedCopy.layout.arrangement.containers[form.entityId]?.[key];
             if (!empty && !same(value, placed)) return false;
           }
           delete actual[key]; delete copied[key];
