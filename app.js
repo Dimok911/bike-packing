@@ -747,6 +747,9 @@ import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-ou
 import { createPersonalPhotoEditFormSession } from "./src/sync/personal-photo-edit-form.js";
 import { createPersonalPhotoCopyFormSession } from "./src/sync/personal-photo-copy-form.js";
 import { createPersonalPhotoCopyBatchSession } from "./src/sync/personal-photo-copy-batch.js";
+import { createPersonalPhotoTreeCopySession } from "./src/sync/personal-photo-tree-copy.js";
+import { PERSONAL_PHOTO_TREE_COPY_ENABLED } from "./src/sync/personal-photo-copy-batch-protocol.js";
+import { PERSONAL_PHOTO_TREE_LINK_ENABLED } from "./src/sync/personal-photo-tree-source.js";
 import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, assertPersonalPhotoCopyBatchRecord } from "./src/sync/personal-photo-copy-batch-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
@@ -2493,7 +2496,7 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
@@ -2666,9 +2669,20 @@ async function preparePersonalContainerTreeAction(request) {
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   const initial = JSON.stringify(personalSaveContext());
-  let prepared, used = false;
+  let prepared, photoSession, photoCopyError, used = false;
   try {
-    prepared = await preparePersonalContainerTreeCopy(state, request, { changedAt: nowIso(), currentEditMeta, markEdited,
+    const changedAt = nowIso(), photoTree = ["containers", "items"].some(collection =>
+      Object.values(request.sourceSnapshot?.[collection] || {}).some(owner => normalizeItemPhotos(owner).length > 0));
+    if (photoTree && PERSONAL_PHOTO_TREE_COPY_ENABLED && personalPhotoFormUiEnabled() && PERSONAL_PHOTO_COPY_BATCH_ENABLED) {
+      const rootName = makeContainerCopyNameForLayout(request.sourceSnapshot.containers[request.sourceSnapshot.rootId].name,
+        state.layouts[request.targetLayoutId], state.containers, uiLanguage === "en" ? "copy" : "копия");
+      try {
+        photoSession = personalPhotoFormSession({ copyTree: true, getContext: personalSaveContext, onDurable: () => {} });
+        photoSession.prepare(personalPhotoFormRequest({ request, rootName, changedAt, editMeta: currentEditMeta(changedAt) }));
+      } catch (error) { photoCopyError = error; photoSession = null; }
+    }
+    prepared = photoTree && photoSession && !PERSONAL_PHOTO_TREE_LINK_ENABLED ? { copy: null, link: null, missing: null }
+      : await preparePersonalContainerTreeCopy(state, request, { changedAt, currentEditMeta, markEdited,
       listId: personalSaveContext().listId,
       normalizeContainerColor, hasPhotos: record => normalizeItemPhotos(record).length > 0,
       copyContainerName: (name, layout, containers) => makeContainerCopyNameForLayout(name, layout, containers, uiLanguage === "en" ? "copy" : "копия")
@@ -2680,6 +2694,17 @@ async function preparePersonalContainerTreeAction(request) {
       showToast("Список изменился. Выберите источники копирования заново.", "error"); return false;
     }
     personalSaveRecovery.assertRunning();
+    if (mode === "copy" && photoCopyError) { showToast(photoCopyError.message, "error"); return false; }
+    if (mode === "copy" && photoSession) {
+      const frozen = photoSession.recoveryCopy().request.request.sourceSnapshot;
+      if (!requireUsageCapacity("containers", Object.keys(frozen.containers).length)
+        || !requireUsageCapacity("items", Object.keys(frozen.items).length)) return false;
+      used = true;
+      return photoSession.submit().then(({ record }) => {
+        scheduleRemoteSave();
+        return record.action.body.owners.find(owner => owner.entityType === "container" && owner.copySource.entityId === frozen.rootId).entityId;
+      }).catch(error => { reportPersonalPhotoFormError(error, { recovery: photoSession.recoveryCopy() }); return false; });
+    }
     const selected = mode === "copy" ? prepared.copy : mode === "link" ? prepared.link : mode === "missing" ? prepared.missing : null;
     if (!selected) { showToast("Для этого варианта копирования ещё нужен отдельный обработчик очереди.", "error"); return false; }
     if (mode === "copy" && (!requireUsageCapacity("containers", selected.intent.containers.length)

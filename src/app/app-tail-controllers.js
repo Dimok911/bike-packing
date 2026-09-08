@@ -2501,7 +2501,7 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (personalCopy) {
     const duplicates = layoutDuplicateSummaryForContainerTree(targetLayoutId, sourceSnapshot);
     const route = privateContainerTreeCopyRoute({ copyAction, duplicateContainerIds: duplicates.containerIds, duplicateItemIds: duplicates.itemIds });
-    const rootId = personalCopy(copyAction === "copy-missing-local" ? "missing" : route === "duplicate-explicit" ? "copy" : route === "link-existing" ? "link" : "unsupported");
+    const rootId = await personalCopy(copyAction === "copy-missing-local" ? "missing" : route === "duplicate-explicit" ? "copy" : route === "link-existing" ? "link" : "unsupported");
     if (!rootId) return;
     markRecentlyAddedContainer(rootId, targetLayoutId);
     openCopiedTargetLayout(targetLayoutId);

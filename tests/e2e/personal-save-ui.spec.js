@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
 import { personalPhotoCopyOwner } from "../../src/sync/personal-photo-copy-source.js";
+import { personalPhotoTreeCopyLayout } from "../../src/sync/personal-photo-tree-copy-layout.js";
 import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
@@ -28,6 +29,8 @@ test.afterEach(async ({ page }, info) => {
     if (startup) console.log("PERSONAL STARTUP", JSON.stringify(startup));
     const formError = await page.evaluate(() => globalThis.__personalTestPhotoFormError).catch(() => null);
     if (formError) { console.log("PHOTO FORM FAILURE", JSON.stringify(formError)); await info.attach("photo-form-failure", { body: JSON.stringify(formError), contentType: "application/json" }); }
+    const treeInput = await page.evaluate(() => globalThis.__personalTestTreeCopyInput).catch(() => null);
+    if (treeInput) await info.attach("photo-tree-copy-input", { body: JSON.stringify(treeInput), contentType: "application/json" });
     const difference = await page.evaluate(() => globalThis.__personalTestProjectionDifference).catch(() => null);
     if (difference) await info.attach("personal-projection-difference", { body: JSON.stringify(difference, null, 2), contentType: "application/json" });
     const photoEvents = await page.evaluate(() => globalThis.__photoEditEvents).catch(() => null);
@@ -136,7 +139,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -240,6 +243,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
         if (photoEdit && body.kind === "photos.mutate" && body.body.action === "copy-batch") {
+          const copiedTree = body.body.copyTree ? personalPhotoTreeCopyLayout(body.body, state.payload) : null;
           const changes = [], owners = [];
           for (const descriptor of body.body.owners) {
             const owner = personalPhotoCopyOwner(descriptor); Object.assign(owner, descriptor.fields);
@@ -260,10 +264,11 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             owners.push({ entityType: descriptor.entityType, entityId: owner.id });
             state.payload[descriptor.entityType === "item" ? "items" : "containers"][owner.id] = owner;
           }
+          if (copiedTree) state.payload.layouts[copiedTree.targetLayoutId] = copiedTree.layout;
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
-              photoCopyBatch: { version: 1, owners } } } };
+              photoCopyBatch: { version: 1, owners }, ...(copiedTree ? { photoCopyTree: { version: 1, rootId: copiedTree.rootId, targetLayoutId: copiedTree.targetLayoutId } } : {}) } } };
           if (state.afterFormCommit) await state.afterFormCommit(body);
         } else if (photoForm && body.kind === "photos.mutate") {
           expect(body.body.action).toBe("form");
@@ -440,10 +445,13 @@ test("initial legacy list preparation refuses unrelated structural repairs befor
   expect(f.errors).toEqual([]);
 });
 
-for (const withContents of [false, true]) test(`personal tree picker freezes ${withContents ? "contents" : "empty bag"} copy and placement as one action across lost ACK`, async ({ page, context }) => {
+for (const photos of [false, true]) for (const withContents of [false, true]) for (const outcome of photos ? ["lost ACK", "quota", "cancel"] : ["lost ACK"]) test(`personal ${photos ? "photo " : ""}tree picker freezes ${withContents ? "contents" : "empty bag"} copy and placement as one action across ${outcome}`, async ({ page, context }) => {
   test.setTimeout(120000);
   const payload = initialPayload(); payload.layouts["layout-b"] = { ...structuredClone(payload.layouts["layout-a"]), id: "layout-b", name: "Цель копии" };
-  const f = await setup(page, context, { payload }), bag = await createRootContainer(page, "Сумка ветки");
+  // This destination represents a previously saved complete layout. Otherwise
+  // opening it repairs a legacy version field unrelated to the chosen copy.
+  Object.assign(payload.layouts["layout-b"].arrangement, { itemQuantities: {}, itemQuantityMigrationVersion: 3 });
+  const f = await setup(page, context, { payload, photoEdit: photos }), bag = await createRootContainer(page, "Сумка ветки");
   let itemTarget = bag;
   if (withContents) {
     await bag.locator("[data-add-to-container]").click();
@@ -455,6 +463,7 @@ for (const withContents of [false, true]) test(`personal tree picker freezes ${w
   await createItemInContainer(page, itemTarget, "Насос ветки", { weight: "123" });
   await synchronize(page, () => Object.keys(f.payload.items).length === 1);
   const rootId = Object.values(f.payload.containers).find(record => record.name === "Сумка ветки").id, itemId = Object.keys(f.payload.items)[0];
+  if (photos) { addConfirmedTreePhotos(f, [["containers", rootId], ["items", itemId]]); await reloadApp(page); }
   const sourceParentId = f.payload.layouts["layout-a"].arrangement.items[itemId];
   const openPicker = async () => {
     await page.locator("#layoutSelect").selectOption("layout-a");
@@ -477,6 +486,62 @@ for (const withContents of [false, true]) test(`personal tree picker freezes ${w
   await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
   await expect(page.locator("#confirmDialog")).toContainText("Создать отдельные копии");
   expect(f.posts.length).toBe(before);
+  if (photos) {
+    const server = structuredClone(f.payload), journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+    if (outcome === "quota") await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Tree copy quota", "QuotaExceededError");
+        return original.call(this, key, value);
+      };
+    });
+    f.loseFormOwner = outcome === "lost ACK"; f.dropCopyBeforeCommit = outcome === "cancel";
+    await submitForm(page, "#confirmOkBtn");
+    if (outcome === "quota") {
+      await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+      const recovery = await downloadRecovery(page), draft = recovery.unconfirmedMemoryDraft;
+      const newIds = Object.keys(draft.containers).filter(id => !server.containers[id]);
+      expect(newIds).toHaveLength(withContents ? 2 : 1);
+      expect(newIds.some(id => draft.layouts["layout-b"].arrangement.rootContainerIds.includes(id))).toBe(true);
+      expect(Object.keys(draft.items)).toHaveLength(withContents ? 2 : 1);
+      expect(Object.values(draft.containers).filter(owner => newIds.includes(owner.id)).flatMap(owner => owner.photos).every(photo => photo.status === "pending")).toBe(true);
+      expect(recovery.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(journal);
+      expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server);
+    } else {
+      await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+      expect(f.posts).toHaveLength(before + 1); const action = structuredClone(f.posts.at(-1));
+      expect(action.kind).toBe("photos.mutate"); expect(action.body.action).toBe("copy-batch");
+      expect(action.body.copyTree.includeContents).toBe(withContents);
+      expect(action.body.owners).toHaveLength(withContents ? 3 : 1);
+      const root = action.body.owners.find(owner => owner.copySource.entityId === rootId).entityId;
+      if (outcome === "cancel") {
+        f.cancelPhotoAction = action; await reloadApp(page, { recovery: true });
+        const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+        await expect(cancel).toBeVisible(); f.loseCancellation = true; f.hideCancellationReceipt = true;
+        await cancel.click(); await expect(cancel).toBeEnabled(); expect(f.payload).toEqual(server);
+        await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
+        await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmCancelBtn").click();
+        await expect(recovery.getByRole("status")).toContainText("Выбор отложен");
+        expect((await downloadRecovery(page)).journalEntries.length).toBeGreaterThan(0);
+        await reloadApp(page, { recovery: true }); await cancel.click(); await page.locator("#confirmOkBtn").click();
+        await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены"); expect(f.payload).toEqual(server);
+      } else {
+        await reloadApp(page, { recovery: true }); const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+        await expect(resume).toBeVisible(); await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toHaveLength(before + 1);
+        f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
+        await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены"); await reloadApp(page);
+        expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(action);
+        expect(f.payload.layouts["layout-b"].arrangement.rootContainerIds).toEqual([rootId, root]);
+        expect(f.payload.layouts["layout-a"]).toEqual(server.layouts["layout-a"]);
+        for (const owner of action.body.owners) {
+          const collection = owner.entityType === "item" ? "items" : "containers";
+          expect(f.payload[collection][owner.copySource.entityId]).toEqual(server[collection][owner.copySource.entityId]);
+          expect(f.payload[collection][owner.entityId].photos.map(photo => photo.id)).toEqual(action.body.changes.filter(change => change.entityId === owner.entityId).map(change => change.photoId));
+        }
+      }
+    }
+    expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]); return;
+  }
   f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
   await page.locator("#confirmOkBtn").click();
   await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
@@ -545,6 +610,7 @@ function addConfirmedTreePhotos(f, owners) {
     const photoId = randomUUID();
     f.payload[collection][id].photos = [{ id: photoId, photoId, assetId: randomUUID(), listId: f.listId, status: "synced",
       url: `/confirmed-tree/${photoId}`, thumbUrl: `/confirmed-tree/${photoId}/thumb`, fileName: "tree.png", type: "image/png", size: 10, width: 2, height: 2 }];
+    f.photoRevisions.set(photoId, f.revision + 1);
   }
   f.revision++;
 }

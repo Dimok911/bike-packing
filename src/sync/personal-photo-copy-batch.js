@@ -53,7 +53,15 @@ export function preparePersonalPhotoCopyBatch(input, { enabled = PERSONAL_PHOTO_
   return { binding, operationId: ids[0], body, snapshot: prepared.snapshot, payload };
 }
 
-export function createPersonalPhotoCopyBatchSession({ outbox, store, getContext, readOwner, onDurable,
+export function createPersonalPhotoCopyBatchSession(options = {}) {
+  return createPersonalPhotoCopySetSession({ ...options, prepareCopy: preparePersonalPhotoCopyBatch,
+    sourcesForRequest: request => (request.sourceIds || []).map(entityId => ({ entityType: request.entityType, entityId })) });
+}
+
+// A single durable lifecycle for a selected catalog batch and a mixed tree.
+// Concrete compilers own source selection and candidate validation; this owns
+// freezing all IDs, exact source reads, one journal capture and recovery.
+export function createPersonalPhotoCopySetSession({ outbox, store, getContext, readOwner, onDurable, prepareCopy, sourcesForRequest,
   enabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED, snapshotToPayload = value => value, createUuid = () => crypto.randomUUID() } = {}) {
   let attempt;
   const current = () => { if (!same(attempt.initial, getContext?.())) fail(); };
@@ -62,14 +70,14 @@ export function createPersonalPhotoCopyBatchSession({ outbox, store, getContext,
       if (attempt) return session.state();
       if (!enabled || !outbox || !store || typeof onDurable !== "function") fail();
       assertListOperationPayload({ ...outbox.binding, kind: "photos.mutate", body: input });
-      const request = clone(input), initial = clone(getContext?.()), collection = request.entityType === "item" ? "items" : "containers";
+      const request = clone(input), initial = clone(getContext?.()), sources = clone(sourcesForRequest(request));
       if (["ids", "versions", "operationId", "files"].some(key => Object.hasOwn(request, key))
         || !initial?.generation || initial.scope !== "personal" || Object.keys(outbox.binding).some(key => initial[key] !== outbox.binding[key]
-          || request.binding?.[key] !== outbox.binding[key]) || !Array.isArray(request.sourceIds) || request.sourceIds.length > 50) fail();
-      const photos = request.sourceIds.map(id => request.basePayload?.[collection]?.[id]?.photos || []), count = photos.reduce((sum, rows) => sum + rows.length, 0);
+          || request.binding?.[key] !== outbox.binding[key]) || !Array.isArray(sources) || !sources.length || sources.length > 50) fail();
+      const photos = sources.map(({ entityType, entityId }) => request.basePayload?.[entityType === "item" ? "items" : "containers"]?.[entityId]?.photos || []), count = photos.reduce((sum, rows) => sum + rows.length, 0);
       if (!count || count > 50) fail();
-      attempt = { request, initial, ids: Array.from({ length: 1 + request.sourceIds.length + count * 2 }, () => createUuid()), phase: "freezing", preview: null, promise: null };
-      attempt.preview = preparePersonalPhotoCopyBatch({ ...request, ids: attempt.ids, versions: photos.map(rows => ({ baseEntityRevision: 1,
+      attempt = { request, sources, initial, ids: Array.from({ length: 1 + sources.length + count * 2 }, () => createUuid()), phase: "freezing", preview: null, promise: null };
+      attempt.preview = prepareCopy({ ...request, ids: attempt.ids, versions: photos.map(rows => ({ baseEntityRevision: 1,
         photoRevisions: rows.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })) })) }, { enabled, snapshotToPayload }).snapshot;
       current(); attempt.phase = "prepared"; return session.state();
     },
@@ -83,10 +91,10 @@ export function createPersonalPhotoCopyBatchSession({ outbox, store, getContext,
         const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); current();
         if (inventory.entries.some(entry => entry.state !== "settled-retained")) fail();
         attempt.phase = "reading-sources"; const versions = [];
-        for (const entityId of attempt.request.sourceIds) {
-          versions.push(await readPersonalPhotoOwnerState({ ...attempt.request, entityId }, { getContext, readOwner, allowEmpty: true })); current();
+        for (const source of attempt.sources) {
+          versions.push(await readPersonalPhotoOwnerState({ ...attempt.request, ...source }, { getContext, readOwner, allowEmpty: true })); current();
         }
-        const prepared = preparePersonalPhotoCopyBatch({ ...attempt.request, ids: attempt.ids, versions }, { enabled, snapshotToPayload });
+        const prepared = prepareCopy({ ...attempt.request, ids: attempt.ids, versions }, { enabled, snapshotToPayload });
         const plan = outbox.preparePhoto(prepared); current(); attempt.phase = "capturing";
         const record = await outbox.capturePhoto({ plan, getContext }); current(); attempt.phase = "applying-view";
         if (onDurable(record)?.then) fail(); attempt.phase = "durable"; resolve({ record, durable: true, fileRetained: true });

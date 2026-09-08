@@ -4,8 +4,24 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+- Завершён локально: независимая копия дерева с фото, `copyTree` внутри
+  copy-batch. API `45dcd06`, frontend — следующий commit после `8c937b3`.
+  147/147 API/MySQL, 154,49 с, bundled Node 24.19.0; `tree-copy-mysql-6.log`.
+  32/32 UI Chromium/mobile WebKit, 6,8 минуты без повторов; `tree-copy-ui-4.log`.
+  469 transport / 895 critical / 59 operation / 74 source/service, source checks.
+  Gates false. Подробности и диагностика первых прогонов — `personal-photo-tree-copy.md`.
+  Исправлены каскад удаления вложенных копий по точному immediate receipt и
+  независимость проверки copy от link/missing. Все процессы API/UI завершены.
+- Следующий участок уже начат отдельно: `personal-layout-copy.js` и unit-тест,
+  4/4 (`layout-copy-unit-3.log`). Пока НЕ подключены к app/outbox, не включать
+  эти два файла в commit дерева с фото. Целая личная укладка копирует размещения
+  прежних владельцев; пустое создание использует тот же новый frozen preparer.
+  Подключить до первого await в saveNewLayout, durable до переключения UI,
+  очистить userLayoutCopy при reconciliation, добавить paired API/UI проверки.
+  Не останавливаться на срезе, публикация отложена.
+
 - Проверен локальный участок: link/missing дерева с подтверждёнными фото.
-  Backend `57c0516`.
+  FE `8c937b3`, backend `57c0516`.
   Gate `PERSONAL_PHOTO_TREE_LINK_ENABLED = false`, детали `personal-photo-tree-link.md`.
   139/139 API/MySQL за 95,35 с, 458 transport, 895 critical, 74 source/service.
   Source checks прошли. UI `photo-tree-ui-2.log`: 20/20 Chromium/mobile WebKit,

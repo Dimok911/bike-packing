@@ -11,8 +11,12 @@ export default defineConfig(({ mode }) => ({
     if (mode === "photo-form" && source.endsWith("/src/sync/personal-photo-form-plan.js")) return code.replace(
       'if (!same(snapshotToPayload(clone(frozen)), base)) fail();',
       'if (!same(snapshotToPayload(clone(frozen)), base)) { globalThis.__personalTestProjectionDifference = { expected: base, actual: snapshotToPayload(clone(frozen)) }; fail(); }');
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-copy.js")) return code.replace(
+      '  if (!enabled) fail();', '  globalThis.__personalTestTreeCopyInput = clone(input); if (!enabled) fail();');
     if (source.split("?")[0].endsWith("/app.js")) return code.replace('function reportPersonalPhotoFormError(error, { recovery } = {}) {',
       'function reportPersonalPhotoFormError(error, { recovery } = {}) { globalThis.__personalTestPhotoFormError = { message: error.message, code: error.code, stack: error.stack };')
+      .replace(/\} catch \(error\) \{ showToast\(error.message, "error"\); return false; \}\r?\n  return mode => \{/,
+      '} catch (error) { globalThis.__personalTestPhotoFormError = { message: error.message, code: error.code, stack: error.stack }; showToast(error.message, "error"); return false; }\n  return mode => {')
       .replace('throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");',
       'globalThis.__personalTestProjectionDifference = { records, operationId: outbox.recover()?.action.operationId }; throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");')
       .replace('throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");',
@@ -25,7 +29,8 @@ export default defineConfig(({ mode }) => ({
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-source.js")) return code.replace(
       "PERSONAL_PHOTO_COPY_FORM_ENABLED = false", "PERSONAL_PHOTO_COPY_FORM_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-batch-protocol.js")) return code.replace(
-      "PERSONAL_PHOTO_COPY_BATCH_ENABLED = false", "PERSONAL_PHOTO_COPY_BATCH_ENABLED = true");
+      "PERSONAL_PHOTO_COPY_BATCH_ENABLED = false", "PERSONAL_PHOTO_COPY_BATCH_ENABLED = true")
+      .replace("PERSONAL_PHOTO_TREE_COPY_ENABLED = false", "PERSONAL_PHOTO_TREE_COPY_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-photo-copy-deletion.js")) return code.replace(
       "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = true")
       .replace("PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = true");

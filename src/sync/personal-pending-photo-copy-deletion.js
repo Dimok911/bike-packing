@@ -41,6 +41,10 @@ export function isPersonalPendingPhotoCopyDeletion({ form, basePayload, payload,
     const reference = personalPhotoCopyResultReference(form);
     if (form.action.listId !== listId || !userDeletion) return false;
     const expected = preparePersonalDeletionBatch(basePayload, userDeletion).snapshot, actual = clone(payload);
+    const tree = Boolean(form.action.body.copyTree);
+    // A tree already owns its frozen placement. An explicit deletion may
+    // reduce that placement, but cannot relocate survivors or change a layout.
+    if (tree && !same(expected.layouts, actual.layouts)) return false;
     const owners = reference.version === 2 ? reference.owners : [reference];
     const sources = reference.version === 2 ? form.action.body.owners.map(owner => owner.copySource) : [form.action.body.copySource];
     for (const source of sources) {
@@ -54,7 +58,7 @@ export function isPersonalPendingPhotoCopyDeletion({ form, basePayload, payload,
       const original = form.photoState.payload[collection][owner.entityId];
       if (expectedOwner === undefined ? actualOwner !== undefined : !same(catalogCopy(expectedOwner, owner.entityType), catalogCopy(original, owner.entityType))
         || !same(catalogCopy(actualOwner, owner.entityType), catalogCopy(original, owner.entityType))) return false;
-      for (const layout of Object.values(actual.layouts || {})) {
+      for (const layout of tree ? [] : Object.values(actual.layouts || {})) {
         if ((layout.rootContainerIds || []).includes(owner.entityId) || (layout.arrangement?.rootContainerIds || []).includes(owner.entityId)
           || Object.hasOwn(layout.arrangement?.[collection] || {}, owner.entityId)) return false;
       }
