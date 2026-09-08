@@ -17,7 +17,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
-  const form = head?.action.kind === "photos.mutate" && head.action.body.action === "form" ? head
+  const form = head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
     : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
   if (!form || !outbox.hasPending()) throw blocked();

@@ -64,7 +64,7 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       state, dispatchAllowed: false, entityType: first.entityType, entityId: first.entityId, photoId: first.photoId });
   }
   for (const [operationId, record] of byId) {
-    if (record.action.body.action === "form" && record.photoState.fileIntentHash === null) {
+    if (["form", "copy-batch"].includes(record.action.body.action) && record.photoState.fileIntentHash === null) {
       if (ids.includes(operationId)) continue; // Already classified as link-mismatch; never discard unexpected bytes.
       let state = "linked";
       try { assertPersonalPhotoRecord(record); } catch { state = "link-mismatch"; }

@@ -1,6 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoFormRecord, assertPersonalPhotoFormFile } from "./personal-photo-form-outbox-record.js";
 import { personalPhotoPublicationManifest } from "./personal-photo-publication-protocol.js";
+import { assertPersonalPhotoCopyBatchRecord } from "./personal-photo-copy-batch-protocol.js";
 
 export const PERSONAL_PHOTO_OUTBOX_ENABLED = false;
 export const PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED = false;
@@ -33,6 +34,7 @@ export function assertPersonalPhotoCandidate({ body, basePayload, payload }) {
 }
 
 export function assertPersonalPhotoRecord(record) {
+  if (record?.action?.body?.action === "copy-batch") return assertPersonalPhotoCopyBatchRecord(record).photos;
   if (record?.action?.body?.action === "form") return assertPersonalPhotoFormRecord(record).photos;
   const photo = record.photoState, action = record.action;
   if (action?.kind !== "photos.mutate" || photo?.version !== 1 || !record.mergeBase

@@ -746,6 +746,8 @@ import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js
 import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
 import { createPersonalPhotoEditFormSession } from "./src/sync/personal-photo-edit-form.js";
 import { createPersonalPhotoCopyFormSession } from "./src/sync/personal-photo-copy-form.js";
+import { createPersonalPhotoCopyBatchSession } from "./src/sync/personal-photo-copy-batch.js";
+import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, assertPersonalPhotoCopyBatchRecord } from "./src/sync/personal-photo-copy-batch-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
@@ -2491,7 +2493,7 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
@@ -2500,7 +2502,8 @@ function personalPhotoFormSession(options) {
     onDurable(record) {
       personalSaveRecovery.assertRunning();
       // The journal owns this exact form; any new bytes were committed first.
-      assertPersonalPhotoFormRecord(record);
+      if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
+      else assertPersonalPhotoFormRecord(record);
       personalReconciledSnapshot(record.photoState.payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
       if (!sameJson(serializeState({ forSync: true }), record.photoState.payload)) {
@@ -2611,22 +2614,24 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
   if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
   const collection = type === "item" ? "items" : "containers";
   if (sourceIds.some(id => normalizeItemPhotos(state[collection]?.[id]).length > 0)) {
-    if (!PERSONAL_PHOTO_COPY_FORM_ENABLED || !personalPhotoFormUiEnabled() || sourceIds.length !== 1 || keepPlacement) {
+    if (!PERSONAL_PHOTO_COPY_FORM_ENABLED || !personalPhotoFormUiEnabled() || sourceIds.length > 1 && !PERSONAL_PHOTO_COPY_BATCH_ENABLED || keepPlacement) {
       showToast("Этот вариант копирования с фото пока недоступен. Выбранные записи сохранены.", "error"); return false;
     }
     let session;
     try {
       const sourceId = sourceIds[0], source = state[collection][sourceId], changedAt = nowIso();
-      const request = personalPhotoFormRequest({ entityType: type, sourceId, fields: {
+      const request = personalPhotoFormRequest(sourceIds.length > 1
+        ? { entityType: type, sourceIds, changedAt, editMeta: currentEditMeta(changedAt) }
+        : { entityType: type, sourceId, fields: {
         name: type === "item" ? makeItemCopyName(source.name, state.items) : makeContainerCopyName(source.name, state.containers),
         createdAt: changedAt, ...currentEditMeta(changedAt) } });
-      session = personalPhotoFormSession({ copyOwner: true, getContext: personalSaveContext, onDurable: () => {} });
+      session = personalPhotoFormSession({ copyOwner: true, copyBatch: sourceIds.length > 1, getContext: personalSaveContext, onDurable: () => {} });
       session.prepare(request);
     } catch (error) { showToast(error.message, "error"); return false; }
     return async () => {
       try {
         personalSaveRecovery.assertRunning();
-        if (!requireUsageCapacity(collection)) return false;
+        if (!requireUsageCapacity(collection, sourceIds.length)) return false;
         await session.submit(); scheduleRemoteSave(); return true;
       } catch (error) { reportPersonalPhotoFormError(error, { recovery: session.recoveryCopy() }); return false; }
     };
@@ -5951,8 +5956,12 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   if (personalSavePilotEnabled() && !isReadOnlyBikePackingContext() && !isAdminPublicEditScope(modeState)
     && hasPendingPersonalSave()) {
     const pending = personalSaveOutboxForScope()?.recover();
-    const durableForm = personalPhotoFormUiEnabled() && pending?.action.kind === "photos.mutate" && pending.action.body.action === "form";
-    if (durableForm) assertPersonalPhotoFormRecord(pending);
+    const durableForm = personalPhotoFormUiEnabled() && pending?.action.kind === "photos.mutate"
+      && (pending.action.body.action === "form" || PERSONAL_PHOTO_COPY_BATCH_ENABLED && pending.action.body.action === "copy-batch");
+    if (durableForm) {
+      if (pending.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(pending);
+      else assertPersonalPhotoFormRecord(pending);
+    }
     if (!personalOperationId || !(durableForm || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
@@ -8629,7 +8638,7 @@ async function cancelRetainedPersonalPhoto() {
   if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
-    const fileless = original?.action?.body?.action === "form" && original.photoState?.fileIntentHash === null;
+    const fileless = ["form", "copy-batch"].includes(original?.action?.body?.action) && original.photoState?.fileIntentHash === null;
     const photoCount = original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
       title: fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
@@ -8685,6 +8694,7 @@ function canResumeRetainedPersonalPhotoForm() {
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
       && outbox.hasPending() && (outbox.recover()?.action.body.action === "form"
+        || PERSONAL_PHOTO_COPY_BATCH_ENABLED && outbox.recover()?.action.body.action === "copy-batch"
         || PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })
         || PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED && personalPendingPhotoCopyDeletionForm({ records: outbox.list(),

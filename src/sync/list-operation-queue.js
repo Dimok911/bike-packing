@@ -7,6 +7,8 @@ import { PERSONAL_LIST_MIGRATION_ENABLED, PERSONAL_LIST_MIGRATION_CAPABILITY,
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
   personalPhotoFormManifest, validatePersonalPhotoFormResult } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED, PERSONAL_PHOTO_COPY_FORM_CAPABILITY } from "./personal-photo-copy-source.js";
+import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, PERSONAL_PHOTO_COPY_BATCH_CAPABILITY,
+  personalPhotoCopyBatchManifest, validatePersonalPhotoCopyBatchResult } from "./personal-photo-copy-batch-protocol.js";
 import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY } from "./personal-pending-photo-copy-deletion.js";
 
 // Development gate: enabling this requires a separately approved rollout.
@@ -58,6 +60,7 @@ export function validateListReceipt(data, expected) {
       && proof.operationId === expected.operationId && proof.noBusinessEffects === true && proof.operationCannotApply === true;
   }
   if (!(result?.status >= 200 && result.status < 300 && result.payload?.ok === true)) return false;
+  if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
@@ -135,6 +138,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
+  photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -239,8 +243,12 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (![LIST_OPERATION_CAPABILITY, LIST_OPERATION_CANCELLATION_CAPABILITY].every(value => capabilities.capabilities?.includes(value))) throw paused(operationId,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
         if (!entry) {
-          const cancellationOnly = route.kind === "photos.mutate" && body.action === "form" && photoEnabled && photoFormEnabled;
-          if (cancellationOnly) personalPhotoFormManifest(body);
+          const cancellationOnly = route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
+            && (body.action === "form" || body.action === "copy-batch" && photoCopyBatchEnabled && photoCopyEnabled);
+          if (cancellationOnly) {
+            if (body.action === "copy-batch") personalPhotoCopyBatchManifest(body);
+            else personalPhotoFormManifest(body);
+          }
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId, ...(cancellationOnly ? { cancellationOnly: true } : {}) };
           transport.assertWritable(path, method, { ...expected, ...protocol });
           const generation = await sha(initial.generation);
@@ -471,7 +479,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       }
       if (route.kind === "photos.mutate") {
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
-        if (body.action === "form") {
+        if (body.action === "copy-batch") {
+          if (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled) throw paused(requestedId, "Массовое копирование с фото ещё не включено.");
+          personalPhotoCopyBatchManifest(body);
+        } else if (body.action === "form") {
           if (!photoFormEnabled) throw paused(requestedId, "Сохранение карточки вместе с фото ещё не включено.");
           if (body.copySource && !photoCopyEnabled) throw paused(requestedId, "Копирование карточки с фото ещё не включено.");
           personalPhotoFormManifest(body);
@@ -532,6 +543,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (route.kind === "photos.mutate" && body.copySource && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_FORM_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает копирование карточки с фото. Запрос не отправлен.");
+          }
+          if (route.kind === "photos.mutate" && body.action === "copy-batch" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_BATCH_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает массовое копирование с фото. Запрос не отправлен.");
           }
           if (body.photoResults && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");

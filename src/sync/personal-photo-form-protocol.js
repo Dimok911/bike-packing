@@ -34,7 +34,7 @@ function photoValidationView(body) {
   return { version: 1, action: "batch", changes: body.changes.map(change => ({ ...change, baseEntityRevision: body.baseEntityRevision || 1 })) };
 }
 
-export function personalPhotoFormManifest(body) {
+export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {}) {
   const keys = ["version", "action", "baseStateRevision", "causal", "entityType", "entityId", "baseEntityRevision", "fields", "changes", "copySource"];
   if (!object(body) || body.version !== 1 || body.action !== "form" || Object.keys(body).some(key => !keys.includes(key))
     || !["item", "container"].includes(body.entityType) || !id(body.entityId)
@@ -44,13 +44,13 @@ export function personalPhotoFormManifest(body) {
     || body.entityType === "container" && Object.hasOwn(body.fields, "quantity")
     || body.baseEntityRevision === 0 && !Object.hasOwn(body.fields, "name")
     || body.baseEntityRevision > 0 && Object.hasOwn(body.fields, "createdAt")
-    || !Array.isArray(body.changes) || !body.changes.length || body.changes.length > 50
+    || !Array.isArray(body.changes) || !body.changes.length && !(allowEmptyCopy && body.copySource) || body.changes.length > 50
     || body.changes.some(change => !change || change.entityType !== body.entityType || change.entityId !== body.entityId
       || change.baseEntityRevision !== body.baseEntityRevision || change.action === "copy" && !body.copySource
       || body.baseEntityRevision === 0 && change.action !== (body.copySource ? "copy" : "attach"))
-    || Object.hasOwn(body, "copySource") && !personalPhotoCopySourceValid(body)) fail();
-  if (body.baseEntityRevision === 0 && body.changes[0].expectedPhotoIds?.length !== 0) fail();
-  const photos = personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true, allowAttachThenOrder: true });
+    || Object.hasOwn(body, "copySource") && !personalPhotoCopySourceValid(body, { allowEmpty: allowEmptyCopy })) fail();
+  if (body.baseEntityRevision === 0 && body.changes.length && body.changes[0].expectedPhotoIds?.length !== 0) fail();
+  const photos = body.changes.length ? personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true, allowAttachThenOrder: true }) : [];
   return { entityType: body.entityType, entityId: body.entityId, baseEntityRevision: body.baseEntityRevision,
     created: body.baseEntityRevision === 0, ...(body.copySource ? { copySource: clone(body.copySource) } : {}), fields: clone(body.fields), photos };
 }

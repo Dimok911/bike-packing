@@ -9,6 +9,7 @@ import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOw
   personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_EDIT_FORM_ENABLED, assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./personal-photo-copy-source.js";
+import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, assertPersonalPhotoCopyBatchCandidate } from "./personal-photo-copy-batch-protocol.js";
 import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
   personalPhotoCopyResultReference, isPersonalPendingPhotoCopyDeletion } from "./personal-pending-photo-copy-deletion.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
@@ -99,6 +100,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
+  photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
@@ -424,15 +426,17 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone({ binding, observation: observation(current), retiredOperationIds: current.anchor?.retired || [],
         photoReceipts: current.anchor?.photoReceipts || [],
         records: [...current.records.values()].filter(record => record.action.kind === "photos.mutate"
-          && (record.photoState.fileIntentHash !== null || record.action.body.action === "form")) });
+          && (record.photoState.fileIntentHash !== null || ["form", "copy-batch"].includes(record.action.body.action))) });
     },
     preparePhoto({ snapshot, payload, body, operationId = crypto.randomUUID() }) {
-      if (body?.action === "form") {
+      if (["form", "copy-batch"].includes(body?.action)) {
         for (const value of [snapshot, payload, body]) assertListOperationPayload({ ...binding, kind: "photos.mutate", body: value });
       }
       const input = clone({ snapshot, payload, body }), current = assertObserved(), { head, applied, anchor, records } = current;
       if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
       const form = input.body?.action === "form";
+      const copyBatch = input.body?.action === "copy-batch";
+      if (copyBatch && (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled)) throw blocked("photo-copy-batch-disabled", "Массовое копирование с фото ещё не включено.");
       if (form && !photoFormEnabled) throw blocked("photo-form-disabled", "Сохранение карточки вместе с фото ещё не включено.");
       if (form && input.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
       if (head && !applied.has(head.action.operationId)) throw blocked("photo-base", "Сначала нужно подтвердить предыдущее изменение карточки.");
@@ -444,8 +448,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         || storage.getItem(keyPrefix + operationId) !== null || !input.snapshot || input.body?.causal !== undefined
         || input.body.baseStateRevision !== base.stateRevision) throw blocked("photo-base", "Не подтверждена исходная версия фотодействия.");
       const candidate = { body: input.body, basePayload: base.payload, payload: input.payload, listId };
-      const manifest = form ? assertPersonalPhotoFormCandidate(candidate).photos : assertPersonalPhotoCandidate(candidate);
-      const changes = form || input.body.action === "batch" ? input.body.changes : [input.body];
+      const manifest = copyBatch ? assertPersonalPhotoCopyBatchCandidate(candidate).photos
+        : form ? assertPersonalPhotoFormCandidate(candidate).photos : assertPersonalPhotoCandidate(candidate);
+      const changes = form || copyBatch || input.body.action === "batch" ? input.body.changes : [input.body];
       if (form && !input.body.copySource && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled
         || manifest.some(entry => entry.action === "attach") && (form || input.body.action === "batch")
         && (!photoBatchEnabled || !form && manifest.some(entry => entry.action !== "attach"))
@@ -460,7 +465,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone({ action, snapshot: input.snapshot, payload: input.payload, mergeBase: base });
     },
     async capturePhoto({ plan, store, getContext }) {
-      if (plan?.action?.body?.action === "form") {
+      if (["form", "copy-batch"].includes(plan?.action?.body?.action)) {
         assertListOperationPayload(plan.action);
         for (const value of [plan.snapshot, plan.payload]) assertListOperationPayload({ ...binding, kind: "photos.mutate", body: value });
       }
@@ -474,7 +479,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (!getContext?.()?.generation) throw blocked("context", "Не определена локальная версия фотодействия.");
         const current = assertObserved(), assertCurrent = guardEditor(getContext, current.head);
         assertCurrent(); prepare();
-        const inventory = ["batch", "form"].includes(input.action.body.action);
+        const inventory = ["batch", "form", "copy-batch"].includes(input.action.body.action);
         const changes = inventory ? input.action.body.changes : [input.action.body];
         const attachment = changes.some(change => change.action === "attach"), batch = attachment && inventory;
         const file = attachment ? await store?.read(input.action.operationId) : null;
@@ -667,6 +672,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const lastCommittedIndex = settled.outcomes.findLastIndex(proof => proof.operation.state === "committed");
       const rejectedPhoto = !alreadyCommitted && settled.outcomes.slice(lastCommittedIndex + 1).findLast(proof => proof.operation.kind === "photos.mutate" && proof.operation.state === "rejected");
       if (rejectedPhoto && !photoEnabled) throw blocked("photo-disabled", "Явное разрешение фотодействий ещё не включено.");
+      if (rejectedPhoto && records.get(rejectedPhoto.operation.id)?.action.body.action === "copy-batch"
+        && (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled)) {
+        throw blocked("photo-copy-batch-disabled", "Решение по отклонённой массовой копии ещё не включено. Исходный набор сохранён.");
+      }
       if (rejectedPhoto && records.get(rejectedPhoto.operation.id)?.action.body.action === "form" && !photoFormEnabled) {
         throw blocked("photo-form-disabled", "Решение по отклонённой карточке с фото ещё не включено. Поля и файлы сохранены.");
       }
@@ -802,8 +811,10 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         formEnabled: photoFormEnabled,
         enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled && photoFormEnabled });
       const filelessForm = pendingForm || head;
-      if (filelessForm?.action?.body?.action === "form" && filelessForm.photoState?.fileIntentHash === null) {
-        if (!photoEnabled || !photoFormEnabled || !(filelessForm.action.body.copySource ? photoCopyEnabled : photoEditEnabled) || !photoBatchCancellationEnabled) {
+      if (["form", "copy-batch"].includes(filelessForm?.action?.body?.action) && filelessForm.photoState?.fileIntentHash === null) {
+        const copyBatch = filelessForm.action.body.action === "copy-batch";
+        if (!photoEnabled || !photoFormEnabled || !(copyBatch ? photoCopyEnabled && photoCopyBatchEnabled
+          : filelessForm.action.body.copySource ? photoCopyEnabled : photoEditEnabled) || !photoBatchCancellationEnabled) {
           throw blocked("photo-cancellation", "Отмена изменения существующих фото ещё не включена.");
         }
         assertPersonalPhotoRecord(filelessForm);
@@ -917,6 +928,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         const action = record.action;
         if (action.kind === "photos.mutate") {
           if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
+          if (action.body.action === "copy-batch" && (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled)) throw blocked("photo-copy-batch-disabled", "Массовое копирование с фото ещё не включено.");
           if (action.body.action === "form" && !photoFormEnabled) throw blocked("photo-form-disabled", "Сохранение карточки вместе с фото ещё не включено.");
           const manifest = assertPersonalPhotoRecord(record), attachments = manifest.filter(entry => entry.action === "attach");
           if (action.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");

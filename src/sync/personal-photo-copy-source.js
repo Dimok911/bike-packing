@@ -12,8 +12,8 @@ const metadata = ["name", "createdAt", "updatedAt", "updatedByDeviceId", "update
 // This is a whole owner's frozen source, not a mutable reference to whatever
 // happens to be at sourceId when a worker resumes. Only identity/placement,
 // copy name and edit metadata change; every other source field is preserved.
-export function personalPhotoCopySourceValid(body) {
-  const source = body?.copySource, owner = source?.payload, photos = owner?.photos;
+export function personalPhotoCopySourceValid(body, { allowEmpty = false } = {}) {
+  const source = body?.copySource, owner = source?.payload, photos = allowEmpty ? owner?.photos ?? [] : owner?.photos;
   if (!object(source) || Object.keys(source).some(key => !["listId", "entityType", "entityId", "entityRevision", "payload"].includes(key))
     || !id(source.listId) || !["item", "container"].includes(source.entityType) || source.entityType !== body.entityType
     || !id(source.entityId) || source.entityId === body.entityId || !Number.isSafeInteger(source.entityRevision) || source.entityRevision < 1
@@ -21,7 +21,7 @@ export function personalPhotoCopySourceValid(body) {
     || ["adminDemo", "adminSharedSourceId", "publicCatalogLayoutId", "_publicCopySourceId", "sharedSourceId"].some(key => owner[key])
     || source.entityType === "container" && owner.parentId
     || !object(body.fields) || Object.keys(body.fields).some(key => !metadata.includes(key))
-    || !Array.isArray(photos) || !photos.length || photos.length > 50 || !Array.isArray(body.changes) || body.changes.length !== photos.length
+    || !Array.isArray(photos) || !allowEmpty && !photos.length || photos.length > 50 || !Array.isArray(body.changes) || body.changes.length !== photos.length
     || new Set(photos.map(photo => photo?.id)).size !== photos.length || new Set(photos.map(photo => photo?.assetId)).size !== photos.length) return false;
   return photos.every((photo, index) => {
     const change = body.changes[index];

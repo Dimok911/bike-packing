@@ -3,9 +3,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
+import { personalPhotoCopyOwner } from "../../src/sync/personal-photo-copy-source.js";
 import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
@@ -135,7 +136,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -169,7 +170,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const owner = state.payload[entityType === "item" ? "items" : "containers"][entityId];
         data = { ok: true, version: 1, readOnly: true, environment: "bike-packing-experiment", actorId: "actor-a", listId: state.listId,
           stateRevision: state.revision, owner: { entityType, entityId, entityRevision: state.revision, payload: structuredClone(owner) },
-          photos: owner.photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: state.photoRevisions.get(photo.id) })) };
+          photos: (owner.photos || []).map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: state.photoRevisions.get(photo.id) })) };
         state.ownerRead = structuredClone(data);
         if (state.afterOwnerRead) await state.afterOwnerRead(data);
       }
@@ -226,8 +227,9 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/list-operations" && request.method() === "POST") {
         const body = request.postDataJSON(); state.posts.push(body);
-        if (body.body.copySource && state.beforeCopyDispatch) await state.beforeCopyDispatch(body);
-        if (state.dropCopyBeforeCommit && body.kind === "photos.mutate" && body.body.copySource) {
+        const ownerCopy = body.body.copySource || body.body.action === "copy-batch";
+        if (ownerCopy && state.beforeCopyDispatch) await state.beforeCopyDispatch(body);
+        if (state.dropCopyBeforeCommit && body.kind === "photos.mutate" && ownerCopy) {
           state.injectedFailure = true; return route.abort("failed");
         }
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
@@ -237,7 +239,33 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
-        if (photoForm && body.kind === "photos.mutate") {
+        if (photoEdit && body.kind === "photos.mutate" && body.body.action === "copy-batch") {
+          const changes = [], owners = [];
+          for (const descriptor of body.body.owners) {
+            const owner = personalPhotoCopyOwner(descriptor); Object.assign(owner, descriptor.fields);
+            expect(descriptor.copySource.payload).toEqual(state.payload[descriptor.entityType === "item" ? "items" : "containers"][descriptor.copySource.entityId]);
+            expect(descriptor.copySource.entityRevision).toBe(state.revision);
+            for (const change of body.body.changes.filter(change => change.entityId === owner.id && change.entityType === descriptor.entityType)) {
+              expect(change.expectedPhotoIds).toEqual(owner.photos.map(photo => photo.id));
+              expect(change.source.photoRevision).toBe(state.photoRevisions.get(change.source.photoId));
+              const source = descriptor.copySource.payload.photos[change.index];
+              expect(source.id).toBe(change.source.photoId); expect(source.assetId).toBe(change.source.assetId);
+              const photo = { ...source, id: change.photoId, photoId: change.photoId, assetId: change.assetId,
+                url: `${origin}/photo/${change.photoId}.png`, thumbUrl: `${origin}/thumb/${change.photoId}.png` };
+              owner.photos.push(photo); state.photoRevisions.set(photo.id, state.revision + 1);
+              changes.push({ index: changes.length, action: "copy", entityType: descriptor.entityType, entityId: owner.id, photoId: photo.id,
+                assetId: photo.assetId, photoIds: owner.photos.map(photo => photo.id), photo });
+            }
+            for (const key of descriptor.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) delete owner[key];
+            owners.push({ entityType: descriptor.entityType, entityId: owner.id });
+            state.payload[descriptor.entityType === "item" ? "items" : "containers"][owner.id] = owner;
+          }
+          state.revision++;
+          data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
+            result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
+              photoCopyBatch: { version: 1, owners } } } };
+          if (state.afterFormCommit) await state.afterFormCommit(body);
+        } else if (photoForm && body.kind === "photos.mutate") {
           expect(body.body.action).toBe("form");
           const owner = personalPhotoFormOwner(state.payload, body.body), changes = [];
           for (const [index, change] of body.body.changes.entries()) {
@@ -309,7 +337,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
-        if (state.loseFormOwner && body.kind === "photos.mutate" && body.body.action === "form") {
+        if (state.loseFormOwner && body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action)) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }
@@ -1672,6 +1700,88 @@ for (const type of ["item", "container"]) for (const outcome of ["confirmed", "l
     await synchronize(page, () => !f.payload[collection][sourceId]);
     expect(f.payload[collection][targetId].photos).toEqual(copiedPhotos); expect(f.posts).toHaveLength(before + 2);
     await reloadApp(page); expect(f.payload[collection][sourceId]).toBeUndefined(); expect(f.payload[collection][targetId].photos).toEqual(copiedPhotos);
+  }
+  expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
+});
+
+for (const type of ["item", "container"]) for (const outcome of ["confirmed", "lost ACK", "quota", "last source changed", "cancel lost ACK"]) test(`selected photo owner batch ${type} ${outcome} preserves the entire frozen selection`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, collection, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true });
+  await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.at(-1)?.kind).toBe("photos.mutate");
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  const firstId = f.posts.at(-1).body.entityId, sourceIds = [firstId, `${type}-second-source`, `${type}-empty-source`];
+  // Simulate two already confirmed remote catalog owners. All interactions
+  // under test below use the actual selected-card Copy and recovery buttons.
+  for (const [index, id] of sourceIds.slice(1).entries()) {
+    const source = structuredClone(f.payload[collection][firstId]); source.id = id; source.name = `Источник ${index + 2}`;
+    source.photos = index === 0 ? source.photos.map(photo => { const id = randomUUID(); return { ...photo, id, photoId: id, assetId: randomUUID() }; }) : [];
+    f.payload[collection][id] = source;
+    for (const photo of source.photos) f.photoRevisions.set(photo.id, f.revision + 1);
+  }
+  f.revision++; await reloadApp(page);
+  const server = structuredClone(f.payload), before = f.posts.length, stages = [...f.stagePosts];
+  const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  const originalJournal = await journal();
+  await selectCatalogBatch(page, type, [], { action: "copy", ids: sourceIds });
+  expect(await journal()).toEqual(originalJournal); expect(f.posts).toHaveLength(before);
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Batch quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  if (outcome === "last source changed") f.afterOwnerRead = data => {
+    if (data.owner.entityId === sourceIds.at(-1)) data.owner.payload.name = "Новая серверная версия";
+  };
+  f.loseFormOwner = outcome === "lost ACK"; f.dropCopyBeforeCommit = outcome === "cancel lost ACK";
+  await submitForm(page, "#confirmOkBtn");
+  if (["quota", "last source changed"].includes(outcome)) {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    const recovery = await downloadRecovery(page), draft = recovery.unconfirmedMemoryDraft;
+    const copies = Object.values(draft[collection]).filter(owner => !Object.hasOwn(server[collection], owner.id));
+    expect(copies).toHaveLength(3); expect(copies.reduce((sum, owner) => sum + owner.photos.length, 0)).toBe(4);
+    expect(copies.flatMap(owner => owner.photos).every(photo => photo.status === "pending")).toBe(true);
+    expect(await journal()).toEqual(originalJournal); expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server);
+  } else {
+    await page.locator("#syncBtn").click(); await expect.poll(() => f.posts.length).toBe(before + 1);
+    const action = structuredClone(f.posts.at(-1)); expect(action.body.action).toBe("copy-batch");
+    expect(action.body.owners.map(owner => owner.copySource.entityId).sort()).toEqual([...sourceIds].sort());
+    expect(action.body.changes).toHaveLength(4);
+    for (const owner of action.body.owners) expect(owner.copySource.payload).toEqual(server[collection][owner.copySource.entityId]);
+    if (outcome === "cancel lost ACK") {
+      await expect.poll(() => f.injectedFailure).toBe(true); f.cancelPhotoAction = action;
+      await reloadApp(page, { recovery: true });
+      const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+      await expect(cancel).toBeVisible(); f.loseCancellation = true; f.hideCancellationReceipt = true;
+      await cancel.click(); await expect(cancel).toBeEnabled(); expect(f.payload).toEqual(server);
+      await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
+      await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmCancelBtn").click();
+      await expect(recovery.getByRole("status")).toContainText("Выбор отложен"); expect(f.posts).toHaveLength(before + 2);
+      expect((await downloadRecovery(page)).journalEntries.length).toBeGreaterThan(0);
+      await reloadApp(page, { recovery: true }); await cancel.click(); await page.locator("#confirmOkBtn").click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+      expect(f.posts).toHaveLength(before + 3); expect(f.payload).toEqual(server); await reloadApp(page);
+    } else {
+      if (outcome === "lost ACK") {
+        await expect.poll(() => f.injectedFailure).toBe(true); await reloadApp(page, { recovery: true });
+        const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+        await expect(resume).toBeVisible(); await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toHaveLength(before + 1);
+        f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
+        await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены"); await reloadApp(page);
+      } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+      expect(f.posts.at(-1)).toEqual(action);
+      for (const owner of action.body.owners) {
+        const target = f.payload[collection][owner.entityId]; expect(target.note).toBe(owner.copySource.payload.note);
+        expect(target.photos.map(photo => photo.id)).toEqual(action.body.changes.filter(change => change.entityId === owner.entityId).map(change => change.photoId));
+        expect(target.photos.every(photo => photo.status === "synced")).toBe(true);
+      }
+      await selectCatalogBatch(page, type, [], { ids: sourceIds }); await submitForm(page, "#confirmOkBtn");
+      await synchronize(page, () => sourceIds.every(id => !f.payload[collection][id]));
+      await reloadApp(page); expect(f.posts).toHaveLength(before + 2);
+      for (const owner of action.body.owners) expect(f.payload[collection][owner.entityId]).toBeTruthy();
+    }
   }
   expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
 });

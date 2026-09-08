@@ -13,7 +13,7 @@ const fail = () => { throw Object.assign(new Error("Версии карточк�
 // Verify a read against the frozen base; never adopt a newer server selection or
 // substitute a list/owner revision for a photo's publication revision.
 export async function readPersonalPhotoOwnerState({ binding, entityType, entityId, basePayload, baseStateRevision },
-  { getContext, readOwner } = {}) {
+  { getContext, readOwner, allowEmpty = false } = {}) {
   if (binding?.environment !== "bike-packing-experiment" || !id(binding.actorId) || binding.actorId.length > 36
     || binding.scopeKey !== `id:${binding.actorId}` || !id(binding.listId) || !id(entityId)
     || !["item", "container"].includes(entityType) || !revision(baseStateRevision) || typeof readOwner !== "function") fail();
@@ -26,7 +26,8 @@ export async function readPersonalPhotoOwnerState({ binding, entityType, entityI
   assertCurrent();
   const source = basePayload?.[collection]?.[entityId];
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body: { owner: source } });
-  if (!source || source.id !== entityId || !Array.isArray(source.photos) || !source.photos.length) fail();
+  const photos = allowEmpty ? source?.photos ?? [] : source?.photos;
+  if (!source || source.id !== entityId || !Array.isArray(photos) || !allowEmpty && !photos.length) fail();
   const owner = clone(source);
   const response = await readOwner(`/bike-packing/lists/${encodeURIComponent(binding.listId)}/photo-owner-state?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`);
   assertCurrent();
@@ -34,7 +35,7 @@ export async function readPersonalPhotoOwnerState({ binding, entityType, entityI
     || ["environment", "actorId", "listId"].some(key => response[key] !== binding[key])
     || response.stateRevision !== baseStateRevision || response.owner?.entityType !== entityType || response.owner.entityId !== entityId
     || !revision(response.owner.entityRevision) || response.owner.entityRevision > baseStateRevision || !same(response.owner.payload, owner)
-    || !Array.isArray(response.photos) || response.photos.length !== owner.photos.length
+    || !Array.isArray(response.photos) || response.photos.length !== (owner.photos || []).length
     || new Set(response.photos.map(photo => photo?.photoId)).size !== response.photos.length) fail();
   for (const [index, photo] of response.photos.entries()) {
     const expected = owner.photos[index];
