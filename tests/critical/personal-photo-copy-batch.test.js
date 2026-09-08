@@ -8,6 +8,9 @@ import { personalPhotoFormManifest } from "../../src/sync/personal-photo-form-pr
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
 import { personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-photo-recovery-cancel.js";
+import { preparePersonalDeletionBatch } from "../../src/sync/personal-deletion-intent.js";
+import { personalPendingPhotoCopyDeletionForm, personalPhotoCopyResultReference, isPersonalPendingPhotoCopyDeletion,
+  PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED } from "../../src/sync/personal-pending-photo-copy-deletion.js";
 
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 function fixture(entityType = "item") {
@@ -126,4 +129,45 @@ test("receipt proves every selected owner, full unknown fields, every photo and 
     r => { r.photoChanges[2].photo.width++; r.list.payload.items[body.owners[1].entityId].photos[0].width++; }]) {
     const changed = structuredClone(result); mutate(changed); assert.equal(validatePersonalPhotoCopyBatchResult(changed, { body, listId: "list" }), false);
   }
+});
+
+for (const type of ["item", "container"]) for (const first of ["source", "copy"]) test(`pending selected ${type} deletion ${first} first retains all result owners and never revives removed members`, async () => {
+  const f = fixture(type), { record: form } = await createPersonalPhotoCopyBatchSession(f.options).submit(f.request);
+  const ref = personalPhotoCopyResultReference(form), owners = form.action.body.owners;
+  assert.equal(ref.version, 2); assert.equal(ref.owners.length, 4); assert.equal(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, false);
+  const outbox = createPersonalSaveOutbox({ ...f.outboxOptions, pendingPhotoCopyDeletionEnabled: true, pendingPhotoCopyBatchDeletionEnabled: true });
+  const gated = createPersonalSaveOutbox({ ...f.outboxOptions, pendingPhotoCopyDeletionEnabled: true });
+  const selected = [first === "source" ? "first" : owners[0].entityId, owners[2].entityId, first === "source" ? owners[0].entityId : "first"];
+  let base = form.photoState.payload, head = form;
+  for (const [index, id] of selected.entries()) {
+    const deletion = preparePersonalDeletionBatch(base, { type, id });
+    const input = { snapshot: deletion.snapshot, body: { baseStateRevision: 7, payload: deletion.snapshot, userDeletion: deletion.intent } };
+    const before = [...f.values];
+    if (!index) { assert.throws(() => gated.capture(input), { code: "photo-copy-pending" }); assert.deepEqual([...f.values], before); }
+    const child = outbox.capture(input);
+    assert.deepEqual(child.action.body.photoResults, ref);
+    assert.equal(child.action.body.causal.baseOperationId, head.action.operationId);
+    assert.deepEqual(child.action.body.causal.dependsOn.map(dep => dep.operationId), [...new Set([head.action.operationId, form.action.operationId])]);
+    assert.equal(personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: child.action.operationId, listId: "list" }).action.operationId, form.action.operationId);
+    for (const mutate of [payload => { payload[f.collection][owners[1].entityId].name = "Hidden edit"; },
+      payload => { payload[f.collection][id] = { id, photos: [] }; },
+      payload => { payload[f.collection][owners[3].entityId].photos = [{ id: "hidden", status: "pending" }]; }]) {
+      const changed = structuredClone(deletion.snapshot); mutate(changed);
+      assert.equal(isPersonalPendingPhotoCopyDeletion({ form, basePayload: base, payload: changed, userDeletion: deletion.intent, listId: "list" }), false);
+    }
+    base = deletion.snapshot; head = child;
+  }
+  const records = outbox.list(), frozen = [...f.values];
+  for (const mutate of [rows => { rows.at(-1).action.body.photoResults.owners.pop(); },
+    rows => { rows.at(-1).action.body.photoResults.owners.reverse(); }, rows => { rows.at(-1).action.body.causal.dependsOn.pop(); }]) {
+    const rows = structuredClone(records).sort((a, b) => a.action.generation - b.action.generation); mutate(rows);
+    assert.equal(personalPendingPhotoCopyDeletionForm({ records: rows, operationId: head.action.operationId, listId: "list" }), null);
+  }
+  const reader = createPersonalSaveOutbox({ ...f.binding, storage: f.storage });
+  assert.equal(reader.capture({ snapshot: { ...base, showItemMeta: true }, body: { payload: base, baseStateRevision: 7 } }).action.operationId, head.action.operationId);
+  assert.deepEqual([...f.values], frozen); assert.deepEqual(records.find(record => record.action.operationId === form.action.operationId), form);
+  const options = { records, pendingCopyDeletionEnabled: true, pendingCopyBatchDeletionEnabled: true, copyEnabled: true,
+    copyBatchEnabled: true, formEnabled: true, batchEnabled: true };
+  assert.equal(personalPhotoRecoveryCancellationHead(head, options), true);
+  assert.equal(Boolean(personalPhotoRecoveryCancellationHead(head, { ...options, pendingCopyBatchDeletionEnabled: false })), false);
 });

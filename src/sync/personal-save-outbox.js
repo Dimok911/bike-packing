@@ -10,7 +10,7 @@ import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOw
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_EDIT_FORM_ENABLED, assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, assertPersonalPhotoCopyBatchCandidate } from "./personal-photo-copy-batch-protocol.js";
-import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
   personalPhotoCopyResultReference, isPersonalPendingPhotoCopyDeletion } from "./personal-pending-photo-copy-deletion.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED, PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED, personalRecordPayload, assertPersonalPhotoCandidate,
   assertPersonalPhotoRecord, assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
@@ -101,6 +101,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   pendingPhotoOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
+  pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
     throw blocked("scope", "Не определён личный список для сохранения.");
@@ -524,6 +525,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
             .some(key => Object.hasOwn(input.body, key))
           && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled
+          || pendingCopy.action.body.action === "copy-batch" && (!pendingPhotoCopyBatchDeletionEnabled || !photoCopyBatchEnabled)
           || create || restore || migration || localReconciliation || !isPersonalPendingPhotoCopyDeletion({ form: pendingCopy,
             basePayload: personalRecordPayload(head), payload: input.body?.payload, userDeletion: input.body?.userDeletion, listId })) {
           throw blocked("photo-copy-pending", "Удаление до подтверждения этой копии ещё не разрешено. Исходная копия сохранена.");
@@ -806,6 +808,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         records: [...records.values()], operationId: head?.action.operationId, listId })
         || pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({
           records: [...records.values()], operationId: head?.action.operationId, listId });
+      if (pendingForm && pendingForm.action.body.action === "copy-batch" && !pendingPhotoCopyBatchDeletionEnabled) {
+        throw blocked("photo-cancellation", "Отмена зависимых удалений массовой копии ещё не включена.");
+      }
       if (pendingForm && pendingForm.photoState.fileIntentHash !== null) return cancelPersonalPhotoBatch({ record: pendingForm, binding, queue,
         store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
         formEnabled: photoFormEnabled,
@@ -897,10 +902,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       for (let record = head; record; record = records.get(record.action.body.causal.baseOperationId)) chain.push(record);
       const root = chain.at(-1);
       const dependentForm = chain.find((record, index) => record.action.kind === "photos.mutate" && index > 0);
-      const resolvedForm = dependentForm?.action.body.copySource
+      const resolvedForm = dependentForm?.action.body.copySource || dependentForm?.action.body.action === "copy-batch"
         ? pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId })
         : pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId });
-      if (dependentForm && resolvedForm?.action.operationId !== dependentForm.action.operationId) {
+      if (dependentForm && (resolvedForm?.action.operationId !== dependentForm.action.operationId
+        || dependentForm.action.body.action === "copy-batch" && (!pendingPhotoCopyBatchDeletionEnabled || !photoCopyBatchEnabled))) {
         throw blocked("photo-pending", "Продолжение формы не подтверждено как удаление её владельца. Исходные действия сохранены.");
       }
       if (root.reconciliation) {

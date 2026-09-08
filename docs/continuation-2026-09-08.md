@@ -4,13 +4,29 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+- Проверен локально новый участок: удаление до ACK массовой копии.
+  Backend `d39d61c`.
+  `photoResults.version: 2` хранит полный список владельцев исходного batch,
+  включая копии без фото; используются прежние цепочки и серверный resolver.
+  Новый gate `PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = false`,
+  API gate `BIKE_PACKING_CAUSAL_PHOTO_COPY_BATCH_DELETION_ENABLED` unset.
+  453 transport, 895 critical, 56 operation, 74 source/service и source checks.
+  API/MySQL 137/137, 81,81 с, без skips (`pending-copy-batch-mysql-2.log`).
+  UI 28/28 Chromium/mobile WebKit, 9,9 минуты, без повторов во втором прогоне
+  (`pending-copy-batch-ui-2.log`). Первый UI-прогон обнаружил сравнение записей
+  в нестабильном порядке localStorage; тест сравнивает полный состав по ID.
+  Первый API-прогон нашёл boolean-false доступ в отмене (исправлен) и неверное
+  ожидание теста о наличии уже compacted записи. Все процессы завершены.
+  Новый guard также запрещает возвращать источник с photos:[] прямо в первом
+  удалении. Продолжать деревья/укладки; весь список остаётся открытым.
+
 - Завершён локально следующий участок: `photos.mutate/action: copy-batch`, массовые
   каталожные копии вещей/сумок с фото и выбранными владельцами без фото.
   20/20 UI Chromium/mobile WebKit за 6,0 минуты
   без повторов (`copy-batch-ui-1.log`), 449 transport, 895 critical,
   53 operation, 74 source/service, FE/BE source checks прошли. Итоговый
   API/MySQL после исправления отмены: 129/129, 80,71 с, без skips,
-  `copy-batch-mysql-4.log`. Backend `6a81211`. Все процессы завершены.
+  `copy-batch-mysql-4.log`. FE `ce9bdfa`, backend `6a81211`. Все процессы завершены.
   Предыдущие прогоны не считаются приёмкой (ошибка версии тестового владельца,
   неверный валидатор отмены, затем native Node crash 3221226505 до новых тестов).
   Флаги false. Подробности `personal-photo-copy-batch.md`. Продолжить удаление до подтверждения массовой копии,

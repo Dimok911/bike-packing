@@ -2,9 +2,13 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { preparePersonalDeletionBatch } from "./personal-deletion-intent.js";
 import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
 import { assertPersonalPhotoFormRecord } from "./personal-photo-form-outbox-record.js";
+import { personalPhotoFormManifest } from "./personal-photo-form-protocol.js";
+import { personalPhotoCopyBatchManifest, assertPersonalPhotoCopyBatchRecord } from "./personal-photo-copy-batch-protocol.js";
 
 export const PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = false;
 export const PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY = "personalCausalPhotoCopyDeletionV1";
+export const PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = false;
+export const PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY = "personalCausalPhotoCopyBatchDeletionV1";
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const catalogCopy = (owner, type) => {
@@ -17,9 +21,16 @@ const catalogCopy = (owner, type) => {
 };
 
 export function personalPhotoCopyResultReference(form) {
-  const manifest = assertPersonalPhotoFormRecord(form);
+  if (form.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(form);
+  else assertPersonalPhotoFormRecord(form);
+  return personalPhotoCopyBodyResultReference(form.action.body, form.action.operationId);
+}
+
+export function personalPhotoCopyBodyResultReference(body, operationId) {
+  if (body.action === "copy-batch") return { version: 2, operationId, owners: personalPhotoCopyBatchManifest(body).owners };
+  const manifest = personalPhotoFormManifest(body);
   if (!manifest.copySource) throw Error("Не подтверждено исходное действие копирования.");
-  return { version: 1, operationId: form.action.operationId, entityType: manifest.entityType, entityId: manifest.entityId };
+  return { version: 1, operationId, entityType: manifest.entityType, entityId: manifest.entityId };
 }
 
 // Only this exact copied owner may carry symbolic pending references. Its
@@ -29,20 +40,27 @@ export function isPersonalPendingPhotoCopyDeletion({ form, basePayload, payload,
   try {
     const reference = personalPhotoCopyResultReference(form);
     if (form.action.listId !== listId || !userDeletion) return false;
-    const collection = reference.entityType === "item" ? "items" : "containers";
-    const sourceId = form.action.body.copySource.entityId;
-    if (!Object.hasOwn(basePayload[collection], sourceId) && Object.hasOwn(payload[collection], sourceId)) return false;
     const expected = preparePersonalDeletionBatch(basePayload, userDeletion).snapshot, actual = clone(payload);
-    const expectedOwner = expected[collection]?.[reference.entityId], actualOwner = actual[collection]?.[reference.entityId];
-    const original = form.photoState.payload[collection][reference.entityId];
-    if (expectedOwner === undefined ? actualOwner !== undefined : !same(catalogCopy(expectedOwner, reference.entityType), catalogCopy(original, reference.entityType))
-      || !same(catalogCopy(actualOwner, reference.entityType), catalogCopy(original, reference.entityType))) return false;
-    for (const layout of Object.values(actual.layouts || {})) {
-      if ((layout.rootContainerIds || []).includes(reference.entityId) || (layout.arrangement?.rootContainerIds || []).includes(reference.entityId)
-        || Object.hasOwn(layout.arrangement?.[collection] || {}, reference.entityId)) return false;
+    const owners = reference.version === 2 ? reference.owners : [reference];
+    const sources = reference.version === 2 ? form.action.body.owners.map(owner => owner.copySource) : [form.action.body.copySource];
+    for (const source of sources) {
+      const collection = source.entityType === "item" ? "items" : "containers";
+      if ((!Object.hasOwn(basePayload[collection], source.entityId) || !Object.hasOwn(expected[collection], source.entityId))
+        && Object.hasOwn(payload[collection], source.entityId)) return false;
     }
-    if (expectedOwner) expectedOwner.photos = [];
-    if (actualOwner) actualOwner.photos = [];
+    for (const owner of owners) {
+      const collection = owner.entityType === "item" ? "items" : "containers";
+      const expectedOwner = expected[collection]?.[owner.entityId], actualOwner = actual[collection]?.[owner.entityId];
+      const original = form.photoState.payload[collection][owner.entityId];
+      if (expectedOwner === undefined ? actualOwner !== undefined : !same(catalogCopy(expectedOwner, owner.entityType), catalogCopy(original, owner.entityType))
+        || !same(catalogCopy(actualOwner, owner.entityType), catalogCopy(original, owner.entityType))) return false;
+      for (const layout of Object.values(actual.layouts || {})) {
+        if ((layout.rootContainerIds || []).includes(owner.entityId) || (layout.arrangement?.rootContainerIds || []).includes(owner.entityId)
+          || Object.hasOwn(layout.arrangement?.[collection] || {}, owner.entityId)) return false;
+      }
+      if (expectedOwner) expectedOwner.photos = [];
+      if (actualOwner) actualOwner.photos = [];
+    }
     return preservesConfirmedPersonalPhotos(expected, actual, listId);
   } catch { return false; }
 }

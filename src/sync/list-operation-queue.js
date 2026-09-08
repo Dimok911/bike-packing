@@ -9,7 +9,9 @@ import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED, PERSONAL_PHOTO_COPY_FORM_CAPABILITY } from "./personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_COPY_BATCH_ENABLED, PERSONAL_PHOTO_COPY_BATCH_CAPABILITY,
   personalPhotoCopyBatchManifest, validatePersonalPhotoCopyBatchResult } from "./personal-photo-copy-batch-protocol.js";
-import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY } from "./personal-pending-photo-copy-deletion.js";
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY,
+  PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY,
+  personalPhotoCopyBodyResultReference } from "./personal-pending-photo-copy-deletion.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -139,6 +141,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
+  pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -319,7 +322,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const parent = JSON.parse(JSON.stringify(predecessor || {}));
       const parentRoute = listOperationRoute(parent.path, parent.method), parentBody = JSON.parse(parent.body || "{}");
       const rejectedFormParent = photoEnabled && photoFormEnabled && parentRoute?.kind === "photos.mutate"
-        && parentBody.action === "form" && route.kind === "list.update";
+        && (parentBody.action === "form" || parentBody.action === "copy-batch" && photoCopyBatchEnabled && pendingPhotoCopyBatchDeletionEnabled)
+        && route.kind === "list.update";
       const validUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id || "");
       const listId = route.listId;
       const dependencies = [{ operationId: parent.operationId, listId }];
@@ -327,10 +331,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       if (body.photoResults) {
         if (!pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoEnabled || !photoFormEnabled) throw paused(operationId);
         const copy = JSON.parse(JSON.stringify(photoResultPredecessor || {})), copyRoute = listOperationRoute(copy.path, copy.method);
-        const copyBody = JSON.parse(copy.body || "{}"), form = personalPhotoFormManifest(copyBody);
-        if (!form.copySource || copyRoute?.kind !== "photos.mutate" || copyRoute.listId !== listId || !validUuid(copy.operationId)
-          || canonicalListOperationJson(body.photoResults) !== canonicalListOperationJson({ version: 1, operationId: copy.operationId,
-            entityType: form.entityType, entityId: form.entityId })) throw paused(operationId);
+        const copyBody = JSON.parse(copy.body || "{}"), reference = personalPhotoCopyBodyResultReference(copyBody, copy.operationId);
+        if (reference.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)
+          || copyRoute?.kind !== "photos.mutate" || copyRoute.listId !== listId || !validUuid(copy.operationId)
+          || canonicalListOperationJson(body.photoResults) !== canonicalListOperationJson(reference)) throw paused(operationId);
         if (copy.operationId !== parent.operationId) dependencies.push({ operationId: copy.operationId, listId });
         copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: "photos.mutate", body: copyBody,
           payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: "photos.mutate", listId, body: copyBody })) };
@@ -342,7 +346,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
         || body.causal?.baseOperationId !== parent.operationId
         || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson(dependencies)
         || canonicalListOperationJson(body.causal.reads) !== "[]") throw paused(operationId);
-      if (rejectedFormParent) personalPhotoFormManifest(parentBody);
+      if (rejectedFormParent) {
+        if (parentBody.action === "copy-batch") personalPhotoCopyBatchManifest(parentBody);
+        else personalPhotoFormManifest(parentBody);
+      }
       const expected = { operationId, actorId: initial.actorId, listId, kind: route.kind, body, children: [],
         payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: route.kind, listId, body })) };
       const parentExpected = { operationId: parent.operationId, actorId: initial.actorId, listId, kind: parentRoute.kind,
@@ -377,6 +384,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
         if (copyExpected && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
+        if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) throw paused(operationId);
         assertListOperationPayload(expected);
         if (!entry) {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
@@ -488,7 +496,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
-      if (body.photoResults && (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled || route.kind !== "list.update")) {
+      if (body.photoResults && (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled || route.kind !== "list.update"
+        || body.photoResults.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled))) {
         throw paused(requestedId, "Удаление до подтверждения копии ещё не включено.");
       }
       const generation = await sha(initial.generation);
@@ -549,6 +558,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (body.photoResults && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");
+          }
+          if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения массовой копии.");
           }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();

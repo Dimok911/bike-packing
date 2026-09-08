@@ -727,7 +727,7 @@ import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
   personalPendingPhotoOwnerDeletionForm } from "./src/sync/personal-pending-photo-owner-deletion.js";
-import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
   isPersonalPendingPhotoCopyDeletion } from "./src/sync/personal-pending-photo-copy-deletion.js";
 import { isKnownEmptyPersonalSave } from "./src/sync/personal-empty-save.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
@@ -2578,7 +2578,8 @@ function preparePersonalCatalogDeletion(value) {
         const copy = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED && PERSONAL_PHOTO_COPY_FORM_ENABLED
           && sameJson(parent?.photoState?.payload || parent?.action.body.payload, currentPayload)
           && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: parent?.action.operationId, listId: currentPackingListId, includeForm: true });
-        const copyDeletion = copy && isPersonalPendingPhotoCopyDeletion({ form: copy, basePayload: currentPayload,
+        const copyDeletion = copy && (copy.action.body.action !== "copy-batch" || PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED)
+          && isPersonalPendingPhotoCopyDeletion({ form: copy, basePayload: currentPayload,
           payload: cloneStateForSync(prepared.snapshot, { forSync: true }), userDeletion: prepared.intent, listId: currentPackingListId });
         const formDeletion = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && sameJson(parent?.photoState?.payload, currentPayload)
           && isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),

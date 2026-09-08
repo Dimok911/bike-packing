@@ -136,7 +136,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -326,11 +326,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           }
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
           if (body.body.photoResults) {
-            const ref = body.body.photoResults, collection = ref.entityType === "item" ? "items" : "containers";
+            const ref = body.body.photoResults;
             const copy = state.receipts.get(ref.operationId);
             expect(copy.operation.state).toBe("committed");
             expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.operationId, listId: state.listId });
-            if (state.payload[collection][ref.entityId]) state.payload[collection][ref.entityId].photos = structuredClone(copy.result.payload.list.payload[collection][ref.entityId].photos);
+            for (const owner of ref.version === 2 ? ref.owners : [ref]) {
+              const collection = owner.entityType === "item" ? "items" : "containers";
+              if (state.payload[collection][owner.entityId]) state.payload[collection][owner.entityId].photos = structuredClone(copy.result.payload.list.payload[collection][owner.entityId].photos);
+            }
           }
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
@@ -1786,27 +1789,45 @@ for (const type of ["item", "container"]) for (const outcome of ["confirmed", "l
   expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
 });
 
-for (const type of ["item", "container"]) for (const outcome of ["source", "copy", "both", "lost deletion", "quota", "cancel both", "cancel both lost ACK"]) test(`pending photo copy ${type} deletion ${outcome} preserves its frozen result and exact dependencies`, async ({ page, context }) => {
+for (const batch of [false, true]) for (const type of ["item", "container"]) for (const outcome of ["source", "copy", "both", "lost deletion", "quota", "cancel both", "cancel both lost ACK"]) test(`pending photo copy${batch ? " batch" : ""} ${type} deletion ${outcome} preserves its frozen result and exact dependencies`, async ({ page, context }) => {
   test.setTimeout(150000);
   const { f, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true });
   await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
   await expect.poll(() => f.posts.at(-1)?.kind).toBe("photos.mutate");
   const sourceId = f.posts.at(-1).body.entityId;
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  const sourceIds = [sourceId];
+  if (batch) {
+    for (const [index, id] of [`${type}-second-source`, `${type}-empty-source`].entries()) {
+      const source = structuredClone(f.payload[collection][sourceId]); source.id = id; source.name = `Источник ${index + 2}`;
+      source.photos = index === 0 ? source.photos.map(photo => { const id = randomUUID(); return { ...photo, id, photoId: id, assetId: randomUUID() }; }) : [];
+      f.payload[collection][id] = source; sourceIds.push(id);
+      for (const photo of source.photos) f.photoRevisions.set(photo.id, f.revision + 1);
+    }
+    f.revision++; await reloadApp(page);
+  }
   const before = f.posts.length, server = structuredClone(f.payload), stages = [...f.stagePosts], cancelled = outcome.startsWith("cancel");
+  // Storage enumeration order is unspecified across reload; compare exact
+  // records by identity without using UUID order to schedule any action.
   const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
-    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action).sort((a, b) => a.action.operationId.localeCompare(b.action.operationId)));
   let release;
   const hold = () => new Promise(resolve => { release = resolve; });
   if (cancelled) { f.beforeCopyDispatch = hold; f.dropCopyBeforeCommit = true; }
   else { f.afterFormCommit = hold; f.loseFormOwner = !["lost deletion", "quota"].includes(outcome); }
   try {
     await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
-    await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${sourceId}"]`).click();
+    if (batch) await selectCatalogBatch(page, type, [], { action: "copy", ids: sourceIds });
+    else await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${sourceId}"]`).click();
     await submitForm(page, "#confirmOkBtn"); await page.locator("#syncBtn").click();
     await expect.poll(() => Boolean(release)).toBe(true);
-    const originalRecords = await records(), form = originalRecords.find(record => record.action.body.copySource), targetId = form.action.body.entityId;
+    const originalRecords = await records(), form = originalRecords.find(record => batch ? record.action.body.action === "copy-batch" : record.action.body.copySource);
+    const targetId = batch ? form.action.body.owners.find(owner => owner.copySource.entityId === sourceId).entityId : form.action.body.entityId;
     const selected = ["source", "quota"].includes(outcome) ? [sourceId] : outcome === "copy" ? [targetId] : [targetId, sourceId];
+    if (batch && outcome !== "quota") {
+      if (outcome !== "source") selected.push(form.action.body.owners.find(owner => owner.copySource.entityId === sourceIds.at(-1)).entityId);
+      if (outcome !== "copy") selected.push(sourceIds.at(-1));
+    }
     const children = [];
     for (const id of selected) {
       if (type === "item") await page.locator(`#itemsView [data-list-item-id="${id}"] .item-title`).click();
@@ -1835,7 +1856,9 @@ for (const type of ["item", "container"]) for (const outcome of ["source", "copy
       const parentId = children.at(-1)?.action.operationId || form.action.operationId;
       expect(child.action.body.causal.baseOperationId).toBe(parentId);
       expect(child.action.body.causal.dependsOn.map(dep => dep.operationId)).toEqual([...new Set([parentId, form.action.operationId])]);
-      expect(child.action.body.photoResults).toEqual({ version: 1, operationId: form.action.operationId, entityType: type, entityId: targetId });
+      expect(child.action.body.photoResults).toEqual(batch ? { version: 2, operationId: form.action.operationId,
+        owners: form.action.body.owners.map(({ entityType, entityId }) => ({ entityType, entityId })) }
+        : { version: 1, operationId: form.action.operationId, entityType: type, entityId: targetId });
       expect(child.action.body.payload[collection][id]).toBeUndefined(); children.push(child);
     }
     const retained = await records(); f.cancelPhotoAction = form.action;
@@ -1852,7 +1875,7 @@ for (const type of ["item", "container"]) for (const outcome of ["source", "copy
         await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
       }
       await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible();
-      await expect(page.locator("#confirmDialog")).toContainText("действий: 3");
+      await expect(page.locator("#confirmDialog")).toContainText(`действий: ${1 + children.length}`);
       await page.locator("#confirmCancelBtn").click(); await expect(recovery.getByRole("status")).toContainText("Выбор отложен");
       expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 2 + children.length); expect(await records()).toEqual(retained);
       for (const child of children) expect(f.receipts.get(child.action.operationId).result.payload.code).toBe("dependency_rejected");
@@ -1870,9 +1893,13 @@ for (const type of ["item", "container"]) for (const outcome of ["source", "copy
       expect(f.posts.slice(before).map(post => post.operationId)).toEqual([form.action.operationId, ...children.map(child => child.action.operationId)]);
       for (const id of selected) expect(f.payload[collection][id]).toBeUndefined();
       if (!selected.includes(targetId)) {
-        expect(f.payload[collection][targetId].photos.map(photo => photo.id)).toEqual(form.action.body.changes.map(change => change.photoId));
+        expect(f.payload[collection][targetId].photos.map(photo => photo.id)).toEqual(form.action.body.changes.filter(change => change.entityId === targetId).map(change => change.photoId));
         expect(f.payload[collection][targetId].photos.every(photo => photo.status === "synced")).toBe(true);
         expect(f.payload[collection][targetId].note).toBe(server[collection][sourceId].note);
+      }
+      if (batch) for (const owner of form.action.body.owners.filter(owner => !selected.includes(owner.entityId))) {
+        expect(f.payload[collection][owner.entityId].photos.map(photo => photo.id)).toEqual(form.action.body.changes.filter(change => change.entityId === owner.entityId).map(change => change.photoId));
+        expect(f.payload[collection][owner.entityId].note).toBe(owner.copySource.payload.note);
       }
     }
     for (const child of children) expect(f.posts.find(post => post.operationId === child.action.operationId).body).toEqual(child.action.body);
