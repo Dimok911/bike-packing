@@ -68,7 +68,7 @@ test("actual copy adapter freezes all IDs before confirmation, registers once, a
     const binding = { actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" };
     const outbox = createPersonalSaveOutbox({ storage, ...binding });
     let generation = 1, actorId = "actor-a", capacity = true;
-    const deps = { state, preparePersonalCopyBatch, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { state, preparePersonalCopyBatch, PERSONAL_PHOTO_COPY_FORM_ENABLED: false, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
       personalSaveRecovery: { assertRunning() {} }, personalSaveContext: () => ({ generation, actorId }),
       showToast: message => messages.push(message), localText: (en, ru) => ru,

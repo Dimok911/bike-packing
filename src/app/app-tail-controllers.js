@@ -4716,7 +4716,7 @@ async function copyCatalogItems(itemIds) {
   });
   if (!confirmed) return;
   if (personalCopy) {
-    if (!personalCopy()) return;
+    if (!await personalCopy()) return;
     runtime.selectedCatalogItemIds = new Set();
     runtime.selectedCatalogItemAnchorId = "";
     render();
@@ -4778,7 +4778,7 @@ async function copyCatalogRootContainers(containerIds) {
   });
   if (!confirmed) return;
   if (personalCopy) {
-    if (!personalCopy()) return;
+    if (!await personalCopy()) return;
     runtime.selectedCatalogRootIds = new Set();
     runtime.selectedCatalogRootAnchorId = "";
     render();
@@ -5508,7 +5508,7 @@ async function copyItem(itemId, options = {}) {
   if (personalCopy) {
     const copyPlaced = keepPlacement && isItemInActiveLayout(item);
     if (options.confirm !== false && !await askConfirmDialog(itemCopyConfirm({ item, keepPlacement, t }))) return;
-    if (!personalCopy()) return;
+    if (!await personalCopy()) return;
     render();
     showToast(copyPlaced ? t("items.copyPlaced") : t("items.copyOutside"), "success");
     return;
@@ -5607,7 +5607,7 @@ async function duplicateRootContainer(containerId, { addToLayoutId = "",
   if (!requireUsageCapacity("containers")) return;
   if (personalCopy === false) return;
   if (personalCopy) {
-    if (!personalCopy()) return;
+    if (!await personalCopy()) return;
     render();
     showToast(t("rootContainers.copyOutside"), "success");
     return;

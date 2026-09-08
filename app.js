@@ -743,6 +743,8 @@ import { drainPersonalPhotoForm } from "./src/sync/personal-photo-form-drain.js"
 import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js";
 import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
 import { createPersonalPhotoEditFormSession } from "./src/sync/personal-photo-edit-form.js";
+import { createPersonalPhotoCopyFormSession } from "./src/sync/personal-photo-copy-form.js";
+import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./src/sync/personal-photo-copy-source.js";
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
 import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
@@ -2487,7 +2489,8 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
+  const createSession = options.copyOwner ? createPersonalPhotoCopyFormSession
+    : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
     readEntities: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
@@ -2598,6 +2601,28 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     return false;
   }
   if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
+  const collection = type === "item" ? "items" : "containers";
+  if (sourceIds.some(id => normalizeItemPhotos(state[collection]?.[id]).length > 0)) {
+    if (!PERSONAL_PHOTO_COPY_FORM_ENABLED || !personalPhotoFormUiEnabled() || sourceIds.length !== 1 || keepPlacement) {
+      showToast("Этот вариант копирования с фото пока недоступен. Выбранные записи сохранены.", "error"); return false;
+    }
+    let session;
+    try {
+      const sourceId = sourceIds[0], source = state[collection][sourceId], changedAt = nowIso();
+      const request = personalPhotoFormRequest({ entityType: type, sourceId, fields: {
+        name: type === "item" ? makeItemCopyName(source.name, state.items) : makeContainerCopyName(source.name, state.containers),
+        createdAt: changedAt, ...currentEditMeta(changedAt) } });
+      session = personalPhotoFormSession({ copyOwner: true, getContext: personalSaveContext, onDurable: () => {} });
+      session.prepare(request);
+    } catch (error) { showToast(error.message, "error"); return false; }
+    return async () => {
+      try {
+        personalSaveRecovery.assertRunning();
+        if (!requireUsageCapacity(collection)) return false;
+        await session.submit(); scheduleRemoteSave(); return true;
+      } catch (error) { reportPersonalPhotoFormError(error, { recovery: session.recoveryCopy() }); return false; }
+    };
+  }
   const initial = JSON.stringify(personalSaveContext());
   let prepared, used = false;
   try {

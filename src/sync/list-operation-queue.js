@@ -6,6 +6,7 @@ import { PERSONAL_LIST_MIGRATION_ENABLED, PERSONAL_LIST_MIGRATION_CAPABILITY,
   assertPersonalListMigrationHash, validatePersonalListMigrationResult } from "./personal-list-migration.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
   personalPhotoFormManifest, validatePersonalPhotoFormResult } from "./personal-photo-form-protocol.js";
+import { PERSONAL_PHOTO_COPY_FORM_ENABLED, PERSONAL_PHOTO_COPY_FORM_CAPABILITY } from "./personal-photo-copy-source.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -131,6 +132,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoEnabled = PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, readOnly = false, cancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
+  photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -451,6 +453,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
         if (body.action === "form") {
           if (!photoFormEnabled) throw paused(requestedId, "Сохранение карточки вместе с фото ещё не включено.");
+          if (body.copySource && !photoCopyEnabled) throw paused(requestedId, "Копирование карточки с фото ещё не включено.");
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
@@ -503,6 +506,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (route.kind === "photos.mutate" && body.action === "form" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает сохранение карточки вместе с фото. Запрос не отправлен.");
+          }
+          if (route.kind === "photos.mutate" && body.copySource && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_FORM_CAPABILITY)) {
+            throw paused(null, "Сервер ещё не поддерживает копирование карточки с фото. Запрос не отправлен.");
           }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();

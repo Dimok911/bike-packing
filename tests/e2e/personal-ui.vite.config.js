@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => ({
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-confirmed-photos.js")) return code.replace(
       "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-source.js")) return code.replace(
+      "PERSONAL_PHOTO_COPY_FORM_ENABLED = false", "PERSONAL_PHOTO_COPY_FORM_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-photo-owner-deletion.js")) return code.replace(
       "PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED = true");
     if (/\/src\/sync\/personal-list-migration\.js$/.test(source)) return code.replace("PERSONAL_LIST_MIGRATION_ENABLED = false", "PERSONAL_LIST_MIGRATION_ENABLED = true");
