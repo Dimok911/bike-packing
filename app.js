@@ -742,7 +742,7 @@ import { createPersonalPhotoStaging } from "./src/sync/personal-photo-staging.js
 import { assertPersonalPhotoFormRecord } from "./src/sync/personal-photo-form-outbox-record.js";
 import { createPersonalPhotoEditFormSession } from "./src/sync/personal-photo-edit-form.js";
 import { PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./src/sync/personal-photo-form-protocol.js";
-import { preservesConfirmedPersonalPhotoChain } from "./src/sync/personal-confirmed-photos.js";
+import { preservesConfirmedPersonalPhotoChain, preservesConfirmedPersonalPhotos, PERSONAL_PHOTO_OWNER_DELETION_ENABLED } from "./src/sync/personal-confirmed-photos.js";
 import { personalSnapshotWithUiPreferences } from "./src/sync/personal-snapshot-codec.js";
 import { drainPersonalSaveWithReconciliation } from "./src/sync/personal-save-drain.js";
 import { ensureCausalPersonalListId, initialPersonalListId } from "./src/sync/causal-personal-list-bootstrap.js";
@@ -2556,17 +2556,25 @@ function preparePersonalCatalogDeletion(value) {
     personalSaveRecovery.assertRunning();
     let prepared;
     try {
+      const allowPhotoOwners = personalPhotoFormUiEnabled() && PERSONAL_PHOTO_OWNER_DELETION_ENABLED;
+      const operationId = crypto.randomUUID();
       prepared = preparePersonalDeletionBatch(state, intent, {
-        changedAt: nowIso(), markEdited, hasPhotos: record => normalizeItemPhotos(record).length > 0
+        changedAt: nowIso(), markEdited,
+        hasPhotos: record => !allowPhotoOwners && normalizeItemPhotos(record).length > 0
       });
+      if (allowPhotoOwners && !preservesConfirmedPersonalPhotos(state, prepared.snapshot, currentPackingListId,
+        { userDeletion: prepared.intent })) throw Error("Удаление требует подтверждённых фото текущего списка. Исходные данные сохранены.");
+      // Publish the complete intent before replacing live state. A storage
+      // failure leaves the visible owner and its photos in their original place.
+      used = true;
+      persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId });
     } catch (error) { showToast(error.message, "error"); return false; }
-    used = true;
     // Keep the runtime active-layout accessor/UI state; one complete business
     // candidate and one durable action, before rendering or file cleanup.
     for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
       if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
     }
-    saveState({ personalMutation: prepared.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     if (editingRootContainerId && !state.containers[editingRootContainerId]) editingRootContainerId = null;
     return true;
   };
@@ -2743,7 +2751,7 @@ function hasPendingPersonalSave() {
   return Boolean(personalSaveOutboxForScope()?.hasPending());
 }
 
-function capturePersonalSaveIntent(snapshot, personalMutation = null) {
+function capturePersonalSaveIntent(snapshot, personalMutation = null, operationId) {
   if (!personalSavePilotEnabled() || localStorageScopeKey === GUEST_STORAGE_SCOPE
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   let outbox = personalSaveOutboxForScope();
@@ -2763,7 +2771,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
     // Prepared after an authenticated empty inventory. This first UI save is
     // synchronous too: durable snapshot/action before the active-list mirror.
     outbox = personalInitialSaveOutbox;
-    const intent = outbox.capture({ snapshot, create: true,
+    const intent = outbox.capture({ snapshot, create: true, operationId,
       body: { ...body, title: localText("My packing lists", "Мои укладки") } });
     personalSaveOutboxes.set(JSON.stringify([outbox.binding.actorId, outbox.binding.listId, localStorageScopeKey]), outbox);
     saveActivePackingListId(outbox.binding.listId);
@@ -2777,7 +2785,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null) {
   const latest = outbox.recover?.();
   if (!personalMutation && ["list.restore", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
-  return outbox.capture({ snapshot, body });
+  return outbox.capture({ snapshot, body, operationId });
 }
 
 async function prepareInitialPersonalSave() {
@@ -2799,10 +2807,10 @@ async function prepareInitialPersonalSave() {
   personalInitialSaveOutbox = outbox;
 }
 
-function persistStateSnapshot(snapshot = state, { recordAction = true, personalMutation = null } = {}) {
+function persistStateSnapshot(snapshot = state, { recordAction = true, personalMutation = null, operationId } = {}) {
   if (personalSavePilotEnabled()) personalSaveRecovery.assertRunning();
   const intent = recordAction && personalSavePilotEnabled() && !applyingRemoteState
-    ? capturePersonalSaveIntent(snapshot, personalMutation) : null;
+    ? capturePersonalSaveIntent(snapshot, personalMutation, operationId) : null;
   if (intent || personalSavePilotEnabled() && hasPendingPersonalSave()) {
     // The action already owns a durable snapshot. Never evict another recovery
     // record to make space for this optional legacy/UI mirror.
@@ -4991,7 +4999,7 @@ function solidifyManagedTemplateDrafts() {
   });
 }
 
-function saveState({ captureArrangement = true, sync = true, personalMutation = null } = {}) {
+function saveState({ captureArrangement = true, sync = true, personalMutation = null, recordAction = true } = {}) {
   if (captureArrangement) captureActiveLayoutArrangement();
   solidifyManagedTemplateDrafts();
   sanitizePrivateCopiedPublicOrigins(state, { guestDemoCopyFlag: GUEST_DEMO_COPY_FLAG });
@@ -5008,7 +5016,7 @@ function saveState({ captureArrangement = true, sync = true, personalMutation = 
   const privateStateCanPersist = canUseLocalEditableState() && !isReadOnlyStateScope();
   if (privateStateCanPersist) {
     if (sync && !applyingRemoteState) markCurrentGuestWorkspaceForLoginHandoff();
-    persistStateSnapshot(state, { personalMutation });
+    persistStateSnapshot(state, { personalMutation, recordAction });
   } else if (!isAdminEditablePublishedLayout()) {
     if (sync && !applyingRemoteState) {
       syncMeta.dirty = false;
@@ -8731,7 +8739,8 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       const records = outbox.list();
       if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(record.action.body.payload)))
         && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
-          operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId }))) {
+          operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
+          allowOwnerDeletion: PERSONAL_PHOTO_OWNER_DELETION_ENABLED }))) {
         throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");
       }
     };

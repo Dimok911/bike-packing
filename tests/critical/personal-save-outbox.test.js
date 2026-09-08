@@ -1321,9 +1321,14 @@ test("actual deletion adapter publishes one whole action and binds confirmation 
     isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
     personalDeletionIntent, personalSaveContext: () => context, showToast: message => warnings.push(message),
     localText: (en, ru) => ru, preparePersonalDeletionBatch, state, nowIso: () => "test-date", markEdited() {},
+    personalPhotoFormUiEnabled: () => false,
     normalizeItemPhotos: record => record.photos || [], editingRootContainerId: null,
-    saveState: ({ personalMutation }) => saved.push(f.outbox.capture({ snapshot: state,
-      body: { baseStateRevision: 5, payload: state, userDeletion: personalMutation } }))
+    persistStateSnapshot: (snapshot, { personalMutation, operationId }) => {
+      assert.ok(state.items.a); assert.ok(state.items.b);
+      saved.push(f.outbox.capture({ snapshot, operationId,
+        body: { baseStateRevision: 5, payload: snapshot, userDeletion: personalMutation } }));
+    },
+    saveState: options => { assert.equal(options.recordAction, false); assert.equal(options.captureArrangement, false); }
   });
   const intent = { type: "batch", operations: ["a", "b"].map(id => ({ type: "item", id })) };
   const stale = prepare(intent); context = { ...context, generation: 2 };

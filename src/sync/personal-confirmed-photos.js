@@ -1,9 +1,12 @@
 import { causalPhotoReferenceForSync } from "../state/causal-photo-reference.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
+import { preparePersonalDeletionBatch } from "./personal-deletion-intent.js";
+
+export const PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false;
 
 // A database-only edit may retain already confirmed assets, never perform a
 // hidden attach, copy, delete, reorder or legacy URL-to-asset conversion.
-export function preservesConfirmedPersonalPhotos(base, candidate, listId) {
+export function preservesConfirmedPersonalPhotos(base, candidate, listId, { userDeletion = null } = {}) {
   if (!base || !candidate || typeof listId !== "string" || !listId) return false;
   const inventory = payload => {
     const result = [], ids = new Set(), assets = new Set();
@@ -22,7 +25,20 @@ export function preservesConfirmedPersonalPhotos(base, candidate, listId) {
     }
     return result;
   };
-  try { return canonicalListOperationJson(inventory(base)) === canonicalListOperationJson(inventory(candidate)); }
+  try {
+    // Validate the complete original inventory BEFORE reducing explicit owners.
+    // A deleted owner must not hide pending, legacy or cross-list references.
+    const original = canonicalListOperationJson(inventory(base));
+    const actual = canonicalListOperationJson(inventory(candidate));
+    if (original === actual) return true;
+    if (!userDeletion) return false;
+    const expected = preparePersonalDeletionBatch(base, userDeletion).snapshot;
+    if (["items", "containers"].some(collection => Object.keys(base[collection]).some(id =>
+      !Object.hasOwn(expected[collection], id) && Object.hasOwn(candidate[collection], id)))) return false;
+    // The ordinary reducer preserves items and independently reusable nested
+    // bags. Their photos must survive unchanged, including order and metadata.
+    return canonicalListOperationJson(inventory(expected)) === actual;
+  }
   catch { return false; }
 }
 
@@ -30,7 +46,7 @@ export function preservesConfirmedPersonalPhotos(base, candidate, listId) {
 // is a historical checkpoint link, not permission to dispatch that old form.
 // Records must come from the validated scoped outbox; this adds the file guard,
 // it does not replace its receipt, fork, revision or server-side checks.
-export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId }) {
+export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId, allowOwnerDeletion = false }) {
   try {
     if (!Array.isArray(records) || !records.length || !operationId) return false;
     const byId = new Map(records.map(record => [record.action.operationId, record]));
@@ -46,7 +62,8 @@ export function preservesConfirmedPersonalPhotoChain({ records, operationId, lis
       if (parentId && !parent) return false;
       const base = record.mergeBase?.payload || parent?.action.body.payload;
       if (record.mergeBase && parent && canonicalListOperationJson(base) !== canonicalListOperationJson(parent.action.body.payload)) return false;
-      if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId)) return false;
+      if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId,
+        { userDeletion: allowOwnerDeletion ? action.body.userDeletion : null })) return false;
       record = parent;
     }
     return true;

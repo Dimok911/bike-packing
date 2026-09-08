@@ -956,6 +956,70 @@ for (const type of ["item", "container"]) test(`actual ${type} editor and reload
   expect(f.errors).toEqual([]);
 });
 
+for (const type of ["item", "container"]) for (const outcome of ["confirmed", "lost ACK", "quota"]) test(`confirmed photo owner ${type} deletion preserves other files (${outcome})`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const payload = initialPayload(), photo = { id: "owner-photo", photoId: "owner-photo", assetId: "f58a351b-2293-41d4-a704-355e84c849ef",
+    listId: "list-a", status: "synced", url: `${origin}/photos/owner-photo/file`, thumbUrl: `${origin}/photos/owner-photo/thumb`,
+    fileName: "Удаляемое.png", type: "image/png", size: 100, width: 1, height: 1 };
+  payload.containers["photo-bag"] = { id: "photo-bag", name: "Сумка с фото", weight: 0, volume: 0, color: "",
+    location: "Велосипед", note: "", categories: [], category: "", nestable: false, photos: type === "container" ? [photo] : [] };
+  for (const id of ["photo-item", "kept-item"]) payload.items[id] = { id, name: id === "photo-item" ? "Вещь с фото" : "Остающаяся вещь",
+    quantity: 1, weight: 0, color: "", location: "Велосипед", note: "", categories: [], category: "",
+    photos: id === "photo-item" ? type === "item" ? [photo] : [] : [{ ...photo, id: "kept-photo", photoId: "kept-photo",
+      assetId: "fb20f8bf-0b4b-4c61-a169-70d1ee4f63ba" }] };
+  const layout = payload.layouts["layout-a"];
+  layout.rootContainerIds = ["photo-bag"]; layout.arrangement.rootContainerIds = ["photo-bag"];
+  layout.arrangement.items = { "photo-item": "photo-bag", "kept-item": "photo-bag" };
+  layout.arrangement.containers["photo-bag"] = { parentId: null, childIds: [], itemIds: ["photo-item", "kept-item"],
+    order: ["photo-item", "kept-item"].map(id => ({ type: "item", id })) };
+  const f = await setup(page, context, { payload, photoEdit: true });
+  const collection = type === "item" ? "items" : "containers", ownerId = type === "item" ? "photo-item" : "photo-bag";
+  const prefix = type === "item" ? "item" : "rootContainer";
+  const journal = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  // Settle the ordinary normalization of this legacy-shaped seed before
+  // counting the single deletion action or injecting its lost response.
+  await synchronize(page, () => Boolean(f.payload.customLocations));
+  const before = f.posts.length, server = structuredClone(f.payload), saved = await journal();
+  if (type === "item") await page.locator("#itemsView .item-title").filter({ hasText: "Вещь с фото" }).click();
+  else await page.locator('#bagsView [data-root-card="photo-bag"] [data-root-title]').click();
+  await page.locator(`#${prefix}DeleteForeverBtn`).click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Owner deletion quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  else if (outcome === "lost ACK") { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  await submitForm(page, "#confirmOkBtn");
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    const local = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")));
+    expect(local[collection][ownerId].photos).toEqual([photo]);
+    expect(await journal()).toEqual(saved); expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before);
+  } else {
+    if (outcome === "lost ACK") {
+      await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+      const original = structuredClone(f.posts.at(-1));
+      await reloadApp(page); await page.locator("#syncBtn").click();
+      expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(original);
+      f.lose = false; f.unknown = false; f.beforeUpdate = null;
+    }
+    await synchronize(page, () => !f.payload[collection][ownerId]);
+    expect(f.posts).toHaveLength(before + 1);
+    expect(f.posts.at(-1).kind).toBe("list.update");
+    expect(f.posts.at(-1).body.userDeletion).toEqual({ type, id: ownerId });
+    expect(f.payload.items["kept-item"].photos).toEqual(server.items["kept-item"].photos);
+    await reloadApp(page);
+    const local = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")));
+    expect(local[collection][ownerId]).toBeUndefined(); expect(local.items["kept-item"].photos).toEqual(server.items["kept-item"].photos);
+    expect(f.posts).toHaveLength(before + 1);
+  }
+  expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]);
+});
+
 test("actual edit/delete dialogs, nested placement and confirmed compaction keep deleted entities absent", async ({ page, context }) => {
   test.setTimeout(90000);
   const f = await setup(page, context);
