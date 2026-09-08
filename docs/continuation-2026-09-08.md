@@ -15,16 +15,38 @@
 server capability `personalCausalPhotoHistoryRestoreV1`. Раздел 8 принят для
 личного списка; административная история остаётся в разделе 11.
 
-Следующий участок уже начат отдельно: `personal-archive-photo-files.js` и
-`personal-archive-photo-files.test.js`, пока НЕ подключены и не входят в
-коммит истории. 3/3 unit (`archive-photo-files-unit-1.log`): все IDs/metadata/Blob
-фиксируются до первого await; проверяются SHA-256, пропущенный файл, дубликаты,
-подмена Map/metadata во время ожидания, независимые новые assets при одном
-архивном файле у двух владельцев. Это только file preparation, НЕ импорт.
-Нужны цельный frozen import source/target/ID plan, durable outbox+files,
-защищённый API/CAS и UI-подключение selected/full/merge, затем guest handoff.
-Продолжать локально до конца списка, без публикации, push или включения gates.
-Предыдущие указания ниже о неподключённой истории — историческая точка.
+Архивы без фото теперь приняты локально: 172/172 API/MySQL на Node24.19
+(`archive-import-mysql-2.log`, 202,34 с), 10/10 UI Chromium/mobile WebKit
+(`archive-import-ui-4.log`, 3,6 минуты), 499 transport, 895 critical,
+60 operation, 74 source/service, FE check. См. personal-archive-import.md.
+Все процессы завершены. Новый list.import, gate false, три режима, durable
+before view, fixed target IDs/names и явное keep-server после отклонения.
+Section09 целиком остаётся открытым. Без публикации/push/live/gate enable.
+
+Далее файловый архив: новые personal-archive-photo-files.js / plan.js /
+protocol.js / record.js и три test-файла пока НЕ импортируются runtime и
+НЕ включены в package. 6/6 files+plan и 2/2 record unit прошли; это только
+подготовка. Нужны native store/outbox/staging/receipt recovery/cancellation,
+API атомарное восстановление с новыми owner-bound assets и реальный UI.
+Потом guest handoff, sharing/public copy/admin и общий остаток checklist.
+
+Дополнение задачи «Исправить прокрутку фото в Safari»: сообщён выпуск v1599
+(PR12, fix cfa222e0891633b42ea1373225db9ad3c3573a18, merge
+0e4df10fe9671a3e92f0d2fe7dc56846faa278af). Здесь не проверен и не перенесён.
+Последующее сообщение: физический iPhone16ProMax Safari27beta всё ещё блокирует
+новый pinch, начатый при докатывании после отпускания пальца. Source task
+продолжает решение совместно с Shared Services; v1599 НЕ окончательное
+исправление этого жеста. Не публиковать Experiment и не переносить буквально
+номер Production. Следующее стабильное дополнение ожидается от source task.
+
+Получено новое сообщение существующей задачи «Исправить прокрутку фото в Safari»
+(01a078da-0a8e-73e2-a3fd-d65c71e65e60): Production теперь v1598, исправление
+офлайн fullscreen, PR #11, d3eb3d052c5a6c56a79344f2f91722eaa7db6bea, merge
+c0862dcb8bd4acf601e9d0021fea84abba3a32d6. Это сведения другой задачи, здесь
+ещё НЕ проверены и НЕ перенесены. Учесть при последующем локальном выравнивании
+Experiment вместо v1597, сохраняя experimentTransport. Отчёт указан в
+C:/Users/user/Documents/GitHub/Dimok911/bike-packing/ftp-upload/safari-v1598/release-report.md.
+Приоритет — текущий список; публикация по-прежнему запрещена пользователем.
 
 - Завершён локально item-copy-placement (FE `c73f4b8`, API `aab9df3`): 20/20 UI, 5,3 минуты
   (`item-placement-ui-2.log`); 158/158 API/MySQL, 166,28 с, bundled Node 24.19.0

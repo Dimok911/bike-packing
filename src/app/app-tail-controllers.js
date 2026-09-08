@@ -372,7 +372,7 @@ export function createAppTailControllers(ctx) {
     resetBackupImportUi, resetData, resetGuestDemoScopeToCanonical, resolveExistingBackupPhotosValue, resolveLayoutCreateTemplateCopyLayoutValue,
     resolveLayoutCreateTemplateCopySourceValue, resolvePreferredLayoutId, resolveStoredPrivateLayoutChoice, resolveStoredPrivateLayoutChoiceForState, restorableStoredPrivateLayoutChoiceId,
     restoreAdminPublishedLayoutContext, restoreBackupAdminTemplates, restoreBike3dDetailViewport, restoreFullBackupFlow, restoreHistoryRecord, restoreModeState,
-    restorePrivateHistoryRecordOnServer, restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow,
+    restorePrivateHistoryRecordOnServer, restorePrivateLayoutChoiceInState, restoreSavedLayoutChoice, restoreSearchBlurViewportLock, restoreSelectedBackupLayoutsFlow, preparePersonalArchiveImportAction,
     restoreSelectedBackupLayoutsToState, reusableGuestDemoCopyLayout, rootContainerCopyConfirm, rootContainerDeleteConfirm,
     rootContainerSortMode, rootContainerUsageCountsForCatalog, rootContainersForEditorForState, rootContainersForSettingsForState, runSyncNow,
     runSyncNowFlow, safeSetLocalStorage, sameJson, sanitizePrivateCopiedPublicOrigins, saveActiveLayoutChoice,
@@ -9930,6 +9930,7 @@ async function restoreSelectedBackupLayouts() {
   await restoreSelectedBackupLayoutsFlow({
     askConfirmDialog,
     backupImportState: runtime.backupImportState,
+    preparePersonalArchiveImport: preparePersonalArchiveImportAction,
     backupLayoutRows,
     cloneValue: clone,
     getLayoutContainerIdSet: getLayoutContainerIdSetForState,
@@ -10027,6 +10028,7 @@ async function restoreFullBackup() {
   await restoreFullBackupFlow({
     askConfirmDialog,
     backupImportState: runtime.backupImportState,
+    preparePersonalArchiveImport: preparePersonalArchiveImportAction,
     fullBackupRestoreConfirm: (stats) => fullBackupRestoreConfirm(stats, { language: uiLanguage }),
     localText,
     normalizeRemoteState,

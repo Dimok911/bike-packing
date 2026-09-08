@@ -1,3 +1,5 @@
+import { createBackupZip } from "../../src/backup/archive.js";
+import { assertPersonalArchiveImportBody, assertPersonalArchiveImportHashes, personalArchiveImportReceipt } from "../../src/sync/personal-archive-import-protocol.js";
 import { personalPhotoHistoryPlan } from "../../src/sync/personal-photo-history-plan.js";
 import { test, expect } from "@playwright/test";
 import { spawnSync } from "node:child_process";
@@ -142,7 +144,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -243,7 +245,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
-        if (["list.update", "list.restore"].includes(body.kind) && state.beforeUpdate) await state.beforeUpdate(body);
+        if (["list.update", "list.restore", "list.import"].includes(body.kind) && state.beforeUpdate) await state.beforeUpdate(body);
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
@@ -336,6 +338,9 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(body.body).toEqual({ ...state.migrationPreviews.at(-1).migration, causal: { dependsOn: [], reads: [] } });
             state.migration = false;
           }
+          if (body.kind === "list.import") {
+            assertPersonalArchiveImportBody(body.body, { base: state.payload, causal: true }); await assertPersonalArchiveImportHashes(body.body);
+          }
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
           if (body.body.photoResults) {
             const ref = body.body.photoResults;
@@ -350,6 +355,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
+              ...(body.kind === "list.import" ? { stateRevision: state.revision, archiveImport: personalArchiveImportReceipt(body.body.archiveImport) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
@@ -2577,6 +2583,85 @@ test("quota before history restore keeps the history window and complete recover
   const copy = await downloadRecovery(page);
   expect(copy.unconfirmedMemoryDraft.containers).toEqual({}); expect(copy.unconfirmedMemoryDraft.items).toEqual({});
   expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server); expect(f.errors).toEqual([]);
+});
+
+async function prepareArchiveUi(page, context, mode) {
+  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка из выбранного архива");
+  await createItemInContainer(page, bag, "Вещь архива", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const source = structuredClone(f.payload), itemId = Object.keys(source.items)[0];
+  source.activeLayoutId = "layout-a"; source.items[itemId].weight = 45;
+  source.layouts["layout-a"].arrangement.itemQuantities[itemId] = 3;
+  source.layouts["layout-a"].arrangement.packedItems[itemId] = true;
+  await createRootContainer(page, "Более новая серверная сумка");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === 2);
+  const bytes = Buffer.from(await (await createBackupZip({ format: "bike-packing-backup", version: 1, createdAt: "2026-09-01T12:00:00Z", language: "ru", state: source, photos: [] })).arrayBuffer());
+  await page.locator("#menuBtn").click(); await page.locator("#backupBtn").click();
+  await page.locator("#backupFileInput").setInputFiles({ name: "selected.bikepacking-backup.zip", mimeType: "application/zip", buffer: bytes });
+  await expect(page.locator('[data-backup-layout-id="layout-a"]')).toBeVisible();
+  if (mode === "copy") await page.locator('[data-backup-restore-mode][value="copy"]').check();
+  await page.locator(mode === "full" ? "#backupRestoreFullBtn" : "#backupRestoreSelectedBtn").click();
+  await expect(page.locator("#confirmDialog"), await page.locator("#backupStatus").textContent()).toBeVisible();
+  return { f, source, itemId };
+}
+
+for (const mode of ["full", "replace", "copy"]) test(`actual ${mode} archive import freezes layout choices through lost ACK reload and later edit`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, itemId } = await prepareArchiveUi(page, context, mode), before = f.posts.length;
+  f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
+  await page.locator("#confirmOkBtn").click();
+  await expect(page.locator("#backupStatus")).toContainText("на устройстве");
+  await page.locator('#backupDialog [value="cancel"]').click();
+  await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  expect(f.posts.length).toBe(before + 1);
+  const action = f.posts.at(-1); expect(action.kind).toBe("list.import"); expect(action.body.archiveImport.mode).toBe(mode);
+  const targetId = mode === "full" ? "layout-a" : action.body.archiveImport.layoutTargets[0].targetId;
+  expect(action.body.payload.items[itemId].weight).toBe(mode === "full" ? 45 : 100);
+  expect(action.body.payload.layouts[targetId].arrangement.itemQuantities[itemId]).toBe(3);
+  expect(action.body.payload.layouts[targetId].arrangement.packedItems[itemId]).toBe(true);
+  expect(Object.keys(action.body.payload.containers)).toHaveLength(mode === "full" ? 1 : 2);
+  expect(action.body.forceOverwrite).toBeUndefined();
+  f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+  await synchronize(page, () => f.payload.layouts[targetId]?.arrangement.itemQuantities[itemId] === 3);
+  expect(f.posts.length).toBe(before + 1); await expect(page.locator("#layoutSelect")).toHaveValue(targetId);
+  await createRootContainer(page, "Правка после импорта");
+  await synchronize(page, () => Object.values(f.payload.containers).some(value => value.name === "Правка после импорта"));
+  expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.archiveImport).toBeUndefined(); expect(f.errors).toEqual([]);
+});
+
+test("archive import quota retains the archive dialog and complete draft without changing the list", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, itemId } = await prepareArchiveUi(page, context, "full"), before = f.posts.length, server = structuredClone(f.payload);
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Injected quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+  await expect(page.locator("#backupDialog")).toBeVisible();
+  const copy = await downloadRecovery(page); expect(copy.unconfirmedMemoryDraft.items[itemId].weight).toBe(45);
+  expect(Object.keys(copy.unconfirmedMemoryDraft.containers)).toHaveLength(1); expect(f.posts.length).toBe(before); expect(f.payload).toEqual(server); expect(f.errors).toEqual([]);
+});
+
+test("rejected archive import preserves both choices until keep-server and does not replay archive data as an ordinary save", async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, itemId } = await prepareArchiveUi(page, context, "full"), before = f.posts.length; f.allowConflicts = true;
+  f.beforeUpdate = action => {
+    if (action.kind !== "list.import" || f.archiveRejected) return;
+    f.archiveRejected = true; f.payload = structuredClone(f.payload); f.payload.items[itemId].weight = 765; f.revision++;
+  };
+  await page.locator("#confirmOkBtn").click(); await page.locator('#backupDialog [value="cancel"]').click();
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmDialog")).toContainText("заново выбрать архив");
+  await page.locator("#confirmCancelBtn").click(); expect(f.posts.length).toBe(before + 1);
+  await expect(page.locator("#packingView [data-root-container-id]")).toHaveCount(1);
+  f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
+  await page.locator("#syncBtn").click(); await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const kept = f.posts.at(-1); expect(kept.kind).toBe("list.update"); expect(kept.body.archiveImport).toBeUndefined(); expect(kept.body.payload.items[itemId].weight).toBe(765);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+  await synchronize(page, () => f.payload.items[itemId].weight === 765); expect(f.posts.length).toBe(before + 2); expect(f.errors).toEqual([]);
 });
 
 function replacementPayload() {

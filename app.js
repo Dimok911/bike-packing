@@ -1,4 +1,5 @@
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./src/sync/personal-photo-history-protocol.js";
+import { preparePersonalArchiveImport } from "./src/sync/personal-archive-import.js";
 import {
   STORAGE_KEY,
   APP_VERSION,
@@ -876,6 +877,7 @@ import {
 } from "./src/backup/archive.js";
 import {
   addBackupDictionaryValues,
+  backupCopyLayoutName,
   backupLayoutRows as buildBackupLayoutRows,
   normalizeRestoredBackupState,
   restoreSelectedBackupLayoutsToState,
@@ -1922,7 +1924,7 @@ const appTailControllerDeps = {
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
   personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
-  preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
+  preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
   scopedLocalStorageKey, scopedStorageKey, searchContextCommitTimer, selectDemoTemplateForLanguage, selectLocalAdminTemplateCopyLayouts,
@@ -2953,7 +2955,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
     throw new Error("Для причинного сохранения сначала нужен подтверждённый личный список и аккаунт.");
   }
   const latest = outbox.recover?.();
-  if (!personalMutation && ["list.restore", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
+  if (!personalMutation && ["list.restore", "list.import", "list.migrate", "photos.mutate"].includes(latest?.action.kind)
     && sameJson(cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), body.payload)) return latest;
   return outbox.capture({ snapshot, body, operationId });
 }
@@ -6085,7 +6087,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
       if (pending.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(pending);
       else assertPersonalPhotoFormRecord(pending);
     }
-    if (!personalOperationId || !(durableForm || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
+    if (!personalOperationId || !(durableForm || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.import", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -8955,12 +8957,12 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       // Autosave pauses without stealing focus. The explicit sync button opens
       // the decision UI; server CAS still checks the version after that choice.
       resolveConflicts: notify ? (conflicts, details) => askConflictResolution(conflicts, details) : undefined,
-      resolveRejectedRestore: notify ? async ({ discardedOperationCount }) => {
+      resolveRejectedRestore: notify ? async ({ discardedOperationCount, source }) => {
         const confirmed = await askConfirmDialog({
           title: localText("Restore was not applied", "Восстановление не применено"),
           text: localText(
-            `The server rejected the restore. Keep its current version and discard this restore and the later unconfirmed local changes (${discardedOperationCount} actions)? You can then choose a history point again. Cancel keeps both versions and the queue.`,
-            `Сервер отклонил восстановление. Оставить актуальную серверную версию и отменить это восстановление вместе с последующими неподтверждёнными локальными изменениями (действий: ${discardedOperationCount})? После этого можно заново выбрать точку истории. Отмена сохраняет обе версии и очередь.`),
+            `The server rejected the restore. Keep its current version and discard this restore and the later unconfirmed local changes (${discardedOperationCount} actions)? You can then choose ${source === "archive" ? "the archive" : "a history point"} again. Cancel keeps both versions and the queue.`,
+            `Сервер отклонил восстановление. Оставить актуальную серверную версию и отменить это восстановление вместе с последующими неподтверждёнными локальными изменениями (действий: ${discardedOperationCount})? После этого можно заново выбрать ${source === "archive" ? "архив" : "точку истории"}. Отмена сохраняет обе версии и очередь.`),
           okText: localText("Keep server version", "Оставить серверную версию"), tone: "danger"
         });
         return confirmed === true ? "keep-server" : "cancel";
@@ -11610,6 +11612,40 @@ function historySourceLabel(source = activeHistorySource) {
     return layout?.name ? `${t("history.sourceTemplate")} · ${layout.name}` : t("history.sourceTemplate");
   }
   return t("history.sourceMine");
+}
+
+async function preparePersonalArchiveImportAction({ backupImportState, mode, selectedIds = new Set(), rows = [] }) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox) throw Error("Сначала подтвердите личный список.");
+  const source = clone(backupImportState.state), names = clone(state.layouts), layoutTargets = [];
+  for (const { layout, existing } of mode === "full" ? [] : rows.filter(row => selectedIds.has(row.layout.id))) {
+    const targetId = mode === "copy" ? crypto.randomUUID()
+      : existing?.id || (!state.layouts[layout.id] ? layout.id : crypto.randomUUID());
+    const name = mode === "copy" ? backupCopyLayoutName(layout.name, backupImportState.manifest?.createdAt, names,
+      backupImportState.manifest?.language || "ru") : layout.name;
+    layoutTargets.push({ sourceId: layout.id, targetId, name }); names[targetId] = { id: targetId, name };
+  }
+  const editMeta = {}; markEdited(editMeta);
+  return preparePersonalArchiveImport({ source, mode, layoutTargets, sourceActiveLayoutId: source.activeLayoutId || "", editMeta, outbox,
+    getContext: () => { personalSaveRecovery.assertRunning(); return { ...personalSaveContext(), activeLayoutId: state.activeLayoutId }; },
+    getState: () => ({ ...state, activeLayoutId: state.activeLayoutId }), getRevision: () => Number(syncMeta.stateRevision),
+    makeSnapshot(payload, previous, activeLayoutId) {
+      const snapshot = normalizeRemoteState({ ...payload, activeLayoutId }, { repairCatalog: false });
+      if (!snapshot) throw Error("Не удалось прочитать подготовленное состояние архива.");
+      applyLayoutArrangement(activeLayoutId, snapshot);
+      return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+    },
+    onCaptured(saved) {
+      replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+      rememberActiveLayoutChoice(saved.snapshot.activeLayoutId);
+      syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+      renderPreservingPackingScroll();
+      updateSyncUi("Архив сохранён на устройстве и ждёт подтверждения сервера."); scheduleRemoteSave();
+    }
+  });
 }
 
 async function preparePersonalHistoryRestoreAction(record, layoutIds) {

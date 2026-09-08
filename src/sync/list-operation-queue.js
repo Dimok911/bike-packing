@@ -1,3 +1,4 @@
+import { PERSONAL_ARCHIVE_IMPORT_ENABLED, PERSONAL_ARCHIVE_IMPORT_CAPABILITY, assertPersonalArchiveImportHashes, validatePersonalArchiveImportResult } from "./personal-archive-import-protocol.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
@@ -34,6 +35,8 @@ export function canonicalListOperationJson(value) {
 
 export function listOperationRoute(path, method = "GET") {
   if (method === "POST" && path === "/bike-packing/lists") return { kind: "list.create", listId: "" };
+  const archive = /^\/bike-packing\/lists\/([^/]+)\/import$/.exec(path);
+  if (archive && method === "POST") return { kind: "list.import", listId: decodeURIComponent(archive[1]) };
   const restore = /^\/bike-packing\/lists\/([^/]+)\/restore$/.exec(path);
   if (restore && method === "POST") return { kind: "list.restore", listId: decodeURIComponent(restore[1]) };
   const migration = /^\/bike-packing\/lists\/([^/]+)\/migration$/.exec(path);
@@ -67,6 +70,7 @@ export function validateListReceipt(data, expected) {
   if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
+  if (expected.kind === "list.import") return validatePersonalArchiveImportResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
   if (expected.kind === "list.restore" && expected.body?.historyRestore?.version === 2) return validatePersonalPhotoHistoryResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
@@ -147,6 +151,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoCopyPlacementEnabled = PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED,
   photoTreeCopyEnabled = PERSONAL_PHOTO_TREE_COPY_ENABLED,
   photoRestoreEnabled = PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED,
+  archiveImportEnabled = PERSONAL_ARCHIVE_IMPORT_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
@@ -349,9 +354,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
         copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: "photos.mutate", body: copyBody,
           payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: "photos.mutate", listId, body: copyBody })) };
       }
-      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore"].includes(route.kind)
+      if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore", "list.import"].includes(route.kind)
         || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
-        || !["list.create", "list.update", "list.restore"].includes(parentRoute?.kind) && !rejectedFormParent
+        || !["list.create", "list.update", "list.restore", "list.import"].includes(parentRoute?.kind) && !rejectedFormParent
         || (parentRoute.listId || parentBody.id) !== listId
         || body.causal?.baseOperationId !== parent.operationId
         || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson(dependencies)
@@ -492,6 +497,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
       if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !photoRestoreEnabled) throw paused(requestedId, "Восстановление истории с фото ещё не включено.");
+      if (route.kind === "list.import") {
+        if (!archiveImportEnabled) throw paused(requestedId, "Импорт архива через очередь ещё не включён.");
+        await assertPersonalArchiveImportHashes(body);
+      }
       if (route.kind === "list.migrate") {
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
         await assertPersonalListMigrationHash(body);
@@ -563,6 +572,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && body.action === "form" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает сохранение карточки вместе с фото. Запрос не отправлен.");
           }
+          if (route.kind === "list.import" && !capabilities.capabilities?.includes(PERSONAL_ARCHIVE_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает импорт архива через очередь.");
           if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает восстановление истории с фото.");
           if (route.kind === "photos.mutate" && body.copySource && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_FORM_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает копирование карточки с фото. Запрос не отправлен.");

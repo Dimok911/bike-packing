@@ -73,7 +73,7 @@ export function personalDeletionReference(base, records) {
       if (!validPersonalRestoreCancellation(record)) throw Error("Не подтверждён отказ от отклонённого восстановления.");
       reference = JSON.parse(JSON.stringify(record.snapshot)); declared = true;
     }
-    if (record.action?.kind === "list.restore") {
+    if (["list.restore", "list.import"].includes(record.action?.kind)) {
       // A prepared restore is an explicit replacement, not permission for
       // unrelated losses in a later save. The server still validates its hash,
       // history provenance and numeric target revision inside the transaction.

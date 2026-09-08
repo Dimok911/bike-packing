@@ -22,6 +22,8 @@ export default defineConfig(({ mode }) => ({
       .replace('throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");',
       'globalThis.__personalTestProjectionDifference = { expected: business, actual: snapshot && cloneStateForSync(snapshot, { forSync: true }) }; throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");')
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
+    if (source.endsWith("/src/sync/personal-archive-import-protocol.js")) return code.replace(
+      "PERSONAL_ARCHIVE_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_IMPORT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-history-protocol.js")) return code.replace(
       "PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED = false", "PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-source.js")) return code.replace(

@@ -36,6 +36,7 @@ export async function restoreSelectedBackupLayoutsFlow({
   normalizeRestoredBackupState = () => {},
   nowIso = () => new Date().toISOString(),
   prepareBackupPhotosForState = async () => {},
+  preparePersonalArchiveImport = null,
   render = () => {},
   restoreSelectedBackupLayoutsToState,
   saveRecoverySnapshot = () => {},
@@ -52,13 +53,21 @@ export async function restoreSelectedBackupLayoutsFlow({
   uniqueLayoutId = () => ""
 } = {}) {
   if (!backupImportState) return;
-  const selectedIds = selectedBackupLayoutIds();
+  const selectedIds = new Set(selectedBackupLayoutIds());
   if (!selectedIds.size) return;
   const restoreMode = selectedBackupRestoreMode();
   const summary = summarizeSelectedBackupLayouts(selectedIds, restoreMode);
-  const confirmed = await askConfirmDialog(selectedBackupRestoreConfirm(summary, { restoreMode }));
-  if (!confirmed) return;
   try {
+    const commit = preparePersonalArchiveImport ? await preparePersonalArchiveImport({
+      backupImportState, mode: restoreMode, selectedIds, rows: backupLayoutRows()
+    }) : null;
+    const confirmed = await askConfirmDialog(selectedBackupRestoreConfirm(summary, { restoreMode }));
+    if (!confirmed) return;
+    if (commit) {
+      commit();
+      setBackupStatus(localText("Selected layouts saved on this device. Waiting for server confirmation.", "Выбранные укладки сохранены на устройстве. Ожидается подтверждение сервера."), "success");
+      return;
+    }
     setBackupStatus(localText("Restoring selected layouts...", "Восстанавливаю выбранные укладки..."));
     saveRecoverySnapshot("before-backup-layout-restore", state);
     const source = backupImportState.state;
@@ -100,6 +109,7 @@ export async function restoreFullBackupFlow({
   normalizeRemoteState = () => null,
   nowIso = () => new Date().toISOString(),
   prepareBackupPhotosForState = async () => {},
+  preparePersonalArchiveImport = null,
   render = () => {},
   replaceState = () => {},
   saveRemoteState = async () => {},
@@ -112,9 +122,15 @@ export async function restoreFullBackupFlow({
 } = {}) {
   if (!backupImportState) return;
   const stats = stateStats(backupImportState.state);
-  const confirmed = await askConfirmDialog(fullBackupRestoreConfirm(stats));
-  if (!confirmed) return;
   try {
+    const commit = preparePersonalArchiveImport ? await preparePersonalArchiveImport({ backupImportState, mode: "full" }) : null;
+    const confirmed = await askConfirmDialog(fullBackupRestoreConfirm(stats));
+    if (!confirmed) return;
+    if (commit) {
+      commit();
+      setBackupStatus(localText("Archived state saved on this device. Waiting for server confirmation.", "Состояние архива сохранено на устройстве. Ожидается подтверждение сервера."), "success");
+      return;
+    }
     setBackupStatus(localText("Restoring full personal state...", "Восстанавливаю полное состояние..."));
     const nextState = normalizeRemoteState(backupImportState.state);
     if (!nextState) throw new Error(localText("The archived state is damaged.", "Состояние из архива повреждено."));

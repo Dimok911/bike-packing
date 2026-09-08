@@ -11,12 +11,12 @@ export const containsPersonalPhotos = value => value !== null && typeof value ==
 export function validPersonalRestoreCancellation(record) {
   const decision = record?.reconciliation?.decision, action = record?.action;
   const base = record?.mergeBase, outcomes = record?.reconciliation?.settled;
-  return decision?.version === 1 && decision.type === "keep-server-after-rejected-restore"
+  return decision?.version === 1 && ["keep-server-after-rejected-restore", "keep-server-after-rejected-import"].includes(decision.type)
     && uuid(decision.restoreOperationId) && Number.isSafeInteger(decision.stateRevision) && decision.stateRevision > 0
     && action?.kind === "list.update" && base?.stateRevision === decision.stateRevision
     && action.body?.baseStateRevision === decision.stateRevision && Boolean(base.payload)
     && Array.isArray(outcomes) && outcomes.some(proof => proof.operation?.id === decision.restoreOperationId
-      && proof.operation.kind === "list.restore" && proof.operation.state === "rejected")
+      && proof.operation.kind === (decision.type === "keep-server-after-rejected-import" ? "list.import" : "list.restore") && proof.operation.state === "rejected")
     && (!containsPersonalPhotos(action.body.payload) || preservesConfirmedPersonalPhotos(base.payload, action.body.payload, action.listId))
     && canonicalListOperationJson(action.body.payload) === canonicalListOperationJson(base.payload);
 }
