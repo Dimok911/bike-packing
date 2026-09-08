@@ -307,6 +307,15 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       return clone(head?.snapshot || null);
     },
     baseline() { return clone(read().anchor?.baseline || null); },
+    confirmedBoundary() {
+      const { anchor, records } = read();
+      if (!anchor) return null;
+      // read() validates the checkpoint, its retained action and applied proof.
+      // This is a boundary for local preflight, never a substitute API receipt.
+      return clone({ operationId: anchor.operationId, listId,
+        stateRevision: anchor.baseline?.stateRevision || anchor.stateRevision,
+        payload: anchor.baseline?.payload || personalRecordPayload(records.get(anchor.operationId)) });
+    },
     confirmedBase() {
       const { anchor, head, applied } = read();
       if (!head) return clone(initialMergeBase || null);

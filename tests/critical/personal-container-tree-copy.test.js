@@ -6,6 +6,8 @@ import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js
 import { createSubcontainerInLayoutState } from "../../src/state/container-ops.js";
 import { normalizeContainerFields } from "../../src/state/normalize.js";
 import { cloneStateForSyncPayload } from "../../src/sync/serialize.js";
+import { randomUUID } from "node:crypto";
+import { preservesConfirmedPersonalPhotoChain } from "../../src/sync/personal-confirmed-photos.js";
 
 function fixture() {
   const source = { rootId: "root", containers: {
@@ -19,6 +21,66 @@ function fixture() {
   const options = { changedAt: "fixed", createId: (kind, id) => `${kind}-copy-${id}` };
   return { source, state, request, options };
 }
+
+for (const mode of ["link", "missing"]) test(`confirmed photo tree ${mode} preserves identities, layout quantities and frozen outbox recovery`, async () => {
+  const f = fixture();
+  for (const owner of [f.state.items.pump, f.state.containers.pouch]) {
+    const id = randomUUID(); owner.photos = [{ id, photoId: id, assetId: randomUUID(), listId: "list", status: "synced",
+      url: `/photo/${id}`, thumbUrl: `/thumb/${id}`, fileName: "chosen.png", type: "image/png", size: 10, width: 2, height: 2 }];
+  }
+  f.source.items.pump.photos = structuredClone(f.state.items.pump.photos);
+  f.source.containers.pouch.photos = structuredClone(f.state.containers.pouch.photos);
+  f.state.items.pump.quantity = 9;
+  if (mode === "missing") {
+    f.state.layouts.to.rootContainerIds = ["root"];
+    f.state.layouts.to.arrangement.rootContainerIds = ["root"];
+    f.state.layouts.to.arrangement.containers.root = { parentId: "", childIds: [], itemIds: [], order: [] };
+  }
+  const before = structuredClone(f.state), original = structuredClone(f.source);
+  const options = { ...f.options, photoTreeLinkEnabled: true, listId: "list", createId: () => assert.fail("Existing tree placement allocates no owner IDs") };
+  await assert.rejects(preparePersonalContainerTreeCopy(f.state, f.request, { ...options, photoTreeLinkEnabled: false }));
+  for (const mutate of [value => { value.items.pump.photos = []; }, value => { value.items.pump.photos[0].status = "pending"; },
+    value => { value.containers.pouch.photos[0].assetId = randomUUID(); }, value => { value.containers.pouch.childIds = ["root"]; }]) {
+    const corrupt = structuredClone(original); mutate(corrupt);
+    await assert.rejects(preparePersonalContainerTreeCopy(f.state, { ...f.request, sourceSnapshot: corrupt }, options));
+  }
+  const promise = preparePersonalContainerTreeCopy(f.state, f.request, options);
+  f.source.items.pump.photos = []; f.source.items.pump.quantity = 999; f.state.items.pump.name = "Later edit";
+  const prepared = await promise, selected = prepared[mode];
+  assert.equal(prepared.copy, null); assert.ok(selected); assert.equal(selected.intent.mode, mode);
+  for (const collection of ["items", "containers"]) for (const id of Object.keys(before[collection])) {
+    assert.deepEqual(selected.snapshot[collection][id].photos, before[collection][id].photos);
+  }
+  assert.equal(selected.snapshot.items.pump.name, before.items.pump.name);
+  assert.equal(selected.snapshot.items.pump.quantity, 9);
+  assert.equal(selected.snapshot.layouts.to.arrangement.itemQuantities.pump, 2);
+  assert.deepEqual(selected.snapshot.layouts.from, before.layouts.from);
+  const values = new Map(), storage = { get length() { return values.size; }, key: i => [...values.keys()][i],
+    getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v), removeItem: k => values.delete(k) };
+  const context = { actorId: "actor", listId: "list", scopeKey: "id:actor", environment: "bike-packing-experiment", scope: "personal", generation: "photo-tree" };
+  const make = () => createPersonalSaveOutbox({ ...context, storage });
+  make().adoptRemoteBaseline({ snapshot: before, payload: before, stateRevision: 1 });
+  const saved = make().capture({ snapshot: selected.snapshot, body: { baseStateRevision: 1, payload: selected.snapshot, userContainerTree: selected.intent } });
+  const bytes = [...values], calls = [];
+  await assert.rejects(make().drain({ getContext: () => context, queue: { run: async action => { calls.push(action); throw Error("Lost tree ACK"); } } }));
+  assert.deepEqual([...values], bytes); assert.deepEqual(make().recover(), saved);
+  assert.equal(calls.length, 1); assert.equal(calls[0].operationId, saved.action.operationId);
+  assert.deepEqual(JSON.parse(calls[0].body), saved.action.body);
+  make().markApplied({ operationId: saved.action.operationId, stateRevision: 2 }); make().compact();
+  const next = structuredClone(selected.snapshot); next.items.pump.name = "After link";
+  const settled = make().capture({ snapshot: next, body: { baseStateRevision: 2, payload: next } });
+  make().markApplied({ operationId: settled.action.operationId, stateRevision: 3 }); make().compact();
+  const last = structuredClone(next); last.items.pump.note = "Newest fields";
+  const pending = make().capture({ snapshot: last, body: { baseStateRevision: 3, payload: last } });
+  const chain = { records: make().list(), operationId: pending.action.operationId, listId: "list" };
+  assert.equal(preservesConfirmedPersonalPhotoChain(chain), false, "the retained checkpoint can refer to a retired ancestor");
+  const boundary = make().confirmedBoundary();
+  assert.equal(boundary.operationId, settled.action.operationId); assert.equal(boundary.stateRevision, 3);
+  assert.equal(preservesConfirmedPersonalPhotoChain({ ...chain, confirmedBoundary: boundary }), true);
+  boundary.payload.items.pump.photos = [];
+  assert.equal(preservesConfirmedPersonalPhotoChain({ ...chain, confirmedBoundary: boundary }), false);
+  assert.deepEqual(make().confirmedBoundary().payload.items.pump.photos, before.items.pump.photos);
+});
 
 test("new child records already have complete reload-stable fields without normalizing existing records", () => {
   const f = fixture(); f.state.locations = ["Bike"];

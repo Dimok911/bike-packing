@@ -5,6 +5,7 @@ import { getLayoutContainerIdSet, getLayoutItemIdSet } from "../state/layout-ops
 import { normalizeItemQuantity } from "../state/normalize.js";
 import { normalizeLayoutArrangement } from "../state/layout-normalize.js";
 import { isItemUnavailableForPacking } from "../state/layout-locks.js";
+import { assertPersonalPhotoTreeSource, PERSONAL_PHOTO_TREE_LINK_ENABLED } from "./personal-photo-tree-source.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const validId = value => typeof value === "string" && value.length > 0 && value.length <= 191
@@ -103,14 +104,34 @@ function validateSource(state, source, hasPhotos) {
   if (containers.size !== Object.keys(source.containers).length || items.size !== Object.keys(source.items).length) throw Error("В снимке есть записи вне выбранной ветки.");
 }
 
-// Both possible results are detached from the live editor before any await or
-// confirmation. Only a same-list private snapshot is supported here. Files
-// and public origins need their own explicitly frozen adapters.
+function prepareLinkedTree(frozen, source, common, changedAt, markEdited) {
+  const layout = frozen.layouts[common.targetLayoutId];
+  const hasDuplicates = Object.keys(source.containers).some(id => layout.arrangement.containers[id] || layout.rootContainerIds?.includes(id))
+    || Object.keys(source.items).some(id => layout.arrangement.items[id]);
+  if (hasDuplicates) return null;
+  const linked = clone(frozen); linked.collapsedContainers ||= {};
+  if (!linkExistingContainerTreeToLayoutState(linked, source, common.targetLayoutId, common.targetParentId, {
+    changedAt, targetIndex: common.targetIndex, targetContainerIds: Object.keys(layout.arrangement.containers),
+    normalizeLayoutArrangement: (target, state) => {
+      target.arrangement.itemQuantities ||= {};
+      for (const [id, item] of Object.entries(source.items)) target.arrangement.itemQuantities[id] = normalizeItemQuantity(item.quantity);
+      normalizeLayoutArrangement(target, state);
+    }, touchLayout: id => markEdited(linked.layouts[id], changedAt)
+  })) throw Error("Не удалось подготовить связь с выбранной укладкой.");
+  return { snapshot: linked, rootId: source.rootId, intent: personalContainerTreeIntent({ ...common, mode: "link",
+    containers: Object.keys(source.containers).map(id => ({ sourceId: id, targetId: id })),
+    items: Object.keys(source.items).map(id => ({ sourceId: id, targetId: id })) }) };
+}
+
+// Every available result is detached before an await or confirmation. Confirmed
+// same-list photos permit existing-owner placement only; independent photo tree
+// copies and public origins still require their own frozen publication adapter.
 export async function preparePersonalContainerTreeCopy(state, request, {
   changedAt = "", currentEditMeta = () => ({}), markEdited = () => {},
   normalizeContainerColor = value => value, copyContainerName = name => `${name} копия`,
   hasPhotos = record => Boolean(record.photos?.length),
-  createId = kind => `${kind}-${crypto.randomUUID()}`
+  createId = kind => `${kind}-${crypto.randomUUID()}`,
+  listId = "", photoTreeLinkEnabled = PERSONAL_PHOTO_TREE_LINK_ENABLED
 } = {}) {
   const frozen = clone(state), source = clone(request.sourceSnapshot), targetLayoutId = request.targetLayoutId;
   const sourceLayoutId = request.sourceLayoutId || "", targetParentId = request.targetParentId || "", targetIndex = request.targetIndex ?? null;
@@ -120,7 +141,17 @@ export async function preparePersonalContainerTreeCopy(state, request, {
     || sourceLayoutId && !privateRecord(frozen.layouts?.[sourceLayoutId])
     || targetParentId && (!validId(targetParentId) || !privateRecord(frozen.containers?.[targetParentId]) || !layout.arrangement.containers[targetParentId])
     || targetIndex !== null && (!Number.isSafeInteger(targetIndex) || targetIndex < 0)) throw Error("Целевая укладка или место копирования изменились.");
-  validateSource(frozen, source, hasPhotos);
+  const photoTree = ["containers", "items"].some(type => Object.entries(source[type] || {}).some(([id, record]) =>
+    [record, frozen[type]?.[id]].some(owner => owner && (hasPhotos(owner) || Object.hasOwn(owner, "photos") && !Array.isArray(owner.photos)))));
+  if (photoTree) {
+    if (!photoTreeLinkEnabled) throw Error("Размещение сумки с фотографиями ещё не включено.");
+    assertPersonalPhotoTreeSource({ snapshot: frozen, sourceSnapshot: source, listId });
+  }
+  validateSource(frozen, source, photoTree ? () => false : hasPhotos);
+  const common = { type: "container-tree", version: 1, rootId: source.rootId, sourceLayoutId, targetLayoutId, targetParentId, targetIndex };
+  const missing = prepareMissingTree(frozen, source, common, changedAt, markEdited);
+  const link = prepareLinkedTree(frozen, source, common, changedAt, markEdited);
+  if (photoTree) return { copy: null, link, missing };
   const mapping = { containers: [], items: [] }, assigned = new Set();
   for (const [type, records] of [["container", source.containers], ["item", source.items]]) {
     for (const id of Object.keys(records)) {
@@ -129,8 +160,6 @@ export async function preparePersonalContainerTreeCopy(state, request, {
       assigned.add(targetId); mapping[type === "container" ? "containers" : "items"].push({ sourceId: id, targetId });
     }
   }
-  const common = { type: "container-tree", version: 1, rootId: source.rootId, sourceLayoutId, targetLayoutId, targetParentId, targetIndex };
-  const missing = prepareMissingTree(frozen, source, common, changedAt, markEdited);
   const intent = personalContainerTreeIntent({ ...common, mode: "copy", ...mapping });
   const snapshot = clone(frozen);
   const copied = await duplicateContainerSnapshotRecords(source, { targetState: snapshot, changedAt,
@@ -143,18 +172,5 @@ export async function preparePersonalContainerTreeCopy(state, request, {
     ...copied, changedAt, targetParentId, targetIndex, normalizeLayoutArrangement,
     touchContainer: id => markEdited(snapshot.containers[id], changedAt), touchLayout: id => markEdited(snapshot.layouts[id], changedAt)
   })) throw Error("Не удалось подготовить размещение копии.");
-  let link = null;
-  const hasDuplicates = Object.keys(source.containers).some(id => layout.arrangement.containers[id] || layout.rootContainerIds?.includes(id))
-    || Object.keys(source.items).some(id => layout.arrangement.items[id]);
-  if (!hasDuplicates) {
-    const linked = clone(frozen); linked.collapsedContainers ||= {};
-    if (!linkExistingContainerTreeToLayoutState(linked, source, targetLayoutId, targetParentId, {
-      changedAt, targetIndex, normalizeLayoutArrangement, targetContainerIds: Object.keys(layout.arrangement.containers),
-      touchLayout: id => markEdited(linked.layouts[id], changedAt)
-    })) throw Error("Не удалось подготовить связь с выбранной укладкой.");
-    link = { snapshot: linked, rootId: source.rootId, intent: personalContainerTreeIntent({ ...common, mode: "link",
-      containers: Object.keys(source.containers).map(id => ({ sourceId: id, targetId: id })),
-      items: Object.keys(source.items).map(id => ({ sourceId: id, targetId: id })) }) };
-  }
   return { copy: { snapshot, rootId: copied.rootId, intent }, link, missing };
 }

@@ -73,6 +73,23 @@ test("missing, duplicate, cyclic, foreign or baseless chain fails closed", () =>
     assert.equal(preservesConfirmedPersonalPhotoChain(input), false);
   }
 });
+
+test("a validated compacted checkpoint ends historical traversal while every newer photo step is checked", () => {
+  const input = chain(), root = input.records[0], child = input.records[1];
+  root.action.body.causal.baseOperationId = "compacted-predecessor";
+  child.mergeBase = { payload: structuredClone(root.action.body.payload), stateRevision: 4 };
+  const boundary = { operationId: root.action.operationId, listId: "list", stateRevision: 4, payload: structuredClone(root.action.body.payload) };
+  assert.equal(preservesConfirmedPersonalPhotoChain(input), false);
+  assert.equal(preservesConfirmedPersonalPhotoChain({ ...input, confirmedBoundary: boundary }), true);
+  for (const change of [value => { value.listId = "foreign"; }, value => { value.operationId = "missing"; },
+    value => { value.stateRevision = 3; }, value => { value.payload.items.item.photos = []; },
+    value => { value.payload.items.item.photos[0].status = "pending"; }]) {
+    const invalid = structuredClone(boundary); change(invalid);
+    assert.equal(preservesConfirmedPersonalPhotoChain({ ...input, confirmedBoundary: invalid }), false);
+  }
+  child.action.body.payload.items.item.photos = [];
+  assert.equal(preservesConfirmedPersonalPhotoChain({ ...input, confirmedBoundary: boundary }), false);
+});
 test("changing the order of two confirmed photos needs an explicit file-owner action", () => {
   const base = fixture(), first = base.items.item.photos[0];
   base.items.item.photos.push({ ...first, id: "photo-b", photoId: "photo-b", assetId: "679de067-231b-49a9-9d79-8aa0d1dc1107" });

@@ -2669,6 +2669,7 @@ async function preparePersonalContainerTreeAction(request) {
   let prepared, used = false;
   try {
     prepared = await preparePersonalContainerTreeCopy(state, request, { changedAt: nowIso(), currentEditMeta, markEdited,
+      listId: personalSaveContext().listId,
       normalizeContainerColor, hasPhotos: record => normalizeItemPhotos(record).length > 0,
       copyContainerName: (name, layout, containers) => makeContainerCopyNameForLayout(name, layout, containers, uiLanguage === "en" ? "copy" : "копия")
     });
@@ -8797,6 +8798,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
       const records = outbox.list();
       if ((containsPhotos(loadBaseState()) || records.some(record => containsPhotos(record.action.body.payload)))
         && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
+          confirmedBoundary: outbox.confirmedBoundary(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
           allowOwnerDeletion: PERSONAL_PHOTO_OWNER_DELETION_ENABLED }))) {
         throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");

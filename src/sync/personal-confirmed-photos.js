@@ -46,22 +46,29 @@ export function preservesConfirmedPersonalPhotos(base, candidate, listId, { user
 // is a historical checkpoint link, not permission to dispatch that old form.
 // Records must come from the validated scoped outbox; this adds the file guard,
 // it does not replace its receipt, fork, revision or server-side checks.
-export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId, allowOwnerDeletion = false }) {
+export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId, allowOwnerDeletion = false, confirmedBoundary = null }) {
   try {
     if (!Array.isArray(records) || !records.length || !operationId) return false;
     const byId = new Map(records.map(record => [record.action.operationId, record]));
     if (byId.size !== records.length) return false;
+    if (confirmedBoundary && (confirmedBoundary.listId !== listId || !byId.has(confirmedBoundary.operationId)
+      || !Number.isSafeInteger(confirmedBoundary.stateRevision) || confirmedBoundary.stateRevision < 1
+      || !preservesConfirmedPersonalPhotos(confirmedBoundary.payload, confirmedBoundary.payload, listId))) return false;
     const visited = new Set();
     let record = byId.get(operationId);
     if (!record) return false;
     while (record) {
       const { action } = record, parentId = action.body.causal?.baseOperationId;
+      if (action.operationId === confirmedBoundary?.operationId) return action.listId === listId;
       if (visited.has(action.operationId) || action.kind !== "list.update" || action.listId !== listId) return false;
       visited.add(action.operationId);
       const parent = parentId ? byId.get(parentId) : null;
       if (parentId && !parent) return false;
-      const base = record.mergeBase?.payload || parent?.action.body.payload;
-      if (record.mergeBase && parent && canonicalListOperationJson(base) !== canonicalListOperationJson(parent.action.body.payload)) return false;
+      const boundaryParent = confirmedBoundary && parentId === confirmedBoundary.operationId;
+      const parentPayload = boundaryParent ? confirmedBoundary.payload : parent?.action.body.payload;
+      const base = record.mergeBase?.payload || parentPayload;
+      if (record.mergeBase && parent && canonicalListOperationJson(base) !== canonicalListOperationJson(parentPayload)) return false;
+      if (boundaryParent && record.mergeBase?.stateRevision !== confirmedBoundary.stateRevision) return false;
       if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId,
         { userDeletion: allowOwnerDeletion ? action.body.userDeletion : null })) return false;
       record = parent;

@@ -4,8 +4,20 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+- Проверен локальный участок: link/missing дерева с подтверждёнными фото.
+  Backend `57c0516`.
+  Gate `PERSONAL_PHOTO_TREE_LINK_ENABLED = false`, детали `personal-photo-tree-link.md`.
+  139/139 API/MySQL за 95,35 с, 458 transport, 895 critical, 74 source/service.
+  Source checks прошли. UI `photo-tree-ui-2.log`: 20/20 Chromium/mobile WebKit,
+  4,5 минуты, без повторов. Все процессы завершены. Исправлен обход compacted подтверждённого
+  предшественника в фото-preflight через проверенный `confirmedBoundary()`.
+  Исходные фото не менялись. Временная диагностика остаётся только в test bundle.
+  Следующий участок начат отдельно: `personal-photo-tree-copy-layout.js` и
+  одноимённый unit-тест (3 passed), пока НЕ подключены и не добавлены в пакет.
+  Не включать эти два файла в commit link/missing. Продолжать независимые копии.
+
 - Проверен локально новый участок: удаление до ACK массовой копии.
-  Backend `d39d61c`.
+  FE `8e373a4`, backend `d39d61c`.
   `photoResults.version: 2` хранит полный список владельцев исходного batch,
   включая копии без фото; используются прежние цепочки и серверный resolver.
   Новый gate `PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED = false`,

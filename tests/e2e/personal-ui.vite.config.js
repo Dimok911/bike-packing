@@ -13,9 +13,13 @@ export default defineConfig(({ mode }) => ({
       'if (!same(snapshotToPayload(clone(frozen)), base)) { globalThis.__personalTestProjectionDifference = { expected: base, actual: snapshotToPayload(clone(frozen)) }; fail(); }');
     if (source.split("?")[0].endsWith("/app.js")) return code.replace('function reportPersonalPhotoFormError(error, { recovery } = {}) {',
       'function reportPersonalPhotoFormError(error, { recovery } = {}) { globalThis.__personalTestPhotoFormError = { message: error.message, code: error.code, stack: error.stack };')
+      .replace('throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");',
+      'globalThis.__personalTestProjectionDifference = { records, operationId: outbox.recover()?.action.operationId }; throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");')
       .replace('throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");',
       'globalThis.__personalTestProjectionDifference = { expected: business, actual: snapshot && cloneStateForSync(snapshot, { forSync: true }) }; throw new Error("Объединённая версия требует проверки структуры. Автоматическая отправка остановлена.");')
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-source.js")) return code.replace(
+      "PERSONAL_PHOTO_TREE_LINK_ENABLED = false", "PERSONAL_PHOTO_TREE_LINK_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-confirmed-photos.js")) return code.replace(
       "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-source.js")) return code.replace(

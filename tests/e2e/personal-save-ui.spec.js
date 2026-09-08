@@ -540,13 +540,23 @@ test("personal tree picker quota preserves the complete copy draft and original 
   expect(f.posts).toHaveLength(postsBefore); expect(Object.keys(f.payload.containers)).toEqual([rootId]); expect(f.errors).toEqual([]);
 });
 
-for (const quota of [false, true]) test(`personal tree picker missing-only retains exact additions and existing records (${quota ? "quota" : "lost ACK"})`, async ({ page, context }) => {
+function addConfirmedTreePhotos(f, owners) {
+  for (const [collection, id] of owners) {
+    const photoId = randomUUID();
+    f.payload[collection][id].photos = [{ id: photoId, photoId, assetId: randomUUID(), listId: f.listId, status: "synced",
+      url: `/confirmed-tree/${photoId}`, thumbUrl: `/confirmed-tree/${photoId}/thumb`, fileName: "tree.png", type: "image/png", size: 10, width: 2, height: 2 }];
+  }
+  f.revision++;
+}
+
+for (const photos of [false, true]) for (const quota of [false, true]) test(`personal ${photos ? "photo " : ""}tree picker missing-only retains exact additions and existing records (${quota ? "quota" : "lost ACK"})`, async ({ page, context }) => {
   test.setTimeout(120000);
   const payload = initialPayload(); payload.layouts["layout-b"] = { ...structuredClone(payload.layouts["layout-a"]), id: "layout-b", name: "Цель дополнения" };
-  const f = await setup(page, context, { payload }), bag = await createRootContainer(page, "Сумка дополнения");
+  const f = await setup(page, context, { payload, photoEdit: photos }), bag = await createRootContainer(page, "Сумка дополнения");
   await createItemInContainer(page, bag, "Уже размещённая вещь");
   await synchronize(page, () => Object.keys(f.payload.items).length === 1);
   const rootId = Object.keys(f.payload.containers)[0], originalItemId = Object.keys(f.payload.items)[0];
+  if (photos) { addConfirmedTreePhotos(f, [["containers", rootId], ["items", originalItemId]]); await reloadApp(page); }
   const pick = async () => {
     await page.locator("#layoutSelect").selectOption("layout-a");
     await bag.getByText("Сумка дополнения", { exact: true }).click();
@@ -563,6 +573,10 @@ for (const quota of [false, true]) test(`personal tree picker missing-only retai
   await expect(page.locator("#addToContainerDialog")).not.toBeVisible();
   await createItemInContainer(page, bag.locator("[data-subcontainer-id]").filter({ hasText: "Недостающий карман" }), "Недостающая вещь");
   await synchronize(page, () => Object.keys(f.payload.items).length === 2);
+  if (photos) {
+    addConfirmedTreePhotos(f, [["containers", Object.keys(f.payload.containers).find(id => id !== rootId)],
+      ["items", Object.keys(f.payload.items).find(id => id !== originalItemId)]]); await reloadApp(page);
+  }
   const source = structuredClone(f.payload), pouchId = Object.keys(source.containers).find(id => id !== rootId), itemId = Object.keys(source.items).find(id => id !== originalItemId);
   expect(source.layouts["layout-b"].arrangement.containers[pouchId]).toBeUndefined();
   await pick(); await expect(page.locator("#confirmAlternateBtn")).toHaveText("Только недостающие");
@@ -583,6 +597,8 @@ for (const quota of [false, true]) test(`personal tree picker missing-only retai
     expect(Object.keys(draft.containers).sort()).toEqual(Object.keys(source.containers).sort());
     expect(draft.layouts["layout-b"].arrangement.items[itemId]).toBe(pouchId);
     expect(draft.layouts["layout-b"].arrangement.items[originalItemId]).toBe(rootId);
+    if (photos) for (const collection of ["items", "containers"]) for (const id of Object.keys(source[collection]))
+      expect(draft[collection][id].photos).toEqual(source[collection][id].photos);
     expect(recovery.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(journal);
     expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(source);
   } else {
@@ -599,27 +615,60 @@ for (const quota of [false, true]) test(`personal tree picker missing-only retai
     expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(original);
   }
   expect(f.errors).toEqual([]);
+  if (photos) expect(f.stagePosts).toHaveLength(0);
 });
 
-test("personal tree picker links existing records to another layout without copying their IDs", async ({ page, context }) => {
+for (const photos of [false, true]) for (const outcome of photos ? ["lost ACK", "quota"] : ["success"]) test(`personal ${photos ? "photo " : ""}tree picker links existing records to another layout without copying their IDs (${outcome})`, async ({ page, context }) => {
   test.setTimeout(120000);
-  const f = await setup(page, context), bag = await createRootContainer(page, "Сумка связи");
+  const f = await setup(page, context, { photoEdit: photos }), bag = await createRootContainer(page, "Сумка связи");
   await createItemInContainer(page, bag, "Вещь связи");
   await synchronize(page, () => Object.keys(f.payload.items).length === 1);
   const rootId = Object.keys(f.payload.containers)[0], itemId = Object.keys(f.payload.items)[0];
   await page.locator("#newLayoutBtn").click(); await page.locator("#layoutCreateMode").selectOption("empty");
   await page.locator("#layoutName").fill("Цель связи"); await submitForm(page, "#saveLayoutBtn", "#layoutName");
   await synchronize(page, () => Object.keys(f.payload.layouts).length === 2);
+  if (photos) { addConfirmedTreePhotos(f, [["containers", rootId], ["items", itemId]]); await reloadApp(page); }
   const targetId = Object.keys(f.payload.layouts).find(id => id !== "layout-a");
   await page.locator("#layoutSelect").selectOption("layout-a");
   await page.locator(`#packingView [data-root-container-id="${rootId}"]`).getByText("Сумка связи", { exact: true }).click();
   await page.locator("#rootContainerCopyToContainerBtn").click();
   await page.locator("#containerPickerLayoutSelect").selectOption(targetId);
   const before = f.posts.length;
+  const source = structuredClone(f.payload), journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  if (outcome === "lost ACK") { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Tree quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
   await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    const recovery = await downloadRecovery(page), draft = recovery.unconfirmedMemoryDraft;
+    expect(draft.layouts[targetId].arrangement.items[itemId]).toBe(rootId);
+    for (const [collection, id] of [["items", itemId], ["containers", rootId]]) expect(draft[collection][id].photos).toEqual(source[collection][id].photos);
+    expect(recovery.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(journal);
+    expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(source); expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]);
+    return;
+  }
   await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
-  await synchronize(page, () => f.payload.layouts[targetId].arrangement.rootContainerIds.includes(rootId));
+  if (outcome === "lost ACK") {
+    await page.locator("#syncBtn").click();
+    await expect.poll(() => f.payload.layouts[targetId].arrangement.rootContainerIds.includes(rootId)).toBe(true);
+  } else await synchronize(page, () => f.payload.layouts[targetId].arrangement.rootContainerIds.includes(rootId));
   expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1).body.userContainerTree.mode).toBe("link");
+  if (outcome === "lost ACK") {
+    await expect.poll(() => f.injectedFailure).toBe(true);
+    const action = structuredClone(f.posts.at(-1)); f.lose = false; f.unknown = false; f.beforeUpdate = null;
+    await reloadApp(page); await synchronize(page, () => f.payload.layouts[targetId].arrangement.rootContainerIds.includes(rootId));
+    expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(action);
+  }
+  if (photos) {
+    for (const [collection, id] of [["items", itemId], ["containers", rootId]]) expect(f.payload[collection][id].photos).toEqual(source[collection][id].photos);
+    expect(f.stagePosts).toHaveLength(0);
+  }
   expect(Object.keys(f.payload.containers)).toEqual([rootId]); expect(Object.keys(f.payload.items)).toEqual([itemId]);
   expect(f.payload.layouts["layout-a"].arrangement.items[itemId]).toBe(rootId);
   expect(f.payload.layouts[targetId].arrangement.items[itemId]).toBe(rootId); expect(f.errors).toEqual([]);
