@@ -1107,10 +1107,36 @@ export async function openPhotoLightbox(sourceImage, {
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
     directDesktop: !touchCarousel,
+    touchPaging: touchCarousel ? "controlled" : "native",
+    canTouchPage: () => scale <= 1 && !pinching && !touchStartedWithPinch,
+    onTouchPagingStart: () => {
+      trackTouchActive = true;
+      pendingScrollIndex = null;
+      cancelTrackSettle();
+    },
+    onTouchPagingPosition: ({ index: visibleIndex }) => {
+      suppressImageCloseUntil = Date.now() + 300;
+      updateLightboxDots(visibleIndex);
+      prepareVisiblePreviews(visibleIndex);
+    },
+    onTouchPagingSettle: ({ index: settledIndex }) => {
+      // Reduced-motion/instant settling can run before touchend bubbles here.
+      // Source activation follows gesture cleanup, while pinch can take over
+      // synchronously without an image load or a native deceleration phase.
+      queueMicrotask(() => {
+        if (!overlay.isConnected || trackTouchActive || scale > 1 || pinching
+          || fullscreenSwitcher.isSettling || settledIndex !== visibleTouchIndex()) return;
+        pendingScrollIndex = null;
+        updateLightboxDots(settledIndex);
+        if (settledIndex !== activeIndex) showPhoto(settledIndex);
+      });
+    },
     canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch,
     waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
+  const controlledTouchPaging = fullscreenSwitcher?.touchPaging === "controlled";
+  overlay.classList.toggle("photo-lightbox-controlled-paging", controlledTouchPaging);
   let loadingNotice = null;
   let cancelPanInertia = () => {};
   let sourceController = null;
@@ -1452,7 +1478,7 @@ export async function openPhotoLightbox(sourceImage, {
       // A decoded original can arrive while the user is dragging its preview.
       // Keep the same DOM image through the gesture and the edge return.
       if (touchCarousel && phase === "before-replace") {
-        while (stillCurrent() && (trackTouchActive || lightboxSettleTimer !== null
+        while (stillCurrent() && (trackTouchActive || fullscreenSwitcher?.isSettling || lightboxSettleTimer !== null
           || currentImage.classList.contains("vpg-edge-content-returning"))) {
           await new Promise((resolve) => setTimeout(resolve, 32));
         }
@@ -1693,6 +1719,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const settleTouchCarouselTrack = () => {
     cancelTrackSettle();
+    if (controlledTouchPaging) return;
     if (trackTouchActive || scale > 1 || !overlay.isConnected) return;
     if (scrollFrame) {
       cancelAnimationFrame(scrollFrame);
@@ -1711,6 +1738,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const scheduleTrackSettle = () => {
     cancelTrackSettle();
+    if (controlledTouchPaging) return;
     if (trackTouchActive || !overlay.isConnected) return;
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
@@ -1764,6 +1792,8 @@ export async function openPhotoLightbox(sourceImage, {
     button.addEventListener("touchstart", (event) => {
       if (event.touches.length !== 1) return;
       const touch = event.touches[0];
+      fullscreenSwitcher?.stopTouchPaging?.();
+      if (controlledTouchPaging) trackTouchActive = true;
       pendingScrollIndex = null;
       navStartX = touch.clientX;
       navStartY = touch.clientY;
@@ -1783,6 +1813,7 @@ export async function openPhotoLightbox(sourceImage, {
       track.scrollLeft = navStartScrollLeft - dx;
     }, { passive: false });
     button.addEventListener("touchend", (event) => {
+      if (controlledTouchPaging) trackTouchActive = event.touches.length > 0;
       if (!navMoved || !event.changedTouches.length) return;
       const touch = event.changedTouches[0];
       const dx = touch.clientX - navStartX;
@@ -1797,6 +1828,11 @@ export async function openPhotoLightbox(sourceImage, {
       event.preventDefault();
       event.stopPropagation();
     }, { passive: false });
+    button.addEventListener("touchcancel", () => {
+      if (!controlledTouchPaging) return;
+      trackTouchActive = false;
+      fullscreenSwitcher.goTo(visibleTouchIndex(), "smooth", false);
+    }, { passive: true });
   };
   bindNavSwipe(prevButton);
   bindNavSwipe(nextButton);

@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { devices, expect, test } from "@playwright/test";
 
-test.use({ ...devices["iPhone 16 Pro Max"] });
+const { defaultBrowserType, ...phoneDevice } = devices["iPhone 16 Pro Max"];
+test.use(phoneDevice);
 
 async function openGallery(page) {
   await page.route("https://vniipo-help.ru/shared-ui/**", (route) => route.abort());
@@ -39,7 +40,7 @@ async function openGallery(page) {
     window.lightboxTouch = (type, x, count = 1) => {
       const track = document.querySelector(".photo-lightbox-track");
       const event = new Event(type, { bubbles: true, cancelable: true });
-      const touch = { clientX: x, clientY: 400 };
+      const touch = { identifier: 1, clientX: x, clientY: 400 };
       Object.defineProperty(event, "touches", { value: Array.from({ length: count }, () => touch) });
       Object.defineProperty(event, "changedTouches", { value: [touch] });
       track.dispatchEvent(event);
@@ -47,7 +48,8 @@ async function openGallery(page) {
     window.lightboxPinch = (type, distance) => {
       const track = document.querySelector(".photo-lightbox-track");
       const event = new Event(type, { bubbles: true, cancelable: true });
-      const touches = [-1, 1].map((side) => ({
+      const touches = [-1, 1].map((side, index) => ({
+        identifier: index + 1,
         clientX: track.clientWidth / 2 + side * distance / 2,
         clientY: 400
       }));
@@ -126,6 +128,62 @@ test("adjacent previews are decoded before a swipe while original downloads are 
   }
 });
 
+test("a new pinch interrupts photo settling after the swipe finger was released", async ({ page }) => {
+  await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await openGallery(page);
+  const track = page.locator(".photo-lightbox-track");
+  const images = page.locator(".photo-lightbox-image");
+  await expect.poll(() => images.nth(1).evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+  const takeover = await page.evaluate(async () => {
+    const track = document.querySelector(".photo-lightbox-track");
+    const images = document.querySelectorAll(".photo-lightbox-image");
+    window.lightboxTouch("touchstart", 390);
+    window.lightboxTouch("touchmove", 90);
+    window.lightboxTouch("touchend", 90, 0);
+    const releasedAt = track.scrollLeft;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const movingAt = track.scrollLeft;
+    const platformScrolling = getComputedStyle(track).overflowX;
+    // This is a NEW gesture after touchend, while the previous slide animation
+    // is still running. UIKit must never own momentum during this interval.
+    window.lightboxPinch("touchstart", 100);
+    window.lightboxPinch("touchmove", 200);
+    return {
+      releasedAt,
+      movingAt,
+      width: track.clientWidth,
+      platformScrolling,
+      scale: images[1].style.transform,
+      previousScale: images[0].style.transform,
+      stoppedAt: track.scrollLeft
+    };
+  });
+  expect(takeover.releasedAt).toBeGreaterThan(takeover.width / 2);
+  expect(takeover.movingAt).toBeGreaterThan(takeover.releasedAt);
+  expect(takeover.movingAt).toBeLessThan(takeover.width - 2);
+  expect(takeover.platformScrolling).toBe("hidden");
+  expect(takeover.scale).toContain("scale(2)");
+  expect(takeover.previousScale).not.toContain("scale(2)");
+  expect(Math.abs(takeover.stoppedAt - takeover.width)).toBeLessThan(2);
+  await page.evaluate(() => window.lightboxTouch("touchend", 200, 0));
+  await page.waitForTimeout(650);
+  await expect(images.nth(1)).toHaveCSS("transform", /matrix\(2, 0, 0, 2,/);
+  await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => track.evaluate((node) => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(2);
+  // Ending a later pinch at 100% permits another swipe without restoring native
+  // momentum, including the reduced-motion and cancellation cleanup paths.
+  await page.evaluate(() => {
+    window.lightboxPinch("touchstart", 200);
+    window.lightboxPinch("touchmove", 100);
+    window.lightboxTouch("touchcancel", 200, 0);
+    window.lightboxTouch("touchstart", 390);
+    window.lightboxTouch("touchmove", 90);
+    window.lightboxTouch("touchend", 90, 0);
+  });
+  await expect(page.locator('[data-photo-lightbox-dot="2"]')).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => track.evaluate((node) => Math.abs(node.scrollLeft - node.clientWidth * 2))).toBeLessThan(2);
+});
+
 for (const { direction, from, fraction, releaseSwipe } of [
   { direction: "forward drag", from: 0, fraction: 0.65, releaseSwipe: false },
   { direction: "backward settling", from: 2, fraction: 1.35, releaseSwipe: true }
@@ -184,7 +242,7 @@ for (const { direction, from, fraction, releaseSwipe } of [
         window.lightboxPinch("touchmove", 100);
         window.lightboxTouch("touchend", 200, 1);
       });
-      await expect(track).toHaveCSS("overflow-x", "auto");
+      await expect(track).toHaveCSS("overflow-x", "hidden");
       await page.evaluate(() => window.lightboxTouch("touchend", 200, 0));
       await page.locator('[data-photo-lightbox-dot="2"]').tap();
       await expect.poll(() => track.evaluate((node) => Math.abs(node.scrollLeft - node.clientWidth * 2))).toBeLessThan(2);
@@ -194,6 +252,85 @@ for (const { direction, from, fraction, releaseSwipe } of [
     }
   });
 }
+
+test("browser-delivered new pinch takes over a released flick before it stops", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "The trusted-touch protocol is available in Chromium only");
+  await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await openGallery(page);
+  const track = page.locator(".photo-lightbox-track");
+  const image = page.locator(".photo-lightbox-image").nth(1);
+  await expect.poll(() => image.evaluate((node) => node.complete && node.naturalWidth > 0)).toBe(true);
+  const session = await page.context().newCDPSession(page);
+  const point = (id, x) => ({ id, x, y: 400, radiusX: 6, radiusY: 6, force: 1 });
+  try {
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(1, 390)] });
+    for (const x of [340, 290, 240, 190, 140, 90]) {
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(1, x)] });
+      await page.waitForTimeout(20);
+    }
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const moving = await track.evaluate((node) => ({ left: node.scrollLeft, width: node.clientWidth }));
+    expect(moving.left).toBeGreaterThan(moving.width / 2);
+    expect(moving.left).toBeLessThan(moving.width - 2);
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(2, 150), point(3, 250)] });
+    await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(2, 100), point(3, 300)] });
+    await expect.poll(() => image.evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a)).toBeGreaterThan(1.9);
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(400);
+    await expect.poll(() => track.evaluate((node) => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(2);
+    await expect(image).toHaveCSS("transform", /matrix\(2, 0, 0, 2,/);
+  } finally {
+    await session.detach();
+  }
+});
+
+test("reduced-motion paging activates the new photo after gesture cleanup", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await openGallery(page);
+  await page.evaluate(() => {
+    window.lightboxTouch("touchstart", 390);
+    window.lightboxTouch("touchmove", 90);
+    window.lightboxTouch("touchend", 90, 0);
+  });
+  await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
+  await page.evaluate(() => {
+    window.lightboxPinch("touchstart", 100);
+    window.lightboxPinch("touchmove", 200);
+  });
+  await expect(page.locator(".photo-lightbox-image").nth(1)).toHaveCSS("transform", /matrix\(2, 0, 0, 2,/);
+});
+
+test("a swipe on the navigation control interrupts settling without jumping back", async ({ page }) => {
+  await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await openGallery(page);
+  const result = await page.evaluate(async () => {
+    const track = document.querySelector(".photo-lightbox-track");
+    const button = document.querySelector(".photo-lightbox-next");
+    window.lightboxTouch("touchstart", 390);
+    window.lightboxTouch("touchmove", 90);
+    window.lightboxTouch("touchend", 90, 0);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const dispatch = (type, x, count = 1) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const touch = { identifier: 1, clientX: x, clientY: 400 };
+      Object.defineProperty(event, "touches", { value: count ? [touch] : [] });
+      Object.defineProperty(event, "changedTouches", { value: [touch] });
+      button.dispatchEvent(event);
+    };
+    dispatch("touchstart", 390);
+    dispatch("touchmove", 200);
+    const draggedAt = track.scrollLeft;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const heldAt = track.scrollLeft;
+    dispatch("touchend", 200, 0);
+    return { draggedAt, heldAt, releasedAt: track.scrollLeft };
+  });
+  expect(result.heldAt).toBe(result.draggedAt);
+  expect(result.releasedAt).toBe(result.draggedAt);
+  await expect.poll(() => page.locator(".photo-lightbox-track").evaluate((track) => Math.abs(track.scrollLeft - track.clientWidth * 2))).toBeLessThan(2);
+  await expect(page.locator('[data-photo-lightbox-dot="2"]')).toHaveAttribute("aria-current", "true");
+});
 
 test("last-photo edge pulls and viewport height events preserve the last index", async ({ page }) => {
   await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));

@@ -56,12 +56,14 @@ export function createSharedFullscreenSwitcher(options = {}) {
   const api = runtime();
   const factory = api?.capabilities?.fullscreenEdgeRubberBand >= 2
     && (!options.waitForReady || api?.capabilities?.readyFullscreenNavigation >= 1)
+    && (options.touchPaging !== "controlled" || api?.capabilities?.controlledTouchPaging >= 1)
     ? api.createFullscreenSwitcher
     : fallbackRuntime?.createFullscreenSwitcher;
   const controller = factory?.(options) || null;
   if (
     controller
-    && !fullscreenSwitcherMatchesRequestedMode(controller, options.directDesktop)
+    && (!fullscreenSwitcherMatchesRequestedMode(controller, options.directDesktop)
+      || (options.touchPaging === "controlled" && controller.touchPaging !== "controlled"))
     && factory !== fallbackRuntime?.createFullscreenSwitcher
   ) {
     controller.destroy?.();
