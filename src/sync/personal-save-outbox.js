@@ -532,7 +532,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         // same entry point. An unchanged business snapshot creates no action
         // and must reach the read-only recovery screen even with writers off.
         if (!create && !restore && !migration && !localReconciliation && input.body.causal === undefined
-          && !["userDeletion", "userCopy", "userContainerTree", "userPlacement", "userDictionary", "historyRestore", "migration"]
+          && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userPlacement", "userDictionary", "historyRestore", "migration"]
             .some(key => Object.hasOwn(input.body, key))
           && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
         if (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled
@@ -653,6 +653,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         force: false, forceOverwrite: false, fullReplace: false };
       delete body.causal;
       delete body.userCopy; // A comparison is a new action, not another execution of the old copy manifest.
+      delete body.userContainerTree;
+      delete body.userLayoutCopy;
       delete body.userDictionary;
       delete body.userPlacement;
       delete body.historyRestore;
@@ -798,6 +800,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       // No force/delete override from a previous full save is inherited.
       delete action.body.userDeletion;
       delete action.body.userCopy;
+      delete action.body.userContainerTree;
+      delete action.body.userLayoutCopy;
       delete action.body.userDictionary;
       delete action.body.userPlacement;
       delete action.body.historyRestore;

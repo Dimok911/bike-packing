@@ -24,6 +24,8 @@ export default defineConfig(({ mode }) => ({
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-source.js")) return code.replace(
       "PERSONAL_PHOTO_TREE_LINK_ENABLED = false", "PERSONAL_PHOTO_TREE_LINK_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-layout-copy.js")) return code.replace(
+      "PERSONAL_PHOTO_LAYOUT_COPY_ENABLED = false", "PERSONAL_PHOTO_LAYOUT_COPY_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-confirmed-photos.js")) return code.replace(
       "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-source.js")) return code.replace(

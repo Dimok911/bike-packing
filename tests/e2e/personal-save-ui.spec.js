@@ -8,6 +8,7 @@ import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.
 import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
 import { personalPhotoCopyOwner } from "../../src/sync/personal-photo-copy-source.js";
 import { personalPhotoTreeCopyLayout } from "../../src/sync/personal-photo-tree-copy-layout.js";
+import { personalBusinessPayload } from "../../src/sync/personal-server-payload.js";
 import { readZipEntries, zipText } from "../../src/utils/simple-zip.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
 
@@ -443,6 +444,59 @@ test("initial legacy list preparation refuses unrelated structural repairs befor
   expect(f.posts).toHaveLength(0); expect(f.payload).toEqual(before); expect(f.revision).toBe(1);
   expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:")))).toEqual([]);
   expect(f.errors).toEqual([]);
+});
+
+for (const photos of [false, true]) for (const mode of ["copy", "empty"]) for (const outcome of ["lost ACK", "quota"]) test(`personal whole layout ${mode} ${photos ? "with photos" : "without photos"} retains one selected layout across ${outcome}`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const f = await setup(page, context, { photoEdit: photos }), bag = await createRootContainer(page, "Сумка укладки");
+  await createItemInContainer(page, bag, "Вещь укладки");
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const rootId = Object.keys(f.payload.containers)[0], itemId = Object.keys(f.payload.items)[0];
+  if (photos) { addConfirmedTreePhotos(f, [["containers", rootId], ["items", itemId]]); await reloadApp(page); }
+  const original = structuredClone(f.payload), before = f.posts.length;
+  const journal = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+  await page.locator("#newLayoutBtn").click(); await page.locator("#layoutCreateMode").selectOption(mode);
+  if (mode === "copy") await page.locator("#layoutCopyFrom").selectOption("layout-a");
+  await page.locator("#layoutName").fill("Сохранённая укладка");
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Layout quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  else { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  await submitForm(page, "#saveLayoutBtn", "#layoutName");
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    const recovery = await downloadRecovery(page), draft = recovery.unconfirmedMemoryDraft;
+    const ids = Object.keys(draft.layouts).filter(id => !original.layouts[id]); expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(/^layout-[0-9a-f-]{36}$/); expect(draft.layouts[ids[0]].name).toBe("Сохранённая укладка");
+    expect(draft.layouts[ids[0]].arrangement.items).toEqual(mode === "copy" ? original.layouts["layout-a"].arrangement.items : {});
+    expect(recovery.journalEntries.map(({ key, value }) => [key, value]).sort()).toEqual(journal);
+    const draftBusiness = personalBusinessPayload(draft);
+    expect(draftBusiness.items).toEqual(original.items); expect(draftBusiness.containers).toEqual(original.containers);
+    expect(await page.locator("#layoutSelect").inputValue()).toBe("layout-a");
+    expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(original);
+  } else {
+    await expect(page.locator("#layoutDialog")).not.toBeVisible();
+    await page.locator("#syncBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+    expect(f.posts).toHaveLength(before + 1); const action = structuredClone(f.posts.at(-1)), targetId = action.body.userLayoutCopy.targetLayoutId;
+    expect(action.body.userLayoutCopy).toEqual({ type: "layout-copy", version: 1, sourceLayoutId: mode === "copy" ? "layout-a" : "", targetLayoutId: targetId });
+    expect(targetId).toMatch(/^layout-[0-9a-f-]{36}$/);
+    expect(action.body.payload.items).toEqual(original.items); expect(action.body.payload.containers).toEqual(original.containers);
+    expect(action.body.payload.layouts[targetId].arrangement.items).toEqual(mode === "copy" ? original.layouts["layout-a"].arrangement.items : {});
+    f.lose = false; f.unknown = false; f.beforeUpdate = null; await reloadApp(page);
+    await synchronize(page, () => Object.keys(f.payload.layouts).length === 2);
+    expect(f.posts).toHaveLength(before + 1); expect(f.posts.at(-1)).toEqual(action);
+    const savedCopy = structuredClone(f.payload.layouts[targetId]);
+    await page.locator("#layoutSelect").selectOption("layout-a"); await confirmActiveLayoutDeletion(page);
+    await page.locator("#confirmOkBtn").click(); await synchronize(page, () => !f.payload.layouts["layout-a"]);
+    expect(f.payload.layouts[targetId]).toEqual(savedCopy); expect(f.payload.items).toEqual(original.items); expect(f.payload.containers).toEqual(original.containers);
+    expect(f.posts.filter(post => post.body.userLayoutCopy)).toEqual([action]);
+    await reloadApp(page); expect(await page.locator("#layoutSelect").inputValue()).toBe(targetId);
+  }
+  expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]);
 });
 
 for (const photos of [false, true]) for (const withContents of [false, true]) for (const outcome of photos ? ["lost ACK", "quota", "cancel"] : ["lost ACK"]) test(`personal ${photos ? "photo " : ""}tree picker freezes ${withContents ? "contents" : "empty bag"} copy and placement as one action across ${outcome}`, async ({ page, context }) => {

@@ -765,6 +765,7 @@ import { preparePersonalPlacementMutation, personalPlacementIntent } from "./src
 import { preparePersonalHistoryRestore } from "./src/sync/personal-history-restore.js";
 import { preparePersonalListMigration, PERSONAL_LIST_MIGRATION_ENABLED } from "./src/sync/personal-list-migration.js";
 import { preparePersonalContainerTreeCopy, personalContainerTreeIntent } from "./src/sync/personal-container-tree-copy.js";
+import { preparePersonalLayoutCopy, personalLayoutCopyIntent, PERSONAL_PHOTO_LAYOUT_COPY_ENABLED } from "./src/sync/personal-layout-copy.js";
 import { personalBusinessPayload } from "./src/sync/personal-server-payload.js";
 import { createListOperationQueue } from "./src/sync/list-operation-queue.js";
 import { bindExperimentTransportMenu } from "./src/ui/experiment-transport-settings.js";
@@ -1916,7 +1917,7 @@ const appTailControllerDeps = {
   isNewItemPlacementPickerMode, itemDialogContainerPickerMode, itemDialogTargetLayoutFromPicker,
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
-  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
+  saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction,
   personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
@@ -2717,6 +2718,39 @@ async function preparePersonalContainerTreeAction(request) {
   };
 }
 
+function preparePersonalLayoutCopyAction({ sourceLayoutId = "", requestedName, activate = true }) {
+  if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  personalSaveRecovery.assertRunning();
+  const context = personalSaveContext(), initial = JSON.stringify(context), operationId = crypto.randomUUID();
+  const targetLayoutId = `layout-${crypto.randomUUID()}`;
+  let prepared, used = false;
+  try {
+    prepared = preparePersonalLayoutCopy(state, { sourceLayoutId, targetLayoutId, requestedName, activate,
+      listId: context.listId || personalInitialSaveOutbox?.binding.listId }, {
+      changedAt: nowIso(), currentCreateMeta, uniqueLayoutName, dictionaryDefaults: { locations, categories },
+      photoEnabled: personalPhotoFormUiEnabled() && PERSONAL_PHOTO_LAYOUT_COPY_ENABLED
+    });
+  } catch (error) { showToast(error.message, "error"); return false; }
+  return () => {
+    if (used || initial !== JSON.stringify(personalSaveContext())) {
+      showToast("Список изменился. Выберите исходную укладку заново.", "error"); return false;
+    }
+    personalSaveRecovery.assertRunning(); used = true;
+    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
+    // The full candidate is durable before active-layout preferences or view.
+    state.layouts = prepared.snapshot.layouts;
+    if (activate) {
+      state.activeLayoutId = prepared.layoutId; state.packedItems = prepared.snapshot.packedItems;
+      setActivePrivateScope(); applyLayoutArrangement(prepared.layoutId);
+    }
+    saveState({ captureArrangement: false, recordAction: false });
+    if (activate) rememberActiveLayoutChoice(prepared.layoutId);
+    render(); return prepared.layoutId;
+  };
+}
+
 function preparePersonalLayoutDeletionAction(layoutId) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
@@ -2835,6 +2869,7 @@ function capturePersonalSaveIntent(snapshot, personalMutation = null, operationI
   });
   if (personalMutation?.type === "placement") body.userPlacement = personalPlacementIntent(personalMutation);
   else if (personalMutation?.type === "container-tree") body.userContainerTree = personalContainerTreeIntent(personalMutation);
+  else if (personalMutation?.type === "layout-copy") body.userLayoutCopy = personalLayoutCopyIntent(personalMutation);
   else if (personalMutation?.type === "dictionary") body.userDictionary = JSON.parse(JSON.stringify(personalMutation));
   else if (personalMutation?.type === "copy") body.userCopy = personalCopyIntent(personalMutation);
   else if (personalMutation) body.userDeletion = personalDeletionIntent(personalMutation);

@@ -379,7 +379,7 @@ export function createAppTailControllers(ctx) {
     saveActivePackingListId, saveAuthEmail, saveAuthEmailToStorage, saveBaseState, saveDictionaryOwner,
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
-    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction,
+    saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction,
     personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
@@ -6938,6 +6938,15 @@ async function saveNewLayout(event) {
     } catch (error) {
       showToast(localText(`The layout was created locally but was not saved to the server: ${error.message}`, `Укладка создана локально, но не сохранена на сервере: ${error.message}`), "error");
     }
+    return;
+  }
+  const personalCopy = preparePersonalLayoutCopyAction({ sourceLayoutId: shouldCopy ? refs.layoutCopyFrom.value : "",
+    requestedName, activate: !pendingCopyTargetLayoutCreation });
+  if (personalCopy === false) return;
+  if (personalCopy) {
+    const createdId = personalCopy(); if (!createdId) return;
+    refs.layoutDialog.close();
+    if (!resumeCopyPickerAfterLayoutCreation(createdId)) switchView("packing");
     return;
   }
   const source = shouldCopy

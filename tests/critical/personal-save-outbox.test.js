@@ -206,12 +206,12 @@ function historicalProof(f, record, state = "committed") {
     operation: { ...f.outbox.binding, id: record.action.operationId, kind: record.action.kind, state, payloadDigest: "1".repeat(64) } };
 }
 
-function reconciliationFixture() {
+function reconciliationFixture(bodyExtras = {}) {
   const f = fixture();
   const payload = { items: { a: { id: "a", name: "Original", weight: 100 } }, containers: {}, layouts: {} };
   f.outbox.adoptRemoteBaseline({ snapshot: payload, payload, stateRevision: 5 });
   const local = structuredClone(payload); local.items.a.name = "Local";
-  const first = f.outbox.capture({ snapshot: { ...local, localUi: "packing" }, body: { baseStateRevision: 5, payload: local } });
+  const first = f.outbox.capture({ snapshot: { ...local, localUi: "packing" }, body: { baseStateRevision: 5, payload: local, ...bodyExtras } });
   const remote = { id: "list-a", ownerId: "actor-a", stateRevision: 6, payload: structuredClone(payload) };
   remote.payload.items.a.weight = 200;
   const proofs = new Map([[first.action.operationId, { ...historicalProof(f, first, "rejected"), rejectionCode: "stale_state_revision" }]]);
@@ -236,6 +236,16 @@ test("explicit conflicting choices are frozen into a new action without changing
   assert.notEqual(next.action.operationId, f.first.action.operationId);
   assert.deepEqual([...f.values].slice(0, before.length), before);
   assert.equal(f.make().recover().action.operationId, next.action.operationId);
+});
+
+test("server reconciliation cannot inherit a previous tree or layout copy marker", async () => {
+  for (const marker of ["userLayoutCopy", "userContainerTree"]) {
+    const f = reconciliationFixture({ [marker]: { version: 1, sourceLayoutId: "source", targetLayoutId: "copy" } }), before = [...f.values];
+    const next = await f.outbox.reconcile(f.options);
+    assert.equal(Object.hasOwn(next.action.body, marker), false);
+    assert.deepEqual([...f.values].slice(0, before.length), before);
+    assert.notEqual(next.action.operationId, f.first.action.operationId);
+  }
 });
 
 test("oversized reconciliation retains the chosen merged draft without publishing a successor", async () => {

@@ -5,20 +5,27 @@
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
 - Завершён локально: независимая копия дерева с фото, `copyTree` внутри
-  copy-batch. API `45dcd06`, frontend — следующий commit после `8c937b3`.
+  copy-batch. API `45dcd06`, frontend `7cdbc2d`.
   147/147 API/MySQL, 154,49 с, bundled Node 24.19.0; `tree-copy-mysql-6.log`.
   32/32 UI Chromium/mobile WebKit, 6,8 минуты без повторов; `tree-copy-ui-4.log`.
   469 transport / 895 critical / 59 operation / 74 source/service, source checks.
   Gates false. Подробности и диагностика первых прогонов — `personal-photo-tree-copy.md`.
   Исправлены каскад удаления вложенных копий по точному immediate receipt и
   независимость проверки copy от link/missing. Все процессы API/UI завершены.
-- Следующий участок уже начат отдельно: `personal-layout-copy.js` и unit-тест,
-  4/4 (`layout-copy-unit-3.log`). Пока НЕ подключены к app/outbox, не включать
-  эти два файла в commit дерева с фото. Целая личная укладка копирует размещения
-  прежних владельцев; пустое создание использует тот же новый frozen preparer.
-  Подключить до первого await в saveNewLayout, durable до переключения UI,
-  очистить userLayoutCopy при reconciliation, добавить paired API/UI проверки.
-  Не останавливаться на срезе, публикация отложена.
+- Завершён следующий локальный участок: `personal-layout-copy.js` подключён
+  к app/outbox до первого await в saveNewLayout. 476 transport; новые unit-
+  проверки настоящего adapter/durable/quota, marker cleanup. Документ
+  `personal-layout-copy.md`, API `07f6502`. 151/151 API/MySQL, 159,52 с (`layout-copy-mysql-1.log`),
+  без skips. UI `layout-copy-ui-1.log`: 24/24 Chromium/mobile WebKit, 4,4 минуты
+  с первой попытки (16 новых + прежние link/layout-deletion). 895 critical,
+  74 source/service, source checks. Все процессы завершены. Gates false, источник/цель фиксируются до ожидания,
+  данные сохраняются до переключения UI. Reconciliation очищает userLayoutCopy
+  и старый userContainerTree. Продолжать следующий пункт без публикации.
+- Следующий открытый путь найден в `copyItemToContainerInLayout` /
+  `duplicateItemToContainerInLayout`: отдельная вещь с фото в выбранную сумку.
+  Старый путь выбирает источник/ID после подтверждения и вызывает legacy photo
+  copy; нужен frozen personal adapter до окна подтверждения. Полезная основа —
+  общий copy-batch/session и pure placement compiler, затем API/UI приёмка.
 
 - Проверен локальный участок: link/missing дерева с подтверждёнными фото.
   FE `8c937b3`, backend `57c0516`.
