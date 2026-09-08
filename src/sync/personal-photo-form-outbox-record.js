@@ -15,7 +15,7 @@ export function assertPersonalPhotoFormRecord(record) {
   const manifest = assertPersonalPhotoFormCandidate({ body: action.body, basePayload: record.mergeBase.payload,
     payload: photo.payload, listId: action.listId });
   if (manifest.photos.some(entry => entry.action === "attach")) {
-    if (manifest.photos.some(entry => entry.action !== "attach") || photo.fileInventoryVersion !== 2
+    if (photo.fileInventoryVersion !== 2
       || !/^[a-f0-9]{64}$/.test(photo.fileIntentHash || "")) fail();
   } else if (manifest.created || manifest.photos.some(entry => !["delete", "order"].includes(entry.action))
     || photo.fileIntentHash !== null || photo.fileInventoryVersion !== undefined) fail();
@@ -24,10 +24,11 @@ export function assertPersonalPhotoFormRecord(record) {
 
 export function assertPersonalPhotoFormFile(record, saved, binding) {
   const manifest = assertPersonalPhotoFormRecord(record);
-  if (manifest.photos.some(entry => entry.action !== "attach") || !saved || !same(saved.binding, binding) || !same(saved.action, record.action) || !same(saved.snapshot, record.snapshot)
-    || saved.intentHash !== record.photoState.fileIntentHash || !Array.isArray(saved.files) || saved.files.length !== manifest.photos.length) fail();
+  const attachments = manifest.photos.filter(entry => entry.action === "attach");
+  if (!attachments.length || !saved || !same(saved.binding, binding) || !same(saved.action, record.action) || !same(saved.snapshot, record.snapshot)
+    || saved.intentHash !== record.photoState.fileIntentHash || !Array.isArray(saved.files) || saved.files.length !== attachments.length) fail();
   for (const [index, part] of saved.files.entries()) {
-    const entry = manifest.photos[index];
+    const entry = attachments[index];
     if (part?.stage?.operationId !== entry.assetId || part.stage.photoId !== entry.photoId
       || part.stage.entityType !== manifest.entityType || part.stage.entityId !== manifest.entityId
       || !(part.file instanceof Blob) || part.file.size <= 0 || part.file.size !== part.fileMetadata?.size

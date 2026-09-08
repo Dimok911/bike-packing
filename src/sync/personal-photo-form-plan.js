@@ -11,10 +11,11 @@ const fileValid = file => file instanceof Blob && file.size > 0 && file.size <= 
   && ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"].includes(file.type);
 const fail = () => { throw Object.assign(new Error("Не удалось зафиксировать карточку со всеми фото. Ничего не отправлено."), { code: "photo-form-plan" }); };
 
-// Initial form slice: fields + new attachments, no placement/removal/reorder.
+// A complete form owns fields, new attachments and an optional frozen selection
+// of existing photos. Delete first, attach, then apply one terminal exact order.
 // No await, hashing, upload, storage, editor mutation, or new random IDs on retry.
 export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePayload, baseStateRevision,
-  entityType, entityId, baseEntityRevision, fields, files, index = null }, {
+  entityType, entityId, baseEntityRevision, fields, files, index = null, photoSelection = null, photoRevisions = [] }, {
   enabled = PERSONAL_PHOTO_FORM_ENABLED, createUuid = () => crypto.randomUUID(), snapshotToPayload = value => value
 } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || !id(binding.actorId) || binding.actorId.length > 36
@@ -36,6 +37,29 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
     || new Set(oldPhotos.map(photo => photo.id)).size !== oldPhotos.length) fail();
   const at = index ?? oldPhotos.length;
   if (!Number.isSafeInteger(at) || at < 0 || at > oldPhotos.length) fail();
+  let retained = oldPhotos.map(photo => photo.id), order = null;
+  const revisions = new Map();
+  if (photoSelection !== null) {
+    if (!previous || index !== null || !photoSelection || Object.keys(photoSelection).some(key => !["retainedPhotoIds", "order"].includes(key))
+      || !Array.isArray(photoSelection.retainedPhotoIds) || !Array.isArray(photoSelection.order)
+      || !Array.isArray(photoRevisions) || photoRevisions.length !== oldPhotos.length) fail();
+    retained = [...photoSelection.retainedPhotoIds]; order = clone(photoSelection.order);
+    if (new Set(retained).size !== retained.length || retained.some(value => !oldPhotos.some(photo => photo.id === value))) fail();
+    const orderedPhotos = [], orderedFiles = [];
+    for (const part of order) {
+      if (!part || typeof part !== "object" || Object.keys(part).length !== 1) fail();
+      if (Object.hasOwn(part, "photoId") && retained.includes(part.photoId)) orderedPhotos.push(part.photoId);
+      else if (Number.isSafeInteger(part.fileIndex) && part.fileIndex >= 0 && part.fileIndex < files.length) orderedFiles.push(part.fileIndex);
+      else fail();
+    }
+    if (!same(orderedPhotos, retained) || orderedFiles.length !== files.length || new Set(orderedFiles).size !== files.length) fail();
+    for (const proof of photoRevisions) {
+      if (!proof || revisions.has(proof.photoId) || !Number.isSafeInteger(proof.photoRevision)
+        || proof.photoRevision < 1 || proof.photoRevision > baseEntityRevision
+        || !oldPhotos.some(photo => photo.id === proof.photoId && photo.assetId === proof.assetId)) fail();
+      revisions.set(proof.photoId, proof.photoRevision);
+    }
+  }
   let bytes = 0;
   const selected = files.map(part => {
     const file = part?.file, thumb = part?.thumb ?? null, fileName = part?.fileName || file?.name || "photo";
@@ -44,15 +68,30 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
     return { file, thumb, fileName };
   });
   const assigned = new Set(), nextUuid = () => { const value = createUuid(); if (!uuid(value) || assigned.has(value)) fail(); assigned.add(value); return value; };
-  const operationId = nextUuid(), expected = oldPhotos.map(photo => photo.id), changes = [], parts = [], pending = clone(oldPhotos);
+  const operationId = nextUuid(), expected = oldPhotos.map(photo => photo.id), changes = [], parts = [];
+  let pending = clone(oldPhotos);
+  for (const photo of oldPhotos.filter(photo => !retained.includes(photo.id))) {
+    changes.push({ version: 1, action: "delete", entityType, entityId, baseEntityRevision,
+      expectedPhotoIds: [...expected], photoId: photo.id, assetId: photo.assetId, basePhotoRevision: revisions.get(photo.id) });
+    expected.splice(expected.indexOf(photo.id), 1); pending = pending.filter(entry => entry.id !== photo.id);
+  }
+  const newIds = [];
   for (const [offset, part] of selected.entries()) {
-    const assetId = nextUuid(), photoId = `photo-${nextUuid()}`, position = at + offset;
+    const assetId = nextUuid(), photoId = `photo-${nextUuid()}`, position = order ? expected.length : at + offset;
+    newIds.push(photoId);
     changes.push({ version: 1, action: "attach", entityType, entityId, baseEntityRevision,
       expectedPhotoIds: [...expected], assetId, photoId, index: position });
     expected.splice(position, 0, photoId);
     pending.splice(position, 0, { id: photoId, photoId, assetId, listId: binding.listId, status: "pending" });
     parts.push({ stage: { operationId: assetId, entityType, entityId, photoId, fileName: part.fileName }, file: part.file, thumb: part.thumb });
   }
+  if (order) {
+    const finalIds = order.map(part => part.photoId ?? newIds[part.fileIndex]);
+    if (!same(expected, finalIds)) changes.push({ version: 1, action: "order", entityType, entityId, baseEntityRevision,
+      expectedPhotoIds: [...expected], photoIds: finalIds });
+    pending = finalIds.map(photoId => pending.find(photo => photo.id === photoId));
+  }
+  if (changes.length > 50) fail();
   const body = { version: 1, action: "form", entityType, entityId, baseEntityRevision, baseStateRevision, fields: frozenFields, changes };
   const owner = personalPhotoFormOwner(base, body); owner.photos = pending;
   frozen[collection] ||= {};

@@ -48,7 +48,7 @@ export function personalPhotoFormManifest(body) {
       || change.baseEntityRevision !== body.baseEntityRevision || change.action === "copy"
       || body.baseEntityRevision === 0 && change.action !== "attach")) fail();
   if (body.baseEntityRevision === 0 && body.changes[0].expectedPhotoIds?.length !== 0) fail();
-  const photos = personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true });
+  const photos = personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true, allowAttachThenOrder: true });
   return { entityType: body.entityType, entityId: body.entityId, baseEntityRevision: body.baseEntityRevision,
     created: body.baseEntityRevision === 0, fields: clone(body.fields), photos };
 }
@@ -106,7 +106,7 @@ export function validatePersonalPhotoFormResult(payload, expected) {
   try {
     const manifest = personalPhotoFormManifest(expected.body), summary = payload?.photoForm;
     if (!summary || summary.entityType !== manifest.entityType || summary.entityId !== manifest.entityId || summary.created !== manifest.created
-      || !validatePersonalPhotoPublicationResult(payload, { ...expected, body: photoValidationView(expected.body) }, { allowDeleteThenOrder: true })) return false;
+      || !validatePersonalPhotoPublicationResult(payload, { ...expected, body: photoValidationView(expected.body) }, { allowDeleteThenOrder: true, allowAttachThenOrder: true })) return false;
     const owner = payload.list.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId];
     return Object.entries(manifest.fields).every(([key, value]) => key === "dimensions" && value === null
       ? !Object.hasOwn(owner, key) : Object.hasOwn(owner, key) && same(owner[key], value));

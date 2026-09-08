@@ -95,7 +95,8 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
-        const values = edit ? { photoIds: personalPhotoEditSelection(selection) } : { files: entry.files.selection(selection) };
+        const values = edit ? { photoIds: personalPhotoEditSelection(selection) }
+          : isEditEnabled() && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
         entry.session = (edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
         const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);

@@ -11,7 +11,7 @@ const equal = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.l
 const invalid = () => { throw Object.assign(new Error("Состав фотодействия изменён или неполон. Отправка остановлена."),
   { code: "photo-manifest", isOperationPreflightError: true }); };
 
-export function personalPhotoPublicationManifest(body, { allowDeleteThenOrder = false } = {}) {
+export function personalPhotoPublicationManifest(body, { allowDeleteThenOrder = false, allowAttachThenOrder = false } = {}) {
   // Only the form validator opts in through a call argument. Wire flags never
   // broaden the photo-only batch grammar; an order remains terminal per owner.
   if (body?.version !== 1 || body.payload !== undefined || body.force || body.forceOverwrite) invalid();
@@ -25,7 +25,7 @@ export function personalPhotoPublicationManifest(body, { allowDeleteThenOrder = 
       || change.payload !== undefined || change.force || change.forceOverwrite
       || batch && (change.causal !== undefined || change.baseStateRevision !== undefined)) invalid();
     const ownerKey = `${change.entityType}:${change.entityId}`, previous = owners.get(ownerKey);
-    if (previous && (change.action === "order" && !(allowDeleteThenOrder && previous.onlyDeletes) || previous.action === "order"
+    if (previous && (change.action === "order" && !(allowDeleteThenOrder && previous.onlyDeletes || allowAttachThenOrder && previous.onlyFormChanges) || previous.action === "order"
       || change.baseEntityRevision !== previous.baseEntityRevision || !equal(change.expectedPhotoIds, previous.photoIds))) invalid();
     let photoIds;
     if (change.action === "order") {
@@ -50,6 +50,7 @@ export function personalPhotoPublicationManifest(body, { allowDeleteThenOrder = 
     const outcome = { index, action: change.action, entityType: change.entityType, entityId: change.entityId,
       ...(change.action === "order" ? {} : { photoId: change.photoId, assetId: change.assetId }), photoIds };
     owners.set(ownerKey, { ...outcome, baseEntityRevision: change.baseEntityRevision,
+      onlyFormChanges: ["attach", "delete"].includes(change.action) && (!previous || previous.onlyFormChanges),
       onlyDeletes: change.action === "delete" && (!previous || previous.onlyDeletes) });
     return outcome;
   });

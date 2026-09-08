@@ -49,3 +49,15 @@ test("a new owner may select all local files without inventing old published pho
   f.draft.photos = [];
   assert.throws(() => f.files.selection({ draft: f.draft, basePhotos: [] }));
 });
+
+test("mixed selection binds every retained old photo and every newly selected immutable file in final UI order", () => {
+  const f = fixture();
+  f.draft.photos = [f.draft.photos[2], f.draft.photos[0], f.draft.photos[1]];
+  const selected = f.files.mixedSelection(f);
+  assert.deepEqual(selected.photoSelection, { retainedPhotoIds: ["old"], order: [{ fileIndex: 0 }, { photoId: "old" }, { fileIndex: 1 }] });
+  assert.deepEqual(selected.files.map(part => part.fileName), ["image-2.png", "image-1.png"]);
+  f.draft.deletedPhotos.push(f.draft.photos.splice(1, 1)[0]);
+  assert.deepEqual(f.files.mixedSelection(f).photoSelection, { retainedPhotoIds: [], order: [{ fileIndex: 0 }, { fileIndex: 1 }] });
+  f.draft.deletedPhotos = []; assert.throws(() => f.files.mixedSelection(f));
+  const forged = fixture(); forged.draft.photos[0].assetId = crypto.randomUUID(); assert.throws(() => forged.files.mixedSelection(forged));
+});

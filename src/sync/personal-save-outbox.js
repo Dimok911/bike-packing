@@ -429,9 +429,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const candidate = { body: input.body, basePayload: base.payload, payload: input.payload, listId };
       const manifest = form ? assertPersonalPhotoFormCandidate(candidate).photos : assertPersonalPhotoCandidate(candidate);
       const changes = form || input.body.action === "batch" ? input.body.changes : [input.body];
-      if (form && !manifest.some(entry => entry.action === "attach") && !photoEditEnabled
+      if (form && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled
         || manifest.some(entry => entry.action === "attach") && (form || input.body.action === "batch")
-        && (!photoBatchEnabled || manifest.some(entry => entry.action !== "attach"))
+        && (!photoBatchEnabled || !form && manifest.some(entry => entry.action !== "attach"))
         || changes.some(change => change.action === "copy" && change.source.listId !== listId)) {
         throw blocked("photo-composite", "Для этого фотопакета ещё нужен составной локальный адаптер.");
       }
@@ -861,7 +861,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
           if (action.body.action === "form" && !photoFormEnabled) throw blocked("photo-form-disabled", "Сохранение карточки вместе с фото ещё не включено.");
           const manifest = assertPersonalPhotoRecord(record), attachments = manifest.filter(entry => entry.action === "attach");
-          if (action.body.action === "form" && !attachments.length && !photoEditEnabled) throw blocked("photo-edit-disabled", "Изменение существующих фото ещё не включено.");
+          if (action.body.action === "form" && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled) throw blocked("photo-edit-disabled", "Изменение существующих фото ещё не включено.");
           const batch = record.photoState.fileInventoryVersion === 2;
           if (batch && !photoBatchEnabled) throw blocked("photo-batch-disabled", "Пакетная отправка фото ещё не включена.");
           if (attachments.length) {

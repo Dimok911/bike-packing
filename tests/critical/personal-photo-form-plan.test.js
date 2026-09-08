@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { preparePersonalPhotoFormAttachments } from "../../src/sync/personal-photo-form-plan.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, personalPhotoFormManifest, assertPersonalPhotoFormCandidate,
   validatePersonalPhotoFormResult } from "../../src/sync/personal-photo-form-protocol.js";
+import { personalPhotoPublicationManifest } from "../../src/sync/personal-photo-publication-protocol.js";
+import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
+import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
+import { assertPersonalPhotoFormFile } from "../../src/sync/personal-photo-form-outbox-record.js";
 
 const photo = () => ({ id: "old", photoId: "old", assetId: crypto.randomUUID(), status: "synced", listId: "list", url: "/old", thumbUrl: "/old-thumb" });
 function fixture({ created = false, type = "item" } = {}) {
@@ -15,6 +19,54 @@ function fixture({ created = false, type = "item" } = {}) {
     files: [0, 1].map(index => ({ fileName: `form-${index}.png`, file: new Blob(["same selected bytes"], { type: "image/png" }), thumb: null })) };
 }
 const prepare = f => preparePersonalPhotoFormAttachments(f, { enabled: true });
+
+function mixedFixture() {
+  const f = fixture();
+  f.basePayload.items.owner.photos = [0, 1, 2].map(i => ({ ...photo(), id: `old-${i}`, photoId: `old-${i}` }));
+  f.snapshot = structuredClone(f.basePayload);
+  f.photoRevisions = f.basePayload.items.owner.photos.map(p => ({ photoId: p.id, assetId: p.assetId, photoRevision: 7 }));
+  f.photoSelection = { retainedPhotoIds: ["old-2", "old-1"], order: [{ fileIndex: 1 }, { photoId: "old-2" }, { fileIndex: 0 }, { photoId: "old-1" }] };
+  return f;
+}
+
+test("mixed form freezes deletions, all new files and final order in one hash-bound recoverable action", async () => {
+  const f = mixedFixture(), before = structuredClone(f.snapshot), prepared = prepare(f), changes = prepared.body.changes;
+  assert.deepEqual(changes.map(p => p.action), ["delete", "attach", "attach", "order"]);
+  assert.equal(changes[0].basePhotoRevision, 7); assert.equal(changes[0].baseEntityRevision, 12);
+  assert.deepEqual(changes[1].expectedPhotoIds, ["old-1", "old-2"]);
+  assert.deepEqual(changes[2].expectedPhotoIds, ["old-1", "old-2", changes[1].photoId]);
+  assert.deepEqual(changes[3].photoIds, [changes[2].photoId, "old-2", changes[1].photoId, "old-1"]);
+  assert.deepEqual(prepared.payload.items.owner.photos.map(p => p.id), changes[3].photoIds);
+  assert.deepEqual(f.snapshot, before);
+  assert.throws(() => personalPhotoPublicationManifest({ version: 1, action: "batch", changes }));
+  assert.throws(() => personalPhotoPublicationManifest({ version: 1, action: "batch", changes, allowAttachThenOrder: true }));
+  const values = new Map(), storage = { get length() { return values.size; }, key: i => [...values.keys()][i],
+    getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v), removeItem: k => values.delete(k) };
+  const make = photoEditEnabled => createPersonalSaveOutbox({ ...f.binding, storage, photoEnabled: true,
+    photoBatchEnabled: true, photoFormEnabled: true, photoEditEnabled });
+  const outbox = make(true); outbox.adoptRemoteBaseline({ snapshot: f.snapshot, payload: f.basePayload, stateRevision: 17 });
+  const disabled = make(false); disabled.adoptRemoteBaseline({ snapshot: f.snapshot, payload: f.basePayload, stateRevision: 17 });
+  assert.throws(() => disabled.preparePhoto(prepared));
+  const plan = outbox.preparePhoto(prepared);
+  const stored = await encodePersonalPhotoFormRecord({ binding: f.binding, ...plan, files: prepared.files });
+  const saved = await decodePersonalPhotoFormRecord(stored, f.binding, prepared.operationId);
+  assert.deepEqual(saved.action.body, plan.action.body); assert.equal(saved.files.length, 2);
+  const context = { ...f.binding, scope: "personal", generation: "mixed" };
+  const record = await outbox.capturePhoto({ plan, store: { read: async () => saved }, getContext: () => context });
+  assert.equal(record.action.operationId, prepared.operationId); assert.equal(make(true).list().length, 1);
+  assert.deepEqual(make(true).recoverSnapshot().items.owner.photos.map(p => p.id), changes[3].photoIds);
+  const incomplete = { ...saved, files: saved.files.slice(0, 1) };
+  assert.throws(() => assertPersonalPhotoFormFile(record, incomplete, f.binding));
+});
+
+test("mixed form rejects missing, duplicate, foreign or rewritten selection and photo-version evidence", () => {
+  for (const mutate of [f => f.photoSelection.order.pop(), f => { f.photoSelection.order[0] = { fileIndex: 0 }; },
+    f => { f.photoSelection.retainedPhotoIds.push("foreign"); }, f => { f.photoSelection.order[1].photoId = "old-0"; },
+    f => { f.photoRevisions[0].photoRevision = 13; }, f => { f.photoRevisions[0].assetId = crypto.randomUUID(); },
+    f => { f.photoRevisions[1] = f.photoRevisions[0]; }, f => { f.index = 0; }]) {
+    const f = mixedFixture(); mutate(f); assert.throws(() => prepare(f));
+  }
+});
 
 test("form attachments freeze new item and bag IDs, business fields, exact owner revision and all equal-but-separate files", async () => {
   for (const created of [true, false]) for (const type of ["item", "container"]) {

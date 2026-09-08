@@ -732,6 +732,66 @@ async function prepareExistingPhotoEdit(page, context, { type = "container", cha
   return { ...form, ownerId, originalPhotos };
 }
 
+for (const type of ["item", "container"]) for (const outcome of ["confirmed", "lost file", "lost owner", "queue quota"]) test(`mixed photo form ${type} retains new files, deletion and final order (${outcome})`, async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { f, before, collection, prefix, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type, change: "delete" });
+  const server = structuredClone(f.payload), stageBefore = f.stagePosts.length;
+  const image = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles([1, 2].map(i => ({ name: `новое-${i}.png`, mimeType: "image/png", buffer: image })));
+  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(3);
+  const firstNew = await page.locator(`#${prefix}PhotoPreview img`).nth(1).getAttribute("data-photo-local-id");
+  await submitForm(page, `#${prefix}PhotoPreview [data-photo-index="1"]`);
+  await submitForm(page, `#${prefix}PhotoPrimaryBtn`);
+  await expect(page.locator(`#${prefix}PhotoPreview img`).first()).toHaveAttribute("data-photo-local-id", firstNew);
+  if (outcome === "lost file") f.loseStageAt = stageBefore + 2;
+  if (outcome === "lost owner") f.loseFormOwner = true;
+  if (outcome === "queue quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:")) {
+        const action = JSON.parse(value)?.action;
+        if (action?.kind === "photos.mutate" && action.body.changes?.some(p => p.action === "delete")
+          && action.body.changes.some(p => p.action === "attach")) throw new DOMException("Mixed form queue quota", "QuotaExceededError");
+      }
+      return original.call(this, key, value);
+    };
+  });
+  await submitForm(page, button);
+  if (outcome === "queue quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible(); await expect(dialog).toBeVisible();
+    const copy = await downloadRecovery(page);
+    expect(copy.unconfirmedMemoryDraft[collection][ownerId].photos).toHaveLength(3);
+    expect(copy.unconfirmedMemoryDraft[collection][ownerId].photos.some(p => p.id === originalPhotos[0].id)).toBe(false);
+    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(stageBefore);
+  } else {
+    await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    if (outcome !== "confirmed") {
+      await expect.poll(() => f.stagePosts.length).toBe(stageBefore + 2);
+      if (outcome === "lost owner") await expect.poll(() => f.injectedFailure).toBe(true);
+      else expect(f.payload).toEqual(server);
+      const posts = structuredClone(f.posts), stages = [...f.stagePosts];
+      await reloadApp(page, { recovery: true });
+      const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+      await resume.click(); await expect(resume).toBeEnabled();
+      expect(f.posts).toEqual(posts); expect(f.stagePosts).toEqual(stages);
+      f.loseStageAt = 0; f.hiddenStage = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+      await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+    expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(stageBefore + 2);
+    const action = f.posts.at(-1), changes = action.body.changes;
+    expect(changes.map(p => p.action)).toEqual(["delete", "attach", "attach", "order"]);
+    expect(changes[0].photoId).toBe(originalPhotos[0].id);
+    expect(changes.at(-1).photoIds).toEqual([changes[1].photoId, originalPhotos[1].id, changes[2].photoId]);
+    expect(f.payload[collection][ownerId].photos.map(p => p.id)).toEqual(changes.at(-1).photoIds);
+    expect(f.payload[collection][ownerId].name).toBe("Фотографии изменены");
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(stageBefore + 2);
+  }
+  expect(f.errors).toEqual([]);
+});
+
 for (const type of ["item", "container"]) for (const change of ["delete", "order", "delete-order"]) for (const lost of [false, true]) {
   test(`existing photo ${type} ${change} is one durable form without upload (${lost ? "lost ACK" : "normal ACK"})`, async ({ page, context }) => {
     test.setTimeout(120000);

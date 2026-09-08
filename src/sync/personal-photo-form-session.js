@@ -5,6 +5,7 @@ import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventor
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { preparePersonalPhotoFormAttachments } from "./personal-photo-form-plan.js";
+import { readPersonalPhotoOwnerState } from "./personal-photo-owner-state.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const uuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -14,7 +15,7 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // selection, fields, list base and ALL IDs before inspecting retained files or
 // reading an owner's revision. That read may confirm the frozen base, not replace
 // it with newer data. No network mutation is performed by this session.
-export function createPersonalPhotoFormSession({ outbox, store, getContext, readEntities, onDurable,
+export function createPersonalPhotoFormSession({ outbox, store, getContext, readEntities, readOwner, onDurable,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = PERSONAL_PHOTO_FORM_ENABLED } = {}) {
   let attempt = null;
   const current = initial => {
@@ -41,7 +42,7 @@ export function createPersonalPhotoFormSession({ outbox, store, getContext, read
         const { files, ...request } = input;
         assertListOperationPayload({ ...request.binding, kind: "photos.mutate", body: request });
         const frozen = clone(request), initial = clone(getContext());
-        if (typeof frozen.created !== "boolean" || Object.hasOwn(frozen, "baseEntityRevision")
+        if (typeof frozen.created !== "boolean" || Object.hasOwn(frozen, "baseEntityRevision") || Object.hasOwn(frozen, "photoRevisions")
           || !initial.generation || initial.scope !== "personal" || initial.scopeKey !== `id:${initial.actorId}`
           || Object.keys(outbox.binding).some(key => initial[key] !== outbox.binding[key] || frozen.binding?.[key] !== outbox.binding[key])
           || !Array.isArray(files) || !files.length || files.length > 50) fail("Форма не содержит подтверждённый личный список и полный набор файлов.");
@@ -62,7 +63,9 @@ export function createPersonalPhotoFormSession({ outbox, store, getContext, read
         // is never recorded in an action, outbox, file store or network request.
         // The dispatchable action is constructed separately after the exact read.
         const previewIds = [...ids], { created: previewCreated, ...previewInput } = frozen;
-        attempt.preview = preparePersonalPhotoFormAttachments({ ...previewInput, files: selected, baseEntityRevision: previewCreated ? 0 : 1 },
+        const previewPhotos = frozen.basePayload?.[frozen.entityType === "item" ? "items" : "containers"]?.[frozen.entityId]?.photos || [];
+        attempt.preview = preparePersonalPhotoFormAttachments({ ...previewInput, files: selected, baseEntityRevision: previewCreated ? 0 : 1,
+          photoRevisions: previewPhotos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })) },
           { enabled, snapshotToPayload, createUuid: () => previewIds.shift() }).snapshot;
         current(initial);
         if (outbox.hasPending()) fail("Сначала подтвердите предыдущие изменения списка. Поля и фото остались в форме.");
@@ -73,13 +76,14 @@ export function createPersonalPhotoFormSession({ outbox, store, getContext, read
             fail("Прежние фотодействия требуют проверки. Новая форма не отправлена; исходные файлы сохранены.");
           }
           attempt.phase = "reading-owner";
-          const baseEntityRevision = frozen.created ? 0 : await readPersonalPhotoFormOwnerRevision(frozen, { getContext, readEntities });
+          const versions = frozen.photoSelection ? await readPersonalPhotoOwnerState(frozen, { getContext, readOwner })
+            : { baseEntityRevision: frozen.created ? 0 : await readPersonalPhotoFormOwnerRevision(frozen, { getContext, readEntities }) };
           current(initial);
           const { created, ...values } = frozen;
           const submitter = createPersonalPhotoFormSubmitter({ outbox, store, getContext, onDurable, snapshotToPayload,
             enabled, createUuid: () => ids.shift() });
           attempt.submitter = submitter; attempt.phase = "capturing";
-          const result = await submitter.submit({ ...values, baseEntityRevision, files: selected });
+          const result = await submitter.submit({ ...values, ...versions, files: selected });
           attempt.phase = "durable"; resolve(result);
         })().catch(rejected);
       } catch (error) { rejected(error); }

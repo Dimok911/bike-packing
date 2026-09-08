@@ -16,12 +16,13 @@ function validateIntent({ binding, action, snapshot, files }) {
   assertListOperationPayload({ ...binding, ...action });
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body: snapshot });
   const manifest = personalPhotoFormManifest(action.body), owner = snapshot?.[manifest.entityType === "item" ? "items" : "containers"]?.[manifest.entityId];
-  if (files.length !== manifest.photos.length || manifest.photos.some(entry => entry.action !== "attach")
+  const attachments = manifest.photos.filter(entry => entry.action === "attach");
+  if (!attachments.length || files.length !== attachments.length
     || !owner || owner.id !== manifest.entityId || !same(owner.photos?.map(photo => photo.id), manifest.photos.at(-1).photoIds)
     || Object.entries(manifest.fields).some(([key, value]) => key === "dimensions" && value === null
       ? Object.hasOwn(owner, key) : !Object.hasOwn(owner, key) || !same(owner[key], value))) invalid();
   for (const [index, part] of files.entries()) {
-    const entry = manifest.photos[index], stage = part?.stage;
+    const entry = attachments[index], stage = part?.stage;
     if (stage?.operationId !== entry.assetId || stage.operationId === action.operationId || stage.photoId !== entry.photoId
       || stage.entityType !== manifest.entityType || stage.entityId !== manifest.entityId
       || typeof stage.fileName !== "string" || !stage.fileName || stage.fileName.length > 255) invalid();

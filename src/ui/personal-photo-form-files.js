@@ -66,6 +66,25 @@ export function createPersonalPhotoFormFiles({ binding, getContext }) {
         return { ...prepared }; // Blob bytes are immutable; metadata is copied.
       });
     },
+    mixedSelection({ draft, basePhotos }) {
+      assertCurrent();
+      if (!Array.isArray(draft?.photos) || !Array.isArray(draft.deletedPhotos) || !Array.isArray(basePhotos) || !basePhotos.length) fail();
+      const originals = new Set(basePhotos.map(photo => photo.id));
+      const retainedPhotoIds = personalPhotoEditSelection({ binding, basePhotos,
+        draft: { photos: draft.photos.filter(photo => originals.has(photo?.id)), deletedPhotos: draft.deletedPhotos } });
+      const order = [], files = [], ids = new Set(); let bytes = 0;
+      for (const photo of draft.photos) {
+        if (!photo || typeof photo.id !== "string" || !photo.id || ids.has(photo.id)) fail(); ids.add(photo.id);
+        if (originals.has(photo.id)) { order.push({ photoId: photo.id }); continue; }
+        if (photo.localId !== photo.id || photo.status !== "pending" || photo.url || photo.thumbUrl || Object.hasOwn(photo, "assetId")
+          || ["_copyToCurrentList", "copyToCurrentList", "publicCopySourceId", "sharedSourceId"].some(key => photo[key])) fail();
+        const prepared = records.get(photo.localId); if (!prepared) fail();
+        bytes += prepared.file.size + (prepared.thumb?.size || 0); if (bytes > 50 * 1024 * 1024) fail();
+        order.push({ fileIndex: files.length }); files.push({ ...prepared });
+      }
+      if (!files.length || files.length > 50) fail();
+      return { files, photoSelection: { retainedPhotoIds, order } };
+    },
     assertCurrent
   };
 }

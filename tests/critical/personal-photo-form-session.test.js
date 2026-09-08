@@ -5,25 +5,53 @@ import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js
 import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
 
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
-function fixture(created = false) {
+function fixture(created = false, mixed = false) {
   const binding = { environment: "bike-packing-experiment", actorId: "actor", scopeKey: "id:actor", listId: "list" };
   const context = { ...binding, scope: "personal", generation: "base", form: "opened" }, values = new Map(), files = new Map(), events = [], scan = deferred();
   const base = { items: created ? {} : { item: { id: "item", name: "Before", photos: [] } }, containers: {}, layouts: {} };
+  if (mixed) base.items.item.photos = [0, 1].map(i => ({ id: `old-${i}`, photoId: `old-${i}`, assetId: crypto.randomUUID(),
+    listId: "list", status: "synced", url: `/old-${i}`, thumbUrl: `/old-${i}-thumb` }));
   const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: k => values.get(k) ?? null,
     setItem: (k, v) => values.set(k, v), removeItem: k => values.delete(k) };
-  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoFormEnabled: true });
+  const outbox = createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true, photoFormEnabled: true, photoEditEnabled: mixed });
   outbox.adoptRemoteBaseline({ snapshot: base, payload: base, stateRevision: 5 });
   const store = { binding, ids: async () => { await scan.promise; return [...files.keys()]; },
     read: id => decodePersonalPhotoFormRecord(files.get(id), binding, id),
     async captureForm(value) { events.push("file"); files.set(value.action.operationId, await encodePersonalPhotoFormRecord({ binding, ...value })); } };
   const request = { binding, snapshot: structuredClone(base), basePayload: base, baseStateRevision: 5, created, entityType: "item", entityId: "item",
     fields: { name: "Chosen", note: "Chosen note" }, files: [1, 2].map(i => ({ file: new Blob([`selected ${i}`], { type: "image/png" }), fileName: `${i}.png` })) };
+  if (mixed) request.photoSelection = { retainedPhotoIds: ["old-1"], order: [{ fileIndex: 0 }, { photoId: "old-1" }, { fileIndex: 1 }] };
   const response = { ok: true, listId: "list", stateRevision: 5, items: [{ id: "item", listId: "list", ownerId: "actor", deleted: false,
     deletedAt: null, stateRevision: 3, payload: structuredClone(base.items.item || {}) }] };
   const options = { enabled: true, outbox, store, getContext: () => context,
     readEntities: async () => { events.push("GET"); return response; }, onDurable: () => { events.push("view"); } };
-  return { binding, context, outbox, store, files, events, scan, request, response, options };
+  const ownerResponse = { ok: true, version: 1, readOnly: true, ...binding, stateRevision: 5,
+    owner: { entityType: "item", entityId: "item", entityRevision: 3, payload: structuredClone(base.items.item || {}) },
+    photos: (base.items.item?.photos || []).map(p => ({ photoId: p.id, assetId: p.assetId, photoRevision: 2 })) };
+  options.readOwner = async () => { events.push("GET-photos"); return ownerResponse; };
+  return { binding, context, outbox, store, files, events, scan, request, response, ownerResponse, options };
 }
+
+for (const outcome of ["valid", "changed-owner"]) test(`mixed session freezes the selected order and files before awaiting exact owner/photo evidence (${outcome})`, async () => {
+  const f = fixture(false, true), session = createPersonalPhotoFormSession(f.options), pending = session.submit(f.request);
+  const ids = session.recoveryCopy().ids;
+  f.request.photoSelection.order.reverse(); f.request.fields.name = "Late"; f.request.files.reverse();
+  assert.equal(session.submit(f.request), pending);
+  if (outcome === "changed-owner") f.ownerResponse.owner.payload.name = "Changed remotely";
+  f.scan.resolve();
+  if (outcome === "changed-owner") {
+    await assert.rejects(pending, { code: "photo-owner-state" }); assert.deepEqual(f.events, ["GET-photos"]);
+    assert.equal(f.files.size, 0); assert.equal(f.outbox.list().length, 0);
+  } else {
+    const record = (await pending).record, changes = record.action.body.changes;
+    assert.deepEqual(changes.map(p => p.action), ["delete", "attach", "attach", "order"]);
+    assert.equal(changes[0].basePhotoRevision, 2); assert.equal(changes[0].baseEntityRevision, 3);
+    assert.deepEqual(changes.at(-1).photoIds, [changes[1].photoId, "old-1", changes[2].photoId]);
+    assert.equal(record.action.body.fields.name, "Chosen"); assert.deepEqual(f.events, ["GET-photos", "file", "view"]);
+    assert.deepEqual(await Promise.all((await f.store.read(record.action.operationId)).files.map(p => p.file.text())), ["selected 1", "selected 2"]);
+  }
+  assert.deepEqual(session.recoveryCopy().ids, ids);
+});
 
 for (const created of [false, true]) test(`whole ${created ? "new" : "existing"} form freezes before storage scan and owner lookup, then links once`, async () => {
   const f = fixture(created), session = createPersonalPhotoFormSession(f.options), promise = session.submit(f.request);
