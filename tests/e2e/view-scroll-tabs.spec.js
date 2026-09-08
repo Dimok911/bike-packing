@@ -544,7 +544,11 @@ test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ p
     input.blur();
   });
   await page.waitForTimeout(700);
-  await addScrollableViewFixtures(page);
+  // The filtered list can rerender during startup or scrolling. A spacer child
+  // is then removed and the test scrolls an empty viewport. Keep test geometry
+  // outside the rendered children so the actual sticky-height assertions remain
+  // meaningful across those rerenders.
+  await page.addStyleTag({ content: "#itemsView, #bagsView, #packingView { min-height: 2600px !important; }" });
 
   const stickySnapshot = () => page.evaluate(() => {
     const controls = document.querySelector(".controls");
@@ -559,9 +563,6 @@ test("reverse iPhone scrolling keeps the sticky stack height stable", async ({ p
 
   for (const view of ["items", "bags", "packing"]) {
     await selectViewWithoutAutoScroll(page, view);
-    // Late startup work can rerender a view and replace test-only children.
-    // Reattach the geometry fixture immediately before measuring this view.
-    await addScrollableViewFixtures(page);
     await page.waitForTimeout(50);
     await expect.poll(async () => (await stickySnapshot()).compact).toBe(true);
     const baseline = await stickySnapshot();
