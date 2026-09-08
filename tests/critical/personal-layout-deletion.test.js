@@ -1,3 +1,4 @@
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -51,30 +52,35 @@ test("layout deletion authorizes only its own placements, never loss of bags/ite
 test("actual layout adapter records replacement before preference writes and keeps the whole draft on quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalLayoutDeletionAction\([^]*?\n\}/)[0];
   const make = () => {
+    const issued = [];
     const state = initial(), events = [], values = new Map();
     const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" });
-    const outbox = makeOutbox(); let generation = 1;
-    const deps = { state, preparePersonalLayoutDeletion, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
-      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
+    const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1;
+    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalLayoutDeletion, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       canDeleteActiveLayout: () => true, personalSaveContext: () => ({ generation }), userEditableLayouts: () => Object.values(state.layouts),
       ensureLayoutDictionaries: layout => layout, locations: ["Bike"], categories: ["Repair"], uniqueLayoutName: () => "New layout",
       createEmptyLayoutArrangement, currentCreateMeta: () => ({ createdAt: "test-date" }), nowIso: () => "test-date",
       setActivePrivateScope() {}, applyLayoutArrangement() {}, localText: (en, ru) => ru, showToast: message => events.push(message),
-      saveState: ({ personalMutation }) => { outbox.capture({ snapshot: state, body: { baseStateRevision: 1, payload: state, userDeletion: personalMutation } }); events.push("durable"); },
+      persistStateSnapshot: (snapshot, { personalMutation, operationId }) => { outbox.capture({ snapshot, operationId, body: { baseStateRevision: 1, payload: snapshot, userDeletion: personalMutation } }); events.push("durable"); },
+      saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().layouts, state.layouts); },
       rememberActiveLayoutChoice: id => { assert.equal(makeOutbox().recoverSnapshot().activeLayoutId, id); events.push("preference"); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
-    return { state, storage, values, events, prepare, makeOutbox, change: () => { generation++; } };
+    return { state, storage, values, events, prepare, issued, outbox, makeOutbox, recovery, change: () => { generation++; } };
   };
   const f = make(), confirm = f.prepare("a"); assert.equal(f.values.size, 0);
-  assert.equal(confirm(), true); assert.deepEqual(f.events, ["durable", "preference"]); assert.equal(f.values.size, 1);
+  const idsBeforeConfirmation = [...f.issued]; assert.ok(idsBeforeConfirmation.length);
+  assert.equal(confirm(), true);
+  assert.equal(f.outbox.recover().action.operationId, idsBeforeConfirmation[0]); assert.deepEqual(f.issued, idsBeforeConfirmation); assert.deepEqual(f.events, ["durable", "preference"]); assert.equal(f.values.size, 1);
   const recovered = f.makeOutbox().recoverSnapshot(); assert.equal(Object.keys(recovered.layouts).length, 1); assert.ok(!recovered.layouts.a);
   assert.equal(confirm(), false);
   const stale = make(), attempt = stale.prepare("a"); stale.change(); assert.equal(attempt(), false); assert.ok(stale.state.layouts.a);
   const switched = make(), previous = switched.prepare("a"); switched.state.activeLayoutId = "other";
   assert.equal(previous(), false); assert.ok(switched.state.layouts.a); assert.equal(switched.values.size, 0);
   const quota = make(), failed = quota.prepare("a"); quota.storage.setItem = () => { throw Error("quota"); };
-  assert.throws(failed, { code: "quota" }); assert.deepEqual(quota.events, []); assert.equal(quota.values.size, 0);
-  assert.ok(!quota.state.layouts.a); assert.equal(Object.keys(quota.state.layouts).length, 1); assert.ok(quota.state.items.item);
+  assert.equal(failed(), false); assert.ok(!quota.events.includes("durable")); assert.ok(!quota.events.includes("preference")); assert.equal(quota.values.size, 0);
+  assert.ok(quota.state.layouts.a); assert.equal(Object.keys(quota.state.layouts).length, 1); assert.ok(quota.state.items.item);
+  assert.equal(quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft.layouts.a, undefined);
 });

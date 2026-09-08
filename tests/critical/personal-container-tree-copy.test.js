@@ -1,3 +1,4 @@
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -195,26 +196,30 @@ test("prepared tree copy and placement survive outbox reload/lost ACK as a singl
 test("real tree adapter guards asynchronous preparation and confirmation, capacity and single durable capture", async () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/async function preparePersonalContainerTreeAction\([^]*?\n\}/)[0];
   const make = () => {
+    const issued = [];
     const f = fixture(), saved = [], values = new Map(), messages = [], counts = [];
     const storage = { get length() { return values.size; }, key: i => [...values.keys()][i],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
-    const outbox = createPersonalSaveOutbox({ storage, actorId: "actor", listId: "list", scopeKey: "id:actor" });
+    const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(() => createPersonalSaveOutbox({ storage, actorId: "actor", listId: "list", scopeKey: "id:actor" }), "id:actor");
     let actorId = "actor", generation = 1, capacity = true, blocked = false;
-    const deps = { state: f.state, preparePersonalContainerTreeCopy, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor",
+    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state: f.state, preparePersonalContainerTreeCopy, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, uiLanguage: "ru",
-      personalSaveRecovery: { assertRunning() { if (blocked) throw Error("recovery blocked"); } }, personalSaveContext: () => ({ actorId, generation }),
+      personalSaveRecovery: { assertRunning() { if (blocked) throw Error("recovery blocked"); recovery.assertRunning(); } }, personalSaveContext: () => ({ actorId, generation }),
       showToast: message => messages.push(message), requireUsageCapacity: (type, count) => { counts.push([type, count]); return capacity; },
       nowIso: () => "fixed", currentEditMeta: () => ({}), markEdited() {}, normalizeContainerColor: value => value,
       normalizeItemPhotos: record => record.photos || [], makeContainerCopyNameForLayout: name => `${name} copy`, applyLayoutArrangement() {},
-      saveState: ({ personalMutation }) => saved.push(outbox.capture({ snapshot: f.state,
-        body: { baseStateRevision: 1, payload: f.state, userContainerTree: personalContainerTreeIntent(personalMutation) } })) };
+      persistStateSnapshot: (snapshot, { personalMutation, operationId }) => saved.push(outbox.capture({ snapshot, operationId,
+        body: { baseStateRevision: 1, payload: snapshot, userContainerTree: personalContainerTreeIntent(personalMutation) } })),
+      saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().layouts, f.state.layouts); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
-    return { ...f, saved, storage, values, messages, counts, prepare,
+    return { ...f, saved, storage, values, messages, counts, prepare, issued, outbox, recovery,
       changeActor: () => { actorId = "other"; }, changeEditor: () => { generation++; }, exhaust: () => { capacity = false; }, block: () => { blocked = true; } };
   };
   const f = make(), confirm = await f.prepare(f.request);
   assert.equal(f.saved.length, 0); assert.equal(Object.keys(f.state.containers).length, 2);
-  const copiedId = confirm("copy"); assert.equal(typeof copiedId, "string"); assert.equal(confirm("copy"), false);
+  const idsBeforeConfirmation = [...f.issued]; assert.ok(idsBeforeConfirmation.length);
+  const copiedId = confirm("copy");
+  assert.equal(f.outbox.recover().action.operationId, idsBeforeConfirmation[0]); assert.deepEqual(f.issued, idsBeforeConfirmation); assert.equal(typeof copiedId, "string"); assert.equal(confirm("copy"), false);
   assert.equal(f.saved.length, 1); assert.equal(f.values.size, 1); assert.equal(Object.keys(f.saved[0].snapshot.containers).length, 4);
   assert.deepEqual(f.counts, [["containers", 2], ["items", 1]]);
   for (const change of ["changeActor", "changeEditor"]) {
@@ -232,7 +237,9 @@ test("real tree adapter guards asynchronous preparation and confirmation, capaci
   assert.throws(() => blockedAttempt("copy"), /recovery blocked/); assert.equal(blocked.values.size, 0);
   const quota = make(), attempt = await quota.prepare(quota.request);
   quota.storage.setItem = () => { throw Error("quota"); };
-  assert.throws(() => attempt("copy"), { code: "quota" }); assert.equal(quota.values.size, 0);
-  assert.equal(Object.keys(quota.state.containers).length, 4, "complete desired draft survives for recovery");
-  assert.equal(Object.keys(quota.state.items).length, 2); assert.equal(attempt("copy"), false);
+  assert.equal(attempt("copy"), false); assert.equal(quota.values.size, 0);
+  assert.equal(Object.keys(quota.state.containers).length, 2);
+  const draft = quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft;
+  assert.equal(Object.keys(draft.containers).length, 4); assert.equal(Object.keys(draft.items).length, 2);
+  assert.equal(Object.keys(quota.state.items).length, 1); assert.equal(attempt("copy"), false);
 });

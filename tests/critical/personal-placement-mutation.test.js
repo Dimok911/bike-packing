@@ -1,3 +1,4 @@
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -208,27 +209,28 @@ test("linking rejects already placed IDs, unavailable records, public sources an
 test("actual placement confirmation is single-use, binds the active layout and preserves its complete draft on quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalPlacementAction\([^]*?\n\}/)[0];
   const make = () => {
+    const issued = [];
     const state = installRuntimeActiveLayoutId(initial(), "l"), values = new Map(), events = [];
     const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" });
-    const outbox = makeOutbox(); let generation = 1;
-    const deps = { state, preparePersonalPlacementMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
-      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
+    const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1;
+    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalPlacementMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       warnLockedLayoutMutation: () => false, personalSaveContext: () => ({ generation }), nowIso: () => "fixed", markEdited() {},
       normalizeItemPhotos: record => record.photos || [], localText: (en, ru) => ru, showToast: message => events.push(message),
       applyLayoutArrangement: layoutId => applyLayoutArrangementToState(state, layoutId, {
         normalizeLayoutArrangement, repairContainerMembershipFromItemLinks, migrateContainerOrder() {}
-      }), saveState: ({ personalMutation }) => {
-        const layout = state.layouts[state.activeLayoutId];
-        layout.arrangement = createLayoutArrangementFromCurrentState(state, layout.rootContainerIds, { itemQuantities: layout.arrangement.itemQuantities });
-        outbox.capture({ snapshot: state, body: { payload: state, baseStateRevision: 1, userPlacement: personalMutation } }); events.push("durable");
-      } };
+      }), persistStateSnapshot: (snapshot, { personalMutation, operationId }) => {
+        outbox.capture({ snapshot, operationId, body: { payload: snapshot, baseStateRevision: 1, userPlacement: personalMutation } }); events.push("durable");
+      }, saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().layouts, state.layouts); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
-    return { state, values, storage, events, prepare, makeOutbox, change: () => { generation++; } };
+    return { state, values, storage, events, prepare, issued, outbox, makeOutbox, recovery, change: () => { generation++; } };
   };
   const f = make(), request = { layoutId: "l", action: "remove-container", ids: ["bag"] }, confirm = f.prepare(request);
-  request.ids[0] = "changed"; assert.equal(f.values.size, 0); assert.equal(confirm(), true); assert.equal(confirm(), false);
+  request.ids[0] = "changed"; assert.equal(f.values.size, 0); const idsBeforeConfirmation = [...f.issued]; assert.ok(idsBeforeConfirmation.length);
+  assert.equal(confirm(), true);
+  assert.equal(f.outbox.recover().action.operationId, idsBeforeConfirmation[0]); assert.deepEqual(f.issued, idsBeforeConfirmation); assert.equal(confirm(), false);
   assert.deepEqual(Object.keys(f.makeOutbox().recoverSnapshot().containers), ["bag"]); assert.equal(f.events[0], "durable");
   const marks = make(); assert.equal(marks.prepare({ layoutId: "l", action: "unpack-all", ids: ["a", "b"] })(), true);
   assert.deepEqual(marks.makeOutbox().recoverSnapshot().layouts.l.arrangement.packedItems, {}); assert.equal(marks.state.showOnlyUnpacked, false);
@@ -241,7 +243,8 @@ test("actual placement confirmation is single-use, binds the active layout and p
     assert.equal(old(), false); assert.equal(stale.values.size, 0); assert.deepEqual(stale.state.packedItems, { a: true, b: true });
   }
   const quota = make(), failed = quota.prepare({ layoutId: "l", action: "remove-container", ids: ["bag"] });
-  quota.storage.setItem = () => { throw Error("quota"); }; assert.throws(failed, { code: "quota" });
+  quota.storage.setItem = () => { throw Error("quota"); }; assert.equal(failed(), false);
   assert.equal(quota.values.size, 0); assert.deepEqual(Object.keys(quota.state.items), ["a", "b"]);
-  assert.deepEqual(quota.state.layouts.l.arrangement.items, {}); assert.deepEqual(quota.events, []);
+  assert.deepEqual(quota.state.layouts.l.arrangement.items, { a: "bag", b: "pocket" }); assert.ok(!quota.events.includes("durable"));
+  assert.deepEqual(quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft.layouts.l.arrangement.items, {});
 });

@@ -2643,7 +2643,7 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
       } catch (error) { reportPersonalPhotoFormError(error, { recovery: session.recoveryCopy() }); return false; }
     };
   }
-  const initial = JSON.stringify(personalSaveContext());
+  const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
   let prepared, used = false;
   try {
     prepared = preparePersonalCopyBatch(state, { type: "copy", version: 1, keepPlacement,
@@ -2660,9 +2660,11 @@ function preparePersonalCatalogCopy(type, sourceIds, { keepPlacement = false, ad
     personalSaveRecovery.assertRunning();
     if (!requireUsageCapacity(type === "item" ? "items" : "containers", sourceIds.length)) return false;
     used = true;
+    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
     for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
     if (keepPlacement) applyLayoutArrangement(state.activeLayoutId);
-    saveState({ personalMutation: prepared.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     return true;
   };
 }
@@ -2671,7 +2673,7 @@ async function preparePersonalContainerTreeAction(request) {
   if (!personalSavePilotEnabled() || !localStorageScopeKey.startsWith("id:")
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
-  const initial = JSON.stringify(personalSaveContext());
+  const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
   let prepared, photoSession, photoCopyError, used = false;
   try {
     const changedAt = nowIso(), photoTree = ["containers", "items"].some(collection =>
@@ -2713,9 +2715,11 @@ async function preparePersonalContainerTreeAction(request) {
     if (mode === "copy" && (!requireUsageCapacity("containers", selected.intent.containers.length)
       || !requireUsageCapacity("items", selected.intent.items.length))) return false;
     used = true;
+    try { persistStateSnapshot(selected.snapshot, { personalMutation: selected.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
     for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers"]) state[key] = selected.snapshot[key];
     applyLayoutArrangement(state.activeLayoutId);
-    saveState({ personalMutation: selected.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     return selected.rootId;
   };
 }
@@ -2805,7 +2809,7 @@ function preparePersonalLayoutDeletionAction(layoutId) {
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   if (layoutId !== state.activeLayoutId || !canDeleteActiveLayout()) return false;
-  const initial = JSON.stringify(personalSaveContext()), eligible = userEditableLayouts().map(layout => layout.id);
+  const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext()), eligible = userEditableLayouts().map(layout => layout.id);
   const nextLayoutId = eligible.find(id => id !== layoutId) || `layout-${crypto.randomUUID()}`;
   let prepared, used = false;
   try {
@@ -2824,10 +2828,12 @@ function preparePersonalLayoutDeletionAction(layoutId) {
       return false;
     }
     personalSaveRecovery.assertRunning(); used = true;
+    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
     for (const key of ["items", "containers", "layouts", "packedItems"]) state[key] = prepared.snapshot[key];
     state.activeLayoutId = prepared.nextLayoutId;
     setActivePrivateScope(); applyLayoutArrangement(prepared.nextLayoutId);
-    saveState({ personalMutation: prepared.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     rememberActiveLayoutChoice(prepared.nextLayoutId);
     return true;
   };
@@ -2839,7 +2845,7 @@ function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner(
   personalSaveRecovery.assertRunning();
   if (owner !== state) return false;
   request = JSON.parse(JSON.stringify(request));
-  const initial = JSON.stringify(personalSaveContext()), scope = dictionaryEditScope(owner);
+  const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext()), scope = dictionaryEditScope(owner);
   let prepared, used = false;
   try {
     prepared = preparePersonalDictionaryMutation(state, { ...request, values: dictionaryOptionsForOwner(request.type, owner),
@@ -2853,11 +2859,13 @@ function preparePersonalDictionaryAction(request, owner = activeDictionaryOwner(
     personalSaveRecovery.assertRunning();
     if (request.action === "add" && !requireUsageCapacity(request.type === "location" ? "locations" : "categories")) return false;
     used = true;
+    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
     for (const key of ["items", "containers", "locations", "categories", "customLocations", "customCategories", "locationDictionary", "categoryDictionary"]) {
       if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
       else delete state[key];
     }
-    saveState({ personalMutation: prepared.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     return true;
   };
 }
@@ -2868,7 +2876,7 @@ function preparePersonalPlacementAction(request) {
   personalSaveRecovery.assertRunning();
   request = JSON.parse(JSON.stringify(request));
   if (request.layoutId !== state.activeLayoutId || warnLockedLayoutMutation(request.layoutId)) return false;
-  const initial = JSON.stringify(personalSaveContext());
+  const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
   let prepared, used = false;
   try {
     prepared = preparePersonalPlacementMutation(state, request, { changedAt: nowIso(), markEdited,
@@ -2881,11 +2889,13 @@ function preparePersonalPlacementAction(request) {
       return false;
     }
     personalSaveRecovery.assertRunning(); used = true;
+    try { persistStateSnapshot(prepared.snapshot, { personalMutation: prepared.intent, operationId }); }
+    catch (error) { showToast(error.message, "error"); return false; }
     for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
       if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
     }
     applyLayoutArrangement(request.layoutId);
-    saveState({ personalMutation: prepared.intent });
+    saveState({ captureArrangement: false, recordAction: false });
     return true;
   };
 }

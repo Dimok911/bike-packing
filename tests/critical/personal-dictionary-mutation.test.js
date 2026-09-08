@@ -1,3 +1,4 @@
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -46,28 +47,34 @@ test("invalid dictionary selections fail before changing any live record and add
 test("actual dictionary adapter binds confirmation to the editor and persists all references before any success", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalDictionaryAction\([^]*?\n\}/)[0];
   const make = () => {
+    const issued = [];
     const state = initial(), values = new Map(), events = [];
     const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const makeOutbox = () => createPersonalSaveOutbox({ storage, actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" });
-    const outbox = makeOutbox(); let generation = 1, capacity = true;
-    const deps = { state, preparePersonalDictionaryMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
-      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: { assertRunning() {} },
+    const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(makeOutbox, "id:actor-a"); let generation = 1, capacity = true;
+    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalDictionaryMutation, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+      isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {}, personalSaveRecovery: recovery,
       activeDictionaryOwner: () => state, personalSaveContext: () => ({ generation }), dictionaryEditScope: () => ({ items: [state.items.a, state.items.b], containers: [state.containers.bag] }),
       dictionaryOptionsForOwner: type => state[type === "location" ? "locations" : "categories"], nowIso: () => "fixed", markEdited() {},
       localText: (en, ru) => ru, showToast: message => events.push(message), requireUsageCapacity: () => capacity,
-      saveState: ({ personalMutation }) => { outbox.capture({ snapshot: state, body: { payload: state, baseStateRevision: 1, userDictionary: personalMutation } }); events.push("durable"); } };
+      persistStateSnapshot: (snapshot, { personalMutation, operationId }) => { outbox.capture({ snapshot, operationId, body: { payload: snapshot, baseStateRevision: 1, userDictionary: personalMutation } }); events.push("durable"); },
+      saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().items, state.items); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
-    return { state, storage, values, events, prepare, makeOutbox, change: () => { generation++; }, noCapacity: () => { capacity = false; } };
+    return { state, storage, values, events, prepare, issued, outbox, makeOutbox, recovery, change: () => { generation++; }, noCapacity: () => { capacity = false; } };
   };
   const request = { type: "location", action: "rename", value: "Bike", nextValue: "Bicycle" }, f = make();
   const confirm = f.prepare(request); request.nextValue = "changed later"; assert.equal(f.values.size, 0); assert.equal(f.state.items.a.location, "Bike");
-  assert.equal(confirm(), true); assert.deepEqual(f.events, ["durable"]); assert.equal(f.makeOutbox().recoverSnapshot().items.a.location, "Bicycle");
+  const idsBeforeConfirmation = [...f.issued]; assert.ok(idsBeforeConfirmation.length);
+  assert.equal(confirm(), true);
+  assert.equal(f.outbox.recover().action.operationId, idsBeforeConfirmation[0]); assert.deepEqual(f.issued, idsBeforeConfirmation); assert.deepEqual(f.events, ["durable"]); assert.equal(f.makeOutbox().recoverSnapshot().items.a.location, "Bicycle");
   assert.equal(f.makeOutbox().recoverSnapshot().containers.bag.location, "Bicycle"); assert.equal(confirm(), false);
   const stale = make(), old = stale.prepare({ ...request, nextValue: "Bicycle" }); stale.change(); assert.equal(old(), false); assert.equal(stale.state.items.a.location, "Bike");
   const quota = make(), failed = quota.prepare({ type: "location", action: "delete", value: "Bike", fallback: "Camp" });
-  quota.storage.setItem = () => { throw Error("quota"); }; assert.throws(failed, { code: "quota" });
-  assert.equal(quota.values.size, 0); assert.equal(quota.state.items.a.location, "Camp"); assert.equal(quota.state.containers.bag.location, "Camp");
+  quota.storage.setItem = () => { throw Error("quota"); }; assert.equal(failed(), false);
+  assert.equal(quota.values.size, 0); assert.equal(quota.state.items.a.location, "Bike"); assert.equal(quota.state.containers.bag.location, "Bike");
+  const draft = quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft;
+  assert.equal(draft.items.a.location, "Camp"); assert.equal(draft.containers.bag.location, "Camp");
   const limited = make(), add = limited.prepare({ type: "location", action: "add", value: "Hotel" }); limited.noCapacity();
   assert.equal(add(), false); assert.equal(limited.values.size, 0); assert.deepEqual(limited.state.locations, ["Bike", "Camp"]);
 });

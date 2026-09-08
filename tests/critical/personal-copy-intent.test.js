@@ -1,3 +1,4 @@
+import { createPersonalSaveRecovery } from "../../src/sync/personal-save-recovery.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -62,28 +63,32 @@ test("missing, photo-owning, colliding and duplicate copy targets abort the enti
 test("actual copy adapter freezes all IDs before confirmation, registers once, and rejects changed editor/account or quota", () => {
   const source = readFileSync(new URL("../../app.js", import.meta.url), "utf8").match(/function preparePersonalCatalogCopy\([^]*?\n\}/)[0];
   const make = () => {
+    const issued = [];
     const state = initial(), saved = [], values = new Map(), messages = [], counts = [];
     const storage = { get length() { return values.size; }, key: index => [...values.keys()][index],
       getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const binding = { actorId: "actor-a", scopeKey: "id:actor-a", listId: "list-a" };
-    const outbox = createPersonalSaveOutbox({ storage, ...binding });
+    const recovery = createPersonalSaveRecovery(), outbox = recovery.outbox(() => createPersonalSaveOutbox({ storage, ...binding }), binding.scopeKey);
     let generation = 1, actorId = "actor-a", capacity = true;
-    const deps = { state, preparePersonalCopyBatch, PERSONAL_PHOTO_COPY_FORM_ENABLED: false, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
+    const deps = { crypto: { randomUUID() { const id = crypto.randomUUID(); issued.push(id); return id; } }, state, preparePersonalCopyBatch, PERSONAL_PHOTO_COPY_FORM_ENABLED: false, personalSavePilotEnabled: () => true, localStorageScopeKey: "id:actor-a",
       isReadOnlyBikePackingContext: () => false, isAdminPublicEditScope: () => false, modeState: {},
-      personalSaveRecovery: { assertRunning() {} }, personalSaveContext: () => ({ generation, actorId }),
+      personalSaveRecovery: recovery, personalSaveContext: () => ({ generation, actorId }),
       showToast: message => messages.push(message), localText: (en, ru) => ru,
       requireUsageCapacity: (type, add) => { counts.push([type, add]); return capacity; },
       nowIso: () => options.changedAt, currentEditMeta: options.currentEditMeta, markEdited: options.markEdited,
       normalizeContainerColor: value => value, normalizeItemPhotos: record => record.photos || [], applyLayoutArrangement() {},
-      saveState: ({ personalMutation }) => saved.push(outbox.capture({ snapshot: state,
-        body: { baseStateRevision: 1, payload: state, userCopy: personalCopyIntent(personalMutation) } })) };
+      persistStateSnapshot: (snapshot, { personalMutation, operationId }) => saved.push(outbox.capture({ snapshot, operationId,
+        body: { baseStateRevision: 1, payload: snapshot, userCopy: personalCopyIntent(personalMutation) } })),
+      saveState: options => { assert.equal(options.recordAction, false); assert.deepEqual(outbox.recoverSnapshot().layouts, state.layouts); } };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
-    return { state, saved, values, storage, messages, counts, prepare,
+    return { state, saved, values, storage, messages, counts, prepare, issued, outbox, recovery,
       changeEditor: () => { generation++; }, changeActor: () => { actorId = "actor-b"; }, exhaust: () => { capacity = false; } };
   };
   const f = make(), confirm = f.prepare("item", ["a", "b"]);
   assert.equal(f.values.size, 0); assert.equal(Object.keys(f.state.items).length, 2);
-  assert.equal(confirm(), true); assert.equal(confirm(), false); assert.equal(f.saved.length, 1);
+  const idsBeforeConfirmation = [...f.issued]; assert.ok(idsBeforeConfirmation.length);
+  assert.equal(confirm(), true);
+  assert.equal(f.outbox.recover().action.operationId, idsBeforeConfirmation[0]); assert.deepEqual(f.issued, idsBeforeConfirmation); assert.equal(confirm(), false); assert.equal(f.saved.length, 1);
   assert.equal(f.values.size, 1); assert.equal(Object.keys(f.saved[0].snapshot.items).length, 4);
   assert.equal(new Set(f.saved[0].action.body.userCopy.entries.map(entry => entry.targetId)).size, 2);
   assert.deepEqual(f.counts, [["items", 2], ["items", 2]]);
@@ -93,8 +98,9 @@ test("actual copy adapter freezes all IDs before confirmation, registers once, a
   }
   const quota = make(), attempt = quota.prepare("item", ["a", "b"]);
   quota.storage.setItem = () => { throw Error("quota"); };
-  assert.throws(attempt, { code: "quota" }); assert.equal(quota.values.size, 0);
-  assert.equal(Object.keys(quota.state.items).length, 4, "the complete desired draft survives for the recovery latch");
+  assert.equal(attempt(), false); assert.equal(quota.values.size, 0);
+  assert.equal(Object.keys(quota.state.items).length, 2);
+  assert.equal(Object.keys(quota.recovery.recoveryCopy(quota.storage).unconfirmedMemoryDraft.items).length, 4);
   assert.equal(attempt(), false, "a failed publication cannot generate another target set");
   const photo = make(); photo.state.items.b.photos = [{ id: "photo" }];
   assert.equal(photo.prepare("item", ["a", "b"]), false); assert.equal(photo.values.size, 0);

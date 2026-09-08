@@ -140,9 +140,10 @@ test("a refused independent copy does not block the separately validated existin
       personalPhotoFormSession: () => ({ prepare() { events.push("copy refused"); throw Error("Independent copy limit"); } }),
       preparePersonalContainerTreeCopy: (state, request, options) => preparePersonalContainerTreeCopy(state, request, { ...options, photoTreeLinkEnabled: true }),
       normalizeContainerColor: value => value, markEdited() {}, applyLayoutArrangement() {}, requireUsageCapacity: () => true,
-      showToast: text => events.push(text), saveState: ({ personalMutation }) => {
-        f.outbox.capture({ snapshot: state, body: { payload: f.options.snapshotToPayload(state), baseStateRevision: 7, userContainerTree: personalMutation } }); events.push("durable link");
-      } };
+      showToast: text => events.push(text), persistStateSnapshot: (snapshot, { personalMutation, operationId }) => {
+        assert.deepEqual(state, before);
+        f.outbox.capture({ snapshot, operationId, body: { payload: f.options.snapshotToPayload(snapshot), baseStateRevision: 7, userContainerTree: personalMutation } }); events.push("durable link");
+      }, saveState: options => assert.equal(options.recordAction, false) };
     const prepare = new Function(...Object.keys(deps), `return (${source})`)(...Object.values(deps));
     const commit = await prepare(f.input.request); assert.equal(typeof commit, "function"); assert.deepEqual(state, before);
     if (mode === "copy") { assert.equal(commit(mode), false); assert.equal(f.outbox.hasPending(), false); assert.deepEqual(state, before); }

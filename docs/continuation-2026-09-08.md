@@ -4,7 +4,7 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
-- Завершён локально item-copy-placement (API `aab9df3`): 20/20 UI, 5,3 минуты
+- Завершён локально item-copy-placement (FE `c73f4b8`, API `aab9df3`): 20/20 UI, 5,3 минуты
   (`item-placement-ui-2.log`); 158/158 API/MySQL, 166,28 с, bundled Node 24.19.0
   (`item-placement-mysql-3.log`). 481 transport / 895 critical / 60 operation /
   74 source/service, source checks. Новый gate false. Полные frozen source/target,
@@ -13,12 +13,18 @@
   `personal-item-copy-placement.md`. Исправлена серверная проекция двух derived
   placement-полей перед точным сравнением, SQL source/revision guard сохранён.
   Все процессы API/UI/диагностической MySQL завершены.
-- Следующий участок уже начат локально: пять старых personal DB callbacks в
-  app.js (catalog copy, tree copy/link/missing, layout deletion, dictionary,
-  placement) теперь вызывают persistStateSnapshot до изменения state; operationId
-  фиксируется до подтверждения. Это ещё НЕ приёмка: адаптированные 39 unit прошли,
-  нужны полный transport и реальные UI/quota/lost-ACK регрессии. Следующий этап
-  не входит в коммит item-copy-placement. Продолжать без публикации.
+- Завершены пять personal DB callbacks в app.js: catalog copy, tree
+  copy/link/missing, layout deletion, dictionary, placement. Снимок сохраняется
+  до изменения state, operationId фиксируется до подтверждения. 39/39 focused,
+  481/481 transport, 895/895 critical, 74/74 UI Chromium/mobile WebKit за 13,2 минуты.
+  `durable-adapters-ui-1.log`, `durable-adapters-transport-1.log`,
+  `durable-adapters-critical-1.log`. Подробности `personal-durable-adapters.md`.
+  UI-процесс завершён. API не изменён, последняя приёмка 158/158.
+- Следующий участок: полная история с подтверждёнными фотографиями (раздел 8).
+  Pure plan `personal-photo-history-plan.js` пока НЕ подключён, 4/4 unit.
+  Нужны server preview/execute с точной историей, head/asset/file guards,
+  атомарное возвращение/удаление ссылок, outbox и настоящие API/UI проверки.
+  Новые два файла не входят в commit DB callbacks. Продолжать без публикации.
 
 
 - Завершён локально: независимая копия дерева с фото, `copyTree` внутри
