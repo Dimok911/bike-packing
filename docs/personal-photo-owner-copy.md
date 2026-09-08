@@ -1,6 +1,8 @@
 # Обычная копия записи с фотографиями
 
 Локальный участок перехода, 2026-09-08. Публикация отложена пользователем.
+Продолжение с удалением до ACK и отменой зависимых удалений уже проверено:
+`personal-pending-photo-copy-deletion.md`; прежние границы ниже исторические.
 `PERSONAL_PHOTO_COPY_FORM_ENABLED = false`; на API нужен отдельный
 `BIKE_PACKING_CAUSAL_PHOTO_COPY_FORM_ENABLED=1` вместе со всеми прежними gates.
 Новая возможность объявляется как `personalCausalPhotoCopyFormV1`.

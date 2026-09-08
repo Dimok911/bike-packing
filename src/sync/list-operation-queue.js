@@ -7,6 +7,7 @@ import { PERSONAL_LIST_MIGRATION_ENABLED, PERSONAL_LIST_MIGRATION_CAPABILITY,
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY,
   personalPhotoFormManifest, validatePersonalPhotoFormResult } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED, PERSONAL_PHOTO_COPY_FORM_CAPABILITY } from "./personal-photo-copy-source.js";
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY } from "./personal-pending-photo-copy-deletion.js";
 
 // Development gate: enabling this requires a separately approved rollout.
 export const LIST_OPERATION_QUEUE_ENABLED = false;
@@ -133,6 +134,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
+  pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
     const controller = new AbortController();
@@ -303,7 +305,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
     // parent is already rejected. The backend dependency transaction therefore
     // cannot apply this exact child's effects. Unknown independent actions still
     // have no resend permission. Both complete manifests are verified by GET.
-    async settleRejectedDependency({ path, method, body: bodyText, operationId, predecessor }) {
+    async settleRejectedDependency({ path, method, body: bodyText, operationId, predecessor, photoResultPredecessor }) {
       if (!this.supports(path, method) || !locks?.request) throw paused(operationId);
       const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
       const parent = JSON.parse(JSON.stringify(predecessor || {}));
@@ -312,12 +314,25 @@ export function createListOperationQueue({ transport, getContext = () => null,
         && parentBody.action === "form" && route.kind === "list.update";
       const validUuid = id => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id || "");
       const listId = route.listId;
+      const dependencies = [{ operationId: parent.operationId, listId }];
+      let copyExpected;
+      if (body.photoResults) {
+        if (!pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoEnabled || !photoFormEnabled) throw paused(operationId);
+        const copy = JSON.parse(JSON.stringify(photoResultPredecessor || {})), copyRoute = listOperationRoute(copy.path, copy.method);
+        const copyBody = JSON.parse(copy.body || "{}"), form = personalPhotoFormManifest(copyBody);
+        if (!form.copySource || copyRoute?.kind !== "photos.mutate" || copyRoute.listId !== listId || !validUuid(copy.operationId)
+          || canonicalListOperationJson(body.photoResults) !== canonicalListOperationJson({ version: 1, operationId: copy.operationId,
+            entityType: form.entityType, entityId: form.entityId })) throw paused(operationId);
+        if (copy.operationId !== parent.operationId) dependencies.push({ operationId: copy.operationId, listId });
+        copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: "photos.mutate", body: copyBody,
+          payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: "photos.mutate", listId, body: copyBody })) };
+      }
       if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore"].includes(route.kind)
         || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
         || !["list.create", "list.update", "list.restore"].includes(parentRoute?.kind) && !rejectedFormParent
         || (parentRoute.listId || parentBody.id) !== listId
         || body.causal?.baseOperationId !== parent.operationId
-        || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson([{ operationId: parent.operationId, listId }])
+        || canonicalListOperationJson(body.causal.dependsOn) !== canonicalListOperationJson(dependencies)
         || canonicalListOperationJson(body.causal.reads) !== "[]") throw paused(operationId);
       if (rejectedFormParent) personalPhotoFormManifest(parentBody);
       const expected = { operationId, actorId: initial.actorId, listId, kind: route.kind, body, children: [],
@@ -331,6 +346,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (String(me?.user?.id || "") !== initial.actorId) throw paused(operationId);
         const parentReceipt = await read(`${gateway}/${encodeURIComponent(parent.operationId)}`); assertCurrent();
         if (!validateListReceipt(parentReceipt, parentExpected) || parentReceipt.operation.state !== "rejected") throw paused(operationId);
+        if (copyExpected) {
+          const copyReceipt = copyExpected.operationId === parent.operationId ? parentReceipt : await read(`${gateway}/${encodeURIComponent(copyExpected.operationId)}`);
+          assertCurrent(); if (!validateListReceipt(copyReceipt, copyExpected)) throw paused(operationId);
+        }
         let entry = transport.writes.find(value => value.id === operationId);
         if (entry && (entry.recovery?.type !== "list" || entry.recovery.actorId !== initial.actorId
           || entry.recovery.listId !== listId || entry.recovery.kind !== route.kind
@@ -349,6 +368,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
+        if (copyExpected && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
         assertListOperationPayload(expected);
         if (!entry) {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
@@ -457,6 +477,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
+      if (body.photoResults && (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled || route.kind !== "list.update")) {
+        throw paused(requestedId, "Удаление до подтверждения копии ещё не включено.");
+      }
       const generation = await sha(initial.generation);
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
       const requestKey = await sha(canonicalListOperationJson({ path, method, body, ...(!requestedId ? { generation } : {}), actorId: initial.actorId,
@@ -509,6 +532,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (route.kind === "photos.mutate" && body.copySource && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_FORM_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает копирование карточки с фото. Запрос не отправлен.");
+          }
+          if (body.photoResults && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");
           }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;
           const operationId = requestedId || crypto.randomUUID();

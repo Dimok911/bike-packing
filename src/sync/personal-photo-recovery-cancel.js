@@ -9,18 +9,22 @@ import { checkPersonalPhotoRecoveryResult } from "./personal-photo-recovery-chec
 import { PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } from "./personal-photo-batch-cancellation.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_COPY_FORM_ENABLED } from "./personal-photo-copy-source.js";
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm } from "./personal-pending-photo-copy-deletion.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
 
 export const personalPhotoRecoveryCancellationEnabled = () => PERSONAL_PHOTO_ACTIONS_ENABLED && PERSONAL_PHOTO_OUTBOX_ENABLED
   && PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED && PERSONAL_PHOTO_STAGING_ENABLED && PERSONAL_PHOTO_CANCELLATION_ENABLED && LIST_OPERATION_QUEUE_ENABLED;
 export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED,
   formEnabled = PERSONAL_PHOTO_FORM_ENABLED, editEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, copyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
-  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, records = [] } = {}) =>
+  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
+  pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, records = [] } = {}) =>
   record?.action?.kind === "photos.mutate" && (record.action.body?.action !== "form" || formEnabled)
     && (record.action.body?.action === "attach" || batchEnabled && (record.photoState?.fileInventoryVersion === 2
       || (record.action.body?.copySource ? copyEnabled : editEnabled) && record.action.body?.action === "form" && record.photoState?.fileIntentHash === null))
   || validPersonalPhotoCancellation(record)
   || pendingOwnerDeletionEnabled && batchEnabled && formEnabled && Boolean(personalPendingPhotoOwnerDeletionForm({ records,
+    operationId: record?.action.operationId, listId: record?.action.listId }))
+  || pendingCopyDeletionEnabled && copyEnabled && batchEnabled && formEnabled && Boolean(personalPendingPhotoCopyDeletionForm({ records,
     operationId: record?.action.operationId, listId: record?.action.listId }));
 
 // Explicitly stopping an upload and keeping the current server version are
@@ -32,7 +36,8 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
   operationCancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   editEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, copyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
-  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED }) {
+  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
+  pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED }) {
   if (!enabled || !locks?.request || typeof chooseCurrent !== "function") throw Error("Явная отмена фотодействий ещё не включена.");
   const binding = outbox.binding, initial = { ...getContext() };
   const assertContext = () => {
@@ -49,11 +54,13 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
     if (inventory.entries.every(entry => entry.state === "settled-retained")) return checkPersonalPhotoRecoveryResult(common);
     const head = outbox.recover();
     const pendingForm = pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
-      operationId: head?.action.operationId, listId: binding.listId });
-    if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, pendingOwnerDeletionEnabled,
+      operationId: head?.action.operationId, listId: binding.listId })
+      || pendingCopyDeletionEnabled && copyEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
+    if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, pendingOwnerDeletionEnabled, pendingCopyDeletionEnabled,
       records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
     const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true,
-      photoFormEnabled: formEnabled, photoCopyEnabled: copyEnabled, cancellationEnabled: operationCancellationEnabled });
+      photoFormEnabled: formEnabled, photoCopyEnabled: copyEnabled, pendingPhotoCopyDeletionEnabled: pendingCopyDeletionEnabled,
+      cancellationEnabled: operationCancellationEnabled });
     const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled });
     if (head.action.kind === "photos.mutate" || pendingForm) {
       const cancelled = await outbox.cancelPhotoUpload({ queue, getContext, photoStore: store, photoStaging }); assertContext();

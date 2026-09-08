@@ -727,6 +727,8 @@ import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
   personalPendingPhotoOwnerDeletionForm } from "./src/sync/personal-pending-photo-owner-deletion.js";
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
+  isPersonalPendingPhotoCopyDeletion } from "./src/sync/personal-pending-photo-copy-deletion.js";
 import { isKnownEmptyPersonalSave } from "./src/sync/personal-empty-save.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
@@ -2569,10 +2571,16 @@ function preparePersonalCatalogDeletion(value) {
       });
       if (allowPhotoOwners && !preservesConfirmedPersonalPhotos(state, prepared.snapshot, currentPackingListId,
         { userDeletion: prepared.intent })) {
-        const parent = personalSaveOutboxForScope()?.recover();
-        if (!PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED || !sameJson(parent?.photoState?.payload, serializeState({ forSync: true }))
-          || !isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
-            userDeletion: prepared.intent, listId: currentPackingListId })) {
+        const outbox = personalSaveOutboxForScope(), parent = outbox?.recover(), currentPayload = serializeState({ forSync: true });
+        const copy = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED && PERSONAL_PHOTO_COPY_FORM_ENABLED
+          && sameJson(parent?.photoState?.payload || parent?.action.body.payload, currentPayload)
+          && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: parent?.action.operationId, listId: currentPackingListId, includeForm: true });
+        const copyDeletion = copy && isPersonalPendingPhotoCopyDeletion({ form: copy, basePayload: currentPayload,
+          payload: cloneStateForSync(prepared.snapshot, { forSync: true }), userDeletion: prepared.intent, listId: currentPackingListId });
+        const formDeletion = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && sameJson(parent?.photoState?.payload, currentPayload)
+          && isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
+            userDeletion: prepared.intent, listId: currentPackingListId });
+        if (!copyDeletion && !formDeletion) {
           throw Error("Удаление требует подтверждённых фото либо точно сохранённой формы этого владельца. Исходные данные сохранены.");
         }
       }
@@ -8678,6 +8686,8 @@ function canResumeRetainedPersonalPhotoForm() {
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
       && outbox.hasPending() && (outbox.recover()?.action.body.action === "form"
         || PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
+          operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })
+        || PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED && personalPendingPhotoCopyDeletionForm({ records: outbox.list(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })));
   } catch { return false; }
 }

@@ -2,6 +2,7 @@ import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
+import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm } from "./personal-pending-photo-copy-deletion.js";
 
 const blocked = () => Object.assign(new Error("Сохранение формы с фото пока не подтверждено. Поля, файлы и исходная очередь сохранены."),
   { code: "photo-form-drain", isPersonalSaveBlocked: true });
@@ -12,11 +13,13 @@ const blocked = () => Object.assign(new Error("Сохранение формы �
 // route barriers remain owned by the established staging client and queue.
 export async function drainPersonalPhotoForm({ outbox, store, staging, queue, getContext,
   readRemote, makeSnapshot, makeBaselineMeta, onAdopted, enabled = PERSONAL_PHOTO_FORM_ENABLED,
-  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED }) {
+  pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
+  pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
   const form = head?.action.kind === "photos.mutate" && head.action.body.action === "form" ? head
-    : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
+    : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
+      || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
   if (!form || !outbox.hasPending()) throw blocked();
   try {
     const assertCurrent = () => {
@@ -61,11 +64,13 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     // A user may durably delete this owner while a file/receipt read is in
     // flight. That old worker must stop without blocking the new exact chain.
     // It never adopts the old form or retries it under a fresh identifier.
-    if (pendingOwnerDeletionEnabled && ["context", "photo-form-drain", "photo-recovery-changed"].includes(error.code)
+    const continuation = form.action.body.copySource
+      ? pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId })
+      : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId });
+    if (["context", "photo-form-drain", "photo-recovery-changed"].includes(error.code)
       && context?.scope === "personal" && Object.keys(binding).every(key => context[key] === binding[key])
       && latest?.action.operationId !== head.action.operationId
-      && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId,
-        listId: binding.listId })?.action.operationId === form.action.operationId) {
+      && continuation?.action.operationId === form.action.operationId) {
       throw Object.assign(Error("Сохранено удаление владельца. Продолжение использует новую подтверждённую локальную цепочку."), { code: "photo-form-superseded" });
     }
     throw error;

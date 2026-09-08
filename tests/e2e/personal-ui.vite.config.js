@@ -5,6 +5,9 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (source.endsWith("/src/sync/auth-load-flow.js")) return code.replace(
+      '  await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });',
+      '  globalThis.__personalStartupPhase = "rendering"; try { await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice }); globalThis.__personalStartupPhase = "rendered"; } catch (error) { globalThis.__personalStartupPhase = { message: error.message, code: error.code, stack: error.stack }; throw error; }');
     if (mode === "photo-form" && source.endsWith("/src/sync/personal-photo-form-plan.js")) return code.replace(
       'if (!same(snapshotToPayload(clone(frozen)), base)) fail();',
       'if (!same(snapshotToPayload(clone(frozen)), base)) { globalThis.__personalTestProjectionDifference = { expected: base, actual: snapshotToPayload(clone(frozen)) }; fail(); }');
@@ -17,6 +20,8 @@ export default defineConfig(({ mode }) => ({
       "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PHOTO_OWNER_DELETION_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-copy-source.js")) return code.replace(
       "PERSONAL_PHOTO_COPY_FORM_ENABLED = false", "PERSONAL_PHOTO_COPY_FORM_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-photo-copy-deletion.js")) return code.replace(
+      "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-photo-owner-deletion.js")) return code.replace(
       "PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED = false", "PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED = true");
     if (/\/src\/sync\/personal-list-migration\.js$/.test(source)) return code.replace("PERSONAL_LIST_MIGRATION_ENABLED = false", "PERSONAL_LIST_MIGRATION_ENABLED = true");

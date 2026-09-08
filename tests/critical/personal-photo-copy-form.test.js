@@ -8,6 +8,9 @@ import { assertPersonalPhotoFormRecord } from "../../src/sync/personal-photo-for
 import { personalPhotoFormManifest, validatePersonalPhotoFormResult } from "../../src/sync/personal-photo-form-protocol.js";
 import { personalPhotoRecoveryCancellationHead } from "../../src/sync/personal-photo-recovery-cancel.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { personalPendingPhotoCopyDeletionForm, personalPhotoCopyResultReference, isPersonalPendingPhotoCopyDeletion } from "../../src/sync/personal-pending-photo-copy-deletion.js";
+import { preparePersonalDeletionBatch } from "../../src/sync/personal-deletion-intent.js";
+import { cloneStateForSyncPayload } from "../../src/sync/serialize.js";
 
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 function fixture(entityType = "item") {
@@ -111,4 +114,78 @@ test("copy receipt must prove the full copied owner and every immutable photo id
   }
   assert.equal(personalPhotoRecoveryCancellationHead(record, { batchEnabled: true, formEnabled: true, editEnabled: true, copyEnabled: false }), false);
   assert.equal(personalPhotoRecoveryCancellationHead(record, { batchEnabled: true, formEnabled: true, editEnabled: false, copyEnabled: true }), true);
+});
+
+for (const entityType of ["item", "container"]) test(`pending ${entityType} copy deletion validates every result edge and cannot revive either owner`, async () => {
+  const f = fixture(entityType), { record: form } = await createPersonalPhotoCopyFormSession(f.options).submit(f.request);
+  const reference = personalPhotoCopyResultReference(form), targetId = form.action.body.entityId;
+  for (const firstId of ["source", targetId]) {
+    const first = preparePersonalDeletionBatch(form.photoState.payload, { type: entityType, id: firstId });
+    const child = { action: { ...f.binding, operationId: randomUUID(), kind: "list.update", generation: 2,
+      body: { payload: first.snapshot, baseStateRevision: 7, userDeletion: first.intent, photoResults: reference,
+        causal: { baseOperationId: form.action.operationId, dependsOn: [{ operationId: form.action.operationId, listId: "list" }], reads: [] } } },
+      mergeBase: { payload: form.photoState.payload, stateRevision: 7 } };
+    assert.equal(isPersonalPendingPhotoCopyDeletion({ form, basePayload: form.photoState.payload, payload: first.snapshot, userDeletion: first.intent, listId: "list" }), true);
+    assert.equal(personalPendingPhotoCopyDeletionForm({ records: [form, child], operationId: child.action.operationId, listId: "list" }), form);
+    const second = preparePersonalDeletionBatch(first.snapshot, { type: entityType, id: firstId === "source" ? targetId : "source" });
+    const grandchild = { action: { ...f.binding, operationId: randomUUID(), kind: "list.update", generation: 3,
+      body: { payload: second.snapshot, baseStateRevision: 7, userDeletion: second.intent, photoResults: reference,
+        causal: { baseOperationId: child.action.operationId, dependsOn: [{ operationId: child.action.operationId, listId: "list" },
+          { operationId: form.action.operationId, listId: "list" }], reads: [] } } }, mergeBase: { payload: first.snapshot, stateRevision: 7 } };
+    const resolve = records => personalPendingPhotoCopyDeletionForm({ records, operationId: grandchild.action.operationId, listId: "list" });
+    assert.equal(resolve([grandchild, form, child]), form);
+    for (const mutate of [records => { records[0].action.body.causal.dependsOn.pop(); },
+      records => { records[0].action.body.photoResults.operationId = randomUUID(); },
+      records => { records[0].mergeBase.payload = {}; },
+      records => { records[0].action.body.payload[f.collection][firstId] = { id: firstId, name: "Revived", photos: [] }; },
+      records => { records[2].action.body.payload[f.collection].hidden = { id: "hidden", photos: [{ id: "pending", status: "pending" }] }; },
+      records => { records[0].action.body.causal.baseOperationId = records[0].action.operationId; }]) {
+      const records = structuredClone([grandchild, form, child]); mutate(records); assert.equal(resolve(records), null);
+    }
+  }
+});
+
+test("outbox captures source/copy deletion only with its independent gate and derives result links from the stored chain", async () => {
+  for (const entityType of ["item", "container"]) for (const target of ["source", "copy"]) {
+    const f = fixture(entityType), { record: form } = await createPersonalPhotoCopyFormSession(f.options).submit(f.request);
+    const sourceId = target === "source" ? "source" : form.action.body.entityId;
+    const deletion = preparePersonalDeletionBatch(form.photoState.payload, { type: entityType, id: sourceId });
+    const input = { snapshot: deletion.snapshot, body: { payload: deletion.snapshot, baseStateRevision: 7, userDeletion: deletion.intent } };
+    const before = [...f.values]; assert.throws(() => f.outbox.capture(input), { code: "photo-copy-pending" }); assert.deepEqual([...f.values], before);
+    const outbox = createPersonalSaveOutbox({ ...f.outboxOptions, pendingPhotoCopyDeletionEnabled: true });
+    assert.throws(() => outbox.capture({ ...input, body: { ...input.body, photoResults: personalPhotoCopyResultReference(form) } }), { code: "input" });
+    const record = outbox.capture(input);
+    assert.deepEqual(record.action.body.photoResults, personalPhotoCopyResultReference(form));
+    assert.equal(record.action.body.causal.baseOperationId, form.action.operationId);
+    assert.equal(personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: record.action.operationId, listId: "list" }).action.operationId, form.action.operationId);
+    const next = preparePersonalDeletionBatch(deletion.snapshot, { type: entityType, id: target === "source" ? form.action.body.entityId : "source" });
+    const child = outbox.capture({ snapshot: next.snapshot, body: { payload: next.snapshot, baseStateRevision: 7, userDeletion: next.intent } });
+    assert.equal(child.action.body.causal.baseOperationId, record.action.operationId);
+    assert.deepEqual(child.action.body.causal.dependsOn.map(dep => dep.operationId), [record.action.operationId, form.action.operationId]);
+    assert.deepEqual(outbox.list().find(record => record.action.operationId === form.action.operationId), form);
+    const frozen = [...f.values];
+    const reader = createPersonalSaveOutbox({ ...f.binding, storage: f.storage });
+    assert.deepEqual(reader.capture({ snapshot: { ...next.snapshot, showItemMeta: true }, body: { payload: next.snapshot, baseStateRevision: 7 } }), child);
+    assert.deepEqual([...f.values], frozen);
+    assert.throws(() => outbox.capture({ snapshot: f.base, body: { payload: f.base, baseStateRevision: 7 } }), { code: "photo-copy-pending" });
+    assert.deepEqual([...f.values], frozen);
+  }
+});
+
+test("pending bag copy survives source deletion with projected catalog fields and cannot acquire a hidden placement", async () => {
+  const f = fixture("container"), project = value => cloneStateForSyncPayload(value, { forSync: true });
+  f.request.basePayload = project(f.base); f.options.snapshotToPayload = project;
+  f.response.owner.payload = structuredClone(f.request.basePayload.containers.source);
+  f.outbox.adoptRemoteBaseline({ snapshot: f.base, payload: f.request.basePayload, stateRevision: 7 });
+  const { record: form } = await createPersonalPhotoCopyFormSession(f.options).submit(f.request);
+  const deletion = preparePersonalDeletionBatch(form.photoState.payload, { type: "container", id: "source" });
+  const input = { snapshot: deletion.snapshot, body: { payload: project(deletion.snapshot), baseStateRevision: 7, userDeletion: deletion.intent } };
+  const outbox = createPersonalSaveOutbox({ ...f.outboxOptions, pendingPhotoCopyDeletionEnabled: true });
+  const record = outbox.capture(input);
+  assert.equal(record.action.body.payload.containers[form.action.body.entityId].childIds, undefined);
+  for (const mutate of [payload => { payload.containers[form.action.body.entityId].childIds = ["hidden"]; },
+    payload => { payload.layouts.hidden = { arrangement: { containers: { [form.action.body.entityId]: {} } } }; }]) {
+    const payload = structuredClone(input.body.payload); mutate(payload);
+    assert.equal(isPersonalPendingPhotoCopyDeletion({ form, basePayload: form.photoState.payload, payload, userDeletion: deletion.intent, listId: "list" }), false);
+  }
 });
