@@ -2578,12 +2578,8 @@ test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remot
   assert.equal("thumbBlob" in task, false);
 });
 
-test("CRITICAL offline-photos: fullscreen opens on the preview before adapter hydration", () => {
+test("CRITICAL offline-photos: fullscreen local preparation keeps cancellation guards and disables network prefetch", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
-  const awaitIndex = source.indexOf("await prepareFullscreenSource(entry)");
-  const dialogIndex = source.indexOf('document.createElement("dialog")');
-  assert.ok(awaitIndex >= 0);
-  assert.ok(dialogIndex >= 0 && dialogIndex < awaitIndex);
   assert.match(source, /if \(openRequestId !== lightboxOpenRequestId\) return;/);
   assert.match(source, /closePhotoLightbox\(\{ preserveOpenRequest: true \}\)/);
   assert.match(source, /prefetchAdjacent:\s*false/);

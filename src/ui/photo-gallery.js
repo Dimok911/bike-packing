@@ -994,6 +994,24 @@ export async function openPhotoLightbox(sourceImage, {
     });
   }
   const initialEntry = entries[initialIndex];
+  const cachedSourcePreparations = new Map();
+  const prepareCachedEntry = (entryIndex) => {
+    const entry = entries[entryIndex];
+    if (!entry?.localId || entry.verifiedFullSrc) return Promise.resolve();
+    if (!cachedSourcePreparations.has(entryIndex)) {
+      // This adapter reads local storage only. Never download neighboring
+      // originals just to prepare the fullscreen carousel.
+      const pending = Promise.resolve().then(() => prepareFullscreenSource(entry)).catch(() => null).then((sources) => {
+        if (sources?.full) entry.verifiedFullSrc = sources.full;
+        if (sources?.preview) entry.previewSrc = sources.preview;
+        if (sources?.width) entry.width = sources.width;
+        if (sources?.height) entry.height = sources.height;
+      });
+      cachedSourcePreparations.set(entryIndex, pending);
+    }
+    return cachedSourcePreparations.get(entryIndex);
+  };
+  await Promise.all([initialIndex - 1, initialIndex, initialIndex + 1].map(prepareCachedEntry));
   if (openRequestId !== lightboxOpenRequestId) return;
   closePhotoLightbox({ preserveOpenRequest: true });
   const initialPreviewSrc = initialEntry?.verifiedFullSrc || initialEntry?.previewSrc || initialEntry?.fullSrc || "";
@@ -1339,13 +1357,19 @@ export async function openPhotoLightbox(sourceImage, {
     for (let index = Math.max(0, centerIndex - 1); index <= Math.min(entries.length - 1, centerIndex + 1); index += 1) {
       const previewImage = lightboxImages[index];
       if (!previewImage || previewImage.getAttribute("src")) continue;
-      // Populate the actual slide before native scrolling reveals it. Full-size
-      // hydration remains demand driven through the active source controller.
-      const src = entries[index]?.previewSrc;
-      if (!src) continue;
-      previewImage.src = src;
-      void decodeSharedFullscreenImage(previewImage)
-        .then(() => settleImagePresentation(previewImage))
+      // A saved original is already local: put it in the neighboring slide
+      // before the swipe instead of painting and later replacing its thumbnail.
+      void prepareCachedEntry(index).then(async () => {
+        if (!overlay.isConnected || previewImage.getAttribute("src")) return;
+        const entry = entries[index];
+        const fullSrc = entry?.verifiedFullSrc || entry?.resolvedFullSrc;
+        const src = fullSrc || entry?.previewSrc;
+        if (!src) return;
+        previewImage.dataset.photoLightboxQuality = fullSrc ? "full" : "preview";
+        previewImage.src = src;
+        await decodeSharedFullscreenImage(previewImage);
+        settleImagePresentation(previewImage);
+      })
         .catch(() => {});
     }
   };
@@ -1474,13 +1498,7 @@ export async function openPhotoLightbox(sourceImage, {
       // image: fetching an identical blob swaps the bitmap after its first paint.
       // Local/offline records and separate previews still use the cache pipeline.
       if (!entryExpectsFullSize(entry)) return entry.fullSrc || entry.previewSrc || null;
-      const preparedSources = entry.localId
-        ? await prepareFullscreenSource(entry).catch(() => null)
-        : null;
-      if (preparedSources?.full) entry.verifiedFullSrc = preparedSources.full;
-      if (preparedSources?.preview) entry.previewSrc = preparedSources.preview;
-      if (preparedSources?.width) entry.width = preparedSources.width;
-      if (preparedSources?.height) entry.height = preparedSources.height;
+      await prepareCachedEntry(_entryIndex);
       const next = entry.verifiedFullSrc
         ? { src: entry.verifiedFullSrc, objectUrl: "", isFull: true }
         : await resolvePhotoLightboxSource(entry, {
@@ -1522,6 +1540,8 @@ export async function openPhotoLightbox(sourceImage, {
     const token = ++renderToken;
     loadingNotice.settle("idle");
     const entry = entries[nextIndex];
+    await prepareCachedEntry(nextIndex);
+    if (token !== renderToken || !overlay.isConnected) return false;
     const previewSrc = entry?.previewSrc || entry?.fullSrc || "";
     const targetImage = lightboxImages[nextIndex];
     if (!previewSrc || !targetImage) return false;
