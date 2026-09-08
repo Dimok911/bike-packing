@@ -44,6 +44,17 @@ async function openGallery(page) {
       Object.defineProperty(event, "changedTouches", { value: [touch] });
       track.dispatchEvent(event);
     };
+    window.lightboxPinch = (type, distance) => {
+      const track = document.querySelector(".photo-lightbox-track");
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      const touches = [-1, 1].map((side) => ({
+        clientX: track.clientWidth / 2 + side * distance / 2,
+        clientY: 400
+      }));
+      Object.defineProperty(event, "touches", { value: touches });
+      Object.defineProperty(event, "changedTouches", { value: touches });
+      track.dispatchEvent(event);
+    };
   });
   await expect(page.locator("dialog.photo-lightbox")).toBeVisible();
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -114,6 +125,75 @@ test("adjacent previews are decoded before a swipe while original downloads are 
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+
+for (const { direction, from, fraction, releaseSwipe } of [
+  { direction: "forward drag", from: 0, fraction: 0.65, releaseSwipe: false },
+  { direction: "backward settling", from: 2, fraction: 1.35, releaseSwipe: true }
+]) {
+  test(`pinch immediately takes over the visible photo during ${direction}`, async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await page.route("**/slow-full/**", async (route) => {
+      await held;
+      await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640"><rect width="480" height="640" fill="green"/></svg>' });
+    });
+    try {
+      await openGallery(page);
+      if (from) await page.locator(`[data-photo-lightbox-dot="${from}"]`).tap();
+      const track = page.locator(".photo-lightbox-track");
+      await expect.poll(() => track.evaluate((node, index) => Math.abs(node.scrollLeft - node.clientWidth * index), from)).toBeLessThan(2);
+      const visible = page.locator(".photo-lightbox-image").nth(1);
+      await expect.poll(() => visible.evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+      const immediate = await page.evaluate(({ from, fraction, releaseSwipe }) => {
+        const track = document.querySelector(".photo-lightbox-track");
+        track.style.setProperty("scroll-snap-type", "none", "important");
+        window.lightboxTouch("touchstart", 350);
+        window.lightboxTouch("touchmove", 100);
+        track.scrollLeft = track.clientWidth * fraction;
+        track.dispatchEvent(new Event("scroll"));
+        if (releaseSwipe) window.lightboxTouch("touchend", 100, 0);
+        window.pinchImage = document.querySelectorAll(".photo-lightbox-image")[1];
+        window.lightboxPinch("touchstart", 100);
+        const lockedAtStart = getComputedStyle(track).overflowX;
+        // Both events run before any async source preparation or settle timer.
+        window.lightboxPinch("touchmove", 200);
+        return {
+          lockedAtStart,
+          visibleTransform: window.pinchImage.style.transform,
+          previousTransform: document.querySelectorAll(".photo-lightbox-image")[from].style.transform,
+          left: track.scrollLeft,
+          expectedLeft: track.clientWidth
+        };
+      }, { from, fraction, releaseSwipe });
+      expect(immediate.lockedAtStart).toBe("hidden");
+      expect(immediate.visibleTransform).toContain("scale(2)");
+      expect(immediate.previousTransform).not.toContain("scale(2)");
+      expect(Math.abs(immediate.left - immediate.expectedLeft)).toBeLessThan(2);
+      await expect(page.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
+      release();
+      await page.waitForTimeout(350);
+      expect(await visible.evaluate((image) => image === window.pinchImage)).toBe(true);
+      await expect(visible).toHaveCSS("transform", /matrix\(2, 0, 0, 2,/);
+      // Finishing preparation and lifting both fingers must retain the zoom.
+      await page.evaluate(() => window.lightboxTouch("touchend", 200, 0));
+      await expect(visible).toHaveJSProperty("naturalWidth", 480);
+      await expect(visible).toHaveCSS("transform", /matrix\(2, 0, 0, 2,/);
+      // A fresh pinch back to 100% releases the track for the next swipe.
+      await page.evaluate(() => {
+        window.lightboxPinch("touchstart", 200);
+        window.lightboxPinch("touchmove", 100);
+        window.lightboxTouch("touchend", 200, 1);
+      });
+      await expect(track).toHaveCSS("overflow-x", "auto");
+      await page.evaluate(() => window.lightboxTouch("touchend", 200, 0));
+      await page.locator('[data-photo-lightbox-dot="2"]').tap();
+      await expect.poll(() => track.evaluate((node) => Math.abs(node.scrollLeft - node.clientWidth * 2))).toBeLessThan(2);
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+    }
+  });
+}
 
 test("last-photo edge pulls and viewport height events preserve the last index", async ({ page }) => {
   await page.route("**/slow-full/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));

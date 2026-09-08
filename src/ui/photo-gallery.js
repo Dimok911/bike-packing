@@ -1180,7 +1180,7 @@ export async function openPhotoLightbox(sourceImage, {
   const apply = () => {
     clampPan();
     image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
-    track.classList.toggle("photo-lightbox-track-zoomed", scale > 1);
+    track.classList.toggle("photo-lightbox-track-zoomed", scale > 1 || pinching);
   };
   const resetPanVelocity = (clientX, clientY, timestamp = now()) => {
     panVelocityX = 0;
@@ -1442,8 +1442,10 @@ export async function openPhotoLightbox(sourceImage, {
       return true;
     }
     if (!replacement) return false;
+    const token = renderToken;
     const stillCurrent = () => (
-      sourceController?.activeIndex === entryIndex
+      token === renderToken
+      && sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
     const shouldCommit = async ({ phase }) => {
@@ -1534,7 +1536,7 @@ export async function openPhotoLightbox(sourceImage, {
     sourceController = null;
     preparedFullImages.clear();
   };
-  const preparePhoto = async (nextIndex, { force = false } = {}) => {
+  const preparePhoto = async (nextIndex, { force = false, preserveTransform = false } = {}) => {
     if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
     cancelPanInertia(false);
     const token = ++renderToken;
@@ -1553,10 +1555,16 @@ export async function openPhotoLightbox(sourceImage, {
     activeIndex = nextIndex;
     image = targetImage;
     prepareVisiblePreviews(nextIndex);
-    if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
-    image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
+    // A pinch can adopt the neighboring bitmap before this async preparation
+    // finishes. Let the source lifecycle replace it after the gesture instead
+    // of changing its source or resetting a zoom that has already started.
+    if (!preserveTransform || !image.getAttribute("src")) {
+      if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
+      image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
+    }
     updateNavigation();
-    resetTransform();
+    if (preserveTransform) apply();
+    else resetTransform();
     const expectsFullSize = entryExpectsFullSize(entry);
     if (!expectsFullSize) {
       image.dataset.photoLightboxQuality = entry.fullSrc ? "full" : "preview";
@@ -1660,6 +1668,28 @@ export async function openPhotoLightbox(sourceImage, {
     if (lightboxSettleTimer === null) return;
     clearTimeout(lightboxSettleTimer);
     lightboxSettleTimer = null;
+  };
+  const takeOverVisiblePhotoForPinch = () => {
+    const nextIndex = directDesktop ? fullscreenSwitcher.presentedIndex : visibleTouchIndex();
+    pendingScrollIndex = null;
+    cancelTrackSettle();
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = 0;
+    const targetImage = lightboxImages[nextIndex];
+    if (image !== targetImage) {
+      image.style.removeProperty("transform");
+      image = targetImage;
+      scale = 1;
+      panX = 0;
+      panY = 0;
+    }
+    activeIndex = nextIndex;
+    // Pinch owns the track from the second finger, even at exactly 100%.
+    // Only this explicit gesture takeover interrupts native scroll settling.
+    apply();
+    fullscreenSwitcher.goTo(nextIndex, "instant", false);
+    updateNavigation();
+    void showPhoto(nextIndex, { force: true, preserveTransform: true });
   };
   const settleTouchCarouselTrack = () => {
     cancelTrackSettle();
@@ -1898,6 +1928,7 @@ export async function openPhotoLightbox(sourceImage, {
     const center = touchCenter(event.touches[0], event.touches[1]);
     pinching = true;
     touchStartedWithPinch = true;
+    takeOverVisiblePhotoForPinch();
     pinchDistance = touchDistance(event.touches[0], event.touches[1]);
     pinchScale = scale;
     startX = center.x;
@@ -1962,6 +1993,7 @@ export async function openPhotoLightbox(sourceImage, {
       const touch = event.touches[0];
       pinching = false;
       pinchDistance = 0;
+      apply();
       startX = touch.clientX;
       startY = touch.clientY;
       startPanX = panX;
@@ -2001,6 +2033,7 @@ export async function openPhotoLightbox(sourceImage, {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    apply();
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
     trackTouchActive = false;
@@ -2008,6 +2041,7 @@ export async function openPhotoLightbox(sourceImage, {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    apply();
     if (touchCarousel && scale <= 1) scheduleTrackSettle();
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
