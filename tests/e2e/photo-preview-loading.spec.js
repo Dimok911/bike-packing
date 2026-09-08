@@ -14,6 +14,78 @@ async function openPreviewFixture(page) {
   await page.goto("/__preview/fixture.html");
 }
 
+for (const cachedInMemory of [true, false]) {
+  test(`saved fullscreen originals never display thumbnails (${cachedInMemory ? "warm memory" : "cold local cache"})`, async ({ page }) => {
+    await openPreviewFixture(page);
+    await page.evaluate(async (cachedInMemory) => {
+      const { renderItemPhotoHtml, openPhotoLightbox } = await import("./src/ui/photo-gallery.js");
+      const makeSource = (width, color) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = width * 0.75;
+        const context = canvas.getContext("2d");
+        context.fillStyle = color;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL();
+      };
+      const previews = ["red", "green", "blue"].map((color) => makeSource(32, color));
+      const originals = ["red", "green", "blue"].map((color) => makeSource(1200, color));
+      const photos = originals.map((_, index) => ({ id: `saved-${index}`, url: `${location.origin}/saved-${index}/full`, thumbUrl: `${location.origin}/saved-${index}/thumb`, width: 1200, height: 900 }));
+      const photoObjectUrls = {
+        get: (id) => previews[Number(id.split("-")[1])],
+        sources: (id) => {
+          const index = Number(id.split("-")[1]);
+          return { preview: previews[index], full: cachedInMemory ? originals[index] : "" };
+        }
+      };
+      document.body.innerHTML = renderItemPhotoHtml({ photos }, { photoObjectUrls });
+      window.fullscreenOriginals = originals;
+      window.fullscreenThumbnailPaints = [];
+      window.fullscreenOriginalNodes = [];
+      const inspect = () => {
+        document.querySelectorAll(".photo-lightbox-image").forEach((image) => {
+          if (previews.includes(image.getAttribute("src"))) window.fullscreenThumbnailPaints.push(image.src);
+        });
+      };
+      new MutationObserver((records) => {
+        records.forEach((record) => {
+          if (record.target.matches?.(".photo-lightbox-image") && previews.includes(record.oldValue)) window.fullscreenThumbnailPaints.push(record.oldValue);
+        });
+        inspect();
+      }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"], attributeOldValue: true });
+      window.openSavedFullscreen = () => openPhotoLightbox(document.querySelector("[data-photo-open] img"), {
+        photoObjectUrls,
+        prepareFullscreenSource: async (entry) => {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          const index = Number(entry.localId.split("-")[1]);
+          return { preview: previews[index], full: originals[index], width: 1200, height: 900 };
+        },
+        downloadCoordinator: { download: () => { throw new Error("saved originals must not download"); } }
+      });
+      await window.openSavedFullscreen();
+    }, cachedInMemory);
+    const images = page.locator(".photo-lightbox-image");
+    await expect(images.nth(0)).toHaveJSProperty("naturalWidth", 1200);
+    const touch = await page.locator(".photo-lightbox").evaluate((dialog) => dialog.classList.contains("photo-lightbox-touch-carousel"));
+    if (touch) {
+      await expect(images.nth(1)).toHaveJSProperty("naturalWidth", 1200);
+      await images.nth(1).evaluate((image) => { window.savedNeighborNode = image; });
+    }
+    for (const index of [1, 2, 0]) {
+      await page.locator(`[data-photo-lightbox-dot="${index}"]`).click();
+      await expect(images.nth(index)).toHaveJSProperty("naturalWidth", 1200);
+      await expect(images.nth(index)).toHaveAttribute("data-photo-lightbox-quality", "full");
+      await expect(page.locator(`[data-photo-lightbox-dot="${index}"]`)).toHaveAttribute("aria-current", "true");
+      if (touch && index === 1) expect(await images.nth(1).evaluate((image) => image === window.savedNeighborNode)).toBe(true);
+    }
+    expect(await page.evaluate(() => window.fullscreenThumbnailPaints)).toEqual([]);
+    await page.locator(".photo-lightbox-close").click();
+    await page.evaluate(() => window.openSavedFullscreen());
+    await expect(images.nth(0)).toHaveJSProperty("naturalWidth", 1200);
+    expect(await page.evaluate(() => window.fullscreenThumbnailPaints)).toEqual([]);
+  });
+}
+
 test("desktop dot navigation hides empty image frames and only announces slow previews", async ({ page }) => {
   await openPreviewFixture(page);
   await page.evaluate(async () => {
