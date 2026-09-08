@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
   personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
@@ -67,6 +68,7 @@ export function validateListReceipt(data, expected) {
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
+  if (expected.kind === "list.restore" && expected.body?.historyRestore?.version === 2) return validatePersonalPhotoHistoryResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
   const type = expected.kind.split(".")[0];
@@ -144,6 +146,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
   photoCopyPlacementEnabled = PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED,
   photoTreeCopyEnabled = PERSONAL_PHOTO_TREE_COPY_ENABLED,
+  photoRestoreEnabled = PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
@@ -488,6 +491,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
       // Freeze before waiting for another tab, not after it has changed local data.
       const body = JSON.parse(bodyText || "{}");
       const route = listOperationRoute(path, method);
+      if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !photoRestoreEnabled) throw paused(requestedId, "Восстановление истории с фото ещё не включено.");
       if (route.kind === "list.migrate") {
         if (initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) throw paused(requestedId);
         await assertPersonalListMigrationHash(body);
@@ -559,6 +563,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && body.action === "form" && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает сохранение карточки вместе с фото. Запрос не отправлен.");
           }
+          if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает восстановление истории с фото.");
           if (route.kind === "photos.mutate" && body.copySource && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_FORM_CAPABILITY)) {
             throw paused(null, "Сервер ещё не поддерживает копирование карточки с фото. Запрос не отправлен.");
           }

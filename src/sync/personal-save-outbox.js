@@ -1,9 +1,11 @@
+import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
+import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./personal-photo-history-protocol.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalSnapshot, decodePersonalSnapshot } from "./personal-snapshot-codec.js";
 import { planPersonalPayloadReconciliation, planPersonalLocalPayloadReconciliation } from "./personal-save-reconciliation.js";
 import { retainedPersonalDeletionIntent } from "./personal-deletion-intent.js";
-import { personalHistoryRestoreManifest } from "./personal-history-restore.js";
+import { personalHistoryRestoreManifest, assertPersonalPhotoHistoryRestore } from "./personal-history-restore.js";
 import { personalListMigrationBody } from "./personal-list-migration.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
   personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
@@ -103,6 +105,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
   photoCopyPlacementEnabled = PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED,
   photoTreeCopyEnabled = PERSONAL_PHOTO_TREE_COPY_ENABLED,
+  photoRestoreEnabled = PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
@@ -148,7 +151,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           || !Number.isSafeInteger(action.generation) || action.generation < 1) throw Error("Invalid record");
         if (record.mergeBase && (!record.mergeBase.payload || !Number.isSafeInteger(record.mergeBase.stateRevision)
           || record.mergeBase.stateRevision < 1 || !updateKind(action.kind))) throw Error("Invalid merge base");
-        if (action.kind === "list.restore") personalHistoryRestoreManifest(action.body.historyRestore);
+        if (action.kind === "list.restore") {
+          const manifest = personalHistoryRestoreManifest(action.body.historyRestore);
+          if (manifest.version === 2) {
+            assertPersonalPhotoHistoryRestore({ body: action.body, base: record.mergeBase?.payload, listId });
+            assertPersonalPhotoHistoryRestore({ body: { ...action.body, payload: record.snapshot }, base: record.mergeBase?.payload, listId });
+          }
+        }
         if (action.kind === "list.migrate") {
           personalListMigrationBody(action.body, { causal: true });
           if (action.generation !== 1 || action.previousLocalOperationId || record.reconciliation || record.localReconciliation) throw Error("Migration is not initial");
@@ -561,7 +570,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       if (restore) {
         const manifest = personalHistoryRestoreManifest(input.body?.historyRestore);
-        const confirmedRevision = anchor?.baseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision || initialMergeBase?.stateRevision || input.body.baseStateRevision;
+        const restoreBaseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
+        if (manifest.version === 2) {
+          if (!photoRestoreEnabled) throw blocked("photo-history-disabled", "Восстановление истории с фото ещё не включено.");
+          assertPersonalPhotoHistoryRestore({ body: input.body, listId,
+            base: restoreBaseline?.payload || personalRecordPayload(head) || initialMergeBase?.payload });
+        }
+        const confirmedRevision = restoreBaseline?.stateRevision || applied.get(head?.action.operationId)?.stateRevision || initialMergeBase?.stateRevision || input.body.baseStateRevision;
         if (create || localReconciliation || head && !applied.has(head.action.operationId)
           || input.body.baseStateRevision !== manifest.targetStateRevision || confirmedRevision !== manifest.targetStateRevision) {
           throw blocked("restore-base", "Восстановление требует подтверждённой текущей версии списка.");
@@ -764,7 +779,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           stateRevision: remote.stateRevision, localFilesRetained: true };
         plan = { payload: remote.payload, conflicts: [] };
       } else if (rejectedRestore) {
-        if (containsPersonalPhotos(remote.payload) || [...records.values()].some(record => containsPersonalPhotos(record.snapshot) || containsPersonalPhotos(record.action.body.payload))) {
+        if ((containsPersonalPhotos(remote.payload) || [...records.values()].some(record => containsPersonalPhotos(record.snapshot) || containsPersonalPhotos(record.action.body.payload)))
+          && (!photoRestoreEnabled || !preservesConfirmedPersonalPhotos(remote.payload, remote.payload, listId))) {
           throw blocked("restore-files", "Сверка восстановления с фото ждёт файлового адаптера. Обе версии сохранены.");
         }
         const restoreRecord = records.get(rejectedRestore.operation.id);
@@ -952,6 +968,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       for (const record of chain.reverse()) {
         assertContext();
         const action = record.action;
+        if (action.kind === "list.restore" && action.body.historyRestore?.version === 2 && !photoRestoreEnabled) throw blocked("photo-history-disabled", "Восстановление истории с фото ещё не включено.");
         if (action.kind === "photos.mutate") {
           if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
           if (action.body.action === "copy-batch" && (!photoCopyBatchEnabled || !photoCopyEnabled || !photoFormEnabled)) throw blocked("photo-copy-batch-disabled", "Массовое копирование с фото ещё не включено.");

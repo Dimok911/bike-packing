@@ -4,6 +4,28 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+
+Продолжение 2026-09-09: пять DB callbacks зафиксированы в FE `c87f55c`.
+Личная история с фото завершена локально: API `47bf753`, 166/166 MySQL
+(`photo-history-mysql-3.log`, 197,97 с); 22/22 UI после финального исправления
+(`photo-history-ui-3.log`, 5,8 минуты), 491 transport, 895 critical,
+60 operation, 74 source/service, FE check. Все процессы API/UI завершены.
+`personal-photo-history-restore.md` содержит детали и диагностику первых
+прогонов. Новый false gate `PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED` и
+server capability `personalCausalPhotoHistoryRestoreV1`. Раздел 8 принят для
+личного списка; административная история остаётся в разделе 11.
+
+Следующий участок уже начат отдельно: `personal-archive-photo-files.js` и
+`personal-archive-photo-files.test.js`, пока НЕ подключены и не входят в
+коммит истории. 3/3 unit (`archive-photo-files-unit-1.log`): все IDs/metadata/Blob
+фиксируются до первого await; проверяются SHA-256, пропущенный файл, дубликаты,
+подмена Map/metadata во время ожидания, независимые новые assets при одном
+архивном файле у двух владельцев. Это только file preparation, НЕ импорт.
+Нужны цельный frozen import source/target/ID plan, durable outbox+files,
+защищённый API/CAS и UI-подключение selected/full/merge, затем guest handoff.
+Продолжать локально до конца списка, без публикации, push или включения gates.
+Предыдущие указания ниже о неподключённой истории — историческая точка.
+
 - Завершён локально item-copy-placement (FE `c73f4b8`, API `aab9df3`): 20/20 UI, 5,3 минуты
   (`item-placement-ui-2.log`); 158/158 API/MySQL, 166,28 с, bundled Node 24.19.0
   (`item-placement-mysql-3.log`). 481 transport / 895 critical / 60 operation /

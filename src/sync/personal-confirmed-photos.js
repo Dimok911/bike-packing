@@ -1,6 +1,7 @@
 import { causalPhotoReferenceForSync } from "../state/causal-photo-reference.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { preparePersonalDeletionBatch } from "./personal-deletion-intent.js";
+import { assertPersonalPhotoHistoryRestore } from "./personal-history-restore.js";
 
 export const PERSONAL_PHOTO_OWNER_DELETION_ENABLED = false;
 
@@ -46,7 +47,7 @@ export function preservesConfirmedPersonalPhotos(base, candidate, listId, { user
 // is a historical checkpoint link, not permission to dispatch that old form.
 // Records must come from the validated scoped outbox; this adds the file guard,
 // it does not replace its receipt, fork, revision or server-side checks.
-export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId, allowOwnerDeletion = false, confirmedBoundary = null }) {
+export function preservesConfirmedPersonalPhotoChain({ records, operationId, listId, allowOwnerDeletion = false, allowHistoryRestore = false, confirmedBoundary = null }) {
   try {
     if (!Array.isArray(records) || !records.length || !operationId) return false;
     const byId = new Map(records.map(record => [record.action.operationId, record]));
@@ -60,7 +61,7 @@ export function preservesConfirmedPersonalPhotoChain({ records, operationId, lis
     while (record) {
       const { action } = record, parentId = action.body.causal?.baseOperationId;
       if (action.operationId === confirmedBoundary?.operationId) return action.listId === listId;
-      if (visited.has(action.operationId) || action.kind !== "list.update" || action.listId !== listId) return false;
+      if (visited.has(action.operationId) || !["list.update", ...(allowHistoryRestore ? ["list.restore"] : [])].includes(action.kind) || action.listId !== listId) return false;
       visited.add(action.operationId);
       const parent = parentId ? byId.get(parentId) : null;
       if (parentId && !parent) return false;
@@ -69,7 +70,8 @@ export function preservesConfirmedPersonalPhotoChain({ records, operationId, lis
       const base = record.mergeBase?.payload || parentPayload;
       if (record.mergeBase && parent && canonicalListOperationJson(base) !== canonicalListOperationJson(parentPayload)) return false;
       if (boundaryParent && record.mergeBase?.stateRevision !== confirmedBoundary.stateRevision) return false;
-      if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId,
+      if (action.kind === "list.restore") assertPersonalPhotoHistoryRestore({ body: action.body, base, listId });
+      else if (!preservesConfirmedPersonalPhotos(base, action.body.payload, listId,
         { userDeletion: allowOwnerDeletion ? action.body.userDeletion : null })) return false;
       record = parent;
     }

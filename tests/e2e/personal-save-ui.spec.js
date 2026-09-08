@@ -1,3 +1,4 @@
+import { personalPhotoHistoryPlan } from "../../src/sync/personal-photo-history-plan.js";
 import { test, expect } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -141,7 +142,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -165,8 +166,10 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         if (layoutIds.length) for (const id of layoutIds) payload.layouts[id] = structuredClone(source.payload.layouts[id]);
         payload.activeLayoutId ||= "layout-a"; payload.packedItems ||= {};
         const hash = value => createHash("sha256").update(canonicalListOperationJson(value)).digest("hex");
+        const photoRestore = url.searchParams.get("photos") === "1" ? personalPhotoHistoryPlan({ listId: state.listId,
+          baseStateRevision: state.revision, currentPayload: state.payload, payload, heads: state.historyHeads || [] }).manifest : null;
         data = { ok: true, actorId: "actor-a", environment: "bike-packing-experiment", listId: state.listId,
-          restore: { payload, baseStateRevision: state.revision, historyRestore: { version: 1, historyId: 101,
+          restore: { payload, baseStateRevision: state.revision, historyRestore: { version: photoRestore ? 2 : 1, ...(photoRestore ? { photoRestore } : {}), historyId: 101,
             historyPayloadHash: hash(source.payload), payloadHash: hash(payload), layoutIds, targetStateRevision: state.revision } } };
       }
       else if (photoEdit && path === `/bike-packing/lists/${state.listId}/photo-owner-state`) {
@@ -346,7 +349,9 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           }
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
-            result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}) } } };
+            result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
+              ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
+                restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
         if (state.loseFormOwner && body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action)) {
@@ -2389,6 +2394,68 @@ async function openPreparedHistoryRestore(page, f, snapshot, scoped = false) {
   await page.locator("#historyDialog [data-restore-history]").click();
   await expect(page.locator("#confirmDialog")).toBeVisible();
 }
+
+async function synchronizePhotoHistory(page, condition) {
+  await page.locator("#syncBtn").click();
+  await expect.poll(condition, { timeout: 20000 }).toBe(true);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+}
+
+for (const type of ["item", "container"]) for (const outcome of ["lost ACK", "quota", "rejected"]) test(`actual photo history ${type} keeps exact files and chosen restore (${outcome})`, async ({ page, context }) => {
+  test.setTimeout(180000);
+  const { f, collection, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type });
+  const history = structuredClone(f.payload);
+  await submitForm(page, button); await expect(dialog).not.toBeVisible();
+  await synchronizePhotoHistory(page, () => f.payload[collection][ownerId].photos.length === 1);
+  const current = structuredClone(f.payload), before = f.posts.length, stages = [...f.stagePosts];
+  f.historyHeads = originalPhotos.map(reference => ({ photoId: reference.id, assetId: reference.assetId, entityType: type,
+    entityId: ownerId, revision: f.revision, deleted: !current[collection][ownerId].photos.some(photo => photo.id === reference.id), reference }));
+  await page.locator('[data-view="packing"]').click();
+  await openPreparedHistoryRestore(page, f, history);
+  if (outcome === "quota") await page.evaluate(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.kind === "list.restore") throw new DOMException("History quota", "QuotaExceededError");
+      return set.call(this, key, value);
+    };
+  });
+  if (outcome === "lost ACK") { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+  if (outcome === "rejected") {
+    f.allowConflicts = true;
+    f.beforeUpdate = action => {
+      if (action.kind !== "list.restore" || f.restoreRejected) return;
+      f.restoreRejected = true; f.payload = structuredClone(f.payload); f.payload[collection][ownerId].weight = 789; f.revision++;
+    };
+  }
+  await page.locator("#confirmOkBtn").click();
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    await expect(page.locator("#historyDialog")).toBeVisible(); expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(current);
+    const recovery = await downloadRecovery(page); expect(recovery.unconfirmedMemoryDraft[collection][ownerId].photos).toEqual(originalPhotos);
+    await reloadApp(page); expect(f.payload[collection][ownerId].photos).toEqual(current[collection][ownerId].photos);
+  } else {
+    await expect(page.locator("#historyDialog")).not.toBeVisible(); await page.locator("#syncBtn").click();
+    if (outcome === "lost ACK") {
+      await expect.poll(() => f.injectedFailure).toBe(true);
+      const restore = f.posts.at(-1); expect(restore.kind).toBe("list.restore"); expect(restore.body.historyRestore.version).toBe(2);
+      expect(restore.body.payload[collection][ownerId].photos).toEqual(originalPhotos);
+      f.lose = false; f.unknown = false; f.beforeUpdate = null;
+      await reloadApp(page); await synchronizePhotoHistory(page, () => f.payload[collection][ownerId].photos.length === 2);
+      expect(f.posts).toHaveLength(before + 1); expect(f.posts.filter(post => post.operationId === restore.operationId)).toHaveLength(1);
+    } else {
+      await expect(page.locator("#confirmTitle")).toHaveText("Восстановление не применено");
+      await page.locator("#confirmCancelBtn").click(); expect(f.posts).toHaveLength(before + 1);
+      f.beforeUpdate = null;
+      await page.locator("#syncBtn").click(); await expect(page.locator("#confirmTitle")).toHaveText("Восстановление не применено");
+      await page.locator("#confirmOkBtn").click();
+      await expect.poll(() => f.posts.length).toBe(before + 2);
+      await reloadApp(page); await synchronizePhotoHistory(page, () => f.payload[collection][ownerId].weight === 789);
+      expect(f.payload[collection][ownerId].photos).toEqual(current[collection][ownerId].photos);
+      expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.historyRestore).toBeUndefined();
+    }
+  }
+  expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
+});
 
 for (const scoped of [false, true]) test(`actual ${scoped ? "scoped" : "full"} history restore survives lost ACK and reload with one fixed action`, async ({ page, context }) => {
   test.setTimeout(120000);

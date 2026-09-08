@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./src/sync/personal-photo-history-protocol.js";
 import {
   STORAGE_KEY,
   APP_VERSION,
@@ -8920,7 +8921,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
         && !(personalPhotoFormUiEnabled() && preservesConfirmedPersonalPhotoChain({ records,
           confirmedBoundary: outbox.confirmedBoundary(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
-          allowOwnerDeletion: PERSONAL_PHOTO_OWNER_DELETION_ENABLED }))) {
+          allowOwnerDeletion: PERSONAL_PHOTO_OWNER_DELETION_ENABLED, allowHistoryRestore: PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED }))) {
         throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");
       }
     };
@@ -11621,10 +11622,12 @@ async function preparePersonalHistoryRestoreAction(record, layoutIds) {
   const outbox = personalSaveOutboxForScope();
   if (!outbox) throw Error("Сначала подтвердите личный список.");
   return preparePersonalHistoryRestore({ historyId: Number(record.id), layoutIds, outbox,
+    photoRestoreEnabled: PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED,
     getContext: () => { personalSaveRecovery.assertRunning(); return { ...personalSaveContext(), activeLayoutId: state.activeLayoutId, historySource: activeHistorySource }; },
     getState: () => ({ ...state, activeLayoutId: state.activeLayoutId }), getRevision: () => Number(syncMeta.stateRevision),
     readPreview(historyId, selected) {
       const params = new URLSearchParams(); selected.forEach(id => params.append("layoutId", id));
+      if (PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED) params.set("photos", "1");
       return apiFetch(`/bike-packing/lists/${encodeURIComponent(listId)}/history/${historyId}/restore?${params}`, {
         timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true
       });

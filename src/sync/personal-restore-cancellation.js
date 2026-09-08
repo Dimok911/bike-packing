@@ -1,3 +1,4 @@
+import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -16,6 +17,6 @@ export function validPersonalRestoreCancellation(record) {
     && action.body?.baseStateRevision === decision.stateRevision && Boolean(base.payload)
     && Array.isArray(outcomes) && outcomes.some(proof => proof.operation?.id === decision.restoreOperationId
       && proof.operation.kind === "list.restore" && proof.operation.state === "rejected")
-    && !containsPersonalPhotos(action.body.payload)
+    && (!containsPersonalPhotos(action.body.payload) || preservesConfirmedPersonalPhotos(base.payload, action.body.payload, action.listId))
     && canonicalListOperationJson(action.body.payload) === canonicalListOperationJson(base.payload);
 }
