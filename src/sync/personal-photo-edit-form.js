@@ -3,6 +3,7 @@ import { assertListOperationPayload } from "./list-operation-payload.js";
 import { assertPersonalPhotoFormCandidate, personalPhotoFormOwner, PERSONAL_PHOTO_EDIT_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { readPersonalPhotoOwnerState } from "./personal-photo-owner-state.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
+import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, applyPersonalPhotoItemFormContext, refreshPersonalPhotoItemContextView } from "./personal-photo-item-form-context.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
@@ -13,13 +14,16 @@ const fail = message => { throw Object.assign(new Error(message || "Не уда�
 // against the preceding child result, then reorder the exact survivors. The
 // complete form is one atomic action, never independently dispatched children.
 export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, baseStateRevision, entityType, entityId,
-  fields, photoIds, baseEntityRevision, photoRevisions, operationId }, { enabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, snapshotToPayload = value => value } = {}) {
+  fields, photoIds, baseEntityRevision, photoRevisions, operationId, formContext = null }, {
+  enabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, snapshotToPayload = value => value } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || binding.scopeKey !== `id:${binding.actorId}`
     || !uuid(operationId) || !Number.isSafeInteger(baseStateRevision) || baseStateRevision < 1
     || !Number.isSafeInteger(baseEntityRevision) || baseEntityRevision < 1 || baseEntityRevision > baseStateRevision) fail();
-  const input = { binding, snapshot, basePayload, baseStateRevision, entityType, entityId, fields, photoIds, baseEntityRevision, photoRevisions, operationId };
+  if (formContext !== null && !itemContextEnabled) fail();
+  const input = { binding, snapshot, basePayload, baseStateRevision, entityType, entityId, fields, photoIds, baseEntityRevision, photoRevisions, operationId,
+    ...(formContext === null ? {} : { formContext }) };
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body: input });
-  ({ binding, snapshot, basePayload, fields, photoIds, photoRevisions } = clone(input));
+  ({ binding, snapshot, basePayload, fields, photoIds, photoRevisions, formContext = null } = clone(input));
   if (!same(snapshotToPayload(clone(snapshot)), basePayload)) fail();
   const collection = entityType === "item" ? "items" : "containers", before = basePayload?.[collection]?.[entityId];
   const photos = before?.photos;
@@ -44,7 +48,7 @@ export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, b
   });
   if (!same(expected, photoIds)) changes.push({ ...common, action: "order", expectedPhotoIds: [...expected], photoIds });
   if (!changes.length || changes.length > 50) fail("Слишком много изменений фото для одной формы. Изменения остались в форме.");
-  const body = { ...common, action: "form", baseStateRevision, fields, changes };
+  const body = { ...common, action: "form", baseStateRevision, fields, changes, ...(formContext === null ? {} : { formContext }) };
   const owner = personalPhotoFormOwner(basePayload, body);
   owner.photos = photoIds.map(id => clone(photos.find(photo => photo.id === id)));
   // Keep the UI's placement mirrors and project them through the existing
@@ -54,6 +58,10 @@ export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, b
     else snapshot[collection][entityId][key] = clone(value);
   }
   snapshot[collection][entityId].photos = owner.photos;
+  if (formContext !== null) {
+    const context = applyPersonalPhotoItemFormContext(snapshot, body, basePayload);
+    refreshPersonalPhotoItemContextView(snapshot, context, entityId);
+  }
   const payload = snapshotToPayload(clone(snapshot));
   assertPersonalPhotoFormCandidate({ body, basePayload, payload, listId: binding.listId });
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body });
@@ -62,7 +70,8 @@ export function preparePersonalPhotoEditForm({ binding, snapshot, basePayload, b
 }
 
 export function createPersonalPhotoEditFormSession({ outbox, store, getContext, readOwner, onDurable,
-  enabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, snapshotToPayload = value => value, createUuid = () => crypto.randomUUID() } = {}) {
+  enabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
+  snapshotToPayload = value => value, createUuid = () => crypto.randomUUID() } = {}) {
   let attempt;
   const current = initial => { if (!same(initial, getContext?.())) fail("Форма или аккаунт изменились. Старое действие не применено."); };
   return {
@@ -90,7 +99,7 @@ export function createPersonalPhotoEditFormSession({ outbox, store, getContext, 
         // This preview has no action/receipt and is never stored or dispatched.
         const photos = request.basePayload?.[request.entityType === "item" ? "items" : "containers"]?.[request.entityId]?.photos || [];
         attempt.preview = preparePersonalPhotoEditForm({ ...request, operationId: attempt.operationId, baseEntityRevision: 1,
-          photoRevisions: photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })) }, { enabled, snapshotToPayload }).snapshot;
+          photoRevisions: photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })) }, { enabled, itemContextEnabled, snapshotToPayload }).snapshot;
         current(initial);
         if (outbox.hasPending()) fail("Сначала подтвердите предыдущие изменения. Удаление или порядок фото сохранены в форме.");
         (async () => {
@@ -99,7 +108,7 @@ export function createPersonalPhotoEditFormSession({ outbox, store, getContext, 
           if (inventory.entries.some(entry => entry.state !== "settled-retained")) fail("Прежние фотодействия требуют проверки. Новое действие не отправлено.");
           attempt.phase = "reading-owner";
           const versions = await readPersonalPhotoOwnerState(request, { getContext, readOwner }); current(initial);
-          const prepared = preparePersonalPhotoEditForm({ ...request, ...versions, operationId: attempt.operationId }, { enabled, snapshotToPayload });
+          const prepared = preparePersonalPhotoEditForm({ ...request, ...versions, operationId: attempt.operationId }, { enabled, itemContextEnabled, snapshotToPayload });
           const plan = outbox.preparePhoto(prepared); current(initial);
           attempt.phase = "capturing";
           const record = await outbox.capturePhoto({ plan, getContext }); current(initial);

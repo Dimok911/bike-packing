@@ -733,6 +733,7 @@ import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTB
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate } from "./src/sync/personal-pending-archive-update.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate } from "./src/sync/personal-pending-guest-update.js";
 import { createPersonalPendingGuestFormSession } from "./src/sync/personal-pending-guest-form.js";
+import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-item-form-context.js";
 import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
   personalPendingPhotoOwnerDeletionForm } from "./src/sync/personal-pending-photo-owner-deletion.js";
@@ -1939,7 +1940,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2499,6 +2500,10 @@ function personalPhotoFormUiEnabled() {
 
 function personalPhotoEditFormUiEnabled() {
   return PERSONAL_PHOTO_EDIT_FORM_ENABLED && personalPhotoFormUiEnabled();
+}
+
+function personalPhotoItemContextUiEnabled() {
+  return PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED && personalPhotoFormUiEnabled();
 }
 
 function personalPendingImportSource(outbox, includeSource = false) {

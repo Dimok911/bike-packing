@@ -4,6 +4,59 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+
+Итог item photo context: UI4 завершён 26/26, 5,3 мин, exit 0 (session13431).
+API2 212/212, 229,61 с. Все процессы завершены. Docs и checklist обновлены.
+Срез полностью проверен и готов к scoped local FE/BE commit. Ниже упоминания
+выполняющегося UI4 исторические. Три НОВЫХ НЕПОДКЛЮЧЁННЫХ файла сумок
+(перечислены ниже) не включать в commit формы вещи.
+
+
+Продолжение 2026-09-09: галерея принята FE cf92069, API HEAD f80303b.
+Текущий незакоммиченный срез — составная форма личной вещи с фото,
+formContext.version=1, собственные false gate/capability; полный выбранный
+layout, доступность и количество проходят одну прежнюю фото-транзакцию.
+FE новый personal-photo-item-form-context.js и тест, app/controller,
+form protocol/plan/session/edit/submit, outbox/queue; BE mirror, form,
+list-operations/lists API, capability server и тесты. Docs
+personal-photo-item-form-context.md и API causal-photo-item-form-context.md.
+10 targeted +54 queue, 584 transport (transport-2), 896 critical,
+75 BE operations, 74 BE source/service и FE check прошли.
+API/MySQL item-photo-context-mysql-2.log: 212/212, 229,61 с, exit 0;
+процесс 98675 завершён, disposable MySQL штатно остановлен. Первый прогон
+211 total,205 pass,6 fail из-за test expectation GET unknown=404 вместо
+200/operation.state=unknown; затем четыре новых paired теста не получили
+свой флаг. Исправлен только fixture; дополнительный SQL rollback тест
+прошёл во втором полном прогоне вместе с полным набором.
+UI2 item-photo-context-ui-2.log: 12/12, 2,3 мин. UI1:6 pass,1 fail,5 notrun:
+новый mobile create тест оставлял focus в quantity перед tap; исправлен
+blur через существующий submitForm helper, приложение не менялось.
+UI3 item-photo-context-ui-3.log завершён: 9 pass, 1 fail, 16 notrun.
+Новые composed Chromium прошли; ordinary helper требовал photo-form bundle,
+но был собран только photo-edit. Runtime не менялся; повтор UI4 запущен
+с modes photo-form,photo-edit, process session13431. Сейчас выполняется:
+26 тестов, grep composed item photo|ordinary photo form (container|item)
+(create|edit) saves, режим photo-edit. Новые move/fileless delete+quantity/
+unplace/lost ACK и регрессия восьми обычных форм. НЕ считать завершённым
+до финального выхода; после обновить обе docs и checklist, scoped local
+commits FE/BE. Все исходные gates false. Никаких push/publication/Trello.
+Далее продолжать ВЕСЬ список, не завершать ответ после этого среза.
+Следующий пункт — составные фотоформы сумок. Изучены layout-ops.js,
+item-dialog-save.js и app-tail: parent move/lift, root reordering,
+new root placement, catalog detached/link, full source subtree. Подготовлены НЕПОДКЛЮЧЁННЫЕ файлы, НЕ включать в item context commit:
+FE src/sync/personal-photo-form-layout.js (общая строгая проверка укладки,
+пока item module ещё содержит свою прежнюю копию),
+src/sync/personal-photo-container-form-context.js и
+ tests/critical/personal-photo-container-form-context.test.js.
+Первые 4/4 pure проверки прошли: перенос вложенного дерева, подъём в корень,
+новая пустая сумка в выбранной колонке и отрицательные условия. Формы, queue,
+API и docs сумок ещё НЕ подключены. Пока compiler запрещает existing detached
+bag — полный выбранный источник для его дочерних записей остаётся доработкой.
+Никаких BE файлов сумок пока нет. CleanupEmptyContainers default
+removeTemporary=false; не приписывать обычному parent move автоматическое
+удаление группы без проверки конкретного пути. Снимки UI имеют зеркала,
+полный business источник и выбранная укладка должны замораживаться явно.
+
 Сейчас: private-owner срез зафиксирован FE 6b08fe5 / BE f80303b.
 Галерея 2.4.0 применена и полностью проверена локально. 896 critical,
 573 transport и check прошли; gallery-240-ui-1.log: 39 passed, 3 expected

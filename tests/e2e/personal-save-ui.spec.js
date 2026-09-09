@@ -13,6 +13,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
+import { applyPersonalPhotoItemFormContext } from "../../src/sync/personal-photo-item-form-context.js";
 import { personalPhotoCopyOwner } from "../../src/sync/personal-photo-copy-source.js";
 import { personalPhotoCopyPlacementLayout } from "../../src/sync/personal-photo-copy-placement-layout.js";
 import { personalPhotoTreeCopyLayout } from "../../src/sync/personal-photo-tree-copy-layout.js";
@@ -302,7 +303,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -480,7 +481,9 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           if (body.body.baseEntityRevision === 0) {
             for (const key of body.body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) delete owner[key];
           }
-          state.payload[body.body.entityType === "item" ? "items" : "containers"][owner.id] = owner; state.revision++;
+          state.payload[body.body.entityType === "item" ? "items" : "containers"][owner.id] = owner;
+          if (body.body.formContext) applyPersonalPhotoItemFormContext(state.payload, body.body);
+          state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
               photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 } } } };
@@ -1130,10 +1133,11 @@ async function synchronize(page, condition) {
   }), { timeout: 20000 }).toBe(true);
 }
 
-async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2 } = {}) {
+async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2, secondBag = false } = {}) {
   const f = await setup(page, context, { photoForm: true, photoEdit }), bag = await createRootContainer(page, "База фотоформы");
   if (type === "item" && !created) await createItemInContainer(page, bag, "Вещь фотоформы");
-  await synchronize(page, () => Object.keys(f.payload.containers).length === 1 && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
+  if (secondBag) await createRootContainer(page, "Вторая сумка фотоформы");
+  await synchronize(page, () => Object.keys(f.payload.containers).length === (secondBag ? 2 : 1) && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
   const before = f.posts.length, collection = type === "item" ? "items" : "containers";
   await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
   if (created) await page.locator(type === "item" ? "#addItemBtn" : "#addRootContainerBtn").click();
@@ -1156,6 +1160,87 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   await expect(page.locator(button)).toBeVisible();
   return { f, before, collection, prefix, button, dialog };
 }
+
+for (const scenario of ["create", "move", "quantity", "unplace", "lost file", "lost owner", "queue quota"]) test(`composed item photo form preserves placement and availability (${scenario})`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const created = scenario === "create";
+  const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type: "item", created, photoEdit: true, secondBag: scenario === "move" });
+  const server = structuredClone(f.payload), bagId = scenario === "move" ? Object.values(f.payload.containers).find(bag => bag.name === "Вторая сумка фотоформы").id : Object.keys(f.payload.containers)[0];
+  if (created || scenario === "move" || scenario === "unplace") {
+    await page.locator("#itemContainerPickerBtn").click();
+    await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await page.locator(scenario !== "unplace" ? `#containerPickerBoard [data-pick-container="${bagId}"]` : "#containerPickerNoneBtn").click();
+  }
+  if (scenario !== "unplace") await page.locator("#itemQuantity").fill("4");
+  if (!created && scenario !== "move") await page.locator("#itemAvailabilityStatus").selectOption("broken");
+  if (scenario === "lost file") f.loseStageAt = 2;
+  if (scenario === "lost owner") f.loseFormOwner = true;
+  if (scenario === "queue quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.formContext) throw new DOMException("Item context quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await submitForm(page, button, "#itemQuantity");
+  if (scenario === "queue quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible(); await expect(dialog).toBeVisible();
+    const copy = await downloadRecovery(page), itemId = Object.keys(server.items)[0];
+    expect(copy.unconfirmedMemoryDraft.items[itemId].availabilityStatus).toBe("broken");
+    expect(Object.values(copy.unconfirmedMemoryDraft.layouts).some(layout => layout.arrangement.itemQuantities[itemId] === 4)).toBe(true);
+    expect(f.payload).toEqual(server); expect(f.stagePosts).toHaveLength(0); expect(f.posts).toHaveLength(before);
+  } else {
+    await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    if (scenario.startsWith("lost")) {
+      await expect.poll(() => f.stagePosts.length).toBe(2);
+      if (scenario === "lost owner") await expect.poll(() => f.injectedFailure).toBe(true);
+      else expect(f.payload).toEqual(server);
+      const posts = structuredClone(f.posts), stages = [...f.stagePosts];
+      await reloadApp(page, { recovery: true });
+      const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+      await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toEqual(posts); expect(f.stagePosts).toEqual(stages);
+      f.loseStageAt = 0; f.hiddenStage = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+      await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+    expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
+    const action = f.posts.at(-1), itemId = action.body.entityId, placement = action.body.formContext.placement;
+    expect(action.kind).toBe("photos.mutate"); expect(action.body.baseEntityRevision === 0).toBe(created);
+    expect(f.payload.items[itemId].photos).toHaveLength(2);
+    expect(f.payload.items[itemId].availabilityStatus).toBe(created || scenario === "move" ? undefined : "broken");
+    expect(placement.targetLayout).toEqual(server.layouts[placement.targetLayout.id]);
+    expect(f.payload.layouts[placement.targetLayout.id].arrangement.items[itemId]).toBe(scenario === "unplace" ? undefined : bagId);
+    expect(f.payload.layouts[placement.targetLayout.id].arrangement.itemQuantities[itemId]).toBe(scenario === "unplace" ? undefined : 4);
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(2);
+  }
+  expect(f.errors).toEqual([]);
+});
+
+for (const unplace of [false, true]) test(`composed item photo edit without new files ${unplace ? "unplaces" : "changes quantity"} after a lost confirmation`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const { f, before, ownerId, button, dialog, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type: "item", change: "delete" });
+  const stages = [...f.stagePosts], server = structuredClone(f.payload);
+  if (unplace) {
+    await page.locator("#itemContainerPickerBtn").click(); await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await page.locator("#containerPickerNoneBtn").click();
+  } else await page.locator("#itemQuantity").fill("7");
+  await page.locator("#itemAvailabilityStatus").selectOption("lost"); f.loseFormOwner = true;
+  await submitForm(page, button, "#itemQuantity"); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.injectedFailure).toBe(true);
+  const action = structuredClone(f.posts.at(-1)); expect(action.body.formContext.availabilityStatus).toBe("lost");
+  expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toEqual(stages);
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+  await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts.at(-1)).toEqual(action);
+  f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.payload.items[ownerId].photos.map(photo => photo.id)).toEqual([originalPhotos[1].id]);
+  expect(f.payload.items[ownerId].availabilityStatus).toBe("lost");
+  const placement = action.body.formContext.placement, layout = f.payload.layouts[placement.targetLayout.id];
+  expect(placement.targetLayout).toEqual(server.layouts[placement.targetLayout.id]);
+  expect(layout.arrangement.itemQuantities[ownerId]).toBe(unplace ? undefined : 7);
+  expect(Boolean(layout.arrangement.items[ownerId])).toBe(!unplace);
+  await reloadApp(page); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
+});
 
 for (const type of ["container", "item"]) for (const created of [false, true]) test(`ordinary photo form ${type} ${created ? "create" : "edit"} saves files once and follows with a field edit${created ? " after lost ACK" : ""}`, async ({ page, context }) => {
   test.setTimeout(120000);

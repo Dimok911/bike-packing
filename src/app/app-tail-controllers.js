@@ -380,7 +380,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -8147,6 +8147,7 @@ function openedFormPhotoStatus(photos) {
 const personalPhotoForms = createPersonalPhotoFormController({
   isEnabled: personalPhotoFormUiEnabled,
   isEditEnabled: personalPhotoEditFormUiEnabled,
+  isItemContextEnabled: personalPhotoItemContextUiEnabled,
   isPendingUpdate: personalPendingImportFormEnabled,
   createPendingUpdateSession: options => personalPhotoFormSession({ ...options, pendingImport: true }),
   getContext: personalSaveContext,
@@ -8172,12 +8173,21 @@ const personalPhotoForms = createPersonalPhotoFormController({
       dimensions: hasContainerDimensions(dimensions) ? dimensions : null,
       ...(created ? currentCreateMeta() : currentEditMeta()),
       ...(item ? { quantity: 1 } : { volume: snapshot.volume, nestable: snapshot.nestable }) };
-    return { request: personalPhotoFormRequest({ entityType: type,
-        entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingImport: pendingUpdate }),
-      placementChanged: item ? itemPlacementSnapshotChanged(initial, snapshot) || Boolean(created && snapshot.containerId)
-        : containerPlacementSnapshotChanged(initial, snapshot) || Boolean(created && (placeNewRootInCurrentLayout || pendingCopyTargetContainerSetup)),
-      availabilityChanged: item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available"),
-      catalogSource: Boolean(!item && rootContainerCatalogSelection) };
+    const placementChanged = item ? itemPlacementSnapshotChanged(initial, snapshot) || Boolean(created && snapshot.containerId)
+      : containerPlacementSnapshotChanged(initial, snapshot) || Boolean(created && (placeNewRootInCurrentLayout || pendingCopyTargetContainerSetup));
+    const availabilityChanged = item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available");
+    const request = personalPhotoFormRequest({ entityType: type,
+      entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingImport: pendingUpdate });
+    if (item && !pendingUpdate && personalPhotoItemContextUiEnabled() && (placementChanged || availabilityChanged)) {
+      const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
+      const targetLayout = request.basePayload.layouts?.[layoutId];
+      if (placementChanged && !targetLayout) throw Error("Не найдена подтверждённая целевая укладка. Форма сохранена.");
+      request.formContext = { version: 1, availabilityStatus: snapshot.availabilityStatus,
+        placement: placementChanged ? { targetLayout: structuredClone(targetLayout), targetContainerId: snapshot.containerId,
+          quantity: snapshot.containerId ? snapshot.quantity : 1,
+          layoutFields: Object.fromEntries(["updatedAt", "updatedByDeviceId", "updatedByDeviceName"].filter(key => Object.hasOwn(fields, key)).map(key => [key, fields[key]])) } : null };
+    }
+    return { request, placementChanged, availabilityChanged, catalogSource: Boolean(!item && rootContainerCatalogSelection) };
   },
   createSession: personalPhotoFormSession,
   createEditSession: options => personalPhotoFormSession({ ...options, editExistingPhotos: true }),

@@ -2,6 +2,7 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { personalPhotoCopySourceValid, personalPhotoCopyOwner } from "./personal-photo-copy-source.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
+import { personalPhotoItemFormContext, personalPhotoItemContextOwner, applyPersonalPhotoItemFormContext } from "./personal-photo-item-form-context.js";
 
 // Separate rollout gate. Storage/queue integration does not enable the UI writer.
 export const PERSONAL_PHOTO_FORM_ENABLED = false;
@@ -36,7 +37,7 @@ function photoValidationView(body) {
 }
 
 export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {}) {
-  const keys = ["version", "action", "baseStateRevision", "causal", "entityType", "entityId", "baseEntityRevision", "fields", "changes", "copySource"];
+  const keys = ["version", "action", "baseStateRevision", "causal", "entityType", "entityId", "baseEntityRevision", "fields", "changes", "copySource", "formContext"];
   if (!object(body) || body.version !== 1 || body.action !== "form" || Object.keys(body).some(key => !keys.includes(key))
     || !["item", "container"].includes(body.entityType) || !id(body.entityId)
     || !Number.isSafeInteger(body.baseEntityRevision) || body.baseEntityRevision < 0 || !object(body.fields) || !Object.keys(body.fields).length
@@ -52,7 +53,9 @@ export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {})
     || Object.hasOwn(body, "copySource") && !personalPhotoCopySourceValid(body, { allowEmpty: allowEmptyCopy })) fail();
   if (body.baseEntityRevision === 0 && body.changes.length && body.changes[0].expectedPhotoIds?.length !== 0) fail();
   const photos = body.changes.length ? personalPhotoPublicationManifest(photoValidationView(body), { allowDeleteThenOrder: true, allowAttachThenOrder: true }) : [];
+  if (Object.hasOwn(body, "formContext")) personalPhotoItemFormContext(body);
   return { entityType: body.entityType, entityId: body.entityId, baseEntityRevision: body.baseEntityRevision,
+    ...(Object.hasOwn(body, "formContext") ? { formContext: clone(body.formContext) } : {}),
     created: body.baseEntityRevision === 0, ...(body.copySource ? { copySource: clone(body.copySource) } : {}), fields: clone(body.fields), photos };
 }
 
@@ -71,7 +74,7 @@ export function personalPhotoFormOwner(basePayload, body) {
   for (const [key, value] of Object.entries(manifest.fields)) {
     if (key === "dimensions" && value === null) delete owner[key]; else owner[key] = value;
   }
-  return owner;
+  return manifest.formContext ? personalPhotoItemContextOwner(owner, personalPhotoItemFormContext(body, basePayload)) : owner;
 }
 
 export function assertPersonalPhotoFormCandidate({ body, basePayload, payload, listId }) {
@@ -103,6 +106,7 @@ export function assertPersonalPhotoFormCandidate({ body, basePayload, payload, l
   if (manifest.created) for (const key of body.entityType === "item" ? ["containerId"] : ["parentId", "childIds", "itemIds", "order"]) {
     if (!Object.hasOwn(desired, key)) delete owner[key];
   }
+  if (manifest.formContext) applyPersonalPhotoItemFormContext(candidate, body, basePayload);
   if (!same(candidate, payload)) fail();
   return manifest;
 }
@@ -125,6 +129,11 @@ export function validatePersonalPhotoFormResult(payload, expected) {
       if (!same(actual, copied)) return false;
       if (owner.photos.some((photo, index) => ["fileName", "type", "size", "width", "height"].some(key =>
         photo[key] !== manifest.copySource.payload.photos[index][key]))) return false;
+    }
+    if (manifest.formContext) {
+      const context = personalPhotoItemFormContext(expected.body);
+      if (context.availabilityStatus === "available" ? Object.hasOwn(owner, "availabilityStatus") : owner.availabilityStatus !== context.availabilityStatus) return false;
+      if (context.layout && !same(payload.list.payload.layouts?.[context.targetLayoutId], context.layout)) return false;
     }
     return Object.entries(manifest.fields).every(([key, value]) => key === "dimensions" && value === null
       ? !Object.hasOwn(owner, key) : Object.hasOwn(owner, key) && same(owner[key], value));

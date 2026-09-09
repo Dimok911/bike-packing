@@ -53,7 +53,7 @@ function fixture() {
   const make = () => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
     return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
-      photoFormEnabled: state.photoFormEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
+      photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -268,6 +268,27 @@ test("form queue separately gates publication and checks form capability before 
     if (mode === "gate") f.state.photoFormEnabled = false; else f.state.capabilities.pop();
     await assert.rejects(f.make().queue.run(f.input));
     assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0);
+  }
+});
+
+test("item form context needs its own gate and capability before registering a write, while exact receipt reads survive disabling it", async () => {
+  for (const mode of ["gate", "capability", "lost ACK"]) {
+    const f = photoFormQueueFixture();
+    f.body.formContext = { version: 1, availabilityStatus: "broken", placement: null };
+    f.state.payload.list.payload.items["item-a"].availabilityStatus = "broken";
+    f.input.body = JSON.stringify(f.body);
+    f.state.itemContextEnabled = mode !== "gate";
+    if (mode !== "capability") f.state.capabilities.push("personalCausalPhotoItemFormContextV1");
+    if (mode === "lost ACK") { f.state.loseResponse = true; f.state.unknown = true; }
+    await assert.rejects(f.make().queue.run(f.input));
+    if (mode !== "lost ACK") {
+      assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0); continue;
+    }
+    assert.equal(f.posts().length, 1); f.state.itemContextEnabled = false; f.state.unknown = false;
+    const proof = await f.make().queue.inspect(f.input); assert.equal(proof.operation.state, "committed");
+    assert.equal(proof.historicalOnly, true); assert.equal(f.posts().length, 1);
+    delete f.receipts.get(f.input.operationId).result.payload.list.payload.items["item-a"].availabilityStatus;
+    await assert.rejects(f.make().queue.inspect(f.input)); assert.equal(f.posts().length, 1);
   }
 });
 

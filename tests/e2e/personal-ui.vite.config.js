@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => ({
     if (mode === "photo-form" && source.endsWith("/src/sync/personal-photo-form-plan.js")) return code.replace(
       'if (!same(snapshotToPayload(clone(frozen)), base)) fail();',
       'if (!same(snapshotToPayload(clone(frozen)), base)) { globalThis.__personalTestProjectionDifference = { expected: base, actual: snapshotToPayload(clone(frozen)) }; fail(); }');
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-item-form-context.js")) return code.replace(
+      "PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED = false", "PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-copy.js")) return code.replace(
       '  if (!enabled) fail();', '  globalThis.__personalTestTreeCopyInput = clone(input); if (!enabled) fail();');
     if (source.split("?")[0].endsWith("/app.js")) return code.replace('function reportPersonalPhotoFormError(error, { recovery } = {}) {',
