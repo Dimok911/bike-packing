@@ -1694,7 +1694,14 @@ locked/notes, текущие общие карточки и новое реше�
 172/172 API/MySQL (202,34 с), 10/10 Chromium/mobile WebKit (3,6 мин),
 499 transport, 895 critical, 60 operation, 74 source/service, source check.
 Подробнее: `personal-archive-import.md`. Все gates false; без публикации/push.
-Фото, гостевой перенос и раздел 9 целиком ещё не завершены.
+Следующее продолжение — архивы с фото приняты локально отдельно:
+182/182 API/MySQL (194,34с), 18/18 Chromium/mobile WebKit (4,8мин),
+514 transport, 895 critical, 60 operation, 74 source/service, FE check.
+Полный/выбранный импорт, immutable file inventory, native storage, независимые
+asset IDs, lost ACK/reload, SQL rollback, cancellation и recovery export
+проверены. Подробнее: personal-archive-photo-import.md. Все gates false.
+Потомки незавершённого импорта, гостевой перенос, публичные/административные
+архивы и раздел 9 целиком ещё не завершены.
 
 - [ ] Выбранные укладки, полный архив, объединение и замена.
 - [ ] Сохранённый состав пакета, отображение старых ID в новые и дочерние операции с фото.

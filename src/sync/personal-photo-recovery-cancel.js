@@ -1,3 +1,5 @@
+import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { validPersonalRestoreCancellation } from "./personal-restore-cancellation.js";
 import { PERSONAL_PHOTO_ACTIONS_ENABLED } from "./personal-photo-action-store.js";
 import { PERSONAL_PHOTO_OUTBOX_ENABLED } from "./personal-photo-outbox-record.js";
 import { PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED } from "./personal-photo-publication-protocol.js";
@@ -21,7 +23,7 @@ const pendingCopyForCancellation = (record, records, copyBatchEnabled, pendingCo
 };
 export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED,
   formEnabled = PERSONAL_PHOTO_FORM_ENABLED, editEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, copyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
-  copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
+  copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, records = [] } = {}) =>
@@ -29,6 +31,9 @@ export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = P
     && (record.action.body?.action === "attach" || batchEnabled && (record.photoState?.fileInventoryVersion === 2
       || copyBatchEnabled && copyEnabled && formEnabled && record.action.body?.action === "copy-batch" && record.photoState?.fileIntentHash === null
       || (record.action.body?.copySource ? copyEnabled : editEnabled) && record.action.body?.action === "form" && record.photoState?.fileIntentHash === null))
+  || archiveEnabled && (record?.action?.kind === "list.import" && record.action.body.archiveImport?.version === 2
+    && batchEnabled && (record.photoState?.fileInventoryVersion === 2 || record.photoState?.fileIntentHash === null)
+    || record?.reconciliation?.decision?.type === "keep-server-after-rejected-import" && validPersonalRestoreCancellation(record))
   || validPersonalPhotoCancellation(record)
   || pendingOwnerDeletionEnabled && batchEnabled && formEnabled && Boolean(personalPendingPhotoOwnerDeletionForm({ records,
     operationId: record?.action.operationId, listId: record?.action.listId }))
@@ -44,7 +49,7 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
   operationCancellationEnabled = LIST_OPERATION_CANCELLATION_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   editEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, copyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
-  copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
+  copyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED }) {
@@ -66,26 +71,28 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
     const pendingForm = pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
       operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && copyEnabled && pendingCopyForCancellation(head, outbox.list(), copyBatchEnabled, pendingCopyBatchDeletionEnabled);
-    if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, copyBatchEnabled, pendingOwnerDeletionEnabled, pendingCopyDeletionEnabled, pendingCopyBatchDeletionEnabled,
+    if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, copyBatchEnabled, archiveEnabled, pendingOwnerDeletionEnabled, pendingCopyDeletionEnabled, pendingCopyBatchDeletionEnabled,
       records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
     const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true,
       photoFormEnabled: formEnabled, photoCopyEnabled: copyEnabled, photoCopyBatchEnabled: copyBatchEnabled, pendingPhotoCopyDeletionEnabled: pendingCopyDeletionEnabled,
       pendingPhotoCopyBatchDeletionEnabled: pendingCopyBatchDeletionEnabled,
+      archiveImportEnabled: archiveEnabled, archivePhotoImportEnabled: archiveEnabled,
       cancellationEnabled: operationCancellationEnabled });
-    const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled });
-    if (head.action.kind === "photos.mutate" || pendingForm) {
+    const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled, archiveEnabled });
+    if (head.photoState || pendingForm) {
       const cancelled = await outbox.cancelPhotoUpload({ queue, getContext, photoStore: store, photoStaging }); assertContext();
       if (cancelled.alreadyPublished) return checkPersonalPhotoRecoveryResult(common);
     }
     let reconciled;
     try {
       reconciled = await outbox.reconcile({ queue, getContext, readRemote, makeSnapshot, makeBaselineMeta,
-        resolveRejectedPhoto: async details => { assertContext(); const choice = await chooseCurrent(details); assertContext(); return choice; } });
+        resolveRejectedPhoto: async details => { assertContext(); const choice = await chooseCurrent(details); assertContext(); return choice; },
+        resolveRejectedRestore: async details => { assertContext(); const choice = await chooseCurrent({ ...details, photoOperationId: details.restoreOperationId }); assertContext(); return choice; } });
     } catch (error) {
       // A decision saved before reload still owns its exact ID/body. Its first
       // dispatch or waiting-receipt resume belongs to the existing queue, not
       // a new keep-current decision or a replacement photo upload.
-      if (!validPersonalPhotoCancellation(head) || !error.isOperationReceiptError || error.isPersonalSaveBlocked) throw error;
+      if (!(validPersonalPhotoCancellation(head) || archiveEnabled && validPersonalRestoreCancellation(head)) || !error.isOperationReceiptError || error.isPersonalSaveBlocked) throw error;
     }
     assertContext();
     if (!reconciled?.adoptedBaseline) {

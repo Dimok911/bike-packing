@@ -7,7 +7,7 @@ const paused = (code, cause) => Object.assign(new Error("Файлы и очер�
 
 async function exactCachedPhotoReceipt(proof, file, binding) {
   const op = proof?.operation, action = file.action;
-  if (proof?.historicalOnly !== true || op?.id !== action.operationId || op.kind !== "photos.mutate" || action.kind !== op.kind
+  if (proof?.historicalOnly !== true || op?.id !== action.operationId || !["photos.mutate", "list.import"].includes(op.kind) || action.kind !== op.kind
     || action.listId !== binding.listId || Object.keys(binding).filter(key => key !== "scopeKey").some(key => op[key] !== binding[key])
     || !["committed", "rejected"].includes(op.state) || !Number.isInteger(proof.resultStatus)
     || (op.state === "committed" ? !(proof.resultStatus >= 200 && proof.resultStatus < 300) || !Number.isSafeInteger(proof.stateRevision) || proof.stateRevision < 1
@@ -64,7 +64,7 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       state, dispatchAllowed: false, entityType: first.entityType, entityId: first.entityId, photoId: first.photoId });
   }
   for (const [operationId, record] of byId) {
-    if (["form", "copy-batch"].includes(record.action.body.action) && record.photoState.fileIntentHash === null) {
+    if ((["form", "copy-batch"].includes(record.action.body.action) || record.action.kind === "list.import") && record.photoState.fileIntentHash === null) {
       if (ids.includes(operationId)) continue; // Already classified as link-mismatch; never discard unexpected bytes.
       let state = "linked";
       try { assertPersonalPhotoRecord(record); } catch { state = "link-mismatch"; }
@@ -73,14 +73,14 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
         state = await exactCachedPhotoReceipt(proof, record, binding) ? "settled-retained" : "receipt-mismatch";
         assertContext();
       }
-      entries.push({ operationId, fileless: true, photoCount: record.action.body.changes.length,
+      entries.push({ operationId, fileless: true, photoCount: record.action.kind === "list.import" ? 0 : record.action.body.changes.length,
         entityType: record.action.body.entityType, entityId: record.action.body.entityId,
         ...(state === "settled-retained" ? { ownerOutcome: proof.operation.state, exactReceiptCached: true } : {}), state, dispatchAllowed: false });
       continue;
     }
     if (!ids.includes(operationId)) entries.push({ operationId, stageOperationId: record.action.body.assetId,
       ...(record.photoState.fileInventoryVersion === 2 ? { batch: true,
-        stageOperationIds: record.action.body.changes.map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });
+        stageOperationIds: (record.action.kind === "list.import" ? record.action.body.archiveImport.files : record.action.body.changes).map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });
   }
   const afterIds = await store.ids(); assertContext();
   // Sorting compares SETS for a stable scan; it never orders user actions.

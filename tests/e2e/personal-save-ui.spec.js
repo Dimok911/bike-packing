@@ -1,4 +1,5 @@
 import { createBackupZip } from "../../src/backup/archive.js";
+import { assertPersonalArchivePhotoBody, assertPersonalArchivePhotoHashes, personalArchivePhotoReceipt } from "../../src/sync/personal-archive-photo-protocol.js";
 import { assertPersonalArchiveImportBody, assertPersonalArchiveImportHashes, personalArchiveImportReceipt } from "../../src/sync/personal-archive-import-protocol.js";
 import { personalPhotoHistoryPlan } from "../../src/sync/personal-photo-history-plan.js";
 import { test, expect } from "@playwright/test";
@@ -144,7 +145,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -222,7 +223,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const body = request.postDataJSON(), id = path.split("/").at(-2);
         expect(id).toBe(state.cancelPhotoAction.operationId); expect(body.operationId).toBe(id);
         expect(body.expectedActorId).toBe("actor-a"); expect(body.environment).toBe("bike-packing-experiment");
-        expect(body.listId).toBe(state.listId); expect(body.kind).toBe("photos.mutate"); expect(body.body).toEqual(state.cancelPhotoAction.body);
+        expect(body.listId).toBe(state.listId); expect(body.kind).toBe(state.cancelPhotoAction.kind); expect(body.body).toEqual(state.cancelPhotoAction.body);
         state.posts.push(body);
         const binding = { environment: body.environment, actorId: body.expectedActorId, kind: body.kind, listId: body.listId, body: body.body };
         data = state.receipts.get(id) || { ok: true,
@@ -338,10 +339,34 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(body.body).toEqual({ ...state.migrationPreviews.at(-1).migration, causal: { dependsOn: [], reads: [] } });
             state.migration = false;
           }
+          const archivePhotos = [];
           if (body.kind === "list.import") {
-            assertPersonalArchiveImportBody(body.body, { base: state.payload, causal: true }); await assertPersonalArchiveImportHashes(body.body);
+            if (body.body.archiveImport.version === 2) {
+              expect(photoEdit).toBe(true);
+              assertPersonalArchivePhotoBody(body.body, { base: state.payload, listId: body.listId, causal: true }); await assertPersonalArchivePhotoHashes(body.body);
+              for (const file of body.body.archiveImport.files) {
+                const stage = state.stageReceipts.get(file.assetId); expect(stage?.asset.state).toBe("ready");
+                expect(stage.operation.entityId).toBe(file.entityId); expect(stage.operation.photoId).toBe(file.photoId);
+                expect(stage.asset.fileHash).toBe(file.file.hash); expect(stage.asset.thumbHash).toBe(file.thumb?.hash || file.file.hash);
+                const photo = { id: file.photoId, photoId: file.photoId, assetId: file.assetId, listId: body.listId, status: "synced",
+                  url: `${origin}/photo/${file.photoId}.png`, thumbUrl: `${origin}/thumb/${file.photoId}.png`,
+                  fileName: file.file.fileName, type: file.file.type, size: file.file.size, width: 1, height: 1 };
+                archivePhotos.push({ entityType: file.entityType, entityId: file.entityId, photoId: file.photoId, assetId: file.assetId,
+                  fileHash: file.file.hash, thumbHash: file.thumb?.hash || file.file.hash, photo });
+                state.photoRevisions.set(file.photoId, state.revision + 1);
+              }
+            } else {
+              assertPersonalArchiveImportBody(body.body, { base: state.payload, causal: true }); await assertPersonalArchiveImportHashes(body.body);
+            }
           }
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
+          if (body.kind === "list.import" && body.body.archiveImport.version === 2) {
+            state.payload = structuredClone(state.payload);
+            for (const file of archivePhotos) {
+              const owner = state.payload[file.entityType === "item" ? "items" : "containers"][file.entityId];
+              owner.photos = owner.photos.map(photo => photo.id === file.photoId ? file.photo : photo);
+            }
+          }
           if (body.body.photoResults) {
             const ref = body.body.photoResults;
             const copy = state.receipts.get(ref.operationId);
@@ -355,12 +380,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
-              ...(body.kind === "list.import" ? { stateRevision: state.revision, archiveImport: personalArchiveImportReceipt(body.body.archiveImport) } : {}),
+              ...(body.kind === "list.import" ? { stateRevision: state.revision,
+                archiveImport: (body.body.archiveImport.version === 2 ? personalArchivePhotoReceipt : personalArchiveImportReceipt)(body.body.archiveImport),
+                ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
-        if (state.loseFormOwner && body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action)) {
+        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && body.body.archiveImport.version === 2)) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }
@@ -2604,6 +2631,149 @@ async function prepareArchiveUi(page, context, mode) {
   await expect(page.locator("#confirmDialog"), await page.locator("#backupStatus").textContent()).toBeVisible();
   return { f, source, itemId };
 }
+
+async function preparePhotoArchiveUi(page, context, mode) {
+  const f = await setup(page, context, { photoEdit: true }), bag = await createRootContainer(page, "Сумка файлового архива");
+  await createItemInContainer(page, bag, "Вещь файлового архива", { weight: "100" });
+  await synchronize(page, () => Object.keys(f.payload.items).length === 1);
+  const source = structuredClone(f.payload), itemId = Object.keys(source.items)[0], bagId = Object.keys(source.containers)[0];
+  source.activeLayoutId = "layout-a"; source.items[itemId].weight = 45;
+  source.layouts["layout-a"].arrangement.itemQuantities[itemId] = 3;
+  const photos = [], entries = [], originals = [];
+  for (const index of [0, 1]) {
+    const id = `archive-photo-${index}`, bytes = Buffer.concat([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64"), Buffer.from(`frozen original ${index}`)]);
+    const thumb = Buffer.concat([bytes, Buffer.from("thumbnail")]); originals.push(bytes);
+    photos.push({ id, sha256: createHash("sha256").update(bytes).digest("hex"), file: `photos/${id}/file`, thumb: `photos/${id}/thumb`,
+      fileName: `архив-${index}.png`, type: "image/png", thumbType: "image/png", size: bytes.length, width: 1, height: 1, entityType: "item", entityId: itemId });
+    entries.push({ name: `photos/${id}/file`, content: new Blob([bytes], { type: "image/png" }) }, { name: `photos/${id}/thumb`, content: new Blob([thumb], { type: "image/png" }) });
+  }
+  for (const owner of [source.items[itemId], source.containers[bagId]]) owner.photos = photos.map(photo => ({ id: photo.id }));
+  const bytes = Buffer.from(await (await createBackupZip({ format: "bike-packing-backup", version: 1, createdAt: "2026-09-01T12:00:00Z", language: "ru", state: source, photos }, entries)).arrayBuffer());
+  await page.locator("#menuBtn").click(); await page.locator("#backupBtn").click();
+  await page.locator("#backupFileInput").setInputFiles({ name: "photos.bikepacking-backup.zip", mimeType: "application/zip", buffer: bytes });
+  await expect(page.locator('[data-backup-layout-id="layout-a"]')).toBeVisible();
+  if (mode === "copy") await page.locator('[data-backup-restore-mode][value="copy"]').check();
+  await page.locator(mode === "full" ? "#backupRestoreFullBtn" : "#backupRestoreSelectedBtn").click();
+  await expect(page.locator("#confirmDialog"), await page.locator("#backupStatus").textContent()).toBeVisible();
+  return { f, source, itemId, bagId, originals };
+}
+
+for (const mode of ["full", "replace", "copy"]) for (const lost of (mode === "full" ? ["owner", "last file"] : ["owner"]))
+test(`actual ${mode} photo archive import survives lost ${lost}, native storage reload and exact receipt recovery`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const { f, itemId, bagId } = await preparePhotoArchiveUi(page, context, mode), before = f.posts.length;
+  if (lost === "owner") f.loseFormOwner = true; else f.loseStageAt = 4;
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#backupStatus")).toContainText("на устройстве");
+  await page.locator('#backupDialog [value="cancel"]').click(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.stagePosts.length).toBe(4);
+  if (lost === "owner") await expect.poll(() => f.injectedFailure).toBe(true); else expect(f.posts).toHaveLength(before);
+  const saved = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(value => value.action?.kind === "list.import"));
+  expect(saved.action.body.archiveImport.files).toHaveLength(4);
+  const frozenAction = structuredClone(saved.action), stages = [...f.stagePosts];
+  expect(saved.action.body.archiveImport.files.map(file => file.assetId)).toEqual(stages);
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+  await expect(resume).toBeVisible(); await resume.click(); await expect(resume).toBeEnabled();
+  expect(f.stagePosts).toEqual(stages); expect(f.posts).toHaveLength(before + (lost === "owner" ? 1 : 0));
+  f.loseFormOwner = false; f.hiddenFormOwner = null; f.loseStageAt = 0; f.hiddenStage = null;
+  await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toEqual(stages);
+  const action = f.posts.at(-1); expect(action.operationId).toBe(frozenAction.operationId); expect(action.body).toEqual(frozenAction.body);
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  const local = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1::id:actor-a")));
+  expect(local.items[itemId].photos).toHaveLength(2); expect(local.containers[bagId].photos).toHaveLength(2);
+  expect(local.items[itemId].weight).toBe(mode === "full" ? 45 : 100);
+  expect(new Set([...local.items[itemId].photos, ...local.containers[bagId].photos].map(photo => photo.id)).size).toBe(4);
+  const targetId = mode === "full" ? "layout-a" : action.body.archiveImport.layoutTargets[0].targetId;
+  await expect(page.locator("#layoutSelect")).toHaveValue(targetId);
+  await createRootContainer(page, "Правка после файлового архива");
+  await synchronizePhotoHistory(page, () => Object.values(f.payload.containers).some(value => value.name === "Правка после файлового архива"));
+  expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.archiveImport).toBeUndefined(); expect(f.errors).toEqual([]);
+});
+
+for (const failure of ["native files", "queue link"]) test(`photo archive import ${failure} quota exports every selected original and keeps the archive window`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const { f, itemId, originals } = await preparePhotoArchiveUi(page, context, "full"), before = f.posts.length, current = structuredClone(f.payload);
+  await page.evaluate(failure => {
+    if (failure === "native files") {
+      const original = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function(...args) { if (this.name === "actions") throw new DOMException("Archive quota", "QuotaExceededError"); return original.apply(this, args); };
+    } else {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.kind === "list.import") throw new DOMException("Archive link quota", "QuotaExceededError");
+        return original.call(this, key, value);
+      };
+    }
+  }, failure);
+  await page.locator("#confirmOkBtn").click(); const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery).toBeVisible(); await expect(page.locator("#backupDialog")).toBeVisible();
+  const downloaded = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+  const entries = await readZipEntries(new Blob([await readFile(await (await downloaded).path())]));
+  const form = JSON.parse(zipText(entries.get("opened-form/form.json"))), manifest = JSON.parse(zipText(entries.get("recovery-manifest.json")));
+  expect(form.request.source.items[itemId].weight).toBe(45); expect(form.files).toHaveLength(4);
+  expect(manifest.automaticImportAllowed).toBe(false);
+  for (const index of [0, 1, 2, 3]) expect(Buffer.from(entries.get(`opened-form/${index}/original.bin`))).toEqual(originals[index % 2]);
+  expect(f.posts).toHaveLength(before); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(current); expect(f.errors).toEqual([]);
+});
+
+for (const lost of [false, true]) test(`photo archive import cancellation keeps ready files and fences undispatched parts${lost ? " through lost cancellation ACK" : ""}`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const { f } = await preparePhotoArchiveUi(page, context, "full"), before = f.posts.length, current = structuredClone(f.payload);
+  f.loseStageAt = 1;
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#backupStatus")).toContainText("на устройстве");
+  await page.locator('#backupDialog [value="cancel"]').click(); await page.locator("#syncBtn").click(); await expect.poll(() => f.hiddenStage).toBeTruthy();
+  const saved = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(value => value.action?.kind === "list.import"));
+  f.cancelPhotoAction = saved.action;
+  f.cancellationReceipts = new Map(saved.action.body.archiveImport.files.map(file => [file.assetId, { ok: true,
+    operation: { id: file.assetId, actorId: "actor-a", environment: "bike-packing-experiment", listId: f.listId,
+      entityType: file.entityType, entityId: file.entityId, photoId: file.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+    cancellation: { version: 1, stageOperationId: file.assetId, fileHash: file.file.hash, thumbHash: file.thumb?.hash || file.file.hash, noAssetPublished: true, stageCannotPublish: true } }]));
+  await reloadApp(page, { recovery: true }); f.hiddenStage = null;
+  const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+  await expect(cancel).toBeVisible();
+  if (lost) {
+    f.loseCancellation = true; f.hideCancellationReceipt = true; await cancel.click(); await expect(cancel).toBeEnabled();
+    expect(f.posts).toHaveLength(before + 1); expect(f.payload).toEqual(current);
+    await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
+  }
+  await cancel.click(); await expect(page.locator("#confirmDialog")).toContainText("Архив");
+  await page.locator("#confirmCancelBtn").click(); expect(f.payload).toEqual(current);
+  await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.stagePosts).toHaveLength(1); expect(f.cancellationPosts).toHaveLength(3);
+  expect(f.posts.filter(post => post.kind === "list.import")).toHaveLength(1);
+  expect(f.posts.at(-1).kind).toBe("list.update"); expect(f.posts.at(-1).body.archiveImport).toBeUndefined();
+  await reloadApp(page); await expect(recovery).not.toBeVisible(); expect(f.payload).toEqual(current); expect(f.errors).toEqual([]);
+});
+
+test("rejected photo archive import retains the complete archive and waits for explicit keep-server through a lost decision ACK", async ({ page, context }) => {
+  test.setTimeout(150000);
+  const { f, itemId } = await preparePhotoArchiveUi(page, context, "full"), before = f.posts.length;
+  f.allowConflicts = true;
+  f.beforeUpdate = action => {
+    if (action.kind !== "list.import" || f.archiveRejected) return;
+    f.archiveRejected = true; f.payload = structuredClone(f.payload); f.payload.items[itemId].weight = 765; f.revision++;
+  };
+  await page.locator("#confirmOkBtn").click(); await expect(page.locator("#backupStatus")).toContainText("на устройстве");
+  await page.locator('#backupDialog [value="cancel"]').click(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.archiveRejected).toBe(true); const original = f.posts.at(-1);
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+  await expect(cancel).toBeVisible(); await cancel.click(); await expect(page.locator("#confirmDialog")).toContainText("Архив");
+  await page.locator("#confirmCancelBtn").click(); expect(f.posts).toHaveLength(before + 1); expect(f.payload.items[itemId].weight).toBe(765);
+  f.lose = true; f.beforeUpdate = () => { f.unknown = true; };
+  await cancel.click(); await page.locator("#confirmOkBtn").click(); await expect.poll(() => f.injectedFailure).toBe(true);
+  const decision = f.posts.at(-1); expect(decision.kind).toBe("list.update"); expect(decision.body.archiveImport).toBeUndefined();
+  expect(decision.body.payload.items[itemId].weight).toBe(765); expect(f.stagePosts).toHaveLength(4); expect(f.cancellationPosts).toEqual([]);
+  f.lose = false; f.unknown = false; f.beforeUpdate = null;
+  await reloadApp(page, { recovery: true }); await cancel.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  expect(f.posts.filter(post => post.operationId === original.operationId)).toHaveLength(1); expect(f.posts).toHaveLength(before + 2);
+  expect(f.payload.items[itemId].weight).toBe(765); expect(f.errors).toEqual([]);
+});
 
 for (const mode of ["full", "replace", "copy"]) test(`actual ${mode} archive import freezes layout choices through lost ACK reload and later edit`, async ({ page, context }) => {
   test.setTimeout(120000);

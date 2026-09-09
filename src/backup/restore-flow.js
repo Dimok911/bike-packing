@@ -64,7 +64,7 @@ export async function restoreSelectedBackupLayoutsFlow({
     const confirmed = await askConfirmDialog(selectedBackupRestoreConfirm(summary, { restoreMode }));
     if (!confirmed) return;
     if (commit) {
-      commit();
+      await commit();
       setBackupStatus(localText("Selected layouts saved on this device. Waiting for server confirmation.", "Выбранные укладки сохранены на устройстве. Ожидается подтверждение сервера."), "success");
       return;
     }
@@ -127,7 +127,7 @@ export async function restoreFullBackupFlow({
     const confirmed = await askConfirmDialog(fullBackupRestoreConfirm(stats));
     if (!confirmed) return;
     if (commit) {
-      commit();
+      await commit();
       setBackupStatus(localText("Archived state saved on this device. Waiting for server confirmation.", "Состояние архива сохранено на устройстве. Ожидается подтверждение сервера."), "success");
       return;
     }

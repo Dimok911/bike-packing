@@ -23,12 +23,55 @@ server capability `personalCausalPhotoHistoryRestoreV1`. Раздел 8 прин
 before view, fixed target IDs/names и явное keep-server после отклонения.
 Section09 целиком остаётся открытым. Без публикации/push/live/gate enable.
 
-Далее файловый архив: новые personal-archive-photo-files.js / plan.js /
-protocol.js / record.js и три test-файла пока НЕ импортируются runtime и
-НЕ включены в package. 6/6 files+plan и 2/2 record unit прошли; это только
-подготовка. Нужны native store/outbox/staging/receipt recovery/cancellation,
-API атомарное восстановление с новыми owner-bound assets и реальный UI.
-Потом guest handoff, sharing/public copy/admin и общий остаток checklist.
+Файловый архив принят локально: 182/182 API/MySQL за 194,34с
+(archive-photo-mysql-4.log), 18/18 Chromium/mobile WebKit за 4,8 минуты
+(archive-photo-ui-4.log), 514 transport, 895 critical, 60 operation,
+74 source/service, FE check-2. Все API/UI процессы завершены. Серверная основа
+API df5e7ea, ещё не commit усиление теста lost-first-stage ACK перед отменой.
+FE текущие файлы архивов ещё предстоит commit. Gates false, no push/publish.
+
+UI исправления: run1 native quota export блокировался getContext с editing
+latch. run2 native quota прошёл, queue-link quota потерял memoryForm:
+recoveryCopy тоже читал guarded context. Теперь контекст читается без latch;
+запись/onCaptured отдельно проверяют assertRunning. run3 cancellation после
+lost stage ACK упёрлась в transport barrier. Добавлена строго cancellationOnly
+ветка list.import v2 с exact owner/action/asset/photo/fileHash/thumbHash;
+обычный dispatch из такой записи по-прежнему запрещён. 18/18 UI и 182/182
+API после этих исправлений прошли. См. personal-archive-photo-import.md.
+
+Следующий участок: потомки pending archive. Созданы НЕ импортируемые runtime
+personal-pending-archive-update.js и critical test (НЕ в package, НЕ включать
+в commit текущего файлового этапа). 4/4 чистые unit прошли,
+archive-descendants-plan-2.log. Сохраняют exact pending bindings/order,
+разрешают DB поля и последовательные owner/layout deletions; проверяют
+immediate chain/source dependency и запрещают воскрешение удалённого owner.
+Это только подготовка; основные адаптеры ещё НЕ написаны.
+
+Нужен false gate и photoResults.version3 с operationId импорта и ordered owners
+из archiveImport.files (возможен fileless owners=[]). FE: source по immediate
+цепочке, зависимость одновременно от импорта и immediate predecessor,
+сохранение snapshot до UI, проверка unchanged pending photos/explicit deletion.
+BE resolver version3: exact committed import и immediate parent receipt той же
+actor/list/среды/версии, полный archivePhotos/files/references; материализация
+только matching pending ссылок в отдельном execution body. Исходное тело и
+дайджест не переписывать. Затем обычные DB/photo publication guards.
+Подключить outbox reader/capture/drain/reconcile/cancellation, app guards и
+form drain/recovery к source pending import, не только photos.mutate.
+Нужны reverse delivery, lost ACK/restart, правка/удаление вещи/сумки/укладки,
+последовательные удаления, отмена pending chain и newer remote state.
+Потом guest handoff, sharing/public copy/admin и полный остаток checklist.
+Не останавливаться с final после среза: пользователь велел работать до конца.
+
+Новое сообщение Safari source task: Production v1600 опубликован,
+app PR13 merge22c0dff33b62f733f78cfa1fa2dcb81d6cff8dbe,
+fix20506c879beb0f2ad91bda0236fa7cd512c515f5, finalhead
+a15089f65e01548834eb7ae82b0088976de37fad (добавлен sticky fixture fix),
+CI34290234469/34290229938 success по сообщению источника. Sharedgallery2.3.0
+main ef7a6ea1fd0704ee6e308494bb16c7fff93e8de7, runtimeSHA
+5cfb7e78667ecdc375d0d434c44deaf1bef0d1949b10d50dd8e9b9cdf875b2f8.
+Здесь НЕ проверено/перенесено. При последующем локальном выравнивании нужны
+app adapter + capability + fallback + manifest + CSS; номер Experiment свой.
+Физический Safari27beta ещё проверяет пользователь. Наша очередь сохраняется.
 
 Дополнение задачи «Исправить прокрутку фото в Safari»: сообщён выпуск v1599
 (PR12, fix cfa222e0891633b42ea1373225db9ad3c3573a18, merge

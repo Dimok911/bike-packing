@@ -1,3 +1,6 @@
+import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./src/sync/personal-archive-photo-protocol.js";
+import { preparePersonalArchivePhotoImport } from "./src/sync/personal-archive-photo-import.js";
+import { assertPersonalArchivePhotoRecord } from "./src/sync/personal-archive-photo-outbox-record.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./src/sync/personal-photo-history-protocol.js";
 import { preparePersonalArchiveImport } from "./src/sync/personal-archive-import.js";
 import {
@@ -8763,12 +8766,15 @@ async function cancelRetainedPersonalPhoto() {
   if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
-    const fileless = ["form", "copy-batch"].includes(original?.action?.body?.action) && original.photoState?.fileIntentHash === null;
-    const photoCount = original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
+    const archive = original?.action?.kind === "list.import";
+    const fileless = (archive || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
+    const photoCount = archive ? original.action.body.archiveImport.files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
+      title: archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
         : photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
-      text: fileless ? localText(
+      text: archive ? localText(
+        `The server did not apply this archive. Keep its current version? Rejected actions: ${discardedOperationCount}. The complete source, files and receipts remain available for recovery.`,
+        `Сервер не применил этот архив. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Полный источник, файлы и подтверждения останутся для восстановления.`) : fileless ? localText(
         `The server did not apply the fields and photo changes from this form. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original form and receipts remain available for recovery.`,
         `Сервер не применил поля и изменения фото из этой формы. Оставить актуальную серверную версию? Отклонённых локальных действий: ${discardedOperationCount}; они не будут отправлены заново. Исходная форма и подтверждения останутся для восстановления.`)
         : photoCount > 1 ? localText(
@@ -8818,7 +8824,8 @@ function canResumeRetainedPersonalPhotoForm() {
   try {
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && (outbox.recover()?.action.body.action === "form"
+      && outbox.hasPending() && (PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
+        || outbox.recover()?.action.body.action === "form"
         || PERSONAL_PHOTO_COPY_BATCH_ENABLED && outbox.recover()?.action.body.action === "copy-batch"
         || PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
           operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })
@@ -8836,7 +8843,8 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   const getContext = personalSaveContext;
   const queue = createListOperationQueue({ transport: experimentTransport, getContext });
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
-  updateSyncUi("Отправляю сохранённую форму и проверяю подтверждения фото…");
+  const archive = source.outbox.recover()?.action.kind === "list.import";
+  updateSyncUi(archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,
     onAdopted(record) {
@@ -8859,7 +8867,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
       personalPhotoFormLiveSource = null;
       personalPhotoRecoverySource = null;
       renderPreservingPackingScroll(); updateSyncUi();
-      if (notify) showToast("Карточка и фотографии подтверждены сервером.", "success");
+      if (notify) showToast(archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
     }
   });
   return recovery ? { ...result, verified: true, reloadRequired: true } : result;
@@ -11629,8 +11637,16 @@ async function preparePersonalArchiveImportAction({ backupImportState, mode, sel
     layoutTargets.push({ sourceId: layout.id, targetId, name }); names[targetId] = { id: targetId, name };
   }
   const editMeta = {}; markEdited(editMeta);
-  return preparePersonalArchiveImport({ source, mode, layoutTargets, sourceActiveLayoutId: source.activeLayoutId || "", editMeta, outbox,
-    getContext: () => { personalSaveRecovery.assertRunning(); return { ...personalSaveContext(), activeLayoutId: state.activeLayoutId }; },
+  const hasPhotos = value => ["items", "containers"].some(collection => Object.values(value[collection] || {}).some(owner => owner.photos?.length));
+  const withPhotos = hasPhotos(source) || hasPhotos(state);
+  const getContext = () => ({ ...personalSaveContext(), activeLayoutId: state.activeLayoutId });
+  // Recovery must still read the native bytes after the editor's error latch.
+  // Capture/adoption check the editing latch separately; the store independently
+  // verifies account/list/generation without requiring an editable screen.
+  const archiveSource = withPhotos ? { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext }), inventory: null } : null;
+  if (withPhotos && (!PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED || !personalPhotoFormUiEnabled())) throw Error("Импорт архива с фотографиями ещё не включён.");
+  const options = { source, mode, layoutTargets, sourceActiveLayoutId: source.activeLayoutId || "", editMeta, outbox,
+    getContext,
     getState: () => ({ ...state, activeLayoutId: state.activeLayoutId }), getRevision: () => Number(syncMeta.stateRevision),
     makeSnapshot(payload, previous, activeLayoutId) {
       const snapshot = normalizeRemoteState({ ...payload, activeLayoutId }, { repairCatalog: false });
@@ -11639,13 +11655,24 @@ async function preparePersonalArchiveImportAction({ backupImportState, mode, sel
       return personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
     },
     onCaptured(saved) {
+      personalSaveRecovery.assertRunning();
+      if (withPhotos) assertPersonalArchivePhotoRecord(saved);
       replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+      if (withPhotos) { personalPhotoFormLiveSource = archiveSource; personalPhotoRecoverySource = archiveSource; }
       rememberActiveLayoutChoice(saved.snapshot.activeLayoutId);
       syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
       renderPreservingPackingScroll();
       updateSyncUi("Архив сохранён на устройстве и ждёт подтверждения сервера."); scheduleRemoteSave();
     }
-  });
+  };
+  if (!withPhotos) return preparePersonalArchiveImport(options);
+  const commit = await preparePersonalArchivePhotoImport({ ...options, store: archiveSource.store, photoFiles: backupImportState.photoFiles });
+  return async () => {
+    personalPhotoFormPreparing++; personalPhotoRecoverySource = archiveSource;
+    try { personalSaveRecovery.assertRunning(); return await commit(); }
+    catch (error) { reportPersonalPhotoFormError(error, { recovery: error.archivePhotoRecovery || commit.recoveryCopy() }); throw error; }
+    finally { personalPhotoFormPreparing--; }
+  };
 }
 
 async function preparePersonalHistoryRestoreAction(record, layoutIds) {

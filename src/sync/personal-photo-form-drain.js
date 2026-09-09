@@ -1,3 +1,4 @@
+import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
@@ -13,12 +14,13 @@ const blocked = () => Object.assign(new Error("Сохранение формы �
 // route barriers remain owned by the established staging client and queue.
 export async function drainPersonalPhotoForm({ outbox, store, staging, queue, getContext,
   readRemote, makeSnapshot, makeBaselineMeta, onAdopted, enabled = PERSONAL_PHOTO_FORM_ENABLED,
+  archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
-  const form = head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
+  const form = archiveEnabled && head?.action.kind === "list.import" && head.action.body.archiveImport?.version === 2 ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
     : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
   if (!form || !outbox.hasPending()) throw blocked();
@@ -38,8 +40,8 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
         && (entry.state !== "linked" || entry.operationId !== form.action.operationId))) throw blocked();
     let proof;
     try {
-      proof = await queue.inspect({ path: `/bike-packing/lists/${encodeURIComponent(binding.listId)}${head.action.kind === "photos.mutate" ? "/photos/mutate" : ""}`,
-        method: head.action.kind === "photos.mutate" ? "POST" : "PUT", operationId: head.action.operationId, body: JSON.stringify(head.action.body) });
+      proof = await queue.inspect({ path: `/bike-packing/lists/${encodeURIComponent(binding.listId)}${head.action.kind === "list.import" ? "/import" : head.action.kind === "photos.mutate" ? "/photos/mutate" : ""}`,
+        method: ["photos.mutate", "list.import"].includes(head.action.kind) ? "POST" : "PUT", operationId: head.action.operationId, body: JSON.stringify(head.action.body) });
     } catch (error) { assertCurrent(); if (!error.isOperationReceiptError) throw error; }
     assertCurrent();
     if (proof?.operation.state === "rejected") throw blocked(); // Separate explicit cancellation/choice, never automatic keep-current.

@@ -7,7 +7,7 @@ export function mergePersonalPhotoReceipts(...groups) {
   const receipts = new Map();
   for (const group of groups) for (const proof of group || []) {
     const op = proof?.operation;
-    if (proof?.historicalOnly !== true || !uuid(op?.id || "") || op.kind !== "photos.mutate"
+    if (proof?.historicalOnly !== true || !uuid(op?.id || "") || !["photos.mutate", "list.import"].includes(op.kind)
       || !["committed", "rejected"].includes(op.state) || !/^[a-f0-9]{64}$/.test(op.payloadDigest || "")
       || !Number.isInteger(proof.resultStatus)
       || (op.state === "committed" ? !revision(proof.stateRevision) || !(proof.resultStatus >= 200 && proof.resultStatus < 300)

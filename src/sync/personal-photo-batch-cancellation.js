@@ -1,3 +1,4 @@
+import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { assertPersonalPhotoFile } from "./personal-photo-outbox-record.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { validateCancelledStagedPhotoReceipt, validateStagedPhotoReceipt } from "./personal-photo-staging.js";
@@ -12,15 +13,16 @@ const paused = () => Object.assign(new Error("Отмена всего фотоп
 // transaction, then settle each immutable stage ID without sending any bytes.
 // A lost child ACK leaves the original batch intact for exact receipt recovery.
 export async function cancelPersonalPhotoBatch({ record, binding, queue, store, staging, assertCurrent,
-  enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED }) {
+  enabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED }) {
   if (!enabled || typeof assertCurrent !== "function" || record?.photoState?.fileInventoryVersion !== 2
+    || record?.action?.kind === "list.import" && !archiveEnabled
     || record?.action?.body?.action === "form" && !formEnabled
     || !queue?.inspect || !store?.read || !staging?.cancel) throw paused();
   assertCurrent(); record = clone(record); binding = clone(binding);
   const action = record.action;
   const saved = await store.read(action.operationId); assertCurrent();
   assertPersonalPhotoFile(record, saved, binding);
-  const request = { path: `/bike-packing/lists/${encodeURIComponent(binding.listId)}/photos/mutate`,
+  const request = { path: `/bike-packing/lists/${encodeURIComponent(binding.listId)}${action.kind === "list.import" ? "/import" : "/photos/mutate"}`,
     method: "POST", operationId: action.operationId, body: JSON.stringify(action.body) };
   const bytes = new TextEncoder().encode(canonicalListOperationJson({ environment: binding.environment,
     actorId: binding.actorId, kind: action.kind, listId: binding.listId, body: action.body }));

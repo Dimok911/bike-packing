@@ -1,3 +1,4 @@
+import { assertPersonalArchivePhotoRecord, assertPersonalArchivePhotoFile } from "./personal-archive-photo-outbox-record.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoFormRecord, assertPersonalPhotoFormFile } from "./personal-photo-form-outbox-record.js";
 import { personalPhotoPublicationManifest } from "./personal-photo-publication-protocol.js";
@@ -34,6 +35,7 @@ export function assertPersonalPhotoCandidate({ body, basePayload, payload }) {
 }
 
 export function assertPersonalPhotoRecord(record) {
+  if (record?.action?.kind === "list.import") return assertPersonalArchivePhotoRecord(record);
   if (record?.action?.body?.action === "copy-batch") return assertPersonalPhotoCopyBatchRecord(record).photos;
   if (record?.action?.body?.action === "form") return assertPersonalPhotoFormRecord(record).photos;
   const photo = record.photoState, action = record.action;
@@ -54,6 +56,7 @@ export function assertPersonalPhotoRecord(record) {
 }
 
 export function assertPersonalPhotoFile(record, saved, binding) {
+  if (record?.action?.kind === "list.import") { assertPersonalArchivePhotoFile(record, saved, binding); return; }
   if (record?.action?.body?.action === "form") { assertPersonalPhotoFormFile(record, saved, binding); return; }
   const manifest = assertPersonalPhotoRecord(record);
   if (!saved || saved.intentHash !== record.photoState.fileIntentHash
