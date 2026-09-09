@@ -255,7 +255,7 @@ export function createAppTailControllers(ctx) {
     duplicateItemToContainerInLayoutState, duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin,
     editedLayoutName, editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload,
     ensureGuestPublicScope, ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState,
-    ensurePrivateDictionaries, ensurePrivateDictionariesForState, ensurePrivateStateForSharedCopy, ensureSharedCopyTargetLayoutId, enterSignedOutPublicMode,
+    ensurePrivateDictionaries, ensurePrivateDictionariesForState, preparePersonalPublicPickerSource, ensurePrivateStateForSharedCopy, ensureSharedCopyTargetLayoutId, enterSignedOutPublicMode,
     entitySyncBodyContext, entitySyncStateDeps, escapeHtml, expandedHistoryGroups, expandedHistoryRecordId,
     explicitLayoutChoice, exportLayoutAsDemoState, exportLayoutAsPublishedState, fallbackDemoTemplateEntry, fetchAdminReports,
     fetchBikePackingApiCapabilities, fetchPublicSharedLayoutCatalog, fetchPublicTemplatePayloadRecordByItemKey, fetchPublishedDemoTemplateState, fetchPublishedListStateById,
@@ -1814,6 +1814,8 @@ async function openSharedItemCopyPicker(sourceId) {
   const sourceLayoutId = canOpenAdminPublishedEdit()
     ? getPublishedEditLayoutId()
     : activeReadOnlyLayoutId() || state.activeLayoutId;
+  try { await preparePersonalPublicPickerSource(sourceLayoutId, "item", sourceId, false); }
+  catch (error) { showToast(error.message, "error"); return; }
   await ensurePrivateStateForSharedCopy();
   containerPickerSourceIsNestedContainer = false;
   runtime.sharedPickerSourceItemId = sourceId;
@@ -1836,9 +1838,12 @@ async function openSharedContainerCopyPicker(sourceId, {
   const sourceLayoutId = canOpenAdminPublishedEdit()
     ? getPublishedEditLayoutId()
     : activeReadOnlyLayoutId() || state.activeLayoutId;
+  let selectedSource;
+  const legacyNested = sourceIsNestedContainer || isContainerNestedInLayout(sourceId, sourceLayoutId);
+  try { selectedSource = await preparePersonalPublicPickerSource(sourceLayoutId, "container", sourceId, includeContents !== false); }
+  catch (error) { showToast(error.message, "error"); return; }
   await ensurePrivateStateForSharedCopy();
-  containerPickerSourceIsNestedContainer = sourceIsNestedContainer ||
-    isContainerNestedInLayout(sourceId, sourceLayoutId);
+  containerPickerSourceIsNestedContainer = selectedSource?.sourceIsNestedContainer ?? legacyNested;
   sharedPickerCopyIncludesContents = includeContents !== false;
   runtime.sharedPickerSourceItemId = "";
   runtime.sharedPickerSourceContainerId = sourceId;

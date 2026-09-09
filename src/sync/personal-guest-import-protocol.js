@@ -41,14 +41,19 @@ export function personalGuestImportReceipt(value) {
 }
 
 export function validatePersonalGuestImportResult(result, expected) {
+  try { return validatePersonalImportedResult(result, expected, personalGuestImportManifest(expected.body.guestImport),
+    { manifestKey: "guestImport", photosKey: "guestPhotos", receipt: personalGuestImportReceipt }); } catch { return false; }
+}
+
+export function validatePersonalImportedResult(result, expected, manifest, { manifestKey, photosKey, receipt }) {
   try {
-    const manifest = personalGuestImportManifest(expected.body.guestImport), revision = manifest.targetStateRevision + 1;
+    const revision = manifest.targetStateRevision + 1;
     if (manifest.operationId !== expected.operationId || result?.ok !== true || result.list?.id !== expected.listId
-      || result.stateRevision !== revision || result.list.stateRevision !== revision || !same(result.guestImport, personalGuestImportReceipt(manifest))
-      || !Array.isArray(result.guestPhotos) || result.guestPhotos.length !== manifest.files.length) return false;
+      || result.stateRevision !== revision || result.list.stateRevision !== revision || !same(result[manifestKey], receipt(manifest))
+      || !Array.isArray(result[photosKey]) || result[photosKey].length !== manifest.files.length) return false;
     const candidate = clone(expected.body.payload);
     for (const [index, file] of manifest.files.entries()) {
-      const outcome = result.guestPhotos[index], photo = outcome?.photo;
+      const outcome = result[photosKey][index], photo = outcome?.photo;
       if (!exact(outcome, ["entityType", "entityId", "photoId", "assetId", "fileHash", "thumbHash", "photo"])
         || ["entityType", "entityId", "photoId", "assetId"].some(key => outcome[key] !== file[key])
         || outcome.fileHash !== file.file.hash || outcome.thumbHash !== (file.thumb?.hash || file.file.hash)

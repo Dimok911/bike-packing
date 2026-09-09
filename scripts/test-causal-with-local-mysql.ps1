@@ -1,6 +1,7 @@
 param(
   [string]$MysqlBase = 'node_modules/.cache/mysql-causal-test/mysql-8.4.11-winx64',
-  [string]$ApiDirectory = '../bikepacking-api-experiment'
+  [string]$ApiDirectory = '../bikepacking-api-experiment',
+  [ValidateSet('all', 'public')][string]$Scope = 'all'
 )
 $ErrorActionPreference = 'Stop'
 $frontendRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -24,7 +25,7 @@ $mysqlProcess = $null
 $mysqlVerified = $false
 $priorDirectory = Get-Location
 $taskEnvironment = @{
-  BIKE_PACKING_INTEGRATION_TEST = '1'; BIKE_PACKING_TEST_DB_HOST = '127.0.0.1';
+  BIKE_PACKING_CAUSAL_TEST_SCOPE = $Scope; BIKE_PACKING_INTEGRATION_TEST = '1'; BIKE_PACKING_TEST_DB_HOST = '127.0.0.1';
   BIKE_PACKING_TEST_DB_PORT = "$mysqlPort"; BIKE_PACKING_TEST_DB_USER = 'root';
   BIKE_PACKING_TEST_DB_PASSWORD = ''; BIKE_PACKING_TEST_DB_NAME = 'bikepacking_local_causal_test';
   BIKE_PACKING_FRONTEND_TEST_DIR = $frontendRoot; CAUSAL_TEST_EXPECTED_DATADIR = $mysqlData

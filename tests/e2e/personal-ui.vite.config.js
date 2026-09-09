@@ -41,6 +41,8 @@ export default defineConfig(({ mode }) => ({
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
     if (source.endsWith("/src/sync/personal-archive-import-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_IMPORT_ENABLED = true");
+    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" && source.endsWith("/src/sync/personal-public-entity-plan.js")) return code.replace(
+      "PERSONAL_PUBLIC_ENTITY_COPY_ENABLED = false", "PERSONAL_PUBLIC_ENTITY_COPY_ENABLED = true");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" && source.endsWith("/src/sync/personal-public-import-protocol.js")) return code.replace(
       "PERSONAL_PUBLIC_IMPORT_ENABLED = false", "PERSONAL_PUBLIC_IMPORT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-guest-import-protocol.js")) return code.replace(

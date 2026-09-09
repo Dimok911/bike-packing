@@ -1,3 +1,4 @@
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
 import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "./personal-manufacturer-photo-source.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
@@ -128,7 +129,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   archiveImportEnabled = PERSONAL_ARCHIVE_IMPORT_ENABLED,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
-  publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED,
+  publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
@@ -500,7 +501,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (!photoEnabled) throw blocked("photo-disabled", "Причинные фотодействия ещё не включены.");
       const archive = input.body?.archiveImport?.version === 2;
       const publicCopy = Object.hasOwn(input.body || {}, "publicImport"), guest = Object.hasOwn(input.body || {}, "guestImport"), imported = archive || guest || publicCopy;
-      if (publicCopy && !publicImportEnabled) throw blocked("public-import-disabled", "Копирование шаблонов через очередь ещё не включено.");
+      if (publicCopy && (!publicImportEnabled || input.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-import-disabled", "Копирование шаблонов через очередь ещё не включено.");
       if (guest && !guestImportEnabled) throw blocked("guest-import-disabled", "Гостевой перенос через очередь ещё не включён.");
       if (archive && (!archiveImportEnabled || !archivePhotoImportEnabled)) throw blocked("archive-photo-disabled", "Архивы с фотографиями ещё не включены.");
       const form = input.body?.action === "form";
@@ -631,7 +632,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
           && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "publicImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
-        if (!photoEnabled || (publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled)
+        if (!photoEnabled || (publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled || pendingImport.action.body.publicImport?.version === 2 && !publicEntityEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled)
           || create || restore || archiveImport || migration || localReconciliation || !(publicCopy ? isPersonalPendingPublicUpdate : guest ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: pendingImport,
             basePayload: personalRecordPayload(head), payload: input.body.payload, userDeletion: input.body.userDeletion, listId })) {
           throw blocked("import-pending", "Правка не подтверждена как продолжение сохранённого переноса. Исходник и фотографии сохранены.");
@@ -1025,15 +1026,16 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       if (pendingForm && pendingForm.photoState.fileIntentHash !== null) return cancelPersonalPhotoBatch({ record: pendingForm, binding, queue,
         store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
-        formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled, guestEnabled: guestImportEnabled, publicEnabled: publicImportEnabled,
+        formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled, guestEnabled: guestImportEnabled, publicEnabled: publicImportEnabled, publicEntityEnabled,
         enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled
           && (pendingForm.action.kind === "list.import" ? Object.hasOwn(pendingForm.action.body, "publicImport") ? publicImportEnabled : Object.hasOwn(pendingForm.action.body, "guestImport") ? guestImportEnabled : archiveImportEnabled && archivePhotoImportEnabled : photoFormEnabled) });
       const filelessForm = pendingForm || head;
       if ((["form", "copy-batch"].includes(filelessForm?.action?.body?.action) || filelessForm?.action?.body?.archiveImport?.version === 2
-        || filelessForm?.action?.body?.guestImport?.version === 1 || filelessForm?.action?.body?.publicImport?.version === 1) && filelessForm.photoState?.fileIntentHash === null) {
+        || filelessForm?.action?.body?.guestImport?.version === 1 || [1, 2].includes(filelessForm?.action?.body?.publicImport?.version)) && filelessForm.photoState?.fileIntentHash === null) {
         if (filelessForm.action.body.copyTree && !photoTreeCopyEnabled) throw blocked("photo-tree-copy-disabled", "Отмена копии дерева с фото ещё не включена.");
         if (filelessForm.action.body.copyPlacement && !photoCopyPlacementEnabled) throw blocked("photo-copy-placement-disabled", "Отмена копии вещи в сумку с фото ещё не включена.");
         const copyBatch = filelessForm.action.body.action === "copy-batch";
+        if (filelessForm.action.body.publicImport?.version === 2 && !publicEntityEnabled) throw blocked("public-entity-disabled");
         if (!photoEnabled || !(filelessForm.action.kind === "list.import" ? (Object.hasOwn(filelessForm.action.body, "publicImport") ? publicImportEnabled : Object.hasOwn(filelessForm.action.body, "guestImport") ? guestImportEnabled : archivePhotoImportEnabled) : photoFormEnabled && (copyBatch ? photoCopyEnabled && photoCopyBatchEnabled
           : filelessForm.action.body.copySource ? photoCopyEnabled : filelessForm.action.body.manufacturerSource ? manufacturerSourceEnabled : photoEditEnabled)) || !photoBatchCancellationEnabled) {
           throw blocked("photo-cancellation", "Отмена изменения существующих фото ещё не включена.");
@@ -1054,7 +1056,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       if (head?.photoState?.fileInventoryVersion === 2) return cancelPersonalPhotoBatch({ record: head, binding, queue,
         store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
-        formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled, guestEnabled: guestImportEnabled, publicEnabled: publicImportEnabled,
+        formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled, guestEnabled: guestImportEnabled, publicEnabled: publicImportEnabled, publicEntityEnabled,
         enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled
           && (head.action.body.action !== "form" || photoFormEnabled) });
       if (!photoEnabled || head?.action.kind !== "photos.mutate" || head.action.body.action !== "attach"
@@ -1158,7 +1160,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         assertContext();
         const action = record.action;
         const publicCopy = action.kind === "list.import" && Object.hasOwn(action.body, "publicImport");
-        if (publicCopy && !publicImportEnabled) throw blocked("public-import-disabled", "Копирование шаблонов через очередь ещё не включено.");
+        if (publicCopy && (!publicImportEnabled || action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-import-disabled", "Копирование шаблонов через очередь ещё не включено.");
         const guest = action.kind === "list.import" && Object.hasOwn(action.body, "guestImport");
         if (guest && !guestImportEnabled) throw blocked("guest-import-disabled", "Гостевой перенос через очередь ещё не включён.");
         if (action.kind === "list.import" && !guest && !publicCopy && !archiveImportEnabled) throw blocked("archive-disabled", "Импорт архива через очередь ещё не включён.");

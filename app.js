@@ -752,8 +752,9 @@ import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-protocol.js";
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./src/sync/personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./src/sync/personal-public-import-protocol.js";
-import { preparePersonalPublicImportSelection } from "./src/sync/personal-public-import-selection.js";
+import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } from "./src/sync/personal-public-import-selection.js";
 import { createPersonalPublicImportSelectionStore } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
@@ -1823,7 +1824,7 @@ const appTailControllerDeps = {
   duplicateRootContainerInState, duplicateSnapshotItemToContainerInLayoutState, editMetaForDevice, editSharedSourceAsAdmin, editedLayoutName,
   editingItemTitleId, ensureAdminPublicCopyTargetsAvailable, ensureCurrentPackingListId, ensureGuestDemoPreviewPayload, ensureGuestPublicScope,
   ensureItemDisplayModeState, ensureLayoutContainerPlacementForState, ensureLayoutDictionaries, ensureLayoutDictionariesForState, ensurePrivateDictionaries,
-  ensurePrivateDictionariesForState, ensurePrivateStateForSharedCopy, ensureSharedCopyTargetLayoutId, enterSignedOutPublicMode, entitySyncBodyContext,
+  ensurePrivateDictionariesForState, preparePersonalPublicPickerSource, ensurePrivateStateForSharedCopy, ensureSharedCopyTargetLayoutId, enterSignedOutPublicMode, entitySyncBodyContext,
   entitySyncStateDeps, escapeHtml, explicitLayoutChoice,
   exportLayoutAsDemoState, exportLayoutAsPublishedState, fallbackDemoTemplateEntry, fetchAdminReports, fetchBikePackingApiCapabilities,
   fetchPublicSharedLayoutCatalog, fetchPublicTemplatePayloadRecordByItemKey, fetchPublishedDemoTemplateState, fetchPublishedListStateById, fetchRemoteListChangesRecord,
@@ -8870,7 +8871,7 @@ async function cancelRetainedPersonalPhoto() {
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
     const imported = original?.action?.kind === "list.import", guest = imported && original.action.body.guestImport?.version === 1;
-    const publicCopy = imported && original.action.body.publicImport?.version === 1;
+    const publicCopy = imported && [1, 2].includes(original.action.body.publicImport?.version);
     const archive = imported && !guest && !publicCopy;
     const fileless = (imported || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
     const photoCount = imported ? (publicCopy ? original.action.body.publicImport : guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
@@ -8939,7 +8940,7 @@ function canResumeRetainedPersonalPhotoForm() {
       && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && (PERSONAL_PUBLIC_IMPORT_ENABLED && outbox.recover()?.action.body.publicImport?.version === 1
+      && outbox.hasPending() && (PERSONAL_PUBLIC_IMPORT_ENABLED && [1, 2].includes(outbox.recover()?.action.body.publicImport?.version)
         || PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
         || PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
         || personalPendingImportSource(outbox)
@@ -8971,7 +8972,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
   const archive = source.outbox.recover()?.action.kind === "list.import" || personalPendingImportSource(source.outbox)?.action.kind === "list.import";
   const guest = (personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.guestImport?.version === 1;
-  const publicCopy = (personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.publicImport?.version === 1;
+  const publicCopy = [1, 2].includes((personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.publicImport?.version);
   updateSyncUi(publicCopy ? "Сохраняю личную копию шаблона и проверяю фотографии…" : guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,
@@ -9311,12 +9312,8 @@ function personalPublicCopySnapshot(payload, previous, activeLayoutId) {
   return personalPublicImportSnapshot(payload, personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous)));
 }
 
-async function runCausalPublicLayoutCopy(layout, progress) {
-  if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return null;
-  if (!PERSONAL_PUBLIC_IMPORT_ENABLED) throw Error("Копирование публичных шаблонов через очередь ещё не включено.");
-  if (layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
-  personalSaveRecovery.assertRunning();
-  if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
+function personalPublicSourceTarget(layout) {
+  if (!layout || layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
   // Every demo shares the same display-layout ID. Freeze the actual selected
   // catalog entry before loading the private editor or awaiting any response.
   const demoEntry = layout.id === DEMO_SHARED_LAYOUT_ID
@@ -9327,7 +9324,97 @@ async function runCausalPublicLayoutCopy(layout, progress) {
     throw Error("Выбранный demo-шаблон не найден в опубликованном каталоге. Копирование остановлено.");
   }
   const sourceLanguage = demoTarget?.language || layout.language || uiLanguage;
-  const actorId = String(currentUser.id), itemKey = demoTarget?.itemKey || sharedLayoutItemKey(layout.id, sourceLanguage);
+  return { demoTarget, sourceLanguage, itemKey: demoTarget?.itemKey || sharedLayoutItemKey(layout.id, sourceLanguage) };
+}
+
+let personalPublicPickerSource = null, personalPublicPickerGeneration = 0;
+async function preparePersonalPublicPickerSource(viewLayoutId, entityType, sourceId, includeContents = false) {
+  personalPublicPickerSource = null; const generation = ++personalPublicPickerGeneration;
+  if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return;
+  if (!PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error("Копирование отдельных записей шаблона через очередь ещё не включено.");
+  personalSaveRecovery.assertRunning();
+  if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
+  const actorId = String(currentUser.id), layout = findSharedLayout(viewLayoutId), target = personalPublicSourceTarget(layout);
+  const loaded = await apiFetch(publicTemplatePayloadPath(target.itemKey), { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true });
+  if (generation !== personalPublicPickerGeneration || String(currentUser?.id) !== actorId || activeReadOnlyLayoutId() !== viewLayoutId
+    || !sameJson(target, personalPublicSourceTarget(findSharedLayout(viewLayoutId)))) throw Error("Выбранный шаблон или аккаунт изменился. Копирование остановлено.");
+  const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId] || Object.values(sourcePayload?.layouts || {})[0];
+  const owner = sourcePayload?.[entityType === "item" ? "items" : "containers"]?.[sourceId];
+  if (!sourceLayout || owner?.id !== sourceId || loaded.ok !== true || !loaded.publicTemplatePayload
+    || target.demoTarget && loaded.listId !== target.demoTarget.listId || loaded.record?.language && loaded.record.language !== target.sourceLanguage) {
+    throw Error("Не удалось прочитать выбранную запись из полной версии шаблона.");
+  }
+  personalPublicPickerSource = clone({ actorId, viewLayoutId, entityType, sourceId, includeContents, sourcePayload, sourceLayoutId: sourceLayout.id,
+    sourceName: owner.name || "", source: { kind: "public-template", itemKey: target.itemKey, listId: loaded.listId,
+      stateRevision: loaded.stateRevision, language: target.sourceLanguage } });
+  return { sourceIsNestedContainer: entityType === "container" && Boolean(sourceLayout.arrangement
+    ? sourceLayout.arrangement.containers?.[sourceId]?.parentId : owner.parentId) };
+}
+
+async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId, targetLayoutId, { includeContents = false, targetIndex = null } = {}) {
+  if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit() || isAdminEditablePublishedLayout(targetLayoutId)) return null;
+  if (!PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error("Копирование отдельных записей шаблона через очередь ещё не включено.");
+  personalSaveRecovery.assertRunning();
+  const chosen = personalPublicPickerSource && clone(personalPublicPickerSource);
+  if (!chosen || chosen.actorId !== String(currentUser.id) || chosen.entityType !== entityType || chosen.sourceId !== sourceId
+    || chosen.includeContents !== includeContents) throw Error("Исходный выбор изменился. Откройте копирование нужной записи из шаблона снова.");
+  await ensurePrivateStateForSharedCopy(); setActivePrivateScope();
+  if (String(currentUser?.id) !== chosen.actorId || !personalPhotoFormUiEnabled()) throw Error("Личная очередь копирования ещё недоступна.");
+  const outbox = personalSaveOutboxForScope(), initial = clone(personalSaveContext());
+  if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) throw Error("Личный список ещё не подтверждён.");
+  if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, personalBusinessPayload(state))) {
+    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta(); await queuedPersonalSave();
+    if (outbox.hasPending() || !sameJson(initial, personalSaveContext())) throw Error("Подготовка личного списка ещё не подтверждена.");
+  }
+  const selection = preparePersonalPublicEntitySelection({ binding: outbox.binding, basePayload: personalBusinessPayload(state),
+    baseStateRevision: Number(syncMeta.stateRevision), source: chosen.source, sourcePayload: chosen.sourcePayload, editMeta: currentCreateMeta(),
+    copy: { version: 1, mode: "independent", sourceLayoutId: chosen.sourceLayoutId,
+      entries: [{ entityType, sourceId, includeContents }], destination: { layoutId: targetLayoutId, containerId: targetContainerId || "", index: targetIndex } } });
+  const previous = clone(state), revision = Number(syncMeta.stateRevision), selectedSnapshot = { rootId: entityType === "container" ? sourceId : "", containers: {}, items: {} };
+  for (const row of selection.ownerTargets) {
+    const field = row.entityType === "item" ? "items" : "containers"; selectedSnapshot[field][row.sourceId] = clone(chosen.sourcePayload[field][row.sourceId]);
+  }
+  const choice = entityType === "item" ? await confirmPublicCopyDuplicates(targetLayoutId, selectedSnapshot, chosen.sourceName) ? "copy-all" : "cancel"
+    : await chooseContainerTreeCopyToLayoutAction(targetLayoutId, selectedSnapshot, chosen.sourceName, { publicSource: true });
+  if (choice === "cancel") return { cancelled: true };
+  if (choice !== "copy-all") throw Error("Добавление только недостающих записей ещё проходит переход. Выбранный состав сохранён в окне копирования.");
+  if (!sameJson(initial, personalSaveContext()) || !sameJson(previous, state) || revision !== Number(syncMeta.stateRevision)
+    || !sameJson(chosen, personalPublicPickerSource)) throw Error("Личный список или выбор изменился во время подтверждения. Копирование остановлено.");
+  const source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext: personalSaveContext }), inventory: null };
+  personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
+  let commit;
+  try {
+    commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
+      getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
+      async loadFile({ photo }) {
+        if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
+        const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
+        if (!response.ok) throw Error("Не удалось прочитать исходную фотографию шаблона.");
+        const file = await response.blob(); return { file, thumb: null, fileName: photo.fileName || `${photo.id}.${file.type.split("/")[1] || "jpg"}` };
+      },
+      onCaptured(saved) {
+        personalSaveRecovery.assertRunning(); replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+        personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source; personalPublicPickerSource = null;
+        rememberActiveLayoutChoice(targetLayoutId); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+        refs.containerPickerDialog.close(); if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
+        switchView("packing"); renderPreservingPackingScroll();
+        updateSyncUi("Выбранная копия сохранена на устройстве и ждёт подтверждения сервера.");
+      }
+    });
+    await commit();
+  } catch (error) { reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error; }
+  finally { personalPhotoFormPreparing--; }
+  scheduleRemoteSave(); return { layoutId: targetLayoutId, operationId: selection.operationId };
+}
+
+async function runCausalPublicLayoutCopy(layout, progress) {
+  if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return null;
+  if (!PERSONAL_PUBLIC_IMPORT_ENABLED) throw Error("Копирование публичных шаблонов через очередь ещё не включено.");
+  if (layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
+  personalSaveRecovery.assertRunning();
+  if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
+  const { demoTarget, sourceLanguage, itemKey } = personalPublicSourceTarget(layout);
+  const actorId = String(currentUser.id);
   progress.update(15, "shared.copyStageLoadingPersonal");
   await ensurePrivateStateForSharedCopy();
   if (String(currentUser?.id) !== actorId) throw Error("Аккаунт изменился. Копирование остановлено.");
@@ -10522,6 +10609,11 @@ async function copySharedItem(itemId) {
 async function copySharedItemToLayoutContainer(itemId, targetContainerId, targetLayoutId) {
   if (!itemId || !targetContainerId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic && personalSavePilotEnabled() && currentUser && !canOpenAdminPublishedEdit()) {
+    try { await runCausalPublicEntityCopy("item", itemId, targetContainerId, targetLayoutId); }
+    catch (error) { showToast(error.message, "error"); }
+    return;
+  }
   if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
   if (!state.layouts?.[targetLayoutId]) return;
   const published = findSharedPublishedItem(itemId);
@@ -10561,6 +10653,11 @@ async function copySharedRootToLayoutContainer(rootId, targetParentId, targetLay
 } = {}) {
   if (!rootId || !targetLayoutId || !state.layouts?.[targetLayoutId]) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (!targetIsPublic && personalSavePilotEnabled() && currentUser && !canOpenAdminPublishedEdit()) {
+    try { await runCausalPublicEntityCopy("container", rootId, targetParentId, targetLayoutId, { includeContents, targetIndex }); }
+    catch (error) { showToast(error.message, "error"); }
+    return;
+  }
   if (!targetIsPublic) await ensurePrivateStateForSharedCopy();
   if (!state.layouts?.[targetLayoutId]) return;
   const published = findSharedPublishedContainer(rootId);

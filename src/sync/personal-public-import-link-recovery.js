@@ -1,3 +1,4 @@
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, assertPersonalPublicImportBody, assertPersonalPublicImportHashes } from "./personal-public-import-protocol.js";
 import { personalArchiveJson } from "./personal-archive-import-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
@@ -8,8 +9,8 @@ const fail = () => { throw Object.assign(Error("Сохранённая копи�
 // Explicit local recovery after selection/action preparation or a native file
 // commit. It links only the original action, without downloads or server writes.
 export async function recoverPersonalPublicImportLink({ entry, outbox, store, getContext, makeSnapshot,
-  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED }) {
-  if (!enabled || !entry?.action || entry.completion || !outbox || !store) fail();
+  enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }) {
+  if (!enabled || entry?.selection.version === 2 && !publicEntityEnabled || !entry?.action || entry.completion || !outbox || !store) fail();
   entry = structuredClone(entry);
   const initial = structuredClone(getContext()), binding = outbox.binding, { selection, action } = entry;
   const assertCurrent = () => {
@@ -18,7 +19,8 @@ export async function recoverPersonalPublicImportLink({ entry, outbox, store, ge
   };
   assertCurrent();
   if (action.kind !== "list.import" || action.operationId !== selection.operationId || Object.keys(binding).some(key => action[key] !== binding[key])) fail();
-  for (const key of ["source", "sourcePayload", "layoutTargets", "ownerTargets", "photoTargets", "editMeta"])
+  if (action.body.publicImport?.version !== selection.version) fail();
+  for (const key of ["source", "sourcePayload", selection.version === 2 ? "copy" : "layoutTargets", "ownerTargets", "photoTargets", "editMeta"])
     if (!same(action.body.publicImport?.[key], selection[key])) fail();
   const compiled = assertPersonalPublicImportBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
   await assertPersonalPublicImportHashes(action.body); assertCurrent();

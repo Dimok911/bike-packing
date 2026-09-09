@@ -314,7 +314,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1" ? ["personalCausalPublicEntitiesV1"] : []), ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: structuredClone(state.publicRecords) };
       else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/")) {
@@ -537,7 +537,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             state.migration = false;
           }
           const archivePhotos = [], guestImport = body.kind === "list.import" && body.body.guestImport?.version === 1,
-            publicImport = body.kind === "list.import" && body.body.publicImport?.version === 1;
+            publicImport = body.kind === "list.import" && [1, 2].includes(body.body.publicImport?.version);
           if (body.kind === "list.import") {
             if (publicImport || guestImport || body.body.archiveImport.version === 2) {
               expect(photoEdit).toBe(true);
@@ -602,7 +602,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
-        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && (body.body.publicImport?.version === 1 || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
+        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && ([1, 2].includes(body.body.publicImport?.version) || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }
@@ -5139,4 +5139,75 @@ for (const language of ["ru", "en"]) for (const fileless of [false, true]) test(
   const copied = Object.values(f.payload.items).find(item => item.name === `Exact selected source ${language}`); expect(copied).toBeTruthy();
   expect(Object.values(f.payload.items).some(item => item.name === "Different default source")).toBe(false);
   expect(f.posts.at(-1)).toEqual(original); expect(f.errors).toEqual([]);
+});
+
+for (const kind of ["item", "tree", "empty", "nested", "unplaced"]) for (const fileless of [false, true]) for (const demo of (kind === "unplaced" ? [false] : [false, true]))
+test(`public entity ${kind} ${fileless ? "fileless" : "photo"} ${demo ? "demo" : "shared"} copy keeps selected source and existing target through lost ACK`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1", "Separate public copies remain disabled");
+  test.setTimeout(150000);
+  const publicSource = guestImportPayload(!fileless), payload = replacementPayload();
+  const sourceId = kind === "item" ? "source" : kind === "nested" ? "pocket" : kind === "unplaced" ? "newbag" : "bag";
+  publicSource.items.source.name = "Точная публичная вещь"; publicSource.containers.bag.name = "Точная публичная сумка";
+  payload.items.source.name = "Моя изменённая вещь"; payload.containers.bag.name = "Моя сумка";
+  if (!fileless) publicSource.containers[kind === "nested" || kind === "unplaced" ? sourceId : "bag"].photos = [{ ...publicSource.items.source.photos[0], id: "public-bag-photo" }];
+  const other = structuredClone(publicSource); other.items.source.name = "Ошибка: другой шаблон"; other.containers.bag.name = "Ошибка: другая сумка";
+  const itemKey = demo ? "demo-state:entities-selected" : "shared-layout:entities-selected", listId = demo ? "public-demo-state-entities-selected" : "public-shared-layout-entities-selected";
+  const selected = { id: listId, itemKey, publicTemplateKind: demo ? "demo" : "shared", sharedLayoutId: demo ? undefined : "entities-selected",
+    title: "Выбранный источник копии", language: "ru", sourceType: demo ? "public-template" : "curated-bikepacker" };
+  const f = await setup(page, context, { photoEdit: true, payload, publicSource, publicSourceConfig: { record: selected,
+    others: [{ ...selected, id: demo ? "public-demo-state" : "public-shared-layout-entities-other", itemKey: demo ? "demo-state" : "shared-layout:entities-other",
+      sharedLayoutId: demo ? undefined : "entities-other", title: "Другой источник", payload: other, visibility: "public", stateRevision: 7, ownerId: "public-owner", layoutOrder: -1 }] } });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const before = structuredClone(f.payload);
+  const option = page.locator("#layoutSelect option").filter({ hasText: selected.title });
+  await expect(option).toHaveCount(1, { timeout: 30000 }); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  if (["empty", "unplaced"].includes(kind)) await page.locator('[data-view="bags"]').click();
+  if (kind === "item") await page.locator('[data-view="items"]').click();
+  const copyButton = kind === "item" ? page.locator('[data-copy-layout-item="shared-virtual-item-source"], [data-copy-item="shared-virtual-item-source"]')
+    : page.locator(`[data-copy-root="shared-virtual-container-${sourceId}"]`);
+  await copyButton.filter({ visible: true }).first().click();
+  const picker = page.locator("#containerPickerDialog"); await expect(picker).toBeVisible();
+  await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+  f.loseFormOwner = true; const posts = f.posts.length;
+  if (["item", "nested"].includes(kind)) await page.locator('#containerPickerBoard [data-pick-container="bag"]').click();
+  else await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  if (kind !== "unplaced") { await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn"); }
+  await expect(picker).not.toBeVisible();
+  await expect.poll(() => f.posts.length, { timeout: 30000 }).toBe(posts + 1);
+  const original = structuredClone(f.posts.at(-1)), manifest = original.body.publicImport;
+  expect(original.kind).toBe("list.import"); expect(manifest.version).toBe(2);
+  expect(manifest.source).toEqual({ kind: "public-template", listId, itemKey, stateRevision: 7, language: "ru" });
+  expect(manifest.sourcePayload).toEqual(publicSource); expect(manifest.copy.destination.layoutId).toBe("layout-a");
+  expect(manifest.copy.entries).toEqual([{ entityType: kind === "item" ? "item" : "container", sourceId, includeContents: ["tree", "nested"].includes(kind) }]);
+  await expect.poll(() => f.hiddenFormOwner).toBe(original.operationId);
+  await reloadApp(page, { recovery: true }); f.loseFormOwner = false; f.hiddenFormOwner = null;
+  await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены");
+  await reloadApp(page); expect(f.posts).toHaveLength(posts + 1); expect(f.posts.at(-1)).toEqual(original);
+  expect(personalBusinessPayload(f.payload).items.source).toEqual(personalBusinessPayload(before).items.source);
+  expect(personalBusinessPayload(f.payload).containers.bag).toEqual(personalBusinessPayload(before).containers.bag);
+  expect(Object.keys(f.payload.layouts)).toEqual(Object.keys(before.layouts));
+  expect(f.payload.layouts["layout-a"].arrangement.itemQuantities.source).toBe(3);
+  const copiedItem = manifest.ownerTargets.find(owner => owner.entityType === "item" && owner.sourceId === (kind === "nested" ? "inside" : "source"));
+  if (copiedItem) {
+    expect(f.payload.items[copiedItem.targetId].name).toBe(publicSource.items[copiedItem.sourceId].name);
+    expect(f.payload.layouts["layout-a"].arrangement.itemQuantities[copiedItem.targetId]).toBe(kind === "nested" ? 2 : 3);
+  }
+  expect(f.stagePosts).toHaveLength(fileless ? 0 : kind === "tree" ? 2 : 1); expect(f.errors).toEqual([]);
+});
+
+for (const item of [false, true]) test(`public entity gate off keeps ${item ? "item" : "tree"} selection away from legacy writes`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1", "Checks the independent disabled entity writer");
+  const publicSource = guestImportPayload(true), f = await setup(page, context, { photoEdit: true, payload: replacementPayload(), publicSource });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const before = structuredClone(f.payload), posts = f.posts.length;
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Публичный шаблон" });
+  await expect(option).toHaveCount(1); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  if (item) await page.locator('[data-view="items"]').click();
+  await page.locator(item ? '[data-copy-item="shared-virtual-item-source"]' : '[data-copy-root="shared-virtual-container-bag"]').filter({ visible: true }).first().click();
+  await expect(page.getByText("Копирование отдельных записей шаблона через очередь ещё не включено.", { exact: true })).toBeVisible();
+  await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
+  expect(f.errors).toEqual([]);
 });

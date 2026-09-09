@@ -7,7 +7,7 @@ const fail = () => { throw Object.assign(Error("Копирование шабл�
 
 export function assertPersonalPublicImportRecord(record) {
   const action = record?.action, photo = record?.photoState;
-  if (action?.kind !== "list.import" || action.body?.publicImport?.version !== 1 || photo?.version !== 1
+  if (action?.kind !== "list.import" || ![1, 2].includes(action.body?.publicImport?.version) || photo?.version !== 1
     || !record.mergeBase || record.mergeBase.stateRevision !== action.body.baseStateRevision || record.reconciliation || record.localReconciliation
     || !same(photo.payload, action.body.payload) || !same(personalGuestBusinessPayload(record.snapshot), photo.payload)) fail();
   const plan = assertPersonalPublicImportBody(action.body, { base: record.mergeBase.payload, listId: action.listId, operationId: action.operationId, causal: true });

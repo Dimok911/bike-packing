@@ -249,7 +249,8 @@ export function createExperimentTransport({
     const imports = ["publicImport", "guestImport", "archiveImport"].filter(key => Object.hasOwn(recovery?.body || {}, key));
     const imported = imports.length === 1 ? recovery.body[imports[0]] : null;
     const importFiles = imported && (imports[0] === "archiveImport" ? imported.version === 2
-      : imported.version === 1 && imported.operationId === recovery.operationId) ? imported.files : null;
+      : (imports[0] === "publicImport" ? [1, 2].includes(imported.version) : imported.version === 1)
+        && imported.operationId === recovery.operationId) ? imported.files : null;
     const ownCancelledStage = entry => causal && recovery.cancellationOnly === true && method === "POST"
       && entry.path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/photo-assets` && entry.method === "POST"
       && entry.recovery?.type === "photo-stage" && entry.recovery.protocol === "staging-v1"

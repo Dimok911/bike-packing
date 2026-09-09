@@ -1,3 +1,4 @@
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY } from "./personal-public-import-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY } from "./personal-guest-import-protocol.js";
@@ -47,7 +48,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args),
   timeoutMs = 10000, enabled = PERSONAL_PHOTO_STAGING_ENABLED, cancellationEnabled = PERSONAL_PHOTO_CANCELLATION_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
-  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED } = {}) {
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
   const request = async (path, form, json = false) => {
     const controller = new AbortController(); let timer;
     try {
@@ -83,7 +84,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       if (!record?.stage || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
       const ownerForm = record.action?.body?.action === "form", archive = record.action?.kind === "list.import";
       const guest = archive && Object.hasOwn(record.action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(record.action.body || {}, "publicImport");
-      if (publicCopy && !inspectOnly && !publicEnabled) throw paused(null, "Копирование шаблонов с фотографиями ещё не включено.");
+      if (publicCopy && !inspectOnly && (!publicEnabled || record.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw paused(null, "Копирование шаблонов с фотографиями ещё не включено.");
       if (guest && !inspectOnly && !guestEnabled) throw paused(null, "Гостевой перенос с фотографиями ещё не включён.");
       if (archive && !guest && !publicCopy && !inspectOnly && !archiveEnabled) throw paused(null, "Архивы с фотографиями ещё не включены.");
       if (ownerForm && !inspectOnly && !formEnabled) throw paused(null, "Работа с файлами формы ещё не включена.");
@@ -117,7 +118,7 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
       if (!capabilities?.capabilities?.includes(STAGED_PHOTO_ASSET_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает отдельное подтверждение файла. Фото не отправлено.");
       if (guest && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает гостевой перенос с фотографиями.");
-      if (publicCopy && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает копирование шаблонов с фотографиями.");
+      if (publicCopy && !cancelOnly && (!capabilities.capabilities.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || record.action.body.publicImport?.version === 2 && !capabilities.capabilities.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(stageId, "Сервер ещё не поддерживает копирование шаблонов с фотографиями.");
       if (archive && !guest && !publicCopy && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает архивы с фотографиями.");
       if (ownerForm && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает всю карточку с фото. Файлы не отправлены.");
       if (cancelOnly) {

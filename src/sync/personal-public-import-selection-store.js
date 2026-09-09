@@ -1,3 +1,4 @@
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, personalPublicImportSource, assertPersonalPublicImportBody,
   assertPersonalPublicImportHashes } from "./personal-public-import-protocol.js";
 import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
@@ -13,7 +14,7 @@ const fail = cause => { throw Object.assign(Error("Подготовленная 
 // write is atomic; no retry deletes/replaces either original. Locks are scoped
 // to this actor/list, so an unrelated list does not wait for this preparation.
 export function createPersonalPublicImportSelectionStore({ binding, getContext, storage = globalThis.localStorage,
-  locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED } = {}) {
+  locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
   if (binding?.environment !== "bike-packing-experiment" || !binding.actorId || binding.actorId.length > 36
     || !binding.listId || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4) fail();
   binding = Object.freeze(clone(binding));
@@ -27,9 +28,9 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
   const assertCurrent = initial => { if (!same(context(), initial)) fail(); };
   const validate = selection => {
     assertListOperationPayload({ ...binding, kind: "list.import", body: selection });
-    if (selection?.version !== 1 || !same(selection.binding, binding) || !uuid(selection.operationId)
+    if (![1, 2].includes(selection?.version) || !same(selection.binding, binding) || !uuid(selection.operationId)
       || !Number.isSafeInteger(selection.baseStateRevision) || selection.baseStateRevision < 1 || !selection.basePayload
-      || !selection.sourcePayload || !Array.isArray(selection.layoutTargets) || !selection.layoutTargets.length
+      || !selection.sourcePayload || (selection.version === 2 ? !selection.copy : !Array.isArray(selection.layoutTargets) || !selection.layoutTargets.length)
       || !Array.isArray(selection.ownerTargets) || !Array.isArray(selection.photoTargets)) fail();
     personalPublicImportSource(selection.source);
   };
@@ -51,7 +52,8 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
     if (action?.kind !== "list.import" || action.operationId !== selection.operationId
       || Object.keys(binding).some(key => action[key] !== binding[key])) fail();
     const manifest = action.body?.publicImport;
-    for (const key of ["source", "sourcePayload", "layoutTargets", "ownerTargets", "photoTargets", "editMeta"]) if (!same(manifest?.[key], selection[key])) fail();
+    if (manifest?.version !== selection.version) fail();
+    for (const key of ["source", "sourcePayload", selection.version === 2 ? "copy" : "layoutTargets", "ownerTargets", "photoTargets", "editMeta"]) if (!same(manifest?.[key], selection[key])) fail();
     assertPersonalPublicImportBody(action.body, { base: selection.basePayload, listId: binding.listId, operationId: action.operationId, causal: true });
     await assertPersonalPublicImportHashes(action.body);
   };
@@ -103,13 +105,13 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
   return {
     binding,
     async capture(input) {
-      if (!enabled) fail();
+      if (!enabled || input?.version === 2 && !publicEntityEnabled) fail();
       const initial = context(); validate(input); const selection = clone(input);
       const row = { version: 1, selection, hash: await personalArchiveHash(selection) }; assertCurrent(initial);
       return lock(initial, () => ({ selection, reused: writeOnce(key(selection.operationId), JSON.stringify(row)) }));
     },
     async rememberAction({ selection, action }) {
-      if (!enabled) fail();
+      if (!enabled || selection?.version === 2 && !publicEntityEnabled) fail();
       const initial = context(); validate(selection); selection = clone(selection);
       assertListOperationPayload(action); action = clone(action); await validateAction(selection, action);
       const row = { version: 1, action, hash: await personalArchiveHash(action) }; assertCurrent(initial);

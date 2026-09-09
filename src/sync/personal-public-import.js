@@ -1,6 +1,7 @@
-import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED, personalPublicImportPlan } from "./personal-public-import-protocol.js";
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
-import { personalGuestImportPlan, personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
+import { personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
 import { preparePersonalGuestImportFiles } from "./personal-guest-import-files.js";
 import { personalArchiveHash, personalArchiveJson } from "./personal-archive-import-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
@@ -13,8 +14,8 @@ const fail = () => { throw Object.assign(Error("Аккаунт или личны
 // Public sources stay read-only. This journal retains the exact selected
 // source, IDs and action for recovery; preparing never changes the editor.
 export async function preparePersonalPublicImport({ selection, selectionStore, outbox, store, loadFile, getContext,
-  getState, getRevision, makeSnapshot, onCaptured, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED }) {
-  if (!enabled) throw Error("Копирование шаблона через очередь ещё не включено.");
+  getState, getRevision, makeSnapshot, onCaptured, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED }) {
+  if (!enabled || selection?.version === 2 && !publicEntityEnabled) throw Error("Копирование шаблона через очередь ещё не включено.");
   assertListOperationJsonValue(selection);
   const initial = clone(getContext()), previous = clone(getState()), revision = getRevision(), binding = outbox.binding;
   let chosen = clone(selection), filePreparation, parts = [], snapshot = null, plan = null;
@@ -57,10 +58,10 @@ export async function preparePersonalPublicImport({ selection, selectionStore, o
     filePreparation = preparePersonalGuestImportFiles({ ...chosen, candidate: { sourceState: chosen.sourcePayload } }, { loadFile: readFile });
     parts = await filePreparation.verify(); assertCurrent();
     const files = parts.map(part => clone(part.manifest));
-    const manifest = { version: 1, operationId: chosen.operationId, sourcePayload: clone(chosen.sourcePayload), source: clone(chosen.source),
-      layoutTargets: clone(chosen.layoutTargets), ownerTargets: clone(chosen.ownerTargets), photoTargets: clone(chosen.photoTargets),
+    const manifest = { version: chosen.version, operationId: chosen.operationId, sourcePayload: clone(chosen.sourcePayload), source: clone(chosen.source),
+      ...(chosen.version === 2 ? { copy: clone(chosen.copy) } : { layoutTargets: clone(chosen.layoutTargets) }), ownerTargets: clone(chosen.ownerTargets), photoTargets: clone(chosen.photoTargets),
       editMeta: clone(chosen.editMeta), targetStateRevision: revision, files };
-    const result = personalGuestImportPlan({ ...manifest, currentPayload: chosen.basePayload, listId: binding.listId }, files);
+    const result = personalPublicImportPlan({ ...manifest, currentPayload: chosen.basePayload, listId: binding.listId }, files);
     snapshot = clone(makeSnapshot(clone(result.payload), previous, result.activeLayoutId));
     if (!same(personalGuestBusinessPayload(snapshot), result.payload)) throw Error("Подготовка отображения изменила выбранную копию шаблона.");
     manifest.sourceHash = await personalArchiveHash(manifest.sourcePayload); manifest.payloadHash = await personalArchiveHash(result.payload); assertCurrent();

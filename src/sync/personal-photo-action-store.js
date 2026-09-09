@@ -1,3 +1,4 @@
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./personal-public-entity-plan.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
 import { encodePersonalPublicImportRecord, decodePersonalPublicImportRecord } from "./personal-public-import-record.js";
@@ -29,7 +30,7 @@ const sameBytes = (a, b) => {
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
-  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED } = {}) {
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -99,7 +100,7 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   return {
     binding,
     async capturePublic(input) {
-      if (input?.action?.kind !== "list.import" || input.action.body?.publicImport?.version !== 1) throw blocked("invalid-public");
+      if (input?.action?.kind !== "list.import" || ![1, 2].includes(input.action.body?.publicImport?.version)) throw blocked("invalid-public");
       return this.captureBatch(input);
     },
     async captureGuest(input) {
@@ -128,7 +129,7 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         if (!enabled || !batchEnabled) throw blocked("batch-disabled");
         const form = frozen.action?.body?.action === "form", archive = frozen.action?.kind === "list.import";
         const guest = archive && Object.hasOwn(frozen.action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(frozen.action.body || {}, "publicImport");
-        if (publicCopy && !publicEnabled) throw blocked("public-disabled");
+        if (publicCopy && (!publicEnabled || frozen.action.body.publicImport?.version === 2 && !publicEntityEnabled)) throw blocked("public-disabled");
         if (guest && !guestEnabled) throw blocked("guest-disabled");
         if (archive && !guest && !publicCopy && !archiveEnabled) throw blocked("archive-disabled");
         if (form && !formEnabled) throw blocked("form-disabled");

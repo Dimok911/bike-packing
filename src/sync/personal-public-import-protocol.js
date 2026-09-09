@@ -1,7 +1,9 @@
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
-import { personalArchiveJson } from "./personal-archive-import-protocol.js";
-import { personalGuestImportManifest, assertPersonalGuestImportBody, assertPersonalGuestImportHashes,
-  personalGuestImportReceipt, validatePersonalGuestImportResult } from "./personal-guest-import-protocol.js";
+import { personalPublicEntityPlan } from "./personal-public-entity-plan.js";
+import { personalGuestImportPlan } from "./personal-guest-import-plan.js";
+import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
+import { personalGuestImportManifest, assertPersonalGuestImportBody,
+  personalGuestImportReceipt, validatePersonalImportedResult } from "./personal-guest-import-protocol.js";
 
 export const PERSONAL_PUBLIC_IMPORT_ENABLED = false;
 export const PERSONAL_PUBLIC_IMPORT_CAPABILITY = "personalCausalPublicImportV1";
@@ -26,6 +28,15 @@ export function personalPublicImportSource(value) {
 export function personalPublicImportManifest(value) {
   assertListOperationJsonValue(value);
   if (!value || !Object.hasOwn(value, "source")) fail();
+  if (value.version === 2) {
+    if (!exact(value, ["version", "operationId", "sourcePayload", "sourceHash", "copy", "ownerTargets", "photoTargets", "editMeta", "targetStateRevision", "payloadHash", "files", "source"])
+      || typeof value.operationId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.operationId)
+      || [value.sourceHash, value.payloadHash].some(hash => typeof hash !== "string" || !/^[a-f0-9]{64}$/.test(hash))
+      || !Number.isSafeInteger(value.targetStateRevision) || value.targetStateRevision < 1
+      || !Array.isArray(value.ownerTargets) || !Array.isArray(value.photoTargets) || !Array.isArray(value.files)
+      || value.files.length > 50 || value.files.length !== value.photoTargets.length) fail();
+    personalPublicImportSource(value.source); return clone(value);
+  }
   const { source, ...copy } = value;
   return { ...personalGuestImportManifest(copy), source: personalPublicImportSource(source) };
 }
@@ -42,17 +53,23 @@ export function assertPersonalPublicImportBody(body, options = {}) {
   const manifest = personalPublicImportManifest(body.publicImport), source = manifest.source;
   if (source.listId === options.listId || manifest.ownerTargets.some(target => target.reuse !== false)) fail();
   if (options.causal && !same(body.causal?.reads, [{ listId: source.listId, revision: source.stateRevision }])) fail();
-  return assertPersonalGuestImportBody(copyBody(body), options);
+  if (body.baseStateRevision !== manifest.targetStateRevision || options.operationId !== manifest.operationId) fail();
+  if (manifest.version === 1) return assertPersonalGuestImportBody(copyBody(body), options);
+  const plan = personalPublicEntityPlan({ ...manifest, currentPayload: options.base, listId: options.listId }, manifest.files);
+  if (!same(plan.payload, body.payload)) fail(); return plan;
 }
 
 export async function assertPersonalPublicImportHashes(body) {
   assertListOperationJsonValue(body);
-  await assertPersonalGuestImportHashes(copyBody(clone(body)));
+  body = clone(body);
+  const manifest = personalPublicImportManifest(body?.publicImport);
+  if (await personalArchiveHash(manifest.sourcePayload) !== manifest.sourceHash || await personalArchiveHash(body.payload) !== manifest.payloadHash) fail();
 }
 
 export function personalPublicImportReceipt(value) {
   const manifest = personalPublicImportManifest(value);
-  return { ...personalGuestImportReceipt(copyManifest(manifest)), source: clone(manifest.source) };
+  if (manifest.version === 1) return { ...personalGuestImportReceipt(copyManifest(manifest)), source: clone(manifest.source) };
+  const { sourcePayload, editMeta, ...receipt } = manifest; return receipt;
 }
 
 export function validatePersonalPublicImportResult(result, expected) {
@@ -61,7 +78,11 @@ export function validatePersonalPublicImportResult(result, expected) {
     const manifest = personalPublicImportManifest(expected.body.publicImport);
     if (!same(result.publicImport, personalPublicImportReceipt(manifest)) || !Array.isArray(result.publicPhotos)
       || Object.hasOwn(result, "guestImport") || Object.hasOwn(result, "archiveImport")) return false;
-    return validatePersonalGuestImportResult({ ...result, guestImport: personalGuestImportReceipt(copyManifest(manifest)), guestPhotos: result.publicPhotos },
-      { ...expected, body: copyBody(expected.body) });
+    return validatePersonalImportedResult(result, expected, manifest,
+      { manifestKey: "publicImport", photosKey: "publicPhotos", receipt: personalPublicImportReceipt });
   } catch { return false; }
+}
+
+export function personalPublicImportPlan(input, files) {
+  return input.version === 2 ? personalPublicEntityPlan(input, files) : personalGuestImportPlan(input, files);
 }
