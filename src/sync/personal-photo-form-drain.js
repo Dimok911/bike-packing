@@ -1,3 +1,4 @@
+import { PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED, personalPendingPublicUpdateSource } from "./personal-pending-public-update.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource } from "./personal-pending-guest-update.js";
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
@@ -26,6 +27,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
+  pendingPublicUpdateEnabled = PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
   formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
@@ -33,7 +35,8 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
-  const pendingImport = operationId => guestEnabled && pendingGuestUpdateEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
+  const pendingImport = operationId => publicEnabled && pendingPublicUpdateEnabled && personalPendingPublicUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
+    || guestEnabled && pendingGuestUpdateEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
     || archiveEnabled && pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
   const pendingForm = operationId => pendingFormUpdateEnabled && personalPendingFormUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
   const form = head?.action.kind === "list.import" && (publicEnabled && head.action.body.publicImport?.version === 1 || guestEnabled && head.action.body.guestImport?.version === 1

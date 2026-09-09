@@ -10,7 +10,7 @@ const fail = () => { throw Error("Форма больше не совпадае�
 // the first await, closing the dialog, replacing memory or scheduling a writer.
 export function createPersonalPendingImportFormSession({ outbox, getContext, onDurable,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = false, findSource,
-  readPayload = record => record.action.body.payload, recoveryPhase = "pending-import-fields" }) {
+  readPayload = record => record.action.body.payload, recoveryPhase = "pending-import-fields", disabledMessage = "" }) {
   let completion, preview = null, initial = null, operationId = null, request = null;
   return {
     submit(input) {
@@ -18,6 +18,7 @@ export function createPersonalPendingImportFormSession({ outbox, getContext, onD
       let resolve, reject;
       completion = new Promise((yes, no) => { resolve = yes; reject = no; });
       try {
+        if (!enabled && disabledMessage) throw Error(disabledMessage);
         if (!enabled || !outbox || typeof findSource !== "function" || typeof onDurable !== "function") fail();
         assertListOperationPayload({ ...outbox.binding, kind: "list.update", body: input });
         const frozen = clone(input); initial = clone(getContext());

@@ -80,7 +80,7 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
     }
     if (!ids.includes(operationId)) entries.push({ operationId, stageOperationId: record.action.body.assetId,
       ...(record.photoState.fileInventoryVersion === 2 ? { batch: true,
-        stageOperationIds: (record.action.kind === "list.import" ? (record.action.body.guestImport || record.action.body.archiveImport).files : record.action.body.changes).map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });
+        stageOperationIds: (record.action.kind === "list.import" ? (record.action.body.publicImport || record.action.body.guestImport || record.action.body.archiveImport).files : record.action.body.changes).map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });
   }
   const afterIds = await store.ids(); assertContext();
   // Sorting compares SETS for a stable scan; it never orders user actions.
