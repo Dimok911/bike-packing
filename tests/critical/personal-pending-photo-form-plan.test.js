@@ -18,8 +18,9 @@ function fixture(type = "item") {
 }
 
 test("pending compiler passes the real application projection without inventing synced photo metadata", () => {
-  for (const type of ["item", "container"]) {
+  for (const type of ["item", "container"]) for (const fileless of [false, true]) {
     const f = fixture(type), collection = type === "item" ? "items" : "containers";
+    if (fileless) { f.files = []; f.photoSelection = null; f.photoIds = ["photo-2", "photo-0"]; }
     Object.assign(f.snapshot[collection].owner.photos[0], { thumbUrl: "/original-thumb", type: "image/png", size: 1, width: 1, height: 1 });
     const project = value => cloneStateForSyncPayload(value, { forSync: true });
     f.basePayload = project(f.snapshot); f.snapshot = structuredClone(f.basePayload);
@@ -45,6 +46,25 @@ test("another pending form preserves exact inherited photos and retains only its
     assert.deepEqual(saved.action, action); assert.deepEqual(await Promise.all(saved.files.map(part => part.file.text())), ["new bytes 0", "new bytes 1"]);
     assert.deepEqual(f.basePayload, base);
   }
+});
+
+for (const selected of [["photo-2", "photo-0"], [], ["photo-2", "photo-1", "photo-0"]]) test(`pending fileless edit freezes deletion/order and the complete owner (${selected.join(",") || "delete all"})`, () => {
+  const f = fixture(); f.files = []; f.photoSelection = null; f.photoIds = selected;
+  const before = structuredClone(f.basePayload), plan = prepare(f, { enabled: true });
+  assert.equal(plan.files.length, 0); assert.equal(plan.body.baseEntityRevision, null);
+  assert.deepEqual(plan.body.ownerResult.owner, before.items.owner);
+  assert.deepEqual(plan.payload.items.owner.photos.map(photo => photo.id), selected);
+  assert.ok(plan.body.changes.length > 0); assert.ok(plan.body.changes.every(change => change.action !== "attach" && change.baseEntityRevision === null));
+  assert.ok(plan.body.changes.filter(change => change.action === "delete").every(change => change.basePhotoRevision === null));
+  assert.deepEqual(f.basePayload, before);
+});
+
+test("pending fileless edit refuses no-op order, duplicate IDs and ambiguous new-file input", () => {
+  for (const photoIds of [["photo-0", "photo-1", "photo-2"], ["photo-0", "photo-0"], ["unknown"]]) {
+    const f = fixture(); f.files = []; f.photoSelection = null; f.photoIds = photoIds;
+    assert.throws(() => prepare(f, { enabled: true }));
+  }
+  assert.throws(() => prepare({ ...fixture(), photoIds: [] }, { enabled: true }));
 });
 
 test("a dependent result may materialize inherited pending references but cannot drop unknown business fields", () => {

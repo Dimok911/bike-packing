@@ -1,4 +1,5 @@
 import { preparePersonalPhotoFormAttachments } from "./personal-photo-form-plan.js";
+import { preparePersonalPhotoEditForm } from "./personal-photo-edit-form.js";
 import { assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { assertListOperationPayload, assertListOperationJsonValue } from "./list-operation-payload.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
@@ -14,12 +15,13 @@ const fail = () => { throw Object.assign(Error("Следующая фотофо�
 // ancestry before linking this plan; an operation ID by itself is not proof.
 // The complete new file set and every new ID are captured once, synchronously.
 export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload, baseStateRevision,
-  parentOperationId, entityType, entityId, fields, files, index = null, photoSelection = null,
+  parentOperationId, entityType, entityId, fields, files, index = null, photoSelection = null, photoIds = null,
   formContext = null, containerFormContext = null }, { enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), itemContextEnabled = false, containerContextEnabled = false } = {}) {
-  if (!enabled || !uuid(parentOperationId) || !["item", "container"].includes(entityType) || !Array.isArray(files) || !files.length) fail();
+  if (!enabled || !uuid(parentOperationId) || !["item", "container"].includes(entityType) || !Array.isArray(files)
+    || (files.length ? photoIds !== null : !Array.isArray(photoIds) || photoSelection !== null || index !== null)) fail();
   assertListOperationJsonValue({ binding, snapshot, basePayload, baseStateRevision, parentOperationId, entityType, entityId,
-    fields, index, photoSelection, formContext, containerFormContext });
+    fields, index, photoSelection, photoIds, formContext, containerFormContext });
   const collection = entityType === "item" ? "items" : "containers", owner = basePayload?.[collection]?.[entityId];
   if (!isPersonalPhotoPrivateOwner(owner) || !Array.isArray(owner.photos) || !same(snapshotToPayload(clone(snapshot)), basePayload)) fail();
   for (const type of ["items", "containers"]) for (const record of Object.values(basePayload[type] || {})) {
@@ -47,10 +49,12 @@ export function preparePersonalPendingPhotoForm({ binding, snapshot, basePayload
       frozenOwner.photos.some(source => source.id === photo.id && source.status === "pending") ? { ...photo, status: "synced" } : photo);
     return projected;
   };
-  const plan = preparePersonalPhotoFormAttachments({ binding, snapshot: view, basePayload: base, baseStateRevision,
+  const input = { binding, snapshot: view, basePayload: base, baseStateRevision,
     entityType, entityId, baseEntityRevision: 1, fields, files, index, photoSelection,
-    photoRevisions: owner.photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })), formContext, containerFormContext },
-  { enabled: true, snapshotToPayload: grammarProjection, createUuid, itemContextEnabled, containerContextEnabled });
+    photoRevisions: owner.photos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })), formContext, containerFormContext };
+  const options = { enabled: true, snapshotToPayload: grammarProjection, createUuid, itemContextEnabled, containerContextEnabled };
+  const plan = files.length ? preparePersonalPhotoFormAttachments(input, options)
+    : { version: 1, ...preparePersonalPhotoEditForm({ ...input, photoIds, operationId: createUuid() }, options), files: [] };
   if (plan.operationId === parentOperationId || plan.files.some(part => part.stage.operationId === parentOperationId)) fail();
   plan.body.baseEntityRevision = null;
   plan.body.ownerResult = { version: 1, operationId: parentOperationId, owner: frozenOwner };

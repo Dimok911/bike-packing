@@ -131,6 +131,22 @@ test("a fileless manufacturer root supports a later complete file form without i
   assert.equal(encoded.size, 1); assert.equal((await store.read(result.record.action.operationId)).files.length, 1);
 });
 
+test("a pending fileless delete-all form and DB child retain the sole original binary record", async () => {
+  const f = await durableFixture(); f.store.ids = async () => [...f.encoded.keys()];
+  f.store.captureForm = () => assert.fail("Fileless form must not create a binary record");
+  const session = createPersonalPendingPhotoFormSession({ outbox: f.outbox, store: f.store, getContext: () => f.context, enabled: true, onDurable: () => {} });
+  const result = await session.submit({ binding: f.outbox.binding, snapshot: f.root.snapshot, basePayload: f.root.photoState.payload, baseStateRevision: 1,
+    entityType: "item", entityId: "owner", created: false, parentOperationId: f.root.action.operationId,
+    fields: { name: "Pending photo removed" }, files: [], photoIds: [] });
+  assert.equal(result.record.photoState.fileIntentHash, null); assert.equal(f.encoded.size, 1);
+  const snapshot = structuredClone(result.record.snapshot); snapshot.items.owner.weight = 21;
+  const child = f.outbox.capture({ snapshot, body: { baseStateRevision: 1, payload: snapshot } });
+  assert.equal(child.action.body.photoResults.version, 6);
+  assert.equal(chain({ records: f.outbox.list(), operationId: child.action.operationId, listId: "list" }).forms.length, 2);
+  assert.equal(f.make(false).recover().action.operationId, child.action.operationId);
+  assert.equal((await f.store.read(f.root.action.operationId)).files.length, 1);
+});
+
 test("quota after the second native file commit preserves its unlinked bytes and the entire first queued form", async () => {
   const f = await durableFixture(), plan = f.prepare(f.next); await f.saveFiles(plan);
   const before = f.outbox.list(), write = f.storage.setItem;

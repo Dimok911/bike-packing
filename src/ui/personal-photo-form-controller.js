@@ -80,9 +80,9 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       const manufacturer = type === "container" && isManufacturerSourceEnabled() && Boolean(view?.manufacturerSource);
       const emptyManufacturer = manufacturer && !selected.length && !view?.source;
       const fresh = selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl);
-      const pendingFiles = fresh && isPendingFiles(type);
       const edit = !fresh && !emptyManufacturer && Boolean(view?.draft && (view.draft.deletedPhotos?.length
         || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
+      const pendingFiles = (fresh || edit) && isPendingFiles(type);
       const pendingUpdate = !fresh && !edit && !manufacturer && isPendingUpdate();
       if (!fresh) {
         if (edit && (!isEditEnabled() || typeof createEditSession !== "function")) {
@@ -105,7 +105,7 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding, allowPending: pendingFiles };
-        const values = emptyManufacturer ? { files: [] } : pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection) }
+        const values = emptyManufacturer ? { files: [] } : pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection), ...(pendingFiles ? { files: [] } : {}) }
           : (pendingFiles || isEditEnabled()) && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
         entry.session = (pendingFiles ? createPendingFilesSession : pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
         const pending = entry.session.submit({ ...request, ...values });
