@@ -9,7 +9,8 @@ const fail = () => { throw Error("Форма больше не совпадае�
 // file inventory or selected photo references. Capture is synchronous, before
 // the first await, closing the dialog, replacing memory or scheduling a writer.
 export function createPersonalPendingImportFormSession({ outbox, getContext, onDurable,
-  snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = false, findSource, recoveryPhase = "pending-import-fields" }) {
+  snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = false, findSource,
+  readPayload = record => record.action.body.payload, recoveryPhase = "pending-import-fields" }) {
   let completion, preview = null, initial = null, operationId = null, request = null;
   return {
     submit(input) {
@@ -25,7 +26,7 @@ export function createPersonalPendingImportFormSession({ outbox, getContext, onD
         if (!source || !outbox.hasPending() || !initial.generation || initial.scope !== "personal"
           || Object.keys(outbox.binding).some(key => initial[key] !== outbox.binding[key] || frozen.binding?.[key] !== outbox.binding[key])
           || frozen.created !== false || frozen.parentOperationId !== head.action.operationId
-          || !["item", "container"].includes(frozen.entityType) || !same(frozen.basePayload, head.action.body.payload)
+          || !["item", "container"].includes(frozen.entityType) || !same(frozen.basePayload, readPayload(head))
           || !same(snapshotToPayload(frozen.snapshot), frozen.basePayload)) fail();
         const collection = frozen.entityType === "item" ? "items" : "containers", owner = frozen.snapshot[collection]?.[frozen.entityId];
         const fields = frozen.fields, allowed = ["name", "weight", "color", "location", "category", "categories", "note", "dimensions",

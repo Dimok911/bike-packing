@@ -734,6 +734,8 @@ import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTB
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate } from "./src/sync/personal-pending-archive-update.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate } from "./src/sync/personal-pending-guest-update.js";
 import { createPersonalPendingGuestFormSession } from "./src/sync/personal-pending-guest-form.js";
+import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, isPersonalPendingFormUpdate } from "./src/sync/personal-pending-form-update.js";
+import { createPersonalPendingFormSession } from "./src/sync/personal-pending-form-session.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-item-form-context.js";
 import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
@@ -2514,7 +2516,8 @@ function personalPhotoContainerContextUiEnabled() {
 function personalPendingImportSource(outbox, includeSource = false) {
   if (!outbox) return null;
   const options = { records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId, includeSource };
-  return PERSONAL_PENDING_GUEST_UPDATE_ENABLED && PERSONAL_GUEST_IMPORT_ENABLED && personalPendingGuestUpdateSource(options)
+  return PERSONAL_PENDING_FORM_UPDATE_ENABLED && personalPendingFormUpdateSource(options)
+    || PERSONAL_PENDING_GUEST_UPDATE_ENABLED && PERSONAL_GUEST_IMPORT_ENABLED && personalPendingGuestUpdateSource(options)
     || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource(options);
 }
 
@@ -2527,7 +2530,7 @@ function personalPendingImportFormEnabled() {
 function personalPhotoFormRequest(values, { pendingImport = false } = {}) {
   personalSaveRecovery.assertRunning();
   const outbox = personalSaveOutboxForScope(), head = pendingImport && personalPendingImportFormEnabled() ? outbox.recover() : null;
-  const baseline = head ? { payload: head.action.body.payload, stateRevision: head.action.body.baseStateRevision } : outbox?.confirmedBase();
+  const baseline = head ? { payload: head.photoState?.payload || head.action.body.payload, stateRevision: head.action.body.baseStateRevision } : outbox?.confirmedBase();
   if (!personalPhotoFormUiEnabled() || !baseline || !currentPackingListId) {
     throw Error("Сначала подтвердите личный список. Поля и фото остались в форме.");
   }
@@ -2542,7 +2545,8 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.pendingImport ? (personalPendingImportSource(outbox, true)?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const pendingSource = options.pendingImport ? personalPendingImportSource(outbox, true) : null;
+  const createSession = options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
@@ -2636,8 +2640,8 @@ function preparePersonalCatalogDeletion(value) {
         const formDeletion = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && sameJson(parent?.photoState?.payload, currentPayload)
           && isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
             userDeletion: prepared.intent, listId: currentPackingListId });
-        const archive = sameJson(parent?.action.body.payload, currentPayload) && personalPendingImportSource(outbox, true);
-        const archiveDeletion = archive && (archive.action.body.guestImport ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: archive, basePayload: currentPayload,
+        const archive = sameJson(parent?.photoState?.payload || parent?.action.body.payload, currentPayload) && personalPendingImportSource(outbox, true);
+        const archiveDeletion = archive && (archive.action.kind === "photos.mutate" ? isPersonalPendingFormUpdate : archive.action.body.guestImport ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: archive, basePayload: currentPayload,
           payload: cloneStateForSync(prepared.snapshot, { forSync: true }), userDeletion: prepared.intent, listId: currentPackingListId });
         if (!copyDeletion && !formDeletion && !archiveDeletion) {
           throw Error("Удаление требует подтверждённых фото либо точно сохранённой формы этого владельца. Исходные данные сохранены.");
@@ -8907,7 +8911,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   }
   const queue = createListOperationQueue({ transport: experimentTransport, getContext });
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
-  const archive = source.outbox.recover()?.action.kind === "list.import" || Boolean(personalPendingImportSource(source.outbox));
+  const archive = source.outbox.recover()?.action.kind === "list.import" || personalPendingImportSource(source.outbox)?.action.kind === "list.import";
   const guest = (personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.guestImport?.version === 1;
   updateSyncUi(guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,

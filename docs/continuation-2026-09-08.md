@@ -6,11 +6,46 @@
 укладке завершены локально: 34 focused, 596 transport, 896 critical, FE check,
 UI 30/30 (6,9 мин; container-copy-target-ui-6.log), API/MySQL 218/218
 (250,47 с; container-copy-target-mysql-1.log). Все процессы exit0, MySQL
-остановлен. Следующий WIP — потомки обычной фотоформы, чтобы следующий
-выбор места мог ждать её подтверждения в очереди. Сейчас добавлены только
-НЕПОДКЛЮЧЁННЫЕ src/sync/personal-pending-form-update.js и
-tests/critical/personal-pending-form-update.test.js, focused 4/4
-(pending-form-focused-2.log); gates false, общего UI/API ещё нет.
+остановлен. Этот этап — FE e6f2fee / API b25873c.
+
+Следующий срез потомков обычной фотоформы подключён в UI/API за собственным
+выключенным флагом. DB-поля, размещение и явное удаление следуют за новыми,
+смешанными и fileless фотоформами. Сумка из picker принимает зависимый link-item
+до подтверждения файлов. Исходные действия/файлы сохраняются; отмена после
+reload обрабатывает всю цепочку и отдельный выбор серверной версии.
+Ссылка photoResults.version=5; строгая проверка полного результата на FE.
+Описание: personal-pending-photo-form-updates.md, API causal-photo-form-descendants.md.
+
+Проверено: 604 transport (pending-form-transport-3.log), 896 critical
+(pending-form-critical-1.log), FE check; API 81 operations, 74 source/service.
+API/MySQL **230/230**, 354,32 с (pending-form-mysql-3.log), exit0, MySQL
+остановлен. UI **30/30**, 7,3 мин (pending-form-ui-5.log), отдельно **4/4**
+потерянный ACK окончательного выбора, 1,6 мин (pending-form-ui-decision-1.log),
+Chromium/mobile WebKit. Регрессия при выключенном новом флаге **18/18**,
+4,6 мин (pending-form-ui-regression-1.log), production/photo-edit пакеты.
+Все процессы exit0 и завершены. API-коммит **1311c1a**; frontend — коммит,
+включающий эту запись. Публикация, push и включение флагов не выполнялись.
+
+В процессе исправлены отсутствовавшее определение исходной формы в отмене
+и drain hook для её DB-потомков. Первое строгое UI-подтверждение выявило
+неполную mock-квитанцию без верхнего stateRevision; mock приведён к реальному API.
+API-2 исчерпал прежний общий 300-секундный лимит на расширившейся серии;
+лимит всей серии увеличен до 600 с, API-3 полностью прошёл. Прямой test:smoke
+без специального disposable-окружения отказал на защитной проверке до БД;
+валидный полный прогон выполнен только установленным локальным скриптом.
+
+Следующий незакоммиченный WIP — производитель: personal-manufacturer-photo-selection
+и personal-manufacturer-photo-source с двумя одноимёнными тестами. Пока это
+НЕПОДКЛЮЧЁННЫЕ чистые preparer/parser, 6/6 (manufacturer-source-focused-3.log),
+включая совпадение provenance со всем существующим каталогом с фотографиями.
+Preparer замораживает полный entry и выбранные URL до await, не принимает
+частичный набор файлов и проверяет актуальность формы. Parser воспроизводит
+существующую manufacturerCatalogSource metadata, сохраняя весь исходный entry.
+Первый тест обнаружил различие default [] в вычислении volumeOptions; исправлено
+в новом parser, исходные данные и существующий каталог не менялись. Ещё нужны
+UI/controller, form/outbox/queue/protocol/API, source gate/capability, byte retention,
+fileless случай после удаления выбранных фото и реальные paired/UI проверки.
+Эти четыре новых файла не включать в коммит уже проверенных потомков формы.
 Не останавливаться после текущего среза: продолжать ВЕСЬ checklist.
 
 Container form context завершён локально: полный API/MySQL 218/218,

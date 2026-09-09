@@ -5,6 +5,8 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_FORM === "1" && source.endsWith("/src/sync/personal-pending-form-update.js")) return code.replace(
+      "PERSONAL_PENDING_FORM_UPDATE_ENABLED = false", "PERSONAL_PENDING_FORM_UPDATE_ENABLED = true");
     if (source.endsWith("/src/public/guest-login-handoff.js")) return code.replace('  if (validation.ok) return validation.candidate;',
       '  globalThis.__personalGuestHandoffValidation = { reason: validation.reason, handoff, sourceState }; if (validation.ok) return validation.candidate;');
     if (source.endsWith("/src/sync/auth-load-flow.js")) return code.replace(

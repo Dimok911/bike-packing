@@ -304,7 +304,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -406,6 +406,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
         if (["list.update", "list.restore", "list.import"].includes(body.kind) && state.beforeUpdate) await state.beforeUpdate(body);
+        if (body.kind === "photos.mutate" && state.beforePhotoWrite) await state.beforePhotoWrite(body);
         const base = predecessor?.result.payload.list?.stateRevision ?? body.body.baseStateRevision;
         if (body.kind === "list.create") { expect(state.listId).toBeNull(); expect(body.body.id).toBe(body.listId); }
         else if (!state.allowConflicts) expect(base).toBe(state.revision);
@@ -536,13 +537,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             const copy = state.receipts.get(ref.operationId);
             expect(copy.operation.state).toBe("committed");
             expect(body.body.causal.dependsOn).toContainEqual({ operationId: ref.operationId, listId: state.listId });
-            if ([3, 4].includes(ref.version)) {
-              expect(copy.operation.kind).toBe("list.import"); expect(predecessor.operation.state).toBe("committed");
+            if ([3, 4, 5].includes(ref.version)) {
+              expect(copy.operation.kind).toBe(ref.version === 5 ? "photos.mutate" : "list.import"); expect(predecessor.operation.state).toBe("committed");
               for (const collection of ["items", "containers"]) for (const [id, owner] of Object.entries(state.payload[collection])) {
                 const previous = predecessor.result.payload.list.payload[collection][id];
                 if (owner.photos) owner.photos = owner.photos.map(photo => {
                   if (photo.status !== "pending") return photo;
-                  const file = (ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
+                  const file = (ref.version === 5 ? copy.result.payload.photoChanges.filter(change => change.action === "attach") : ref.version === 4 ? copy.result.payload.guestPhotos : copy.result.payload.archivePhotos).find(file => file.photoId === photo.id);
                   expect(file?.entityId).toBe(id); expect(file?.assetId).toBe(photo.assetId);
                   expect(previous?.photos).toContainEqual(file.photo); return structuredClone(file.photo);
                 });
@@ -555,7 +556,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           }
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
-            result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
+            result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
               ...(guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
                 archiveImport: (body.body.archiveImport.version === 2 ? personalArchivePhotoReceipt : personalArchiveImportReceipt)(body.body.archiveImport),
                 ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
@@ -1180,6 +1181,119 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   await expect(page.locator(button)).toBeVisible();
   return { f, before, collection, prefix, button, dialog };
 }
+
+for (const type of ["item", "container"]) for (const outcome of ["fields", "lost child", "delete", "quota"]) test(`pending ordinary photo form descendants ${type} (${outcome})`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PENDING_FORM !== "1", "Separate disabled feature in the isolated test bundle");
+  test.setTimeout(150000);
+  const { f, before, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true });
+  const server = structuredClone(f.payload); let release;
+  f.beforeStageAck = () => new Promise(resolve => { release = resolve; });
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  try {
+    await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    const originalRecords = await records(), form = originalRecords.find(record => record.action.kind === "photos.mutate"), ownerId = form.action.body.entityId;
+    const edit = async value => {
+      await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+      await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+      await page.locator(`#${prefix}Weight`).fill(String(value)); await submitForm(page, button, `#${prefix}Weight`);
+    };
+    if (outcome === "quota") await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.photoResults?.version === 5) throw new DOMException("Pending form quota", "QuotaExceededError");
+        return original.call(this, key, value);
+      };
+    });
+    await edit(111);
+    if (outcome === "quota") {
+      await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible(); await expect(dialog).toBeVisible();
+      expect(await records()).toEqual(originalRecords); const draft = await downloadRecovery(page);
+      expect(draft.unconfirmedMemoryDraft[collection][ownerId].weight).toBe(111); expect(draft.unconfirmedMemoryDraft[collection][ownerId].photos).toHaveLength(2);
+      expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before); return;
+    }
+    await expect(dialog).not.toBeVisible(); await edit(222); await expect(dialog).not.toBeVisible();
+    if (outcome === "delete") {
+      await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+      await page.locator(`#${prefix}DeleteForeverBtn`).click(); await page.locator("#confirmOkBtn").click(); await expect(dialog).not.toBeVisible();
+    }
+    const saved = await records(), children = saved.filter(record => record.action.body.photoResults?.version === 5).sort((a, b) => a.action.generation - b.action.generation);
+    expect(children).toHaveLength(outcome === "delete" ? 3 : 2); expect(saved.find(record => record.action.operationId === form.action.operationId)).toEqual(form);
+    let parent = form;
+    for (const child of children) {
+      expect(child.action.body.causal.baseOperationId).toBe(parent.action.operationId);
+      expect(child.action.body.causal.dependsOn.map(dep => dep.operationId)).toEqual([...new Set([parent.action.operationId, form.action.operationId])]);
+      expect(child.action.body.photoResults.owners).toEqual([{ entityType: type, entityId: ownerId }]); parent = child;
+    }
+    if (outcome === "lost child") { f.lose = true; f.beforeUpdate = () => { f.unknown = true; }; }
+    f.beforeStageAck = null; release(); release = null;
+    if (outcome === "lost child") {
+      await expect.poll(() => f.posts.some(post => post.operationId === children[0].action.operationId), { timeout: 20000 }).toBe(true);
+      await reloadApp(page, { recovery: true });
+      const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+      const posts = structuredClone(f.posts), stages = [...f.stagePosts]; await resume.click(); await expect(resume).toBeEnabled();
+      expect(f.posts).toEqual(posts); expect(f.stagePosts).toEqual(stages);
+      f.lose = false; f.unknown = false; f.beforeUpdate = null;
+      await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены"); await reloadApp(page);
+    } else await synchronizePhotoHistory(page, () => outcome === "delete" ? !f.payload[collection][ownerId] : f.payload[collection][ownerId]?.weight === 222);
+    expect(f.posts).toHaveLength(before + 1 + children.length);
+    expect(f.stagePosts).toEqual(form.action.body.changes.filter(change => change.action === "attach").map(change => change.assetId));
+    if (outcome !== "delete") { expect(f.payload[collection][ownerId].weight).toBe(222); expect(f.payload[collection][ownerId].photos).toHaveLength(2); }
+    else expect(f.payload[collection][ownerId]).toBeUndefined();
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 1 + children.length); expect(f.errors).toEqual([]);
+  } finally { f.beforeStageAck = null; release?.(); }
+});
+
+for (const type of ["item", "container"]) test(`pending fileless ordinary photo form keeps later fields through lost child ACK (${type})`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PENDING_FORM !== "1", "Separate disabled feature in the isolated test bundle");
+  test.setTimeout(150000);
+  const { f, collection, prefix, button, dialog, ownerId, originalPhotos } = await prepareExistingPhotoEdit(page, context, { type, change: "delete-order" });
+  const before = f.posts.length, stageBefore = f.stagePosts.length; let release;
+  f.beforePhotoWrite = () => new Promise(resolve => { release = resolve; });
+  try {
+    await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    for (const weight of [111, 222]) {
+      await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Фотографии изменены" }).click();
+      await page.locator(`#${prefix}Weight`).fill(String(weight)); await submitForm(page, button, `#${prefix}Weight`); await expect(dialog).not.toBeVisible();
+    }
+    f.beforeUpdate = () => { f.lose = true; f.unknown = true; }; f.beforePhotoWrite = null; release(); release = null;
+    await expect.poll(() => f.injectedFailure).toBe(true); await reloadApp(page, { recovery: true });
+    f.beforeUpdate = null; f.lose = false; f.unknown = false;
+    const recovery = page.locator("#personalSaveRecoveryDialog"); await recovery.locator("[data-resume-photo-upload]").click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    expect(f.payload[collection][ownerId].weight).toBe(222);
+    expect(f.payload[collection][ownerId].photos.map(photo => photo.id)).toEqual([originalPhotos[2].id, originalPhotos[1].id]);
+    expect(f.posts).toHaveLength(before + 3); expect(f.stagePosts).toHaveLength(stageBefore);
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 3); expect(f.errors).toEqual([]);
+  } finally { f.beforePhotoWrite = null; release?.(); }
+});
+
+test("pending photo target accepts the selected item link before any file confirmation", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PENDING_FORM !== "1", "Separate disabled feature in the isolated test bundle");
+  test.setTimeout(150000);
+  const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type: "container", created: true, photoEdit: true, copyTarget: true });
+  let release; f.beforeStageAck = () => new Promise(resolve => { release = resolve; });
+  const server = structuredClone(f.payload), sourceId = Object.keys(server.items)[0];
+  try {
+    await submitForm(page, button); await expect(dialog).not.toBeVisible(); await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await expect.poll(() => Boolean(release), { timeout: 20000 }).toBe(true);
+    const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+      .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+    const form = (await records()).find(record => record.action.body.containerFormContext), targetId = form.action.body.entityId;
+    await page.locator(`#containerPickerBoard [data-pick-container="${targetId}"]`).click(); await expect(page.locator("#containerPickerDialog")).not.toBeVisible();
+    const child = (await records()).find(record => record.action.body.photoResults?.version === 5);
+    expect(child.action.body.userPlacement.action).toBe("link-item"); expect(child.action.body.causal.baseOperationId).toBe(form.action.operationId);
+    expect(child.action.body.payload.layouts["layout-b"].arrangement.items[sourceId]).toBe(targetId);
+    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before);
+    f.beforeStageAck = null; release(); release = null;
+    await synchronizePhotoHistory(page, () => f.payload.layouts["layout-b"].arrangement.items[sourceId] === targetId);
+    expect(f.payload.layouts["layout-a"]).toEqual(server.layouts["layout-a"]); expect(f.payload.items).toEqual(server.items);
+    expect(f.payload.containers[targetId].photos).toHaveLength(2); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2); expect(f.errors).toEqual([]);
+  } finally { f.beforeStageAck = null; release?.(); }
+});
 
 for (const scenario of ["copy", "copy with source photos", "lost file", "lost owner", "queue quota"]) test(`container photo form returns to the item copy picker (${scenario})`, async ({ page, context }) => {
   test.setTimeout(150000);
@@ -1859,8 +1973,9 @@ for (const type of ["item", "container"]) for (const outcome of ["file in flight
   expect(f.errors).toEqual([]);
 });
 
-for (const type of ["item", "container"]) for (const lost of [false, true]) test(`pending photo deletion ${type} cancellation retains files and allows a postponed choice${lost ? " after lost cancellation ACK" : ""}`, async ({ page, context }) => {
+for (const type of ["item", "container"]) for (const lost of [false, true, ...(process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["decision"] : [])]) test(`pending photo deletion ${type} cancellation retains files and allows a postponed choice${lost === "decision" ? " after lost decision ACK" : lost ? " after lost cancellation ACK" : ""}`, async ({ page, context }) => {
   test.setTimeout(120000);
+  const descendants = process.env.BIKE_PERSONAL_PENDING_FORM === "1", extra = descendants ? 1 : 0;
   const { f, before, collection, prefix, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type, photoEdit: true });
   const server = structuredClone(f.payload);
   let release;
@@ -1870,6 +1985,10 @@ for (const type of ["item", "container"]) for (const lost of [false, true]) test
     await submitForm(page, button); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
     await expect.poll(() => Boolean(release)).toBe(true);
     await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+    if (descendants) {
+      await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
+      await page.locator(`#${prefix}Weight`).fill("222"); await submitForm(page, button, `#${prefix}Weight`); await expect(dialog).not.toBeVisible();
+    }
     await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: "Карточка со всеми файлами" }).click();
     await page.locator(`#${prefix}DeleteForeverBtn`).click(); await submitForm(page, "#confirmOkBtn");
     await expect(dialog).not.toBeVisible();
@@ -1893,13 +2012,14 @@ for (const type of ["item", "container"]) for (const lost of [false, true]) test
             thumbHash: part.thumbMetadata?.hash || part.fileMetadata.hash, noAssetPublished: true, stageCannotPublish: true } })) };
     });
     f.cancelPhotoAction = retained.action;
+    if (descendants) expect(retained.deletion.body.photoResults.version).toBe(5);
     f.cancellationReceipts = new Map(retained.cancellationReceipts.map(proof => [proof.operation.id, proof]));
     f.beforeStageAck = null; release();
     await expect.poll(() => f.hiddenStage).toBe(f.stagePosts[0]);
     await reloadApp(page, { recovery: true }); f.hiddenStage = null;
     const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
     await expect(cancel).toBeVisible();
-    if (lost) {
+    if (lost === true) {
       f.loseCancellation = true; f.hideCancellationReceipt = true;
       await cancel.click(); await expect(cancel).toBeEnabled();
       expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 1);
@@ -1907,14 +2027,20 @@ for (const type of ["item", "container"]) for (const lost of [false, true]) test
       f.loseCancellation = false; f.hiddenFormOwner = null;
     }
     await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible();
-    await expect(page.locator("#confirmDialog")).toContainText("действий: 2");
+    await expect(page.locator("#confirmDialog")).toContainText(`действий: ${2 + extra}`);
     await page.locator("#confirmCancelBtn").click(); await expect(recovery.getByRole("status")).toContainText("Выбор отложен");
-    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(1);
+    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before + 2 + extra); expect(f.stagePosts).toHaveLength(1);
     expect(f.receipts.get(retained.deletion.operationId).result.payload.code).toBe("dependency_rejected");
     await reloadApp(page, { recovery: true }); await cancel.click();
+    if (lost === "decision") f.beforeUpdate = action => { if (!action.body.photoResults) { f.lose = true; f.unknown = true; } };
     await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmOkBtn").click();
+    if (lost === "decision") {
+      await expect.poll(() => f.posts.length).toBe(before + 3 + extra);
+      f.beforeUpdate = null; f.lose = false; f.unknown = false;
+      await reloadApp(page, { recovery: true }); await cancel.click();
+    }
     await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
-    expect(f.posts).toHaveLength(before + 3); expect(f.stagePosts).toHaveLength(1); expect(f.cancellationPosts).toHaveLength(1);
+    expect(f.posts).toHaveLength(before + 3 + extra); expect(f.stagePosts).toHaveLength(1); expect(f.cancellationPosts).toHaveLength(1);
     expect(f.payload[collection][retained.action.body.entityId]).toEqual(server[collection][retained.action.body.entityId]);
     expect(await page.evaluate(async id => {
       const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");

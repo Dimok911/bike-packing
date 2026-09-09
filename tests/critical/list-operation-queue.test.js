@@ -912,6 +912,26 @@ test("waiting with wrong scope is not permission to POST again; confirmed stale 
   assert.equal(attempts, 1);
 });
 
+test("ordinary form descendants require their own gate and capability while exact receipt reads survive disabling writers", async () => {
+  for (const mode of ["gate", "capability", "lost ACK"]) {
+    const f = fixture(), parentId = crypto.randomUUID(), operationId = crypto.randomUUID(); let enabled = mode !== "gate";
+    const payload = { items: { owner: { id: "owner", name: "Later edit", photos: [] } }, containers: {}, layouts: {} };
+    const body = { baseStateRevision: 1, payload, photoResults: { version: 5, operationId: parentId, owners: [{ entityType: "item", entityId: "owner" }] },
+      causal: { baseOperationId: parentId, dependsOn: [{ operationId: parentId, listId: "list-a" }], reads: [] } };
+    const input = { path, method: "PUT", operationId, body: JSON.stringify(body), receiptOnly: true };
+    f.state.capabilities = ["personalListCausalOperationsV1", ...(mode === "capability" ? [] : ["personalCausalPhotoFormDescendantsV1"])];
+    f.state.payload = { ok: true, stateRevision: 2, list: { id: "list-a", stateRevision: 2, payload } };
+    const queue = () => createListOperationQueue({ transport: f.transport, getContext: () => f.context, locks: f.locks, fetchImpl: f.fetchImpl,
+      enabled: true, photoEnabled: true, photoFormEnabled: true, pendingFormUpdateEnabled: enabled });
+    if (mode === "lost ACK") { f.state.loseResponse = true; f.state.unknown = true; }
+    await assert.rejects(queue().run(input));
+    if (mode !== "lost ACK") { assert.equal(f.posts().length, 0); assert.equal(f.transport.writes.length, 0); continue; }
+    assert.equal(f.posts().length, 1); enabled = false; f.state.unknown = false;
+    const proof = await queue().inspect(input); assert.equal(proof.operation.state, "committed"); assert.equal(proof.historicalOnly, true);
+    assert.equal(f.posts().length, 1);
+  }
+});
+
 test("unrelated target can complete while another target's POST is in flight", async () => {
   const f = fixture(); let started, release;
   const entered = new Promise(resolve => { started = resolve; });
