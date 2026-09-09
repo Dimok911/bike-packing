@@ -232,7 +232,7 @@ for (const phase of ["native files", "queue link"]) test(`actual guest sign-in $
 });
 
 async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true,
-  guestSource = null, publicSource = null, configure = () => {} } = {}) {
+  guestSource = null, publicSource = null, publicSourceConfig = null, language = "ru", configure = () => {} } = {}) {
   photoForm ||= photoEdit;
   if (migration && migrationComplete) {
     // A previously saved complete legacy list, not an intentionally incomplete
@@ -250,6 +250,11 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
   const activeBundleRoot = photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
   state.publicSource = publicSource;
+  state.publicReads = [];
+  state.publicRecords = publicSource ? [...(publicSourceConfig?.others || []), {
+    id: "public-shared-layout-template-ui", itemKey: "shared-layout:template-ui", sharedLayoutId: "template-ui", publicTemplateKind: "shared-layout",
+    title: "Публичный шаблон", language: "ru", sourceType: "curated-bikepacker", visibility: "public", stateRevision: 7, ownerId: "public-owner",
+    ...publicSourceConfig?.record, payload: publicSource }] : [];
   state.photoRevisions = new Map();
   state.stagePosts = [];
   configure(state);
@@ -265,7 +270,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       && /\/letters-vniipo\/api\/.*due to access control checks\.$/.test(error.message)) return;
     state.errors.push(error.message);
   });
-  await context.addInitScript(() => { localStorage.setItem("bike-packing-language-v1", "ru"); });
+  await context.addInitScript(language => { localStorage.setItem("bike-packing-language-v1", language); }, language);
   if (guestSource) {
     await context.addInitScript(guestSource => {
       if (sessionStorage.getItem("guest-seeded")) return;
@@ -311,12 +316,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
         capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" ? ["personalCausalPublicDescendantsV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
-      else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: [{
-        id: "public-shared-layout-template-ui", sharedLayoutId: "template-ui", publicTemplateKind: "shared-layout", title: "Публичный шаблон", language: "ru",
-        sourceType: "curated-bikepacker", visibility: "public", stateRevision: 7, ownerId: "public-owner", payload: structuredClone(state.publicSource) }] };
-      else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/") && decodeURIComponent(path.split("/").at(-1)) === "shared-layout:template-ui") {
-        data = { ok: true, publicTemplatePayload: true, canonical: true, itemKey: "shared-layout:template-ui", listId: "public-shared-layout-template-ui", stateRevision: 7,
-          payload: structuredClone(state.publicSource), record: { id: "public-shared-layout-template-ui", language: "ru", stateRevision: 7, payload: structuredClone(state.publicSource) } };
+      else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: structuredClone(state.publicRecords) };
+      else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/")) {
+        const itemKey = decodeURIComponent(path.split("/").at(-1)), source = state.publicRecords.find(record => record.itemKey === itemKey);
+        state.publicReads.push(itemKey);
+        if (!source) { status = 404; data = { ok: false, code: "not_found" }; }
+        else data = { ok: true, publicTemplatePayload: true, canonical: true, itemKey, listId: source.id, stateRevision: source.stateRevision,
+          payload: structuredClone(source.payload), record: structuredClone(source) };
       }
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -5103,4 +5109,34 @@ for (const fileless of [false, true]) test(`pending public writer disabled keeps
     expect(local.items[itemId].weight).toBe(before.find(record => record.action.body.publicImport).action.body.payload.items[itemId].weight);
     expect(f.stagePosts).toHaveLength(fileless ? 0 : 1); expect(f.errors).toEqual([]);
   } finally { clearHold(); release(); }
+});
+
+for (const language of ["ru", "en"]) for (const fileless of [false, true]) test(`selected demo public copy ${language} ${fileless ? "fileless" : "photo"} retains the chosen template instead of the default after lost ACK`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1", "Public copy remains disabled"); test.setTimeout(150000);
+  const publicSource = guestImportPayload(!fileless), chosenName = `Selected demo ${language}`, listId = `public-demo-state-selected-${language}`, itemKey = `demo-state:selected-${language}`;
+  publicSource.items.source.name = `Exact selected source ${language}`;
+  const other = structuredClone(publicSource); other.items.source.name = "Different default source";
+  const selected = { id: listId, itemKey, publicTemplateKind: "demo", sharedLayoutId: undefined, title: chosenName, language, sourceType: "public-template" };
+  const f = await setup(page, context, { photoEdit: true, language, publicSource, publicSourceConfig: { record: selected,
+    others: [{ ...selected, id: language === "ru" ? "public-demo-state" : "public-demo-state-en", itemKey: language === "ru" ? "demo-state" : "demo-state:en",
+      title: "Default demo", payload: other, visibility: "public", stateRevision: 7, ownerId: "public-owner", layoutOrder: -1 }] } });
+  await synchronize(page, () => true); const posts = f.posts.length;
+  const option = page.locator("#layoutSelect option").filter({ hasText: chosenName });
+  await expect(option).toHaveCount(1, { timeout: 30000 }); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  f.loseFormOwner = true;
+  const button = page.locator('[data-copy-shared-layout]').filter({ visible: true }).first(); await button.click();
+  await expect.poll(() => f.posts.length).toBe(posts + 1);
+  const original = structuredClone(f.posts.at(-1)); expect(original.kind).toBe("list.import");
+  expect(original.body.publicImport.source).toEqual({ kind: "public-template", listId, itemKey, stateRevision: 7, language });
+  expect(original.body.publicImport.sourcePayload).toEqual(publicSource);
+  await expect.poll(() => f.hiddenFormOwner).toBe(original.operationId);
+  await reloadApp(page, { recovery: true }); f.loseFormOwner = false; f.hiddenFormOwner = null;
+  await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText(language === "ru" ? "Подтверждения и актуальная версия сохранены" : "Receipts and the current version are saved");
+  await reloadApp(page);
+  expect(f.posts).toHaveLength(posts + 1); expect(f.stagePosts).toHaveLength(fileless ? 0 : 1);
+  const copied = Object.values(f.payload.items).find(item => item.name === `Exact selected source ${language}`); expect(copied).toBeTruthy();
+  expect(Object.values(f.payload.items).some(item => item.name === "Different default source")).toBe(false);
+  expect(f.posts.at(-1)).toEqual(original); expect(f.errors).toEqual([]);
 });

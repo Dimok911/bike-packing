@@ -9317,7 +9317,17 @@ async function runCausalPublicLayoutCopy(layout, progress) {
   if (layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
   personalSaveRecovery.assertRunning();
   if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
-  const actorId = String(currentUser.id), itemKey = sharedLayoutItemKey(layout.id);
+  // Every demo shares the same display-layout ID. Freeze the actual selected
+  // catalog entry before loading the private editor or awaiting any response.
+  const demoEntry = layout.id === DEMO_SHARED_LAYOUT_ID
+    ? serverConfirmedDemoTemplates.find(entry => (entry.listId || entry.id) === activeDemoTemplateListId) : null;
+  const demoTarget = demoEntry ? publicDemoTemplatePayloadTarget(demoEntry, { fallbackLanguage: uiLanguage,
+    demoListIdForLanguage: demoPublicListIdForLanguage }) : null;
+  if (layout.id === DEMO_SHARED_LAYOUT_ID && (!demoTarget || demoTarget.listId !== activeDemoTemplateListId)) {
+    throw Error("Выбранный demo-шаблон не найден в опубликованном каталоге. Копирование остановлено.");
+  }
+  const sourceLanguage = demoTarget?.language || layout.language || uiLanguage;
+  const actorId = String(currentUser.id), itemKey = demoTarget?.itemKey || sharedLayoutItemKey(layout.id, sourceLanguage);
   progress.update(15, "shared.copyStageLoadingPersonal");
   await ensurePrivateStateForSharedCopy();
   if (String(currentUser?.id) !== actorId) throw Error("Аккаунт изменился. Копирование остановлено.");
@@ -9338,11 +9348,14 @@ async function runCausalPublicLayoutCopy(layout, progress) {
   const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId]
     || Object.values(sourcePayload?.layouts || {})[0];
   if (!sourceLayout || loaded.ok !== true || !loaded.publicTemplatePayload) throw Error("Не удалось прочитать полную исходную версию шаблона.");
+  if (demoTarget && loaded.listId !== demoTarget.listId || loaded.record?.language && loaded.record.language !== sourceLanguage) {
+    throw Error("Полученный шаблон не совпал с выбранным источником. Копирование остановлено.");
+  }
   const selection = preparePersonalPublicImportSelection({ binding: outbox.binding, basePayload: personalBusinessPayload(state),
     baseStateRevision: Number(syncMeta.stateRevision), sourcePayload, layoutIds: [sourceLayout.id],
     layoutNames: [uniqueLayoutName(sourceLayout.name || layout.name)], editMeta: currentCreateMeta(),
     source: { kind: "public-template", itemKey, listId: loaded.listId, stateRevision: loaded.stateRevision,
-      language: loaded.record?.language || layout.language || uiLanguage } });
+      language: sourceLanguage } });
   const previous = clone(state), revision = Number(syncMeta.stateRevision);
   const repeated = findCopiedSharedLayout(layout, sourceLayout);
   if (!(await confirmRepeatedSharedLayoutCopy(repeated, sourceLayout.name || layout.name))) return { cancelled: true };
