@@ -2483,13 +2483,13 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.3.0 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.3.1 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.3.0");
+  assert.equal(manifest.version, "2.3.1");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "5cfb7e78667ecdc375d0d434c44deaf1bef0d1949b10d50dd8e9b9cdf875b2f8");
+  assert.equal(manifest.sha256, "a6f844caa1b8482aa222877b4c3c600ba02faace42d80763b11cbf242acfb139");
   assert.match(asset, /controlledTouchPaging: 1/);
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
@@ -2780,7 +2780,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.3\.0"/);
+  assert.match(fallbackSource, /const VERSION = "2\.3\.1"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
