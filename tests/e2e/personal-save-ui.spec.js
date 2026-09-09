@@ -5311,3 +5311,74 @@ for (const entity of [false, true]) test(`public preparation disabled reader ${e
   expect(rows).toHaveLength(1); expect(JSON.parse(rows[0].text).selection).toEqual(selected);
   expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before); expect(f.errors).toEqual([]);
 });
+
+for (const photos of [false, true]) for (const demo of [false, true]) for (const outcome of ["lost ACK", "quota", "cancel", ...(photos && !demo ? ["large source"] : [])])
+test(`public missing only ${demo ? "demo" : "shared"} ${photos ? "photos" : "fileless"} preserves edited bags and exact additions across ${outcome}`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1", "Own public entity writer is disabled");
+  test.setTimeout(120000);
+  const publicSource = guestImportPayload(photos), payload = replacementPayload(), a = publicSource.layouts["layout-a"].arrangement;
+  if (outcome === "large source") publicSource.items.source.photos = Array.from({ length: 51 }, (_, index) => ({
+    ...publicSource.items.source.photos[0], id: `already-present-source-photo-${index}` }));
+  payload.containers.bag.note = "Моя изменённая сумка"; payload.containers.pocket.custom = { preserve: "private pocket" };
+  payload.items.source.note = "Моя заметка к вещи"; payload.layouts["layout-a"].arrangement.packedItems.source = true;
+  for (const [id, parentId, quantity] of [["missing-root", "bag", 5], ["missing-pocket", "pocket", 4]]) {
+    publicSource.items[id] = { id, name: `Новая вещь ${id}`, quantity: 1, containerId: parentId, custom: { original: id },
+      photos: photos ? [{ ...publicSource.items.source.photos[0], id: `photo-${id}` }] : [] };
+    a.items[id] = parentId; a.itemQuantities[id] = quantity; a.packedItems[id] = true;
+    a.containers[parentId].itemIds.push(id); a.containers[parentId].order.push({ type: "item", id });
+  }
+  const itemKey = demo ? "demo-state:missing-selected" : "shared-layout:missing-selected", listId = demo ? "public-demo-state-missing-selected" : "public-shared-layout-missing-selected";
+  const f = await setup(page, context, { photoEdit: true, payload, publicSource, publicSourceConfig: { record: {
+    id: listId, itemKey, publicTemplateKind: demo ? "demo" : "shared", sharedLayoutId: demo ? undefined : "missing-selected",
+    title: "Источник недостающих вещей", sourceType: demo ? "public-template" : "curated-bikepacker", language: "ru" } } });
+  await synchronize(page, () => Boolean(f.payload.items.source));
+  addConfirmedTreePhotos(f, [["containers", "bag"], ["items", "source"]]); await reloadApp(page);
+  const before = structuredClone(f.payload), option = page.locator("#layoutSelect option").filter({ hasText: "Источник недостающих вещей" });
+  await expect(option).toHaveCount(1); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  await page.locator('[data-copy-root="shared-virtual-container-bag"]').filter({ visible: true }).first().click();
+  await expect(page.locator("#containerPickerDialog")).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+  await page.locator("#containerPickerBoard [data-pick-root-index]").last().click();
+  await expect(page.locator("#confirmAlternateBtn")).toHaveText("Только недостающие");
+  const posts = f.posts.length;
+  if (outcome === "cancel") {
+    await submitForm(page, "#confirmCancelBtn");
+    expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+    expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
+    expect(f.errors).toEqual([]); return;
+  }
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.publicImport?.copy?.mode === "missing")
+        throw new DOMException("Missing copy queue quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  f.loseFormOwner = ["lost ACK", "large source"].includes(outcome);
+  await submitForm(page, "#confirmAlternateBtn");
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+  } else await expect.poll(() => Boolean(f.hiddenFormOwner), { timeout: 30000 }).toBe(true);
+  const retained = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:") && key.endsWith(":action"))
+    .map(([, text]) => JSON.parse(text).action));
+  expect(retained).toHaveLength(1); const original = retained[0];
+  expect(original.body.publicImport.copy.mode).toBe("missing"); expect(original.body.publicImport.sourcePayload).toEqual(publicSource);
+  expect(original.body.publicImport.files).toHaveLength(photos ? 2 : 0);
+  expect(original.body.publicImport.ownerTargets.map(row => row.entityType)).toEqual(["item", "item"]);
+  await reloadApp(page, { recovery: true }); f.loseFormOwner = false; f.hiddenFormOwner = ""; f.guestPhotoUnavailable = true;
+  await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+  await reloadApp(page);
+  expect(f.posts).toHaveLength(posts + 1); expect(f.stagePosts).toHaveLength(photos ? 2 : 0);
+  expect(f.payload.containers).toEqual(before.containers);
+  for (const [id, owner] of Object.entries(before.items)) expect(f.payload.items[id]).toEqual(owner);
+  expect(Object.keys(f.payload.layouts)).toEqual(Object.keys(before.layouts));
+  for (const row of original.body.publicImport.ownerTargets) {
+    const parent = row.sourceId === "missing-root" ? "bag" : "pocket", target = f.payload.layouts["layout-a"].arrangement;
+    expect(target.items[row.targetId]).toBe(parent); expect(target.itemQuantities[row.targetId]).toBe(parent === "bag" ? 5 : 4);
+    expect(target.packedItems[row.targetId]).toBeUndefined(); expect(f.payload.items[row.targetId].custom.original).toBe(row.sourceId);
+  }
+  expect(f.payload.layouts["layout-a"].arrangement.packedItems.source).toBe(true); expect(f.errors).toEqual([]);
+});

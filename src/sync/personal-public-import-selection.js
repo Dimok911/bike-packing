@@ -3,7 +3,7 @@ import { personalGuestSourceLayout } from "./personal-guest-import-source.js";
 import { personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED, personalPublicImportSource } from "./personal-public-import-protocol.js";
-import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, personalPublicEntityGraph } from "./personal-public-entity-plan.js";
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, personalPublicEntitySelectionGraph } from "./personal-public-entity-plan.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const id = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(value)
@@ -69,7 +69,7 @@ export function preparePersonalPublicEntitySelection({ binding, basePayload, bas
   assertListOperationPayload({ ...binding, kind: "list.import", body: { basePayload, baseStateRevision, source, sourcePayload, copy, editMeta } });
   const chosenSource = personalPublicImportSource(source), base = personalGuestBusinessPayload(basePayload), frozen = clone(sourcePayload);
   if (chosenSource.listId === binding.listId) fail();
-  const graph = personalPublicEntityGraph(frozen, copy), reserved = new Set(), allocated = new Set();
+  const graph = personalPublicEntitySelectionGraph(frozen, copy, base), reserved = new Set(), allocated = new Set();
   for (const payload of [frozen, base]) {
     for (const field of ["items", "containers", "layouts"]) for (const [key, owner] of Object.entries(payload[field])) {
       reserved.add(key);

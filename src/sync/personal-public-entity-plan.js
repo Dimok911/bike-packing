@@ -1,6 +1,9 @@
 import { personalImportOwnersPlan, personalGuestBusinessPayload } from "./personal-import-owners-plan.js";
 import { personalGuestSourceLayout } from "./personal-guest-import-source.js";
 import { assertListOperationJsonValue } from "./list-operation-payload.js";
+import { personalArchiveJson } from "./personal-archive-import-protocol.js";
+import { planPublicCopyMissingItems, summarizePublicCopyDuplicates } from "../public/copy-duplicates.js";
+import { hasPrivateSyncBlockedPublicOrigin } from "../public/copy-public-to-private.js";
 
 export const PERSONAL_PUBLIC_ENTITY_COPY_ENABLED = false;
 export const PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY = "personalCausalPublicEntitiesV1";
@@ -82,10 +85,49 @@ export function personalPublicEntityGraph(sourcePayload, copy) {
   return { layout, selectedOwners, quantities };
 }
 
+// Preserve the established "Missing only" policy: add missing things into
+// matching existing bags. Never replace an edited bag/item or invent a bag.
+// Placement mirrors are built solely from the chosen canonical layouts.
+export function personalPublicMissingPreview({ currentPayload, sourcePayload, sourceLayoutId, sourceId, targetLayoutId }) {
+  const independent = { version: 1, mode: "independent", sourceLayoutId,
+    entries: [{ entityType: "container", sourceId, includeContents: true }],
+    destination: { layoutId: targetLayoutId, containerId: "", index: null } };
+  const graph = personalPublicEntityGraph(sourcePayload, independent), base = personalGuestBusinessPayload(currentPayload), target = base.layouts[targetLayoutId];
+  if (!target || target.locked) fail();
+  const current = arrangementFor(base, target), sourceSnapshot = { rootId: sourceId, containers: {}, items: {} };
+  for (const row of graph.selectedOwners) {
+    if (row.entityType === "container") {
+      const placement = graph.layout.arrangement.containers[row.sourceId];
+      sourceSnapshot.containers[row.sourceId] = { ...clone(sourcePayload.containers[row.sourceId]), parentId: placement.parentId,
+        childIds: clone(placement.childIds), itemIds: clone(placement.itemIds), order: clone(placement.order) };
+    }
+    else sourceSnapshot.items[row.sourceId] = { ...clone(sourcePayload.items[row.sourceId]), quantity: graph.quantities[row.sourceId] };
+  }
+  const items = Object.fromEntries([...current.items].map(id => [id, { ...clone(base.items[id]), quantity: current.quantities[id] }]));
+  const options = { sourceSnapshot, targetContainerIds: [...current.containers], targetItemIds: [...current.items],
+    containers: base.containers, items, hasPrivateSyncBlockedPublicOrigin };
+  const missing = planPublicCopyMissingItems(options), duplicates = summarizePublicCopyDuplicates(options);
+  return { ...missing, duplicates, sourceSnapshot, graph,
+    copy: { ...independent, version: 2, mode: "missing", missingItems: clone(missing.missingItems) } };
+}
+
+export function personalPublicEntitySelectionGraph(sourcePayload, copy, currentPayload) {
+  if (copy?.version === 1) return personalPublicEntityGraph(sourcePayload, copy);
+  if (!exact(copy, ["version", "mode", "sourceLayoutId", "entries", "destination", "missingItems"])
+    || copy.version !== 2 || copy.mode !== "missing" || !Array.isArray(copy.entries) || copy.entries.length !== 1
+    || !exact(copy.entries[0], ["entityType", "sourceId", "includeContents"]) || copy.entries[0].entityType !== "container"
+    || copy.entries[0].includeContents !== true || !Array.isArray(copy.missingItems) || !copy.missingItems.length) fail();
+  const preview = personalPublicMissingPreview({ currentPayload, sourcePayload, sourceLayoutId: copy.sourceLayoutId,
+    sourceId: copy.entries[0].sourceId, targetLayoutId: copy.destination?.layoutId });
+  if (personalArchiveJson(preview.copy) !== personalArchiveJson(copy)) fail();
+  const selected = new Set(copy.missingItems.map(entry => entry.sourceItemId));
+  return { ...preview.graph, selectedOwners: preview.graph.selectedOwners.filter(row => row.entityType === "item" && selected.has(row.sourceId)) };
+}
+
 // One deterministic final state, retaining the original complete public source.
 // No clocks, new IDs, network calls, or writes to existing private owners.
 export function personalPublicEntityPlan({ currentPayload, sourcePayload, copy, ownerTargets, photoTargets, editMeta = {}, listId, operationId }, files = []) {
-  const graph = personalPublicEntityGraph(sourcePayload, copy), base = personalGuestBusinessPayload(currentPayload);
+  const base = personalGuestBusinessPayload(currentPayload), graph = personalPublicEntitySelectionGraph(sourcePayload, copy, base);
   const destination = copy.destination, target = base.layouts[destination.layoutId];
   if (!target || target.locked || !Array.isArray(ownerTargets) || ownerTargets.some(owner => owner.reuse !== false)) fail();
   const current = arrangementFor(base, target);
@@ -111,9 +153,14 @@ export function personalPublicEntityPlan({ currentPayload, sourcePayload, copy, 
     }
     a.containers[containerId] = row; return containerId;
   };
-  const inserted = copy.entries.map(entry => ({ type: entry.entityType, id: entry.entityType === "item"
+  const inserted = copy.mode === "missing" ? [] : copy.entries.map(entry => ({ type: entry.entityType, id: entry.entityType === "item"
     ? addItem(entry.sourceId, destination.containerId) : addContainer(entry.sourceId, destination.containerId, entry.includeContents) }));
-  if (destination.containerId) {
+  if (copy.mode === "missing") {
+    for (const entry of copy.missingItems) {
+      const row = a.containers[entry.targetContainerId], itemId = addItem(entry.sourceItemId, entry.targetContainerId);
+      row.itemIds.push(itemId); row.order.push({ type: "item", id: itemId });
+    }
+  } else if (destination.containerId) {
     const row = a.containers[destination.containerId];
     for (const entry of inserted) row[entry.type === "item" ? "itemIds" : "childIds"].push(entry.id);
     if (destination.index !== null && destination.index > row.order.length) fail();

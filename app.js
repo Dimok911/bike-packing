@@ -752,7 +752,7 @@ import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-protocol.js";
-import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } from "./src/sync/personal-public-entity-plan.js";
+import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, personalPublicMissingPreview } from "./src/sync/personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./src/sync/personal-public-import-protocol.js";
 import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } from "./src/sync/personal-public-import-selection.js";
 import { createPersonalPublicImportSelectionStore } from "./src/sync/personal-public-import-selection-store.js";
@@ -9387,18 +9387,30 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
     capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta(); await queuedPersonalSave();
     if (outbox.hasPending() || !sameJson(initial, personalSaveContext())) throw Error("Подготовка личного списка ещё не подтверждена.");
   }
-  const selection = preparePersonalPublicEntitySelection({ binding: outbox.binding, basePayload: personalBusinessPayload(state),
-    baseStateRevision: Number(syncMeta.stateRevision), source: chosen.source, sourcePayload: chosen.sourcePayload, editMeta: currentCreateMeta(),
+  const selectionInput = { binding: outbox.binding, basePayload: personalBusinessPayload(state),
+    baseStateRevision: Number(syncMeta.stateRevision), source: chosen.source, sourcePayload: chosen.sourcePayload, editMeta: currentCreateMeta() };
+  const missingPreview = entityType === "container" && includeContents ? personalPublicMissingPreview({ currentPayload: selectionInput.basePayload,
+    sourcePayload: chosen.sourcePayload, sourceLayoutId: chosen.sourceLayoutId, sourceId, targetLayoutId }) : null;
+  let independentSelection, missingSelection, independentFailure, missingFailure;
+  try { independentSelection = preparePersonalPublicEntitySelection({ ...selectionInput,
     copy: { version: 1, mode: "independent", sourceLayoutId: chosen.sourceLayoutId,
-      entries: [{ entityType, sourceId, includeContents }], destination: { layoutId: targetLayoutId, containerId: targetContainerId || "", index: targetIndex } } });
-  const previous = clone(state), revision = Number(syncMeta.stateRevision), selectedSnapshot = { rootId: entityType === "container" ? sourceId : "", containers: {}, items: {} };
-  for (const row of selection.ownerTargets) {
+      entries: [{ entityType, sourceId, includeContents }], destination: { layoutId: targetLayoutId, containerId: targetContainerId || "", index: targetIndex } } }); }
+  catch (error) { independentFailure = error; }
+  if (missingPreview?.canCopyMissingItems) {
+    try { missingSelection = preparePersonalPublicEntitySelection({ ...selectionInput, copy: missingPreview.copy }); }
+    catch (error) { missingFailure = error; }
+  }
+  if (!independentSelection && !missingSelection) throw independentFailure || missingFailure;
+  const previous = clone(state), revision = Number(syncMeta.stateRevision), selectedSnapshot = missingPreview?.sourceSnapshot
+    || { rootId: entityType === "container" ? sourceId : "", containers: {}, items: {} };
+  if (!missingPreview) for (const row of independentSelection.ownerTargets) {
     const field = row.entityType === "item" ? "items" : "containers"; selectedSnapshot[field][row.sourceId] = clone(chosen.sourcePayload[field][row.sourceId]);
   }
   const choice = entityType === "item" ? await confirmPublicCopyDuplicates(targetLayoutId, selectedSnapshot, chosen.sourceName) ? "copy-all" : "cancel"
-    : await chooseContainerTreeCopyToLayoutAction(targetLayoutId, selectedSnapshot, chosen.sourceName, { publicSource: true });
+    : await chooseContainerTreeCopyToLayoutAction(targetLayoutId, selectedSnapshot, chosen.sourceName, { publicSource: true, publicCopyPreview: missingPreview });
   if (choice === "cancel") return { cancelled: true };
-  if (choice !== "copy-all") throw Error("Добавление только недостающих записей ещё проходит переход. Выбранный состав сохранён в окне копирования.");
+  const selection = choice === "copy-all" ? independentSelection : choice === "copy-missing" ? missingSelection : null;
+  if (!selection) throw (choice === "copy-all" ? independentFailure : missingFailure) || Error("Выбранный состав копии недоступен. Исходный выбор сохранён.");
   if (!sameJson(initial, personalSaveContext()) || !sameJson(previous, state) || revision !== Number(syncMeta.stateRevision)
     || !sameJson(chosen, personalPublicPickerSource)) throw Error("Личный список или выбор изменился во время подтверждения. Копирование остановлено.");
   const source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext: personalSaveContext }), inventory: null };
@@ -11087,11 +11099,11 @@ async function confirmContainerTreeCopyToLayout(targetLayoutId, sourceSnapshot, 
   return false;
 }
 
-async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false } = {}) {
+async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnapshot, sourceName = "", { publicSource = false, publicCopyPreview = null } = {}) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!targetLayout || !sourceSnapshot) return "cancel";
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
-  const publicSourceSnapshot = publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
+  const publicSourceSnapshot = publicCopyPreview?.sourceSnapshot || publicCopySnapshotFromSourceSnapshot(sourceSnapshot);
   const sourceIsPublicCopy = publicSource ||
     snapshotHasPrivateSyncBlockedPublicOrigin(sourceSnapshot) ||
     snapshotHasLocalPublicCopyOrigin(sourceSnapshot);
@@ -11118,9 +11130,9 @@ async function chooseContainerTreeCopyToLayoutAction(targetLayoutId, sourceSnaps
     showToast(localText("Copy skipped: the elements are already in the target layout.", "Копирование пропущено: элементы уже есть в целевой укладке."), "success");
     return "cancel";
   }
-  const duplicates = publicCopyDuplicateSummaryForSnapshot(targetLayoutId, publicSourceSnapshot);
+  const duplicates = publicCopyPreview?.duplicates || publicCopyDuplicateSummaryForSnapshot(targetLayoutId, publicSourceSnapshot);
   if (!duplicates.containerIds.length && !duplicates.itemIds.length) return "copy-all";
-  const missingPlan = publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
+  const missingPlan = publicCopyPreview || publicCopyMissingItemPlanForSnapshot(targetLayoutId, publicSourceSnapshot);
   const duplicate = await askConfirmDialog({
     title: localText("Already copied to this layout", "Уже скопировано в эту укладку"),
     text: localText(`“${sourceName || "Element"}” is already in “${targetLayout.name || "Layout"}” as a demo/template copy. Create another separate copy?`, `«${sourceName || "Элемент"}» уже есть в укладке «${targetLayout.name || "Укладка"}» как копия из demo/shared. Создать ещё одну отдельную копию?`),
