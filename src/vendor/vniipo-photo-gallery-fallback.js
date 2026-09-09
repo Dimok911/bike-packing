@@ -1,13 +1,14 @@
 (function installVniipoPhotoGallery(global) {
   "use strict";
 
-  const VERSION = "2.2.1";
+  const VERSION = "2.4.0";
   const CONTRACT_VERSION = 2;
   const bindings = new WeakMap();
   const edgePresentations = new WeakMap();
   const styleId = "vniipo-photo-gallery-v2-styles";
   const fullscreenControlStyleId = "vniipo-photo-gallery-v2-fullscreen-controls";
   const edgeStyleId = "vniipo-photo-gallery-v2-edge-content";
+  const pagingStyleId = "vniipo-photo-gallery-v2-controlled-paging";
 
   const defaults = Object.freeze({
     gallery: "[data-photo-gallery]",
@@ -328,13 +329,29 @@
     };
     const onTouchCancel = () => clear();
 
-    track?.addEventListener?.("touchstart", onTouchStart, { passive: true });
-    track?.addEventListener?.("touchmove", onTouchMove, { passive: false });
-    track?.addEventListener?.("touchend", onTouchEnd, { passive: false });
-    track?.addEventListener?.("touchcancel", onTouchCancel, { passive: true });
+    if (!options.manual) {
+      track?.addEventListener?.("touchstart", onTouchStart, { passive: true });
+      track?.addEventListener?.("touchmove", onTouchMove, { passive: false });
+      track?.addEventListener?.("touchend", onTouchEnd, { passive: false });
+      track?.addEventListener?.("touchcancel", onTouchCancel, { passive: true });
+    }
 
     return {
       clear,
+      setOffset(index, offset) {
+        if (destroyed || !options.manual) return;
+        const content = getSlides()[index]?.firstElementChild;
+        if (!offset || !content?.style) { clear(); return; }
+        if (gesture?.content !== content) {
+          clear();
+          const base = translation(content);
+          if (!base) return;
+          gesture = { content, base, previousTranslate: content.style.translate || "" };
+          edgePresentations.set(content, { previousTranslate: gesture.previousTranslate, clear });
+        }
+        content.classList?.add("vpg-edge-content-dragging");
+        content.style.translate = `${gesture.base.x + clamp(offset, -maxOffset, maxOffset)}px ${gesture.base.y}px`;
+      },
       destroy() {
         if (destroyed) return;
         destroyed = true;
@@ -347,11 +364,272 @@
     };
   }
 
+  function createControlledTouchPaging(options) {
+    const { track, slides, edge } = options;
+    const win = options.windowRef || global;
+    const fractional = options.touchPagingPresentation === "transform";
+    const doc = track.ownerDocument || global.document;
+    let strip = null;
+    const placeholders = [];
+    if (fractional) {
+      strip = doc.createElement("div");
+      strip.className = "vpg-controlled-strip";
+      for (const [property, value] of Object.entries({
+        display: "flex", position: "relative", flex: "0 0 100%", width: "100%", height: "100%",
+        "min-width": "0", "box-sizing": "border-box", margin: "0", padding: "0", border: "0",
+        "will-change": "transform", transition: "none", "scroll-snap-type": "none",
+      })) strip.style.setProperty(property, value, "important");
+      track.insertBefore(strip, slides[0] || null);
+      slides.forEach(slide => {
+        const marker = doc.createComment("vpg-slide");
+        slide.parentNode.insertBefore(marker, slide);
+        placeholders.push([slide, marker]);
+        strip.appendChild(slide);
+      });
+    }
+    const raf = options.requestAnimationFrame || win.requestAnimationFrame?.bind(win) || ((fn) => setTimeout(fn, 16));
+    const caf = options.cancelAnimationFrame || win.cancelAnimationFrame?.bind(win) || clearTimeout;
+    const now = options.now || (() => win.performance?.now?.() ?? Date.now());
+    let offsets = [], viewportWidth = 360;
+    const measure = () => {
+      viewportWidth = Number(track.clientWidth) || 360;
+      offsets = slides.map((slide, index) => resolveSlideLeft(strip || track, slide, index));
+    };
+    measure();
+    const leftAt = (index) => offsets[index] || 0;
+    const last = () => Math.max(0, slides.length - 1);
+    const max = () => leftAt(last());
+    const resistance = clamp(options.edgeResistance ?? 0.24, 0.05, 0.5);
+    const edgeLimit = clamp(options.edgeMaxOffset ?? 44, 12, 72);
+    let position = leftAt(clamp(options.initialIndex, 0, last()));
+    let frame = null, generation = 0, gesture = null, settling = false, destroyed = false;
+    let suppressClick = false, pending = false;
+    const nearest = () => {
+      let index = 0, distance = Infinity;
+      slides.forEach((slide, i) => {
+        const next = Math.abs(leftAt(i) - position);
+        if (next < distance) { distance = next; index = i; }
+      });
+      return index;
+    };
+    function paint(value, notify = true) {
+      const token = generation;
+      position = value;
+      if (fractional) strip.style.setProperty("transform", `translate3d(${-position}px, 0, 0)`, "important");
+      else {
+        track.scrollLeft = clamp(position, 0, max());
+        edge.setOffset(position < 0 ? 0 : last(), position < 0 ? -position : position > max() ? max() - position : 0);
+      }
+      const index = nearest();
+      options.onIndex(index, notify);
+      if (!destroyed && token === generation) options.onTouchPagingPosition?.({ index, position, dragging: Boolean(gesture), settling });
+    }
+    function queue(value) {
+      position = value;
+      pending = true;
+      if (frame !== null) return;
+      const token = generation;
+      frame = raf(() => {
+        if (destroyed || token !== generation) return;
+        frame = null; pending = false;
+        paint(position);
+      });
+    }
+    function stop() {
+      const token = ++generation;
+      if (frame !== null) caf(frame);
+      frame = null;
+      settling = false;
+      gesture = null;
+      // Flush before consumer pinch handlers select their image. Clear pending
+      // first so a callback can safely reenter goTo/stop/destroy.
+      if (pending) { pending = false; paint(position); }
+      if (destroyed || token !== generation) return nearest();
+      // Read geometry once at an interaction boundary, never after every frame's
+      // scroll/style writes. Consumers can resize between gestures/navigation.
+      measure();
+      // A consumer can proxy a drag from navigation controls outside the track.
+      // Adopt an actual external scroll write, but preserve logical edge offset
+      // when physical scrollLeft still equals our own clamped painted position.
+      if (!fractional) {
+        const actual = clamp(track.scrollLeft, 0, max());
+        if (Math.abs(actual - clamp(position, 0, max())) > 1) {
+          position = actual;
+          edge.clear();
+        }
+      }
+      return nearest();
+    }
+    function goTo(index, behavior = "smooth", notify = true, releaseVelocity = null) {
+      if (destroyed) return nearest();
+      const token = generation + 1;
+      stop();
+      if (destroyed || token !== generation) return nearest();
+      const target = clamp(index, 0, last()), to = leftAt(target), from = position;
+      const reduced = options.reducedMotion ?? win.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      const finish = () => {
+        settling = false; frame = null;
+        paint(to, notify);
+        if (token === generation && !destroyed) options.onTouchPagingSettle?.({ index: target, position });
+      };
+      if (behavior !== "smooth" || reduced || Math.abs(to - from) < 0.5) { finish(); return target; }
+      settling = true;
+      const distance = Math.abs(to - from);
+      const speed = Math.max(0, (Number(releaseVelocity) || 0) * Math.sign(to - from));
+      // Match the release speed instead of always applying a new 260ms brake.
+      // Hermite's bounded starting slope keeps the path monotonic and ends at
+      // rest. Programmatic navigation and edge return use a brisk ease-out.
+      const duration = releaseVelocity === null || from < 0 || from > max()
+        ? clamp(100 + distance * 0.25, 100, 220)
+        : clamp(distance / Math.max(0.8, speed) * 1.4, 70, 220);
+      const slope = releaseVelocity === null || from < 0 || from > max()
+        ? 2.5 : clamp(speed * duration / distance, 0, 2.5);
+      const started = now();
+      const step = () => {
+        if (destroyed || token !== generation) return;
+        const progress = clamp((now() - started) / duration, 0, 1);
+        if (progress >= 1) { finish(); return; }
+        const eased = slope * progress + (3 - 2 * slope) * progress ** 2 + (slope - 2) * progress ** 3;
+        paint(from + (to - from) * eased, notify);
+        if (!destroyed && token === generation) frame = raf(step);
+      };
+      frame = raf(step);
+      return target;
+    }
+    const allowed = (event) => options.canTouchPage?.(event) !== false;
+    const point = (touches, id) => Array.from(touches || []).find((touch) => touch.identifier === id);
+    const start = (event) => {
+      if (destroyed) return;
+      const token = generation + 1, index = stop();
+      if (destroyed || token !== generation) return;
+      suppressClick = false;
+      options.onTouchPagingStart?.({ index, position, event });
+      if (destroyed || token !== generation || event.touches?.length !== 1 || !allowed(event)) return;
+      const p = event.touches[0];
+      gesture = { id: p.identifier, x: p.clientX, y: p.clientY, base: position, index,
+        rawBase: position < 0 ? position / resistance : position > max() ? max() + (position - max()) / resistance : position,
+        lastX: p.clientX, lastTime: now(), velocity: 0, axis: null };
+    };
+    const move = (event) => {
+      if (!gesture) return;
+      if (event.touches?.length !== 1 || !allowed(event)) { stop(); return; }
+      const p = point(event.touches, gesture.id);
+      if (!p) { stop(); return; }
+      const dx = p.clientX - gesture.x, dy = p.clientY - gesture.y;
+      if (!gesture.axis && Math.hypot(dx, dy) >= 7) gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.05 ? "x" : "y";
+      if (gesture.axis !== "x") return;
+      if (event.cancelable !== false) event.preventDefault?.();
+      suppressClick = true;
+      const time = now(), elapsed = time - gesture.lastTime;
+      if (elapsed > 0) gesture.velocity = (gesture.lastX - p.clientX) / elapsed;
+      gesture.lastX = p.clientX; gesture.lastTime = time;
+      let next = gesture.rawBase - dx;
+      if (next < 0) next = -Math.min(edgeLimit, -next * resistance);
+      else if (next > max()) next = max() + Math.min(edgeLimit, (next - max()) * resistance);
+      next = clamp(next, gesture.index === 0 ? -edgeLimit : leftAt(gesture.index - 1),
+        gesture.index === last() ? max() + edgeLimit : leftAt(gesture.index + 1));
+      if (fractional) queue(next);
+      else paint(next);
+    };
+    const end = (event) => {
+      if (!gesture) return;
+      const ended = gesture;
+      gesture = null;
+      if (event.touches?.length || !allowed(event)) { stop(); return; }
+      if (ended.axis !== "x") { goTo(nearest(), "smooth"); return; }
+      if (event.cancelable !== false) event.preventDefault?.();
+      const delta = position - ended.base;
+      const fast = now() - ended.lastTime <= 100 && Math.abs(ended.velocity) >= 0.35 && Math.abs(delta) >= 12;
+      const far = Math.abs(delta) >= Math.max(28, viewportWidth * 0.22);
+      const direction = fast ? Math.sign(ended.velocity) : Math.sign(delta);
+      const target = fast || far ? ended.index + direction : nearest();
+      const velocity = now() - ended.lastTime <= 100 ? ended.velocity : 0;
+      goTo(clamp(target, Math.max(0, ended.index - 1), Math.min(last(), ended.index + 1)), "smooth", true, velocity);
+    };
+    const cancel = () => {
+      // A pinch already owns the gesture after multitouch takeover. Its cancel
+      // must not snap the track or emit a spurious paging Settle callback.
+      if (!gesture && !settling) return;
+      const index = stop(); goTo(index, "auto");
+    };
+    const click = (event) => {
+      if (!suppressClick) return;
+      suppressClick = false; event.preventDefault?.(); event.stopImmediatePropagation?.();
+    };
+    const listeners = [["touchstart", start, { capture: true, passive: true }],
+      ["touchmove", move, { capture: true, passive: false }],
+      ["touchend", end, { capture: true, passive: false }],
+      ["touchcancel", cancel, { capture: true, passive: true }],
+      ["click", click, { capture: true }]];
+    const targets = new Map(), handled = new WeakSet();
+    function bindTarget(target) {
+      if (!target?.addEventListener || destroyed) return () => {};
+      if (targets.has(target)) return targets.get(target);
+      const touchAction = fractional && target !== track && target.style?.setProperty
+        ? [target.style.getPropertyValue("touch-action"), target.style.getPropertyPriority("touch-action")] : null;
+      if (touchAction) target.style.setProperty("touch-action", "none", "important");
+      const handlers = listeners.map(([type, fn, config]) => {
+        const handler = event => {
+          if (handled.has(event)) return;
+          handled.add(event);
+          fn(event);
+        };
+        target.addEventListener(type, handler, config);
+        return [type, handler, config];
+      });
+      const unbind = () => {
+        if (targets.get(target) !== unbind) return;
+        handlers.forEach(([type, fn, config]) => target.removeEventListener(type, fn, config));
+        targets.delete(target);
+        if (touchAction) {
+          if (touchAction[0]) target.style.setProperty("touch-action", ...touchAction);
+          else target.style.removeProperty("touch-action");
+        }
+        if (!destroyed) stop();
+      };
+      targets.set(target, unbind);
+      return unbind;
+    }
+    bindTarget(track);
+    function refreshLayout() {
+      if (destroyed) return nearest();
+      const index = nearest();
+      return goTo(index, "instant");
+    }
+    const Resize = options.ResizeObserver || win.ResizeObserver;
+    const observer = fractional && Resize ? new Resize(() => {
+      if (!destroyed && Number(track.clientWidth) !== viewportWidth) refreshLayout();
+    }) : null;
+    observer?.observe(track);
+    // Initialization has no callbacks: applications often finish declaring their
+    // pinch/image state only after createFullscreenSwitcher has returned.
+    track.scrollLeft = fractional ? 0 : clamp(position, 0, max());
+    if (fractional) strip.style.setProperty("transform", `translate3d(${-position}px, 0, 0)`, "important");
+    return { goTo, stop, bindTarget, refreshLayout,
+      get viewportWidth() { return viewportWidth; },
+      get position() { return position; }, get isSettling() { return settling; },
+      destroy() {
+        if (destroyed) return;
+        destroyed = true; generation++;
+        if (frame !== null) caf(frame);
+        frame = null; pending = false; gesture = null; settling = false;
+        observer?.disconnect();
+        targets.forEach(unbind => unbind());
+        edge.clear();
+        placeholders.forEach(([slide, marker]) => {
+          if (slide.parentNode === strip && marker.parentNode) marker.parentNode.insertBefore(slide, marker);
+          marker.remove();
+        });
+        strip?.remove();
+      } };
+  }
+
   function createFullscreenSwitcher(options = {}) {
     const root = options.root;
     const track = options.track;
     const slides = Array.from(options.slides || track?.children || []);
     const directDesktop = options.directDesktop ?? isDirectDesktop(options.windowRef || global);
+    const controlled = options.touchPaging === "controlled" && !directDesktop;
     let activeIndex = clamp(options.initialIndex, 0, Math.max(0, slides.length - 1));
     let presentedIndex = activeIndex;
     let presentationGeneration = 0;
@@ -359,6 +637,8 @@
     const waitForReady = options.waitForReady === true;
     let destroyed = false;
     let edgeRubberBand = null;
+    let paging = null;
+    const pagingStyles = [];
 
     const doc = root?.ownerDocument || track?.ownerDocument || global.document;
     ensureStyles(doc);
@@ -367,6 +647,27 @@
     root?.classList?.toggle("vpg-direct-desktop", directDesktop);
     track?.classList?.add("vpg-fullscreen-track");
     slides.forEach((slide) => slide.classList?.add("vpg-fullscreen-slide"));
+    if (controlled) {
+      root?.classList?.add("vpg-controlled-touch");
+      // Inline important also wins against consumer-specific important rules.
+      // Restore exact values/priorities when this binding is destroyed.
+      for (const [property, value] of Object.entries({
+        "overflow-x": options.touchPagingPresentation === "transform" ? "clip" : "hidden",
+        "overflow-y": options.touchPagingPresentation === "transform" ? "clip" : "hidden", "touch-action": "none",
+        "scroll-snap-type": "none", "scroll-behavior": "auto", "overscroll-behavior-x": "none", "overscroll-behavior-y": "none",
+        "-webkit-overflow-scrolling": "auto",
+      })) {
+        if (!track?.style?.setProperty) continue;
+        pagingStyles.push([property, track.style.getPropertyValue(property), track.style.getPropertyPriority(property)]);
+        track.style.setProperty(property, value, "important");
+      }
+      if (doc?.head && doc.createElement && !doc.getElementById?.(pagingStyleId)) {
+        const style = doc.createElement("style");
+        style.id = pagingStyleId;
+        style.textContent = ".vpg-fullscreen.vpg-controlled-touch .vpg-fullscreen-track{overflow:hidden!important;scroll-snap-type:none!important;scroll-behavior:auto!important;touch-action:none!important;overscroll-behavior:none!important;-webkit-overflow-scrolling:auto!important}";
+        doc.head.appendChild(style);
+      }
+    }
 
     function renderPresentation() {
       slides.forEach((slide, candidate) => {
@@ -389,7 +690,7 @@
       activeIndex = clamp(index, 0, Math.max(0, slides.length - 1));
       if (activeIndex !== previousIndex) {
         cancelPresentation();
-        edgeRubberBand?.clear();
+        if (!controlled) edgeRubberBand?.clear();
       }
       if (!directDesktop || !waitForReady) presentedIndex = activeIndex;
       renderPresentation();
@@ -443,6 +744,7 @@
 
     function scrollActiveIntoPlace(behavior = "auto", force = false) {
       if (destroyed || directDesktop || !track || !slides[activeIndex]) return activeIndex;
+      if (paging) return paging.goTo(activeIndex, behavior);
       const left = activeSlideLeft();
       track.scrollTo?.({ left, behavior });
       if (force && Math.abs((Number(track.scrollLeft) || 0) - left) > 1) {
@@ -452,6 +754,7 @@
     }
 
     function goTo(index, behavior = "smooth", notify = true) {
+      if (paging) return paging.goTo(index, behavior, notify);
       const next = render(index, notify);
       scrollActiveIntoPlace(behavior);
       return next;
@@ -462,6 +765,7 @@
       slides,
       getActiveIndex: () => activeIndex,
       disabled: directDesktop,
+      manual: controlled,
       canRubberBand: options.canRubberBand,
       getComputedStyle: options.getComputedStyle,
       resistance: options.edgeResistance,
@@ -469,13 +773,22 @@
       setTimeout: options.setTimeout,
       clearTimeout: options.clearTimeout,
     });
+    if (controlled) paging = createControlledTouchPaging({
+      ...options, track, slides, edge: edgeRubberBand,
+      onIndex: (index, notify) => { if (index !== activeIndex) render(index, notify); },
+    });
 
     function destroy() {
       if (destroyed) return;
       destroyed = true;
       cancelPresentation();
+      paging?.destroy();
+      pagingStyles.forEach(([property, value, priority]) => {
+        if (value) track.style.setProperty(property, value, priority);
+        else track.style.removeProperty(property);
+      });
       edgeRubberBand?.destroy();
-      root?.classList?.remove("vpg-fullscreen", "vpg-direct-desktop");
+      root?.classList?.remove("vpg-fullscreen", "vpg-direct-desktop", "vpg-controlled-touch");
       track?.classList?.remove("vpg-fullscreen-track");
       slides.forEach((slide) => {
         slide.classList?.remove("vpg-fullscreen-slide", "vpg-fullscreen-active");
@@ -486,6 +799,14 @@
     render(activeIndex, false);
     return {
       directDesktop,
+      touchPaging: controlled ? "controlled" : "native",
+      touchPagingPresentation: controlled && options.touchPagingPresentation === "transform" ? "transform" : "scroll",
+      get position() { return paging?.position ?? Number(track?.scrollLeft || 0); },
+      get isSettling() { return paging?.isSettling ?? false; },
+      stopTouchPaging: () => paging?.stop(),
+      bindTouchPagingTarget: (element) => paging?.bindTarget(element) || (() => {}),
+      refreshTouchPagingLayout: () => paging?.refreshLayout(),
+      get viewportWidth() { return paging?.viewportWidth ?? Number(track?.clientWidth || 0); },
       get activeIndex() { return activeIndex; },
       get presentedIndex() { return presentedIndex; },
       activate,
@@ -1273,6 +1594,7 @@
       fullscreenEdgeSettling: 2,
       fullscreenEdgeRubberBand: 2,
       readyFullscreenNavigation: 1,
+      controlledTouchPaging: 2,
     }),
     bindInlineGalleries,
     createFullscreenSourceController,

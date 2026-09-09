@@ -64,7 +64,7 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
     const dialog = page.locator("dialog.photo-lightbox");
     await expect(dialog).toBeVisible();
     if (isMobile) {
-      await dialog.locator(".photo-lightbox-track").evaluate((track) => { track.scrollLeft = track.clientWidth; });
+      await dialog.locator('[data-photo-lightbox-dot="1"]').click();
       await expect(dialog.locator('[data-photo-lightbox-dot="1"]')).toHaveAttribute("aria-current", "true");
     } else {
       await dialog.getByRole("button", { name: /Next photo|Следующее фото/, exact: true }).click();
@@ -115,7 +115,7 @@ test(`cold fullscreen ${sourceMode} paging keeps ${knownDimensions ? "known" : "
     await next.evaluate((image) => { window.loadedPhoto = image; });
     for (const index of [0, 1]) {
       if (isMobile) {
-        await dialog.locator(".photo-lightbox-track").evaluate((track, i) => { track.scrollLeft = track.clientWidth * i; }, index);
+        await dialog.locator(`[data-photo-lightbox-dot="${index}"]`).click();
       } else {
         await dialog.getByRole("button", { name: index ? "Следующее фото" : "Предыдущее фото", exact: true }).click();
       }

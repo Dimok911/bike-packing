@@ -2487,13 +2487,14 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.2.1 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.4.0 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.2.1");
+  assert.equal(manifest.version, "2.4.0");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "498ce3707cf3368e5ac93355ca396441f597292f9d689ec74a492c6cc11a0638");
+  assert.equal(manifest.sha256, "75c45ba052c586ab9209fd8a8a08b0e9e3ad62314df985d2c88be3496522e768");
+  assert.match(asset, /controlledTouchPaging: 2/);
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2582,12 +2583,8 @@ test("CRITICAL offline-photos: Bikepacking adapter assigns only its opaque remot
   assert.equal("thumbBlob" in task, false);
 });
 
-test("CRITICAL offline-photos: fullscreen opens on the preview before adapter hydration", () => {
+test("CRITICAL offline-photos: fullscreen local preparation keeps cancellation guards and disables network prefetch", () => {
   const source = readProjectFile("src/ui/photo-gallery.js");
-  const awaitIndex = source.indexOf("await prepareFullscreenSource(entry)");
-  const dialogIndex = source.indexOf('document.createElement("dialog")');
-  assert.ok(awaitIndex >= 0);
-  assert.ok(dialogIndex >= 0 && dialogIndex < awaitIndex);
   assert.match(source, /if \(openRequestId !== lightboxOpenRequestId\) return;/);
   assert.match(source, /closePhotoLightbox\(\{ preserveOpenRequest: true \}\)/);
   assert.match(source, /prefetchAdjacent:\s*false/);
@@ -2716,6 +2713,27 @@ test("CRITICAL offline-photos: shared lightbox switches instantly on desktop and
   assert.match(styles, /\.photo-lightbox-dots\s*\{[\s\S]*position:\s*fixed;/);
 });
 
+test("CRITICAL offline-photos: old stable cannot bypass controlled fullscreen paging", () => {
+  const currentRuntime = globalThis.VniipoPhotoGallery;
+  let legacyCalls = 0;
+  globalThis.VniipoPhotoGallery = {
+    capabilities: { fullscreenEdgeRubberBand: 2, readyFullscreenNavigation: 1, controlledTouchPaging: 1 },
+    createFullscreenSwitcher() { legacyCalls += 1; return null; }
+  };
+  try {
+    const controller = createSharedFullscreenSwitcher({
+      directDesktop: false, touchPaging: "controlled", slides: [{}, {}],
+      track: { scrollLeft: 0, clientWidth: 440 }
+    });
+    assert.equal(legacyCalls, 0);
+    assert.equal(controller.touchPaging, "controlled");
+    assert.equal(controller.isSettling, false);
+    controller.destroy();
+  } finally {
+    globalThis.VniipoPhotoGallery = currentRuntime;
+  }
+});
+
 test("CRITICAL offline-photos: old stable cannot bypass shared ready navigation", async () => {
   const currentRuntime = globalThis.VniipoPhotoGallery;
   let legacyCalls = 0;
@@ -2766,7 +2784,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.2\.1"/);
+  assert.match(fallbackSource, /const VERSION = "2\.4\.0"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;

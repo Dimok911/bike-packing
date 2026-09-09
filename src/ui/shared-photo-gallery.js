@@ -19,7 +19,8 @@ export function loadSharedPhotoGallery() {
   const bucket = Math.floor(Date.now() / 3_600_000);
   const script = document.createElement("script");
   script.async = true;
-  script.src = `${STABLE_URL}?contract=${CONTRACT_VERSION}&window=${bucket}`;
+  // A new bundled release must not be replaced by an older hourly HTTP cache.
+  script.src = `${STABLE_URL}?contract=${CONTRACT_VERSION}&window=${bucket}&bundled=${encodeURIComponent(fallbackRuntime?.version || "")}`;
   script.dataset.sharedPhotoGallery = "stable";
   script.addEventListener("load", updateRuntimeLabel, { once: true });
   script.addEventListener("error", updateRuntimeLabel, { once: true });
@@ -56,12 +57,17 @@ export function createSharedFullscreenSwitcher(options = {}) {
   const api = runtime();
   const factory = api?.capabilities?.fullscreenEdgeRubberBand >= 2
     && (!options.waitForReady || api?.capabilities?.readyFullscreenNavigation >= 1)
+    && (options.touchPaging !== "controlled" || api?.capabilities?.controlledTouchPaging >= 2)
     ? api.createFullscreenSwitcher
     : fallbackRuntime?.createFullscreenSwitcher;
   const controller = factory?.(options) || null;
   if (
     controller
-    && !fullscreenSwitcherMatchesRequestedMode(controller, options.directDesktop)
+    && (!fullscreenSwitcherMatchesRequestedMode(controller, options.directDesktop)
+      || (options.touchPaging === "controlled" && (controller.touchPaging !== "controlled"
+        || typeof controller.bindTouchPagingTarget !== "function"
+        || typeof controller.refreshTouchPagingLayout !== "function"
+        || (options.touchPagingPresentation === "transform" && controller.touchPagingPresentation !== "transform"))))
     && factory !== fallbackRuntime?.createFullscreenSwitcher
   ) {
     controller.destroy?.();

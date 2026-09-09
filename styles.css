@@ -8080,6 +8080,15 @@ dialog.photo-lightbox.photo-lightbox-touch-carousel .photo-lightbox-slide {
   scroll-snap-align: center !important;
 }
 
+/* The shared controller owns phone paging so a new pinch is never consumed
+   by platform momentum. Keep the same image/slide geometry while it moves. */
+dialog.photo-lightbox.photo-lightbox-touch-carousel.photo-lightbox-controlled-paging .photo-lightbox-track {
+  overflow: clip !important;
+  scroll-snap-type: none !important;
+  scroll-behavior: auto !important;
+  touch-action: none !important;
+}
+
 .photo-lightbox-slide {
   position: relative;
   flex: 0 0 100%;

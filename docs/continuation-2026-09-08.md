@@ -4,6 +4,18 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+Сейчас: private-owner срез зафиксирован FE 6b08fe5 / BE f80303b.
+Галерея 2.4.0 применена и полностью проверена локально. 896 critical,
+573 transport и check прошли; gallery-240-ui-1.log: 39 passed, 3 expected
+skips (2 desktop-only + Chromium-specific touch delivery в mobile WebKit),
+1,6 мин. gallery-240-photo-forms-1.log: 8/8 реальных guest private photo
+forms за 2,7 мин. Session 16604 завершена exit 0; все процессы закончены.
+Docs experiment-gallery-2.4.0-local.md. После прохода — отдельный FE commit,
+дальше составные формы с размещением/доступностью и остальной список.
+Галерея сохранена вместе с четырьмя отличиями experimentTransport, общий
+fallback точно совпадает с исходным hash. Версия приложения не менялась.
+Публикация и push запрещены последним прямым поручением пользователя.
+
 Актуально: guest descendants зафиксированы FE 794dfb3 / BE bb2c6e6.
 Следующий срез personal-photo-private-owner полностью проверен:
 в FE/BE batch/form/copy/tree/history, плюс прямой API photo mutation.

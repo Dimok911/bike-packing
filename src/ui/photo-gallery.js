@@ -1004,6 +1004,24 @@ export async function openPhotoLightbox(sourceImage, {
     });
   }
   const initialEntry = entries[initialIndex];
+  const cachedSourcePreparations = new Map();
+  const prepareCachedEntry = (entryIndex) => {
+    const entry = entries[entryIndex];
+    if (!entry?.localId || entry.verifiedFullSrc) return Promise.resolve();
+    if (!cachedSourcePreparations.has(entryIndex)) {
+      // This adapter reads local storage only. Never download neighboring
+      // originals just to prepare the fullscreen carousel.
+      const pending = Promise.resolve().then(() => prepareFullscreenSource(entry)).catch(() => null).then((sources) => {
+        if (sources?.full) entry.verifiedFullSrc = sources.full;
+        if (sources?.preview) entry.previewSrc = sources.preview;
+        if (sources?.width) entry.width = sources.width;
+        if (sources?.height) entry.height = sources.height;
+      });
+      cachedSourcePreparations.set(entryIndex, pending);
+    }
+    return cachedSourcePreparations.get(entryIndex);
+  };
+  await Promise.all([initialIndex - 1, initialIndex, initialIndex + 1].map(prepareCachedEntry));
   if (openRequestId !== lightboxOpenRequestId) return;
   closePhotoLightbox({ preserveOpenRequest: true });
   const initialPreviewSrc = initialEntry?.verifiedFullSrc || initialEntry?.previewSrc || initialEntry?.fullSrc || "";
@@ -1093,16 +1111,49 @@ export async function openPhotoLightbox(sourceImage, {
     phoneDevice: /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(window.navigator?.userAgent || "")
   });
   overlay.classList.toggle("photo-lightbox-touch-carousel", touchCarousel);
+  let preparedPagingIndex = null;
   const fullscreenSwitcher = createSharedFullscreenSwitcher({
     root: overlay,
     track,
     slides: overlay.querySelectorAll(".photo-lightbox-slide"),
     initialIndex,
     directDesktop: !touchCarousel,
+    touchPaging: touchCarousel ? "controlled" : "native",
+    touchPagingPresentation: touchCarousel ? "transform" : undefined,
+    canTouchPage: () => scale <= 1 && !pinching && !touchStartedWithPinch,
+    onTouchPagingStart: () => {
+      trackTouchActive = true;
+      preparedPagingIndex = null;
+      pendingScrollIndex = null;
+      cancelTrackSettle();
+    },
+    onTouchPagingPosition: ({ index: visibleIndex }) => {
+      suppressImageCloseUntil = Date.now() + 300;
+      updateLightboxDots(visibleIndex);
+      if (preparedPagingIndex !== visibleIndex) {
+        preparedPagingIndex = visibleIndex;
+        prepareVisiblePreviews(visibleIndex);
+      }
+    },
+    onTouchPagingSettle: ({ index: settledIndex }) => {
+      // Reduced-motion/instant settling can run before touchend bubbles here.
+      // Source activation follows gesture cleanup, while pinch can take over
+      // synchronously without an image load or a native deceleration phase.
+      queueMicrotask(() => {
+        if (!overlay.isConnected || trackTouchActive || scale > 1 || pinching
+          || fullscreenSwitcher.isSettling || settledIndex !== visibleTouchIndex()) return;
+        pendingScrollIndex = null;
+        updateLightboxDots(settledIndex);
+        if (settledIndex !== activeIndex) showPhoto(settledIndex);
+      });
+    },
     canRubberBand: () => scale <= 1 && !pinching && !touchStartedWithPinch,
     waitForReady: true
   });
   const directDesktop = Boolean(fullscreenSwitcher?.directDesktop);
+  const controlledTouchPaging = fullscreenSwitcher?.touchPaging === "controlled";
+  const pagingPosition = () => controlledTouchPaging ? fullscreenSwitcher.position : track.scrollLeft;
+  overlay.classList.toggle("photo-lightbox-controlled-paging", controlledTouchPaging);
   let loadingNotice = null;
   let cancelPanInertia = () => {};
   let sourceController = null;
@@ -1172,7 +1223,7 @@ export async function openPhotoLightbox(sourceImage, {
   const apply = () => {
     clampPan();
     image.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
-    track.classList.toggle("photo-lightbox-track-zoomed", scale > 1);
+    track.classList.toggle("photo-lightbox-track-zoomed", scale > 1 || pinching);
   };
   const resetPanVelocity = (clientX, clientY, timestamp = now()) => {
     panVelocityX = 0;
@@ -1278,8 +1329,8 @@ export async function openPhotoLightbox(sourceImage, {
     });
   };
   const visibleTouchIndex = () => resolvePhotoGallerySnapIndex({
-    scrollLeft: track.scrollLeft,
-    trackWidth: track.clientWidth,
+    scrollLeft: pagingPosition(),
+    trackWidth,
     slideCount: entries.length
   });
   const updateNavigation = () => {
@@ -1349,13 +1400,19 @@ export async function openPhotoLightbox(sourceImage, {
     for (let index = Math.max(0, centerIndex - 1); index <= Math.min(entries.length - 1, centerIndex + 1); index += 1) {
       const previewImage = lightboxImages[index];
       if (!previewImage || previewImage.getAttribute("src")) continue;
-      // Populate the actual slide before native scrolling reveals it. Full-size
-      // hydration remains demand driven through the active source controller.
-      const src = entries[index]?.previewSrc;
-      if (!src) continue;
-      previewImage.src = src;
-      void decodeSharedFullscreenImage(previewImage)
-        .then(() => settleImagePresentation(previewImage))
+      // A saved original is already local: put it in the neighboring slide
+      // before the swipe instead of painting and later replacing its thumbnail.
+      void prepareCachedEntry(index).then(async () => {
+        if (!overlay.isConnected || previewImage.getAttribute("src")) return;
+        const entry = entries[index];
+        const fullSrc = entry?.verifiedFullSrc || entry?.resolvedFullSrc;
+        const src = fullSrc || entry?.previewSrc;
+        if (!src) return;
+        previewImage.dataset.photoLightboxQuality = fullSrc ? "full" : "preview";
+        previewImage.src = src;
+        await decodeSharedFullscreenImage(previewImage);
+        settleImagePresentation(previewImage);
+      })
         .catch(() => {});
     }
   };
@@ -1428,15 +1485,17 @@ export async function openPhotoLightbox(sourceImage, {
       return true;
     }
     if (!replacement) return false;
+    const token = renderToken;
     const stillCurrent = () => (
-      sourceController?.activeIndex === entryIndex
+      token === renderToken
+      && sourceController?.activeIndex === entryIndex
       && overlay.isConnected
     );
     const shouldCommit = async ({ phase }) => {
       // A decoded original can arrive while the user is dragging its preview.
       // Keep the same DOM image through the gesture and the edge return.
       if (touchCarousel && phase === "before-replace") {
-        while (stillCurrent() && (trackTouchActive || lightboxSettleTimer !== null
+        while (stillCurrent() && (trackTouchActive || fullscreenSwitcher?.isSettling || lightboxSettleTimer !== null
           || currentImage.classList.contains("vpg-edge-content-returning"))) {
           await new Promise((resolve) => setTimeout(resolve, 32));
         }
@@ -1484,13 +1543,7 @@ export async function openPhotoLightbox(sourceImage, {
       // image: fetching an identical blob swaps the bitmap after its first paint.
       // Local/offline records and separate previews still use the cache pipeline.
       if (!entryExpectsFullSize(entry)) return experimentTransport.photoUrl(entry.fullSrc || entry.previewSrc || null);
-      const preparedSources = entry.localId
-        ? await prepareFullscreenSource(entry).catch(() => null)
-        : null;
-      if (preparedSources?.full) entry.verifiedFullSrc = preparedSources.full;
-      if (preparedSources?.preview) entry.previewSrc = preparedSources.preview;
-      if (preparedSources?.width) entry.width = preparedSources.width;
-      if (preparedSources?.height) entry.height = preparedSources.height;
+      await prepareCachedEntry(_entryIndex);
       const next = entry.verifiedFullSrc
         ? { src: entry.verifiedFullSrc, objectUrl: "", isFull: true }
         : await resolvePhotoLightboxSource(entry, {
@@ -1526,12 +1579,14 @@ export async function openPhotoLightbox(sourceImage, {
     sourceController = null;
     preparedFullImages.clear();
   };
-  const preparePhoto = async (nextIndex, { force = false } = {}) => {
+  const preparePhoto = async (nextIndex, { force = false, preserveTransform = false } = {}) => {
     if (nextIndex < 0 || nextIndex >= entries.length || (!force && nextIndex === activeIndex)) return false;
     cancelPanInertia(false);
     const token = ++renderToken;
     loadingNotice.settle("idle");
     const entry = entries[nextIndex];
+    await prepareCachedEntry(nextIndex);
+    if (token !== renderToken || !overlay.isConnected) return false;
     const previewSrc = entry?.previewSrc || entry?.fullSrc || "";
     const targetImage = lightboxImages[nextIndex];
     if (!previewSrc || !targetImage) return false;
@@ -1543,10 +1598,16 @@ export async function openPhotoLightbox(sourceImage, {
     activeIndex = nextIndex;
     image = targetImage;
     prepareVisiblePreviews(nextIndex);
-    if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
-    image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
+    // A pinch can adopt the neighboring bitmap before this async preparation
+    // finishes. Let the source lifecycle replace it after the gesture instead
+    // of changing its source or resetting a zoom that has already started.
+    if (!preserveTransform || !image.getAttribute("src")) {
+      if (!sharedFullscreenImageUsesSource(image, displaySrc)) image.src = displaySrc;
+      image.dataset.photoLightboxQuality = readyFullSrc ? "full" : "preview";
+    }
     updateNavigation();
-    resetTransform();
+    if (preserveTransform) apply();
+    else resetTransform();
     const expectsFullSize = entryExpectsFullSize(entry);
     if (!expectsFullSize) {
       image.dataset.photoLightboxQuality = entry.fullSrc ? "full" : "preview";
@@ -1629,7 +1690,7 @@ export async function openPhotoLightbox(sourceImage, {
     const targetLeft = track.clientWidth * safeIndex;
     if (safeIndex === activeIndex && (
       directDesktop
-      || (pendingScrollIndex === null && Math.abs(track.scrollLeft - targetLeft) <= 1)
+      || (pendingScrollIndex === null && Math.abs(pagingPosition() - targetLeft) <= 1)
     )) return false;
     pendingScrollIndex = !directDesktop && behavior === "smooth" ? safeIndex : null;
     if (safeIndex !== activeIndex) showPhoto(safeIndex);
@@ -1651,8 +1712,32 @@ export async function openPhotoLightbox(sourceImage, {
     clearTimeout(lightboxSettleTimer);
     lightboxSettleTimer = null;
   };
+  const takeOverVisiblePhotoForPinch = () => {
+    fullscreenSwitcher.stopTouchPaging?.();
+    const nextIndex = directDesktop ? fullscreenSwitcher.presentedIndex : visibleTouchIndex();
+    pendingScrollIndex = null;
+    cancelTrackSettle();
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = 0;
+    const targetImage = lightboxImages[nextIndex];
+    if (image !== targetImage) {
+      image.style.removeProperty("transform");
+      image = targetImage;
+      scale = 1;
+      panX = 0;
+      panY = 0;
+    }
+    activeIndex = nextIndex;
+    // Pinch owns the track from the second finger, even at exactly 100%.
+    // Only this explicit gesture takeover interrupts native scroll settling.
+    apply();
+    fullscreenSwitcher.goTo(nextIndex, "instant", false);
+    updateNavigation();
+    void showPhoto(nextIndex, { force: true, preserveTransform: true });
+  };
   const settleTouchCarouselTrack = () => {
     cancelTrackSettle();
+    if (controlledTouchPaging) return;
     if (trackTouchActive || scale > 1 || !overlay.isConnected) return;
     if (scrollFrame) {
       cancelAnimationFrame(scrollFrame);
@@ -1671,6 +1756,7 @@ export async function openPhotoLightbox(sourceImage, {
   };
   const scheduleTrackSettle = () => {
     cancelTrackSettle();
+    if (controlledTouchPaging) return;
     if (trackTouchActive || !overlay.isConnected) return;
     lightboxSettleTimer = setTimeout(() => {
       lightboxSettleTimer = null;
@@ -1687,6 +1773,7 @@ export async function openPhotoLightbox(sourceImage, {
     }, 160);
   };
   track.addEventListener("scroll", () => {
+    if (controlledTouchPaging) return;
     suppressImageCloseUntil = Date.now() + 300;
     if (touchCarousel) {
       const visibleIndex = visibleTouchIndex();
@@ -1717,6 +1804,10 @@ export async function openPhotoLightbox(sourceImage, {
   });
   const bindNavSwipe = (button) => {
     if (!button) return;
+    if (controlledTouchPaging) {
+      fullscreenSwitcher.bindTouchPagingTarget(button);
+      return;
+    }
     let navStartX = 0;
     let navStartY = 0;
     let navStartScrollLeft = 0;
@@ -1724,6 +1815,8 @@ export async function openPhotoLightbox(sourceImage, {
     button.addEventListener("touchstart", (event) => {
       if (event.touches.length !== 1) return;
       const touch = event.touches[0];
+      fullscreenSwitcher?.stopTouchPaging?.();
+      if (controlledTouchPaging) trackTouchActive = true;
       pendingScrollIndex = null;
       navStartX = touch.clientX;
       navStartY = touch.clientY;
@@ -1743,6 +1836,7 @@ export async function openPhotoLightbox(sourceImage, {
       track.scrollLeft = navStartScrollLeft - dx;
     }, { passive: false });
     button.addEventListener("touchend", (event) => {
+      if (controlledTouchPaging) trackTouchActive = event.touches.length > 0;
       if (!navMoved || !event.changedTouches.length) return;
       const touch = event.changedTouches[0];
       const dx = touch.clientX - navStartX;
@@ -1757,6 +1851,11 @@ export async function openPhotoLightbox(sourceImage, {
       event.preventDefault();
       event.stopPropagation();
     }, { passive: false });
+    button.addEventListener("touchcancel", () => {
+      if (!controlledTouchPaging) return;
+      trackTouchActive = false;
+      fullscreenSwitcher.goTo(visibleTouchIndex(), "smooth", false);
+    }, { passive: true });
   };
   bindNavSwipe(prevButton);
   bindNavSwipe(nextButton);
@@ -1837,6 +1936,11 @@ export async function openPhotoLightbox(sourceImage, {
     // moving. Only a width change requires repositioning the horizontal track.
     const widthChanged = track.clientWidth !== trackWidth;
     trackWidth = track.clientWidth;
+    if (controlledTouchPaging && widthChanged) {
+      trackTouchActive = false;
+      fullscreenSwitcher.refreshTouchPagingLayout();
+      return;
+    }
     if (trackTouchActive || !widthChanged) return;
     fullscreenSwitcher?.goTo(activeIndex, "auto", false);
   };
@@ -1876,7 +1980,7 @@ export async function openPhotoLightbox(sourceImage, {
       startY = touch.clientY;
       startPanX = panX;
       startPanY = panY;
-      touchStartScrollLeft = track.scrollLeft;
+      touchStartScrollLeft = pagingPosition();
       touchStartTime = Date.now();
       resetPanVelocity(touch.clientX, touch.clientY);
       moved = false;
@@ -1888,6 +1992,7 @@ export async function openPhotoLightbox(sourceImage, {
     const center = touchCenter(event.touches[0], event.touches[1]);
     pinching = true;
     touchStartedWithPinch = true;
+    takeOverVisiblePhotoForPinch();
     pinchDistance = touchDistance(event.touches[0], event.touches[1]);
     pinchScale = scale;
     startX = center.x;
@@ -1952,6 +2057,7 @@ export async function openPhotoLightbox(sourceImage, {
       const touch = event.touches[0];
       pinching = false;
       pinchDistance = 0;
+      apply();
       startX = touch.clientX;
       startY = touch.clientY;
       startPanX = panX;
@@ -1991,6 +2097,7 @@ export async function openPhotoLightbox(sourceImage, {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    apply();
   }, { passive: false });
   overlay.addEventListener("touchcancel", () => {
     trackTouchActive = false;
@@ -1998,6 +2105,7 @@ export async function openPhotoLightbox(sourceImage, {
     pinchDistance = 0;
     pinching = false;
     touchStartedWithPinch = false;
+    apply();
     if (touchCarousel && scale <= 1) scheduleTrackSettle();
   }, { passive: true });
   lightboxKeydownHandler = (event) => {
