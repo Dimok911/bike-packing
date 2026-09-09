@@ -758,7 +758,7 @@ import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelect
 import { createPersonalPublicImportSelectionStore } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
-import { recoverPersonalPublicImportLink } from "./src/sync/personal-public-import-link-recovery.js";
+import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -2633,11 +2633,11 @@ function reportPersonalPhotoFormError(error, { recovery } = {}) {
         personalPhotoRecoverySource.outbox = null;
       }
     }
-    const blocked = Object.assign(new Error(error.message || "Форма с фото требует проверки."), {
+    const blocked = personalSaveRecovery.owns(error) ? error : Object.assign(new Error(error.message || "Форма с фото требует проверки."), {
       cause: error, code: "photo-recovery", isPersonalSaveBlocked: true,
       unconfirmedMemoryDraft: error.unconfirmedMemoryDraft || recovery.preview
     });
-    personalSaveRecovery.report(blocked, { scopeKey: localStorageScopeKey });
+    personalSaveRecovery.report(blocked, { scopeKey: localStorageScopeKey, snapshot: error.unconfirmedMemoryDraft || recovery.preview });
   }
   showToast(error.message || "Поля и фото сохранены в открытой форме.", "warning");
 }
@@ -8784,8 +8784,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       source.outbox = outbox; // Preserve the observed head while the dialog is open.
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       const publicEntries = await personalPublicSelectionStore(binding).entries();
-      const publicPending = publicEntries.filter(entry => entry.action && !entry.completion && !outbox.list().some(record => record.action.operationId === entry.selection.operationId)
-        && !outbox.photoRecoveryReferences().photoReceipts.some(proof => proof.operation.id === entry.selection.operationId));
+      const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
       if (!outbox.hasPending() && publicPending.length === 1) source.publicPreparation = publicPending[0];
       if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
       const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
@@ -8933,12 +8932,15 @@ function canResumeRetainedPersonalPhotoForm() {
   if (!personalPhotoFormUiEnabled() || isForcedOffline()) return false;
   try {
     if (PERSONAL_PUBLIC_IMPORT_ENABLED && personalPhotoRecoverySource?.publicPreparation
+      && (personalPhotoRecoverySource.publicPreparation.selection.version === 1 || PERSONAL_PUBLIC_ENTITY_COPY_ENABLED)
       && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
       && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     if (PERSONAL_GUEST_IMPORT_ENABLED && personalPhotoRecoverySource?.guestPreparation
       && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
       && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     const outbox = personalPhotoRecoverySource?.outbox;
+    const publicVersion = outbox && (personalPendingImportSource(outbox, true) || outbox.recover())?.action.body.publicImport?.version;
+    if (publicVersion === 2 && !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) return false;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
       && outbox.hasPending() && (PERSONAL_PUBLIC_IMPORT_ENABLED && [1, 2].includes(outbox.recover()?.action.body.publicImport?.version)
         || PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
@@ -8961,7 +8963,8 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   }
   const getContext = personalSaveContext;
   if (recovery && source.publicPreparation) {
-    await recoverPersonalPublicImportLink({ entry: source.publicPreparation, outbox: source.outbox, store: source.store, getContext, makeSnapshot: personalPublicCopySnapshot });
+    await recoverPersonalPublicImportPreparation({ entry: source.publicPreparation, selectionStore: personalPublicSelectionStore(source.outbox.binding),
+      outbox: source.outbox, store: source.store, getContext, makeSnapshot: personalPublicCopySnapshot, loadFile: loadPersonalPublicCopyFile });
     source.publicPreparation = null;
   }
   if (recovery && source.guestPreparation) {
@@ -9292,6 +9295,24 @@ function personalPublicSelectionStore(binding) {
   return createPersonalPublicImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
 }
 
+async function loadPersonalPublicCopyFile({ photo }) {
+  if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
+  const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw Error("Не удалось прочитать исходную фотографию шаблона.");
+  const file = await response.blob();
+  return { file, thumb: null, fileName: photo.fileName || `${photo.id}.${file.type.split("/")[1] || "jpg"}` };
+}
+
+async function retainPersonalPublicPreparationForRecovery(source) {
+  try {
+    // The normal editor wrapper may have latched the quota failure. Inspect a
+    // fresh reader, as the recovery dialog does, without releasing that fence.
+    const outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
+    const pending = personalPublicPendingPreparations(await personalPublicSelectionStore(outbox.binding).entries(), outbox);
+    source.publicPreparation = !outbox.hasPending() && pending.length === 1 ? pending[0] : null;
+  } catch { /* Preserve the original storage error and its in-memory recovery archive. */ }
+}
+
 async function completePersonalPublicImportSelections(source) {
   if (!source?.outbox || source.outbox.hasPending()) return;
   const outbox = source.outbox, boundary = outbox.confirmedBoundary();
@@ -9386,12 +9407,7 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
   try {
     commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
       getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
-      async loadFile({ photo }) {
-        if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
-        const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
-        if (!response.ok) throw Error("Не удалось прочитать исходную фотографию шаблона.");
-        const file = await response.blob(); return { file, thumb: null, fileName: photo.fileName || `${photo.id}.${file.type.split("/")[1] || "jpg"}` };
-      },
+      loadFile: loadPersonalPublicCopyFile,
       onCaptured(saved) {
         personalSaveRecovery.assertRunning(); replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
         personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source; personalPublicPickerSource = null;
@@ -9402,7 +9418,10 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
       }
     });
     await commit();
-  } catch (error) { reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error; }
+  } catch (error) {
+    await retainPersonalPublicPreparationForRecovery(source);
+    reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
+  }
   finally { personalPhotoFormPreparing--; }
   scheduleRemoteSave(); return { layoutId: targetLayoutId, operationId: selection.operationId };
 }
@@ -9456,13 +9475,7 @@ async function runCausalPublicLayoutCopy(layout, progress) {
     progress.update(45, "shared.copyStageEntities");
     commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
       getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
-      async loadFile({ photo }) {
-        if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
-        const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
-        if (!response.ok) throw Error("Не удалось прочитать исходную фотографию шаблона.");
-        const file = await response.blob();
-        return { file, thumb: null, fileName: photo.fileName || `${photo.id}.${file.type.split("/")[1] || "jpg"}` };
-      },
+      loadFile: loadPersonalPublicCopyFile,
       onCaptured(saved) {
         personalSaveRecovery.assertRunning();
         replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
@@ -9476,6 +9489,7 @@ async function runCausalPublicLayoutCopy(layout, progress) {
     });
     await commit();
   } catch (error) {
+    await retainPersonalPublicPreparationForRecovery(source);
     reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
   } finally { personalPhotoFormPreparing--; }
   scheduleRemoteSave();

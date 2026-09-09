@@ -5211,3 +5211,103 @@ for (const item of [false, true]) test(`public entity gate off keeps ${item ? "i
   expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
   expect(f.errors).toEqual([]);
 });
+
+for (const entity of [false, true]) for (const phase of ["selection", "fileless action", "native", "queue link"])
+test(`public preparation ${entity ? "entity" : "layout"} ${phase} resumes the same selection after reload`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || entity && process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1", "Own public writers are disabled");
+  test.setTimeout(90000);
+  await context.addInitScript(phase => {
+    const released = () => sessionStorage.getItem("public-preparation-quota-released") === "true";
+    if (phase === "native") {
+      const original = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function (row, ...rest) {
+        if (!released() && row?.intentJson && JSON.parse(row.intentJson).action?.body?.publicImport) throw new DOMException("Public native quota", "QuotaExceededError");
+        return original.call(this, row, ...rest);
+      };
+    } else if (["fileless action", "queue link"].includes(phase)) {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (!released() && (phase === "fileless action" ? String(key).startsWith("bike-packing-public-selections-v1:") && String(key).endsWith(":action")
+          : String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.publicImport)) throw new DOMException("Public preparation quota", "QuotaExceededError");
+        return original.call(this, key, value);
+      };
+    }
+  }, phase);
+  const publicSource = guestImportPayload(phase !== "fileless action"), f = await setup(page, context, { photoEdit: true,
+    payload: entity ? replacementPayload() : initialPayload(), publicSource, configure: f => { f.guestPhotoUnavailable = phase === "selection"; } });
+  await synchronize(page, () => true);
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Публичный шаблон" });
+  await expect(option).toHaveCount(1); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  if (entity) {
+    await page.locator('[data-view="items"]').click();
+    await page.locator('[data-copy-item="shared-virtual-item-source"]').filter({ visible: true }).first().click();
+    await expect(page.locator("#containerPickerDialog")).toBeVisible();
+    await page.locator("#containerPickerLayoutSelect").selectOption("layout-a");
+    await page.locator('#containerPickerBoard [data-pick-container="bag"]').click();
+    await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  } else await page.locator('[data-copy-shared-layout="template-ui"]').first().click();
+  const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+  await expect(recovery).toBeVisible({ timeout: 30000 }); await expect(resume).toBeVisible();
+  const rows = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:")));
+  const selection = JSON.parse(rows.find(([key]) => key.endsWith(":selection"))[1]).selection;
+  const actionRow = rows.find(([key]) => key.endsWith(":action")), original = actionRow ? JSON.parse(actionRow[1]).action : null;
+  expect(Boolean(original)).toBe(["native", "queue link"].includes(phase)); expect(selection.sourcePayload).toEqual(publicSource);
+  const before = structuredClone(f.payload), posts = f.posts.length;
+  expect(f.posts.some(post => post.body.publicImport)).toBe(false); expect(f.stagePosts).toEqual([]);
+  await reloadApp(page, { recovery: true }); await expect(resume).toBeVisible();
+  expect(f.posts).toHaveLength(posts); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:")))).toEqual(rows);
+  f.guestPhotoUnavailable = phase === "queue link"; // Retained native originals must suffice even when the URL is unavailable.
+  await page.evaluate(() => sessionStorage.setItem("public-preparation-quota-released", "true"));
+  await resume.click();
+  await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+  const copies = f.posts.filter(post => post.body.publicImport); expect(copies).toHaveLength(1);
+  const saved = copies[0]; expect(saved.operationId).toBe(selection.operationId);
+  expect(saved.body.publicImport.sourcePayload).toEqual(selection.sourcePayload);
+  for (const key of ["source", "ownerTargets", "photoTargets", entity ? "copy" : "layoutTargets"])
+    expect(saved.body.publicImport[key]).toEqual(selection[key]);
+  if (original) {
+    const { actorId, generation, scopeKey, previousLocalOperationId, ...wire } = original;
+    expect(saved).toEqual({ ...wire, expectedActorId: actorId });
+    expect(JSON.parse(await page.evaluate(key => localStorage.getItem(key), actionRow[0])).action).toEqual(original);
+  }
+  const stageCount = f.stagePosts.length, savedPayload = structuredClone(f.payload);
+  await reloadApp(page); expect(f.posts).toHaveLength(posts + 1); expect(f.stagePosts).toHaveLength(stageCount); expect(f.payload).toEqual(savedPayload);
+  expect(f.errors).toEqual([]);
+});
+
+for (const entity of [false, true]) test(`public preparation disabled reader ${entity ? "entity" : "layout"} keeps the original selection available for export`, async ({ page, context }) => {
+  test.skip(entity ? process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1"
+    : process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1", "Checks the matching disabled writer");
+  const publicSource = guestImportPayload(false), f = await setup(page, context, { photoEdit: true, publicSource,
+    payload: entity ? replacementPayload() : initialPayload() });
+  await synchronize(page, () => true); const before = structuredClone(f.payload), posts = f.posts.length;
+  await context.route(`${origin}/src/**/*.js`, async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid retained-selection fixture path");
+    return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+  });
+  const selected = await page.evaluate(async ({ entity, basePayload, baseStateRevision, sourcePayload }) => {
+    const { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } = await import("/src/sync/personal-public-import-selection.js");
+    const { createPersonalPublicImportSelectionStore } = await import("/src/sync/personal-public-import-selection-store.js");
+    const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+    const sourceLayoutId = sourcePayload.activeLayoutId, selection = (entity ? preparePersonalPublicEntitySelection : preparePersonalPublicImportSelection)({
+      binding, basePayload, baseStateRevision, sourcePayload, editMeta: {},
+      source: { kind: "public-template", listId: "public-shared-layout-template-ui", itemKey: "shared-layout:template-ui", stateRevision: 7, language: "ru" },
+      ...(entity ? { copy: { version: 1, mode: "independent", sourceLayoutId,
+        entries: [{ entityType: "item", sourceId: "source", includeContents: false }], destination: { layoutId: "layout-a", containerId: "bag", index: null } } }
+        : { layoutIds: [sourceLayoutId], layoutNames: ["Сохранённая копия"] })
+    }, { enabled: true });
+    const journal = createPersonalPublicImportSelectionStore({ binding, enabled: true, publicEntityEnabled: true,
+      getContext: () => ({ ...binding, generation: "seed-retained-selection", scope: "personal" }) });
+    await journal.capture(selection); return selection;
+  }, { entity, basePayload: before, baseStateRevision: f.revision, sourcePayload: publicSource });
+  await reloadApp(page, { recovery: true }); const recovery = page.locator("#personalSaveRecoveryDialog");
+  await expect(recovery.locator("[data-resume-photo-upload]")).not.toBeVisible();
+  const download = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+  const entries = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+  const rows = JSON.parse(zipText(entries.get("public-import-selections.json")));
+  expect(rows).toHaveLength(1); expect(JSON.parse(rows[0].text).selection).toEqual(selected);
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before); expect(f.errors).toEqual([]);
+});

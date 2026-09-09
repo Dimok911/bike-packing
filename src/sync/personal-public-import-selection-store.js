@@ -118,6 +118,10 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       return lock(initial, async () => {
         const saved = await readEntry(selection.operationId); assertCurrent(initial);
         if (!saved || !same(saved.selection, selection)) fail();
+        if (saved.action) {
+          if (!same(saved.action, action)) fail();
+          return clone(saved.action); // Keep the original bytes; JSON key order is not a different action.
+        }
         writeOnce(`${key(selection.operationId)}:action`, JSON.stringify(row)); return action;
       });
     },
