@@ -736,6 +736,9 @@ import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource
 import { createPersonalPendingGuestFormSession } from "./src/sync/personal-pending-guest-form.js";
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, isPersonalPendingFormUpdate } from "./src/sync/personal-pending-form-update.js";
 import { createPersonalPendingFormSession } from "./src/sync/personal-pending-form-session.js";
+import { createPersonalPendingPhotoFormSession } from "./src/sync/personal-pending-photo-form-session.js";
+import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./src/sync/personal-photo-form-owner-result.js";
+import { personalPendingPhotoFormChain } from "./src/sync/personal-pending-photo-form-chain.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-item-form-context.js";
 import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
@@ -1943,7 +1946,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2528,9 +2531,18 @@ function personalPendingImportFormEnabled() {
   return Boolean(outbox?.hasPending() && personalPendingImportSource(outbox, true));
 }
 
-function personalPhotoFormRequest(values, { pendingImport = false } = {}) {
+function personalPendingPhotoFormEnabled(type) {
+  if (!PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED || !personalPhotoFormUiEnabled()) return false;
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox?.hasPending()) return false;
+  const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId });
+  return Boolean(chain && chain.entityType === type && chain.entityId === (type === "item" ? editingItemId : editingRootContainerId));
+}
+
+function personalPhotoFormRequest(values, { pendingImport = false, pendingFiles = false } = {}) {
   personalSaveRecovery.assertRunning();
-  const outbox = personalSaveOutboxForScope(), head = pendingImport && personalPendingImportFormEnabled() ? outbox.recover() : null;
+  const outbox = personalSaveOutboxForScope(), head = pendingImport && personalPendingImportFormEnabled()
+    || pendingFiles && personalPendingPhotoFormEnabled(values.entityType) ? outbox.recover() : null;
   const baseline = head ? { payload: head.photoState?.payload || head.action.body.payload, stateRevision: head.action.body.baseStateRevision } : outbox?.confirmedBase();
   if (!personalPhotoFormUiEnabled() || !baseline || !currentPackingListId) {
     throw Error("Сначала подтвердите личный список. Поля и фото остались в форме.");
@@ -2547,7 +2559,7 @@ function personalPhotoFormSession(options) {
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
   const pendingSource = options.pendingImport ? personalPendingImportSource(outbox, true) : null;
-  const createSession = options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.pendingFiles ? createPersonalPendingPhotoFormSession : options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),

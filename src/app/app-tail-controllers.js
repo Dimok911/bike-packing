@@ -384,7 +384,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalPendingPhotoFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -8178,6 +8178,8 @@ const personalPhotoForms = createPersonalPhotoFormController({
   isContainerContextEnabled: personalPhotoContainerContextUiEnabled,
   isManufacturerSourceEnabled: () => PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   isPendingUpdate: personalPendingImportFormEnabled,
+  isPendingFiles: personalPendingPhotoFormEnabled,
+  createPendingFilesSession: options => personalPhotoFormSession({ ...options, pendingFiles: true }),
   createPendingUpdateSession: options => personalPhotoFormSession({ ...options, pendingImport: true }),
   getContext: personalSaveContext,
   getView(type) {
@@ -8190,7 +8192,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       manufacturerSource: item ? null : rootContainerManufacturerPhotoSource,
       source: item ? state.items[runtime.editingItemId] : state.containers[runtime.editingRootContainerId] };
   },
-  readForm(type, { pendingUpdate = false } = {}) {
+  readForm(type, { pendingUpdate = false, pendingFiles = false } = {}) {
     const item = type === "item", entityId = item ? runtime.editingItemId : runtime.editingRootContainerId;
     const created = !entityId, snapshot = item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot();
     const initial = item ? runtime.itemDialogInitialSnapshot : runtime.rootContainerDialogInitialSnapshot;
@@ -8207,7 +8209,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       : containerPlacementSnapshotChanged(initial, snapshot) || Boolean(created && (placeNewRootInCurrentLayout || pendingCopyTargetContainerSetup));
     const availabilityChanged = item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available");
     const request = personalPhotoFormRequest({ entityType: type,
-      entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingImport: pendingUpdate });
+      entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingImport: pendingUpdate, pendingFiles });
     if (!item && !pendingUpdate && created && PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED && rootContainerManufacturerPhotoSource) {
       request.manufacturerSource = structuredClone(rootContainerManufacturerPhotoSource);
     }

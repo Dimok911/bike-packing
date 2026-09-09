@@ -9,6 +9,7 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
   createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isContainerContextEnabled = () => false,
   isManufacturerSourceEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
+  isPendingFiles = () => false, createPendingFilesSession,
   createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
@@ -79,6 +80,7 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       const manufacturer = type === "container" && isManufacturerSourceEnabled() && Boolean(view?.manufacturerSource);
       const emptyManufacturer = manufacturer && !selected.length && !view?.source;
       const fresh = selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl);
+      const pendingFiles = fresh && isPendingFiles(type);
       const edit = !fresh && !emptyManufacturer && Boolean(view?.draft && (view.draft.deletedPhotos?.length
         || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
       const pendingUpdate = !fresh && !edit && !manufacturer && isPendingUpdate();
@@ -95,17 +97,17 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       // Reentrant button/field callbacks cannot create a second session.
       entry.saving = true;
       try {
-        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate });
+        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate, pendingFiles });
         if (catalogSource !== false && !(type === "container" && !pendingUpdate && isManufacturerSourceEnabled() && request.manufacturerSource)
           || (placementChanged !== false || availabilityChanged !== false)
           && !(!pendingUpdate && (type === "item" && isItemContextEnabled() && request.formContext
             || type === "container" && isContainerContextEnabled() && request.containerFormContext))) {
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
-        const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
+        const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding, allowPending: pendingFiles };
         const values = emptyManufacturer ? { files: [] } : pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection) }
-          : isEditEnabled() && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
-        entry.session = (pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
+          : (pendingFiles || isEditEnabled()) && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
+        entry.session = (pendingFiles ? createPendingFilesSession : pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
         const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);
         pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))

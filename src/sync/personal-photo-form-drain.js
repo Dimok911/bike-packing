@@ -4,6 +4,8 @@ import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
+import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
+import { personalPendingPhotoFormChain } from "./personal-pending-photo-form-chain.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, personalPendingPhotoOwnerDeletionForm } from "./personal-pending-photo-owner-deletion.js";
@@ -23,6 +25,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
+  formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
@@ -37,6 +40,8 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
       || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
   if (!form || !outbox.hasPending()) throw blocked();
+  const fileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: outbox.list(), operationId: head.action.operationId, listId: binding.listId }) : null;
+  const expectedForms = fileChain?.forms || [form];
   if (form.action.body.action === "copy-batch" && head.action.operationId !== form.action.operationId && !pendingCopyBatchDeletionEnabled) throw blocked();
   try {
     const assertCurrent = () => {
@@ -48,9 +53,9 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     };
     assertCurrent();
     const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); assertCurrent();
-    if (!inventory.entries.some(entry => entry.operationId === form.action.operationId && ["linked", "settled-retained"].includes(entry.state))
+    if (expectedForms.some(form => !inventory.entries.some(entry => entry.operationId === form.action.operationId && ["linked", "settled-retained"].includes(entry.state)))
       || inventory.entries.some(entry => entry.state !== "settled-retained"
-        && (entry.state !== "linked" || entry.operationId !== form.action.operationId))) throw blocked();
+        && (entry.state !== "linked" || !expectedForms.some(form => entry.operationId === form.action.operationId)))) throw blocked();
     let proof;
     try {
       proof = await queue.inspect({ path: `/bike-packing/lists/${encodeURIComponent(binding.listId)}${head.action.kind === "list.import" ? "/import" : head.action.kind === "photos.mutate" ? "/photos/mutate" : ""}`,
@@ -82,12 +87,14 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     // A user may durably delete this owner while a file/receipt read is in
     // flight. That old worker must stop without blocking the new exact chain.
     // It never adopts the old form or retries it under a fresh identifier.
-    const continuation = form.action.kind === "list.import"
+    const nextFileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId }) : null;
+    const continuation = nextFileChain?.forms.some(entry => entry.action.operationId === form.action.operationId) ? form
+      : form.action.kind === "list.import"
       ? pendingImport(latest?.action.operationId)
       : form.action.body.copySource || form.action.body.action === "copy-batch" && pendingCopyBatchDeletionEnabled
       ? pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId })
       : pendingForm(latest?.action.operationId) || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId });
-    if (["context", "photo-form-drain", "photo-recovery-changed"].includes(error.code)
+    if (["context", "stale-tab", "photo-form-drain", "photo-recovery-changed"].includes(error.code)
       && context?.scope === "personal" && Object.keys(binding).every(key => context[key] === binding[key])
       && latest?.action.operationId !== head.action.operationId
       && continuation?.action.operationId === form.action.operationId) {

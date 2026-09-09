@@ -13,6 +13,7 @@ const blocked = message => Object.assign(new Error(message), { code: "photo-form
 // repeated click returns that same promise, including after a storage error.
 // No network, retry, cleanup or automatic rebase is authorized here.
 export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, onDurable,
+  prepareForm = preparePersonalPhotoFormAttachments, beforeStore,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = PERSONAL_PHOTO_FORM_ENABLED,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
   manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } = {}) {
@@ -44,7 +45,7 @@ export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, on
           throw blocked("Сохранение формы с фото ещё не подключено. Ничего не отправлено.");
         }
         const initial = clone(getContext()); sameContext(initial);
-        const prepared = preparePersonalPhotoFormAttachments(input, { enabled, itemContextEnabled, containerContextEnabled, manufacturerSourceEnabled, snapshotToPayload, createUuid });
+        const prepared = prepareForm(input, { enabled, itemContextEnabled, containerContextEnabled, manufacturerSourceEnabled, snapshotToPayload, createUuid });
         sameContext(initial);
         const plan = outbox.preparePhoto(prepared);
         sameContext(initial);
@@ -55,6 +56,11 @@ export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, on
         // record. It must stay visible to recovery, never be overwritten/deleted.
         attempt.phase = "saving-files";
         (async () => {
+          if (beforeStore) {
+            attempt.phase = "checking-storage";
+            await beforeStore(clone(attempt.plan)); sameContext(initial);
+            attempt.phase = "saving-files";
+          }
           if (attempt.files.length) {
             await store.captureForm({ ...clone(attempt.plan), files: attempt.files });
             attempt.fileStored = true;

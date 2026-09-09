@@ -1,5 +1,7 @@
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
 import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "./personal-manufacturer-photo-source.js";
+import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
+import { personalPendingPhotoFormChain } from "./personal-pending-photo-form-chain.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./personal-photo-item-form-context.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate, personalGuestPhotoResultReference } from "./personal-pending-guest-update.js";
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, isPersonalPendingFormUpdate, personalFormPhotoResultReference } from "./personal-pending-form-update.js";
@@ -112,6 +114,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
   containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
   manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
+  formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   photoEditEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
@@ -245,8 +248,11 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           continue;
         }
         const expectedDependencies = [{ operationId: parentId, listId }];
+        if (Object.hasOwn(action.body, "ownerResult") && !personalPendingPhotoFormChain({ records: [...records.values()], operationId: action.operationId, listId })) {
+          throw Error("Invalid pending photo form ancestry");
+        }
         if (Object.hasOwn(action.body, "photoResults")) {
-          const form = action.body.photoResults.version === 5 ? personalPendingFormUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
+          const form = [5, 6].includes(action.body.photoResults.version) ? personalPendingFormUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : action.body.photoResults.version === 4 ? personalPendingGuestUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : action.body.photoResults.version === 3 ? personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: action.operationId, listId });
@@ -497,10 +503,20 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (Object.hasOwn(input.body, "formContext") && !itemContextEnabled) throw blocked("photo-item-context-disabled", "Совместное сохранение фото и размещения вещи ещё не включено.");
       if (Object.hasOwn(input.body, "containerFormContext") && !containerContextEnabled) throw blocked("photo-container-context-disabled", "Совместное сохранение фото и размещения сумки ещё не включено.");
       if (Object.hasOwn(input.body, "manufacturerSource") && !manufacturerSourceEnabled) throw blocked("manufacturer-photo-source-disabled", "Сохранение сумки производителя с фото ещё не включено.");
+      if (Object.hasOwn(input.body, "ownerResult") && !formOwnerResultEnabled) throw blocked("photo-form-owner-result-disabled", "Следующая форма с файлами ещё не включена.");
       if (form && input.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
-      if (head && !applied.has(head.action.operationId)) throw blocked("photo-base", "Сначала нужно подтвердить предыдущее изменение карточки.");
+      const dependent = form && Object.hasOwn(input.body, "ownerResult");
+      if (dependent) {
+        const chain = head && personalPendingPhotoFormChain({ records: [...records.values()], operationId: head.action.operationId, listId });
+        if (!chain || applied.has(head.action.operationId) || input.body.ownerResult.operationId !== head.action.operationId
+          || chain.entityType !== input.body.entityType || chain.entityId !== input.body.entityId) {
+          throw blocked("photo-base", "Следующая фотоформа не связана с исходной сохранённой цепочкой.");
+        }
+      }
+      if (!dependent && head && !applied.has(head.action.operationId)) throw blocked("photo-base", "Сначала нужно подтвердить предыдущее изменение карточки.");
       const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
-      const base = baseline ? { payload: baseline.payload, stateRevision: baseline.stateRevision }
+      const base = dependent ? { payload: personalRecordPayload(head), stateRevision: head.action.body.baseStateRevision }
+        : baseline ? { payload: baseline.payload, stateRevision: baseline.stateRevision }
         : head && !head.photoState ? { payload: personalRecordPayload(head), stateRevision: applied.get(head.action.operationId).stateRevision }
           : !head ? initialMergeBase : null;
       if (!base || !uuid(operationId) || records.has(operationId) || anchor?.retired.includes(operationId)
@@ -583,12 +599,13 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (Object.hasOwn(input.body || {}, "photoResults")) throw blocked("input", "Связь с результатом копии должна принадлежать исходной локальной очереди.");
       const formSource = head && !applied.has(head.action.operationId) && personalPendingFormUpdateSource({
         records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true });
-      const pendingForm = formSource && (pendingFormUpdateEnabled || head.action.body.photoResults?.version === 5) ? formSource : null;
+      const pendingForm = formSource && (pendingFormUpdateEnabled || [5, 6].includes(head.action.body.photoResults?.version)) ? formSource : null;
       if (pendingForm) {
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
           && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
-        if (!pendingFormUpdateEnabled || !photoEnabled || !photoFormEnabled || create || restore || archiveImport || migration || localReconciliation
+        if (!pendingFormUpdateEnabled || !photoEnabled || !photoFormEnabled || pendingForm.action.body.ownerResult && !formOwnerResultEnabled
+          || create || restore || archiveImport || migration || localReconciliation
           || !isPersonalPendingFormUpdate({ source: pendingForm, basePayload: personalRecordPayload(head), payload: input.body.payload, userDeletion: input.body.userDeletion, listId })) {
           throw blocked("form-pending", "Изменение не подтверждено как продолжение сохранённой карточки. Поля и фотографии сохранены.");
         }
@@ -928,6 +945,56 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     },
     async cancelPhotoUpload({ queue, getContext, photoStore, photoStaging }) {
       const { head, records } = assertObserved();
+      if ((head?.action.body.ownerResult || head?.action.body.photoResults?.version === 6) && !formOwnerResultEnabled) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
+      const fileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: [...records.values()], operationId: head?.action.operationId, listId }) : null;
+      if (fileChain?.forms.length > 1) {
+        if (!photoEnabled || !photoFormEnabled || !photoBatchEnabled || !photoBatchCancellationEnabled
+          || !queue?.inspect || !queue?.cancelExact) throw blocked("photo-cancellation", "Отмена связанных фотоформ ещё не включена.");
+        const assertCurrent = guardEditor(getContext, head);
+        const inspectOrCancel = async record => {
+          const request = operationRequest(record.action); let proof;
+          assertCurrent();
+          try { proof = await queue.inspect(request); }
+          catch (error) { assertCurrent(); if (!error.isOperationReceiptError) throw error; }
+          assertCurrent();
+          if (!proof) {
+            if (!queue.supportsCancellation?.(request.path, request.method)) throw blocked("photo-cancellation", "Не подтверждён способ отмены исходного действия.");
+            proof = await queue.cancelExact(request); assertCurrent();
+          }
+          if (!validHistoricalProof(proof, record.action)) throw blocked("receipt", "Подтверждение не совпало с исходным действием цепочки.");
+          return proof;
+        };
+        // Validate every retained file before the first cancellation request.
+        for (const form of fileChain.forms) {
+          assertCurrent();
+          if (form.photoState.fileIntentHash === null) {
+            if (!(form.action.body.manufacturerSource ? manufacturerSourceEnabled : photoEditEnabled)) throw blocked("photo-cancellation", "Отмена исходной формы ещё не включена.");
+          } else {
+            const saved = await photoStore.read(form.action.operationId); assertCurrent();
+            assertPersonalPhotoFile(form, saved, binding);
+            if (typeof photoStaging?.inspect !== "function") throw blocked("photo-cancellation", "Не подключена проверка исходных файлов.");
+            for (const part of saved.files) {
+              try { await photoStaging.inspect(form.action.operationId, part.stage.operationId); }
+              catch (error) { assertCurrent(); if (!error.isPhotoStagingBlocked && !error.isOperationReceiptError) throw error; }
+              assertCurrent();
+            }
+          }
+        }
+        const forms = [];
+        // Fence ancestors first: an uncertain earlier file belongs to its own
+        // form and cannot authorize an unrelated descendant cancellation.
+        for (const form of fileChain.forms) {
+          const result = form.photoState.fileIntentHash === null
+            ? { ownerReceipt: await inspectOrCancel(form), stageReceipts: [], fileRetained: true }
+            : await cancelPersonalPhotoBatch({ record: form, binding, queue, store: photoStore, staging: photoStaging,
+              assertCurrent, enabled: true, formEnabled: true });
+          assertCurrent(); forms.push(result);
+        }
+        if (forms.every(result => result.ownerReceipt.operation.state === "committed")) return { historicalOnly: true, alreadyPublished: true, forms, fileRetained: true };
+        const descendants = [];
+        for (const step of [...fileChain.steps].reverse()) if (step.action.kind === "list.update") descendants.push(await inspectOrCancel(step));
+        return { historicalOnly: true, forms, descendants, fileRetained: true };
+      }
       const pendingForm = pendingFormUpdateEnabled && photoFormEnabled && personalPendingFormUpdateSource({
         records: [...records.values()], operationId: head?.action.operationId, listId })
         || pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({
@@ -1036,7 +1103,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       for (let record = head; record; record = records.get(record.action.body.causal.baseOperationId)) chain.push(record);
       const root = chain.at(-1);
       const dependentForm = chain.find((record, index) => record.photoState && index > 0);
-      const resolvedForm = dependentForm?.action.kind === "list.import"
+      const fileChain = formOwnerResultEnabled ? personalPendingPhotoFormChain({ records: [...records.values()], operationId: head.action.operationId, listId }) : null;
+      const resolvedForm = fileChain?.forms.length > 1 ? fileChain.forms.find(record => record.action.operationId === dependentForm?.action.operationId)
+        : dependentForm?.action.kind === "list.import"
         ? (Object.hasOwn(dependentForm.action.body, "guestImport")
           ? pendingGuestUpdateEnabled && guestImportEnabled && personalPendingGuestUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId })
           : pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId }))
@@ -1085,13 +1154,14 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           if (Object.hasOwn(action.body, "formContext") && !itemContextEnabled) throw blocked("photo-item-context-disabled", "Совместное сохранение фото и размещения вещи ещё не включено.");
           if (Object.hasOwn(action.body, "containerFormContext") && !containerContextEnabled) throw blocked("photo-container-context-disabled", "Совместное сохранение фото и размещения сумки ещё не включено.");
           if (Object.hasOwn(action.body, "manufacturerSource") && !manufacturerSourceEnabled) throw blocked("manufacturer-photo-source-disabled", "Сохранение сумки производителя с фото ещё не включено.");
+          if (Object.hasOwn(action.body, "ownerResult") && !formOwnerResultEnabled) throw blocked("photo-form-owner-result-disabled", "Следующая форма с файлами ещё не включена.");
           const manifest = assertPersonalPhotoRecord(record), attachments = manifest.filter(entry => entry.action === "attach");
           if (action.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
           if (action.body.action === "form" && !action.body.copySource && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled) throw blocked("photo-edit-disabled", "Изменение существующих фото ещё не включено.");
           const batch = record.photoState.fileInventoryVersion === 2;
           if (batch && !photoBatchEnabled) throw blocked("photo-batch-disabled", "Пакетная отправка фото ещё не включена.");
           let terminal = false;
-          if (dependentForm?.action.operationId === action.operationId) {
+          if (dependentForm?.action.operationId === action.operationId || fileChain?.forms.some(form => form.action.operationId === action.operationId)) {
             try {
               const proof = await queue.inspect(operationRequest(action)); assertContext();
               if (!validHistoricalProof(proof, action)) throw blocked("receipt", "Не подтверждено точное исходное фотодействие.");

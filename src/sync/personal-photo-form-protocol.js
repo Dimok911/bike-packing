@@ -1,5 +1,6 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { personalManufacturerPhotoFormSource } from "./personal-manufacturer-photo-source.js";
+import { personalPhotoFormOwnerResult, personalPhotoFormOwnerValidationBody, assertPersonalPhotoFormOwnerBase } from "./personal-photo-form-owner-result.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { personalPhotoCopySourceValid, personalPhotoCopyOwner } from "./personal-photo-copy-source.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
@@ -35,10 +36,16 @@ const fieldChecks = {
 // The actual immutable request keeps revision zero for creation. A photo-only
 // queue must never receive this validation view as a rewritten request.
 function photoValidationView(body) {
+  if (Object.hasOwn(body, "ownerResult")) body = personalPhotoFormOwnerValidationBody(body);
   return { version: 1, action: "batch", changes: body.changes.map(change => ({ ...change, baseEntityRevision: body.baseEntityRevision || 1 })) };
 }
 
 export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {}) {
+  if (body && Object.hasOwn(body, "ownerResult")) {
+    const ownerResult = personalPhotoFormOwnerResult(body);
+    const manifest = personalPhotoFormManifest(personalPhotoFormOwnerValidationBody(body), { allowEmptyCopy });
+    return { ...manifest, baseEntityRevision: null, ownerResult };
+  }
   const keys = ["version", "action", "baseStateRevision", "causal", "entityType", "entityId", "baseEntityRevision", "fields", "changes", "copySource", "formContext", "containerFormContext", "manufacturerSource"];
   if (!object(body) || body.version !== 1 || body.action !== "form" || Object.keys(body).some(key => !keys.includes(key))
     || !["item", "container"].includes(body.entityType) || !id(body.entityId)
@@ -88,6 +95,7 @@ export function personalPhotoFormOwner(basePayload, body) {
 export function assertPersonalPhotoFormCandidate({ body, basePayload, payload, listId }) {
   if (!object(basePayload) || !object(payload) || !id(listId)) fail();
   const manifest = personalPhotoFormManifest(body), candidate = clone(basePayload);
+  if (manifest.ownerResult) assertPersonalPhotoFormOwnerBase(body, basePayload, listId);
   if (manifest.copySource && manifest.copySource.listId !== listId) fail();
   const collection = body.entityType === "item" ? "items" : "containers", owner = personalPhotoFormOwner(candidate, body);
   const desired = payload[collection]?.[body.entityId];
@@ -130,6 +138,26 @@ export function validatePersonalPhotoFormResult(payload, expected) {
         || !Array.isArray(payload.photoChanges) || payload.photoChanges.length !== 0
         : !validatePersonalPhotoPublicationResult(payload, { ...expected, body: photoValidationView(expected.body) }, { allowDeleteThenOrder: true, allowAttachThenOrder: true }))) return false;
     const owner = payload.list.payload[manifest.entityType === "item" ? "items" : "containers"][manifest.entityId];
+    if (manifest.ownerResult) {
+      if (!isPersonalPhotoPrivateOwner(owner) || payload.stateRevision <= expected.body.baseStateRevision) return false;
+      let frozen = clone(manifest.ownerResult.owner);
+      for (const [key, value] of Object.entries(manifest.fields)) {
+        if (key === "dimensions" && value === null) delete frozen[key]; else frozen[key] = clone(value);
+      }
+      if (manifest.formContext) frozen = personalPhotoItemContextOwner(frozen, personalPhotoItemFormContext(expected.body));
+      frozen.photos = manifest.photos.at(-1).photoIds.map(photoId => {
+        const actual = owner.photos.find(photo => photo.id === photoId), prior = manifest.ownerResult.owner.photos.find(photo => photo.id === photoId);
+        const attachment = manifest.photos.find(change => change.action === "attach" && change.photoId === photoId);
+        if (!actual || actual.status !== "synced" || actual.photoId !== photoId || actual.listId !== expected.listId
+          || actual.assetId !== (prior?.assetId || attachment?.assetId) || prior?.status === "synced" && !same(prior, actual)) fail();
+        return clone(actual);
+      });
+      const actual = clone(owner);
+      for (const key of manifest.entityType === "item" ? ["containerId", "parentContainerId"] : ["parentId", "childIds", "itemIds", "order"]) {
+        delete frozen[key]; delete actual[key];
+      }
+      if (!same(frozen, actual)) return false;
+    }
     if (manifest.manufacturerSource && !same(owner.manufacturerCatalogSource, personalManufacturerPhotoFormSource(expected.body).manufacturerCatalogSource)) return false;
     if (filelessManufacturer && (!same(owner.photos, []) || !same(summary.manufacturerCatalogSource, owner.manufacturerCatalogSource))) return false;
     if (manifest.copySource) {

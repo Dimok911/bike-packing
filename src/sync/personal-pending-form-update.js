@@ -4,6 +4,7 @@ import { personalPhotoFormManifest } from "./personal-photo-form-protocol.js";
 import { personalBusinessPayload } from "./personal-server-payload.js";
 import { preparePersonalDeletionBatch } from "./personal-deletion-intent.js";
 import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
+import { personalPendingPhotoFormChain } from "./personal-pending-photo-form-chain.js";
 
 export const PERSONAL_PENDING_FORM_UPDATE_ENABLED = false;
 export const PERSONAL_PENDING_FORM_UPDATE_CAPABILITY = "personalCausalPhotoFormDescendantsV1";
@@ -16,7 +17,7 @@ export function personalFormPhotoBodyResultReference(body, operationId) {
   const form = personalPhotoFormManifest(body);
   // Copies retain their existing separate protocol and ancestry rules.
   if (form.copySource) throw Error("A copied photo owner requires its copy protocol");
-  return { version: 5, operationId, owners: [{ entityType: form.entityType, entityId: form.entityId }] };
+  return { version: form.ownerResult ? 6 : 5, operationId, owners: [{ entityType: form.entityType, entityId: form.entityId }] };
 }
 
 export function personalFormPhotoResultReference(source) {
@@ -29,7 +30,7 @@ export function personalFormPhotoResultReference(source) {
 export function validatePersonalPendingFormUpdateResult(result, expected) {
   try {
     const body = expected.body, reference = body.photoResults, list = result?.list;
-    if (expected.kind !== "list.update" || reference?.version !== 5 || reference.owners?.length !== 1
+    if (expected.kind !== "list.update" || ![5, 6].includes(reference?.version) || reference.owners?.length !== 1
       || list?.id !== expected.listId || result.ok !== true || !Number.isSafeInteger(result.stateRevision)
       || result.stateRevision <= body.baseStateRevision || list.stateRevision !== result.stateRevision) return false;
     const selected = reference.owners[0], collection = selected.entityType === "item" ? "items" : selected.entityType === "container" ? "containers" : null;
@@ -66,6 +67,9 @@ export function isPersonalPendingFormUpdate({ source, basePayload, payload, user
         || Object.keys(initial[collection]).some(id => !Object.hasOwn(base[collection], id) && Object.hasOwn(actual[collection], id))) return false;
     }
     const attached = new Map(source.action.body.changes.filter(change => change.action === "attach").map(change => [change.photoId, change]));
+    for (const photo of source.action.body.ownerResult?.owner.photos || []) if (photo.status === "pending") {
+      attached.set(photo.id, { photoId: photo.id, assetId: photo.assetId, entityType: source.action.body.entityType, entityId: source.action.body.entityId });
+    }
     const withoutPending = value => {
       const result = clone(value);
       for (const collection of collections) for (const owner of Object.values(result[collection])) if (owner.photos) {
@@ -98,12 +102,13 @@ export function personalPendingFormUpdateSource({ records, operationId, listId, 
     while (record && record.action.kind !== "photos.mutate") {
       const action = record.action, parent = action.body.causal?.baseOperationId;
       if (seen.has(action.operationId) || action.kind !== "list.update" || action.listId !== listId || record.photoState
-        || !parent || !byId.has(parent) || action.body.photoResults?.version !== 5) return null;
+        || !parent || !byId.has(parent) || ![5, 6].includes(action.body.photoResults?.version)) return null;
       seen.add(action.operationId); steps.push(record); record = byId.get(parent);
     }
     if (!record || !steps.length && !includeSource) return null;
     const source = record, reference = personalFormPhotoResultReference(source);
     if (source.action.listId !== listId) return null;
+    if (source.action.body.ownerResult && !personalPendingPhotoFormChain({ records, operationId: source.action.operationId, listId })) return null;
     let previous = source;
     for (const step of steps.reverse()) {
       const action = step.action, deps = action.body.causal.dependsOn, basePayload = payloadOf(previous);
