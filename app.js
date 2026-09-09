@@ -2924,7 +2924,7 @@ function preparePersonalPlacementAction(request) {
     || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
   personalSaveRecovery.assertRunning();
   request = JSON.parse(JSON.stringify(request));
-  if (request.layoutId !== state.activeLayoutId || warnLockedLayoutMutation(request.layoutId)) return false;
+  if (request.layoutId !== state.activeLayoutId && request.action !== "link-item" || warnLockedLayoutMutation(request.layoutId)) return false;
   const operationId = crypto.randomUUID(), initial = JSON.stringify(personalSaveContext());
   let prepared, used = false;
   try {
@@ -2932,7 +2932,7 @@ function preparePersonalPlacementAction(request) {
       hasPhotos: record => normalizeItemPhotos(record).length > 0 });
   } catch (error) { showToast(error.message, "error"); return false; }
   return () => {
-    if (used || request.layoutId !== state.activeLayoutId || initial !== JSON.stringify(personalSaveContext())
+    if (used || request.layoutId !== state.activeLayoutId && request.action !== "link-item" || initial !== JSON.stringify(personalSaveContext())
       || warnLockedLayoutMutation(request.layoutId)) {
       showToast(localText("The layout changed. Confirm the action again.", "Укладка изменилась. Подтвердите действие заново."), "error");
       return false;
@@ -2943,7 +2943,7 @@ function preparePersonalPlacementAction(request) {
     for (const key of ["items", "containers", "layouts", "packedItems", "collapsedContainers", "showOnlyUnpacked"]) {
       if (Object.hasOwn(prepared.snapshot, key)) state[key] = prepared.snapshot[key];
     }
-    applyLayoutArrangement(request.layoutId);
+    applyLayoutArrangement(state.activeLayoutId);
     saveState({ captureArrangement: false, recordAction: false });
     return true;
   };

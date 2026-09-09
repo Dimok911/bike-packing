@@ -2378,12 +2378,17 @@ function openCopiedTargetLayout(layoutId) {
 function linkExistingItemToContainerInLayout(itemId, targetContainerId, targetLayoutId = state.activeLayoutId) {
   const targetLayout = state.layouts[targetLayoutId];
   if (!state.items[itemId] || !targetLayout) return false;
-  ensureWritableTargetLayoutContext(targetLayoutId);
   const changedAt = nowIso();
   if (getLayoutItemIdSet(targetLayout).has(itemId)) return false;
-  if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
+  const commit = preparePersonalPlacementAction({ layoutId: targetLayoutId, action: "link-item", ids: [itemId], targetContainerId });
+  if (commit === false) return false;
+  if (commit) { if (!commit()) return false; }
+  else {
+    ensureWritableTargetLayoutContext(targetLayoutId);
+    if (!placeExistingItemInLayout(itemId, targetContainerId, targetLayoutId, { changedAt })) return false;
+    saveLayoutMutation(targetLayoutId);
+  }
   markRecentlyAddedItem(itemId, targetLayoutId);
-  saveLayoutMutation(targetLayoutId);
   openCopiedTargetLayout(targetLayoutId);
   refs.containerPickerDialog.close();
   closeSourceEditorAfterCopy("item", itemId);
@@ -8207,7 +8212,10 @@ const personalPhotoForms = createPersonalPhotoFormController({
         targetParentId: parentChanged ? snapshot.parentId : "", targetIndex,
         layoutFields: Object.fromEntries(["updatedAt", "updatedByDeviceId", "updatedByDeviceName"].filter(key => Object.hasOwn(fields, key)).map(key => [key, fields[key]])) };
     }
-    return { request, placementChanged, availabilityChanged, catalogSource: Boolean(!item && (rootContainerCatalogSelection || pendingCopyTargetContainerSetup)) };
+    // The existing close listener restores the item-copy picker only after
+    // onDurable closes this dialog. Quota failures keep both the form and its
+    // continuation intact; the selected layout is frozen above.
+    return { request, placementChanged, availabilityChanged, catalogSource: Boolean(!item && rootContainerCatalogSelection) };
   },
   createSession: personalPhotoFormSession,
   createEditSession: options => personalPhotoFormSession({ ...options, editExistingPhotos: true }),

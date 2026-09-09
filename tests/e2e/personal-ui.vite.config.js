@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     if (source.endsWith("/src/sync/auth-load-flow.js")) return code.replace(
       '  await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });',
       '  globalThis.__personalStartupPhase = "rendering"; try { await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice }); globalThis.__personalStartupPhase = "rendered"; } catch (error) { globalThis.__personalStartupPhase = { message: error.message, code: error.code, stack: error.stack }; throw error; }');
-    if (mode === "photo-form" && source.endsWith("/src/sync/personal-photo-form-plan.js")) return code.replace(
+    if (["photo-form", "photo-edit"].includes(mode) && source.endsWith("/src/sync/personal-photo-form-plan.js")) return code.replace(
       'if (!same(snapshotToPayload(clone(frozen)), base)) fail();',
       'if (!same(snapshotToPayload(clone(frozen)), base)) { globalThis.__personalTestProjectionDifference = { expected: base, actual: snapshotToPayload(clone(frozen)) }; fail(); }');
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-item-form-context.js")) return code.replace(

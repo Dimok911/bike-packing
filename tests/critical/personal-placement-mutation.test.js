@@ -19,6 +19,23 @@ const initial = () => ({ activeLayoutId: "l", packedItems: { a: true, b: true },
       pocket: { parentId: "bag", childIds: [], itemIds: ["b"], order: [{ type: "item", id: "b" }] } },
     items: { a: "bag", b: "pocket" }, itemQuantities: { a: 3, b: 2 }, packedItems: { a: true, b: true } } } } });
 
+test("linking an existing item into another layout freezes that target without changing active placement or photos", () => {
+  const state = initial();
+  state.items.a.photos = [{ id: "photo-a", status: "synced", url: "https://photo.example/a" }];
+  state.containers.target = { id: "target", parentId: null, childIds: [], itemIds: [], order: [], photos: [] };
+  state.layouts.other = { id: "other", rootContainerIds: ["target"], arrangement: { rootContainerIds: ["target"],
+    containers: { target: { parentId: "", childIds: [], itemIds: [], order: [] } }, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 } };
+  const before = structuredClone(state);
+  const { snapshot, intent } = preparePersonalPlacementMutation(state, { layoutId: "other", action: "link-item", ids: ["a"], targetContainerId: "target" });
+  assert.deepEqual(state, before); assert.equal(snapshot.activeLayoutId, before.activeLayoutId);
+  assert.deepEqual(snapshot.items, before.items); assert.deepEqual(snapshot.containers, before.containers);
+  assert.deepEqual(snapshot.layouts.l, before.layouts.l); assert.deepEqual(snapshot.packedItems, before.packedItems);
+  assert.equal(snapshot.layouts.other.arrangement.items.a, "target"); assert.equal(snapshot.layouts.other.arrangement.itemQuantities.a, 1);
+  assert.equal(snapshot.layouts.other.arrangement.packedItems.a, undefined); assert.equal(intent.action, "link-item");
+  assert.deepEqual(intent.linkedItemIds, ["a"]);
+  assert.throws(() => preparePersonalPlacementMutation(snapshot, { layoutId: "other", action: "move-item", ids: ["a"], targetContainerId: "target" }));
+});
+
 test("packing marks are explicit values and unpack freezes the exact set without moving records", () => {
   const state = initial(), before = structuredClone(state);
   const unpack = preparePersonalPlacementMutation(state, { layoutId: "l", action: "unpack-all", ids: ["a", "b"] });

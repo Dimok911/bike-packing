@@ -1135,9 +1135,13 @@ async function synchronize(page, condition) {
   }), { timeout: 20000 }).toBe(true);
 }
 
-async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2, secondBag = false, placeNew = false, withContents = false } = {}) {
-  const f = await setup(page, context, { photoForm: true, photoEdit }), bag = await createRootContainer(page, "База фотоформы");
+async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2, secondBag = false, placeNew = false, withContents = false, copyTarget = false, copySourcePhotos = false } = {}) {
+  const payload = initialPayload();
+  if (copyTarget) payload.layouts["layout-b"] = { ...structuredClone(payload.layouts["layout-a"]), id: "layout-b", name: "Пустая цель копирования",
+    arrangement: { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {}, itemQuantityMigrationVersion: 3 } };
+  const f = await setup(page, context, { payload, photoForm: true, photoEdit }), bag = await createRootContainer(page, "База фотоформы");
   if (type === "item" && !created) await createItemInContainer(page, bag, "Вещь фотоформы");
+  if (copyTarget) await createItemInContainer(page, bag, "Источник копирования в новую сумку");
   if (withContents) {
     await bag.locator("[data-add-to-container]").click(); await page.locator("#newSubcontainerName").fill("Карман фотоформы");
     await submitForm(page, "#createSubcontainerBtn", "#newSubcontainerName");
@@ -1146,9 +1150,15 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   }
   if (secondBag) await createRootContainer(page, "Вторая сумка фотоформы");
   await synchronize(page, () => Object.keys(f.payload.containers).length === (secondBag ? 2 : 1) + Number(withContents) && (type !== "item" || created || Object.keys(f.payload.items).length === 1));
+  if (copySourcePhotos) { addConfirmedTreePhotos(f, [["items", Object.keys(f.payload.items)[0]]]); await reloadApp(page); }
   const before = f.posts.length, collection = type === "item" ? "items" : "containers";
   await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
-  if (created && placeNew) {
+  if (copyTarget) {
+    await page.locator('[data-view="items"]').click(); await page.locator("#itemsView .item-title").filter({ hasText: "Источник копирования в новую сумку" }).click();
+    await page.locator("#itemCopyToContainerBtn").click(); await page.locator("#containerPickerLayoutSelect").selectOption("layout-b");
+    await page.locator("#containerPickerBoard [data-add-packing-root]").click();
+    await page.locator("#createRootForLayoutBtn").click();
+  } else if (created && placeNew) {
     await page.locator('[data-view="packing"]').click(); await page.locator("[data-add-packing-root]").click(); await page.locator("#createRootForLayoutBtn").click();
   } else if (created) await page.locator(type === "item" ? "#addItemBtn" : "#addRootContainerBtn").click();
   else await page.locator(type === "item" ? "#itemsView .item-title" : "#bagsView [data-root-title]").filter({ hasText: type === "item" ? "Вещь фотоформы" : "База фотоформы" }).click();
@@ -1170,6 +1180,63 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   await expect(page.locator(button)).toBeVisible();
   return { f, before, collection, prefix, button, dialog };
 }
+
+for (const scenario of ["copy", "copy with source photos", "lost file", "lost owner", "queue quota"]) test(`container photo form returns to the item copy picker (${scenario})`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const sourcePhotos = scenario === "copy with source photos";
+  const { f, before, button, dialog } = await prepareOrdinaryPhotoForm(page, context, { type: "container", created: true,
+    photoEdit: true, copyTarget: true, copySourcePhotos: sourcePhotos });
+  const server = structuredClone(f.payload), sourceId = Object.keys(server.items)[0], picker = page.locator("#containerPickerDialog");
+  if (scenario === "lost file") f.loseStageAt = 2;
+  if (scenario === "lost owner") f.loseFormOwner = true;
+  if (scenario === "queue quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.containerFormContext) throw new DOMException("Copy target quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await submitForm(page, button, "#rootContainerNote");
+  if (scenario === "queue quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible(); await expect(dialog).toBeVisible();
+    await expect(picker).not.toBeVisible();
+    const recovery = await downloadRecovery(page), owner = Object.values(recovery.unconfirmedMemoryDraft.containers).find(row => row.name === "Карточка со всеми файлами");
+    expect(owner.photos).toHaveLength(2); expect(recovery.unconfirmedMemoryDraft.layouts["layout-b"].rootContainerIds).toContain(owner.id);
+    expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before); expect(f.stagePosts).toHaveLength(0); expect(f.errors).toEqual([]); return;
+  }
+  await expect(dialog).not.toBeVisible(); await expect(picker).toBeVisible(); await expect(page.locator("#containerPickerLayoutSelect")).toHaveValue("layout-b");
+  await expect.poll(() => f.stagePosts.length, { timeout: 20000 }).toBe(2);
+  if (scenario.startsWith("lost")) {
+    if (scenario === "lost owner") await expect.poll(() => f.injectedFailure).toBe(true); else expect(f.payload).toEqual(server);
+    const pending = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).map(([, value]) => JSON.parse(value)).find(record => record.action?.body?.containerFormContext));
+    const journalBefore = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort());
+    await page.locator(`#containerPickerBoard [data-pick-container="${pending.action.body.entityId}"]`).click();
+    await expect(picker).toBeVisible(); await expect(page.locator("#layoutSelect")).toHaveValue("layout-a");
+    expect(await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:")).sort())).toEqual(journalBefore);
+    const stages = [...f.stagePosts], posts = structuredClone(f.posts);
+    await reloadApp(page, { recovery: true });
+    const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+    await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toEqual(posts); expect(f.stagePosts).toEqual(stages);
+    f.loseStageAt = 0; f.hiddenStage = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+    await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены"); await reloadApp(page);
+    await page.locator('[data-view="items"]').click(); await page.locator("#itemsView .item-title").filter({ hasText: server.items[sourceId].name }).click();
+    await page.locator("#itemCopyToContainerBtn").click(); await expect(picker).toBeVisible(); await page.locator("#containerPickerLayoutSelect").selectOption("layout-b");
+  } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty), { timeout: 20000 }).toBe(false);
+  expect(f.posts).toHaveLength(before + 1);
+  const form = f.posts.at(-1), targetId = form.body.entityId, targetRevision = f.revision;
+  expect(form.body.containerFormContext.targetLayout).toEqual(server.layouts["layout-b"]);
+  expect(f.payload.containers[targetId].photos).toHaveLength(2); expect(f.payload.items).toEqual(server.items);
+  await page.locator(`#containerPickerBoard [data-pick-container="${targetId}"]`).click(); await expect(picker).not.toBeVisible();
+  await synchronizePhotoHistory(page, () => f.payload.layouts["layout-b"].arrangement.items[sourceId] === targetId);
+  const copy = f.posts.at(-1);
+  expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2);
+  expect(copy.body.baseStateRevision).toBe(targetRevision);
+  expect(copy.kind).toBe("list.update"); expect(copy.body.payload.layouts["layout-b"].arrangement.items[sourceId]).toBe(targetId);
+  expect(copy.body.userPlacement.action).toBe("link-item"); expect(copy.body.userPlacement.layoutId).toBe("layout-b");
+  expect(f.payload.items).toEqual(server.items); expect(f.payload.items[sourceId].photos).toHaveLength(sourcePhotos ? 1 : 0);
+  expect(f.payload.layouts["layout-a"]).toEqual(server.layouts["layout-a"]);
+  await reloadApp(page); expect(f.posts).toHaveLength(before + 2); expect(f.stagePosts).toHaveLength(2); expect(f.errors).toEqual([]);
+});
 
 for (const scenario of ["create", "move", "root order", "lost file", "lost owner", "queue quota"]) test(`composed container photo form preserves complete placement (${scenario})`, async ({ page, context }) => {
   test.setTimeout(150000);

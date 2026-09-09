@@ -2,6 +2,17 @@
 
 ## Актуальная точка — после исходной передачи ниже
 
+Сумка с фото из picker копирования вещи и durable `link-item` в другой
+укладке завершены локально: 34 focused, 596 transport, 896 critical, FE check,
+UI 30/30 (6,9 мин; container-copy-target-ui-6.log), API/MySQL 218/218
+(250,47 с; container-copy-target-mysql-1.log). Все процессы exit0, MySQL
+остановлен. Следующий WIP — потомки обычной фотоформы, чтобы следующий
+выбор места мог ждать её подтверждения в очереди. Сейчас добавлены только
+НЕПОДКЛЮЧЁННЫЕ src/sync/personal-pending-form-update.js и
+tests/critical/personal-pending-form-update.test.js, focused 4/4
+(pending-form-focused-2.log); gates false, общего UI/API ещё нет.
+Не останавливаться после текущего среза: продолжать ВЕСЬ checklist.
+
 Container form context завершён локально: полный API/MySQL 218/218,
 247,28 с (container-photo-context-mysql-1.log), расширенный UI 34/34,
 6,6 мин (container-photo-context-ui-3.log), Chromium/mobile WebKit,

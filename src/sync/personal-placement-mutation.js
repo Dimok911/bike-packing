@@ -86,7 +86,7 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
   const unpackAll = action === "unpack-all";
   if (unpackAll) { action = "set-packed"; packed = false; }
   const layout = state?.layouts?.[layoutId];
-  if (!validId(layoutId) || !privateRecord(layout) || layoutId !== state.activeLayoutId || !layout.arrangement
+  if (!validId(layoutId) || !privateRecord(layout) || layoutId !== state.activeLayoutId && action !== "link-item" || !layout.arrangement
     || !validIds(ids) || !ids.length || !actions.has(action)
     || action !== "set-packed" && ids.length !== expectedCount(action) || action === "set-packed" && typeof packed !== "boolean"
     || (moves.has(action) || links.has(action)) && (!validIndex(targetIndex) || targeted.has(action) && (!validId(targetContainerId)
@@ -156,7 +156,7 @@ export function preparePersonalPlacementMutation(state, { layoutId, action, ids,
       }
     }) })) throw Error("Не удалось подготовить удаление сумки из укладки.");
   markEdited(next, changedAt);
-  snapshot.packedItems = clone(next.arrangement.packedItems || {});
+  if (layoutId === state.activeLayoutId) snapshot.packedItems = clone(next.arrangement.packedItems || {});
   const linkedItemIds = links.has(action) ? difference(next.arrangement.items, layout.arrangement.items) : [];
   const linkedContainerIds = links.has(action) ? difference(next.arrangement.containers, layout.arrangement.containers) : [];
   if (readSet && (JSON.stringify([...readSet.linkedItemIds].sort()) !== JSON.stringify([...linkedItemIds].sort())
