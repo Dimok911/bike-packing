@@ -2,7 +2,72 @@
 
 ## Актуальная точка — после исходной передачи ниже
 
+Container form context завершён локально: полный API/MySQL 218/218,
+247,28 с (container-photo-context-mysql-1.log), расширенный UI 34/34,
+6,6 мин (container-photo-context-ui-3.log), Chromium/mobile WebKit,
+включая регрессию составной вещи и fileless перемещение/порядок сумки.
+Session65418 exit0, все тестовые процессы завершены. Ниже утверждения о
+выполняющихся container прогонах исторические. Продолжать ВЕСЬ checklist:
+следующий путь — создание сумки с фото из picker копирования вещи.
+Публикация/push/live/gates запрещены. Галерея остаётся на hold ниже.
+
 Эта секция имеет приоритет над историческим состоянием остального документа.
+
+
+ВАЖНОЕ УТОЧНЕНИЕ 2026-09-09: source task «Исправить прокрутку фото в Safari»
+01a078da-0a8e-73e2-a3fd-d65c71e65e60 отменил прежнее поручение переноса
+Production v1602/gallery2.4.0: пользователь на iPhone не заметил улучшения,
+результат НЕ ПРИНЯТ, перенос в Experiment только после явного подтверждения.
+Здесь gallery уже в локальном cf92069, НЕ опубликован/НЕ pushed из этой
+задачи. Автоматически ничего не откатывать. Приостановлены дальнейшая
+интеграция галереи и её включение в выпуск. Остальную работу продолжать.
+Обновлён docs/experiment-gallery-2.4.0-local.md (только статус, не runtime).
+Источник сообщения не доказывает независимую проверку iPhone здесь.
+
+Container API/MySQL ЗАВЕРШЁН: 218/218,247,28с,exit0,
+container-photo-context-mysql-1.log, session38697 завершён. DisposableMySQL
+остановлен. FE check session24295 также exit0.
+СЕЙЧАС UI3 container-photo-context-ui-3.log session65418, grep
+'composed (container|item) photo', mode photo-edit, expected34 теста.
+Дождаться итогового выхода, обновить docs/checklist, принять локальный
+container form context FE/BE. Не завершать всю задачу после этого среза.
+
+
+Сейчас актуально: item photo context ПРИНЯТ локально FE f1e73b6 / BE 92f6abe.
+Продолжается весь список без публикации, push или включения gates.
+Нынешний НЕЗАКОММИЧЕННЫЙ срез — containerFormContext.version=1.
+Подключены FE app/controller, form protocol/plan/edit/session/submit,
+outbox/queue; BE form/lists/list-operations/capability server. Новые общие
+модули personal-photo-form-layout.js и personal-photo-container-form-context.js
+в обоих репозиториях. Item context переведён на общий strict layout inventory.
+Три pure модуля FE/BE сверены по UTF-8/LF hash, значения в новых docs
+personal-photo-container-form-context.md / API causal-photo-container-form-context.md.
+Поддержаны новая пустая root, перенос полного дерева, подъём в root, порядок
+root и вставка в parent; detached link пустой или по ПОЛНОМУ sourceLayout.
+Новые связи в другой укладке получают qty1/no packed как прежний link path;
+move сохраняет qty/packing. Нет скрытой нормализации/чтения другого источника.
+Собственный false gate PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
+cap personalCausalPhotoContainerFormContextV1. Создание цели внутри другого
+копирования и producer/public catalog source пока явно остаются заблокированы.
+App readForm catalogSource также учитывает pendingCopyTargetContainerSetup,
+чтобы не потерять возврат к исходному picker. Не считать этот подпункт готовым.
+10 container focused (focused-3),55 queue,595 transport (transport-2),896critical,
+78 BE operations,74 BE source/service и FE check прошли. Все short процессы
+завершены. Initial focused failures были только неполными synced photo
+refs fixture (нужны fileName/type/size/width/height); исправлены,10/10 pass.
+UI2 container-photo-context-ui-2.log:12/12,2,8 мин, session35756 exit0.
+UI1:2pass/1fail/9notrun, неверный selector root reordering; это отдельный
+#rootPlacementDialog [data-place-root-index], с rootContainerNestable unchecked.
+Runtime не менялся ради теста. UI2 все cases passed. Все UI процессы завершены.
+Сейчас работает API/MySQL container-photo-context-mysql-1.log session38697.
+Новые 6 API сценариев прошли, общий набор ещё надо дождаться. Expected218.
+После его завершения запустить UI расширенный grep
+'composed (container|item) photo', mode photo-edit, workers1/max-failures1.
+Добавлены 4 fileless container UI сценария (move/root order +lost ACK,2browsers),
+ОНИ ЕЩЁ НЕ ЗАПУСКАЛИСЬ. Суммарно расширенный UI должен34теста (16bags+18items).
+Обновить docs/checklist окончательными итогами, scoped local FE/BE commits,
+потом продолжать полный список. Не заканчивать после текущего среза.
+Ниже все утверждения о НЕПОДКЛЮЧЁННЫХ container files теперь исторические.
 
 
 Итог item photo context: UI4 завершён 26/26, 5,3 мин, exit 0 (session13431).

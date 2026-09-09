@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./personal-photo-item-form-context.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate, personalGuestPhotoResultReference } from "./personal-pending-guest-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, assertPersonalArchivePhotoBody } from "./personal-archive-photo-protocol.js";
@@ -107,6 +108,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   photoBatchEnabled = PERSONAL_PHOTO_BATCH_OUTBOX_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
+  containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
   photoEditEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
@@ -488,6 +490,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (input.body.copyPlacement && !photoCopyPlacementEnabled) throw blocked("photo-copy-placement-disabled", "Копирование вещи в сумку с фото ещё не включено.");
       if (form && !photoFormEnabled) throw blocked("photo-form-disabled", "Сохранение карточки вместе с фото ещё не включено.");
       if (Object.hasOwn(input.body, "formContext") && !itemContextEnabled) throw blocked("photo-item-context-disabled", "Совместное сохранение фото и размещения вещи ещё не включено.");
+      if (Object.hasOwn(input.body, "containerFormContext") && !containerContextEnabled) throw blocked("photo-container-context-disabled", "Совместное сохранение фото и размещения сумки ещё не включено.");
       if (form && input.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
       if (head && !applied.has(head.action.operationId)) throw blocked("photo-base", "Сначала нужно подтвердить предыдущее изменение карточки.");
       const baseline = anchor?.operationId === head?.action.operationId ? anchor?.baseline : null;
@@ -1055,6 +1058,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
           if (action.body.copyPlacement && !photoCopyPlacementEnabled) throw blocked("photo-copy-placement-disabled", "Копирование вещи в сумку с фото ещё не включено.");
           if (action.body.action === "form" && !photoFormEnabled) throw blocked("photo-form-disabled", "Сохранение карточки вместе с фото ещё не включено.");
           if (Object.hasOwn(action.body, "formContext") && !itemContextEnabled) throw blocked("photo-item-context-disabled", "Совместное сохранение фото и размещения вещи ещё не включено.");
+          if (Object.hasOwn(action.body, "containerFormContext") && !containerContextEnabled) throw blocked("photo-container-context-disabled", "Совместное сохранение фото и размещения сумки ещё не включено.");
           const manifest = assertPersonalPhotoRecord(record), attachments = manifest.filter(entry => entry.action === "attach");
           if (action.body.copySource && !photoCopyEnabled) throw blocked("photo-copy-disabled", "Копирование карточки с фото ещё не включено.");
           if (action.body.action === "form" && !action.body.copySource && manifest.some(entry => entry.action !== "attach") && !photoEditEnabled) throw blocked("photo-edit-disabled", "Изменение существующих фото ещё не включено.");

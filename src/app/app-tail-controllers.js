@@ -380,7 +380,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -8148,6 +8148,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
   isEnabled: personalPhotoFormUiEnabled,
   isEditEnabled: personalPhotoEditFormUiEnabled,
   isItemContextEnabled: personalPhotoItemContextUiEnabled,
+  isContainerContextEnabled: personalPhotoContainerContextUiEnabled,
   isPendingUpdate: personalPendingImportFormEnabled,
   createPendingUpdateSession: options => personalPhotoFormSession({ ...options, pendingImport: true }),
   getContext: personalSaveContext,
@@ -8187,7 +8188,26 @@ const personalPhotoForms = createPersonalPhotoFormController({
           quantity: snapshot.containerId ? snapshot.quantity : 1,
           layoutFields: Object.fromEntries(["updatedAt", "updatedByDeviceId", "updatedByDeviceName"].filter(key => Object.hasOwn(fields, key)).map(key => [key, fields[key]])) } : null };
     }
-    return { request, placementChanged, availabilityChanged, catalogSource: Boolean(!item && rootContainerCatalogSelection) };
+    if (!item && !pendingUpdate && personalPhotoContainerContextUiEnabled() && placementChanged) {
+      const layoutId = created ? rootContainerPlacementTargetLayoutId || getPublishedEditLayoutId() : getPublishedEditLayoutId();
+      const targetLayout = request.basePayload.layouts?.[layoutId];
+      if (!targetLayout) throw Error("Не подтверждена выбранная укладка. Сумка и фото остались в форме.");
+      const selectedId = request.entityId, parentChanged = !created && runtime.rootContainerDialogPendingParentId !== undefined;
+      const sourceLayout = !created && !targetLayout.arrangement?.containers?.[selectedId]
+        && request.basePayload.layouts?.[request.snapshot.activeLayoutId]?.arrangement?.containers?.[selectedId]
+        ? request.basePayload.layouts[request.snapshot.activeLayoutId] : null;
+      let targetIndex = parentChanged ? runtime.rootContainerDialogPendingParentIndex ?? null : null;
+      if (!parentChanged && runtime.rootContainerDialogPendingRootIds) {
+        const selectedRoots = runtime.rootContainerDialogPendingRootIds, previousRoots = targetLayout.rootContainerIds;
+        if (JSON.stringify(selectedRoots.filter(id => id !== selectedId)) !== JSON.stringify(previousRoots.filter(id => id !== selectedId))
+          || selectedRoots.filter(id => id === selectedId).length !== 1) throw Error("Порядок других сумок изменился. Форма сохранена.");
+        targetIndex = selectedRoots.indexOf(selectedId);
+      }
+      request.containerFormContext = { version: 1, targetLayout: structuredClone(targetLayout), sourceLayout: sourceLayout && structuredClone(sourceLayout),
+        targetParentId: parentChanged ? snapshot.parentId : "", targetIndex,
+        layoutFields: Object.fromEntries(["updatedAt", "updatedByDeviceId", "updatedByDeviceName"].filter(key => Object.hasOwn(fields, key)).map(key => [key, fields[key]])) };
+    }
+    return { request, placementChanged, availabilityChanged, catalogSource: Boolean(!item && (rootContainerCatalogSelection || pendingCopyTargetContainerSetup)) };
   },
   createSession: personalPhotoFormSession,
   createEditSession: options => personalPhotoFormSession({ ...options, editExistingPhotos: true }),
@@ -8196,6 +8216,9 @@ const personalPhotoForms = createPersonalPhotoFormController({
   onDurable(record, { type, view }) {
     // No legacy applyPhotoDraft/upload/delete: the durable record owns the candidate.
     if (record.action.body.baseEntityRevision === 0) clearStoredNewEntityFormDraft(type);
+    if (type === "container" && record.action.body.containerFormContext) {
+      placeNewRootInCurrentLayout = false; rootContainerPlacementTargetLayoutId = "";
+    }
     if (type === "item") itemFormDraftSaving = true; else rootContainerFormDraftSaving = true;
     const settled = closeDialogWithoutRestoringFocus(view.dialog);
     Promise.resolve(settled).finally(() => {

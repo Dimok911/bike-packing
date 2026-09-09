@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-container-form-context.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./src/sync/personal-archive-photo-protocol.js";
 import { preparePersonalArchivePhotoImport } from "./src/sync/personal-archive-photo-import.js";
 import { assertPersonalArchivePhotoRecord } from "./src/sync/personal-archive-photo-outbox-record.js";
@@ -1940,7 +1941,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPhotoItemContextUiEnabled, personalPhotoContainerContextUiEnabled, personalPendingImportFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2504,6 +2505,10 @@ function personalPhotoEditFormUiEnabled() {
 
 function personalPhotoItemContextUiEnabled() {
   return PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED && personalPhotoFormUiEnabled();
+}
+
+function personalPhotoContainerContextUiEnabled() {
+  return PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED && personalPhotoFormUiEnabled();
 }
 
 function personalPendingImportSource(outbox, includeSource = false) {

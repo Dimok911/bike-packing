@@ -2,6 +2,7 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, personalPhotoFormOwner, assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, applyPersonalPhotoItemFormContext, refreshPersonalPhotoItemContextView } from "./personal-photo-item-form-context.js";
+import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED, applyPersonalPhotoContainerFormContext, refreshPersonalPhotoContainerContextView } from "./personal-photo-container-form-context.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
@@ -16,8 +17,9 @@ const fail = () => { throw Object.assign(new Error("Не удалось зафи
 // of existing photos. Delete first, attach, then apply one terminal exact order.
 // No await, hashing, upload, storage, editor mutation, or new random IDs on retry.
 export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePayload, baseStateRevision,
-  entityType, entityId, baseEntityRevision, fields, files, index = null, photoSelection = null, photoRevisions = [], formContext = null }, {
-  enabled = PERSONAL_PHOTO_FORM_ENABLED, itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, createUuid = () => crypto.randomUUID(), snapshotToPayload = value => value
+  entityType, entityId, baseEntityRevision, fields, files, index = null, photoSelection = null, photoRevisions = [], formContext = null, containerFormContext = null }, {
+  enabled = PERSONAL_PHOTO_FORM_ENABLED, itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
+  containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED, createUuid = () => crypto.randomUUID(), snapshotToPayload = value => value
 } = {}) {
   if (!enabled || binding?.environment !== "bike-packing-experiment" || !id(binding.actorId) || binding.actorId.length > 36
     || binding.scopeKey !== `id:${binding.actorId}` || !id(binding.listId) || !["item", "container"].includes(entityType)
@@ -25,11 +27,13 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
     || !Number.isSafeInteger(baseEntityRevision) || baseEntityRevision < 0
     || !Array.isArray(files) || !files.length || files.length > 50) fail();
   if (formContext !== null && !itemContextEnabled) fail();
+  if (containerFormContext !== null && !containerContextEnabled) fail();
   binding = clone(binding);
   // Reject non-JSON values before JSON cloning can turn NaN into null (which
   // would otherwise look like an explicit request to remove dimensions).
-  assertListOperationPayload({ ...binding, kind: "photos.mutate", body: { fields, ...(formContext === null ? {} : { formContext }) } });
+  assertListOperationPayload({ ...binding, kind: "photos.mutate", body: { fields, ...(formContext === null ? {} : { formContext }), ...(containerFormContext === null ? {} : { containerFormContext }) } });
   const frozenContext = formContext === null ? null : clone(formContext);
+  const frozenContainerContext = containerFormContext === null ? null : clone(containerFormContext);
   const frozen = clone(snapshot), base = clone(basePayload), frozenFields = clone(fields);
   if (!same(snapshotToPayload(clone(frozen)), base)) fail();
   const collection = entityType === "item" ? "items" : "containers", previous = base?.[collection]?.[entityId];
@@ -96,7 +100,7 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
   }
   if (changes.length > 50) fail();
   const body = { version: 1, action: "form", entityType, entityId, baseEntityRevision, baseStateRevision, fields: frozenFields, changes,
-    ...(frozenContext === null ? {} : { formContext: frozenContext }) };
+    ...(frozenContext === null ? {} : { formContext: frozenContext }), ...(frozenContainerContext === null ? {} : { containerFormContext: frozenContainerContext }) };
   const owner = personalPhotoFormOwner(base, body); owner.photos = pending;
   frozen[collection] ||= {};
   if (baseEntityRevision === 0) frozen[collection][entityId] = clone(owner);
@@ -109,6 +113,10 @@ export function preparePersonalPhotoFormAttachments({ binding, snapshot, basePay
   if (frozenContext !== null) {
     const context = applyPersonalPhotoItemFormContext(frozen, body, base);
     refreshPersonalPhotoItemContextView(frozen, context, entityId);
+  }
+  if (frozenContainerContext !== null) {
+    const context = applyPersonalPhotoContainerFormContext(frozen, body, base);
+    refreshPersonalPhotoContainerContextView(frozen, context);
   }
   const payload = snapshotToPayload(clone(frozen));
   assertPersonalPhotoFormCandidate({ body, basePayload: base, payload, listId: binding.listId });

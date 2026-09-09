@@ -9,6 +9,7 @@ import { syncEntityBatchWithRevisionRetry } from "../../src/sync/entity-sync.js"
 import { assertListOperationPayload, MAX_LIST_OPERATION_PAYLOAD_BYTES } from "../../src/sync/list-operation-payload.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult,
   PERSONAL_PHOTO_PUBLICATION_QUEUE_ENABLED } from "../../src/sync/personal-photo-publication-protocol.js";
+import { personalPhotoContainerFormContext } from "../../src/sync/personal-photo-container-form-context.js";
 
 const path = "/bike-packing/lists/list-a";
 function fixture() {
@@ -53,7 +54,8 @@ function fixture() {
   const make = () => {
     const transport = createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN }, storage, locks, selection: "direct" });
     return { transport, queue: createListOperationQueue({ transport, getContext: () => ({ ...context }), enabled: true, photoEnabled: state.photoEnabled,
-      photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
+      photoFormEnabled: state.photoFormEnabled, itemContextEnabled: state.itemContextEnabled, containerContextEnabled: state.containerContextEnabled,
+      migrationEnabled: state.migrationEnabled, locks, fetchImpl }) };
   };
   return { ...make(), make, state, context, storage, receipts, calls, values, locks, fetchImpl,
     input: { path, method: "PUT", body: JSON.stringify({ payload: { items: {} } }) },
@@ -288,6 +290,28 @@ test("item form context needs its own gate and capability before registering a w
     const proof = await f.make().queue.inspect(f.input); assert.equal(proof.operation.state, "committed");
     assert.equal(proof.historicalOnly, true); assert.equal(f.posts().length, 1);
     delete f.receipts.get(f.input.operationId).result.payload.list.payload.items["item-a"].availabilityStatus;
+    await assert.rejects(f.make().queue.inspect(f.input)); assert.equal(f.posts().length, 1);
+  }
+});
+
+test("container form context checks its own capability before claim and rejects a receipt that omits the whole resulting layout", async () => {
+  for (const mode of ["gate", "capability", "lost ACK"]) {
+    const f = photoFormQueueFixture(); f.body.entityType = "container"; f.state.payload.photoForm.entityType = "container";
+    for (const change of f.body.changes) change.entityType = "container";
+    for (const change of f.state.payload.photoChanges) change.entityType = "container";
+    f.state.payload.list.payload.containers = f.state.payload.list.payload.items; f.state.payload.list.payload.items = {};
+    f.body.containerFormContext = { version: 1, targetLayout: { id: "layout", name: "Selected", rootContainerIds: [],
+      arrangement: { rootContainerIds: [], containers: {}, items: {}, itemQuantities: {}, packedItems: {} } }, sourceLayout: null,
+      targetParentId: "", targetIndex: null, layoutFields: {} };
+    f.state.payload.list.payload.layouts = { layout: personalPhotoContainerFormContext(f.body).layout };
+    f.input.body = JSON.stringify(f.body); f.state.containerContextEnabled = mode !== "gate";
+    if (mode !== "capability") f.state.capabilities.push("personalCausalPhotoContainerFormContextV1");
+    if (mode === "lost ACK") { f.state.loseResponse = true; f.state.unknown = true; }
+    await assert.rejects(f.make().queue.run(f.input));
+    if (mode !== "lost ACK") { assert.equal(f.posts().length, 0); assert.equal(f.make().transport.writes.length, 0); continue; }
+    assert.equal(f.posts().length, 1); f.state.containerContextEnabled = false; f.state.unknown = false;
+    const proof = await f.make().queue.inspect(f.input); assert.equal(proof.operation.state, "committed"); assert.equal(proof.historicalOnly, true);
+    delete f.receipts.get(f.input.operationId).result.payload.list.payload.layouts.layout;
     await assert.rejects(f.make().queue.inspect(f.input)); assert.equal(f.posts().length, 1);
   }
 });

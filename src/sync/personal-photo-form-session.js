@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./personal-photo-item-form-context.js";
 import { readPersonalPhotoFormOwnerRevision } from "./personal-photo-form-base.js";
@@ -18,7 +19,7 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // it with newer data. No network mutation is performed by this session.
 export function createPersonalPhotoFormSession({ outbox, store, getContext, readEntities, readOwner, onDurable,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = PERSONAL_PHOTO_FORM_ENABLED,
-  itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } = {}) {
+  itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } = {}) {
   let attempt = null;
   const current = initial => {
     if (canonicalListOperationJson(initial) !== canonicalListOperationJson(getContext?.())) {
@@ -68,7 +69,7 @@ export function createPersonalPhotoFormSession({ outbox, store, getContext, read
         const previewPhotos = frozen.basePayload?.[frozen.entityType === "item" ? "items" : "containers"]?.[frozen.entityId]?.photos || [];
         attempt.preview = preparePersonalPhotoFormAttachments({ ...previewInput, files: selected, baseEntityRevision: previewCreated ? 0 : 1,
           photoRevisions: previewPhotos.map(photo => ({ photoId: photo.id, assetId: photo.assetId, photoRevision: 1 })) },
-          { enabled, itemContextEnabled, snapshotToPayload, createUuid: () => previewIds.shift() }).snapshot;
+          { enabled, itemContextEnabled, containerContextEnabled, snapshotToPayload, createUuid: () => previewIds.shift() }).snapshot;
         current(initial);
         if (outbox.hasPending()) fail("Сначала подтвердите предыдущие изменения списка. Поля и фото остались в форме.");
         (async () => {
@@ -83,7 +84,7 @@ export function createPersonalPhotoFormSession({ outbox, store, getContext, read
           current(initial);
           const { created, ...values } = frozen;
           const submitter = createPersonalPhotoFormSubmitter({ outbox, store, getContext, onDurable, snapshotToPayload,
-            enabled, itemContextEnabled, createUuid: () => ids.shift() });
+            enabled, itemContextEnabled, containerContextEnabled, createUuid: () => ids.shift() });
           attempt.submitter = submitter; attempt.phase = "capturing";
           const result = await submitter.submit({ ...values, ...versions, files: selected });
           attempt.phase = "durable"; resolve(result);

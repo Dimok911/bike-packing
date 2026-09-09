@@ -1,3 +1,4 @@
+import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED, PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_CAPABILITY } from "./personal-photo-container-form-context.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, PERSONAL_PHOTO_ITEM_FORM_CONTEXT_CAPABILITY } from "./personal-photo-item-form-context.js";
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY, personalGuestPhotoBodyResultReference } from "./personal-pending-guest-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
@@ -152,6 +153,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   migrationEnabled = PERSONAL_LIST_MIGRATION_ENABLED,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED,
+  containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
@@ -554,6 +556,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
         } else if (body.action === "form") {
           if (!photoFormEnabled) throw paused(requestedId, "Сохранение карточки вместе с фото ещё не включено.");
           if (Object.hasOwn(body, "formContext") && !itemContextEnabled) throw paused(requestedId, "Совместное сохранение фото и размещения вещи ещё не включено.");
+          if (Object.hasOwn(body, "containerFormContext") && !containerContextEnabled) throw paused(requestedId, "Совместное сохранение фото и размещения сумки ещё не включено.");
           if (body.copySource && !photoCopyEnabled) throw paused(requestedId, "Копирование карточки с фото ещё не включено.");
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
@@ -616,6 +619,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           }
           if (route.kind === "photos.mutate" && Object.hasOwn(body, "formContext") && !capabilities.capabilities?.includes(PERSONAL_PHOTO_ITEM_FORM_CONTEXT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает совместное сохранение фото и размещения вещи.");
+          }
+          if (route.kind === "photos.mutate" && Object.hasOwn(body, "containerFormContext") && !capabilities.capabilities?.includes(PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_CAPABILITY)) {
+            throw paused(requestedId, "Сервер ещё не поддерживает совместное сохранение фото и размещения сумки.");
           }
           if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает гостевой перенос через очередь.");

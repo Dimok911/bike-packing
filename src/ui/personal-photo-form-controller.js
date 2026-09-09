@@ -7,7 +7,7 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // One entry belongs to its initial-snapshot object, not just the reusable DOM
 // dialog or entity ID. Closing/reopening the same bag creates a different form.
 export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
-  createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
+  createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isContainerContextEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
   createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
@@ -94,7 +94,8 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       try {
         const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate });
         if (catalogSource !== false || (placementChanged !== false || availabilityChanged !== false)
-          && !(type === "item" && !pendingUpdate && isItemContextEnabled() && request.formContext)) {
+          && !(!pendingUpdate && (type === "item" && isItemContextEnabled() && request.formContext
+            || type === "container" && isContainerContextEnabled() && request.containerFormContext))) {
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
