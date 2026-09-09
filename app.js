@@ -2518,7 +2518,8 @@ function personalPendingImportSource(outbox, includeSource = false) {
   const options = { records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId, includeSource };
   return PERSONAL_PENDING_FORM_UPDATE_ENABLED && personalPendingFormUpdateSource(options)
     || PERSONAL_PENDING_GUEST_UPDATE_ENABLED && PERSONAL_GUEST_IMPORT_ENABLED && personalPendingGuestUpdateSource(options)
-    || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource(options);
+    || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource(options)
+    || null;
 }
 
 function personalPendingImportFormEnabled() {

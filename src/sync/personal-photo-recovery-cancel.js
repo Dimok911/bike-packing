@@ -1,5 +1,6 @@
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource } from "./personal-pending-guest-update.js";
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource } from "./personal-pending-form-update.js";
+import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "./personal-manufacturer-photo-source.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
@@ -25,9 +26,9 @@ const pendingCopyForCancellation = (record, records, copyBatchEnabled, pendingCo
   const form = personalPendingPhotoCopyDeletionForm({ records, operationId: record?.action.operationId, listId: record?.action.listId });
   return form && (form.action.body.action !== "copy-batch" || copyBatchEnabled && pendingCopyBatchDeletionEnabled) ? form : null;
 };
-const pendingFormForCancellation = (record, records, formEnabled, editEnabled) => {
+const pendingFormForCancellation = (record, records, formEnabled, editEnabled, manufacturerSourceEnabled) => {
   const source = formEnabled && personalPendingFormUpdateSource({ records, operationId: record?.action.operationId, listId: record?.action.listId });
-  return source && (source.photoState.fileIntentHash !== null || editEnabled) ? source : null;
+  return source && (source.photoState.fileIntentHash !== null || (source.action.body.manufacturerSource ? manufacturerSourceEnabled : editEnabled)) ? source : null;
 };
 export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED,
   formEnabled = PERSONAL_PHOTO_FORM_ENABLED, editEnabled = PERSONAL_PHOTO_EDIT_FORM_ENABLED, copyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
@@ -36,19 +37,20 @@ export const personalPhotoRecoveryCancellationHead = (record, { batchEnabled = P
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
+  manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, records = [] } = {}) =>
   record?.action?.kind === "photos.mutate" && (record.action.body?.action !== "form" || formEnabled)
     && (record.action.body?.action === "attach" || batchEnabled && (record.photoState?.fileInventoryVersion === 2
       || copyBatchEnabled && copyEnabled && formEnabled && record.action.body?.action === "copy-batch" && record.photoState?.fileIntentHash === null
-      || (record.action.body?.copySource ? copyEnabled : editEnabled) && record.action.body?.action === "form" && record.photoState?.fileIntentHash === null))
+      || (record.action.body?.copySource ? copyEnabled : record.action.body?.manufacturerSource ? manufacturerSourceEnabled : editEnabled) && record.action.body?.action === "form" && record.photoState?.fileIntentHash === null))
   || record?.action?.kind === "list.import" && (guestEnabled && record.action.body.guestImport?.version === 1
     || archiveEnabled && record.action.body.archiveImport?.version === 2)
     && batchEnabled && (record.photoState?.fileInventoryVersion === 2 || record.photoState?.fileIntentHash === null)
   || (archiveEnabled || guestEnabled) && record?.reconciliation?.decision?.type === "keep-server-after-rejected-import" && validPersonalRestoreCancellation(record)
   || validPersonalPhotoCancellation(record)
-  || pendingFormUpdateEnabled && batchEnabled && Boolean(pendingFormForCancellation(record, records, formEnabled, editEnabled))
+  || pendingFormUpdateEnabled && batchEnabled && Boolean(pendingFormForCancellation(record, records, formEnabled, editEnabled, manufacturerSourceEnabled))
   || pendingGuestUpdateEnabled && guestEnabled && batchEnabled && Boolean(personalPendingGuestUpdateSource({ records,
     operationId: record?.action.operationId, listId: record?.action.listId }))
   || pendingArchiveUpdateEnabled && archiveEnabled && batchEnabled && Boolean(personalPendingArchiveUpdateSource({ records,
@@ -72,6 +74,7 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
+  manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED }) {
@@ -90,20 +93,20 @@ export async function cancelPersonalPhotoRecovery({ outbox, store, transport, ge
     const common = { outbox, store, transport, getContext, readRemote, makeSnapshot, makeBaselineMeta, fetchImpl, locks };
     if (inventory.entries.every(entry => entry.state === "settled-retained")) return checkPersonalPhotoRecoveryResult(common);
     const head = outbox.recover();
-    const pendingForm = pendingFormUpdateEnabled && pendingFormForCancellation(head, outbox.list(), formEnabled, editEnabled)
+    const pendingForm = pendingFormUpdateEnabled && pendingFormForCancellation(head, outbox.list(), formEnabled, editEnabled, manufacturerSourceEnabled)
       || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
       operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && copyEnabled && pendingCopyForCancellation(head, outbox.list(), copyBatchEnabled, pendingCopyBatchDeletionEnabled)
       || pendingGuestUpdateEnabled && guestEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingArchiveUpdateEnabled && archiveEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
     if (!personalPhotoRecoveryCancellationHead(head, { batchEnabled, formEnabled, editEnabled, copyEnabled, copyBatchEnabled, archiveEnabled, guestEnabled, pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingFormUpdateEnabled, pendingOwnerDeletionEnabled, pendingCopyDeletionEnabled, pendingCopyBatchDeletionEnabled,
-      records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
+      manufacturerSourceEnabled, records: outbox.list() })) throw Error("Это составное действие требует отдельного восстановления. Исходные данные сохранены.");
     const queue = createListOperationQueue({ transport, getContext, fetchImpl, locks, enabled: true, photoEnabled: true,
       photoFormEnabled: formEnabled, photoCopyEnabled: copyEnabled, photoCopyBatchEnabled: copyBatchEnabled, pendingPhotoCopyDeletionEnabled: pendingCopyDeletionEnabled,
       pendingPhotoCopyBatchDeletionEnabled: pendingCopyBatchDeletionEnabled,
       archiveImportEnabled: archiveEnabled, archivePhotoImportEnabled: archiveEnabled,
       guestImportEnabled: guestEnabled,
-      pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingFormUpdateEnabled,
+      pendingArchiveUpdateEnabled, pendingGuestUpdateEnabled, pendingFormUpdateEnabled, manufacturerSourceEnabled,
       cancellationEnabled: operationCancellationEnabled });
     const photoStaging = createPersonalPhotoStaging({ store, transport, getContext, fetchImpl, locks, enabled: true, cancellationEnabled: true, batchEnabled, formEnabled, archiveEnabled, guestEnabled });
     if (head.photoState || pendingForm) {

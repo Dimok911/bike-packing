@@ -1,4 +1,5 @@
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./personal-photo-container-form-context.js";
+import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "./personal-manufacturer-photo-source.js";
 import { preparePersonalPhotoFormAttachments } from "./personal-photo-form-plan.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./personal-photo-item-form-context.js";
@@ -13,7 +14,8 @@ const blocked = message => Object.assign(new Error(message), { code: "photo-form
 // No network, retry, cleanup or automatic rebase is authorized here.
 export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, onDurable,
   snapshotToPayload = value => value, createUuid = () => crypto.randomUUID(), enabled = PERSONAL_PHOTO_FORM_ENABLED,
-  itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } = {}) {
+  itemContextEnabled = PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED, containerContextEnabled = PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED,
+  manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } = {}) {
   let attempt = null;
   const sameContext = initial => {
     const current = getContext?.();
@@ -42,7 +44,7 @@ export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, on
           throw blocked("Сохранение формы с фото ещё не подключено. Ничего не отправлено.");
         }
         const initial = clone(getContext()); sameContext(initial);
-        const prepared = preparePersonalPhotoFormAttachments(input, { enabled, itemContextEnabled, containerContextEnabled, snapshotToPayload, createUuid });
+        const prepared = preparePersonalPhotoFormAttachments(input, { enabled, itemContextEnabled, containerContextEnabled, manufacturerSourceEnabled, snapshotToPayload, createUuid });
         sameContext(initial);
         const plan = outbox.preparePhoto(prepared);
         sameContext(initial);
@@ -53,8 +55,11 @@ export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, on
         // record. It must stay visible to recovery, never be overwritten/deleted.
         attempt.phase = "saving-files";
         (async () => {
-          await store.captureForm({ ...clone(attempt.plan), files: attempt.files });
-          attempt.fileStored = true; sameContext(initial);
+          if (attempt.files.length) {
+            await store.captureForm({ ...clone(attempt.plan), files: attempt.files });
+            attempt.fileStored = true;
+          }
+          sameContext(initial);
           attempt.phase = "linking-queue";
           const record = await outbox.capturePhoto({ plan: clone(attempt.plan), store, getContext });
           attempt.linked = true; sameContext(initial);
@@ -62,7 +67,7 @@ export function createPersonalPhotoFormSubmitter({ outbox, store, getContext, on
           const result = onDurable(clone(record));
           if (result?.then) throw blocked("Применение сохранённой формы должно завершаться без нового ожидания.");
           attempt.phase = "durable";
-          resolve({ record: clone(record), durable: true, fileRetained: true });
+          resolve({ record: clone(record), durable: true, fileRetained: attempt.fileStored });
         })().catch(fail);
       } catch (error) { fail(error); }
       return promise;

@@ -7,7 +7,8 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // One entry belongs to its initial-snapshot object, not just the reusable DOM
 // dialog or entity ID. Closing/reopening the same bag creates a different form.
 export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
-  createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isContainerContextEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
+  createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isContainerContextEnabled = () => false,
+  isManufacturerSourceEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
   createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
@@ -75,17 +76,19 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
     save(type) {
       if (!isEnabled()) return false;
       const view = getView(type), selected = view?.draft?.photos || [];
+      const manufacturer = type === "container" && isManufacturerSourceEnabled() && Boolean(view?.manufacturerSource);
+      const emptyManufacturer = manufacturer && !selected.length && !view?.source;
       const fresh = selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl);
-      const edit = !fresh && Boolean(view?.draft && (view.draft.deletedPhotos?.length
+      const edit = !fresh && !emptyManufacturer && Boolean(view?.draft && (view.draft.deletedPhotos?.length
         || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
-      const pendingUpdate = !fresh && !edit && isPendingUpdate();
+      const pendingUpdate = !fresh && !edit && !manufacturer && isPendingUpdate();
       if (!fresh) {
         if (edit && (!isEditEnabled() || typeof createEditSession !== "function")) {
           onError(Object.assign(new Error("Удаление и перестановка фото ещё подключаются к подтверждённому сохранению. Изменения остались в форме; ничего не отправлено."),
             { code: "photo-form-ui" }), { type, recovery: null });
           return true;
         }
-        if (!edit && !pendingUpdate) return false;
+        if (!edit && !pendingUpdate && !emptyManufacturer) return false;
       }
       const entry = entryFor(type);
       if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
@@ -93,13 +96,14 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       entry.saving = true;
       try {
         const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate });
-        if (catalogSource !== false || (placementChanged !== false || availabilityChanged !== false)
+        if (catalogSource !== false && !(type === "container" && !pendingUpdate && isManufacturerSourceEnabled() && request.manufacturerSource)
+          || (placementChanged !== false || availabilityChanged !== false)
           && !(!pendingUpdate && (type === "item" && isItemContextEnabled() && request.formContext
             || type === "container" && isContainerContextEnabled() && request.containerFormContext))) {
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
-        const values = pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection) }
+        const values = emptyManufacturer ? { files: [] } : pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection) }
           : isEditEnabled() && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
         entry.session = (pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
         const pending = entry.session.submit({ ...request, ...values });

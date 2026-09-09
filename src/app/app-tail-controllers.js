@@ -94,6 +94,8 @@ import {
   writeManufacturerBagCatalogOverride
 } from "../storage/manufacturer-bag-catalog-overrides.js";
 import { prepareManufacturerBagCatalogImport } from "../public/manufacturer-bag-catalog-import.js";
+import { preparePersonalManufacturerPhotoSelection } from "../public/personal-manufacturer-photo-selection.js";
+import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED } from "../sync/personal-manufacturer-photo-source.js";
 import {
   createNewEntityFormDraft,
   entityFormDraftStorageKey,
@@ -164,6 +166,8 @@ export function createAppTailControllers(ctx) {
   let placeNewRootInCurrentLayout = false;
   let rootContainerPlacementTargetLayoutId = "";
   let rootContainerCatalogSelection = null;
+  let rootContainerManufacturerPhotoSource = null;
+  let rootContainerManufacturerPhotoRequest = null;
   let manufacturerBagCatalogOverrides = readManufacturerBagCatalogOverrides();
   let layoutRootTargetLayoutId = "";
   let pendingCopyTargetLayoutCreation = null;
@@ -494,7 +498,12 @@ async function loadManufacturerBagCatalogController() {
         ? "The selected catalog section could not be loaded. Check the connection."
         : "Не удалось загрузить выбранный раздел каталога. Проверьте подключение.", "error"),
       onSelect: applyManufacturerBagCatalogSelection,
-      onSelectError: () => {
+      onSelectError: (error) => {
+        if (error?.code === "manufacturer-photo-source-disabled") {
+          showToast(isEnglishUi() ? "Saving bags from the catalog is not enabled yet. Your form is unchanged."
+            : "Сохранение сумок из каталога ещё не включено. Данные формы сохранены.", "warning");
+          return;
+        }
         setRootContainerDialogPhotoStatus(t("bagCatalog.photoError"));
         showToast(t("bagCatalog.photoError"), "error");
       },
@@ -545,18 +554,29 @@ refs?.openBagCatalogBtn?.addEventListener("click", () => manufacturerBagCatalogD
 
 async function applyManufacturerBagCatalogSelection(entry) {
   if (runtime.editingRootContainerId) return;
+  if (personalPhotoFormUiEnabled() && !PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED) {
+    throw Object.assign(new Error("Manufacturer photo forms are disabled"), { code: "manufacturer-photo-source-disabled" });
+  }
   setRootContainerDialogPhotoStatus(t("bagCatalog.photoPreparing"));
   const source = { photos: [] };
   const photoDraft = runtime.rootContainerDialogPhotoDraft || createPhotoDraftFromRecord(source);
   const limit = usageLimitForRole("photosPerRecord", canOpenAdminPublishedEdit());
   const freePhotoSlots = Math.max(0, limit - photoDraft.photos.length);
   if (!freePhotoSlots) throw new Error("manufacturer-catalog-photo-limit");
-  const prepared = await prepareManufacturerBagCatalogImport(entry, {
+  const causalSource = personalPhotoFormUiEnabled() && PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED;
+  const sourceRequest = {}, sourceSnapshot = JSON.stringify(getRootContainerDialogSnapshot()), sourceGuard = causalSource ? personalPhotoForms.inputGuard("container") : () => true;
+  rootContainerManufacturerPhotoRequest = sourceRequest;
+  const sourceCurrent = () => sourceRequest === rootContainerManufacturerPhotoRequest && sourceGuard()
+    && sourceSnapshot === JSON.stringify(getRootContainerDialogSnapshot());
+  const selection = causalSource ? await preparePersonalManufacturerPhotoSelection(entry, { enabled: true,
+    language: isEnglishUi() ? "en" : "ru", maxPhotos: Math.min(50, freePhotoSlots), isCurrent: sourceCurrent }) : null;
+  const prepared = selection ? { draft: selection.draft, photos: await personalPhotoForms.preparePhotos("container", selection.files) } : await prepareManufacturerBagCatalogImport(entry, {
     createPhotoFromFile: createItemPhotoFromFile,
     language: isEnglishUi() ? "en" : "ru",
     maxPhotos: freePhotoSlots
   });
   const draft = prepared?.draft;
+  if (selection && !sourceCurrent()) throw Error("Форма изменена. Выбор производителя не применён поверх новых данных.");
   const photos = Array.isArray(prepared?.photos) ? prepared.photos : [prepared?.photo].filter(Boolean);
   if (!draft || !photos.length) throw new Error("manufacturer-catalog-photo-unavailable");
 
@@ -570,7 +590,8 @@ async function applyManufacturerBagCatalogSelection(entry) {
     showToast(usageLimitExceededMessage("photosPerRecord", limit), "warning");
   }
 
-  rootContainerCatalogSelection = entry;
+  rootContainerCatalogSelection = selection ? structuredClone(selection.source.entry) : entry;
+  rootContainerManufacturerPhotoSource = selection ? structuredClone(selection.source) : null;
   refs.rootContainerName.value = draft.name;
   refs.rootContainerWeight.value = draft.weight || 0;
   refs.rootContainerVolume.value = draft.volume ? String(draft.volume).replace(".", ",") : "";
@@ -6151,6 +6172,7 @@ function openRootContainerDialog(containerId = null, {
   const container = containerId ? state.containers[containerId] : null;
   if (containerId && !container) return;
   rootContainerCatalogSelection = null;
+  rootContainerManufacturerPhotoSource = null;
   manufacturerBagCatalogDialogController.setImportAvailable(!containerId);
   placeNewRootInCurrentLayout = Boolean(!containerId && placeInCurrentLayout);
   rootContainerPlacementTargetLayoutId = placeNewRootInCurrentLayout && state.layouts?.[targetLayoutId]
@@ -8154,6 +8176,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
   isEditEnabled: personalPhotoEditFormUiEnabled,
   isItemContextEnabled: personalPhotoItemContextUiEnabled,
   isContainerContextEnabled: personalPhotoContainerContextUiEnabled,
+  isManufacturerSourceEnabled: () => PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   isPendingUpdate: personalPendingImportFormEnabled,
   createPendingUpdateSession: options => personalPhotoFormSession({ ...options, pendingImport: true }),
   getContext: personalSaveContext,
@@ -8164,6 +8187,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       saveButton: item ? refs.saveItemBtn : refs.saveRootContainerBtn,
       signature: JSON.stringify(item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot()),
       draft: item ? runtime.itemDialogPhotoDraft : runtime.rootContainerDialogPhotoDraft,
+      manufacturerSource: item ? null : rootContainerManufacturerPhotoSource,
       source: item ? state.items[runtime.editingItemId] : state.containers[runtime.editingRootContainerId] };
   },
   readForm(type, { pendingUpdate = false } = {}) {
@@ -8184,6 +8208,9 @@ const personalPhotoForms = createPersonalPhotoFormController({
     const availabilityChanged = item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available");
     const request = personalPhotoFormRequest({ entityType: type,
       entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingImport: pendingUpdate });
+    if (!item && !pendingUpdate && created && PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED && rootContainerManufacturerPhotoSource) {
+      request.manufacturerSource = structuredClone(rootContainerManufacturerPhotoSource);
+    }
     if (item && !pendingUpdate && personalPhotoItemContextUiEnabled() && (placementChanged || availabilityChanged)) {
       const layoutId = runtime.itemDialogTargetLayoutId || getPublishedEditLayoutId();
       const targetLayout = request.basePayload.layouts?.[layoutId];
@@ -9352,6 +9379,7 @@ function saveRootContainerDialog(event) {
   if (result?.created) clearStoredNewEntityFormDraft("container");
   if (result) {
     rootContainerCatalogSelection = null;
+    rootContainerManufacturerPhotoSource = null;
     placeNewRootInCurrentLayout = false;
     rootContainerPlacementTargetLayoutId = "";
   }

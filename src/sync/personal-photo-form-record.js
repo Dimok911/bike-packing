@@ -1,5 +1,6 @@
 import { createPersonalPhotoInventoryCodec } from "./personal-photo-inventory-codec.js";
 import { personalPhotoFormManifest } from "./personal-photo-form-protocol.js";
+import { personalManufacturerPhotoFormSource } from "./personal-manufacturer-photo-source.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 
@@ -17,6 +18,7 @@ function validateIntent({ binding, action, snapshot, files }) {
   assertListOperationPayload({ ...binding, kind: "photos.mutate", body: snapshot });
   const manifest = personalPhotoFormManifest(action.body), owner = snapshot?.[manifest.entityType === "item" ? "items" : "containers"]?.[manifest.entityId];
   const attachments = manifest.photos.filter(entry => entry.action === "attach");
+  if (manifest.manufacturerSource && !same(owner?.manufacturerCatalogSource, personalManufacturerPhotoFormSource(action.body).manufacturerCatalogSource)) invalid();
   if (!attachments.length || files.length !== attachments.length
     || !owner || owner.id !== manifest.entityId || !same(owner.photos?.map(photo => photo.id), manifest.photos.at(-1).photoIds)
     || Object.entries(manifest.fields).some(([key, value]) => key === "dimensions" && value === null

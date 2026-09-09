@@ -20,7 +20,7 @@ export function assertPersonalPhotoFormRecord(record) {
   } else {
     if (photo.fileIntentHash !== null || photo.fileInventoryVersion !== undefined) fail();
     if (manifest.copySource ? manifest.photos.some(entry => entry.action !== "copy")
-      : manifest.created || manifest.photos.some(entry => !["delete", "order"].includes(entry.action))) fail();
+      : manifest.created && !manifest.manufacturerSource || manifest.photos.some(entry => !["delete", "order"].includes(entry.action))) fail();
   }
   return manifest;
 }

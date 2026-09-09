@@ -47,6 +47,9 @@ test.afterEach(async ({ page }, info) => {
     if (startup) console.log("PERSONAL STARTUP", JSON.stringify(startup));
     const formError = await page.evaluate(() => globalThis.__personalTestPhotoFormError).catch(() => null);
     if (formError) { console.log("PHOTO FORM FAILURE", JSON.stringify(formError)); await info.attach("photo-form-failure", { body: JSON.stringify(formError), contentType: "application/json" }); }
+    const photoQueue = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+      .map(([, value]) => JSON.parse(value)).filter(record => record.action?.kind === "photos.mutate")).catch(() => null);
+    if (photoQueue?.length) await info.attach("photo-form-outbox", { body: JSON.stringify(photoQueue), contentType: "application/json" });
     const treeInput = await page.evaluate(() => globalThis.__personalTestTreeCopyInput).catch(() => null);
     if (treeInput) await info.attach("photo-tree-copy-input", { body: JSON.stringify(treeInput), contentType: "application/json" });
     const difference = await page.evaluate(() => globalThis.__personalTestProjectionDifference).catch(() => null);
@@ -304,7 +307,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -380,6 +383,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if ((photoRecovery || photoEdit) && /^\/bike-packing\/list-operations\/[^/]+\/cancel$/.test(path) && request.method() === "POST") {
         const body = request.postDataJSON(), id = path.split("/").at(-2);
+        (state.ownerCancellationPosts ||= []).push(id);
         expect(id).toBe(state.cancelPhotoAction.operationId); expect(body.operationId).toBe(id);
         expect(body.expectedActorId).toBe("actor-a"); expect(body.environment).toBe("bike-packing-experiment");
         expect(body.listId).toBe(state.listId); expect(body.kind).toBe(state.cancelPhotoAction.kind); expect(body.body).toEqual(state.cancelPhotoAction.body);
@@ -402,6 +406,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         if (state.dropCopyBeforeCommit && body.kind === "photos.mutate" && ownerCopy) {
           state.injectedFailure = true; return route.abort("failed");
         }
+        if (state.dropManufacturerBeforeCommit && body.body.manufacturerSource) { state.injectedFailure = true; return route.abort("failed"); }
         const binding = { environment: "bike-packing-experiment", actorId: "actor-a", kind: body.kind, listId: body.listId, body: body.body };
         const digest = createHash("sha256").update(canonicalListOperationJson(binding)).digest("hex");
         const predecessor = body.body.causal?.baseOperationId && state.receipts.get(body.body.causal.baseOperationId);
@@ -489,7 +494,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), photoChanges: changes,
-              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0 } } } };
+              photoForm: { entityType: body.body.entityType, entityId: owner.id, created: body.body.baseEntityRevision === 0,
+                ...(body.body.manufacturerSource && !body.body.changes.length ? { manufacturerCatalogSource: structuredClone(owner.manufacturerCatalogSource) } : {}) } } } };
           if (state.afterFormCommit) await state.afterFormCommit(body);
         } else if (photoRecovery && body.kind === "photos.mutate") {
           throw Error("Photo recovery must not dispatch the original photo mutation");
@@ -1174,13 +1180,107 @@ async function prepareOrdinaryPhotoForm(page, context, { type = "container", cre
   }), "base64");
   await page.locator(`#${prefix}PhotoInput`).setInputFiles(Array.from({ length: photoCount }, (_, index) => ({ name: `фото-${index + 1}.png`, mimeType: "image/png", buffer: image })));
   await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(photoCount);
-  await expect(page.locator(`#${prefix}PhotoStatus`)).toContainText("Отправятся после сохранения карточки");
+  if (photoCount) await expect(page.locator(`#${prefix}PhotoStatus`)).toContainText("Отправятся после сохранения карточки");
   await expect(page.locator(button)).toBeEnabled();
   expect(f.stagePosts).toHaveLength(0); expect(f.posts).toHaveLength(before);
   await page.locator(`#${prefix}Note`).blur();
   await expect(page.locator(button)).toBeVisible();
   return { f, before, collection, prefix, button, dialog };
 }
+
+for (const outcome of ["confirmed", "lost file", "lost owner", "quota", "source failure", "form changed", "fileless", "fileless lost owner", "fileless quota", "fileless cancel"]) test(`manufacturer photo form preserves the selected source and complete files (${outcome})`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_MANUFACTURER !== "1", "Separate disabled manufacturer feature in the isolated test bundle");
+  test.setTimeout(150000);
+  const fileless = outcome.startsWith("fileless"), quota = outcome.includes("quota"), lostOwner = outcome.includes("lost owner");
+  const { f, before, dialog, button } = await prepareOrdinaryPhotoForm(page, context, { created: true, photoEdit: true, photoCount: 0, placeNew: true });
+  const server = structuredClone(f.payload), sourceId = "blackburn-outpost-frame-bag-large"; let release;
+  if (outcome === "source failure" || outcome === "form changed") await context.route("**/assets/**", async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().resourceType() === "fetch" && pathname.includes("outpost-frame-bag-large-2-")) {
+      if (outcome === "source failure") return route.fulfill({ status: 503, body: "Unavailable selected image" });
+      await new Promise(resolve => { release = resolve; });
+    }
+    return route.fallback();
+  });
+  try {
+    await page.locator("#openBagCatalogBtn").click(); const catalog = page.locator("#bagCatalogDialog"); await expect(catalog).toBeVisible();
+    await page.locator("#bagCatalogSearch").fill("BB-7099763");
+    const select = catalog.locator(`[data-bag-catalog-select="${sourceId}"]`); await expect(select).toBeVisible(); await select.click();
+    if (outcome === "form changed") {
+      await expect.poll(() => Boolean(release)).toBe(true); await catalog.locator('button[value="cancel"]').click();
+      await page.locator("#rootContainerName").fill("Мой новый ввод"); release(); release = null;
+      await expect(page.locator("#rootContainerName")).toHaveValue("Мой новый ввод");
+      await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(0); expect(f.posts).toHaveLength(before); expect(f.payload).toEqual(server); return;
+    }
+    if (outcome === "source failure") {
+      await expect(select).toBeEnabled(); await expect(catalog).toBeVisible();
+      await expect(page.locator("#rootContainerName")).toHaveValue("Карточка со всеми файлами");
+      await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(0); expect(f.stagePosts).toHaveLength(0); expect(f.posts).toHaveLength(before); return;
+    }
+    await expect(catalog).not.toBeVisible(); await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(2);
+    if (fileless) for (const remaining of [1, 0]) {
+      await page.locator("#rootContainerPhotoRemoveBtn").click(); await page.locator("#confirmOkBtn").click();
+      await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(remaining);
+    }
+    await page.locator("#rootContainerName").fill("Моя сумка из каталога");
+    if (quota) await page.evaluate(() => {
+      const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:")) throw new DOMException("Manufacturer journal quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    });
+    f.loseStageAt = outcome === "lost file" ? 2 : 0; f.loseFormOwner = lostOwner;
+    f.dropManufacturerBeforeCommit = outcome === "fileless cancel";
+    await submitForm(page, button, "#rootContainerName");
+    if (quota) {
+      await expect(dialog).toBeVisible(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+      const copy = await downloadRecovery(page); expect(JSON.stringify(copy)).toContain(sourceId);
+      expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(before); return;
+    }
+    await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+    if (outcome === "fileless cancel") {
+      await expect.poll(() => f.injectedFailure).toBe(true); f.cancelPhotoAction = f.posts.at(-1);
+      await reloadApp(page, { recovery: true }); const recovery = page.locator("#personalSaveRecoveryDialog"), cancel = recovery.locator("[data-cancel-photo-upload]");
+      await cancel.click(); await expect(page.locator("#confirmDialog")).toBeVisible(); await page.locator("#confirmCancelBtn").click();
+      await expect(recovery).toContainText("Выбор отложен"); expect(f.payload).toEqual(server);
+      await reloadApp(page, { recovery: true }); await cancel.click(); await page.locator("#confirmOkBtn").click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+      // The fixture's posts also includes the separate owner-cancellation POST.
+      expect(f.posts).toHaveLength(before + 3); expect(f.ownerCancellationPosts).toEqual([f.cancelPhotoAction.operationId]);
+      expect(f.stagePosts).toHaveLength(0); expect(f.cancellationPosts).toHaveLength(0); expect(f.payload).toEqual(server);
+      await reloadApp(page); expect(f.posts).toHaveLength(before + 3); expect(f.errors).toEqual([]); return;
+    }
+    if (outcome === "lost file" || lostOwner) {
+      await expect.poll(() => f.stagePosts.length).toBe(fileless ? 0 : 2);
+      if (lostOwner) await expect.poll(() => f.injectedFailure).toBe(true);
+      await reloadApp(page, { recovery: true }); f.loseStageAt = 0; f.hiddenStage = null; f.loseFormOwner = false; f.hiddenFormOwner = null;
+      const recovery = page.locator("#personalSaveRecoveryDialog"); await recovery.locator("[data-resume-photo-upload]").click();
+      await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    } else await synchronizePhotoHistory(page, () => Object.values(f.payload.containers).some(owner => owner.name === "Моя сумка из каталога"));
+    expect(f.posts).toHaveLength(before + 1); expect(f.stagePosts).toHaveLength(fileless ? 0 : 2);
+    const action = f.posts.at(-1), owner = f.payload.containers[action.body.entityId];
+    expect(action.body.manufacturerSource.entry.id).toBe(sourceId); expect(action.body.manufacturerSource.imageUrls).toHaveLength(2);
+    expect(action.body.containerFormContext.targetLayout.id).toBe("layout-a");
+    expect(owner.manufacturerCatalogSource.catalogId).toBe(sourceId); expect(owner.photos).toHaveLength(fileless ? 0 : 2);
+    expect(f.payload.layouts["layout-a"].arrangement.rootContainerIds).toContain(owner.id);
+    await reloadApp(page); expect(f.posts).toHaveLength(before + 1); expect(f.errors).toEqual([]);
+  } finally { release?.(); }
+});
+
+test("manufacturer photo form remains paused without its separate source gate", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_MANUFACTURER === "1", "Verifies the source-disabled bundle");
+  const { f, before } = await prepareOrdinaryPhotoForm(page, context, { created: true, photoEdit: true, photoCount: 0 });
+  const imageFetches = [];
+  page.on("request", request => { if (request.resourceType() === "fetch" && new URL(request.url()).pathname.startsWith("/assets/")) imageFetches.push(request.url()); });
+  await page.locator("#openBagCatalogBtn").click(); await page.locator("#bagCatalogSearch").fill("BB-7099763");
+  await page.locator('[data-bag-catalog-select="blackburn-outpost-frame-bag-large"]').click();
+  await expect(page.locator("#bagCatalogDialog")).toBeVisible();
+  await expect(page.locator(".toast.warning")).toContainText("Данные формы сохранены");
+  await expect(page.locator("#rootContainerPhotoPreview img")).toHaveCount(0);
+  await expect(page.locator("#rootContainerName")).toHaveValue("Карточка со всеми файлами");
+  expect(imageFetches).toEqual([]);
+  expect(f.posts).toHaveLength(before); expect(f.stagePosts).toHaveLength(0);
+});
 
 for (const type of ["item", "container"]) for (const outcome of ["fields", "lost child", "delete", "quota"]) test(`pending ordinary photo form descendants ${type} (${outcome})`, async ({ page, context }) => {
   test.skip(process.env.BIKE_PERSONAL_PENDING_FORM !== "1", "Separate disabled feature in the isolated test bundle");
