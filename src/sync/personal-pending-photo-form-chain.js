@@ -2,13 +2,16 @@ import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoFormRecord } from "./personal-photo-form-outbox-record.js";
 import { assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { personalFormPhotoResultReference, isPersonalPendingFormUpdate } from "./personal-pending-form-update.js";
+import { personalPublicPendingPhotoFormChain } from "./personal-public-pending-photo-chain.js";
 
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const payloadOf = record => record.photoState?.payload || record.action.body.payload;
 
 // Proves every local step between the original file-owning form and the head.
 // Checkpoints, timestamps, UUID ordering and matching owner IDs are not edges.
-export function personalPendingPhotoFormChain({ records, operationId, listId }) {
+export function personalPendingPhotoFormChain({ records, operationId, listId, entityType, entityId }) {
+  const publicChain = personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId });
+  if (publicChain) return publicChain;
   try {
     const byId = new Map(records.map(record => [record.action.operationId, record]));
     if (byId.size !== records.length) return null;
@@ -37,7 +40,7 @@ export function personalPendingPhotoFormChain({ records, operationId, listId }) 
         || step.mergeBase && !same(step.mergeBase.payload, basePayload)) return null;
       if (action.kind === "photos.mutate") {
         const form = assertPersonalPhotoFormRecord(step);
-        if (!form.ownerResult || form.copySource || form.entityType !== rootManifest.entityType || form.entityId !== rootManifest.entityId
+        if (form.ownerResult?.version !== 1 || form.copySource || form.entityType !== rootManifest.entityType || form.entityId !== rootManifest.entityId
           || form.ownerResult.operationId !== previous.action.operationId) return null;
         assertPersonalPhotoFormCandidate({ body, basePayload, payload: step.photoState.payload, listId });
         forms.push(step); source = step;

@@ -217,4 +217,12 @@ test("pending file session freezes before storage awaits and a repeated save kee
   release(); const result = await pending;
   assert.equal(result.record.action.body.fields.name, "Frozen next form"); assert.equal(applied, 1); assert.equal(captured, 1); assert.equal(ids, 3);
   const saved = await f.store.read(result.record.action.operationId); assert.equal(await saved.files[0].file.text(), "exact next bytes");
+  const recovery = session.recoveryCopy();
+  assert.deepEqual(recovery.request.binding, f.outbox.binding);
+  assert.equal(recovery.request.fields.name, "Frozen next form");
+  assert.deepEqual(recovery.preview, result.record.snapshot);
+  assert.equal(recovery.files[0].fileName, "next.png");
+  assert.equal(recovery.files[0].thumb, null);
+  assert.equal(await recovery.files[0].file.text(), "exact next bytes");
+  assert.equal(recovery.automaticImportAllowed, false);
 });

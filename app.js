@@ -740,6 +740,7 @@ import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource, 
 import { createPersonalPendingFormSession } from "./src/sync/personal-pending-form-session.js";
 import { createPersonalPendingPhotoFormSession } from "./src/sync/personal-pending-photo-form-session.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./src/sync/personal-photo-form-owner-result.js";
+import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./src/sync/personal-public-photo-form-result.js";
 import { personalPendingPhotoFormChain } from "./src/sync/personal-pending-photo-form-chain.js";
 import { PERSONAL_PHOTO_ITEM_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-item-form-context.js";
 import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
@@ -2556,7 +2557,9 @@ function personalPendingPhotoFormEnabled(type) {
   if (!PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED || !personalPhotoFormUiEnabled()) return false;
   const outbox = personalSaveOutboxForScope();
   if (!outbox?.hasPending()) return false;
-  const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId });
+  const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
+    entityType: type, entityId: type === "item" ? editingItemId : editingRootContainerId });
+  if (chain?.publicOperationId && (!PERSONAL_PUBLIC_PHOTO_FORM_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED)) return false;
   return Boolean(chain && chain.entityType === type && chain.entityId === (type === "item" ? editingItemId : editingRootContainerId));
 }
 
@@ -2583,6 +2586,7 @@ function personalPhotoFormSession(options) {
   const createSession = options.pendingFiles ? createPersonalPendingPhotoFormSession : options.pendingImport ? (pendingSource?.action.kind === "photos.mutate" ? createPersonalPendingFormSession : pendingSource?.action.body.publicImport ? createPersonalPendingPublicFormSession : pendingSource?.action.body.guestImport ? createPersonalPendingGuestFormSession : createPersonalPendingArchiveFormSession) : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
+    ...(options.pendingFiles ? { publicEnabled: PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } : {}),
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
     readEntities: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
     readOwner: path => apiFetch(path, { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true }),
@@ -2594,7 +2598,9 @@ function personalPhotoFormSession(options) {
       } else if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
       else assertPersonalPhotoFormRecord(record);
       const payload = options.pendingImport ? record.action.body.payload : record.photoState.payload;
-      if (pendingSource?.action.body.publicImport) personalPublicCopySnapshot(payload, record.snapshot, record.snapshot.activeLayoutId);
+      const publicCopyForm = pendingSource?.action.body.publicImport || record.action.body.ownerResult?.version === 2
+        || record.action.body.photoResults?.version === 8;
+      if (publicCopyForm) personalPublicCopySnapshot(payload, record.snapshot, record.snapshot.activeLayoutId);
       else personalReconciledSnapshot(payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
       if (!sameJson(serializeState({ forSync: true }), payload)) {

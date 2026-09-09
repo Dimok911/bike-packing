@@ -2,9 +2,10 @@ import { guestSelectionFixture } from "./personal-guest-import-fixture.js";
 import { personalGuestImportPlan } from "../../src/sync/personal-guest-import-plan.js";
 import { personalArchiveHash } from "../../src/sync/personal-archive-import-protocol.js";
 import { preparePersonalPublicImportSelection } from "../../src/sync/personal-public-import-selection.js";
-export async function publicImportFixture(fileless) {
+export async function publicImportFixture(fileless, { containerPhotos = false } = {}) {
   const f = guestSelectionFixture(), sourcePayload = f.candidate.sourceState;
   if (fileless) sourcePayload.items.item.photos = [];
+  if (containerPhotos && !fileless) sourcePayload.containers.bag.photos = [{ id: "public-bag-original" }];
   sourcePayload.items.item.custom = { selected: "complete original field" };
   const selection = preparePersonalPublicImportSelection({ ...f, sourcePayload, layoutIds: ["a"], layoutNames: ["Independent public copy"],
     source: { kind: "public-template", itemKey: "shared-layout:selected", listId: "public-shared-layout-selected", stateRevision: 8, language: "ru" } }, { enabled: true });

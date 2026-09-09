@@ -5,6 +5,8 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_PHOTO_FORMS === "1" && source.endsWith("/src/sync/personal-public-photo-form-result.js")) return code.replace(
+      "PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = false", "PERSONAL_PUBLIC_PHOTO_FORM_ENABLED = true");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_PUBLIC === "1" && source.endsWith("/src/sync/personal-pending-public-update.js")) return code.replace(
       "PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED = false", "PERSONAL_PENDING_PUBLIC_UPDATE_ENABLED = true");
     if (source.endsWith("/src/sync/personal-public-import.js")) return code.replace(

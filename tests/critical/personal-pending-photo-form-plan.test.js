@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { preparePersonalPendingPhotoForm as prepare } from "../../src/sync/personal-pending-photo-form-plan.js";
 import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "../../src/sync/personal-photo-form-record.js";
 import { personalPhotoFormManifest, validatePersonalPhotoFormResult } from "../../src/sync/personal-photo-form-protocol.js";
+import { personalPublicPendingPhotoInventory, personalPublicPhotoFormSummary } from "../../src/sync/personal-public-photo-form-result.js";
 
 function fixture(type = "item") {
   const photos = [0, 1, 2].map(index => ({ id: `photo-${index}`, photoId: `photo-${index}`, assetId: randomUUID(), listId: "list", status: "pending" }));
@@ -89,4 +90,66 @@ test("pending compiler refuses an unbound source, lossy fields, another pending 
     f => { f.basePayload.items.owner.photos[1].extra = "invented"; f.snapshot = structuredClone(f.basePayload); }]) {
     const f = fixture(); mutate(f); assert.throws(() => prepare(f, { enabled: true }));
   }
+});
+
+function publicFixture(type = "item") {
+  const f = fixture(type), other = type === "item" ? "containers" : "items";
+  f.publicOperationId = randomUUID();
+  f.basePayload[other].sibling = { id: "sibling", name: "Other imported owner", custom: { keep: "all fields" },
+    photos: [0, 1].map(i => ({ id: `sibling-${i}`, photoId: `sibling-${i}`, assetId: randomUUID(), listId: "list", status: "pending" })) };
+  Object.assign(f.basePayload[type === "item" ? "items" : "containers"].owner.photos[0],
+    { thumbUrl: "/original-thumb", type: "image/png", size: 1, width: 1, height: 1 });
+  f.snapshot = structuredClone(f.basePayload);
+  return f;
+}
+
+test("public pending compiler freezes every imported owner's photos and stores only the new form's bytes", async () => {
+  for (const type of ["item", "container"]) {
+    const f = publicFixture(type), project = value => cloneStateForSyncPayload(value, { forSync: true });
+    f.basePayload = project(f.snapshot); f.snapshot = structuredClone(f.basePayload);
+    const before = structuredClone(f.basePayload), plan = prepare(f, { enabled: true, publicEnabled: true, snapshotToPayload: project });
+    const other = type === "item" ? "containers" : "items", ref = personalPhotoFormManifest(plan.body).ownerResult;
+    assert.equal(ref.version, 2); assert.equal(ref.publicOperationId, f.publicOperationId);
+    assert.equal(ref.operationId, f.parentOperationId);
+    assert.deepEqual(ref.pendingPhotos, personalPublicPendingPhotoInventory(before, "list"));
+    assert.deepEqual(plan.payload[other].sibling, before[other].sibling);
+    assert.deepEqual(project(plan.snapshot), plan.payload);
+    assert.deepEqual(personalPublicPhotoFormSummary(plan.body, "list").pendingPhotos,
+      personalPublicPendingPhotoInventory(plan.payload, "list"));
+    const action = { ...f.binding, operationId: plan.operationId, generation: 2, kind: "photos.mutate", body: plan.body };
+    const stored = await decodePersonalPhotoFormRecord(await encodePersonalPhotoFormRecord({ binding: f.binding,
+      action, snapshot: plan.snapshot, files: plan.files }), f.binding, plan.operationId);
+    assert.deepEqual(stored.action, action);
+    assert.deepEqual(await Promise.all(stored.files.map(file => file.file.text())), ["new bytes 0", "new bytes 1"]);
+    assert.deepEqual(f.basePayload, before);
+  }
+});
+
+test("public fileless deletion keeps sibling files and a later form can select a different imported owner", () => {
+  const f = publicFixture(); f.files = []; f.photoSelection = null; f.photoIds = [];
+  const first = prepare(f, { enabled: true, publicEnabled: true });
+  assert.deepEqual(first.payload.items.owner.photos, []); assert.equal(first.files.length, 0);
+  assert.deepEqual(first.payload.containers.sibling, f.basePayload.containers.sibling);
+  const second = prepare({ ...f, snapshot: first.snapshot, basePayload: first.payload,
+    parentOperationId: first.operationId, entityType: "container", entityId: "sibling", photoIds: ["sibling-1", "sibling-0"],
+    fields: { name: "Other owner after first form" } }, { enabled: true, publicEnabled: true });
+  assert.equal(second.body.ownerResult.publicOperationId, f.publicOperationId);
+  assert.equal(second.body.ownerResult.operationId, first.operationId);
+  assert.deepEqual(second.body.ownerResult.pendingPhotos, personalPublicPendingPhotoInventory(first.payload, "list"));
+  assert.deepEqual(second.payload.items.owner, first.payload.items.owner);
+  assert.deepEqual(second.payload.containers.sibling.photos.map(photo => photo.id), ["sibling-1", "sibling-0"]);
+});
+
+test("public pending forms require their own gate, exact sibling references and independent action IDs", () => {
+  assert.throws(() => prepare(publicFixture(), { enabled: true }));
+  assert.throws(() => prepare(publicFixture(), { publicEnabled: true }));
+  for (const mutate of [f => { f.publicOperationId = "unbound"; },
+    f => { f.basePayload.containers.sibling.photos[0].listId = "foreign"; },
+    f => { f.basePayload.containers.sibling.photos[0].url = "/invented"; },
+    f => { f.basePayload.containers.sibling.photos[0].assetId = f.basePayload.items.owner.photos[1].assetId; }]) {
+    const f = publicFixture(); mutate(f); f.snapshot = structuredClone(f.basePayload);
+    assert.throws(() => prepare(f, { enabled: true, publicEnabled: true }));
+  }
+  const f = publicFixture(); f.files = []; f.photoSelection = null; f.photoIds = [];
+  assert.throws(() => prepare(f, { enabled: true, publicEnabled: true, createUuid: () => f.publicOperationId }));
 });
