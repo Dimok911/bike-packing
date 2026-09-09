@@ -4,6 +4,45 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+Новейшее продолжение — гостевой перенос, 2026-09-09. Подготовка и серверная
+часть проверены: 194/194 API/MySQL за 221,90с (guest-import-mysql-1.log),
+8/8 IndexedDB Chromium/mobile WebKit за 20,6с (guest-selection-browser-2.log),
+543/543 transport, 67/67 API operations-2, 74/74 service/source-2 и FE check.
+Серверный срез зафиксирован локально в fd95168; FE commit записать после фиксации.
+Все процессы завершены. Подробности: docs/personal-guest-import.md в обоих
+репозиториях. Гостевой UI/общая очередь/очистка ещё НЕ подключены, 09 открыт.
+Ничего не публиковать и не push; последний запрос — продолжать весь список
+до конца. Не завершать ответ после этого подготовительного среза.
+
+Новые FE source/owner/layout/selection/plan/protocol/files/record модули;
+selection-store сохраняет полный выбор в отдельной IndexedDB до файлов,
+одинаковый выбор для двух вкладок, immutable UUID/base/source через reload.
+Protocol guestImport.version1, kind list.import, false
+PERSONAL_GUEST_IMPORT_ENABLED/cap personalCausalGuestImportV1. Полный raw source
+сохраняет старый JSON fingerprint: selectionJson = JSON.stringify, канонизация
+только для отдельного hash. Именно это исправило первый браузерный failure.
+20 новых модульных тестов включены в test:transport, standalone storage spec
+включён в mobile-webkit. Существующие guest raw keys/Shared Auth не менялись.
+
+BE содержит 11 зеркал в src/lib/guest-import (+ SHA с нормализацией CRLF),
+bike-packing-guest-import.js, отдельный gated handler и cap. Scoped context
+теперь передаёт operationId. Общий applyImportedPhotoState извлечён из архива;
+archive явно allowArchivedOwners:true, guest false и до этого проверяет ВСЕ
+созданные owner/layout ID, включая tombstones/zero-photo. Флаг
+BIKE_PACKING_CAUSAL_GUEST_IMPORT_ENABLED зависит от causal+staging+photo,
+архивные gates не включают guest. Новые 6 paired API сценариев проходят
+полный compile/receipt/restart/reverse child/SQL rollback/cancellation; это
+ещё не frontend outbox/UI. Aggregate timeout 240→300с для расширенного набора.
+Operations run1 =66/67 из-за audit нового handler, inventory обновлён; run2=67.
+
+Продолжать с подключения FE writer. Новые неподключённые заготовки
+personal-guest-import.js и personal-guest-import-outbox-record.js пока не
+имеют тестов и не входят в принятый срез. Обычные outbox/store/queue/staging/
+drain/cancel/recovery ещё не знают guestImport; app.js не менялся. Нужны exact
+receipt+current checkpoint перед consume handoff/очисткой; при изменившемся
+гостевом workspace его не очищать. Сначала восстановить selection по handoff,
+а не пересоздавать IDs/имена относительно уже изменившейся базы.
+
 
 Продолжение 2026-09-09: пять DB callbacks зафиксированы в FE `c87f55c`.
 Личная история с фото завершена локально: API `47bf753`, 166/166 MySQL
@@ -44,8 +83,8 @@ archive-descendants-mysql-3.log (222,24с); 26/26 Chromium/mobile WebKit
 archive-descendants-ui-2.log (9,3мин). 523 transport-3, 895 critical,
 63 operation, 74 source/service, FE check-2. Все процессы завершены.
 Документ personal-archive-descendants.md обоих репозиториев; checklist09
-обновлён только для конкретного DB среза. Backend commit fd0bea1; frontend
-фиксируется вместе с этой записью (хэш смотреть git log), не публиковать.
+обновлён только для конкретного DB среза. Backend commit fd0bea1; frontend 15df2be. Оба зафиксированы локально,
+без публикации/push.
 
 FE personal-pending-archive-update.js (false gate/capability
 personalCausalArchiveDescendantsV1, photoResults.version3),
@@ -65,8 +104,10 @@ SQL rollback и newer remote. Диагностика первых прогоно
 Следующий незавершённый участок — guest handoff. Созданы НЕ импортируемые
 runtime src/sync/personal-guest-import-selection.js и отдельный critical test
 (НЕ в package; НЕ включать в текущий commit descendants). 3/3 pure теста
-прошли: guest-import-selection-1.log. Freeze полного source/base/handoff,
-выбранных layouts/names, operationUUID и owner/layout mappings до await;
+прошли: guest-import-selection-2.log. Freeze полного source/base/handoff,
+выбранных layouts/names, operationUUID, owner/layout mappings и photo/asset
+UUIDs для каждого нового владельца до await (reused owner сохраняет private
+photos, не получает guest photos повторно);
 повторное использование существующих private records через прежний
 planGuestTemplateEntityReuse; shared source mapping между layouts. Gate false.
 Это подготовка, не writer/protocol/server/UI адаптер. Нужно ещё общее чистое
@@ -76,6 +117,39 @@ handoff/workspace до нужной устойчивой записи/подтв
 reload или менять Shared Auth. Текущий GUEST_LOGIN_HANDOFF_VERSION = 2.
 resolveStoredGuestLoginHandoffCandidate возвращает только candidate, без самого
 handoff; payload хранимого handoff нужно явно сохранить для новой операции.
+
+Изученные реальные зависимости гостевого переноса:
+- src/public/guest-login-import.js importGuestLocalLayoutsToState: общий idMap,
+  planGuestTemplateEntityReuse по выбранным layouts, roots/nested/detached items,
+  dictionaries/custom dictionaries, удаление generated target placeholder,
+  source-origin metadata, display preferences и нормализация. Legacy layout IDs
+  создаются Date.now/Math.random; новый путь должен использовать frozen UUIDs.
+- src/public/guest-login-import-flow.js: сейчас consumeHandoff вызывается после
+  мутирующего importLayouts до persist. Новый путь требует durable capture до
+  view/consume, а clearGuestStorage — только после точного подтверждения.
+- app.js importGuestLocalLayouts ~9238 передаёт callbacks, некоторые замкнуты на
+  global state. Нельзя подать clone target и оставить такие callbacks: копии
+  окажутся в live state. copyPublishedContainerToState ~10267 — wrapper вокруг
+  чистого src/public/copy-published-container.js (но allocator внутри Date/Random).
+  copyPublishedItemToState ~10290 пока прямо мутирует state. Нужны pure adapters.
+- src/public/guest-login-entity-reuse.js: правила reuse по private layouts,
+  origin identity + content hash без photos; одна Map между guest layouts.
+  stableRecordIds сортирует candidates для выбора reuse, не причинные операции.
+- src/state/container-tree-snapshot.js, layout-arrangement.js, dictionaries.js,
+  normalize.js/layout-normalize.js; src/backup/restore.js addBackupDictionaryValues.
+  Normalizers всех records могут незаметно изменить existing private baseline —
+  новый план должен сохранить её точно или остановить несовпадение.
+- src/public/copy-public-to-private.js: _publicCopySource* — metadata личной копии,
+  не active public origin. Текущий archiveImportPlan privateRecord отвергает
+  _publicCopySourceId; нельзя молча стереть provenance ради guest adapter.
+
+Решить до wiring: устойчивый UUID переноса должен пережить clear/consume failure
+и завершённый checkpoint, чтобы reload не импортировал ту же guest session под
+новыми IDs. Возможный Bike-only importOperationId в сохранённом handoff (сам
+Shared Auth не менять), но этот механизм ещё НЕ реализован/НЕ выбран окончательно.
+Нужны новая shared pure guest grammar/plan, точный server CAS+receipt и native
+files pipeline. Нельзя просто отправить client-final snapshot, изменить существующий
+archive source/digest или считать подготовленный selection завершённым переносом.
 
 Потом guest/public origins, sharing/server copy/admin и весь остаток checklist.
 Новые/изменённые фотографии и создание/составные формы во время pending archive

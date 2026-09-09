@@ -24,7 +24,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      testMatch: ["**/view-scroll-tabs.spec.js", "**/manufacturer-bag-catalog.spec.js", "**/photo-lightbox-sizing.spec.js", "**/photo-durable-storage.spec.js", "**/photo-batch-storage.spec.js", "**/experiment-transport.spec.js", "**/list-operation-queue.spec.js", "**/personal-save-ui.spec.js", "**/photo-lightbox-safari.spec.js", "**/photo-preview-loading.spec.js"],
+      testMatch: ["**/view-scroll-tabs.spec.js", "**/manufacturer-bag-catalog.spec.js", "**/photo-lightbox-sizing.spec.js", "**/photo-durable-storage.spec.js", "**/photo-batch-storage.spec.js", "**/personal-guest-storage.spec.js", "**/experiment-transport.spec.js", "**/list-operation-queue.spec.js", "**/personal-save-ui.spec.js", "**/photo-lightbox-safari.spec.js", "**/photo-preview-loading.spec.js"],
       use: { ...devices["iPhone 15"] }
     }
   ]
