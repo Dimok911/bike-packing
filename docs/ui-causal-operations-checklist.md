@@ -674,6 +674,15 @@ Chromium + mobile WebKit без повторов (14,8 минуты), обычн
 
 ### 6. Фотографии
 
+Продолжение 2026-09-09 — личные копии после завершённого гостевого переноса:
+
+- [x] Пометка происхождения private copy сохраняется и больше не блокирует
+  фотоформу, последующую копию и историю. Реальные public/admin/shared записи
+  остаются запрещены; exact source/actor/revision/photo proofs обязательны.
+  206/206 API/MySQL (219,86 с), 8/8 Chromium/mobile WebKit (2,8 мин),
+  573 transport, 895 critical, 72 operations, 74 source/service и FE check.
+  Подробнее: personal-private-copy-photos.md. Все gates false; публикации нет.
+
 Продолжение 2026-09-08 — фото копии вещи с выбранным размещением:
 
 - [x] Строгий copyPlacement внутри fileless copy-batch; одна SQL-транзакция

@@ -1,6 +1,7 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { personalPhotoPublicationManifest, validatePersonalPhotoPublicationResult } from "./personal-photo-publication-protocol.js";
 import { personalPhotoCopySourceValid, personalPhotoCopyOwner } from "./personal-photo-copy-source.js";
+import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 
 // Separate rollout gate. Storage/queue integration does not enable the UI writer.
 export const PERSONAL_PHOTO_FORM_ENABLED = false;
@@ -60,7 +61,7 @@ export function personalPhotoFormOwner(basePayload, body) {
   const previous = basePayload?.[collection]?.[body.entityId];
   if (manifest.created ? previous !== undefined : !previous || previous.id !== body.entityId) fail();
   if (manifest.copySource && !same(basePayload?.[collection]?.[manifest.copySource.entityId], manifest.copySource.payload)) fail();
-  if (previous && ["adminDemo", "adminSharedSourceId", "publicCatalogLayoutId", "_publicCopySourceId", "sharedSourceId"].some(key => previous[key])) fail();
+  if (previous && !isPersonalPhotoPrivateOwner(previous)) fail();
   const owner = manifest.copySource ? personalPhotoCopyOwner(body) : manifest.created
     ? body.entityType === "item" ? { id: body.entityId, quantity: 1, containerId: "", photos: [] }
       : { id: body.entityId, parentId: null, childIds: [], itemIds: [], order: [], photos: [] }

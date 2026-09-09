@@ -4,6 +4,27 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+Актуально: guest descendants зафиксированы FE 794dfb3 / BE bb2c6e6.
+Следующий срез personal-photo-private-owner полностью проверен:
+в FE/BE batch/form/copy/tree/history, плюс прямой API photo mutation.
+FE focused 21/21 и transport 573/573; BE focused 17/17 и operations 72/72.
+API/MySQL повтор private-owner-mysql-2.log: 206/206, 219,86 с. Первый прогон
+203 pass / 3 fail: два новых теста хешировали сокращённый business снимок
+истории вместо полного assembled; исправлен только fixture. FE critical
+895/895, check exit 0; BE source/service 74/74. Все эти проверки завершены.
+UI private-owner-ui-1.log: 8/8 Chromium/mobile WebKit за 2,8 мин.
+Session 38540 завершена exit 0. Все процессы закончены.
+Docs personal-private-copy-photos.md. Срез принимается отдельно от галереи.
+В ignored node_modules/.cache/causal-evidence/2026-09-08/gallery-alignment
+подготовлены 7 *.merged файлов из Production v1597→v1602 с сохранением
+правок Experiment. Единственный конфликт photo-gallery разрешён: вернуть
+experimentTransport.photoUrl + await prepareCachedEntry. Shared fallback
+2.4.0 hash 75c45ba0...2e768 проверен; файлы ещё НЕ применены в runtime.
+После private-owner commit: проверить сохранность исходников *.ours, перенести
+семь .merged и только CSS controlled-paging блок (не сторонний controls grid),
+затем critical/transport/browser. Версию приложения/публикацию не менять.
+Нижнее описание НЕПОДКЛЮЧЁННЫХ private-owner файлов теперь историческое.
+
 Guest descendants локально приняты, после принятой пары
 FE 0ec1ae1 / BE 7fdda7a. photoResults.version=4, собственные false gate
 PERSONAL_PENDING_GUEST_UPDATE_ENABLED и capability personalCausalGuestDescendantsV1.

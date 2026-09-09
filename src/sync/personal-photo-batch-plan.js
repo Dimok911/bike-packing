@@ -1,5 +1,6 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoCandidate } from "./personal-photo-outbox-record.js";
+import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 
 // Preparation only; no UI wiring, storage writes or network dispatch. A batch
 // must first acquire ONE durable file inventory before joining the outbox.
@@ -25,7 +26,7 @@ export function preparePersonalPhotoAttachmentBatch({ binding, snapshot, basePay
   const frozen = clone(snapshot), payload = clone(basePayload), collection = entityType === "item" ? "items" : "containers";
   const owner = payload?.[collection]?.[entityId], localOwner = frozen?.[collection]?.[entityId];
   if (!owner || owner.id !== entityId || !localOwner || localOwner.id !== entityId
-    || owner.adminDemo || owner.adminSharedSourceId || owner.publicCatalogLayoutId || owner._publicCopySourceId || owner.sharedSourceId
+    || !isPersonalPhotoPrivateOwner(owner)
     || !same(snapshotToPayload(clone(frozen)), payload) || owner.photos !== undefined && !Array.isArray(owner.photos)
     || (owner.photos || []).some(photo => !id(photo?.id) || !uuid(photo.assetId) || photo.status !== "synced" || photo.listId !== binding.listId)
     || new Set((owner.photos || []).map(photo => photo.id)).size !== (owner.photos || []).length) invalid();

@@ -1,4 +1,5 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
+import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 
 export const PERSONAL_PHOTO_COPY_FORM_ENABLED = false;
 export const PERSONAL_PHOTO_COPY_FORM_CAPABILITY = "personalCausalPhotoCopyFormV1";
@@ -18,7 +19,7 @@ export function personalPhotoCopySourceValid(body, { allowEmpty = false } = {}) 
     || !id(source.listId) || !["item", "container"].includes(source.entityType) || source.entityType !== body.entityType
     || !id(source.entityId) || source.entityId === body.entityId || !Number.isSafeInteger(source.entityRevision) || source.entityRevision < 1
     || body.baseEntityRevision !== 0 || !object(owner) || owner.id !== source.entityId
-    || ["adminDemo", "adminSharedSourceId", "publicCatalogLayoutId", "_publicCopySourceId", "sharedSourceId"].some(key => owner[key])
+    || !isPersonalPhotoPrivateOwner(owner)
     || source.entityType === "container" && owner.parentId
     || !object(body.fields) || Object.keys(body.fields).some(key => !metadata.includes(key))
     || !Array.isArray(photos) || !allowEmpty && !photos.length || photos.length > 50 || !Array.isArray(body.changes) || body.changes.length !== photos.length

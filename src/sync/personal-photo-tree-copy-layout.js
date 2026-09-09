@@ -1,3 +1,5 @@
+import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
+
 // Pure placement compiler, mirrored byte-for-byte in the API repository.
 const clone = value => JSON.parse(JSON.stringify(value));
 const plain = value => value && Object.getPrototypeOf(value) === Object.prototype;
@@ -8,7 +10,7 @@ const canonical = value => JSON.stringify(value && typeof value === "object"
   ? Array.isArray(value) ? value.map(entry => JSON.parse(canonical(entry)))
     : Object.fromEntries(Object.keys(value).sort().map(key => [key, JSON.parse(canonical(value[key]))])) : value);
 const same = (a, b) => canonical(a) === canonical(b);
-const privateRecord = value => plain(value) && !["adminDemo", "adminSharedSourceId", "publicCatalogLayoutId", "_publicCopySourceId", "sharedSourceId"].some(key => value[key]);
+const privateRecord = isPersonalPhotoPrivateOwner;
 const fail = () => { throw Object.assign(Error("Исходная ветка или место копии изменились. Копирование остановлено."), { code: "photo-copy-tree" }); };
 
 // Every source owner is already frozen in copy-batch. The two full layouts

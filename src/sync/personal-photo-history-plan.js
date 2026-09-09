@@ -1,3 +1,5 @@
+import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
+
 // Pure photo plan for an exact historical snapshot. SQL ownership, immutable
 // history hashes and physical asset verification remain the server's authority.
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -27,7 +29,7 @@ function inventory(payload, listId) {
     for (const entityId of Object.keys(payload[field]).sort()) {
       const owner = payload[field][entityId];
       if (!id(entityId) || !plain(owner) || owner.id !== entityId || Object.hasOwn(owner, "photos") && !Array.isArray(owner.photos)
-        || ["adminDemo", "adminSharedSourceId", "publicCatalogLayoutId", "_publicCopySourceId", "sharedSourceId"].some(key => owner[key])) fail();
+        || !isPersonalPhotoPrivateOwner(owner)) fail();
       const photoIds = [];
       for (const photo of owner.photos || []) {
         const frozen = reference(photo, listId);

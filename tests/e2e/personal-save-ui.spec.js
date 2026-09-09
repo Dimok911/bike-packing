@@ -2831,6 +2831,62 @@ async function preparePhotoArchiveUi(page, context, mode) {
   return { f, source, itemId, bagId, originals };
 }
 
+for (const type of ["item", "container"]) for (const lost of [false, true]) test(`completed guest private photos ${type} edit and copy (${lost ? "lost ACK" : "confirmed"})`, async ({ page, context }) => {
+  test.setTimeout(180000);
+  const guestSource = guestImportPayload(true), originalPhoto = guestSource.items.source.photos[0];
+  guestSource.items.source.photos.push({ ...originalPhoto, id: "second-guest-item-photo" });
+  guestSource.containers.bag.photos = [0, 1].map(index => ({ ...originalPhoto, id: `guest-bag-photo-${index}` }));
+  const f = await setup(page, context, { photoEdit: true, guestSource });
+  await expect.poll(() => f.posts.some(post => post.kind === "list.import"), { timeout: 30000 }).toBe(true);
+  const imported = f.posts.find(post => post.kind === "list.import"), collection = type === "item" ? "items" : "containers";
+  const ownerId = imported.body.guestImport.ownerTargets.find(owner => owner.entityType === type && owner.sourceId === (type === "item" ? "source" : "bag")).targetId;
+  await synchronizePhotoHistory(page, () => f.payload[collection]?.[ownerId]?.photos?.every(photo => photo.status === "synced") === true);
+  const original = structuredClone(f.payload[collection][ownerId]), stageCount = f.stagePosts.length;
+  expect(original._publicCopySourceId).toBeTruthy(); expect(original.photos).toHaveLength(2); expect(stageCount).toBe(4);
+  await reloadApp(page);
+  const prefix = type === "item" ? "item" : "rootContainer", button = type === "item" ? "#saveItemBtn" : "#saveRootContainerBtn";
+  const dialog = page.locator(type === "item" ? "#itemDialog" : "#rootContainerDialog");
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(type === "item" ? `#itemsView [data-list-item-id="${ownerId}"] .item-title` : `#bagsView [data-root-card="${ownerId}"] [data-root-title]`).click();
+  await expect(dialog).toBeVisible(); await page.locator(`#${prefix}PhotoRemoveBtn`).click(); await page.locator("#confirmOkBtn").click();
+  const image = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+    return canvas.toDataURL("image/png").split(",")[1];
+  }), "base64");
+  await page.locator(`#${prefix}PhotoInput`).setInputFiles([1, 2].map(index => ({ name: `после-переноса-${index}.png`, mimeType: "image/png", buffer: image })));
+  await expect(page.locator(`#${prefix}PhotoPreview img`)).toHaveCount(3);
+  await submitForm(page, `#${prefix}PhotoPreview [data-photo-index="1"]`); await submitForm(page, `#${prefix}PhotoPrimaryBtn`);
+  await page.locator(`#${prefix}Weight`).fill("197");
+  const before = f.posts.length; f.loseFormOwner = lost;
+  await submitForm(page, button, `#${prefix}Weight`); await expect(dialog).not.toBeVisible(); await page.locator("#syncBtn").click();
+  await expect.poll(() => f.posts.length).toBe(before + 1);
+  const action = structuredClone(f.posts.at(-1)); expect(action.kind).toBe("photos.mutate");
+  expect(action.body.changes.map(change => change.action)).toEqual(["delete", "attach", "attach", "order"]);
+  if (lost) {
+    await expect.poll(() => f.injectedFailure).toBe(true); await reloadApp(page, { recovery: true });
+    const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+    await resume.click(); await expect(resume).toBeEnabled(); expect(f.posts).toHaveLength(before + 1);
+    f.loseFormOwner = false; f.hiddenFormOwner = null; await resume.click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  } else await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-sync-meta-v1::id:actor-a"))?.dirty)).toBe(false);
+  expect(f.stagePosts).toHaveLength(stageCount + 2);
+  expect(f.payload[collection][ownerId]._publicCopySourceId).toBe(original._publicCopySourceId);
+  expect(f.payload[collection][ownerId].weight).toBe(197);
+  expect(f.payload[collection][ownerId].photos.map(photo => photo.id)).toEqual(action.body.changes.at(-1).photoIds);
+  await reloadApp(page);
+  const source = structuredClone(f.payload[collection][ownerId]), stages = [...f.stagePosts];
+  await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+  await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${ownerId}"]`).click();
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  await synchronizePhotoHistory(page, () => f.posts.length === before + 2);
+  const copy = f.posts.at(-1); expect(copy.body.copySource.payload).toEqual(source);
+  const copied = f.payload[collection][copy.body.entityId]; expect(copied._publicCopySourceId).toBe(original._publicCopySourceId);
+  expect(copied.photos).toHaveLength(3); expect(copied.photos.some(photo => source.photos.some(old => old.id === photo.id || old.assetId === photo.assetId))).toBe(false);
+  expect(f.payload[collection][ownerId]).toEqual(source); expect(f.stagePosts).toEqual(stages);
+  await reloadApp(page); expect(f.posts).toHaveLength(before + 2); expect(f.posts.filter(post => post.kind === "list.import")).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});
+
 async function preparePendingGuestUi(page, context, fileless) {
   const guestSource = guestImportPayload(!fileless);
   if (!fileless) guestSource.containers.bag.photos = [{ ...guestSource.items.source.photos[0], id: "guest-bag-photo" }];
