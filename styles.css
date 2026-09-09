@@ -5970,7 +5970,8 @@ dialog::backdrop {
   margin-top: 8px;
 }
 
-.personal-save-recovery-dialog [data-public-preparation-choices] {
+.personal-save-recovery-dialog [data-public-preparation-choices],
+.personal-save-recovery-dialog [data-public-prepared-copies] {
   min-width: 0;
   margin: 16px 0;
   padding: 12px;
@@ -5978,7 +5979,8 @@ dialog::backdrop {
   border-radius: 8px;
 }
 
-.personal-save-recovery-dialog [data-public-preparation-choices] label {
+.personal-save-recovery-dialog [data-public-preparation-choices] label,
+.personal-save-recovery-dialog [data-public-prepared-copies] label {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
@@ -5988,7 +5990,8 @@ dialog::backdrop {
   cursor: pointer;
 }
 
-.personal-save-recovery-dialog [data-public-preparation-choices] input {
+.personal-save-recovery-dialog [data-public-preparation-choices] input,
+.personal-save-recovery-dialog [data-public-prepared-copies] input {
   width: 18px;
   height: 18px;
   padding: 0;

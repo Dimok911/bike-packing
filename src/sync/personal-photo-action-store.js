@@ -9,6 +9,7 @@ import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "./personal-photo-batch-record.js";
 import { encodePersonalPhotoFormRecord, decodePersonalPhotoFormRecord } from "./personal-photo-form-record.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
+import { createPersonalPublicImportSelectionStore } from "./personal-public-import-selection-store.js";
 
 export const PERSONAL_PHOTO_ACTIONS_ENABLED = false;
 export const PERSONAL_PHOTO_BATCH_STORAGE_ENABLED = false;
@@ -29,6 +30,7 @@ const sameBytes = (a, b) => {
 // expiry API: an unfinished user action owns both its immutable intent and bytes.
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
+  selectionStorage = globalThis.localStorage, selectionLocks = globalThis.navigator?.locks,
   batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
@@ -99,6 +101,10 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    publicPreparationEntries() {
+      if (!selectionStorage) return Promise.resolve([]);
+      return createPersonalPublicImportSelectionStore({ binding, getContext, storage: selectionStorage, locks: selectionLocks }).entries();
+    },
     async capturePublic(input) {
       if (input?.action?.kind !== "list.import" || ![1, 2].includes(input.action.body?.publicImport?.version)) throw blocked("invalid-public");
       return this.captureBatch(input);

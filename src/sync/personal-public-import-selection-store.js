@@ -3,6 +3,7 @@ import { PERSONAL_PUBLIC_IMPORT_ENABLED, personalPublicImportSource, assertPerso
   assertPersonalPublicImportHashes } from "./personal-public-import-protocol.js";
 import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
+import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED, assertPublicPreparationNativeSettlement } from "./personal-public-preparation-resolution-protocol.js";
 
 export const PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED = false;
 
@@ -17,7 +18,7 @@ const fail = cause => { throw Object.assign(Error("Подготовленная 
 // to this actor/list, so an unrelated list does not wait for this preparation.
 export function createPersonalPublicImportSelectionStore({ binding, getContext, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
-  choiceEnabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } = {}) {
+  choiceEnabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED, resolutionEnabled = PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } = {}) {
   if (binding?.environment !== "bike-packing-experiment" || !binding.actorId || binding.actorId.length > 36
     || !binding.listId || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4) fail();
   binding = Object.freeze(clone(binding));
@@ -103,7 +104,16 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
         await validateCompletion(action, row.proof); completion = row.proof;
       } catch (cause) { fail(cause); }
     }
-    return { selection, action, completion };
+    const entry = { selection, action, completion }, settled = storage.getItem(`${key(operationId)}:native-settlement`);
+    if (settled !== null) {
+      try {
+        if (new TextEncoder().encode(settled).byteLength > 4 * 1024 * 1024) fail();
+        const row = JSON.parse(settled);
+        if (row.version !== 1 || Object.keys(row).length !== 3 || row.hash !== await personalArchiveHash(row.settlement)) fail();
+        entry.nativeSettlement = assertPublicPreparationNativeSettlement(entry, row.settlement);
+      } catch (cause) { fail(cause); }
+    }
+    return entry;
   };
   // A choice retains every original row. It can retire only selection-only
   // alternatives: remembering an action and choosing share this same lock.
@@ -122,10 +132,11 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       try {
         if (typeof stored.text !== "string" || new TextEncoder().encode(stored.text).byteLength > 4 * 1024 * 1024) fail();
         const row = JSON.parse(stored.text), choice = row.choice;
-        if (row.version !== 1 || Object.keys(row).length !== 3 || choice?.version !== 1 || Object.keys(choice).length !== 4
-          || !same(choice.binding, binding) || !uuid(choice.selectedOperationId) || !Array.isArray(choice.candidates) || choice.candidates.length < 2
+        if (row.version !== 1 || Object.keys(row).length !== 3 || ![1, 2].includes(choice?.version) || Object.keys(choice).length !== 4
+          || !same(choice.binding, binding) || !Array.isArray(choice.candidates)
+          || (choice.version === 1 ? !uuid(choice.selectedOperationId) || choice.candidates.length < 2
+            || !choice.candidates.some(value => value.operationId === choice.selectedOperationId) : choice.selectedOperationId !== null || choice.candidates.length !== 1)
           || new Set(choice.candidates.map(value => value.operationId)).size !== choice.candidates.length
-          || !choice.candidates.some(value => value.operationId === choice.selectedOperationId)
           || row.hash !== await personalArchiveHash(choice) || stored.name !== `${prefix}choice:${row.hash}`) fail();
         for (const candidate of choice.candidates) {
           const entry = byId.get(candidate.operationId);
@@ -181,6 +192,32 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       });
     },
     async read(operationId) { const initial = context(); return lock(initial, async () => (await readEntry(operationId))?.selection || null); },
+    async retainPreparation({ entry, assertCurrent: assertEditor }) {
+      if (!resolutionEnabled || !enabled || entry?.selection?.version === 2 && !publicEntityEnabled || typeof assertEditor !== "function") fail();
+      const initial = context(), expected = clone(entry);
+      return lock(initial, async () => {
+        const saved = (await readEntries()).find(value => value.selection.operationId === expected.selection.operationId);
+        if (!saved || saved.action || saved.completion || saved.retainedAlternative || !same(saved, expected)) fail();
+        const choice = { version: 2, binding, selectedOperationId: null,
+          candidates: [{ operationId: saved.selection.operationId, selectionHash: await personalArchiveHash(saved.selection) }] };
+        const row = { version: 1, choice, hash: await personalArchiveHash(choice) };
+        assertCurrent(initial); assertEditor(); writeOnce(`${prefix}choice:${row.hash}`, JSON.stringify(row));
+        return { retained: true };
+      });
+    },
+    async confirmNativeSettlement({ operationId, settlement }) {
+      const initial = context(); settlement = clone(settlement);
+      return lock(initial, async () => {
+        const saved = await readEntry(operationId); assertCurrent(initial);
+        assertPublicPreparationNativeSettlement(saved, settlement);
+        if (saved.nativeSettlement) {
+          if (saved.nativeSettlement.intentHash !== settlement.intentHash) fail();
+          return clone(saved.nativeSettlement); // The first exact historical stage proofs remain immutable.
+        }
+        const row = { version: 1, settlement, hash: await personalArchiveHash(settlement) }; assertCurrent(initial);
+        writeOnce(`${key(operationId)}:native-settlement`, JSON.stringify(row)); return settlement;
+      });
+    },
     async choosePreparation({ entries, operationId, assertCurrent: assertEditor }) {
       if (!choiceEnabled || !enabled || !Array.isArray(entries) || entries.length < 2 || typeof assertEditor !== "function") fail();
       const initial = context(), expected = clone(entries);

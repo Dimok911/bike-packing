@@ -5,8 +5,9 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
   getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
   getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false,
   cancelPhotoUpload, canCancelPhotos = () => false, resumePhotoUpload, canResumePhotos = () => false,
-  getPreparationChoices = () => [], choosePreparation } = {}) {
-  let dialog, checking = false, renderPreparationChoices = () => {};
+  getPreparationChoices = () => [], choosePreparation,
+  getPublicPreparations = () => [], resolvePublicPreparation } = {}) {
+  let dialog, checking = false, renderPreparationChoices = () => {}, renderPublicPreparations = () => {};
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
     if (!dialog?.open) return;
@@ -33,6 +34,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
     dialog.querySelector("[data-cancel-photo-upload]").hidden = active || !canCancelPhotos();
     dialog.querySelector("[data-resume-photo-upload]").hidden = active || !canResumePhotos();
     renderPreparationChoices(active);
+    renderPublicPreparations(active);
   };
   return {
     show() {
@@ -107,6 +109,66 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
         choose.disabled = !choices.querySelector("input:checked");
       };
       let checkingResult = false;
+      const preparedCopies = documentRef.createElement("fieldset"); preparedCopies.dataset.publicPreparedCopies = "";
+      const preparedLegend = documentRef.createElement("legend"); preparedLegend.textContent = text("Проверка и остановка отдельной копии", "Check or stop one copy");
+      const preparedExplanation = documentRef.createElement("p");
+      preparedExplanation.textContent = text("Выберите вариант для проверки. Остановка запрещает его ещё не принятую отправку; исходные данные и файлы сохранятся. Уже принятую сервером копию остановка не удаляет.",
+        "Choose a copy to check. Stopping prevents its unaccepted action from running; original data and files are retained. A copy already accepted by the server is not removed.");
+      const preparedOptions = documentRef.createElement("div");
+      const checkPrepared = documentRef.createElement("button"), stopPrepared = documentRef.createElement("button");
+      checkPrepared.type = stopPrepared.type = "button";
+      checkPrepared.dataset.checkPublicPreparation = ""; stopPrepared.dataset.stopPublicPreparation = "";
+      checkPrepared.textContent = text("Проверить выбранную копию", "Check selected copy");
+      stopPrepared.textContent = text("Остановить выбранную копию", "Stop selected copy");
+      preparedCopies.append(preparedLegend, preparedExplanation, preparedOptions, checkPrepared, stopPrepared);
+      const updatePreparedButtons = () => {
+        const option = getPublicPreparations().find(value => value.operationId === preparedOptions.querySelector("input:checked")?.value);
+        checkPrepared.disabled = checkingResult || !option; stopPrepared.disabled = checkingResult || !option?.canStop;
+        stopPrepared.hidden = !getPublicPreparations().some(value => value.canStop);
+      };
+      renderPublicPreparations = active => {
+        const options = getPublicPreparations(); preparedCopies.hidden = active || !options.length;
+        if (preparedCopies.hidden) return;
+        const selected = preparedOptions.querySelector("input:checked")?.value;
+        preparedOptions.replaceChildren();
+        for (const option of options) {
+          const label = documentRef.createElement("label"), input = documentRef.createElement("input"), caption = documentRef.createElement("span");
+          input.type = "radio"; input.name = "public-preparation-resolution"; input.value = option.operationId; input.checked = option.operationId === selected;
+          caption.textContent = `${option.label}. ${option.state}`;
+          input.addEventListener("change", updatePreparedButtons); label.append(input, caption); preparedOptions.append(label);
+        }
+        updatePreparedButtons();
+      };
+      const resolvePrepared = async cancel => {
+        const operationId = preparedOptions.querySelector("input:checked")?.value;
+        if (!operationId || checkingResult) return;
+        checkingResult = true; preparedCopies.disabled = true; preparations.disabled = true;
+        checkResult.disabled = true; resumeUpload.disabled = true; cancelUpload.disabled = true;
+        status.textContent = cancel ? text("Проверяю выбранное действие и останавливаю непринятую отправку…", "Checking the selected action and stopping unaccepted dispatch…")
+          : text("Проверяю точные подтверждения выбранной копии…", "Checking exact receipts for the selected copy…");
+        try {
+          const result = await resolvePublicPreparation(operationId, cancel);
+          if (result?.fileRetained !== true) throw Error(text("Проверка не завершена. Данные сохранены.", "Check incomplete. Data is retained."));
+          const messages = {
+            unknown: ["Сервер пока не подтвердил результат. Копия остаётся для проверки или явной остановки.", "The server has not confirmed the outcome. The copy remains available for review or explicit stopping."],
+            "not-prepared": ["Сохранён только выбор источника. Готового действия для отправки ещё нет.", "Only the source selection is retained. No action is prepared for sending yet."],
+            retained: ["Вариант оставлен в архиве восстановления. Он не будет отправляться.", "The selection is retained in the recovery archive and will not be sent."],
+            committed: ["Копия уже принята сервером. Подтверждение сохранено; остановка её не удаляла.", "The copy was already accepted by the server. Its receipt is retained; stopping did not remove it."],
+            rejected: ["Действие остановлено или отклонено сервером. Исходные записи и доступные файлы сохранены.", "The action is stopped or rejected by the server. Original records and available files are retained."]
+          };
+          if (!messages[result.outcome]) throw Error(text("Неизвестный результат проверки.", "Unknown recovery result."));
+          status.textContent = text(...messages[result.outcome]);
+          if (!getPublicPreparations().length) status.textContent += text(" Перезагрузите страницу, чтобы прочитать актуальную серверную версию.", " Reload to read the current server version.");
+        } catch (error) { status.textContent = error.message; }
+        finally {
+          checkingResult = false; preparedCopies.disabled = false; preparations.disabled = false;
+          checkResult.disabled = false; resumeUpload.disabled = false; cancelUpload.disabled = false;
+          resumeUpload.hidden = !canResumePhotos(); cancelUpload.hidden = !canCancelPhotos();
+          renderPreparationChoices(false); renderPublicPreparations(false);
+        }
+      };
+      checkPrepared.addEventListener("click", () => resolvePrepared(false));
+      stopPrepared.addEventListener("click", () => resolvePrepared(true));
       choose.addEventListener("click", async () => {
         const operationId = choices.querySelector("input:checked")?.value;
         if (!operationId || checkingResult) return;
@@ -119,7 +181,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
         } catch (error) { status.textContent = error.message; }
         finally {
           checkingResult = false; preparations.disabled = false; checkResult.disabled = false; resumeUpload.disabled = false; cancelUpload.disabled = false;
-          resumeUpload.hidden = !canResumePhotos(); renderPreparationChoices(false);
+          resumeUpload.hidden = !canResumePhotos(); renderPreparationChoices(false); renderPublicPreparations(false);
         }
       });
       const resolvePhotoResult = async (action, startingMessage) => {
@@ -199,8 +261,9 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, status, reason, guidance, preparations, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
+      dialog.append(title, description, status, reason, guidance, preparations, preparedCopies, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
       renderPreparationChoices(false);
+      renderPublicPreparations(false);
       documentRef.body.append(dialog);
       dialog.showModal();
     },

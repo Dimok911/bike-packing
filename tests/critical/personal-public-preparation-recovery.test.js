@@ -7,6 +7,9 @@ import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js
 import { encodePersonalPublicImportRecord, decodePersonalPublicImportRecord } from "../../src/sync/personal-public-import-record.js";
 import { preparePersonalPublicImport } from "../../src/sync/personal-public-import.js";
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "../../src/sync/personal-public-import-preparation-recovery.js";
+import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "../../src/sync/personal-public-preparation-resolution.js";
+import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { personalArchiveHash } from "../../src/sync/personal-archive-import-protocol.js";
 
 async function fixture(version, photos = true) {
   const input = version === 2 ? await publicEntityFixture({ photos }) : await publicImportFixture(!photos);
@@ -17,8 +20,9 @@ async function fixture(version, photos = true) {
   const make = () => createPersonalSaveOutbox({ ...binding, storage, photoEnabled: true, photoBatchEnabled: true,
     publicImportEnabled: true, publicEntityEnabled: true });
   const journal = (overrides = {}) => createPersonalPublicImportSelectionStore({ binding, storage, getContext,
-    locks: { request: async (key, run) => run() }, enabled: true, publicEntityEnabled: true, choiceEnabled: true, ...overrides });
+    locks: { request: async (key, run) => run() }, enabled: true, publicEntityEnabled: true, choiceEnabled: true, resolutionEnabled: true, ...overrides });
   const store = { binding, ids: async () => [...native.keys()],
+    publicPreparationEntries: () => journal().entries(),
     read: async id => native.has(id) ? decodePersonalPublicImportRecord(native.get(id), binding, id) : null,
     async capturePublic(value) { native.set(value.action.operationId, await encodePersonalPublicImportRecord({ binding, ...value })); events.push("native"); } };
   const loadFile = async () => { events.push("download"); return { file: input.file, thumb: null,
@@ -241,4 +245,154 @@ for (const winner of ["choice", "action"]) test(`public preparation ${winner} wi
   else { const first = choose(), second = remember(); await first; await assert.rejects(second); }
   const entries = await journal.entries(), other = entries.find(entry => entry.selection.operationId === f.other.selection.operationId);
   assert.equal(Boolean(other.action), winner === "action"); assert.equal(Boolean(other.retainedAlternative), winner === "choice");
+});
+
+async function resolvable(version = 1, phase = "native") {
+  const f = await multiple(version, phase !== "fileless");
+  const action = { ...f.other.action, generation: 1 };
+  await f.journal().rememberAction({ selection: f.other.selection, action });
+  if (phase === "native") await f.store.capturePublic({ action, snapshot: f.other.plan.payload,
+    files: action.body.publicImport.files.map(file => ({ stage: { operationId: file.assetId, photoId: file.photoId,
+      entityType: file.entityType, entityId: file.entityId, fileName: file.file.fileName }, file: f.other.file, thumb: null })) });
+  const calls = [], state = { owner: "unknown", failStage: false, failOwner: false };
+  const proof = async () => ({ historicalOnly: true, operation: { id: action.operationId, environment: f.binding.environment,
+    actorId: f.binding.actorId, listId: f.binding.listId, kind: "list.import", state: state.owner,
+    payloadDigest: await personalArchiveHash({ environment: f.binding.environment, actorId: f.binding.actorId, listId: f.binding.listId,
+      kind: action.kind, body: action.body }) }, resultStatus: state.owner === "committed" ? 200 : 409,
+    stateRevision: state.owner === "committed" ? action.body.baseStateRevision + 1 : null });
+  const stageProof = id => {
+    const file = action.body.publicImport.files.find(file => file.assetId === id);
+    return { ok: true, operation: { id, state: "cancelled", environment: f.binding.environment, actorId: f.binding.actorId,
+      listId: f.binding.listId, entityType: file.entityType, entityId: file.entityId, photoId: file.photoId, payloadDigest: "a".repeat(64) },
+      cancellation: { version: 1, stageOperationId: id, fileHash: file.file.hash, thumbHash: file.thumb?.hash || file.file.hash,
+        noAssetPublished: true, stageCannotPublish: true } };
+  };
+  const queue = { inspect: async request => {
+    calls.push("inspect-owner"); assert.equal(request.operationId, action.operationId); assert.deepEqual(JSON.parse(request.body), action.body);
+    if (state.owner === "unknown") throw Object.assign(Error("Unknown"), { isOperationReceiptError: true }); return proof();
+  }, supportsCancellation: () => true, cancelExact: async request => {
+    calls.push("cancel-owner"); assert.equal(request.operationId, action.operationId); assert.deepEqual(JSON.parse(request.body), action.body);
+    state.owner = "rejected"; if (state.failOwner) throw Error("Lost owner cancellation ACK"); return proof();
+  } };
+  const stage = mode => async (id, assetId) => {
+    calls.push(`${mode}:${assetId}`); assert.equal(id, action.operationId);
+    if (state.failStage) throw Error("Lost stage cancellation ACK"); return stageProof(assetId);
+  };
+  const staging = { inspect: stage("inspect-stage"), cancel: stage("cancel-stage") };
+  const resolve = async (overrides = {}) => resolvePersonalPublicPreparation({
+    entry: (await f.journal().entries()).find(entry => entry.selection.operationId === action.operationId),
+    selectionStore: f.journal(), outbox: f.make(), store: f.store, getContext: () => f.context,
+    queue, staging, cancel: true, enabled: true, publicEnabled: true, publicEntityEnabled: true, ...overrides });
+  const inventory = () => inspectPersonalPhotoRecovery({ outbox: f.make(), store: f.store, getContext: () => f.context });
+  return { ...f, calls, state, action, proof, stageProof, queue, staging, resolve, inventory };
+}
+
+for (const version of [1, 2]) for (const phase of ["native", "fileless", "missing-native"]) for (const owner of ["unknown", "committed", "rejected"])
+test(`public v${version} ${phase} ${owner} resolves the exact alternative and keeps the other choice and original bytes`, async () => {
+  const f = await resolvable(version, phase), before = [...f.values], nativeBefore = [...f.native]; f.state.owner = owner;
+  const result = await f.resolve({ cancel: owner !== "committed" });
+  assert.equal(result.outcome, owner === "committed" ? "committed" : "rejected");
+  assert.equal(f.calls.filter(value => value === "cancel-owner").length, owner === "unknown" ? 1 : 0);
+  assert.equal(f.calls.filter(value => value.startsWith("cancel-stage:")).length, phase === "native" && owner !== "committed" ? f.action.body.publicImport.files.length : 0);
+  for (const [key, value] of before) assert.equal(f.values.get(key), value);
+  assert.deepEqual([...f.native], nativeBefore); assert.equal(f.make().hasPending(), false);
+  const entries = await f.journal().entries(), inventory = await f.inventory();
+  assert.deepEqual(personalPublicRecoverablePreparations(entries, f.make(), inventory).map(entry => entry.selection.operationId), [f.selection.operationId]);
+  assert.ok(inventory.entries.every(entry => entry.state === "settled-retained"));
+  if (owner !== "committed") assert.equal((await f.recover({ entry: entries.find(entry => entry.selection.operationId === f.selection.operationId) })).action.operationId, f.selection.operationId);
+});
+
+for (const lost of ["owner", "stage"]) test(`lost public preparation ${lost} cancellation ACK resumes receipts without replacing original actions`, async () => {
+  const f = await resolvable(); f.state[lost === "owner" ? "failOwner" : "failStage"] = true;
+  const before = [...f.values], nativeBefore = [...f.native]; await assert.rejects(f.resolve(), /Lost/);
+  for (const [key, value] of before) assert.equal(f.values.get(key), value);
+  assert.deepEqual([...f.native], nativeBefore); assert.equal((await f.inventory()).needsRecovery, true);
+  f.state.failOwner = false; f.state.failStage = false;
+  assert.equal((await f.resolve()).outcome, "rejected");
+  assert.equal(f.calls.filter(value => value === "cancel-owner").length, 1);
+  assert.equal((await f.inventory()).needsRecovery, false);
+});
+
+test("public preparation read-only unknown result never writes a completion or calls cancellation", async () => {
+  const f = await resolvable(), before = [...f.values];
+  assert.equal((await f.resolve({ cancel: false, enabled: false, publicEnabled: false, publicEntityEnabled: false })).outcome, "unknown");
+  assert.deepEqual([...f.values], before); assert.deepEqual(f.calls, ["inspect-owner"]);
+});
+
+for (const gate of ["enabled", "publicEnabled", "publicEntityEnabled"])
+test(`prepared public cancellation requires ${gate} before the first network call`, async () => {
+  const f = await resolvable(2), before = [...f.values]; await assert.rejects(f.resolve({ [gate]: false }));
+  assert.deepEqual([...f.values], before); assert.deepEqual(f.calls, []);
+});
+
+test("an already executed public alternative wins a cancellation race and its files are not cancelled", async () => {
+  const f = await resolvable(); f.queue.cancelExact = async () => { f.state.owner = "committed"; return f.proof(); };
+  assert.equal((await f.resolve()).outcome, "committed");
+  assert.deepEqual(f.calls, ["inspect-owner"]); assert.equal((await f.inventory()).needsRecovery, false);
+});
+
+test("late native bytes after owner-only cancellation require their own exact stage settlement", async () => {
+  const f = await resolvable(1, "missing-native"); await f.resolve();
+  await f.store.capturePublic({ action: f.action, snapshot: f.other.plan.payload, files: f.action.body.publicImport.files.map(file => ({
+    stage: { operationId: file.assetId, photoId: file.photoId, entityType: file.entityType, entityId: file.entityId, fileName: file.file.fileName }, file: f.other.file, thumb: null })) });
+  const inventory = await f.inventory(); assert.equal(inventory.entries[0].state, "public-preparation-needs-stage-proof");
+  assert.equal(personalPublicRecoverablePreparations(await f.journal().entries(), f.make(), inventory).length, 2);
+  await f.resolve(); assert.equal((await f.inventory()).needsRecovery, false);
+  assert.equal(f.calls.filter(value => value === "cancel-owner").length, 1);
+});
+
+test("a stale preparation-only variant can be explicitly retained without a server action or a new operation ID", async () => {
+  const f = await multiple(), original = f.entries[1], before = [...f.values];
+  const result = await resolvePersonalPublicPreparation({ entry: original, selectionStore: f.journal(), outbox: f.make(), store: f.store,
+    getContext: () => f.context, cancel: true, enabled: true, publicEnabled: true });
+  assert.equal(result.outcome, "retained"); assert.deepEqual(f.events, []);
+  for (const [key, value] of before) assert.equal(f.values.get(key), value);
+  const retained = (await f.journal().entries()).find(entry => entry.selection.operationId === original.selection.operationId);
+  assert.deepEqual(retained.retainedAlternative, { version: 1, selectedOperationId: null });
+  await assert.rejects(f.journal().rememberAction({ selection: f.other.selection, action: f.other.action }));
+  assert.equal(personalPublicPendingPreparations(await f.journal().entries(), f.make()).length, 1);
+});
+
+test("foreign owner proof and forged stage metadata cannot settle a public preparation", async () => {
+  for (const foreign of ["owner", "stage"]) {
+    const f = await resolvable(); f.state.owner = "rejected";
+    if (foreign === "owner") f.queue.inspect = async () => { const proof = await f.proof(); proof.operation.actorId = "someone-else"; return proof; };
+    else f.staging.cancel = async (id, assetId) => { const proof = f.stageProof(assetId); proof.cancellation.fileHash = "b".repeat(64); return proof; };
+    await assert.rejects(f.resolve()); assert.equal((await f.inventory()).needsRecovery, true);
+    assert.equal((await f.journal().entries()).some(entry => entry.nativeSettlement), false);
+  }
+});
+
+test("changed editor after server cancellation cannot write local proof or cancel files under the new account", async () => {
+  const f = await resolvable(), before = [...f.values];
+  f.queue.cancelExact = async () => { f.state.owner = "rejected"; f.context.generation = "new-editor"; return f.proof(); };
+  await assert.rejects(f.resolve()); assert.deepEqual([...f.values], before);
+  assert.deepEqual(f.calls, ["inspect-owner"]);
+});
+
+for (const boundary of ["completion", "native-settlement"])
+test(`public preparation ${boundary} storage failure keeps originals and resumes exact receipts after reload`, async () => {
+  const f = await resolvable(), before = [...f.values], originals = new Map(f.native);
+  const save = f.values.set.bind(f.values);
+  f.values.set = (key, value) => {
+    if (key.endsWith(`:${boundary}`)) throw Error("Receipt storage quota");
+    return save(key, value);
+  };
+  await assert.rejects(f.resolve());
+  for (const [key, value] of before) assert.equal(f.values.get(key), value);
+  assert.deepEqual(new Map(f.native), originals); assert.equal((await f.inventory()).needsRecovery, true);
+  if (boundary === "completion") assert.equal(f.calls.some(value => value.startsWith("cancel-stage:")), false);
+  f.values.set = save; f.context.generation = "reloaded-after-proof-quota";
+  assert.equal((await f.resolve()).outcome, "rejected");
+  assert.equal(f.calls.filter(value => value === "cancel-owner").length, 1);
+  assert.equal((await f.inventory()).needsRecovery, false); assert.deepEqual(new Map(f.native), originals);
+});
+
+test("damaged native settlement blocks recovery while raw export retains its original bytes", async () => {
+  const f = await resolvable(); await f.resolve();
+  const key = [...f.values.keys()].find(key => key.endsWith(":native-settlement"));
+  f.values.set(key, "damaged native settlement"); const before = [...f.values];
+  await assert.rejects(f.inventory()); await assert.rejects(f.resolve());
+  assert.deepEqual([...f.values], before);
+  assert.equal((await f.journal().recoveryRecords()).find(row => row.key.endsWith(":native-settlement")).text, "damaged native settlement");
 });

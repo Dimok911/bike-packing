@@ -5554,6 +5554,117 @@ test(`public preparation choice ${entity ? "entity photos" : "layout fileless"} 
   expect(f.errors).toEqual([]);
 });
 
+for (const photos of [false, true]) for (const outcome of ["cancel", "lost owner", ...(photos ? ["lost stage"] : []), "committed", "disabled", "selection"])
+test(`public preparation resolution ${photos ? "entity photos" : "layout fileless"} ${outcome} preserves exact alternatives through reload`, async ({ page, context }, testInfo) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1"
+    || (process.env.BIKE_PERSONAL_PUBLIC_RESOLUTION === "1") !== (outcome !== "disabled"), "Checks the independent preparation resolution gate");
+  test.setTimeout(120000);
+  const sourcePayload = guestImportPayload(photos), f = await setup(page, context, { photoEdit: true, publicSource: sourcePayload,
+    payload: photos ? replacementPayload() : initialPayload() });
+  await synchronize(page, () => true);
+  const before = structuredClone(f.payload), initialPosts = f.posts.length;
+  await context.route(`${origin}/src/**/*.js`, async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!/^\/src\/[a-zA-Z0-9/_-]+\.js$/.test(pathname)) throw Error("Invalid public resolution fixture path");
+    return route.fulfill({ contentType: "text/javascript", body: await readFile(path.resolve(`.${pathname}`), "utf8") });
+  });
+  const seeded = await page.evaluate(async ({ photos, outcome, sourcePayload, basePayload, baseStateRevision }) => {
+    const { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } = await import("/src/sync/personal-public-import-selection.js");
+    const { createPersonalPublicImportSelectionStore } = await import("/src/sync/personal-public-import-selection-store.js");
+    const { preparePersonalPublicImport } = await import("/src/sync/personal-public-import.js");
+    const { createPersonalPhotoActionStore } = await import("/src/sync/personal-photo-action-store.js");
+    const { createPersonalSaveOutbox } = await import("/src/sync/personal-save-outbox.js");
+    const binding = { environment: "bike-packing-experiment", actorId: "actor-a", listId: "list-a", scopeKey: "id:actor-a" };
+    const getContext = () => ({ ...binding, generation: "seed-public-resolution", scope: "personal" });
+    const journal = createPersonalPublicImportSelectionStore({ binding, getContext, enabled: true, publicEntityEnabled: true });
+    const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: true, photoBatchEnabled: true, publicImportEnabled: true, publicEntityEnabled: true });
+    outbox.adoptRemoteBaseline({ snapshot: basePayload, payload: basePayload, stateRevision: baseStateRevision });
+    const store = createPersonalPhotoActionStore({ ...binding, getContext, enabled: true, batchEnabled: true, publicEnabled: true, publicEntityEnabled: true });
+    const selections = [], commits = [];
+    for (const name of ["Первая подготовка", "Вторая подготовка"]) {
+      const selection = (photos ? preparePersonalPublicEntitySelection : preparePersonalPublicImportSelection)({ binding, basePayload, baseStateRevision,
+        sourcePayload, editMeta: {}, source: { kind: "public-template", listId: "public-shared-layout-template-ui", itemKey: "shared-layout:template-ui", stateRevision: 7, language: "ru" },
+        ...(photos ? { copy: { version: 1, mode: "independent", sourceLayoutId: sourcePayload.activeLayoutId,
+          entries: [{ entityType: "item", sourceId: "source", includeContents: false }], destination: { layoutId: "layout-a", containerId: "bag", index: null } } }
+          : { layoutIds: [sourcePayload.activeLayoutId], layoutNames: [name] }) }, { enabled: true });
+      selections.push(selection); await journal.capture(selection);
+      if (outcome !== "selection") commits.push(await preparePersonalPublicImport({ selection, selectionStore: journal, outbox, store, getContext,
+        getState: () => basePayload, getRevision: () => baseStateRevision, makeSnapshot: value => value, onCaptured() {},
+        loadFile: async () => ({ file: new Blob(["Retained public preparation file"], { type: "image/png" }), thumb: null, fileName: "prepared.png" }),
+        enabled: true, publicEntityEnabled: true }));
+    }
+    outbox.capturePhoto = async () => { throw Error("Simulated interruption before queue link"); };
+    for (const commit of commits) { try { await commit(); } catch (error) { if (!error.message.startsWith("Simulated interruption")) throw error; } }
+    const entries = await journal.entries(), files = [], cancellationReceipts = [];
+    for (const selection of selections) {
+      const native = await store.read(selection.operationId);
+      if (!native) continue;
+      for (const part of native.files) {
+        files.push({ operationId: selection.operationId, assetId: part.stage.operationId, text: await part.file.text() });
+        cancellationReceipts.push({ ok: true, operation: { id: part.stage.operationId, environment: binding.environment, actorId: binding.actorId,
+          listId: binding.listId, entityType: part.stage.entityType, entityId: part.stage.entityId, photoId: part.stage.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+          cancellation: { version: 1, stageOperationId: part.stage.operationId, fileHash: part.fileMetadata.hash, thumbHash: part.thumbMetadata?.hash || part.fileMetadata.hash,
+            noAssetPublished: true, stageCannotPublish: true } });
+      }
+    }
+    if (outcome === "committed") {
+      const { createExperimentTransport } = await import("/src/sync/experiment-transport.js");
+      const { createPersonalPhotoStaging } = await import("/src/sync/personal-photo-staging.js");
+      const { createListOperationQueue } = await import("/src/sync/list-operation-queue.js");
+      const transport = createExperimentTransport({ locationLike: location, selection: "direct" });
+      const staging = createPersonalPhotoStaging({ store, transport, getContext, enabled: true, batchEnabled: true, publicEnabled: true, publicEntityEnabled: true });
+      const entry = entries.find(entry => entry.selection.operationId === selections[0].operationId);
+      for (const file of entry.action.body.publicImport.files) await staging.stage(entry.action.operationId, file.assetId);
+      const queue = createListOperationQueue({ transport, getContext, enabled: true, photoEnabled: true, publicImportEnabled: true, publicEntityEnabled: true });
+      await queue.run({ path: `/bike-packing/lists/${binding.listId}/import`, method: "POST", body: JSON.stringify(entry.action.body), operationId: entry.action.operationId });
+    }
+    return { selections, entries, files, cancellationReceipts };
+  }, { photos, outcome, sourcePayload, basePayload: before, baseStateRevision: f.revision });
+  f.cancelPhotoActions = new Map(seeded.entries.filter(entry => entry.action).map(entry => [entry.action.operationId, entry.action]));
+  f.cancellationReceipts = new Map(seeded.cancellationReceipts.map(proof => [proof.operation.id, proof]));
+  const originalRows = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:")));
+  await reloadApp(page, { recovery: true }); const recovery = page.locator("#personalSaveRecoveryDialog"), manager = recovery.locator("[data-public-prepared-copies]");
+  const stop = manager.locator("[data-stop-public-preparation]"), inspect = manager.locator("[data-check-public-preparation]");
+  const select = id => manager.locator(`input[value="${id}"]`).check();
+  await expect(manager).toBeVisible(); await select(seeded.selections[0].operationId);
+  if (outcome === "disabled") {
+    await expect(stop).not.toBeVisible(); await inspect.click(); await expect(recovery).toContainText("Сервер пока не подтвердил результат");
+    if (photos) await page.screenshot({ path: path.resolve(`node_modules/.cache/causal-evidence/2026-09-08/public-preparation-resolution-${testInfo.project.name}.png`), fullPage: true });
+  } else {
+    if (outcome === "lost owner") { f.loseCancellation = true; f.hideCancellationReceipt = true; }
+    if (outcome === "lost stage") f.hiddenStage = seeded.cancellationReceipts[0].operation.id;
+    await stop.click();
+    if (outcome.startsWith("lost")) {
+      await expect(stop).toBeEnabled(); await reloadApp(page, { recovery: true });
+      f.loseCancellation = false; f.hiddenFormOwner = null; f.hiddenStage = null;
+      await select(seeded.selections[0].operationId); await stop.click();
+    }
+    await expect(recovery).toContainText(outcome === "committed" ? "Копия уже принята сервером" : outcome === "selection" ? "Вариант оставлен в архиве" : "Действие остановлено или отклонено", { timeout: 30000 });
+    if (!["committed", "selection"].includes(outcome)) expect(f.ownerCancellationPosts).toEqual([seeded.selections[0].operationId]);
+    if (outcome === "committed" || outcome === "selection") {
+      await select(seeded.selections[1].operationId); await stop.click();
+      await expect(recovery).toContainText("Перезагрузите страницу, чтобы прочитать актуальную серверную версию");
+    }
+  }
+  const download = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+  const zip = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+  const rows = JSON.parse(zipText(zip.get("public-import-selections.json")));
+  for (const [key, value] of originalRows) expect(rows.find(row => key.endsWith(row.key))?.text).toBe(value);
+  expect([...zip.keys()].filter(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toHaveLength(seeded.files.length);
+  if (!["disabled", "committed", "selection"].includes(outcome)) {
+    expect(f.payload).toEqual(before); expect(f.stagePosts).toEqual([]);
+    await reloadApp(page, { recovery: true }); const resume = recovery.locator("[data-resume-photo-upload]");
+    await expect(resume).toBeVisible(); await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+    expect(f.stagePosts).toHaveLength(seeded.selections[1].photoTargets.length);
+  }
+  if (outcome !== "disabled") {
+    const posts = f.posts.length, payload = structuredClone(f.payload); await reloadApp(page);
+    expect(f.posts).toHaveLength(posts); expect(f.payload).toEqual(payload);
+    expect(f.posts.filter(post => post.body.publicImport && !f.ownerCancellationPosts?.includes(post.operationId))).toHaveLength(outcome === "selection" ? 0 : 1);
+  } else expect(f.posts).toHaveLength(initialPosts);
+  expect(f.errors).toEqual([]);
+});
+
 for (const photos of [false, true]) for (const demo of [false, true]) for (const outcome of ["lost ACK", "quota", "cancel", ...(photos && !demo ? ["large source"] : [])])
 test(`public missing only ${demo ? "demo" : "shared"} ${photos ? "photos" : "fileless"} preserves edited bags and exact additions across ${outcome}`, async ({ page, context }) => {
   test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1", "Own public entity writer is disabled");

@@ -1,5 +1,6 @@
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoFile, assertPersonalPhotoRecord } from "./personal-photo-outbox-record.js";
+import { assertPublicPreparationNativeSettlement } from "./personal-public-preparation-resolution-protocol.js";
 
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const paused = (code, cause) => Object.assign(new Error("Файлы и очередь требуют проверки. Ничего не удалено и не отправлено."),
@@ -34,6 +35,7 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
   const references = outbox.photoRecoveryReferences();
   if (!same(references.binding, binding)) throw paused("photo-recovery-context");
   const ids = await store.ids(); assertContext();
+  const publicEntries = await store.publicPreparationEntries?.() || []; assertContext();
   if (!Array.isArray(ids) || new Set(ids).size !== ids.length) throw paused("photo-recovery-index");
   const byId = new Map(references.records.map(record => [record.action.operationId, record]));
   const receipts = new Map((references.photoReceipts || []).map(proof => [proof.operation.id, proof]));
@@ -52,10 +54,27 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
       try { assertPersonalPhotoFile(record, file, binding); state = "linked"; }
       catch { state = "link-mismatch"; }
     }
-    const proof = receipts.get(operationId);
+    let proof = receipts.get(operationId);
     if (proof && ["linked", "retired-needs-proof"].includes(state)) {
       state = await exactCachedPhotoReceipt(proof, file, binding) ? "settled-retained" : "receipt-mismatch";
       assertContext();
+    }
+    if (state === "unlinked" && file.action.body?.publicImport) {
+      const prepared = publicEntries.find(entry => entry.selection.operationId === operationId);
+      if (prepared?.completion) {
+        proof = prepared.completion;
+        if (!same(prepared.selection.binding, binding) || !same(prepared.action, file.action)
+          || !await exactCachedPhotoReceipt(proof, file, binding)) state = "receipt-mismatch";
+        else if (proof.operation.state === "committed") state = "settled-retained";
+        else if (!prepared.nativeSettlement) state = "public-preparation-needs-stage-proof";
+        else {
+          try {
+            assertPublicPreparationNativeSettlement(prepared, prepared.nativeSettlement);
+            state = prepared.nativeSettlement.intentHash === file.intentHash ? "settled-retained" : "receipt-mismatch";
+          } catch { state = "receipt-mismatch"; }
+        }
+        assertContext();
+      }
     }
     const parts = file.files || [file], first = parts[0].stage;
     entries.push({ operationId, stageOperationId: first.operationId, intentHash: file.intentHash,
@@ -83,8 +102,10 @@ export async function inspectPersonalPhotoRecovery({ outbox, store, getContext }
         stageOperationIds: (record.action.kind === "list.import" ? (record.action.body.publicImport || record.action.body.guestImport || record.action.body.archiveImport).files : record.action.body.changes).map(change => change.assetId) } : {}), state: "missing-file", dispatchAllowed: false });
   }
   const afterIds = await store.ids(); assertContext();
+  const afterPublicEntries = await store.publicPreparationEntries?.() || []; assertContext();
   // Sorting compares SETS for a stable scan; it never orders user actions.
-  if (!same([...ids].sort(), [...afterIds].sort()) || !same(references, outbox.photoRecoveryReferences())) throw paused("photo-recovery-changed");
+  if (!same([...ids].sort(), [...afterIds].sort()) || !same(references, outbox.photoRecoveryReferences())
+    || !same(publicEntries, afterPublicEntries)) throw paused("photo-recovery-changed");
   return { version: 1, binding, readOnly: true, entries,
     needsRecovery: entries.some(entry => !["linked", "settled-retained"].includes(entry.state)), automaticDispatchAllowed: false };
 }

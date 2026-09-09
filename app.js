@@ -760,6 +760,8 @@ import { createPersonalPublicImportSelectionStore, PERSONAL_PUBLIC_PREPARATION_C
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
+import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
+import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } from "./src/sync/personal-public-preparation-resolution-protocol.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -1267,6 +1269,8 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   resumePhotoUpload: () => drainLivePersonalPhotoForm({ recovery: true }),
   getPreparationChoices: () => retainedPersonalPublicPreparationChoices(),
   choosePreparation: operationId => chooseRetainedPersonalPublicPreparation(operationId),
+  getPublicPreparations: () => retainedPersonalPublicPreparations(),
+  resolvePublicPreparation: (operationId, cancel) => resolveRetainedPersonalPublicPreparation(operationId, cancel),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
     publicSelectionStore: personalPhotoRecoverySource?.store && personalPublicSelectionStore(personalPhotoRecoverySource.store.binding),
@@ -8793,8 +8797,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       const publicEntries = await personalPublicSelectionStore(binding).entries();
       const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
-      source.publicPreparations = publicPending;
-      if (!outbox.hasPending() && publicPending.length === 1) source.publicPreparation = publicPending[0];
+      assignPersonalPublicPreparations(source, publicEntries);
       if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
       const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
       if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
@@ -8954,6 +8957,48 @@ function retainedPersonalPublicPreparationChoices() {
         || selection.copy?.entries?.map(value => selection.sourcePayload[value.entityType === "item" ? "items" : "containers"]?.[value.sourceId]?.name).filter(Boolean).join(", ")
         || localText("Template copy", "Копия шаблона")} · ${selection.photoTargets.length} ${localText("photos", "фото")}` }));
   } catch { return []; }
+}
+
+function assignPersonalPublicPreparations(source, entries) {
+  const pending = personalPublicPendingPreparations(entries, source.outbox);
+  source.publicPreparations = personalPublicRecoverablePreparations(entries, source.outbox, source.inventory);
+  source.publicPreparation = !source.outbox.hasPending() && pending.length === 1 && source.publicPreparations.length === 1 ? pending[0] : null;
+}
+
+function retainedPersonalPublicPreparations() {
+  try {
+    const source = personalPhotoRecoverySource;
+    if (!source?.outbox || source.outbox.hasPending() || !currentUser || isForcedOffline()
+      || Object.keys(source.outbox.binding).some(key => personalSaveContext()[key] !== source.outbox.binding[key])) return [];
+    return (source.publicPreparations || []).map(({ selection, action, completion }, index) => ({ operationId: selection.operationId,
+      label: `${index + 1}. ${selection.layoutTargets?.map(value => value.name).filter(Boolean).join(", ")
+        || selection.copy?.entries?.map(value => selection.sourcePayload[value.entityType === "item" ? "items" : "containers"]?.[value.sourceId]?.name).filter(Boolean).join(", ")
+        || localText("Template copy", "Копия шаблона")} · ${selection.photoTargets.length} ${localText("photos", "фото")}`,
+      state: completion?.operation.state === "committed" ? localText("Copy accepted; files need review", "Копия принята; файлы требуют проверки")
+        : completion ? localText("Action rejected; files need review", "Действие отклонено; файлы требуют проверки")
+        : action ? localText("Action prepared; result needs review", "Действие подготовлено; результат требует проверки") : localText("Selection retained; action not prepared", "Выбор сохранён; действие ещё не подготовлено"),
+      canStop: PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED && PERSONAL_PUBLIC_IMPORT_ENABLED
+        && (selection.version === 1 || PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) }));
+  } catch { return []; }
+}
+
+async function resolveRetainedPersonalPublicPreparation(operationId, cancel) {
+  const option = retainedPersonalPublicPreparations().find(value => value.operationId === operationId);
+  if (!option || cancel && !option.canStop) throw Error("Решение для этой подготовки недоступно. Исходные данные сохранены.");
+  const source = personalPhotoRecoverySource, getContext = personalSaveContext;
+  const entry = source.publicPreparations.find(value => value.selection.operationId === operationId);
+  try {
+    const result = await resolvePersonalPublicPreparation({ entry, cancel, outbox: source.outbox, store: source.store,
+      selectionStore: personalPublicSelectionStore(source.outbox.binding), getContext,
+      queue: createListOperationQueue({ transport: experimentTransport, getContext, readOnly: !cancel }),
+      staging: createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext }) });
+    return result;
+  } finally {
+    if (source === personalPhotoRecoverySource && Object.keys(source.outbox.binding).every(key => getContext()[key] === source.outbox.binding[key])) {
+      source.inventory = await inspectPersonalPhotoRecovery({ outbox: source.outbox, store: source.store, getContext });
+      assignPersonalPublicPreparations(source, await personalPublicSelectionStore(source.outbox.binding).entries());
+    }
+  }
 }
 
 async function chooseRetainedPersonalPublicPreparation(operationId) {
@@ -9346,9 +9391,9 @@ async function retainPersonalPublicPreparationForRecovery(source) {
     // The normal editor wrapper may have latched the quota failure. Inspect a
     // fresh reader, as the recovery dialog does, without releasing that fence.
     const outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
-    const pending = personalPublicPendingPreparations(await personalPublicSelectionStore(outbox.binding).entries(), outbox);
-    source.publicPreparations = pending;
-    source.publicPreparation = !outbox.hasPending() && pending.length === 1 ? pending[0] : null;
+    source.outbox = outbox;
+    source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+    assignPersonalPublicPreparations(source, await personalPublicSelectionStore(outbox.binding).entries());
   } catch { /* Preserve the original storage error and its in-memory recovery archive. */ }
 }
 
