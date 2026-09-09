@@ -19,7 +19,8 @@ export function loadSharedPhotoGallery() {
   const bucket = Math.floor(Date.now() / 3_600_000);
   const script = document.createElement("script");
   script.async = true;
-  script.src = `${STABLE_URL}?contract=${CONTRACT_VERSION}&window=${bucket}`;
+  // A new bundled release must not be replaced by an older hourly HTTP cache.
+  script.src = `${STABLE_URL}?contract=${CONTRACT_VERSION}&window=${bucket}&bundled=${encodeURIComponent(fallbackRuntime?.version || "")}`;
   script.dataset.sharedPhotoGallery = "stable";
   script.addEventListener("load", updateRuntimeLabel, { once: true });
   script.addEventListener("error", updateRuntimeLabel, { once: true });
