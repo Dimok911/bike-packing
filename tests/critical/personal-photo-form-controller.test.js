@@ -34,6 +34,17 @@ test("real form adapter defers closing/queueing, scopes prepared bytes and handl
   assert.equal(f.events.filter(e => e === "cache:id:actor").length, 2);
 });
 
+test("unchanged archived photo references use the durable DB continuation without selecting or staging any files", async () => {
+  const f = fixture(); f.view.source.photos = [{ id: "frozen-photo", assetId: "frozen-asset", status: "pending" }];
+  f.view.draft.photos = structuredClone(f.view.source.photos);
+  f.options.isPendingUpdate = () => true; f.options.createPendingUpdateSession = f.options.createSession;
+  f.options.readForm = (type, { pendingUpdate }) => { assert.equal(pendingUpdate, true); return f.form; };
+  const controller = createPersonalPhotoFormController(f.options);
+  assert.equal(controller.save("item"), true); assert.equal(controller.save("item"), true);
+  assert.equal(f.captured.length, 1); assert.equal(f.captured[0].files, undefined); assert.equal(f.view.dialog.open, true);
+  f.pending.resolve(); await tick(); assert.deepEqual(f.events.slice(-2), ["view", "queue"]);
+});
+
 test("a rejected captured form stays open with its original session and recovery data", async () => {
   const f = fixture(), controller = createPersonalPhotoFormController(f.options);
   f.view.draft.photos = await controller.preparePhotos("container", [selected()]);

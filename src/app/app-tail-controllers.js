@@ -380,7 +380,7 @@ export function createAppTailControllers(ctx) {
     saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord,
     savePublishedLayoutRecordFlow, savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState,
     saveRemoteStateFlow, saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+    personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPendingArchiveFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
     preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, saveStoredActiveLayoutChoice,
     saveStoredActivePackingListId, saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage,
     saveUiSettings, scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave,
@@ -8147,6 +8147,8 @@ function openedFormPhotoStatus(photos) {
 const personalPhotoForms = createPersonalPhotoFormController({
   isEnabled: personalPhotoFormUiEnabled,
   isEditEnabled: personalPhotoEditFormUiEnabled,
+  isPendingUpdate: personalPendingArchiveFormEnabled,
+  createPendingUpdateSession: options => personalPhotoFormSession({ ...options, pendingArchive: true }),
   getContext: personalSaveContext,
   getView(type) {
     const item = type === "item";
@@ -8157,7 +8159,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       draft: item ? runtime.itemDialogPhotoDraft : runtime.rootContainerDialogPhotoDraft,
       source: item ? state.items[runtime.editingItemId] : state.containers[runtime.editingRootContainerId] };
   },
-  readForm(type) {
+  readForm(type, { pendingUpdate = false } = {}) {
     const item = type === "item", entityId = item ? runtime.editingItemId : runtime.editingRootContainerId;
     const created = !entityId, snapshot = item ? getItemDialogSnapshot() : getRootContainerDialogSnapshot();
     const initial = item ? runtime.itemDialogInitialSnapshot : runtime.rootContainerDialogInitialSnapshot;
@@ -8171,7 +8173,7 @@ const personalPhotoForms = createPersonalPhotoFormController({
       ...(created ? currentCreateMeta() : currentEditMeta()),
       ...(item ? { quantity: 1 } : { volume: snapshot.volume, nestable: snapshot.nestable }) };
     return { request: personalPhotoFormRequest({ entityType: type,
-        entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }),
+        entityId: entityId || ensurePhotoDraftEntityId(draft, type), created, fields }, { pendingArchive: pendingUpdate }),
       placementChanged: item ? itemPlacementSnapshotChanged(initial, snapshot) || Boolean(created && snapshot.containerId)
         : containerPlacementSnapshotChanged(initial, snapshot) || Boolean(created && (placeNewRootInCurrentLayout || pendingCopyTargetContainerSetup)),
       availabilityChanged: item && snapshot.availabilityStatus !== (initial?.availabilityStatus || "available"),

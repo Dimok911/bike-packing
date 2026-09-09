@@ -1,4 +1,5 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
@@ -15,13 +16,15 @@ const blocked = () => Object.assign(new Error("Сохранение формы �
 export async function drainPersonalPhotoForm({ outbox, store, staging, queue, getContext,
   readRemote, makeSnapshot, makeBaselineMeta, onAdopted, enabled = PERSONAL_PHOTO_FORM_ENABLED,
   archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
+  pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
   const form = archiveEnabled && head?.action.kind === "list.import" && head.action.body.archiveImport?.version === 2 ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
-    : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
+    : archiveEnabled && pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
+      || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
   if (!form || !outbox.hasPending()) throw blocked();
   if (form.action.body.action === "copy-batch" && head.action.operationId !== form.action.operationId && !pendingCopyBatchDeletionEnabled) throw blocked();
@@ -68,14 +71,16 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     // A user may durably delete this owner while a file/receipt read is in
     // flight. That old worker must stop without blocking the new exact chain.
     // It never adopts the old form or retries it under a fresh identifier.
-    const continuation = form.action.body.copySource || form.action.body.action === "copy-batch" && pendingCopyBatchDeletionEnabled
+    const continuation = form.action.kind === "list.import"
+      ? pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId })
+      : form.action.body.copySource || form.action.body.action === "copy-batch" && pendingCopyBatchDeletionEnabled
       ? pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId })
       : pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: latest?.action.operationId, listId: binding.listId });
     if (["context", "photo-form-drain", "photo-recovery-changed"].includes(error.code)
       && context?.scope === "personal" && Object.keys(binding).every(key => context[key] === binding[key])
       && latest?.action.operationId !== head.action.operationId
       && continuation?.action.operationId === form.action.operationId) {
-      throw Object.assign(Error("Сохранено удаление владельца. Продолжение использует новую подтверждённую локальную цепочку."), { code: "photo-form-superseded" });
+      throw Object.assign(Error("Сохранено следующее действие. Продолжение использует новую подтверждённую локальную цепочку."), { code: "photo-form-superseded" });
     }
     throw error;
   }

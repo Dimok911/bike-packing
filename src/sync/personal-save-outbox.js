@@ -1,4 +1,5 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, assertPersonalArchivePhotoBody } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate, personalArchivePhotoResultReference } from "./personal-pending-archive-update.js";
 import { personalArchivePayloadWithPhotos } from "./personal-archive-photo-plan.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, personalArchiveImportManifest, assertPersonalArchiveImportBody, personalArchiveBusinessPayload } from "./personal-archive-import-protocol.js";
 import { preservesConfirmedPersonalPhotos } from "./personal-confirmed-photos.js";
@@ -111,6 +112,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   photoRestoreEnabled = PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED,
   archiveImportEnabled = PERSONAL_ARCHIVE_IMPORT_ENABLED,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
+  pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
@@ -231,7 +233,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         const expectedDependencies = [{ operationId: parentId, listId }];
         if (Object.hasOwn(action.body, "photoResults")) {
-          const form = personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: action.operationId, listId });
+          const form = action.body.photoResults.version === 3 ? personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
+            : personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: action.operationId, listId });
           if (!form) throw Error("Invalid pending copy result chain");
           if (form.action.operationId !== parentId) expectedDependencies.push({ operationId: form.action.operationId, listId });
         }
@@ -389,8 +392,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     // Called ONLY after latest-receipt freshness and durable UI/base writes.
     // This checkpoint is not a substitute for a server operation receipt.
     markApplied({ operationId, stateRevision }) {
-      const { head, applied } = assertObserved();
-      if (head?.photoState && !(read().anchor?.baseline && applied.has(operationId))) {
+      const { head, applied, records } = assertObserved();
+      const archiveSource = personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId });
+      if ((head?.photoState || archiveSource) && !(read().anchor?.baseline && applied.has(operationId))) {
         throw blocked("photo-checkpoint", "Подтверждение фото и актуальная карточка должны сохраняться вместе.");
       }
       if (head?.action.operationId !== operationId || !Number.isSafeInteger(stateRevision) || stateRevision < 1) {
@@ -554,6 +558,19 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const { head, records, anchor, applied } = current;
       if (Object.hasOwn(input.body || {}, "photoResults")) throw blocked("input", "Связь с результатом копии должна принадлежать исходной локальной очереди.");
+      const pendingArchive = head && !applied.has(head.action.operationId) && personalPendingArchiveUpdateSource({
+        records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true });
+      if (pendingArchive) {
+        if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
+          && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "migration"]
+            .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
+        if (!pendingArchiveUpdateEnabled || !photoEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
+          || create || restore || archiveImport || migration || localReconciliation || !isPersonalPendingArchiveUpdate({ source: pendingArchive,
+            basePayload: personalRecordPayload(head), payload: input.body.payload, userDeletion: input.body.userDeletion, listId })) {
+          throw blocked("archive-pending", "Правка не подтверждена как продолжение сохранённого архива. Исходный архив и фотографии сохранены.");
+        }
+        input.body.photoResults = personalArchivePhotoResultReference(pendingArchive);
+      }
       const pendingCopy = head && !applied.has(head.action.operationId) && personalPendingPhotoCopyDeletionForm({
         records: [...records.values()], operationId: head.action.operationId, listId, includeForm: true });
       if (pendingCopy) {
@@ -579,7 +596,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (head?.action.kind === "list.migrate" && !applied.has(head.action.operationId)) {
         throw blocked("migration-pending", "Сначала подтвердите подготовку старого списка. Следующее изменение не отправлено.");
       }
-      if (!pendingCopy && head?.photoState && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
+      if (!pendingCopy && !pendingArchive && head?.photoState && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
         if (!pendingPhotoOwnerDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoBatchEnabled
           || create || restore || archiveImport || migration || localReconciliation
           || !isPersonalPendingPhotoOwnerDeletion({ parent: head, payload: input.body?.payload, userDeletion: input.body?.userDeletion, listId })) {
@@ -626,6 +643,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       if (pendingCopy && !causal.dependsOn.some(dep => dep.operationId === pendingCopy.action.operationId)) {
         causal.dependsOn.push({ operationId: pendingCopy.action.operationId, listId });
+      }
+      if (pendingArchive && !causal.dependsOn.some(dep => dep.operationId === pendingArchive.action.operationId)) {
+        causal.dependsOn.push({ operationId: pendingArchive.action.operationId, listId });
       }
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}),
@@ -849,6 +869,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       delete action.body.userPlacement;
       delete action.body.historyRestore;
       delete action.body.archiveImport;
+      if (rejectedRestore) delete action.body.photoResults;
       const mergeBase = { payload: remote.payload, stateRevision: remote.stateRevision };
       const reconciliation = { version: 1, settled: settled.outcomes, ...(decision ? { decision } : {}) };
       const record = { version: 1, action, snapshot, mergeBase, reconciliation };
@@ -866,6 +887,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const pendingForm = pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({
         records: [...records.values()], operationId: head?.action.operationId, listId })
         || pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({
+          records: [...records.values()], operationId: head?.action.operationId, listId })
+        || pendingArchiveUpdateEnabled && archivePhotoImportEnabled && personalPendingArchiveUpdateSource({
           records: [...records.values()], operationId: head?.action.operationId, listId });
       if (pendingForm && pendingForm.action.body.action === "copy-batch" && !pendingPhotoCopyBatchDeletionEnabled) {
         throw blocked("photo-cancellation", "Отмена зависимых удалений массовой копии ещё не включена.");
@@ -873,7 +896,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (pendingForm && pendingForm.photoState.fileIntentHash !== null) return cancelPersonalPhotoBatch({ record: pendingForm, binding, queue,
         store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
         formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled,
-        enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled && photoFormEnabled });
+        enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled
+          && (pendingForm.action.kind === "list.import" ? archiveImportEnabled && archivePhotoImportEnabled : photoFormEnabled) });
       const filelessForm = pendingForm || head;
       if ((["form", "copy-batch"].includes(filelessForm?.action?.body?.action) || filelessForm?.action?.body?.archiveImport?.version === 2) && filelessForm.photoState?.fileIntentHash === null) {
         if (filelessForm.action.body.copyTree && !photoTreeCopyEnabled) throw blocked("photo-tree-copy-disabled", "Отмена копии дерева с фото ещё не включена.");
@@ -963,7 +987,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       for (let record = head; record; record = records.get(record.action.body.causal.baseOperationId)) chain.push(record);
       const root = chain.at(-1);
       const dependentForm = chain.find((record, index) => record.photoState && index > 0);
-      const resolvedForm = dependentForm?.action.body.copySource || dependentForm?.action.body.action === "copy-batch"
+      const resolvedForm = dependentForm?.action.kind === "list.import"
+        ? pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId })
+        : dependentForm?.action.body.copySource || dependentForm?.action.body.action === "copy-batch"
         ? pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId })
         : pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId });
       if (dependentForm && (resolvedForm?.action.operationId !== dependentForm.action.operationId

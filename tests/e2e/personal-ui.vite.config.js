@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => ({
       "PERSONAL_ARCHIVE_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_IMPORT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-archive-photo-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-archive-update.js")) return code.replace(
+      "PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED = false", "PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-history-protocol.js")) return code.replace(
       "PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED = false", "PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-tree-source.js")) return code.replace(

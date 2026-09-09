@@ -27,8 +27,8 @@ Section09 целиком остаётся открытым. Без публик�
 (archive-photo-mysql-4.log), 18/18 Chromium/mobile WebKit за 4,8 минуты
 (archive-photo-ui-4.log), 514 transport, 895 critical, 60 operation,
 74 source/service, FE check-2. Все API/UI процессы завершены. Серверная основа
-API df5e7ea, ещё не commit усиление теста lost-first-stage ACK перед отменой.
-FE текущие файлы архивов ещё предстоит commit. Gates false, no push/publish.
+API df5e7ea и тестовый e402b21; FE b706fff. Оба репозитория
+зафиксированы локально. Gates false, no push/publish.
 
 UI исправления: run1 native quota export блокировался getContext с editing
 latch. run2 native quota прошёл, queue-link quota потерял memoryForm:
@@ -39,28 +39,48 @@ lost stage ACK упёрлась в transport barrier. Добавлена стр�
 обычный dispatch из такой записи по-прежнему запрещён. 18/18 UI и 182/182
 API после этих исправлений прошли. См. personal-archive-photo-import.md.
 
-Следующий участок: потомки pending archive. Созданы НЕ импортируемые runtime
-personal-pending-archive-update.js и critical test (НЕ в package, НЕ включать
-в commit текущего файлового этапа). 4/4 чистые unit прошли,
-archive-descendants-plan-2.log. Сохраняют exact pending bindings/order,
-разрешают DB поля и последовательные owner/layout deletions; проверяют
-immediate chain/source dependency и запрещают воскрешение удалённого owner.
-Это только подготовка; основные адаптеры ещё НЕ написаны.
+Потомки pending archive приняты локально: 188/188 API/MySQL на Node24.19
+archive-descendants-mysql-3.log (222,24с); 26/26 Chromium/mobile WebKit
+archive-descendants-ui-2.log (9,3мин). 523 transport-3, 895 critical,
+63 operation, 74 source/service, FE check-2. Все процессы завершены.
+Документ personal-archive-descendants.md обоих репозиториев; checklist09
+обновлён только для конкретного DB среза. Backend commit fd0bea1; frontend
+фиксируется вместе с этой записью (хэш смотреть git log), не публиковать.
 
-Нужен false gate и photoResults.version3 с operationId импорта и ordered owners
-из archiveImport.files (возможен fileless owners=[]). FE: source по immediate
-цепочке, зависимость одновременно от импорта и immediate predecessor,
-сохранение snapshot до UI, проверка unchanged pending photos/explicit deletion.
-BE resolver version3: exact committed import и immediate parent receipt той же
-actor/list/среды/версии, полный archivePhotos/files/references; материализация
-только matching pending ссылок в отдельном execution body. Исходное тело и
-дайджест не переписывать. Затем обычные DB/photo publication guards.
-Подключить outbox reader/capture/drain/reconcile/cancellation, app guards и
-form drain/recovery к source pending import, не только photos.mutate.
-Нужны reverse delivery, lost ACK/restart, правка/удаление вещи/сумки/укладки,
-последовательные удаления, отмена pending chain и newer remote state.
-Потом guest handoff, sharing/public copy/admin и полный остаток checklist.
-Не останавливаться с final после среза: пользователь велел работать до конца.
+FE personal-pending-archive-update.js (false gate/capability
+personalCausalArchiveDescendantsV1, photoResults.version3),
+personal-pending-archive-form.js (field-only durable session), outbox/queue/
+drain/cancellation/recovery, app guards и реальные item/bag forms.
+BE bike-packing-archive-result-references.js материализует точные pending
+ссылки из original import+immediate parent receipts только в execution body.
+Gate BIKE_PACKING_CAUSAL_ARCHIVE_DESCENDANTS_ENABLED false. Явные удаления
+owners/layout, fields, fileless owners=[]; отсутствие воскрешения/неявного
+удаления в том числе owner без фото; markApplied ребёнка не обходит photo
+checkpoint; keep-server решение очищает archiveImport и photoResults.
+Экспорт quota формы включает request.binding, automaticImportAllowed:false,
+preview с несохранёнными полями и исходный native archive inventory.
+UI и API поддерживают потерю ACK и restart, полное сохранение исходных ID/body,
+SQL rollback и newer remote. Диагностика первых прогонов в новом документе.
+
+Следующий незавершённый участок — guest handoff. Созданы НЕ импортируемые
+runtime src/sync/personal-guest-import-selection.js и отдельный critical test
+(НЕ в package; НЕ включать в текущий commit descendants). 3/3 pure теста
+прошли: guest-import-selection-1.log. Freeze полного source/base/handoff,
+выбранных layouts/names, operationUUID и owner/layout mappings до await;
+повторное использование существующих private records через прежний
+planGuestTemplateEntityReuse; shared source mapping между layouts. Gate false.
+Это подготовка, не writer/protocol/server/UI адаптер. Нужно ещё общее чистое
+проектирование guest import (включая dictionaries, placeholders, metadata,
+photo files) и durable handoff identity, paired API+UI/recovery. Нельзя удалять
+handoff/workspace до нужной устойчивой записи/подтверждения, делать дубли при
+reload или менять Shared Auth. Текущий GUEST_LOGIN_HANDOFF_VERSION = 2.
+resolveStoredGuestLoginHandoffCandidate возвращает только candidate, без самого
+handoff; payload хранимого handoff нужно явно сохранить для новой операции.
+
+Потом guest/public origins, sharing/server copy/admin и весь остаток checklist.
+Новые/изменённые фотографии и создание/составные формы во время pending archive
+пока требуют других адаптеров. Не останавливаться с final после среза: пользователь
+велел работать до конца. Публикации, push, live-миграции и gates запрещены.
 
 Новое сообщение Safari source task: Production v1600 опубликован,
 app PR13 merge22c0dff33b62f733f78cfa1fa2dcb81d6cff8dbe,

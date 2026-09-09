@@ -4,13 +4,16 @@ import { preparePersonalArchivePhotoImport } from "../../src/sync/personal-archi
 import { createPersonalSaveOutbox } from "../../src/sync/personal-save-outbox.js";
 import { encodePersonalArchivePhotoRecord, decodePersonalArchivePhotoRecord } from "../../src/sync/personal-archive-photo-record.js";
 import { inspectPersonalPhotoRecovery } from "../../src/sync/personal-photo-recovery-inventory.js";
+import { createPersonalPendingArchiveFormSession } from "../../src/sync/personal-pending-archive-form.js";
+import { preparePersonalDeletionBatch } from "../../src/sync/personal-deletion-intent.js";
+import { personalPendingArchiveUpdateSource } from "../../src/sync/personal-pending-archive-update.js";
 
-async function fixture() {
+async function fixture({ pendingArchiveUpdateEnabled = false } = {}) {
   const context = { environment: "bike-packing-experiment", actorId: "actor", listId: "list", scopeKey: "id:actor", scope: "personal", generation: "archive" };
   const values = new Map(), records = new Map(), events = [];
   const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
-  const make = () => createPersonalSaveOutbox({ ...context, storage, photoEnabled: true, photoBatchEnabled: true, archiveImportEnabled: true, archivePhotoImportEnabled: true });
+  const make = () => createPersonalSaveOutbox({ ...context, storage, photoEnabled: true, photoBatchEnabled: true, archiveImportEnabled: true, archivePhotoImportEnabled: true, pendingArchiveUpdateEnabled });
   const outbox = make(), current = { items: {}, containers: {}, layouts: {}, locations: [], categories: [] };
   outbox.adoptRemoteBaseline({ snapshot: current, payload: current, stateRevision: 1 });
   const source = { ...structuredClone(current), items: { archived: { id: "archived", name: "Chosen owner", photos: [{ id: "old" }] } } };
@@ -65,4 +68,41 @@ test("photo archive refuses abandoned earlier files and changed editor before ca
   const blocked = await fixture(); blocked.store.ids = async () => ["unlinked-id"];
   blocked.store.read = async id => ({ binding: blocked.store.binding, action: { operationId: id }, files: [{ stage: {} }] });
   await assert.rejects(preparePersonalArchivePhotoImport(blocked.options), /Прежние файлы/); assert.deepEqual(blocked.events, []);
+});
+
+test("a pending archive form commits fields before view and reload, then exact owner deletion cannot be undone by another child", async () => {
+  const f = await fixture({ pendingArchiveUpdateEnabled: true }), imported = await (await preparePersonalArchivePhotoImport(f.options))();
+  const request = { binding: f.outbox.binding, snapshot: imported.snapshot, basePayload: imported.action.body.payload,
+    parentOperationId: imported.action.operationId, baseStateRevision: 1, created: false, entityType: "item", entityId: "archived", fields: { name: "Edited during import", weight: 12 } };
+  const session = createPersonalPendingArchiveFormSession({ enabled: true, outbox: f.outbox, getContext: () => f.context,
+    onDurable: record => { assert.deepEqual(f.make().recover(), record); f.events.push("field-view"); } });
+  const pending = session.submit(request); assert.equal(session.submit(request), pending);
+  assert.equal(f.events.at(-1), "field-view"); request.fields.name = "Late mutation";
+  const child = await pending; assert.equal(child.snapshot.items.archived.name, "Edited during import");
+  assert.throws(() => f.outbox.markApplied({ operationId: child.action.operationId, stateRevision: 3 }), /вместе/);
+  assert.deepEqual(child.action.body.photoResults, { version: 3, operationId: imported.action.operationId, owners: [{ entityType: "item", entityId: "archived" }] });
+  const next = f.make(), deletion = preparePersonalDeletionBatch(child.snapshot, { type: "item", id: "archived" });
+  const removed = next.capture({ snapshot: deletion.snapshot, body: { payload: deletion.snapshot, baseStateRevision: 1, userDeletion: deletion.intent } });
+  assert.equal(removed.action.body.causal.dependsOn.length, 2);
+  assert.equal(personalPendingArchiveUpdateSource({ records: f.make().list(), operationId: removed.action.operationId, listId: "list" }).action.operationId, imported.action.operationId);
+  assert.throws(() => next.capture({ snapshot: child.snapshot, body: { payload: child.snapshot, baseStateRevision: 1 } }));
+  assert.deepEqual(f.make().list().find(record => record.action.operationId === imported.action.operationId), imported);
+  assert.equal(await (await f.store.read(imported.action.operationId)).files[0].file.text(), "archive original");
+});
+
+for (const failure of ["quota", "wrong-parent", "photo-injection"]) test(`pending archive field form ${failure} retains the original source and leaves the view untouched`, async () => {
+  const f = await fixture({ pendingArchiveUpdateEnabled: true }), imported = await (await preparePersonalArchivePhotoImport(f.options))();
+  const input = { binding: f.outbox.binding, snapshot: imported.snapshot, basePayload: imported.action.body.payload,
+    parentOperationId: imported.action.operationId, baseStateRevision: 1, created: false, entityType: "item", entityId: "archived", fields: { name: "Draft" } };
+  if (failure === "wrong-parent") input.parentOperationId = crypto.randomUUID();
+  if (failure === "photo-injection") input.fields.photos = [];
+  if (failure === "quota") f.storage.setItem = () => { throw Error("quota"); };
+  const session = createPersonalPendingArchiveFormSession({ enabled: true, outbox: f.outbox, getContext: () => f.context, onDurable: () => assert.fail("must not replace view") });
+  const result = session.submit(input); assert.equal(session.submit(input), result); await assert.rejects(result);
+  assert.deepEqual(f.make().recover(), imported);
+  if (failure === "quota") {
+    const recovery = session.recoveryCopy(); assert.equal(recovery.preview.items.archived.name, "Draft");
+    assert.deepEqual(recovery.request.binding, f.outbox.binding); assert.equal(recovery.automaticImportAllowed, false);
+    assert.deepEqual(recovery.request.snapshot, imported.snapshot);
+  }
 });

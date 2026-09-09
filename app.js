@@ -730,6 +730,8 @@ import { createRemoteListRecordSelector } from "./src/sync/list-records.js";
 import { ensurePersonalListId } from "./src/sync/personal-list-bootstrap.js";
 import { experimentTransport, transportPhotoFetch } from "./src/sync/experiment-transport.js";
 import { createPersonalSaveOutbox, recoverPersonalSaveListId, PERSONAL_SAVE_OUTBOX_ENABLED } from "./src/sync/personal-save-outbox.js";
+import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource, isPersonalPendingArchiveUpdate } from "./src/sync/personal-pending-archive-update.js";
+import { createPersonalPendingArchiveFormSession } from "./src/sync/personal-pending-archive-form.js";
 import { PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED, isPersonalPendingPhotoOwnerDeletion,
   personalPendingPhotoOwnerDeletionForm } from "./src/sync/personal-pending-photo-owner-deletion.js";
 import { PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED, PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED, personalPendingPhotoCopyDeletionForm,
@@ -1926,7 +1928,7 @@ const appTailControllerDeps = {
   saveItemDialogAction, saveLayoutMutation, saveLocalUiState, savePublishedLayoutRecord, savePublishedLayoutRecordFlow,
   savePublishedTemplateMetadata, saveRecoverySnapshot, saveRemoteListStateRecord, saveRemoteState, saveRemoteStateFlow,
   saveRemoteStateRecord, saveRootContainerDialogAction, saveState, preparePersonalCatalogDeletion, preparePersonalCatalogCopy, preparePersonalContainerTreeAction, preparePersonalLayoutCopyAction, preparePersonalItemCopyPlacementAction,
-  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
+  personalPhotoFormUiEnabled, personalPhotoEditFormUiEnabled, personalPendingArchiveFormEnabled, personalSaveContext, personalPhotoFormRequest, personalPhotoFormSession, reportPersonalPhotoFormError,
   preparePersonalLayoutDeletionAction, preparePersonalDictionaryAction, preparePersonalPlacementAction, preparePersonalArchiveImportAction, saveStoredActiveLayoutChoice, saveStoredActivePackingListId,
   saveStoredSyncMeta, saveStoredUiSettings, saveSyncMeta, saveUiLanguage, saveUiSettings,
   scheduleActivePublishedEditSave, schedulePhotoUploadProgressRender, schedulePublishedLayoutSave, scheduleRemoteSave, scheduleSearchContextCommit,
@@ -2488,13 +2490,21 @@ function personalPhotoEditFormUiEnabled() {
   return PERSONAL_PHOTO_EDIT_FORM_ENABLED && personalPhotoFormUiEnabled();
 }
 
-function personalPhotoFormRequest(values) {
+function personalPendingArchiveFormEnabled() {
+  if (!PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED || !PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED || !personalPhotoFormUiEnabled()) return false;
+  const outbox = personalSaveOutboxForScope();
+  return Boolean(outbox?.hasPending() && personalPendingArchiveUpdateSource({ records: outbox.list(),
+    operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId, includeSource: true }));
+}
+
+function personalPhotoFormRequest(values, { pendingArchive = false } = {}) {
   personalSaveRecovery.assertRunning();
-  const outbox = personalSaveOutboxForScope(), baseline = outbox?.confirmedBase();
+  const outbox = personalSaveOutboxForScope(), head = pendingArchive && personalPendingArchiveFormEnabled() ? outbox.recover() : null;
+  const baseline = head ? { payload: head.action.body.payload, stateRevision: head.action.body.baseStateRevision } : outbox?.confirmedBase();
   if (!personalPhotoFormUiEnabled() || !baseline || !currentPackingListId) {
     throw Error("Сначала подтвердите личный список. Поля и фото остались в форме.");
   }
-  return { ...values, binding: outbox.binding, snapshot: JSON.parse(JSON.stringify(state)),
+  return { ...values, ...(head ? { parentOperationId: head.action.operationId } : {}), binding: outbox.binding, snapshot: JSON.parse(JSON.stringify(state)),
     basePayload: baseline.payload, baseStateRevision: baseline.stateRevision };
 }
 
@@ -2505,7 +2515,7 @@ function personalPhotoFormSession(options) {
   const store = createPersonalPhotoActionStore({ ...outbox.binding, getContext: options.getContext });
   const source = { outbox, store, inventory: null };
   personalPhotoRecoverySource = source;
-  const createSession = options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
+  const createSession = options.pendingArchive ? createPersonalPendingArchiveFormSession : options.copyPlacement ? createPersonalPhotoItemCopyPlacementSession : options.copyTree ? createPersonalPhotoTreeCopySession : options.copyBatch ? createPersonalPhotoCopyBatchSession : options.copyOwner ? createPersonalPhotoCopyFormSession
     : options.editExistingPhotos ? createPersonalPhotoEditFormSession : createPersonalPhotoFormSession;
   const session = createSession({ ...options, outbox, store,
     snapshotToPayload: snapshot => cloneStateForSync(snapshot, { forSync: true }),
@@ -2514,11 +2524,14 @@ function personalPhotoFormSession(options) {
     onDurable(record) {
       personalSaveRecovery.assertRunning();
       // The journal owns this exact form; any new bytes were committed first.
-      if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
+      if (options.pendingArchive) {
+        if (!personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: record.action.operationId, listId: outbox.binding.listId })) throw Error("Не подтверждена связь формы с исходным архивом.");
+      } else if (record.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(record);
       else assertPersonalPhotoFormRecord(record);
-      personalReconciledSnapshot(record.photoState.payload, record.snapshot);
+      const payload = options.pendingArchive ? record.action.body.payload : record.photoState.payload;
+      personalReconciledSnapshot(payload, record.snapshot);
       replaceState(record.snapshot, { personalOperationId: record.action.operationId });
-      if (!sameJson(serializeState({ forSync: true }), record.photoState.payload)) {
+      if (!sameJson(serializeState({ forSync: true }), payload)) {
         throw Error("Отображение формы изменило её данные. Исходная форма и все файлы сохранены для проверки.");
       }
       persistStateSnapshot(state, { recordAction: false });
@@ -2596,7 +2609,12 @@ function preparePersonalCatalogDeletion(value) {
         const formDeletion = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && sameJson(parent?.photoState?.payload, currentPayload)
           && isPersonalPendingPhotoOwnerDeletion({ parent, payload: cloneStateForSync(prepared.snapshot, { forSync: true }),
             userDeletion: prepared.intent, listId: currentPackingListId });
-        if (!copyDeletion && !formDeletion) {
+        const archive = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED
+          && sameJson(parent?.action.body.payload, currentPayload)
+          && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: parent?.action.operationId, listId: currentPackingListId, includeSource: true });
+        const archiveDeletion = archive && isPersonalPendingArchiveUpdate({ source: archive, basePayload: currentPayload,
+          payload: cloneStateForSync(prepared.snapshot, { forSync: true }), userDeletion: prepared.intent, listId: currentPackingListId });
+        if (!copyDeletion && !formDeletion && !archiveDeletion) {
           throw Error("Удаление требует подтверждённых фото либо точно сохранённой формы этого владельца. Исходные данные сохранены.");
         }
       }
@@ -6090,7 +6108,9 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
       if (pending.action.body.action === "copy-batch") assertPersonalPhotoCopyBatchRecord(pending);
       else assertPersonalPhotoFormRecord(pending);
     }
-    if (!personalOperationId || !(durableForm || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.import", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
+    const durableArchiveUpdate = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && personalPendingArchiveUpdateSource({
+      records: personalSaveOutboxForScope().list(), operationId: pending?.action.operationId, listId: currentPackingListId });
+    if (!personalOperationId || !(durableForm || durableArchiveUpdate || pending?.reconciliation || pending?.localReconciliation || ["list.restore", "list.import", "list.migrate"].includes(pending?.action.kind)) || pending.action.operationId !== personalOperationId
       || !sameJson(nextState, pending.snapshot)) {
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
@@ -8825,6 +8845,8 @@ function canResumeRetainedPersonalPhotoForm() {
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
       && outbox.hasPending() && (PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
+        || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource({
+          records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })
         || outbox.recover()?.action.body.action === "form"
         || PERSONAL_PHOTO_COPY_BATCH_ENABLED && outbox.recover()?.action.body.action === "copy-batch"
         || PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(),
@@ -8843,7 +8865,8 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   const getContext = personalSaveContext;
   const queue = createListOperationQueue({ transport: experimentTransport, getContext });
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
-  const archive = source.outbox.recover()?.action.kind === "list.import";
+  const archive = source.outbox.recover()?.action.kind === "list.import" || Boolean(personalPendingArchiveUpdateSource({
+    records: source.outbox.list(), operationId: source.outbox.recover()?.action.operationId, listId: source.outbox.binding.listId }));
   updateSyncUi(archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,

@@ -7,7 +7,8 @@ const fail = message => { throw Object.assign(new Error(message), { code: "photo
 // One entry belongs to its initial-snapshot object, not just the reusable DOM
 // dialog or entity ID. Closing/reopening the same bag creates a different form.
 export function createPersonalPhotoFormController({ isEnabled, getContext, getView, readForm, createSession,
-  createEditSession, isEditEnabled = () => false, createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
+  createEditSession, isEditEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
+  createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
     const context = getContext();
@@ -77,27 +78,28 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       const fresh = selected.some(photo => photo?.localId && photo.status === "pending" && !photo.assetId && !photo.url && !photo.thumbUrl);
       const edit = !fresh && Boolean(view?.draft && (view.draft.deletedPhotos?.length
         || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
+      const pendingUpdate = !fresh && !edit && isPendingUpdate();
       if (!fresh) {
         if (edit && (!isEditEnabled() || typeof createEditSession !== "function")) {
           onError(Object.assign(new Error("Удаление и перестановка фото ещё подключаются к подтверждённому сохранению. Изменения остались в форме; ничего не отправлено."),
             { code: "photo-form-ui" }), { type, recovery: null });
           return true;
         }
-        if (!edit) return false;
+        if (!edit && !pendingUpdate) return false;
       }
       const entry = entryFor(type);
       if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
       // Reentrant button/field callbacks cannot create a second session.
       entry.saving = true;
       try {
-        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type);
+        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate });
         if (placementChanged !== false || availabilityChanged !== false || catalogSource !== false) {
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding };
-        const values = edit ? { photoIds: personalPhotoEditSelection(selection) }
+        const values = pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection) }
           : isEditEnabled() && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
-        entry.session = (edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
+        entry.session = (pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
         const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);
         pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))

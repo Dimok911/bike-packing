@@ -1,4 +1,5 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY, personalArchivePhotoBodyResultReference } from "./personal-pending-archive-update.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, PERSONAL_ARCHIVE_IMPORT_CAPABILITY, assertPersonalArchiveImportHashes, validatePersonalArchiveImportResult } from "./personal-archive-import-protocol.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
@@ -148,6 +149,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   photoFormEnabled = PERSONAL_PHOTO_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
+  pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   photoCopyBatchEnabled = PERSONAL_PHOTO_COPY_BATCH_ENABLED,
   photoCopyPlacementEnabled = PERSONAL_PHOTO_COPY_PLACEMENT_ENABLED,
   photoTreeCopyEnabled = PERSONAL_PHOTO_TREE_COPY_ENABLED,
@@ -349,15 +351,18 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const dependencies = [{ operationId: parent.operationId, listId }];
       let copyExpected;
       if (body.photoResults) {
-        if (!pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoEnabled || !photoFormEnabled) throw paused(operationId);
+        const archive = body.photoResults.version === 3;
+        if (!photoEnabled || (archive ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
+          : !pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoFormEnabled)) throw paused(operationId);
         const copy = JSON.parse(JSON.stringify(photoResultPredecessor || {})), copyRoute = listOperationRoute(copy.path, copy.method);
-        const copyBody = JSON.parse(copy.body || "{}"), reference = personalPhotoCopyBodyResultReference(copyBody, copy.operationId);
+        const copyBody = JSON.parse(copy.body || "{}"), reference = (archive ? personalArchivePhotoBodyResultReference : personalPhotoCopyBodyResultReference)(copyBody, copy.operationId);
+        if (archive) await assertPersonalArchivePhotoHashes(copyBody);
         if (reference.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)
-          || copyRoute?.kind !== "photos.mutate" || copyRoute.listId !== listId || !validUuid(copy.operationId)
+          || copyRoute?.kind !== (archive ? "list.import" : "photos.mutate") || copyRoute.listId !== listId || !validUuid(copy.operationId)
           || canonicalListOperationJson(body.photoResults) !== canonicalListOperationJson(reference)) throw paused(operationId);
         if (copy.operationId !== parent.operationId) dependencies.push({ operationId: copy.operationId, listId });
-        copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: "photos.mutate", body: copyBody,
-          payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: "photos.mutate", listId, body: copyBody })) };
+        copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: copyRoute.kind, body: copyBody,
+          payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: copyRoute.kind, listId, body: copyBody })) };
       }
       if (!initial.actorId || !initial.generation || initial.scope !== "personal" || !["list.update", "list.restore", "list.import"].includes(route.kind)
         || !validUuid(operationId) || !validUuid(parent.operationId) || parent.operationId === operationId
@@ -403,7 +408,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
-        if (copyExpected && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
+        if (copyExpected && !capabilities.capabilities?.includes(body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
         if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) throw paused(operationId);
         assertListOperationPayload(expected);
         if (!entry) {
@@ -526,8 +531,10 @@ export function createListOperationQueue({ transport, getContext = () => null,
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
-      if (body.photoResults && (!pendingPhotoCopyDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoCopyEnabled || route.kind !== "list.update"
-        || body.photoResults.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled))) {
+      if (body.photoResults && (!photoEnabled || route.kind !== "list.update" || (body.photoResults.version === 3
+        ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
+        : !pendingPhotoCopyDeletionEnabled || !photoFormEnabled || !photoCopyEnabled
+          || body.photoResults.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)))) {
         throw paused(requestedId, "Удаление до подтверждения копии ещё не включено.");
       }
       const generation = await sha(initial.generation);
@@ -595,7 +602,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && body.copyPlacement && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает копирование вещи в сумку с фото. Запрос не отправлен.");
           }
-          if (body.photoResults && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
+          if (body.photoResults && !capabilities.capabilities?.includes(body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");
           }
           if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) {
