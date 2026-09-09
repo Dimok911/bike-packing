@@ -4,6 +4,60 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+Guest descendants локально приняты, после принятой пары
+FE 0ec1ae1 / BE 7fdda7a. photoResults.version=4, собственные false gate
+PERSONAL_PENDING_GUEST_UPDATE_ENABLED и capability personalCausalGuestDescendantsV1.
+Frontend/backend общие строгие проверки импортов извлечены из прежнего archive
+адаптера; отдельные wrappers сохраняют manifest/version/capability каждого.
+Подключены outbox/queue/drain/cancel и формы app.js/app-tail (pendingImport).
+38 targeted, 568/568 transport, 70/70 API operations, 74/74 source/service и
+FE check проходят. 5 новых pure +6 runtime FE, 3 серверных unit.
+API/MySQL повтор завершён 204/204, guest-descendants-mysql-2.log, 238,54 с.
+Первый прогон: 201 pass / 3 fail (2 guest test + aggregate) из-за тестового
+выбора пустой замены при другой существующей укладке. Исправлен точный
+nextLayoutId; runtime проверки сохранены. Все API процессы завершены.
+UI подготовлено 18 новых Chromium/mobile-WebKit сценариев: pending guest
+photo/fileless fields, item/container/layout deletion, quota, lost child ACK,
+две отмены. UI1: 7 pass / 1 failed / 42 not run. Photo fields прошли; fileless fixture
+пытался терять ACK уже committed import после reload. Обрыв перенесён на
+ACK следующей DB правки. UI2: 13 pass / 1 failed / 36 not run: все fields,
+deletions/quota/lost child прошли, guest cancel dialog не показывал число
+отклонённых действий. Добавлен счётчик в RU/EN. UI3: 13 pass / 1 failed:
+cancel работал, но тест ошибочно ожидал отмену уже готового файла. Теперь
+проверяет точные IDs только неизвестных частей; ready original сохраняется.
+Окончательный UI4: 4/4 targeted cancellation Chromium/mobile WebKit.
+UI5: 50/50 за 11,4 мин, guest-descendants-ui-5.log, modes photo-edit,
+grep 'pending (archive|guest) descendants|actual guest sign-in'. Все процессы
+завершены exit 0; source check повторён после текста окна и прошёл, check-2.
+Critical также прошёл 895/895, guest-descendants-critical-1.log.
+Для следующего этапа добавлены НЕПОДКЛЮЧЁННЫЕ, не включать в guest-descendant
+коммит: FE src/sync/personal-photo-private-owner.js,
+tests/critical/personal-photo-private-owner.test.js; BE
+src/lib/personal-photo-private-owner.js, test/bike-packing-private-photo-owner.test.js,
+test/integration/private-imported-photo-scenarios.js. Первые 3/3 pure проверки
+прошли; новые проверки runtime пока не запускались. Predicate использует существующий
+hasPrivateSyncBlockedPublicOrigin, сохраняет старые active/admin guards и
+различает независимую private provenance от живых public/shared markers.
+Есть конкретный вопрос совместимости: guest owner
+сохраняет частное происхождение _publicCopySourceId (это проверено
+personal-guest-import-owner.test.js), а personalPhotoFormOwner в
+src/sync/personal-photo-form-protocol.js сейчас отвергает это поле у previous.
+Проверить реальные личные копии из шаблона и последующую правку фото отдельно;
+не ослаблять проверки настоящих public/admin/shared владельцев без модели.
+Общий UI controller personal-photo-form-controller.js по-прежнему блокирует
+placementChanged/availabilityChanged/catalogSource; новые файлы и composed
+forms остаются следующим широким срезом, не считать их готовыми по DB forms.
+
+Не включать новые файлы в прежний срез: он уже локально принят и проверен.
+Далее продолжать весь список без публикации/push/включения gates.
+
+Из задачи «Исправить прокрутку фото в Safari» получено сообщение про Production
+v1602/shared 2.4.0, commit 6c4b03f976007f7f1628e1e1fd59ca93c9716339,
+локальный source ftp-upload/safari-v1595/production-source. Его diff прочитан,
+но ещё НЕ перенесён и не проверен здесь. Нужна локальная интеграция после
+текущего среза; Experiment здесь пока имеет gallery 2.2.1. Новое сообщение
+не разрешает публикацию: прямой запрет пользователя остаётся в силе.
+
 Текущее продолжение 2026-09-09: гостевой перенос подключён к реальному
 входу app.js и общим store/outbox/queue/staging/drain/cancellation/recovery.
 198/198 API/MySQL (guest-wiring-mysql-1.log, 218,65 с); 24/24 Chromium/mobile

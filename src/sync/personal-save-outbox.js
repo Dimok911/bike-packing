@@ -1,3 +1,4 @@
+import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource, isPersonalPendingGuestUpdate, personalGuestPhotoResultReference } from "./personal-pending-guest-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, assertPersonalArchivePhotoBody } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, assertPersonalGuestImportBody } from "./personal-guest-import-protocol.js";
 import { personalGuestBusinessPayload } from "./personal-guest-import-plan.js";
@@ -116,6 +117,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
+  pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   photoBatchCancellationEnabled = PERSONAL_PHOTO_BATCH_CANCELLATION_ENABLED } = {}) {
   if (environmentId !== environment || !validId(actorId) || !validId(listId) || !validId(scopeKey)) {
@@ -236,7 +238,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         }
         const expectedDependencies = [{ operationId: parentId, listId }];
         if (Object.hasOwn(action.body, "photoResults")) {
-          const form = action.body.photoResults.version === 3 ? personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
+          const form = action.body.photoResults.version === 4 ? personalPendingGuestUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
+            : action.body.photoResults.version === 3 ? personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: action.operationId, listId })
             : personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: action.operationId, listId });
           if (!form) throw Error("Invalid pending copy result chain");
           if (form.action.operationId !== parentId) expectedDependencies.push({ operationId: form.action.operationId, listId });
@@ -396,7 +399,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
     // This checkpoint is not a substitute for a server operation receipt.
     markApplied({ operationId, stateRevision }) {
       const { head, applied, records } = assertObserved();
-      const archiveSource = personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId });
+      const archiveSource = personalPendingGuestUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId })
+        || personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head?.action.operationId, listId });
       if ((head?.photoState || archiveSource) && !(read().anchor?.baseline && applied.has(operationId))) {
         throw blocked("photo-checkpoint", "Подтверждение фото и актуальная карточка должны сохраняться вместе.");
       }
@@ -565,18 +569,20 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       }
       const { head, records, anchor, applied } = current;
       if (Object.hasOwn(input.body || {}, "photoResults")) throw blocked("input", "Связь с результатом копии должна принадлежать исходной локальной очереди.");
-      const pendingArchive = head && !applied.has(head.action.operationId) && personalPendingArchiveUpdateSource({
-        records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true });
-      if (pendingArchive) {
+      const pendingImport = head && !applied.has(head.action.operationId) && (personalPendingGuestUpdateSource({
+        records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true }) || personalPendingArchiveUpdateSource({
+        records: [...records.values()], operationId: head.action.operationId, listId, includeSource: true }));
+      if (pendingImport) {
+        const guest = Object.hasOwn(pendingImport.action.body, "guestImport");
         if (!create && !restore && !archiveImport && !migration && !localReconciliation && input.body.causal === undefined
           && !["userDeletion", "userCopy", "userContainerTree", "userLayoutCopy", "userItemCopyPlacement", "userPlacement", "userDictionary", "historyRestore", "archiveImport", "guestImport", "migration"]
             .some(key => Object.hasOwn(input.body, key)) && canonicalListOperationJson(personalRecordPayload(head)) === canonicalListOperationJson(input.body.payload)) return clone(head);
-        if (!pendingArchiveUpdateEnabled || !photoEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
-          || create || restore || archiveImport || migration || localReconciliation || !isPersonalPendingArchiveUpdate({ source: pendingArchive,
+        if (!photoEnabled || (guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled)
+          || create || restore || archiveImport || migration || localReconciliation || !(guest ? isPersonalPendingGuestUpdate : isPersonalPendingArchiveUpdate)({ source: pendingImport,
             basePayload: personalRecordPayload(head), payload: input.body.payload, userDeletion: input.body.userDeletion, listId })) {
-          throw blocked("archive-pending", "Правка не подтверждена как продолжение сохранённого архива. Исходный архив и фотографии сохранены.");
+          throw blocked("import-pending", "Правка не подтверждена как продолжение сохранённого переноса. Исходник и фотографии сохранены.");
         }
-        input.body.photoResults = personalArchivePhotoResultReference(pendingArchive);
+        input.body.photoResults = (guest ? personalGuestPhotoResultReference : personalArchivePhotoResultReference)(pendingImport);
       }
       const pendingCopy = head && !applied.has(head.action.operationId) && personalPendingPhotoCopyDeletionForm({
         records: [...records.values()], operationId: head.action.operationId, listId, includeForm: true });
@@ -603,7 +609,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (head?.action.kind === "list.migrate" && !applied.has(head.action.operationId)) {
         throw blocked("migration-pending", "Сначала подтвердите подготовку старого списка. Следующее изменение не отправлено.");
       }
-      if (!pendingCopy && !pendingArchive && head?.photoState && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
+      if (!pendingCopy && !pendingImport && head?.photoState && !(applied.has(head.action.operationId) && anchor?.operationId === head.action.operationId && anchor.baseline)) {
         if (!pendingPhotoOwnerDeletionEnabled || !photoEnabled || !photoFormEnabled || !photoBatchEnabled
           || create || restore || archiveImport || migration || localReconciliation
           || !isPersonalPendingPhotoOwnerDeletion({ parent: head, payload: input.body?.payload, userDeletion: input.body?.userDeletion, listId })) {
@@ -651,8 +657,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       if (pendingCopy && !causal.dependsOn.some(dep => dep.operationId === pendingCopy.action.operationId)) {
         causal.dependsOn.push({ operationId: pendingCopy.action.operationId, listId });
       }
-      if (pendingArchive && !causal.dependsOn.some(dep => dep.operationId === pendingArchive.action.operationId)) {
-        causal.dependsOn.push({ operationId: pendingArchive.action.operationId, listId });
+      if (pendingImport && !causal.dependsOn.some(dep => dep.operationId === pendingImport.action.operationId)) {
+        causal.dependsOn.push({ operationId: pendingImport.action.operationId, listId });
       }
       const action = { ...binding, operationId, generation: (head?.action.generation || 0) + 1,
         ...(baseline ? { previousLocalOperationId: head.action.operationId } : {}),
@@ -898,6 +904,8 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         records: [...records.values()], operationId: head?.action.operationId, listId })
         || pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({
           records: [...records.values()], operationId: head?.action.operationId, listId })
+        || pendingGuestUpdateEnabled && guestImportEnabled && personalPendingGuestUpdateSource({
+          records: [...records.values()], operationId: head?.action.operationId, listId })
         || pendingArchiveUpdateEnabled && archivePhotoImportEnabled && personalPendingArchiveUpdateSource({
           records: [...records.values()], operationId: head?.action.operationId, listId });
       if (pendingForm && pendingForm.action.body.action === "copy-batch" && !pendingPhotoCopyBatchDeletionEnabled) {
@@ -907,7 +915,7 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
         store: photoStore, staging: photoStaging, assertCurrent: guardEditor(getContext, head),
         formEnabled: photoFormEnabled, archiveEnabled: archivePhotoImportEnabled, guestEnabled: guestImportEnabled,
         enabled: photoEnabled && photoBatchEnabled && photoBatchCancellationEnabled
-          && (pendingForm.action.kind === "list.import" ? archiveImportEnabled && archivePhotoImportEnabled : photoFormEnabled) });
+          && (pendingForm.action.kind === "list.import" ? Object.hasOwn(pendingForm.action.body, "guestImport") ? guestImportEnabled : archiveImportEnabled && archivePhotoImportEnabled : photoFormEnabled) });
       const filelessForm = pendingForm || head;
       if ((["form", "copy-batch"].includes(filelessForm?.action?.body?.action) || filelessForm?.action?.body?.archiveImport?.version === 2
         || filelessForm?.action?.body?.guestImport?.version === 1) && filelessForm.photoState?.fileIntentHash === null) {
@@ -999,7 +1007,9 @@ export function createPersonalSaveOutbox({ storage, actorId, listId, scopeKey,
       const root = chain.at(-1);
       const dependentForm = chain.find((record, index) => record.photoState && index > 0);
       const resolvedForm = dependentForm?.action.kind === "list.import"
-        ? pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId })
+        ? (Object.hasOwn(dependentForm.action.body, "guestImport")
+          ? pendingGuestUpdateEnabled && guestImportEnabled && personalPendingGuestUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId })
+          : pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: [...records.values()], operationId: head.action.operationId, listId }))
         : dependentForm?.action.body.copySource || dependentForm?.action.body.action === "copy-batch"
         ? pendingPhotoCopyDeletionEnabled && photoCopyEnabled && personalPendingPhotoCopyDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId })
         : pendingPhotoOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: [...records.values()], operationId: head.action.operationId, listId });

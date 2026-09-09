@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => ({
         '  if (!same(plan.payload, body.payload)) { globalThis.__personalTestProjectionDifference = { expected: plan.payload, actual: body.payload }; fail(); }');
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-archive-photo-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-guest-update.js")) return code.replace(
+      "PERSONAL_PENDING_GUEST_UPDATE_ENABLED = false", "PERSONAL_PENDING_GUEST_UPDATE_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-archive-update.js")) return code.replace(
       "PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED = false", "PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-photo-history-protocol.js")) return code.replace(

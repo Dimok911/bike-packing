@@ -1,3 +1,6 @@
+import { createPersonalPendingGuestFormSession } from "../../src/sync/personal-pending-guest-form.js";
+import { personalPendingGuestUpdateSource } from "../../src/sync/personal-pending-guest-update.js";
+import { preparePersonalDeletionBatch } from "../../src/sync/personal-deletion-intent.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { guestSelectionFixture } from "./personal-guest-import-fixture.js";
@@ -18,7 +21,7 @@ import { loadPersonalGuestImportPhoto } from "../../src/sync/personal-guest-impo
 import { personalGuestBaseNeedsPreparation } from "../../src/sync/personal-guest-import-base.js";
 import { recoverPersonalGuestImportLink } from "../../src/sync/personal-guest-import-link-recovery.js";
 
-async function fixture({ fileless = false } = {}) {
+async function fixture({ fileless = false, pendingGuestUpdateEnabled = false } = {}) {
   const input = guestSelectionFixture();
   if (fileless) {
     input.candidate.sourceState.items.item.photos = [];
@@ -30,7 +33,7 @@ async function fixture({ fileless = false } = {}) {
   const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
   const make = (enabled = true) => createPersonalSaveOutbox({ ...input.binding, storage, photoEnabled: enabled, photoBatchEnabled: enabled, guestImportEnabled: enabled,
-    photoBatchCancellationEnabled: enabled });
+    photoBatchCancellationEnabled: enabled, pendingGuestUpdateEnabled: enabled && pendingGuestUpdateEnabled });
   const outbox = make(), current = structuredClone(input.basePayload);
   outbox.adoptRemoteBaseline({ snapshot: current, payload: current, stateRevision: input.baseStateRevision });
   const store = { binding: input.binding, ids: async () => [...records.keys()],
@@ -73,6 +76,60 @@ for (const fileless of [false, true]) test(`guest ${fileless ? "fileless" : "nat
   assert.equal(Boolean(personalPhotoRecoveryCancellationHead(saved, { guestEnabled: false, archiveEnabled: true, batchEnabled: true })), false);
   const edited = structuredClone(saved.snapshot); edited.items[Object.keys(edited.items)[0]].name = "Pending edit";
   assert.throws(() => f.outbox.capture({ snapshot: edited, body: { payload: edited, baseStateRevision: 7 } }));
+});
+
+for (const fileless of [false, true]) test(`pending guest ${fileless ? "fileless" : "photo"} form persists before view and keeps deletion through reload`, async () => {
+  const f = await fixture({ fileless, pendingGuestUpdateEnabled: true }), imported = await (await preparePersonalGuestImport(f.options))();
+  const item = Object.keys(imported.snapshot.items)[0], request = { binding: f.outbox.binding, snapshot: imported.snapshot, basePayload: imported.action.body.payload,
+    parentOperationId: imported.action.operationId, baseStateRevision: 7, created: false, entityType: "item", entityId: item, fields: { name: "Edited while importing", weight: 14 } };
+  const session = createPersonalPendingGuestFormSession({ enabled: true, outbox: f.outbox, getContext: () => f.context,
+    onDurable: record => { assert.deepEqual(f.make(false).recover(), record); f.events.push("field-view"); } });
+  const pending = session.submit(request); assert.equal(session.submit(request), pending); assert.equal(f.events.at(-1), "field-view");
+  request.fields.name = "Changed later";
+  const first = await pending; assert.equal(first.snapshot.items[item].name, "Edited while importing");
+  assert.equal(first.action.body.photoResults.version, 4); assert.equal(first.action.body.photoResults.operationId, imported.action.operationId);
+  assert.throws(() => f.outbox.markApplied({ operationId: first.action.operationId, stateRevision: 9 }), /вместе/);
+  const next = f.make(), deletion = preparePersonalDeletionBatch(first.snapshot, { type: "item", id: item });
+  const removed = next.capture({ snapshot: deletion.snapshot, body: { payload: deletion.snapshot, baseStateRevision: 7, userDeletion: deletion.intent } });
+  assert.equal(removed.action.body.causal.dependsOn.length, 2);
+  assert.equal(personalPendingGuestUpdateSource({ records: f.make(false).list(), operationId: removed.action.operationId, listId: "list" }).action.operationId, imported.action.operationId);
+  assert.throws(() => next.capture({ snapshot: first.snapshot, body: { payload: first.snapshot, baseStateRevision: 7 } }));
+  assert.deepEqual(f.make().list().find(record => record.action.operationId === imported.action.operationId), imported);
+  if (!fileless) assert.equal(await (await f.store.read(imported.action.operationId)).files[0].file.text(), "guest original");
+});
+
+for (const failure of ["quota", "wrong-parent", "photo-injection"]) test(`pending guest field form ${failure} retains source and does not replace the view`, async () => {
+  const f = await fixture({ pendingGuestUpdateEnabled: true }), imported = await (await preparePersonalGuestImport(f.options))();
+  const input = { binding: f.outbox.binding, snapshot: imported.snapshot, basePayload: imported.action.body.payload, parentOperationId: imported.action.operationId,
+    baseStateRevision: 7, created: false, entityType: "item", entityId: Object.keys(imported.snapshot.items)[0], fields: { name: "Unsent guest fields" } };
+  if (failure === "wrong-parent") input.parentOperationId = crypto.randomUUID();
+  if (failure === "photo-injection") input.fields.photos = [];
+  if (failure === "quota") f.storage.setItem = () => { throw Error("quota"); };
+  const session = createPersonalPendingGuestFormSession({ enabled: true, outbox: f.outbox, getContext: () => f.context, onDurable: () => assert.fail("must retain the current view") });
+  await assert.rejects(session.submit(input)); assert.equal(f.outbox.list().length, 1);
+  assert.deepEqual(f.outbox.recover(), imported); assert.equal(f.records.size, 1);
+  if (failure === "quota") assert.equal(session.recoveryCopy().preview.items[input.entityId].name, "Unsent guest fields");
+});
+
+test("guest descendant queue requires its own writer and capability independently of archive writers", async () => {
+  const f = await fixture({ pendingGuestUpdateEnabled: true }), source = await (await preparePersonalGuestImport(f.options))();
+  const payload = structuredClone(source.snapshot); payload.items[Object.keys(payload.items)[0]].weight = 70;
+  const child = f.outbox.capture({ snapshot: payload, body: { payload, baseStateRevision: 7 } }), request = { path: "/bike-packing/lists/list", method: "PUT",
+    operationId: child.action.operationId, body: JSON.stringify(child.action.body) };
+  let posts = 0, capabilities = ["personalListCausalOperationsV1", "personalCausalArchiveDescendantsV1", "personalCausalGuestImportV1"];
+  const locks = { request: async (name, run) => run() }, fetchImpl = async (url, options) => {
+    if (options.method === "POST") { posts++; throw Error("unavailable owner ACK"); }
+    return new Response(JSON.stringify(url.endsWith("/auth/me") ? { user: { id: "actor" } } : url.endsWith("/capabilities") ? { capabilities }
+      : { ok: true, operation: { id: child.action.operationId, state: "unknown" } }));
+  };
+  const make = pendingGuestUpdateEnabled => createListOperationQueue({ transport: createExperimentTransport({ locationLike: { origin: EXPERIMENT_FRONTEND_ORIGIN },
+    selection: "direct", storage: f.storage, locks }), getContext: () => f.context, locks, fetchImpl, enabled: true, photoEnabled: true,
+    archiveImportEnabled: true, archivePhotoImportEnabled: true, pendingArchiveUpdateEnabled: true, guestImportEnabled: true, pendingGuestUpdateEnabled });
+  await assert.rejects(make(false).run(request)); assert.equal(posts, 0);
+  await assert.rejects(make(true).run(request)); assert.equal(posts, 0);
+  capabilities.push("personalCausalGuestDescendantsV1");
+  await assert.rejects(make(true).run(request)); assert.equal(posts, 1);
+  await assert.rejects(make(true).run(request)); assert.equal(posts, 1);
 });
 
 for (const phase of ["selection", "files", "link", "handoff", "account"]) test(`guest ${phase} failure preserves source and never displays a partial transfer`, async () => {
