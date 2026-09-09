@@ -2483,14 +2483,14 @@ test("CRITICAL offline-photos: vendored cache engine matches its versioned manif
   assert.doesNotMatch(adapter, /function normalizedConcurrency|async function fetchPhotoBlob/);
 });
 
-test("CRITICAL offline-photos: vendored gallery matches its 2.3.1 manifest", () => {
+test("CRITICAL offline-photos: vendored gallery matches its 2.4.0 manifest", () => {
   const asset = readProjectFile("src/vendor/vniipo-photo-gallery-fallback.js");
   const manifest = JSON.parse(readProjectFile("src/vendor/vniipo-photo-gallery-manifest.json"));
-  assert.equal(manifest.version, "2.3.1");
+  assert.equal(manifest.version, "2.4.0");
   assert.equal(manifest.contractVersion, 2);
   assert.equal(canonicalSourceHash(asset), manifest.sha256);
-  assert.equal(manifest.sha256, "a6f844caa1b8482aa222877b4c3c600ba02faace42d80763b11cbf242acfb139");
-  assert.match(asset, /controlledTouchPaging: 1/);
+  assert.equal(manifest.sha256, "75c45ba052c586ab9209fd8a8a08b0e9e3ad62314df985d2c88be3496522e768");
+  assert.match(asset, /controlledTouchPaging: 2/);
   assert.match(asset, /fullscreenSourceLifecycle: 1/);
   assert.match(asset, /safeFullscreenImageReplace: 1/);
   assert.match(asset, /fullscreenControlStyles: 1/);
@@ -2713,7 +2713,7 @@ test("CRITICAL offline-photos: old stable cannot bypass controlled fullscreen pa
   const currentRuntime = globalThis.VniipoPhotoGallery;
   let legacyCalls = 0;
   globalThis.VniipoPhotoGallery = {
-    capabilities: { fullscreenEdgeRubberBand: 2, readyFullscreenNavigation: 1 },
+    capabilities: { fullscreenEdgeRubberBand: 2, readyFullscreenNavigation: 1, controlledTouchPaging: 1 },
     createFullscreenSwitcher() { legacyCalls += 1; return null; }
   };
   try {
@@ -2780,7 +2780,7 @@ test("CRITICAL offline-photos: shared helpers and edge settling are available th
   assert.match(sharedSource, /resolveFullscreenImagePresentation/);
   assert.match(sharedSource, /const fallbackRuntime = runtime\(\)/);
   assert.match(sharedSource, /runtime\(\)\?\.helpers\?\.stepInertia \|\| fallbackRuntime\?\.helpers\?\.stepInertia/);
-  assert.match(fallbackSource, /const VERSION = "2\.3\.1"/);
+  assert.match(fallbackSource, /const VERSION = "2\.4\.0"/);
   assert.match(fallbackSource, /function stepInertia\(/);
 
   const currentRuntime = globalThis.VniipoPhotoGallery;
