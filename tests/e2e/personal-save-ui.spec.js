@@ -5997,3 +5997,85 @@ for (const importKind of ["guest", "archive"]) for (const type of ["item", "cont
     expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toHaveLength(1); expect(f.errors).toEqual([]);
   } finally { clearHold(); release(); }
 });
+
+for (const importKind of ["guest", "archive"]) test(`${importKind} pending owner creation gate off preserves the form and original import`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PENDING_CREATE === "1", "Checks the independent fileless owner creation gate");
+  const { f, release, clearHold } = await preparePendingImportUi(page, context, false, importKind);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  try {
+    const before = await records(), server = structuredClone(f.payload), posts = f.posts.length;
+    await page.locator('[data-view="packing"]').click(); await page.locator("[data-add-packing-root]").click();
+    await page.locator("#createRootForLayoutBtn").click();
+    await page.locator("#rootContainerName").fill("Сумка с выключенным переходом");
+    await submitForm(page, "#saveRootContainerBtn", "#rootContainerName");
+    await expect.poll(() => page.evaluate(() => globalThis.__personalTestPhotoFormError?.message)).toBeTruthy();
+    await expect(page.locator("#rootContainerDialog")).toBeVisible();
+    await expect(page.locator("#rootContainerName")).toHaveValue("Сумка с выключенным переходом");
+    expect(await records()).toEqual(before); expect(f.payload).toEqual(server); expect(f.posts).toHaveLength(posts); expect(f.errors).toEqual([]);
+  } finally { clearHold(); release(); }
+});
+
+for (const importKind of ["guest", "archive"]) for (const [fileless, quota] of [[false, false], [true, false], [false, true]])
+test(`${importKind} pending owner creation ${fileless ? "fileless" : "photos"} ${quota ? "quota" : "save then photo"} keeps the original import and placements`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PENDING_CREATE !== "1", "Checks the separately enabled owner creation adapter");
+  test.setTimeout(150000);
+  const { f, imported, release, clearHold } = await preparePendingImportUi(page, context, fileless, importKind);
+  const records = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).filter(record => record.action));
+  try {
+    await page.locator('[data-view="packing"]').click();
+    const bag = await createRootContainer(page, "Новая сумка во время переноса");
+    const bagId = await bag.getAttribute("data-root-container-id"), afterBag = await records();
+    const bagAction = afterBag.find(record => record.action.body.payload?.containers?.[bagId]);
+    expect(bagAction.action.body.photoResults.version).toBe(importKind === "guest" ? 4 : 3);
+    expect(f.payload.containers[bagId]).toBeUndefined();
+    if (quota) await page.evaluate(() => {
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (String(key).startsWith("bike-packing-personal-save-v1:")) {
+          const record = JSON.parse(value);
+          if (Object.values(record.action?.body.payload?.items || {}).some(owner => owner.name === "Новая вещь во время переноса")) throw new DOMException("new owner quota", "QuotaExceededError");
+        }
+        return write.call(this, key, value);
+      };
+    });
+    await bag.locator("[data-add-to-container]").click(); await page.locator("#createItemForContainerBtn").click();
+    await page.locator("#itemName").fill("Новая вещь во время переноса"); await page.locator("#itemWeight").fill("127");
+    await submitForm(page, "#saveItemBtn", "#itemWeight");
+    if (quota) {
+      await expect(page.locator("#itemDialog")).toBeVisible(); await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+      expect(await records()).toEqual(afterBag); expect(f.payload.containers[bagId]).toBeUndefined();
+      const download = page.waitForEvent("download"); await page.locator("[data-download-photo-recovery]").click();
+      const entries = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+      expect([...entries.keys()].filter(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toHaveLength(2);
+      return;
+    }
+    await expect(page.locator("#itemDialog"), JSON.stringify(f.errors)).not.toBeVisible();
+    const afterItem = await records(), itemAction = afterItem.find(record => Object.values(record.action.body.payload?.items || {}).some(owner => owner.name === "Новая вещь во время переноса"));
+    const itemId = Object.values(itemAction.action.body.payload.items).find(owner => owner.name === "Новая вещь во время переноса").id;
+    expect(itemAction.action.body.causal.baseOperationId).toBe(bagAction.action.operationId);
+    expect(f.payload.items[itemId]).toBeUndefined();
+    // The separately saved new owner may then receive a normal import-linked
+    // photo form. The import and both creation actions stay immutable.
+    await page.locator('[data-view="items"]').click(); await page.locator(`#itemsView [data-list-item-id="${itemId}"] .item-title`).click();
+    const bytes = Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 3; return canvas.toDataURL("image/png").split(",")[1];
+    }), "base64");
+    await page.locator("#itemPhotoInput").setInputFiles({ name: "new-owner.png", mimeType: "image/png", buffer: bytes });
+    await expect(page.locator("#itemPhotoPreview img")).toHaveCount(1); await submitForm(page, "#saveItemBtn");
+    await expect(page.locator("#itemDialog")).not.toBeVisible();
+    const all = await records(), photo = all.find(record => record.action.body.entityId === itemId);
+    expect(photo.action.body.ownerResult.version).toBe(3);
+    for (const old of [imported, bagAction, itemAction]) expect(all.find(record => record.action.operationId === old.action.operationId)).toEqual(old);
+    clearHold(); release(); await reloadApp(page, { recovery: true });
+    const recovery = page.locator("#personalSaveRecoveryDialog");
+    await recovery.locator("[data-resume-photo-upload]").click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+    expect(f.payload.items[itemId].photos).toHaveLength(1); expect(f.payload.items[itemId].weight).toBe(127);
+    expect(Object.values(f.payload.layouts).some(layout => layout.arrangement?.items?.[itemId] === bagId)).toBe(true);
+    expect(f.stagePosts).toHaveLength(fileless ? 1 : 3);
+    for (const old of [imported, bagAction, itemAction, photo]) expect(f.posts.filter(post => post.operationId === old.action.operationId)).toHaveLength(1);
+    await reloadApp(page); expect(f.errors).toEqual([]);
+  } finally { clearHold(); release(); }
+});

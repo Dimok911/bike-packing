@@ -10,6 +10,7 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
   createEditSession, isEditEnabled = () => false, isItemContextEnabled = () => false, isContainerContextEnabled = () => false,
   isManufacturerSourceEnabled = () => false, isPendingUpdate = () => false, createPendingUpdateSession,
   isPendingFiles = () => false, createPendingFilesSession,
+  isPendingCreate = () => false, createPendingCreateSession,
   createPhoto, cachePhoto, onDurable, onQueued, onError, onBusy = () => {} }) {
   const entries = new WeakMap();
   const ownerMatches = entry => {
@@ -83,21 +84,22 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
       const edit = !fresh && !emptyManufacturer && Boolean(view?.draft && (view.draft.deletedPhotos?.length
         || canonicalListOperationJson(selected) !== canonicalListOperationJson(view.source?.photos || [])));
       const pendingFiles = (fresh || edit) && isPendingFiles(type);
-      const pendingUpdate = !fresh && !edit && !manufacturer && isPendingUpdate();
+      const pendingCreate = !fresh && !edit && !manufacturer && !view?.source && isPendingCreate(type);
+      const pendingUpdate = !pendingCreate && !fresh && !edit && !manufacturer && isPendingUpdate();
       if (!fresh) {
         if (edit && (!isEditEnabled() || typeof createEditSession !== "function")) {
           onError(Object.assign(new Error("Удаление и перестановка фото ещё подключаются к подтверждённому сохранению. Изменения остались в форме; ничего не отправлено."),
             { code: "photo-form-ui" }), { type, recovery: null });
           return true;
         }
-        if (!edit && !pendingUpdate && !emptyManufacturer) return false;
+        if (!edit && !pendingUpdate && !pendingCreate && !emptyManufacturer) return false;
       }
       const entry = entryFor(type);
       if (entry.saving || entry.preparing || view.saveButton?.disabled) return true;
       // Reentrant button/field callbacks cannot create a second session.
       entry.saving = true;
       try {
-        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate, pendingFiles });
+        const { request, placementChanged, availabilityChanged, catalogSource } = readForm(type, { pendingUpdate, pendingFiles, pendingCreate });
         if (catalogSource !== false && !(type === "container" && !pendingUpdate && isManufacturerSourceEnabled() && request.manufacturerSource)
           || (placementChanged !== false || availabilityChanged !== false)
           && !(!pendingUpdate && (type === "item" && isItemContextEnabled() && request.formContext
@@ -105,9 +107,10 @@ export function createPersonalPhotoFormController({ isEnabled, getContext, getVi
           fail("Совместное сохранение фото с размещением, доступностью или импортом из каталога ещё не подключено. Поля и фото остались в форме.");
         }
         const selection = { draft: view.draft, basePhotos: view.source?.photos || [], binding: entry.binding, allowPending: pendingFiles };
-        const values = emptyManufacturer ? { files: [] } : pendingUpdate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection), ...(pendingFiles ? { files: [] } : {}) }
+        const values = emptyManufacturer ? { files: [] } : pendingUpdate || pendingCreate ? {} : edit ? { photoIds: personalPhotoEditSelection(selection), ...(pendingFiles ? { files: [] } : {}) }
           : (pendingFiles || isEditEnabled()) && selection.basePhotos.length ? entry.files.mixedSelection(selection) : { files: entry.files.selection(selection) };
-        entry.session = (pendingFiles ? createPendingFilesSession : pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry), onDurable: record => onDurable(record, { type, view }) });
+        entry.session = (pendingCreate ? createPendingCreateSession : pendingFiles ? createPendingFilesSession : pendingUpdate ? createPendingUpdateSession : edit ? createEditSession : createSession)({ getContext: () => contextFor(entry),
+          onDurable: record => onDurable(record, { type, view, ...(pendingCreate ? { pendingCreate: true } : {}) }) });
         const pending = entry.session.submit({ ...request, ...values });
         onBusy(type, true);
         pending.then(() => { if (ownerMatches(entry)) onQueued(type); }, error => errorFor(entry, error))

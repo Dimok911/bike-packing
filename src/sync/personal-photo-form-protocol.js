@@ -42,7 +42,7 @@ function photoValidationView(body) {
   return { version: 1, action: "batch", changes: body.changes.map(change => ({ ...change, baseEntityRevision: body.baseEntityRevision || 1 })) };
 }
 
-export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {}) {
+export function personalPhotoFormManifest(body, { allowEmptyCopy = false, allowEmptyCreate = false } = {}) {
   if (body && Object.hasOwn(body, "ownerResult")) {
     const ownerResult = personalPhotoFormOwnerResult(body);
     const manifest = personalPhotoFormManifest(personalPhotoFormOwnerValidationBody(body), { allowEmptyCopy });
@@ -57,7 +57,8 @@ export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {})
     || body.entityType === "container" && Object.hasOwn(body.fields, "quantity")
     || body.baseEntityRevision === 0 && !Object.hasOwn(body.fields, "name")
     || body.baseEntityRevision > 0 && Object.hasOwn(body.fields, "createdAt")
-    || !Array.isArray(body.changes) || !body.changes.length && !(allowEmptyCopy && body.copySource || body.manufacturerSource) || body.changes.length > 50
+    || !Array.isArray(body.changes) || !body.changes.length && !(allowEmptyCopy && body.copySource || body.manufacturerSource
+      || allowEmptyCreate && body.baseEntityRevision === 0 && !body.copySource && !body.manufacturerSource) || body.changes.length > 50
     || body.changes.some(change => !change || change.entityType !== body.entityType || change.entityId !== body.entityId
       || change.baseEntityRevision !== body.baseEntityRevision || change.action === "copy" && !body.copySource
       || body.baseEntityRevision === 0 && change.action !== (body.copySource ? "copy" : "attach"))
@@ -74,8 +75,8 @@ export function personalPhotoFormManifest(body, { allowEmptyCopy = false } = {})
     created: body.baseEntityRevision === 0, ...(body.copySource ? { copySource: clone(body.copySource) } : {}), fields: clone(body.fields), photos };
 }
 
-export function personalPhotoFormOwner(basePayload, body) {
-  const manifest = personalPhotoFormManifest(body), collection = body.entityType === "item" ? "items" : "containers";
+export function personalPhotoFormOwner(basePayload, body, options) {
+  const manifest = personalPhotoFormManifest(body, options), collection = body.entityType === "item" ? "items" : "containers";
   const previous = basePayload?.[collection]?.[body.entityId];
   if (manifest.created ? previous !== undefined : !previous || previous.id !== body.entityId) fail();
   if (manifest.copySource && !same(basePayload?.[collection]?.[manifest.copySource.entityId], manifest.copySource.payload)) fail();
