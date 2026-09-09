@@ -4,18 +4,21 @@ import { personalPendingPhotoFormChain } from "./personal-pending-photo-form-cha
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED } from "./personal-photo-form-owner-result.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED } from "./personal-public-photo-form-result.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./personal-import-photo-form-result.js";
 
 const fail = () => { throw Object.assign(Error("Исходная фотоформа требует проверки. Новые поля и файлы сохранены."), { code: "pending-photo-form-session" }); };
 
 export function createPersonalPendingPhotoFormSession({ outbox, store, getContext, enabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
-  publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, ...options }) {
+  publicEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, importEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED, ...options }) {
   const submitter = createPersonalPhotoFormSubmitter({ ...options, outbox, store, getContext, enabled,
     prepareForm(input, compilerOptions) {
       if (input.created !== false) fail();
       const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: input.parentOperationId, listId: outbox.binding.listId,
         entityType: input.entityType, entityId: input.entityId });
-      if (!chain || input.publicOperationId && input.publicOperationId !== chain.publicOperationId) fail();
-      return preparePersonalPendingPhotoForm({ ...input, publicOperationId: chain.publicOperationId || null }, { ...compilerOptions, publicEnabled });
+      if (!chain || input.publicOperationId && input.publicOperationId !== chain.publicOperationId
+        || input.importOperationId && input.importOperationId !== chain.importOperationId || input.importKind && input.importKind !== chain.importKind) fail();
+      return preparePersonalPendingPhotoForm({ ...input, publicOperationId: chain.publicOperationId || null,
+        importOperationId: chain.importOperationId || null, importKind: chain.importKind || null }, { ...compilerOptions, publicEnabled, importEnabled });
     },
     async beforeStore(plan) {
       const parent = plan.action.body.ownerResult.operationId;

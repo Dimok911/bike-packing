@@ -2,6 +2,7 @@ import { assertListOperationJsonValue } from "./list-operation-payload.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { isPersonalPhotoPrivateOwner } from "./personal-photo-private-owner.js";
 import { assertPersonalPublicPhotoFormReference, assertPersonalPublicPhotoFormBase } from "./personal-public-photo-form-result.js";
+import { assertPersonalImportPhotoFormReference, assertPersonalImportPhotoFormBase } from "./personal-import-photo-form-result.js";
 
 export const PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED = false;
 export const PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY = "personalCausalPhotoFormOwnerResultV1";
@@ -16,8 +17,8 @@ const fail = () => { throw Object.assign(Error("Не подтверждён ис
 
 export function personalPhotoFormOwnerResult(body) {
   assertListOperationJsonValue(body);
-  if (body?.ownerResult?.version === 2) {
-    const ref = assertPersonalPublicPhotoFormReference(body);
+  if ([2, 3].includes(body?.ownerResult?.version)) {
+    const ref = (body.ownerResult.version === 2 ? assertPersonalPublicPhotoFormReference : assertPersonalImportPhotoFormReference)(body);
     personalPhotoFormOwnerResult({ ...body, ownerResult: { version: 1, operationId: ref.operationId, owner: ref.owner } });
     return ref;
   }
@@ -55,6 +56,7 @@ export function personalPhotoFormOwnerValidationBody(body) {
 export function assertPersonalPhotoFormOwnerBase(body, basePayload, listId) {
   const reference = personalPhotoFormOwnerResult(body);
   if (reference.version === 2) return assertPersonalPublicPhotoFormBase(body, basePayload, listId);
+  if (reference.version === 3) return assertPersonalImportPhotoFormBase(body, basePayload, listId);
   const owner = basePayload?.[body.entityType === "item" ? "items" : "containers"]?.[body.entityId];
   if (!same(owner, reference.owner) || reference.owner.photos.some(photo => photo.listId !== listId)) fail();
   return reference;

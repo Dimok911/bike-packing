@@ -1,5 +1,6 @@
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY } from "./personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_PHOTO_FORM_ENABLED, PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY } from "./personal-public-photo-form-result.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED, PERSONAL_IMPORT_PHOTO_FORM_CAPABILITY, personalImportPhotoFormCapabilities } from "./personal-import-photo-form-result.js";
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED, PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_CAPABILITY } from "./personal-photo-container-form-context.js";
 import { PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED, PERSONAL_MANUFACTURER_PHOTO_FORM_CAPABILITY } from "./personal-manufacturer-photo-source.js";
 import { PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED, PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY } from "./personal-photo-form-owner-result.js";
@@ -88,7 +89,7 @@ export function validateListReceipt(data, expected) {
     : expected.body.archiveImport?.version === 2 ? validatePersonalArchivePhotoResult(result.payload, expected) : validatePersonalArchiveImportResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
   if (expected.kind === "list.restore" && expected.body?.historyRestore?.version === 2) return validatePersonalPhotoHistoryResult(result.payload, expected);
-  if (expected.kind === "list.update" && [5, 6, 8].includes(expected.body?.photoResults?.version)) return validatePersonalPendingFormUpdateResult(result.payload, expected);
+  if (expected.kind === "list.update" && [5, 6, 8, 9].includes(expected.body?.photoResults?.version)) return validatePersonalPendingFormUpdateResult(result.payload, expected);
   if (["list.create", "list.update", "list.restore"].includes(expected.kind)) return result.payload.list?.id === expected.listId;
   if (!expected.kind.endsWith(".sync")) return true;
   const type = expected.kind.split(".")[0];
@@ -166,6 +167,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   manufacturerSourceEnabled = PERSONAL_MANUFACTURER_PHOTO_FORM_ENABLED,
   formOwnerResultEnabled = PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED,
   publicPhotoFormEnabled = PERSONAL_PUBLIC_PHOTO_FORM_ENABLED,
+  importPhotoFormEnabled = PERSONAL_IMPORT_PHOTO_FORM_ENABLED,
   photoCopyEnabled = PERSONAL_PHOTO_COPY_FORM_ENABLED,
   pendingPhotoCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
@@ -182,6 +184,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
   publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
+  const canWriteImportForm = reference => importPhotoFormEnabled && formOwnerResultEnabled && photoFormEnabled && photoEnabled
+    && (reference?.importKind === "guest" ? guestImportEnabled : reference?.importKind === "archive" && archiveImportEnabled && archivePhotoImportEnabled);
   const request = async (path, body) => {
     const controller = new AbortController();
     let timer;
@@ -255,6 +259,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const initial = { ...getContext() }, body = JSON.parse(bodyText || "{}"), route = listOperationRoute(path, method);
       if ((body.ownerResult?.version === 2 || body.photoResults?.version === 8)
         && (!publicPhotoFormEnabled || !publicImportEnabled || !formOwnerResultEnabled || !photoFormEnabled || !photoEnabled)) throw paused(operationId);
+      if (body.ownerResult?.version === 3 && !canWriteImportForm(body.ownerResult)
+        || body.photoResults?.version === 9 && (!importPhotoFormEnabled || !formOwnerResultEnabled || !photoFormEnabled || !photoEnabled)) throw paused(operationId);
       const listId = route.listId || body.id;
       if (!initial.actorId || !initial.generation || initial.scope !== "personal" || initial.environment !== environment
         || initial.listId !== listId || initial.scopeKey !== `id:${initial.actorId}`
@@ -300,6 +306,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
         if ((body.ownerResult?.version === 2 || body.photoResults?.version === 8)
           && ![PERSONAL_PUBLIC_IMPORT_CAPABILITY, PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY, PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY]
+            .every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
+        if ((body.ownerResult?.version === 3 || body.photoResults?.version === 9)
+          && ![...personalImportPhotoFormCapabilities(body.ownerResult), PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY]
             .every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
         if (Object.hasOwn(body, "publicImport") && (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(operationId,
           "Сервер ещё не поддерживает отмену копирования шаблона.");
@@ -401,13 +410,15 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const dependencies = [{ operationId: parent.operationId, listId }];
       let copyExpected;
       if (body.photoResults) {
-        if ([6, 8].includes(body.photoResults.version) && !formOwnerResultEnabled) throw paused(operationId);
+        if ([6, 8, 9].includes(body.photoResults.version) && !formOwnerResultEnabled) throw paused(operationId);
         if (body.photoResults.version === 8 && (!publicPhotoFormEnabled || !publicImportEnabled)) throw paused(operationId);
-        const publicCopy = body.photoResults.version === 7, archive = body.photoResults.version === 3, guest = body.photoResults.version === 4, form = [5, 6, 8].includes(body.photoResults.version);
+        if (body.photoResults.version === 9 && !importPhotoFormEnabled) throw paused(operationId);
+        const publicCopy = body.photoResults.version === 7, archive = body.photoResults.version === 3, guest = body.photoResults.version === 4, form = [5, 6, 8, 9].includes(body.photoResults.version);
         if (!photoEnabled || (publicCopy ? !pendingPublicUpdateEnabled || !publicImportEnabled : form ? !pendingFormUpdateEnabled || !photoFormEnabled : guest ? !pendingGuestUpdateEnabled || !guestImportEnabled : archive ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
           : !pendingPhotoCopyDeletionEnabled || !photoCopyEnabled || !photoFormEnabled)) throw paused(operationId);
         const copy = JSON.parse(JSON.stringify(photoResultPredecessor || {})), copyRoute = listOperationRoute(copy.path, copy.method);
         const copyBody = JSON.parse(copy.body || "{}"), reference = (publicCopy ? personalPublicPhotoBodyResultReference : form ? personalFormPhotoBodyResultReference : guest ? personalGuestPhotoBodyResultReference : archive ? personalArchivePhotoBodyResultReference : personalPhotoCopyBodyResultReference)(copyBody, copy.operationId, listId);
+        if (reference.version === 9 && !canWriteImportForm(copyBody.ownerResult)) throw paused(operationId);
         if (archive) await assertPersonalArchivePhotoHashes(copyBody);
         if (guest) await assertPersonalGuestImportHashes(copyBody);
         if (publicCopy && copyBody.publicImport?.version === 2 && !publicEntityEnabled) throw paused(operationId);
@@ -418,6 +429,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (copy.operationId !== parent.operationId) dependencies.push({ operationId: copy.operationId, listId });
         if (reference.version === 8 && !dependencies.some(dep => dep.operationId === copyBody.ownerResult.publicOperationId)) {
           dependencies.push({ operationId: copyBody.ownerResult.publicOperationId, listId });
+        }
+        if (reference.version === 9 && !dependencies.some(dep => dep.operationId === copyBody.ownerResult.importOperationId)) {
+          dependencies.push({ operationId: copyBody.ownerResult.importOperationId, listId });
         }
         copyExpected = { operationId: copy.operationId, actorId: initial.actorId, listId, kind: copyRoute.kind, body: copyBody,
           payloadDigest: await sha(canonicalListOperationJson({ environment, actorId: initial.actorId, kind: copyRoute.kind, listId, body: copyBody })) };
@@ -466,10 +480,11 @@ export function createListOperationQueue({ transport, getContext = () => null,
           || known?.ok === true && known.operation?.state === "unknown")) throw paused(operationId);
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (!capabilities.capabilities?.includes(LIST_OPERATION_CAPABILITY)) throw paused(operationId);
-        if (copyExpected && !capabilities.capabilities?.includes([5, 6, 8].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
+        if (copyExpected && !capabilities.capabilities?.includes([5, 6, 8, 9].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) throw paused(operationId);
         if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) throw paused(operationId);
-        if ([6, 8].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) throw paused(operationId);
+        if ([6, 8, 9].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) throw paused(operationId);
         if (body.photoResults?.version === 8 && ![PERSONAL_PUBLIC_IMPORT_CAPABILITY, PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY].every(capability => capabilities.capabilities?.includes(capability))) throw paused(operationId);
+        if (body.photoResults?.version === 9 && !capabilities.capabilities?.includes(PERSONAL_IMPORT_PHOTO_FORM_CAPABILITY)) throw paused(operationId);
         assertListOperationPayload(expected);
         if (!entry) {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
@@ -606,18 +621,20 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (Object.hasOwn(body, "manufacturerSource") && !manufacturerSourceEnabled) throw paused(requestedId, "Сохранение сумки производителя с фото ещё не включено.");
           if (Object.hasOwn(body, "ownerResult") && !formOwnerResultEnabled) throw paused(requestedId, "Следующая форма с файлами ещё не включена.");
           if (body.ownerResult?.version === 2 && (!publicPhotoFormEnabled || !publicImportEnabled)) throw paused(requestedId, "Фото до подтверждения публичной копии ещё не включены.");
+          if (body.ownerResult?.version === 3 && !canWriteImportForm(body.ownerResult)) throw paused(requestedId, "Фото до подтверждения переноса или архива ещё не включены.");
           if (body.copySource && !photoCopyEnabled) throw paused(requestedId, "Копирование карточки с фото ещё не включено.");
           personalPhotoFormManifest(body);
         } else personalPhotoPublicationManifest(body);
       }
-      if (body.photoResults && (!photoEnabled || route.kind !== "list.update" || (body.photoResults.version === 7 ? !pendingPublicUpdateEnabled || !publicImportEnabled : [5, 6, 8].includes(body.photoResults.version) ? !pendingFormUpdateEnabled || !photoFormEnabled : body.photoResults.version === 4 ? !pendingGuestUpdateEnabled || !guestImportEnabled : body.photoResults.version === 3
+      if (body.photoResults && (!photoEnabled || route.kind !== "list.update" || (body.photoResults.version === 7 ? !pendingPublicUpdateEnabled || !publicImportEnabled : [5, 6, 8, 9].includes(body.photoResults.version) ? !pendingFormUpdateEnabled || !photoFormEnabled : body.photoResults.version === 4 ? !pendingGuestUpdateEnabled || !guestImportEnabled : body.photoResults.version === 3
         ? !pendingArchiveUpdateEnabled || !archivePhotoImportEnabled || !archiveImportEnabled
         : !pendingPhotoCopyDeletionEnabled || !photoFormEnabled || !photoCopyEnabled
           || body.photoResults.version === 2 && (!photoCopyBatchEnabled || !pendingPhotoCopyBatchDeletionEnabled)))) {
         throw paused(requestedId, "Удаление до подтверждения копии ещё не включено.");
       }
-      if ([6, 8].includes(body.photoResults?.version) && !formOwnerResultEnabled) throw paused(requestedId, "Продолжение цепочки фотоформ ещё не включено.");
+      if ([6, 8, 9].includes(body.photoResults?.version) && !formOwnerResultEnabled) throw paused(requestedId, "Продолжение цепочки фотоформ ещё не включено.");
       if (body.photoResults?.version === 8 && (!publicPhotoFormEnabled || !publicImportEnabled)) throw paused(requestedId, "Фото до подтверждения публичной копии ещё не включены.");
+      if (body.photoResults?.version === 9 && !importPhotoFormEnabled) throw paused(requestedId, "Фото до подтверждения переноса или архива ещё не включены.");
       const generation = await sha(initial.generation);
       if (requestedId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedId)) throw paused(null);
       const requestKey = await sha(canonicalListOperationJson({ path, method, body, ...(!requestedId ? { generation } : {}), actorId: initial.actorId,
@@ -664,6 +681,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
                 PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY, ...(body.photoResults?.version === 8 ? [PERSONAL_PENDING_FORM_UPDATE_CAPABILITY] : [])]
                 .every(capability => capabilities.capabilities?.includes(capability))) throw paused(entry.id);
             }
+            if (body.ownerResult?.version === 3 || body.photoResults?.version === 9) {
+              const capabilities = await read("/bike-packing/capabilities");
+              if (!contextMatches(initial) || ![LIST_OPERATION_CAPABILITY, PERSONAL_PHOTO_PUBLICATION_CAPABILITY,
+                PERSONAL_PHOTO_FORM_CAPABILITY, PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY, ...personalImportPhotoFormCapabilities(body.ownerResult),
+                ...(body.photoResults?.version === 9 ? [PERSONAL_PENDING_FORM_UPDATE_CAPABILITY] : [])]
+                .every(capability => capabilities.capabilities?.includes(capability))) throw paused(entry.id);
+            }
           } });
         else {
           const protocol = { type: "list", protocol: "causal-v1", actorId: initial.actorId };
@@ -693,6 +717,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
             && ![PERSONAL_PUBLIC_IMPORT_CAPABILITY, PERSONAL_PUBLIC_PHOTO_FORM_CAPABILITY].every(capability => capabilities.capabilities?.includes(capability))) {
             throw paused(requestedId, "Сервер ещё не поддерживает фото до подтверждения публичной копии.");
           }
+          if ((body.ownerResult?.version === 3 || body.photoResults?.version === 9)
+            && !personalImportPhotoFormCapabilities(body.ownerResult).every(capability => capabilities.capabilities?.includes(capability))) throw paused(requestedId, "Сервер ещё не поддерживает фото до подтверждения переноса или архива.");
           if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
             if ((!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY) || body.publicImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_ENTITY_COPY_CAPABILITY))) throw paused(requestedId, "Сервер ещё не поддерживает копирование шаблона через очередь.");
           } else if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
@@ -714,13 +740,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && body.copyPlacement && !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает копирование вещи в сумку с фото. Запрос не отправлен.");
           }
-          if (body.photoResults && !capabilities.capabilities?.includes([5, 6, 8].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
+          if (body.photoResults && !capabilities.capabilities?.includes([5, 6, 8, 9].includes(body.photoResults.version) ? PERSONAL_PENDING_FORM_UPDATE_CAPABILITY : body.photoResults.version === 7 ? PERSONAL_PENDING_PUBLIC_UPDATE_CAPABILITY : body.photoResults.version === 4 ? PERSONAL_PENDING_GUEST_UPDATE_CAPABILITY : body.photoResults.version === 3 ? PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY : PERSONAL_PENDING_PHOTO_COPY_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения копии. Запрос не отправлен.");
           }
           if (body.photoResults?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает удаление до подтверждения массовой копии.");
           }
-          if ([6, 8].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) {
+          if ([6, 8, 9].includes(body.photoResults?.version) && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает продолжение цепочки фотоформ.");
           }
           const listId = route.listId || body.id || `list-${crypto.randomUUID()}`;

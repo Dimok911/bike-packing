@@ -3,6 +3,7 @@ import { assertPersonalPhotoFormRecord } from "./personal-photo-form-outbox-reco
 import { assertPersonalPhotoFormCandidate } from "./personal-photo-form-protocol.js";
 import { personalFormPhotoResultReference, isPersonalPendingFormUpdate } from "./personal-pending-form-update.js";
 import { personalPublicPendingPhotoFormChain } from "./personal-public-pending-photo-chain.js";
+import { personalImportPendingPhotoFormChain } from "./personal-import-pending-photo-chain.js";
 
 const same = (a, b) => canonicalListOperationJson(a) === canonicalListOperationJson(b);
 const payloadOf = record => record.photoState?.payload || record.action.body.payload;
@@ -12,6 +13,8 @@ const payloadOf = record => record.photoState?.payload || record.action.body.pay
 export function personalPendingPhotoFormChain({ records, operationId, listId, entityType, entityId }) {
   const publicChain = personalPublicPendingPhotoFormChain({ records, operationId, listId, entityType, entityId });
   if (publicChain) return publicChain;
+  const importChain = personalImportPendingPhotoFormChain({ records, operationId, listId, entityType, entityId });
+  if (importChain) return importChain;
   try {
     const byId = new Map(records.map(record => [record.action.operationId, record]));
     if (byId.size !== records.length) return null;

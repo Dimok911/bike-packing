@@ -1,5 +1,6 @@
 import { PERSONAL_PHOTO_CONTAINER_FORM_CONTEXT_ENABLED } from "./src/sync/personal-photo-container-form-context.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./src/sync/personal-archive-photo-protocol.js";
+import { PERSONAL_ARCHIVE_IMPORT_ENABLED } from "./src/sync/personal-archive-import-protocol.js";
 import { preparePersonalArchivePhotoImport } from "./src/sync/personal-archive-photo-import.js";
 import { assertPersonalArchivePhotoRecord } from "./src/sync/personal-archive-photo-outbox-record.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED } from "./src/sync/personal-photo-history-protocol.js";
@@ -762,6 +763,7 @@ import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-
 import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { resolvePersonalPublicPreparation, personalPublicRecoverablePreparations } from "./src/sync/personal-public-preparation-resolution.js";
 import { PERSONAL_PUBLIC_PREPARATION_RESOLUTION_ENABLED } from "./src/sync/personal-public-preparation-resolution-protocol.js";
+import { PERSONAL_IMPORT_PHOTO_FORM_ENABLED } from "./src/sync/personal-import-photo-form-result.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -2566,6 +2568,8 @@ function personalPendingPhotoFormEnabled(type) {
   const chain = personalPendingPhotoFormChain({ records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId,
     entityType: type, entityId: type === "item" ? editingItemId : editingRootContainerId });
   if (chain?.publicOperationId && (!PERSONAL_PUBLIC_PHOTO_FORM_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED)) return false;
+  if (chain?.importOperationId && (!PERSONAL_IMPORT_PHOTO_FORM_ENABLED || (chain.importKind === "guest"
+    ? !PERSONAL_GUEST_IMPORT_ENABLED : !PERSONAL_ARCHIVE_IMPORT_ENABLED || !PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED))) return false;
   return Boolean(chain && chain.entityType === type && chain.entityId === (type === "item" ? editingItemId : editingRootContainerId));
 }
 
@@ -12205,11 +12209,12 @@ async function preparePersonalArchiveImportAction({ backupImportState, mode, sel
   const editMeta = {}; markEdited(editMeta);
   const hasPhotos = value => ["items", "containers"].some(collection => Object.values(value[collection] || {}).some(owner => owner.photos?.length));
   const withPhotos = hasPhotos(source) || hasPhotos(state);
+  const usePhotoProtocol = withPhotos || PERSONAL_IMPORT_PHOTO_FORM_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPhotoFormUiEnabled();
   const getContext = () => ({ ...personalSaveContext(), activeLayoutId: state.activeLayoutId });
   // Recovery must still read the native bytes after the editor's error latch.
   // Capture/adoption check the editing latch separately; the store independently
   // verifies account/list/generation without requiring an editable screen.
-  const archiveSource = withPhotos ? { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext }), inventory: null } : null;
+  const archiveSource = usePhotoProtocol ? { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext }), inventory: null } : null;
   if (withPhotos && (!PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED || !personalPhotoFormUiEnabled())) throw Error("Импорт архива с фотографиями ещё не включён.");
   const options = { source, mode, layoutTargets, sourceActiveLayoutId: source.activeLayoutId || "", editMeta, outbox,
     getContext,
@@ -12222,16 +12227,16 @@ async function preparePersonalArchiveImportAction({ backupImportState, mode, sel
     },
     onCaptured(saved) {
       personalSaveRecovery.assertRunning();
-      if (withPhotos) assertPersonalArchivePhotoRecord(saved);
+      if (usePhotoProtocol) assertPersonalArchivePhotoRecord(saved);
       replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
-      if (withPhotos) { personalPhotoFormLiveSource = archiveSource; personalPhotoRecoverySource = archiveSource; }
+      if (usePhotoProtocol) { personalPhotoFormLiveSource = archiveSource; personalPhotoRecoverySource = archiveSource; }
       rememberActiveLayoutChoice(saved.snapshot.activeLayoutId);
       syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
       renderPreservingPackingScroll();
       updateSyncUi("Архив сохранён на устройстве и ждёт подтверждения сервера."); scheduleRemoteSave();
     }
   };
-  if (!withPhotos) return preparePersonalArchiveImport(options);
+  if (!usePhotoProtocol) return preparePersonalArchiveImport(options);
   const commit = await preparePersonalArchivePhotoImport({ ...options, store: archiveSource.store, photoFiles: backupImportState.photoFiles });
   return async () => {
     personalPhotoFormPreparing++; personalPhotoRecoverySource = archiveSource;
