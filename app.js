@@ -750,6 +750,12 @@ import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-protocol.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./src/sync/personal-public-import-protocol.js";
+import { preparePersonalPublicImportSelection } from "./src/sync/personal-public-import-selection.js";
+import { createPersonalPublicImportSelectionStore } from "./src/sync/personal-public-import-selection-store.js";
+import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
+import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
+import { recoverPersonalPublicImportLink } from "./src/sync/personal-public-import-link-recovery.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -1257,6 +1263,7 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   resumePhotoUpload: () => drainLivePersonalPhotoForm({ recovery: true }),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
+    publicSelectionStore: personalPhotoRecoverySource?.store && personalPublicSelectionStore(personalPhotoRecoverySource.store.binding),
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
 let applyingLayoutArrangement = false;
@@ -2394,6 +2401,8 @@ function bindOfflineLayoutSettingsControls() {
 }
 
 function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true } = {}) {
+  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport)
+    ? clone(nextState) : null;
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, nextState);
   installRuntimeActiveLayoutId(state, nextState?.activeLayoutId || state.activeLayoutId);
@@ -2408,7 +2417,15 @@ function applyLoadedStateToCurrentScope(nextState, { createFallbackLayout = true
   restorePrivateLayoutChoiceInState(state);
   applyLayoutArrangement(state.activeLayoutId, state);
   applyDefaultCollapsedContainers(state);
+  if (exactPublic) restorePublicCopyBusinessView(exactPublic);
   hydrateLocalSharedTemplateCatalogFromState(state);
+}
+
+function restorePublicCopyBusinessView(payload) {
+  const exact = personalPublicImportSnapshot(payload, state);
+  Object.keys(state).forEach(key => delete state[key]);
+  Object.assign(state, exact);
+  installRuntimeActiveLayoutId(state, exact.activeLayoutId);
 }
 
 function activateLocalStorageScope(scopeKey) {
@@ -4394,7 +4411,7 @@ function loadState({ createFallbackLayout = true } = {}) {
     return initial;
   }
   try {
-    const parsed = JSON.parse(saved);
+    let parsed = JSON.parse(saved);
     if (!parsed.collapsedContainers) parsed.collapsedContainers = {};
     if (typeof parsed.showItemMeta !== "boolean") parsed.showItemMeta = false;
     ensureItemDisplayModeState(parsed);
@@ -4428,6 +4445,7 @@ function loadState({ createFallbackLayout = true } = {}) {
       installRuntimeActiveLayoutId(fallback, fallback.activeLayoutId);
       return fallback;
     }
+    if (recovered && outbox.list().some(record => record.action.body.publicImport)) parsed = personalPublicImportSnapshot(recovered, parsed);
     installRuntimeActiveLayoutId(parsed, parsed.activeLayoutId);
     persistStateSnapshot(parsed, { recordAction: false });
     return parsed;
@@ -6156,6 +6174,8 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
       throw new Error("Замена локального состояния остановлена: сначала нужно подтвердить или разрешить сохранённые действия.");
     }
   }
+  const exactPublic = personalSavePilotEnabled() && personalSaveOutboxForScope()?.list().some(record => record.action.body.publicImport)
+    ? clone(nextState) : null;
   saveRecoverySnapshot("before-replace", state);
   captureActiveLayoutArrangement();
   solidifyManagedTemplateDrafts();
@@ -6181,6 +6201,7 @@ function replaceState(nextState, { preserveLocalUi = true, personalOperationId =
   migrateContainerOrder(state);
   applyLayoutArrangement(state.activeLayoutId, state);
   applyCollectionModeFromSource(state, nextState);
+  if (exactPublic) restorePublicCopyBusinessView(exactPublic);
   if (previousCollapsedContainers) {
     state.collapsedContainers = mergeLocalCollapsedContainers(state.collapsedContainers || {}, previousCollapsedContainers);
   }
@@ -8757,6 +8778,11 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
       source.outbox = outbox; // Preserve the observed head while the dialog is open.
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+      const publicEntries = await personalPublicSelectionStore(binding).entries();
+      const publicPending = publicEntries.filter(entry => entry.action && !entry.completion && !outbox.list().some(record => record.action.operationId === entry.selection.operationId)
+        && !outbox.photoRecoveryReferences().photoReceipts.some(proof => proof.operation.id === entry.selection.operationId));
+      if (!outbox.hasPending() && publicPending.length === 1) source.publicPreparation = publicPending[0];
+      if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
       const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
       if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
         const entries = await personalGuestSelectionStore(binding).entries();
@@ -8767,6 +8793,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       // clears this startup fence. It never permits byte cleanup or re-upload.
       if (source.inventory.entries.some(entry => entry.state !== "settled-retained")) throw Error("Retained photo actions need explicit recovery");
       await completePersonalGuestImportSelections(source);
+      await completePersonalPublicImportSelections(source);
       if (personalPhotoRecoveryCheck === pending) {
         personalPhotoRecoverySource = null;
         personalSaveRecoveryDialog?.finishChecking();
@@ -8796,8 +8823,10 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
 function personalPhotoRecoveryOptions() {
   const source = personalPhotoRecoverySource;
   if (!source?.outbox || !currentUser || isForcedOffline()) throw Error("Для проверки нужен вход в тот же аккаунт и доступ к серверу. Файлы сохранены.");
+  const publicCopy = source.publicPreparation || source.outbox.list().some(record => record.action.body.publicImport);
   return { outbox: source.outbox, store: source.store, transport: experimentTransport,
-    getContext: personalSaveContext, makeSnapshot: personalReconciledSnapshot,
+    getContext: personalSaveContext, makeSnapshot: publicCopy
+      ? (payload, previous) => personalPublicCopySnapshot(payload, previous, previous.activeLayoutId) : personalReconciledSnapshot,
     async readRemote() {
       const initial = personalSaveContext();
       const data = await apiFetch(`/bike-packing/lists/${encodeURIComponent(source.outbox.binding.listId)}/state`, {
@@ -8819,6 +8848,7 @@ function personalPhotoRecoveryOptions() {
 async function checkRetainedPersonalPhotoResult() {
   const result = await checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
   await completePersonalGuestImportSelections(personalPhotoRecoverySource);
+  await completePersonalPublicImportSelections(personalPhotoRecoverySource);
   return result;
 }
 
@@ -8836,13 +8866,16 @@ async function cancelRetainedPersonalPhoto() {
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
     const imported = original?.action?.kind === "list.import", guest = imported && original.action.body.guestImport?.version === 1;
-    const archive = imported && !guest;
+    const publicCopy = imported && original.action.body.publicImport?.version === 1;
+    const archive = imported && !guest && !publicCopy;
     const fileless = (imported || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
-    const photoCount = imported ? (guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
+    const photoCount = imported ? (publicCopy ? original.action.body.publicImport : guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: guest ? localText("Guest work was not imported", "Гостевая работа не перенесена") : archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
+      title: publicCopy ? localText("Template was not copied", "Шаблон не скопирован") : guest ? localText("Guest work was not imported", "Гостевая работа не перенесена") : archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
         : photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
-      text: guest ? localText(
+      text: publicCopy ? localText(
+        `The server did not apply this template copy. Keep its current version? Rejected actions: ${discardedOperationCount}. The chosen source and all files remain available for recovery.`,
+        `Сервер не применил копию шаблона. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Выбранный источник и все фотографии останутся для восстановления.`) : guest ? localText(
         `The server did not apply this guest import. Keep its current version? Rejected actions: ${discardedOperationCount}. The original guest work and all files remain available for recovery.`,
         `Сервер не применил гостевой перенос. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Исходная гостевая работа и все фотографии останутся для восстановления.`) : archive ? localText(
         `The server did not apply this archive. Keep its current version? Rejected actions: ${discardedOperationCount}. The complete source, files and receipts remain available for recovery.`,
@@ -8894,12 +8927,16 @@ async function recoverStalePersonalDraft() {
 function canResumeRetainedPersonalPhotoForm() {
   if (!personalPhotoFormUiEnabled() || isForcedOffline()) return false;
   try {
+    if (PERSONAL_PUBLIC_IMPORT_ENABLED && personalPhotoRecoverySource?.publicPreparation
+      && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
+      && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     if (PERSONAL_GUEST_IMPORT_ENABLED && personalPhotoRecoverySource?.guestPreparation
       && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
       && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && (PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
+      && outbox.hasPending() && (PERSONAL_PUBLIC_IMPORT_ENABLED && outbox.recover()?.action.body.publicImport?.version === 1
+        || PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
         || PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
         || personalPendingImportSource(outbox)
         || outbox.recover()?.action.body.action === "form"
@@ -8918,6 +8955,10 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
     throw Error("Продолжение этой формы недоступно. Поля, файлы и прежние номера сохранены.");
   }
   const getContext = personalSaveContext;
+  if (recovery && source.publicPreparation) {
+    await recoverPersonalPublicImportLink({ entry: source.publicPreparation, outbox: source.outbox, store: source.store, getContext, makeSnapshot: personalPublicCopySnapshot });
+    source.publicPreparation = null;
+  }
   if (recovery && source.guestPreparation) {
     await recoverPersonalGuestImportLink({ entry: source.guestPreparation, outbox: source.outbox, store: source.store, getContext });
     source.guestPreparation = null;
@@ -8926,10 +8967,12 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
   const archive = source.outbox.recover()?.action.kind === "list.import" || personalPendingImportSource(source.outbox)?.action.kind === "list.import";
   const guest = (personalPendingImportSource(source.outbox, true) || source.outbox.recover())?.action.body.guestImport?.version === 1;
-  updateSyncUi(guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
+  const publicCopy = source.outbox.recover()?.action.body.publicImport?.version === 1;
+  updateSyncUi(publicCopy ? "Сохраняю личную копию шаблона и проверяю фотографии…" : guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,
-    beforeAdopted: () => completePersonalGuestImportSelections(source),
+    ...(publicCopy ? { makeSnapshot: (payload, previous) => personalPublicCopySnapshot(payload, previous, previous.activeLayoutId) } : {}),
+    beforeAdopted: async () => { await completePersonalGuestImportSelections(source); await completePersonalPublicImportSelections(source); },
     onAdopted(record) {
       if (recovery) return; // Journal is complete; the blocked editor reloads explicitly.
       personalSaveRecovery.assertRunning();
@@ -8950,7 +8993,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
       personalPhotoFormLiveSource = null;
       personalPhotoRecoverySource = null;
       renderPreservingPackingScroll(); updateSyncUi();
-      if (notify) showToast(guest ? "Гостевая работа и фотографии сохранены в аккаунте." : archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
+      if (notify) showToast(publicCopy ? "Личная копия шаблона и фотографии сохранены в аккаунте." : guest ? "Гостевая работа и фотографии сохранены в аккаунте." : archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
     }
   });
   return recovery ? { ...result, verified: true, reloadRequired: true } : result;
@@ -9238,6 +9281,101 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
 
 function personalGuestSelectionStore(binding) {
   return createPersonalGuestImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
+}
+
+function personalPublicSelectionStore(binding) {
+  return createPersonalPublicImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
+}
+
+async function completePersonalPublicImportSelections(source) {
+  if (!source?.outbox || source.outbox.hasPending()) return;
+  const outbox = source.outbox, boundary = outbox.confirmedBoundary();
+  if (!boundary) return;
+  const journal = personalPublicSelectionStore(outbox.binding), references = outbox.photoRecoveryReferences();
+  for (const entry of await journal.entries()) {
+    if (!entry.action || entry.completion) continue;
+    const proof = references.photoReceipts.find(proof => proof.operation.id === entry.selection.operationId);
+    if (!proof || proof.operation.state === "committed" && boundary.stateRevision < proof.stateRevision) continue;
+    await journal.confirm({ operationId: entry.selection.operationId, proof });
+  }
+}
+
+function personalPublicCopySnapshot(payload, previous, activeLayoutId) {
+  const snapshot = normalizeRemoteState({ ...payload, activeLayoutId }, { repairCatalog: false });
+  if (!snapshot) throw Error("Не удалось прочитать подготовленную копию шаблона.");
+  applyLayoutArrangement(activeLayoutId, snapshot);
+  return personalPublicImportSnapshot(payload, personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous)));
+}
+
+async function runCausalPublicLayoutCopy(layout, progress) {
+  if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit()) return null;
+  if (!PERSONAL_PUBLIC_IMPORT_ENABLED) throw Error("Копирование публичных шаблонов через очередь ещё не включено.");
+  if (layout.linkedSharedList) throw Error("Копирование списка по ссылке ещё требует отдельного перехода.");
+  personalSaveRecovery.assertRunning();
+  if (hasPendingPersonalSave() || syncMeta.dirty) throw Error("Сначала нужно подтвердить текущие личные изменения.");
+  const actorId = String(currentUser.id), itemKey = sharedLayoutItemKey(layout.id);
+  progress.update(15, "shared.copyStageLoadingPersonal");
+  await ensurePrivateStateForSharedCopy();
+  if (String(currentUser?.id) !== actorId) throw Error("Аккаунт изменился. Копирование остановлено.");
+  setActivePrivateScope();
+  if (!personalPhotoFormUiEnabled()) throw Error("Личная очередь копирования ещё недоступна.");
+  const outbox = personalSaveOutboxForScope(), initial = clone(personalSaveContext());
+  if (!outbox || outbox.hasPending() || syncMeta.dirty || !outbox.confirmedBase()) throw Error("Личный список ещё не подтверждён.");
+  if (personalGuestBaseNeedsPreparation(outbox.confirmedBase().payload, personalBusinessPayload(state))) {
+    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+    await queuedPersonalSave();
+    if (outbox.hasPending() || !sameJson(initial, personalSaveContext())) throw Error("Подготовка личного списка ещё не подтверждена.");
+  }
+  progress.update(30, "shared.copyStageLoading");
+  // Read a fresh complete API record. Display metadata/offline previews cannot
+  // establish a source version for a private causal copy.
+  const loaded = await apiFetch(publicTemplatePayloadPath(itemKey), { timeoutMs: LIST_API_TIMEOUT_MS, silentErrors: true });
+  if (!sameJson(initial, personalSaveContext())) throw Error("Редактор изменился. Копирование остановлено.");
+  const sourcePayload = loaded?.payload, sourceLayout = sourcePayload?.layouts?.[sourcePayload.activeLayoutId]
+    || Object.values(sourcePayload?.layouts || {})[0];
+  if (!sourceLayout || loaded.ok !== true || !loaded.publicTemplatePayload) throw Error("Не удалось прочитать полную исходную версию шаблона.");
+  const selection = preparePersonalPublicImportSelection({ binding: outbox.binding, basePayload: personalBusinessPayload(state),
+    baseStateRevision: Number(syncMeta.stateRevision), sourcePayload, layoutIds: [sourceLayout.id],
+    layoutNames: [uniqueLayoutName(sourceLayout.name || layout.name)], editMeta: currentCreateMeta(),
+    source: { kind: "public-template", itemKey, listId: loaded.listId, stateRevision: loaded.stateRevision,
+      language: loaded.record?.language || layout.language || uiLanguage } });
+  const previous = clone(state), revision = Number(syncMeta.stateRevision);
+  const repeated = findCopiedSharedLayout(layout, sourceLayout);
+  if (!(await confirmRepeatedSharedLayoutCopy(repeated, sourceLayout.name || layout.name))) return { cancelled: true };
+  if (!sameJson(initial, personalSaveContext()) || !sameJson(previous, state) || revision !== Number(syncMeta.stateRevision)) {
+    throw Error("Личный список изменился во время подтверждения. Копирование остановлено.");
+  }
+  const source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext: personalSaveContext }), inventory: null };
+  personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
+  let commit;
+  try {
+    progress.update(45, "shared.copyStageEntities");
+    commit = await preparePersonalPublicImport({ selection, selectionStore: personalPublicSelectionStore(outbox.binding), outbox, store: source.store,
+      getContext: personalSaveContext, getState: () => state, getRevision: () => Number(syncMeta.stateRevision), makeSnapshot: personalPublicCopySnapshot,
+      async loadFile({ photo }) {
+        if (!photo.url) throw Error("Не найден исходный файл фотографии шаблона.");
+        const response = await transportPhotoFetch(photo.url, { credentials: "include", cache: "no-store" });
+        if (!response.ok) throw Error("Не удалось прочитать исходную фотографию шаблона.");
+        const file = await response.blob();
+        return { file, thumb: null, fileName: photo.fileName || `${photo.id}.${file.type.split("/")[1] || "jpg"}` };
+      },
+      onCaptured(saved) {
+        personalSaveRecovery.assertRunning();
+        replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+        personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source;
+        rememberActiveLayoutChoice(saved.snapshot.activeLayoutId);
+        syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+        if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
+        switchView("packing"); renderPreservingPackingScroll();
+        updateSyncUi("Личная копия шаблона сохранена на устройстве и ждёт подтверждения сервера.");
+      }
+    });
+    await commit();
+  } catch (error) {
+    reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
+  } finally { personalPhotoFormPreparing--; }
+  scheduleRemoteSave();
+  return { layoutId: selection.layoutTargets[0].targetId };
 }
 
 async function completePersonalGuestImportSelections(source) {
@@ -11007,6 +11145,7 @@ async function copySharedLayout(layoutId, options = {}) {
       },
       confirmRepeatedSharedLayoutCopy,
       copyPublishedContainerToState,
+      copyPersonalPublicLayout: runCausalPublicLayoutCopy,
       copySharedRootToState,
       createLayoutArrangementFromCurrentState,
       createLayoutId: () => `layout-${Date.now()}-${Math.random().toString(16).slice(2)}`,

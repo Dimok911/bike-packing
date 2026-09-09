@@ -1,3 +1,4 @@
+import { assertPersonalPublicImportBody, assertPersonalPublicImportHashes, personalPublicImportReceipt } from "../../src/sync/personal-public-import-protocol.js";
 import { createBackupZip } from "../../src/backup/archive.js";
 import { createGuestLoginHandoff } from "../../src/public/guest-login-handoff.js";
 import { guestLocalLayoutCandidateFromState } from "../../src/public/guest-login-import.js";
@@ -231,7 +232,7 @@ for (const phase of ["native files", "queue link"]) test(`actual guest sign-in $
 });
 
 async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true,
-  guestSource = null, configure = () => {} } = {}) {
+  guestSource = null, publicSource = null, configure = () => {} } = {}) {
   photoForm ||= photoEdit;
   if (migration && migrationComplete) {
     // A previously saved complete legacy list, not an intentionally incomplete
@@ -248,6 +249,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   const state = { listId: fresh ? null : "list-a", payload: structuredClone(payload), revision: fresh ? 0 : 1,
     posts: [], receipts: new Map(), lose, unknown: lose, errors: [], stageReceipts: new Map(), cancellationPosts: [], migration, migrationPreviews: [] };
   const activeBundleRoot = photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
+  state.publicSource = publicSource;
   state.photoRevisions = new Map();
   state.stagePosts = [];
   configure(state);
@@ -307,8 +309,15 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, ...(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" ? ["personalCausalPublicImportV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FILES === "1" ? ["personalCausalPhotoFormOwnerResultV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_MANUFACTURER === "1" ? ["personalCausalManufacturerPhotoFormV1"] : []), ...(photoEdit && process.env.BIKE_PERSONAL_PENDING_FORM === "1" ? ["personalCausalPhotoFormDescendantsV1"] : []), "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalPhotoContainerFormContextV1", "personalCausalPhotoItemFormContextV1", "personalCausalGuestImportV1", "personalCausalGuestDescendantsV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
+      else if (publicSource && path === "/bike-packing/public-templates") data = { ok: true, canonical: true, lists: [{
+        id: "public-shared-layout-template-ui", sharedLayoutId: "template-ui", publicTemplateKind: "shared-layout", title: "Публичный шаблон", language: "ru",
+        sourceType: "curated-bikepacker", visibility: "public", stateRevision: 7, ownerId: "public-owner", payload: structuredClone(state.publicSource) }] };
+      else if (publicSource && path.startsWith("/bike-packing/public-template-payloads/") && decodeURIComponent(path.split("/").at(-1)) === "shared-layout:template-ui") {
+        data = { ok: true, publicTemplatePayload: true, canonical: true, itemKey: "shared-layout:template-ui", listId: "public-shared-layout-template-ui", stateRevision: 7,
+          payload: structuredClone(state.publicSource), record: { id: "public-shared-layout-template-ui", language: "ru", stateRevision: 7, payload: structuredClone(state.publicSource) } };
+      }
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
         expect(request.method()).toBe("GET");
@@ -521,14 +530,18 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(body.body).toEqual({ ...state.migrationPreviews.at(-1).migration, causal: { dependsOn: [], reads: [] } });
             state.migration = false;
           }
-          const archivePhotos = [], guestImport = body.kind === "list.import" && body.body.guestImport?.version === 1;
+          const archivePhotos = [], guestImport = body.kind === "list.import" && body.body.guestImport?.version === 1,
+            publicImport = body.kind === "list.import" && body.body.publicImport?.version === 1;
           if (body.kind === "list.import") {
-            if (guestImport || body.body.archiveImport.version === 2) {
+            if (publicImport || guestImport || body.body.archiveImport.version === 2) {
               expect(photoEdit).toBe(true);
-              if (guestImport) {
+              if (publicImport) {
+                assertPersonalPublicImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true });
+                await assertPersonalPublicImportHashes(body.body); expect(body.body.publicImport.sourcePayload).toEqual(publicSource);
+              } else if (guestImport) {
                 assertPersonalGuestImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true }); await assertPersonalGuestImportHashes(body.body);
               } else { assertPersonalArchivePhotoBody(body.body, { base: state.payload, listId: body.listId, causal: true }); await assertPersonalArchivePhotoHashes(body.body); }
-              for (const file of (guestImport ? body.body.guestImport : body.body.archiveImport).files) {
+              for (const file of (publicImport ? body.body.publicImport : guestImport ? body.body.guestImport : body.body.archiveImport).files) {
                 const stage = state.stageReceipts.get(file.assetId); expect(stage?.asset.state).toBe("ready");
                 expect(stage.operation.entityId).toBe(file.entityId); expect(stage.operation.photoId).toBe(file.photoId);
                 expect(stage.asset.fileHash).toBe(file.file.hash); expect(stage.asset.thumbHash).toBe(file.thumb?.hash || file.file.hash);
@@ -544,7 +557,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             }
           }
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
-          if (body.kind === "list.import" && (guestImport || body.body.archiveImport.version === 2)) {
+          if (body.kind === "list.import" && (publicImport || guestImport || body.body.archiveImport.version === 2)) {
             state.payload = structuredClone(state.payload);
             for (const file of archivePhotos) {
               const owner = state.payload[file.entityType === "item" ? "items" : "containers"][file.entityId];
@@ -576,14 +589,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, stateRevision: state.revision, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
-              ...(guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
+              ...(publicImport ? { stateRevision: state.revision, publicImport: personalPublicImportReceipt(body.body.publicImport), publicPhotos: archivePhotos } : guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
                 archiveImport: (body.body.archiveImport.version === 2 ? personalArchivePhotoReceipt : personalArchiveImportReceipt)(body.body.archiveImport),
                 ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
-        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && (body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
+        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && (body.body.publicImport?.version === 1 || body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }
@@ -4874,4 +4887,53 @@ test("Experiment is prominent above the header, fits mobile and remains translat
   await page.locator("#menuBtn").click();
   await page.locator("#languageSelect").selectOption("en");
   await expect(banner).toHaveText("EXPERIMENT");
+});
+
+test("public template copying stays paused with its own flag off and cannot fall through to legacy writes", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1", "This test checks the disabled public writer");
+  test.setTimeout(90000);
+  const f = await setup(page, context, { photoEdit: true, publicSource: guestImportPayload(true) });
+  await synchronize(page, () => true);
+  const before = structuredClone(f.payload), posts = f.posts.length;
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Публичный шаблон" });
+  await expect(option).toHaveCount(1, { timeout: 30000 });
+  await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await page.locator("#confirmDialog").getByRole("button", { name: "Смотреть шаблон", exact: true }).click();
+  await page.locator('[data-copy-shared-layout="template-ui"]').first().click();
+  await expect(page.locator("main")).toContainText("Копирование публичных шаблонов через очередь ещё не включено.");
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
+
+for (const fileless of [false, true]) for (const lost of [false, true]) test(`public template whole copy ${fileless ? "fileless" : "photos"} ${lost ? "lost owner ACK" : "confirmed"} is durable and recovers without duplicate IDs`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1", "Own public-copy gate remains disabled");
+  test.setTimeout(90000);
+  const publicSource = guestImportPayload(!fileless);
+  publicSource.layouts[publicSource.activeLayoutId].name = "Публичная исходная укладка";
+  const f = await setup(page, context, { photoEdit: true, publicSource, configure: f => { f.loseFormOwner = lost; } });
+  await synchronize(page, () => true);
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Публичный шаблон" });
+  await expect(option).toHaveCount(1, { timeout: 30000 });
+  await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await page.locator("#confirmDialog").getByRole("button", { name: "Смотреть шаблон", exact: true }).click();
+  const button = page.locator('[data-copy-shared-layout="template-ui"]'); await expect(button.first()).toBeVisible();
+  await button.first().click();
+  await expect.poll(() => f.posts.filter(post => post.body.publicImport).length, { timeout: 30000 }).toBe(1);
+  const action = structuredClone(f.posts.find(post => post.body.publicImport)), posts = f.posts.length, stages = [...f.stagePosts];
+  expect(action.body.publicImport.sourcePayload).toEqual(publicSource);
+  expect(action.body.publicImport.files).toHaveLength(fileless ? 0 : 1);
+  expect(action.body.causal.reads).toEqual([{ listId: "public-shared-layout-template-ui", revision: 7 }]);
+  if (lost) {
+    await expect.poll(() => f.hiddenFormOwner).toBe(action.operationId);
+    await reloadApp(page, { recovery: true });
+    f.loseFormOwner = false; f.hiddenFormOwner = "";
+    await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+    await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 20000 });
+    await reloadApp(page);
+  } else await expect.poll(() => page.evaluate(() => Object.entries(localStorage).some(([key, text]) => key.startsWith("bike-packing-public-selections-v1:") && key.endsWith(":completion"))), { timeout: 30000 }).toBe(true);
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual(stages);
+  expect(Object.values(f.payload.layouts).filter(layout => layout.id === action.body.publicImport.layoutTargets[0].targetId)).toHaveLength(1);
+  for (const owner of action.body.publicImport.ownerTargets) expect(owner.targetId).not.toBe(owner.sourceId);
+  await reloadApp(page); expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual(stages); expect(f.errors).toEqual([]);
 });

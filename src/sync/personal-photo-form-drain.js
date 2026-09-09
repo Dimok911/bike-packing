@@ -1,6 +1,7 @@
 import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, personalPendingGuestUpdateSource } from "./personal-pending-guest-update.js";
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, personalPendingFormUpdateSource } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
@@ -22,6 +23,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   readRemote, makeSnapshot, makeBaselineMeta, onAdopted, beforeAdopted = async () => {}, enabled = PERSONAL_PHOTO_FORM_ENABLED,
   archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
+  publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingGuestUpdateEnabled = PERSONAL_PENDING_GUEST_UPDATE_ENABLED,
   pendingFormUpdateEnabled = PERSONAL_PENDING_FORM_UPDATE_ENABLED,
@@ -34,7 +36,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
   const pendingImport = operationId => guestEnabled && pendingGuestUpdateEnabled && personalPendingGuestUpdateSource({ records: outbox.list(), operationId, listId: binding.listId })
     || archiveEnabled && pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
   const pendingForm = operationId => pendingFormUpdateEnabled && personalPendingFormUpdateSource({ records: outbox.list(), operationId, listId: binding.listId });
-  const form = head?.action.kind === "list.import" && (guestEnabled && head.action.body.guestImport?.version === 1
+  const form = head?.action.kind === "list.import" && (publicEnabled && head.action.body.publicImport?.version === 1 || guestEnabled && head.action.body.guestImport?.version === 1
     || archiveEnabled && head.action.body.archiveImport?.version === 2) ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
     : pendingForm(head?.action.operationId) || pendingImport(head?.action.operationId)
       || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })

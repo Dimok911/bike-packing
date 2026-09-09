@@ -88,20 +88,20 @@ test("transport: gate and identity are fail-closed, preparation deduplicates and
   assert.equal(transport.apiUrl("/auth/me"), `${EU_EXPERIMENT_API_BASE}/auth/me`);
 });
 
-test("archive cancellation passes only its exact uncertain byte-bound stage while normal import and unrelated writes stay blocked", async () => {
+for (const envelope of ["archiveImport", "guestImport", "publicImport"]) test(`${envelope} cancellation passes only its exact uncertain byte-bound stage while normal import and unrelated writes stay blocked`, async () => {
   const storage = storageMock(), assetId = crypto.randomUUID(), operationId = crypto.randomUUID();
   storage.setItem(`${AMBIGUOUS_WRITE_KEY}:${assetId}`, JSON.stringify({ id: assetId, path: "/bike-packing/lists/list/photo-assets", method: "POST", uncertain: true, mode: "direct",
     recovery: { type: "photo-stage", protocol: "staging-v1", actorId: "actor", listId: "list", operationId: assetId,
       actionOperationId: operationId, photoId: "photo", entityType: "item", entityId: "item", fileHash: "a".repeat(64), thumbHash: "b".repeat(64) } }));
   const transport = createExperimentTransport({ locationLike, selection: "direct", locks, storage }), path = "/bike-packing/lists/list/import";
   const recovery = { type: "list", protocol: "causal-v1", actorId: "actor", listId: "list", operationId, kind: "list.import", cancellationOnly: true,
-    body: { archiveImport: { version: 2, files: [{ entityType: "item", entityId: "item", photoId: "photo", assetId, file: { hash: "a".repeat(64) }, thumb: { hash: "b".repeat(64) } }] } } };
+    body: { [envelope]: { version: envelope === "archiveImport" ? 2 : 1, operationId, files: [{ entityType: "item", entityId: "item", photoId: "photo", assetId, file: { hash: "a".repeat(64) }, thumb: { hash: "b".repeat(64) } }] } } };
   assert.doesNotThrow(() => transport.assertWritable(path, "POST", recovery));
-  for (const mutate of [r => delete r.cancellationOnly, r => r.actorId = "other", r => r.operationId = crypto.randomUUID(),
-    r => r.listId = "other", r => r.kind = "list.update", r => r.body.archiveImport.version = 1, r => r.body.archiveImport.files = [],
-    r => r.body.archiveImport.files[0].assetId = crypto.randomUUID(), r => r.body.archiveImport.files[0].photoId = "other",
-    r => r.body.archiveImport.files[0].entityId = "other", r => r.body.archiveImport.files[0].file.hash = "c".repeat(64),
-    r => r.body.archiveImport.files[0].thumb.hash = "c".repeat(64)]) {
+  for (const mutate of [r => delete r.cancellationOnly, r => { r.body[envelope === "publicImport" ? "guestImport" : "publicImport"] = structuredClone(r.body[envelope]); }, r => r.actorId = "other", r => r.operationId = crypto.randomUUID(),
+    r => r.listId = "other", r => r.kind = "list.update", r => r.body[envelope].version = 0, r => r.body[envelope].files = [],
+    r => r.body[envelope].files[0].assetId = crypto.randomUUID(), r => r.body[envelope].files[0].photoId = "other",
+    r => r.body[envelope].files[0].entityId = "other", r => r.body[envelope].files[0].file.hash = "c".repeat(64),
+    r => r.body[envelope].files[0].thumb.hash = "c".repeat(64)]) {
     const value = structuredClone(recovery); mutate(value); assert.throws(() => transport.assertWritable(path, "POST", value), /unknown outcome/);
   }
   assert.throws(() => transport.assertWritable("/auth/logout", "POST", recovery), /unknown outcome/);

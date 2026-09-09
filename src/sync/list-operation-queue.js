@@ -6,6 +6,7 @@ import { PERSONAL_PENDING_GUEST_UPDATE_ENABLED, PERSONAL_PENDING_GUEST_UPDATE_CA
 import { PERSONAL_PENDING_FORM_UPDATE_ENABLED, PERSONAL_PENDING_FORM_UPDATE_CAPABILITY, personalFormPhotoBodyResultReference, validatePersonalPendingFormUpdateResult } from "./personal-pending-form-update.js";
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY, assertPersonalArchivePhotoHashes, validatePersonalArchivePhotoResult } from "./personal-archive-photo-protocol.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY, assertPersonalGuestImportHashes, validatePersonalGuestImportResult } from "./personal-guest-import-protocol.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED, PERSONAL_PUBLIC_IMPORT_CAPABILITY, assertPersonalPublicImportHashes, validatePersonalPublicImportResult } from "./personal-public-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, PERSONAL_PENDING_ARCHIVE_UPDATE_CAPABILITY, personalArchivePhotoBodyResultReference } from "./personal-pending-archive-update.js";
 import { PERSONAL_ARCHIVE_IMPORT_ENABLED, PERSONAL_ARCHIVE_IMPORT_CAPABILITY, assertPersonalArchiveImportHashes, validatePersonalArchiveImportResult } from "./personal-archive-import-protocol.js";
 import { PERSONAL_PHOTO_HISTORY_RESTORE_ENABLED, PERSONAL_PHOTO_HISTORY_RESTORE_CAPABILITY, validatePersonalPhotoHistoryResult } from "./personal-photo-history-protocol.js";
@@ -79,7 +80,8 @@ export function validateListReceipt(data, expected) {
   if (expected.kind === "photos.mutate" && expected.body?.action === "copy-batch") return validatePersonalPhotoCopyBatchResult(result.payload, expected);
   if (expected.kind === "photos.mutate") return expected.body?.action === "form"
     ? validatePersonalPhotoFormResult(result.payload, expected) : validatePersonalPhotoPublicationResult(result.payload, expected);
-  if (expected.kind === "list.import") return Object.hasOwn(expected.body, "guestImport") ? validatePersonalGuestImportResult(result.payload, expected)
+  if (expected.kind === "list.import") return Object.hasOwn(expected.body, "publicImport") ? validatePersonalPublicImportResult(result.payload, expected)
+    : Object.hasOwn(expected.body, "guestImport") ? validatePersonalGuestImportResult(result.payload, expected)
     : expected.body.archiveImport?.version === 2 ? validatePersonalArchivePhotoResult(result.payload, expected) : validatePersonalArchiveImportResult(result.payload, expected);
   if (expected.kind === "list.migrate") return validatePersonalListMigrationResult(result.payload, expected);
   if (expected.kind === "list.restore" && expected.body?.historyRestore?.version === 2) return validatePersonalPhotoHistoryResult(result.payload, expected);
@@ -172,6 +174,7 @@ export function createListOperationQueue({ transport, getContext = () => null,
   archiveImportEnabled = PERSONAL_ARCHIVE_IMPORT_ENABLED,
   archivePhotoImportEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
   guestImportEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
+  publicImportEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED,
   pendingPhotoCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED,
   fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 } = {}) {
   const request = async (path, body) => {
@@ -273,6 +276,12 @@ export function createListOperationQueue({ transport, getContext = () => null,
         if (entry?.confirmed || !(validateWaitingOperation(known, expected) || known?.ok === true && op?.state === "unknown"
           && op.id === operationId && (op.actorId === undefined || op.actorId === initial.actorId)
           && (op.environment === undefined || op.environment === environment) && (op.listId === undefined || op.listId === listId))) throw paused(operationId);
+        if (Object.hasOwn(body, "publicImport")) {
+          if (route.kind !== "list.import" || !publicImportEnabled || !photoEnabled || body.publicImport?.operationId !== operationId) {
+            throw paused(operationId, "Отмена копирования шаблона ещё не включена.");
+          }
+          await assertPersonalPublicImportHashes(body); assertCurrent();
+        }
         if (Object.hasOwn(body, "guestImport")) {
           if (route.kind !== "list.import" || !guestImportEnabled || !photoEnabled || body.guestImport?.operationId !== operationId) {
             throw paused(operationId, "Отмена гостевого переноса ещё не включена.");
@@ -282,6 +291,8 @@ export function createListOperationQueue({ transport, getContext = () => null,
         const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
         if (![LIST_OPERATION_CAPABILITY, LIST_OPERATION_CANCELLATION_CAPABILITY].every(value => capabilities.capabilities?.includes(value))) throw paused(operationId,
           "Сервер ещё не поддерживает подтверждённую отмену действия. Данные сохранены.");
+        if (Object.hasOwn(body, "publicImport") && !capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY)) throw paused(operationId,
+          "Сервер ещё не поддерживает отмену копирования шаблона.");
         if (body.copyTree && (!photoTreeCopyEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_TREE_COPY_CAPABILITY))) throw paused(operationId,
           "Отмена копии дерева с фото ещё не включена. Исходная копия сохранена.");
         if (body.copyPlacement && (!photoCopyPlacementEnabled || !capabilities.capabilities?.includes(PERSONAL_PHOTO_COPY_PLACEMENT_CAPABILITY))) throw paused(operationId,
@@ -291,11 +302,14 @@ export function createListOperationQueue({ transport, getContext = () => null,
             && photoEnabled && archiveImportEnabled && archivePhotoImportEnabled;
           const guestCancellation = route.kind === "list.import" && body.guestImport?.version === 1
             && body.guestImport.operationId === operationId && photoEnabled && guestImportEnabled;
+          const publicCancellation = route.kind === "list.import" && body.publicImport?.version === 1
+            && body.publicImport.operationId === operationId && photoEnabled && publicImportEnabled;
           if (Object.hasOwn(body, "guestImport") && !guestCancellation) throw paused(operationId, "Отмена гостевого переноса ещё не включена.");
-          const cancellationOnly = archiveCancellation || guestCancellation || route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
+          const cancellationOnly = archiveCancellation || guestCancellation || publicCancellation || route.kind === "photos.mutate" && photoEnabled && photoFormEnabled
             && (body.action === "form" || body.action === "copy-batch" && photoCopyBatchEnabled && photoCopyEnabled);
           if (cancellationOnly) {
-            if (guestCancellation) await assertPersonalGuestImportHashes(body);
+            if (publicCancellation) await assertPersonalPublicImportHashes(body);
+            else if (guestCancellation) await assertPersonalGuestImportHashes(body);
             else if (archiveCancellation) await assertPersonalArchivePhotoHashes(body);
             else if (body.action === "copy-batch") personalPhotoCopyBatchManifest(body);
             else personalPhotoFormManifest(body);
@@ -537,7 +551,13 @@ export function createListOperationQueue({ transport, getContext = () => null,
       const route = listOperationRoute(path, method);
       if (route.kind === "list.restore" && body.historyRestore?.version === 2 && !photoRestoreEnabled) throw paused(requestedId, "Восстановление истории с фото ещё не включено.");
       if (route.kind === "list.import") {
-        if (Object.hasOwn(body, "guestImport")) {
+        if (Object.hasOwn(body, "publicImport")) {
+          if (!publicImportEnabled || !photoEnabled || body.publicImport?.operationId !== requestedId
+            || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) {
+            throw paused(requestedId, "Копирование шаблона ещё не включено или не совпало с сохранённым действием.");
+          }
+          await assertPersonalPublicImportHashes(body);
+        } else if (Object.hasOwn(body, "guestImport")) {
           if (!guestImportEnabled || !photoEnabled || body.guestImport?.operationId !== requestedId
             || initial.environment !== environment || initial.listId !== route.listId || initial.scopeKey !== `id:${initial.actorId}`) {
             throw paused(requestedId, "Гостевой перенос ещё не включён или не совпал с сохранённым действием.");
@@ -641,7 +661,9 @@ export function createListOperationQueue({ transport, getContext = () => null,
           if (route.kind === "photos.mutate" && Object.hasOwn(body, "ownerResult") && !capabilities.capabilities?.includes(PERSONAL_PHOTO_FORM_OWNER_RESULT_CAPABILITY)) {
             throw paused(requestedId, "Сервер ещё не поддерживает следующую форму с файлами.");
           }
-          if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
+          if (route.kind === "list.import" && Object.hasOwn(body, "publicImport")) {
+            if (!capabilities.capabilities?.includes(PERSONAL_PUBLIC_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает копирование шаблона через очередь.");
+          } else if (route.kind === "list.import" && Object.hasOwn(body, "guestImport")) {
             if (!capabilities.capabilities?.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает гостевой перенос через очередь.");
           } else if (route.kind === "list.import") {
             if (body.archiveImport?.version === 2 && !capabilities.capabilities?.includes(PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY)) throw paused(requestedId, "Сервер ещё не поддерживает архивы с фотографиями.");

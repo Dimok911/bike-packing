@@ -1,4 +1,6 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protocol.js";
+import { encodePersonalPublicImportRecord, decodePersonalPublicImportRecord } from "./personal-public-import-record.js";
 import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { encodePersonalGuestImportRecord, decodePersonalGuestImportRecord } from "./personal-guest-import-record.js";
 import { encodePersonalArchivePhotoRecord, decodePersonalArchivePhotoRecord } from "./personal-archive-photo-record.js";
@@ -27,7 +29,7 @@ const sameBytes = (a, b) => {
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
   batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
-  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED } = {}) {
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED, publicEnabled = PERSONAL_PUBLIC_IMPORT_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -77,8 +79,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         // hash-bound intent and every byte before returning an action.
         if (typeof record.intentJson !== "string" || new TextEncoder().encode(record.intentJson).byteLength > 6 * 1024 * 1024) throw blocked("corrupt-intent");
         const action = JSON.parse(record.intentJson)?.action, form = action?.body?.action === "form", archive = action?.kind === "list.import";
-        const guest = archive && Object.hasOwn(action.body || {}, "guestImport");
-        return await (guest ? decodePersonalGuestImportRecord : archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
+        const guest = archive && Object.hasOwn(action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(action.body || {}, "publicImport");
+        return await (publicCopy ? decodePersonalPublicImportRecord : guest ? decodePersonalGuestImportRecord : archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
       }
       catch (cause) { throw blocked("corrupt-batch", cause); }
     }
@@ -96,6 +98,10 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    async capturePublic(input) {
+      if (input?.action?.kind !== "list.import" || input.action.body?.publicImport?.version !== 1) throw blocked("invalid-public");
+      return this.captureBatch(input);
+    },
     async captureGuest(input) {
       if (input?.action?.kind !== "list.import" || input.action.body?.guestImport?.version !== 1) throw blocked("invalid-guest");
       return this.captureBatch(input);
@@ -121,12 +127,13 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       try {
         if (!enabled || !batchEnabled) throw blocked("batch-disabled");
         const form = frozen.action?.body?.action === "form", archive = frozen.action?.kind === "list.import";
-        const guest = archive && Object.hasOwn(frozen.action.body || {}, "guestImport");
+        const guest = archive && Object.hasOwn(frozen.action.body || {}, "guestImport"), publicCopy = archive && Object.hasOwn(frozen.action.body || {}, "publicImport");
+        if (publicCopy && !publicEnabled) throw blocked("public-disabled");
         if (guest && !guestEnabled) throw blocked("guest-disabled");
-        if (archive && !guest && !archiveEnabled) throw blocked("archive-disabled");
+        if (archive && !guest && !publicCopy && !archiveEnabled) throw blocked("archive-disabled");
         if (form && !formEnabled) throw blocked("form-disabled");
         assertContext(initial);
-        const record = await (guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
+        const record = await (publicCopy ? encodePersonalPublicImportRecord : guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
         await transaction("readwrite", (store, finish, abort) => {
           assertContext(initial);
           const lookup = store.get(record.key);

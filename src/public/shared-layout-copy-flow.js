@@ -11,6 +11,7 @@ export async function copySharedLayoutFlow({ runtime, dependencies }, layoutId, 
     closeSharedLayoutsDialog,
     confirmRepeatedSharedLayoutCopy,
     copyPublishedContainerToState,
+    copyPersonalPublicLayout,
     copySharedRootToState,
     createLayoutArrangementFromCurrentState,
     createLayoutId,
@@ -58,6 +59,14 @@ export async function copySharedLayoutFlow({ runtime, dependencies }, layoutId, 
 
   let createdLayoutId = "";
   try {
+    if (copyPersonalPublicLayout) {
+      const personal = await copyPersonalPublicLayout(layout, progress);
+      if (personal) {
+        if (personal.cancelled) { progress.cancel(); return ""; }
+        progress.update(100, "shared.copyStageDone"); progress.finish();
+        return personal.layoutId;
+      }
+    }
     if (layout.id === DEMO_SHARED_LAYOUT_ID && !canOpenAdminPublishedEdit()) {
       progress.update(25, "shared.copyStageLoading");
       createdLayoutId = await createLocalDemoCopy({ forceNew: true });

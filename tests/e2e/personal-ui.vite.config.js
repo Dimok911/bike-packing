@@ -5,6 +5,9 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (source.endsWith("/src/sync/personal-public-import.js")) return code.replace(
+      'if (!same(personalGuestBusinessPayload(snapshot), result.payload)) throw Error("Подготовка отображения изменила выбранную копию шаблона.");',
+      'if (!same(personalGuestBusinessPayload(snapshot), result.payload)) { globalThis.__personalTestProjectionDifference = { expected: result.payload, actual: personalGuestBusinessPayload(snapshot) }; throw Error("Подготовка отображения изменила выбранную копию шаблона."); }');
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PENDING_FILES === "1" && source.endsWith("/src/sync/personal-photo-form-owner-result.js")) return code.replace(
       "PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED = false", "PERSONAL_PHOTO_FORM_OWNER_RESULT_ENABLED = true");
     if (mode === "photo-edit" && process.env.BIKE_PERSONAL_MANUFACTURER === "1" && source.endsWith("/src/sync/personal-manufacturer-photo-source.js")) return code.replace(
@@ -36,6 +39,8 @@ export default defineConfig(({ mode }) => ({
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
     if (source.endsWith("/src/sync/personal-archive-import-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_IMPORT_ENABLED = true");
+    if (mode === "photo-edit" && process.env.BIKE_PERSONAL_PUBLIC_IMPORT === "1" && source.endsWith("/src/sync/personal-public-import-protocol.js")) return code.replace(
+      "PERSONAL_PUBLIC_IMPORT_ENABLED = false", "PERSONAL_PUBLIC_IMPORT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-guest-import-protocol.js")) return code.replace(
       "PERSONAL_GUEST_IMPORT_ENABLED = false", "PERSONAL_GUEST_IMPORT_ENABLED = true")
       .replace('  if (!same(plan.payload, body.payload)) fail();',
@@ -74,7 +79,9 @@ export default defineConfig(({ mode }) => ({
       return code.replace(/(PERSONAL_PHOTO_(?:ACTIONS|OUTBOX|PUBLICATION_QUEUE|STAGING|CANCELLATION|BATCH_STORAGE|BATCH_OUTBOX|BATCH_STAGING|BATCH_CANCELLATION)_ENABLED) = false/g, "$1 = true");
     }
     if (/\/src\/sync\/(personal-save-outbox|list-operation-queue)\.js$/.test(id.replaceAll("\\", "/"))) {
-      const gated = code.replace(/(PERSONAL_SAVE_OUTBOX_ENABLED|LIST_OPERATION_QUEUE_ENABLED) = false/g, "$1 = true");
+      const gated = code.replace(/(PERSONAL_SAVE_OUTBOX_ENABLED|LIST_OPERATION_QUEUE_ENABLED) = false/g, "$1 = true")
+        .replace('throw blocked("photo-pending", "Сначала нужно подтвердить фото и сохранить актуальную версию карточки. Следующее изменение не отправлено.");',
+          'globalThis.__personalTestProjectionDifference = { expected: personalRecordPayload(head), actual: input.body.payload }; throw blocked("photo-pending", "Сначала нужно подтвердить фото и сохранить актуальную версию карточки. Следующее изменение не отправлено.");');
       return ["photo-recovery", "photo-form", "photo-edit"].includes(mode) ? gated.replace("LIST_OPERATION_CANCELLATION_ENABLED = false", "LIST_OPERATION_CANCELLATION_ENABLED = true") : gated;
     }
   } }],

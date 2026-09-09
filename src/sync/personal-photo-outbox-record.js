@@ -1,5 +1,6 @@
 import { assertPersonalArchivePhotoRecord, assertPersonalArchivePhotoFile } from "./personal-archive-photo-outbox-record.js";
 import { assertPersonalGuestImportRecord, assertPersonalGuestImportFile } from "./personal-guest-import-outbox-record.js";
+import { assertPersonalPublicImportRecord, assertPersonalPublicImportFile } from "./personal-public-import-outbox-record.js";
 import { canonicalListOperationJson } from "./list-operation-queue.js";
 import { assertPersonalPhotoFormRecord, assertPersonalPhotoFormFile } from "./personal-photo-form-outbox-record.js";
 import { personalPhotoPublicationManifest } from "./personal-photo-publication-protocol.js";
@@ -36,6 +37,7 @@ export function assertPersonalPhotoCandidate({ body, basePayload, payload }) {
 }
 
 export function assertPersonalPhotoRecord(record) {
+  if (record?.action?.kind === "list.import" && Object.hasOwn(record.action.body || {}, "publicImport")) return assertPersonalPublicImportRecord(record);
   if (record?.action?.kind === "list.import" && Object.hasOwn(record.action.body || {}, "guestImport")) return assertPersonalGuestImportRecord(record);
   if (record?.action?.kind === "list.import") return assertPersonalArchivePhotoRecord(record);
   if (record?.action?.body?.action === "copy-batch") return assertPersonalPhotoCopyBatchRecord(record).photos;
@@ -58,6 +60,7 @@ export function assertPersonalPhotoRecord(record) {
 }
 
 export function assertPersonalPhotoFile(record, saved, binding) {
+  if (record?.action?.kind === "list.import" && Object.hasOwn(record.action.body || {}, "publicImport")) { assertPersonalPublicImportFile(record, saved, binding); return; }
   if (record?.action?.kind === "list.import" && Object.hasOwn(record.action.body || {}, "guestImport")) { assertPersonalGuestImportFile(record, saved, binding); return; }
   if (record?.action?.kind === "list.import") { assertPersonalArchivePhotoFile(record, saved, binding); return; }
   if (record?.action?.body?.action === "form") { assertPersonalPhotoFormFile(record, saved, binding); return; }
