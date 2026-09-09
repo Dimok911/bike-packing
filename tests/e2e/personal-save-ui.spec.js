@@ -5382,3 +5382,88 @@ test(`public missing only ${demo ? "demo" : "shared"} ${photos ? "photos" : "fil
   }
   expect(f.payload.layouts["layout-a"].arrangement.packedItems.source).toBe(true); expect(f.errors).toEqual([]);
 });
+
+for (const demo of [false, true]) for (const photos of [false, true]) for (const outcome of ["lost ACK", "quota", "cancel"])
+test(`public catalog details ${demo ? "demo" : "shared"} ${photos ? "photos" : "fileless"} keeps the chosen item without placement across ${outcome}`, async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES !== "1", "Own public entity writer is disabled");
+  test.setTimeout(90000);
+  const publicSource = guestImportPayload(photos), payload = replacementPayload();
+  publicSource.items.source.name = "Вещь именно выбранного шаблона"; publicSource.items.source.quantity = 8;
+  publicSource.items.source.custom = { full: "original source owner" };
+  payload.items.source.name = "Моя изменённая вещь";
+  const other = structuredClone(publicSource); other.items.source.name = "Другой шаблон с тем же ID";
+  const itemKey = demo ? "demo-state:catalog-selected" : "shared-layout:catalog-selected", listId = demo ? "public-demo-state-catalog-selected" : "public-shared-layout-catalog-selected";
+  const selected = { id: listId, itemKey, publicTemplateKind: demo ? "demo" : "shared", sharedLayoutId: demo ? undefined : "catalog-selected",
+    title: "Источник вещи для каталога", language: "ru", sourceType: demo ? "public-template" : "curated-bikepacker" };
+  const f = await setup(page, context, { photoEdit: true, payload, publicSource, publicSourceConfig: { record: selected,
+    others: [{ ...selected, id: demo ? "public-demo-state" : "public-shared-layout-catalog-other", itemKey: demo ? "demo-state" : "shared-layout:catalog-other",
+      sharedLayoutId: demo ? undefined : "catalog-other", title: "Другой источник", payload: other, visibility: "public", stateRevision: 7, ownerId: "public-owner", layoutOrder: -1 }] } });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const before = structuredClone(f.payload), posts = f.posts.length;
+  const option = page.locator("#layoutSelect option").filter({ hasText: selected.title });
+  await expect(option).toHaveCount(1); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  await page.locator('[data-view="items"]').click();
+  await page.locator('[data-list-item-id="shared-virtual-item-source"], [data-item-id="shared-virtual-item-source"]').filter({ visible: true }).first().locator(".item-title").click();
+  await expect(page.locator("#copySharedItemDialogBtn")).toBeVisible();
+  await expect(page.locator("#itemName")).toHaveValue(publicSource.items.source.name);
+  await page.locator("#copySharedItemDialogBtn").click();
+  await expect(page.locator("#confirmDialog")).toBeVisible();
+  if (outcome === "cancel") {
+    await submitForm(page, "#confirmCancelBtn"); await expect(page.locator("#copySharedItemDialogBtn")).toBeVisible();
+    // Loading the personal target changes the underlying view. A second click
+    // must retain this dialog's chosen source instead of reading the new view.
+    await page.locator("#copySharedItemDialogBtn").click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await submitForm(page, "#confirmCancelBtn"); await expect(page.locator("#copySharedItemDialogBtn")).toBeVisible();
+    expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+    expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("bike-packing-public-selections-v1:")))).toEqual([]);
+    expect(f.errors).toEqual([]); return;
+  }
+  if (outcome === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.publicImport?.copy?.mode === "catalog")
+        throw new DOMException("Catalog copy queue quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  f.loseFormOwner = outcome === "lost ACK"; await submitForm(page, "#confirmOkBtn");
+  if (outcome === "quota") {
+    await expect(page.locator("#personalSaveRecoveryDialog")).toBeVisible();
+    expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+    expect(await page.locator("#copySharedItemDialogBtn").evaluate(button => !button.hidden)).toBe(true);
+  } else await expect.poll(() => Boolean(f.hiddenFormOwner), { timeout: 30000 }).toBe(true);
+  const retained = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-public-selections-v1:") && key.endsWith(":action"))
+    .map(([, text]) => JSON.parse(text).action));
+  expect(retained).toHaveLength(1); const original = retained[0], manifest = original.body.publicImport;
+  expect(manifest.copy).toEqual({ version: 3, mode: "catalog", sourceLayoutId: publicSource.activeLayoutId,
+    entries: [{ entityType: "item", sourceId: "source", includeContents: false }], destination: { layoutId: "layout-a", containerId: "", index: null } });
+  expect(manifest.sourcePayload).toEqual(publicSource); expect(manifest.source.itemKey).toBe(itemKey);
+  expect(manifest.files).toHaveLength(photos ? 1 : 0);
+  await reloadApp(page, { recovery: true }); f.loseFormOwner = false; f.hiddenFormOwner = ""; f.guestPhotoUnavailable = true;
+  await page.locator("#personalSaveRecoveryDialog [data-resume-photo-upload]").click();
+  await expect(page.locator("#personalSaveRecoveryDialog")).toContainText("Подтверждения и актуальная версия сохранены", { timeout: 30000 });
+  await reloadApp(page);
+  expect(f.posts).toHaveLength(posts + 1); expect(f.stagePosts).toHaveLength(photos ? 1 : 0);
+  const final = personalBusinessPayload(f.payload), base = personalBusinessPayload(before), copyId = manifest.ownerTargets[0].targetId;
+  expect(final.layouts).toEqual(base.layouts); expect(final.containers).toEqual(base.containers);
+  for (const [id, owner] of Object.entries(base.items)) expect(final.items[id]).toEqual(owner);
+  expect(final.items[copyId].name).toBe(publicSource.items.source.name); expect(final.items[copyId].quantity).toBe(8);
+  expect(final.items[copyId].containerId).toBeUndefined(); expect(final.items[copyId].custom).toEqual(publicSource.items.source.custom);
+  expect(f.errors).toEqual([]);
+});
+
+test("public catalog details gate off keeps the original dialog and blocks legacy copying", async ({ page, context }) => {
+  test.skip(process.env.BIKE_PERSONAL_PUBLIC_IMPORT !== "1" || process.env.BIKE_PERSONAL_PUBLIC_ENTITIES === "1", "Checks the independent disabled entity writer");
+  const f = await setup(page, context, { photoEdit: true, payload: replacementPayload(), publicSource: guestImportPayload(true) });
+  await synchronize(page, () => Boolean(f.payload.items.source)); const before = structuredClone(f.payload), posts = f.posts.length;
+  const option = page.locator("#layoutSelect option").filter({ hasText: "Публичный шаблон" });
+  await expect(option).toHaveCount(1); await page.locator("#layoutSelect").selectOption(await option.getAttribute("value"));
+  await expect(page.locator("#confirmDialog")).toBeVisible(); await submitForm(page, "#confirmOkBtn");
+  await page.locator('[data-view="items"]').click();
+  await page.locator('[data-list-item-id="shared-virtual-item-source"], [data-item-id="shared-virtual-item-source"]').filter({ visible: true }).first().locator(".item-title").click();
+  await page.locator("#copySharedItemDialogBtn").click();
+  await expect(page.getByText("Копирование отдельных записей шаблона через очередь ещё не включено.", { exact: true })).toBeVisible();
+  await expect(page.locator("#copySharedItemDialogBtn")).toBeVisible();
+  expect(f.posts).toHaveLength(posts); expect(f.stagePosts).toEqual([]); expect(f.payload).toEqual(before);
+  expect(f.errors).toEqual([]);
+});

@@ -19,9 +19,9 @@ export async function publicEntityFixture({ kind = "tree", photos = true, nested
       arrangement: { rootContainerIds: ["target"], containers: { target: { parentId: "", childIds: [], itemIds: ["kept"], order: [{ type: "item", id: "kept" }] } },
         items: { kept: "target" }, itemQuantities: { kept: 9 }, packedItems: { kept: true } } } } };
   transformSource(sourcePayload);
-  const copy = { version: 1, mode: "independent", sourceLayoutId: "a",
-    entries: [{ entityType: kind === "item" ? "item" : "container", sourceId: kind === "item" ? "item" : "bag", includeContents: kind === "tree" }],
-    destination: { layoutId: "private", containerId: "target", index: 0 } };
+  const copy = { version: kind === "catalog" ? 3 : 1, mode: kind === "catalog" ? "catalog" : "independent", sourceLayoutId: "a",
+    entries: [{ entityType: ["item", "catalog"].includes(kind) ? "item" : "container", sourceId: ["item", "catalog"].includes(kind) ? "item" : "bag", includeContents: kind === "tree" }],
+    destination: { layoutId: "private", containerId: kind === "catalog" ? "" : "target", index: kind === "catalog" ? null : 0 } };
   const selection = preparePersonalPublicEntitySelection({ ...f, sourcePayload, basePayload, copy,
     source: { kind: "public-template", listId: "public-shared-layout-selected", itemKey: "shared-layout:selected", stateRevision: 8, language: "ru" } }, { enabled: true });
   const file = new Blob(["Original selected entity image"], { type: "image/png" });

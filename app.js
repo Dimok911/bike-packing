@@ -9372,7 +9372,7 @@ async function preparePersonalPublicPickerSource(viewLayoutId, entityType, sourc
     ? sourceLayout.arrangement.containers?.[sourceId]?.parentId : owner.parentId) };
 }
 
-async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId, targetLayoutId, { includeContents = false, targetIndex = null } = {}) {
+async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId, targetLayoutId, { includeContents = false, targetIndex = null, catalog = false } = {}) {
   if (!personalSavePilotEnabled() || !currentUser || canOpenAdminPublishedEdit() || isAdminEditablePublishedLayout(targetLayoutId)) return null;
   if (!PERSONAL_PUBLIC_IMPORT_ENABLED || !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED) throw Error("Копирование отдельных записей шаблона через очередь ещё не включено.");
   personalSaveRecovery.assertRunning();
@@ -9393,7 +9393,7 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
     sourcePayload: chosen.sourcePayload, sourceLayoutId: chosen.sourceLayoutId, sourceId, targetLayoutId }) : null;
   let independentSelection, missingSelection, independentFailure, missingFailure;
   try { independentSelection = preparePersonalPublicEntitySelection({ ...selectionInput,
-    copy: { version: 1, mode: "independent", sourceLayoutId: chosen.sourceLayoutId,
+    copy: { version: catalog ? 3 : 1, mode: catalog ? "catalog" : "independent", sourceLayoutId: chosen.sourceLayoutId,
       entries: [{ entityType, sourceId, includeContents }], destination: { layoutId: targetLayoutId, containerId: targetContainerId || "", index: targetIndex } } }); }
   catch (error) { independentFailure = error; }
   if (missingPreview?.canCopyMissingItems) {
@@ -9425,7 +9425,8 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
         personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source; personalPublicPickerSource = null;
         rememberActiveLayoutChoice(targetLayoutId); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
         refs.containerPickerDialog.close(); if (refs.sharedLayoutsDialog?.open) refs.sharedLayoutsDialog.close();
-        switchView("packing"); renderPreservingPackingScroll();
+        if (catalog && refs.dialog.open) refs.dialog.close();
+        switchView(catalog ? "items" : "packing"); renderPreservingPackingScroll();
         updateSyncUi("Выбранная копия сохранена на устройстве и ждёт подтверждения сервера.");
       }
     });
@@ -9435,7 +9436,7 @@ async function runCausalPublicEntityCopy(entityType, sourceId, targetContainerId
     reportPersonalPhotoFormError(error, { recovery: error.publicImportRecovery || commit?.recoveryCopy() }); throw error;
   }
   finally { personalPhotoFormPreparing--; }
-  scheduleRemoteSave(); return { layoutId: targetLayoutId, operationId: selection.operationId };
+  scheduleRemoteSave(); return { layoutId: targetLayoutId, operationId: selection.operationId, copiedItemId: catalog ? selection.ownerTargets[0].targetId : "" };
 }
 
 async function runCausalPublicLayoutCopy(layout, progress) {
@@ -10437,8 +10438,8 @@ function findSharedPublishedContainer(containerId) {
   return null;
 }
 
-function findSharedPublishedItem(itemId) {
-  for (const layout of publicSharedLayouts()) {
+function findSharedPublishedItem(itemId, sourceLayoutId = "") {
+  for (const layout of sourceLayoutId ? [findSharedLayout(sourceLayoutId)].filter(Boolean) : publicSharedLayouts()) {
     const sourceState = sharedLayoutStatePayload(layout);
     if (sourceState?.items?.[itemId]) return { layout, sourceState, item: sourceState.items[itemId] };
   }
@@ -10459,8 +10460,8 @@ function findSharedRoot(rootId) {
   return null;
 }
 
-function findSharedItem(itemId) {
-  const published = findSharedPublishedItem(itemId);
+function findSharedItem(itemId, sourceLayoutId = "") {
+  const published = findSharedPublishedItem(itemId, sourceLayoutId);
   if (published) return {
     item: sharedItemFromPublishedItem(published.item),
     root: null,
@@ -10468,7 +10469,7 @@ function findSharedItem(itemId) {
     sourceRecord: published.item,
     sourceState: published.sourceState
   };
-  for (const layout of publicSharedLayouts()) {
+  for (const layout of sourceLayoutId ? [findSharedLayout(sourceLayoutId)].filter(Boolean) : publicSharedLayouts()) {
     for (const root of sharedLayoutRoots(layout)) {
       const item = (root.items || []).find((entry) => entry.id === itemId);
       if (item) return { item, root, layout };
@@ -10591,7 +10592,19 @@ async function copySharedRoot(rootId) {
   showToast(localText(`“${root.name}” was copied to the selected layout.`, `«${root.name}» скопировано в выбранную укладку.`), "success");
 }
 
-async function copySharedItem(itemId) {
+async function copySharedItem(itemId, { sourceLayoutId = activeReadOnlyLayoutId(), resumeSelection = false } = {}) {
+  if (personalSavePilotEnabled() && currentUser && !canOpenAdminPublishedEdit()) {
+    if (resumeSelection) {
+      if (personalPublicPickerSource?.viewLayoutId !== sourceLayoutId) throw Error("Исходный выбор изменился. Откройте карточку шаблона снова.");
+    } else await preparePersonalPublicPickerSource(sourceLayoutId, "item", itemId, false);
+    await ensurePrivateStateForSharedCopy();
+    const targetLayoutId = ensureSharedCopyTargetLayoutId();
+    if (!targetLayoutId) return;
+    const result = await runCausalPublicEntityCopy("item", itemId, "", targetLayoutId, { catalog: true });
+    if (result?.copiedItemId) await openItemDialog(result.copiedItemId);
+    return result;
+  }
+  if (refs.dialog.open) refs.dialog.close();
   const published = findSharedPublishedItem(itemId);
   if (published) {
     await ensurePrivateStateForSharedCopy();

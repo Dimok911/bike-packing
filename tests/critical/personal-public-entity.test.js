@@ -64,8 +64,8 @@ test("public entity fileless receipt verifies the final existing layout and cann
   }
 });
 
-for (const photos of [false, true]) test(`public entity durable preparation and cold link recovery, photos=${photos}, preserve original action and reject disabled writers`, async () => {
-  const f = await publicEntityFixture({ photos }), context = { ...f.binding, scope: "personal", generation: "entity-copy" };
+for (const kind of ["tree", "catalog"]) for (const photos of [false, true]) test(`public entity ${kind} durable preparation and cold link recovery, photos=${photos}, preserve original action and reject disabled writers`, async () => {
+  const f = await publicEntityFixture({ photos, kind }), context = { ...f.binding, scope: "personal", generation: "entity-copy" };
   const values = new Map(), native = new Map(), events = [], getContext = () => context;
   const storage = { get length() { return values.size; }, key: i => [...values.keys()][i], getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   const make = enabled => createPersonalSaveOutbox({ ...f.binding, storage, photoEnabled: true, photoBatchEnabled: true, publicImportEnabled: true, pendingPublicUpdateEnabled: true, publicEntityEnabled: enabled });
@@ -101,6 +101,31 @@ for (const photos of [false, true]) test(`public entity durable preparation and 
   assert.deepEqual([...values], beforeEdit);
   assert.equal((await inspectPersonalPhotoRecovery({ outbox: make(false), store, getContext })).entries[0].state, "linked");
   assert.equal(events.includes("view"), false); assert.equal(events.filter(value => value === "file").length, photos ? 1 : 0);
+});
+
+for (const photos of [false, true]) test(`public catalog item (${photos ? "files" : "fileless"}) preserves full owners and every layout without placement`, async () => {
+  const f = await publicEntityFixture({ kind: "catalog", photos, transformSource(source) {
+    source.items.item.quantity = 8; source.items.item.location = "Catalog location"; source.items.item.categories = ["Catalog category"];
+  } });
+  const result = assertPersonalPublicImportBody(f.action.body, f.options), ownerId = f.selection.ownerTargets[0].targetId;
+  await assertPersonalPublicImportHashes(f.action.body);
+  assert.deepEqual(result.payload.layouts, f.options.base.layouts); assert.deepEqual(result.payload.containers, f.options.base.containers);
+  assert.equal(result.payload.items[ownerId].quantity, 8); assert.equal(result.payload.items[ownerId].containerId, undefined);
+  assert.deepEqual(result.payload.items[ownerId].custom, { original: "full owner" });
+  assert.deepEqual(result.createdOwners.items, [ownerId]); assert.deepEqual(result.createdOwners.containers, []);
+  assert.ok(result.payload.locations.includes("Catalog location")); assert.ok(result.payload.categories.includes("Catalog category"));
+  for (const mutate of [
+    body => body.publicImport.copy.mode = "independent",
+    body => body.publicImport.copy.version = 1,
+    body => body.publicImport.copy.destination.containerId = "target",
+    body => body.publicImport.copy.destination.index = 0,
+    body => body.publicImport.copy.entries[0].includeContents = true,
+    body => body.publicImport.copy.entries.push({ entityType: "item", sourceId: "kept", includeContents: false }),
+    body => body.publicImport.copy.entries[0] = { entityType: "container", sourceId: "bag", includeContents: false },
+    body => body.payload.layouts.private.name = "Rewritten by a catalog copy",
+    body => body.publicImport.ownerTargets[0].targetId = "kept",
+    body => body.payload.items[ownerId].quantity = 3,
+  ]) { const body = structuredClone(f.action.body); mutate(body); assert.throws(() => assertPersonalPublicImportBody(body, f.options)); }
 });
 
 test("public tree preserves item/child arrays independently of interleaved display order", async () => {

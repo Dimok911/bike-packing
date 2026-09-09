@@ -113,6 +113,12 @@ export function personalPublicMissingPreview({ currentPayload, sourcePayload, so
 
 export function personalPublicEntitySelectionGraph(sourcePayload, copy, currentPayload) {
   if (copy?.version === 1) return personalPublicEntityGraph(sourcePayload, copy);
+  if (copy?.version === 3) {
+    if (!exact(copy, ["version", "mode", "sourceLayoutId", "entries", "destination"]) || copy.mode !== "catalog"
+      || !Array.isArray(copy.entries) || copy.entries.length !== 1 || copy.entries[0]?.entityType !== "item"
+      || copy.destination?.containerId !== "" || copy.destination?.index !== null) fail();
+    return personalPublicEntityGraph(sourcePayload, { ...copy, version: 1, mode: "independent" });
+  }
   if (!exact(copy, ["version", "mode", "sourceLayoutId", "entries", "destination", "missingItems"])
     || copy.version !== 2 || copy.mode !== "missing" || !Array.isArray(copy.entries) || copy.entries.length !== 1
     || !exact(copy.entries[0], ["entityType", "sourceId", "includeContents"]) || copy.entries[0].entityType !== "container"
@@ -131,9 +137,20 @@ export function personalPublicEntityPlan({ currentPayload, sourcePayload, copy, 
   const destination = copy.destination, target = base.layouts[destination.layoutId];
   if (!target || target.locked || !Array.isArray(ownerTargets) || ownerTargets.some(owner => owner.reuse !== false)) fail();
   const current = arrangementFor(base, target);
-  if (destination.containerId ? !current.containers.has(destination.containerId) : copy.entries.some(entry => entry.entityType === "item")) fail();
+  if (copy.mode !== "catalog" && (destination.containerId ? !current.containers.has(destination.containerId) : copy.entries.some(entry => entry.entityType === "item"))) fail();
   const compiled = personalImportOwnersPlan({ currentPayload: base, sourcePayload, selectedOwners: graph.selectedOwners,
     ownerTargets, photoTargets, editMeta, listId, operationId }, files);
+  if (copy.mode === "catalog") {
+    // The existing item-details action creates an unplaced catalog owner. Its
+    // quantity is an owner field; layout quantities and all layouts stay exact.
+    for (const row of graph.selectedOwners) {
+      const owner = sourcePayload.items[row.sourceId];
+      for (const [field, values] of [["locations", [owner.location]], ["categories", owner.categories?.length ? owner.categories : [owner.category]]]) {
+        for (const value of values) if (typeof value === "string" && value.trim() && !compiled.payload[field].includes(value)) compiled.payload[field].push(value);
+      }
+    }
+    return { ...compiled, deletions: [], removedLayoutIds: [], importedLayoutIds: [], activeLayoutId: target.id };
+  }
   const layout = clone(target), a = layout.arrangement, maps = { item: new Map(), container: new Map() };
   for (const owner of ownerTargets) maps[owner.entityType].set(owner.sourceId, owner.targetId);
   const addItem = (sourceId, parentId) => {

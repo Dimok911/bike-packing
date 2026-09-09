@@ -6321,9 +6321,13 @@ function sharedRecordItemContainerId(sourceState, itemId, fallback = "") {
   return fallback || "";
 }
 
+let sharedReadonlyItemSourceLayoutId = "", sharedReadonlyItemCopyPrepared = false;
 async function openSharedReadonlyItemDialog(sourceItemId) {
-  const match = findSharedItem(sourceItemId);
+  const sourceLayoutId = activeReadOnlyLayoutId();
+  const match = findSharedItem(sourceItemId, sourceLayoutId);
   if (!match) return;
+  sharedReadonlyItemSourceLayoutId = sourceLayoutId;
+  sharedReadonlyItemCopyPrepared = false;
   runtime.sharedDialogCopyItemId = sourceItemId;
   runtime.editingItemId = null;
   const sharedItem = match.item;
@@ -6415,16 +6419,21 @@ function setSharedReadonlyItemDialog(readonly) {
 
 function resetSharedReadonlyItemDialog() {
   runtime.sharedDialogCopyItemId = "";
+  sharedReadonlyItemSourceLayoutId = "";
+  sharedReadonlyItemCopyPrepared = false;
   if (!refs.copySharedItemDialogBtn || !refs.saveItemBtn) return;
   if (refs.itemContainerField) refs.itemContainerField.hidden = false;
   setSharedReadonlyItemDialog(false);
 }
 
-function copySharedItemFromReadonlyDialog() {
+async function copySharedItemFromReadonlyDialog() {
   const itemId = runtime.sharedDialogCopyItemId;
   if (!itemId) return;
-  refs.dialog.close();
-  copySharedItem(itemId);
+  try {
+    const result = await copySharedItem(itemId, { sourceLayoutId: sharedReadonlyItemSourceLayoutId, resumeSelection: sharedReadonlyItemCopyPrepared });
+    sharedReadonlyItemCopyPrepared = Boolean(result?.cancelled);
+  }
+  catch (error) { showToast(error.message, "error"); }
 }
 
 async function openSharedReadonlyContainerDialog(sourceContainerId) {
