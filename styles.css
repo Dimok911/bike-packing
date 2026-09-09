@@ -10049,6 +10049,48 @@ html[lang="en"] .confirm-highlight.confirm-danger::before {
   }
 }
 
+/* Keep room for search text alongside the layout and filter buttons. */
+@media (min-width: 521px) {
+  .controls {
+    grid-template-columns: minmax(160px, 1fr) max-content repeat(4, minmax(130px, 1fr));
+  }
+
+  .controls > *,
+  .search-control-row > label {
+    min-width: 0;
+  }
+
+  .layout-actions {
+    grid-template-columns: max-content max-content;
+  }
+
+  .controls .search-control-row {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 521px) and (max-width: 1600px) {
+  .controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .layout-select-control,
+  .layout-actions {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 521px) and (max-width: 1000px) {
+  .controls .search-control-row {
+    grid-column: 1 / -1;
+  }
+
+  #locationFilterLabel,
+  #categoryFilterLabel {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 520px) {
   .admin-report-grid {
     grid-template-columns: minmax(0, 1fr);
