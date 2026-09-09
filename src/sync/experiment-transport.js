@@ -242,10 +242,13 @@ export function createExperimentTransport({
     validateApiPath(path);
     refreshJournal();
     const causal = recovery?.type === "list" && recovery.protocol === "causal-v1" && recovery.actorId;
-    // Cancelling a frozen form/archive can fence its owner even if one of its own
+    // Cancelling a frozen form/import can fence its owner even if one of its own
     // stage ACKs is unknown. This marker is local transport metadata; the
     // queue forbids dispatch/resume of a business write from such an entry.
     // Every unrelated stage/legacy write remains a barrier.
+    const importFiles = recovery?.body?.guestImport?.version === 1 && recovery.body.guestImport.operationId === recovery.operationId
+      ? recovery.body.guestImport.files : !Object.hasOwn(recovery?.body || {}, "guestImport") && recovery?.body?.archiveImport?.version === 2
+        ? recovery.body.archiveImport.files : null;
     const ownCancelledStage = entry => causal && recovery.cancellationOnly === true && method === "POST"
       && entry.path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/photo-assets` && entry.method === "POST"
       && entry.recovery?.type === "photo-stage" && entry.recovery.protocol === "staging-v1"
@@ -258,8 +261,8 @@ export function createExperimentTransport({
         && change.entityType === entry.recovery.entityType && change.entityId === entry.recovery.entityId
         && change.entityType === recovery.body.entityType && change.entityId === recovery.body.entityId)
       || path === `/bike-packing/lists/${encodeURIComponent(recovery.listId)}/import` && recovery.kind === "list.import"
-      && recovery.body?.archiveImport?.version === 2 && Array.isArray(recovery.body.archiveImport.files)
-      && recovery.body.archiveImport.files.some(file => file.assetId === entry.id && file.photoId === entry.recovery.photoId
+      && Array.isArray(importFiles)
+      && importFiles.some(file => file.assetId === entry.id && file.photoId === entry.recovery.photoId
         && file.entityType === entry.recovery.entityType && file.entityId === entry.recovery.entityId
         && /^[a-f0-9]{64}$/.test(file.file?.hash) && file.file.hash === entry.recovery.fileHash
         && (file.thumb?.hash || file.file.hash) === entry.recovery.thumbHash));

@@ -6,7 +6,7 @@ const paused = () => Object.assign(new Error("Не удалось подгото
 
 // Not a normal backup and deliberately has no automatic importer. The raw
 // journal and byte inventory remain useful even when intent hashes are damaged.
-export async function createPersonalPhotoRecoveryArchive({ store, getContext, getRecoveryCopy, inventory = null, memoryForm = null }) {
+export async function createPersonalPhotoRecoveryArchive({ store, getContext, getRecoveryCopy, inventory = null, memoryForm = null, guestSelectionStore = null }) {
   const initial = { ...getContext?.() }, binding = store?.binding;
   const assertCurrent = () => {
     const current = getContext?.();
@@ -22,6 +22,14 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   if (!Array.isArray(rows) || new Set(rows.map(row => row.operationId)).size !== rows.length) throw paused();
   const entries = [{ name: "personal-queue.json", content: frozenCopy }], files = [];
   let totalBytes = new TextEncoder().encode(frozenCopy).byteLength;
+  let guestRows = null;
+  if (guestSelectionStore) {
+    if (!same(guestSelectionStore.binding, binding)) throw paused();
+    guestRows = JSON.stringify(await guestSelectionStore.recoveryRecords()); assertCurrent();
+    totalBytes += new TextEncoder().encode(guestRows).byteLength;
+    if (totalBytes > 256 * 1024 * 1024) throw paused();
+    entries.push({ name: "guest-import-selections.json", content: guestRows });
+  }
   let memoryFormIncluded = false;
   if (memoryForm) {
     if (!same(memoryForm.request?.binding, binding) || memoryForm.automaticImportAllowed !== false
@@ -94,6 +102,7 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   const afterIds = await store.ids(); assertCurrent();
   if (!same([...afterIds].sort(), rows.map(row => row.operationId).sort()) || frozenCopy !== JSON.stringify(getRecoveryCopy())) throw paused();
   const manifest = { format: "bike-packing-photo-recovery-v1", binding, automaticImportAllowed: false,
+    ...(guestRows !== null ? { guestSelectionsIncluded: true, guestSelectionsVerified: false } : {}),
     serverConfirmationIncluded: false, coverage: memoryFormIncluded ? "current-list-local-photo-journal-and-opened-form" : "current-list-local-photo-journal-only", files,
     ...(memoryFormIncluded ? { openedFormIncluded: true, openedFormDispatchable: false } : {}),
     inventory: inventory?.binding && same(inventory.binding, binding) ? inventory : null,
@@ -102,6 +111,8 @@ export async function createPersonalPhotoRecoveryArchive({ store, getContext, ge
   entries.unshift({ name: "recovery-manifest.json", content: JSON.stringify(manifest, null, 2) });
   const blob = await createStoredZip(entries); assertCurrent();
   const finalIds = await store.ids(); assertCurrent();
+  if (guestRows !== null && guestRows !== JSON.stringify(await guestSelectionStore.recoveryRecords())) throw paused();
+  assertCurrent();
   if (!same([...finalIds].sort(), rows.map(row => row.operationId).sort()) || frozenCopy !== JSON.stringify(getRecoveryCopy())) throw paused();
   return { blob, fileName: "bike-packing-photo-recovery.zip", manifest };
 }

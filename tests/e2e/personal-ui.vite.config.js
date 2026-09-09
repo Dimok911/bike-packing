@@ -5,6 +5,8 @@ export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [{ name: "isolated-personal-save-pilot", enforce: "pre", transform(code, id) {
     const source = id.replaceAll("\\", "/");
+    if (source.endsWith("/src/public/guest-login-handoff.js")) return code.replace('  if (validation.ok) return validation.candidate;',
+      '  globalThis.__personalGuestHandoffValidation = { reason: validation.reason, handoff, sourceState }; if (validation.ok) return validation.candidate;');
     if (source.endsWith("/src/sync/auth-load-flow.js")) return code.replace(
       '  await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice });',
       '  globalThis.__personalStartupPhase = "rendering"; try { await renderCachedPrivateStateDuringRemoteLoad({ restoreLayoutChoice }); globalThis.__personalStartupPhase = "rendered"; } catch (error) { globalThis.__personalStartupPhase = { message: error.message, code: error.code, stack: error.stack }; throw error; }');
@@ -24,6 +26,10 @@ export default defineConfig(({ mode }) => ({
       .replace('  return outbox.capture({ snapshot, body, operationId });', '  if (latest?.action.kind === "list.migrate") globalThis.__personalTestProjectionDifference = { expected: cloneStateForSync(outbox.recoverSnapshot(), { forSync: true }), actual: body.payload }; return outbox.capture({ snapshot, body, operationId });');
     if (source.endsWith("/src/sync/personal-archive-import-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_IMPORT_ENABLED = true");
+    if (mode === "photo-edit" && source.endsWith("/src/sync/personal-guest-import-protocol.js")) return code.replace(
+      "PERSONAL_GUEST_IMPORT_ENABLED = false", "PERSONAL_GUEST_IMPORT_ENABLED = true")
+      .replace('  if (!same(plan.payload, body.payload)) fail();',
+        '  if (!same(plan.payload, body.payload)) { globalThis.__personalTestProjectionDifference = { expected: plan.payload, actual: body.payload }; fail(); }');
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-archive-photo-protocol.js")) return code.replace(
       "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = false", "PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED = true");
     if (mode === "photo-edit" && source.endsWith("/src/sync/personal-pending-archive-update.js")) return code.replace(

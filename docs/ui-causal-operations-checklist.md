@@ -1707,12 +1707,22 @@ asset IDs, lost ACK/reload, SQL rollback, cancellation и recovery export
 файлами. 188/188 API/MySQL (222,24с), 26/26 Chromium/mobile WebKit (9,3мин),
 523 transport, 895 critical, 63 operation, 74 source/service, FE check.
 Подробнее: personal-archive-descendants.md. Флаги false; без push/публикации.
-Создание/составные формы и правка самих фото во время импорта, гостевой перенос,
-публичные/административные архивы и раздел 9 целиком ещё не завершены.
+Следующее продолжение — реальный гостевой вход подключён к отдельному
+list.import/guestImport.version=1, общей очереди, native storage, отмене и
+восстановлению. 198/198 API/MySQL (218,65 с), 24/24 Chromium/mobile WebKit
+(2,2 мин), 557 transport, 895 critical, 67 operation, 74 source/service,
+FE check; регрессия архивов 48/48 Chromium/mobile WebKit (11,4 мин).
+Lost ACK/reload/partial files/quota, исходные bytes и full source,
+восстановление native→outbox link и durable completion проверены. Shared Auth
+не менялся. Raw guest workspace и файлы сохраняются до отдельного безопасного
+протокола очистки; completion исключает повтор того же handoff. Подробнее:
+personal-guest-import.md. Все gates false, без публикации/push.
+Создание/составные формы, правка самих фото и guest descendants во время
+импорта, публичные/административные архивы и раздел 9 целиком не завершены.
 
 - [ ] Выбранные укладки, полный архив, объединение и замена.
 - [ ] Сохранённый состав пакета, отображение старых ID в новые и дочерние операции с фото.
-- [ ] Перенос гостевых данных в личное состояние без изменений протокола Shared Auth.
+- [x] Перенос гостевых данных в личное состояние без изменений протокола Shared Auth.
 - [ ] Частичный успех не запускает заново уже принятые части и не отображается
   как завершённое восстановление всего архива.
 

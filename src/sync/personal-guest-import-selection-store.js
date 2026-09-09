@@ -2,6 +2,7 @@ import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.
 import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { validateGuestLoginHandoff } from "../public/guest-login-handoff.js";
+import { personalGuestCompletion, personalGuestCompletedBody, personalGuestPreparedIntent, personalGuestSelectionBody } from "./personal-guest-import-completion.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
@@ -44,6 +45,14 @@ export function createPersonalGuestImportSelectionStore({ binding, getContext, i
     catch (cause) { throw blocked("corrupt", cause); }
     if (row.key !== key(selection.handoff) || row.operationId !== selection.operationId
       || await personalArchiveHash(selection) !== row.selectionHash) throw blocked("corrupt");
+    if (row.intent) {
+      if (row.intent.version !== 1 || Object.keys(row.intent).length !== 3 || await personalArchiveHash(row.intent) !== row.intentHash) throw blocked("corrupt");
+      await personalGuestSelectionBody(selection, row.intent);
+    }
+    if (row.completion) {
+      if (!row.intent || !same(row.intent, { version: 1, files: row.completion.files, causal: row.completion.causal })) throw blocked("corrupt");
+      await personalGuestCompletedBody(selection, row.completion);
+    }
     return selection;
   };
   const transaction = async (mode, initial, run) => {
@@ -115,6 +124,61 @@ export function createPersonalGuestImportSelectionStore({ binding, getContext, i
       const selections = [];
       for (const row of rows) selections.push(await decode(row));
       assertCurrent(initial); return selections;
+    },
+    async entries() {
+      const initial = context();
+      const rows = await transaction("readonly", initial, (store, done) => {
+        const request = store.index("binding").getAll(bindingKey); request.onsuccess = () => done(request.result);
+      });
+      const entries = [];
+      for (const row of rows) entries.push({ selection: await decode(row), intent: clone(row.intent || null), completion: clone(row.completion || null) });
+      assertCurrent(initial); return entries;
+    },
+    async recoveryRecords() {
+      const initial = context();
+      const rows = await transaction("readonly", initial, (store, done) => {
+        const request = store.index("binding").getAll(bindingKey); request.onsuccess = () => done(request.result);
+      });
+      assertCurrent(initial); return clone(rows);
+    },
+    async rememberAction({ selection, action }) {
+      if (!enabled) throw blocked("disabled");
+      const initial = context(), frozen = clone(selection); validate(frozen);
+      const intent = await personalGuestPreparedIntent(frozen, clone(action)), intentHash = await personalArchiveHash(intent), selectionHash = await personalArchiveHash(frozen); assertCurrent(initial);
+      await transaction("readwrite", initial, (store, done, abort) => {
+        const request = store.get(key(frozen.handoff));
+        request.onsuccess = () => {
+          try {
+            assertCurrent(initial); const row = request.result;
+            if (!row || row.version !== 1 || row.bindingKey !== bindingKey || row.selectionHash !== selectionHash || row.selectionJson !== JSON.stringify(frozen) || row.operationId !== frozen.operationId
+              || row.intent && (!same(row.intent, intent) || row.intentHash !== intentHash)) throw blocked("different-intent");
+            store.put({ ...row, intent, intentHash }); done(true);
+          } catch (cause) { abort(cause); }
+        };
+      });
+      assertCurrent(initial); return intent;
+    },
+    async confirm({ selection, action, proof }) {
+      // Read-only server recovery may finish a previously enabled writer.
+      const initial = context(), frozen = clone(selection);
+      validate(frozen);
+      const completion = await personalGuestCompletion(frozen, clone(action), clone(proof)), selectionHash = await personalArchiveHash(frozen);
+      const intentHash = await personalArchiveHash({ version: 1, files: completion.files, causal: completion.causal }); assertCurrent(initial);
+      await transaction("readwrite", initial, (store, done, abort) => {
+        const request = store.get(key(frozen.handoff));
+        request.onsuccess = () => {
+          try {
+            assertCurrent(initial);
+            const row = request.result;
+            if (!row || row.version !== 1 || row.bindingKey !== bindingKey || row.selectionHash !== selectionHash || row.intentHash !== intentHash
+              || row.selectionJson !== JSON.stringify(frozen) || row.operationId !== frozen.operationId || !row.intent
+              || !same(row.intent, { version: 1, files: completion.files, causal: completion.causal })
+              || row.completion && !same(row.completion, completion)) throw blocked("different-completion");
+            store.put({ ...row, completion }); done(true);
+          } catch (cause) { abort(cause); }
+        };
+      });
+      assertCurrent(initial); return completion;
     }
   };
 }

@@ -1,4 +1,7 @@
 import { createBackupZip } from "../../src/backup/archive.js";
+import { createGuestLoginHandoff } from "../../src/public/guest-login-handoff.js";
+import { guestLocalLayoutCandidateFromState } from "../../src/public/guest-login-import.js";
+import { assertPersonalGuestImportBody, assertPersonalGuestImportHashes, personalGuestImportReceipt } from "../../src/sync/personal-guest-import-protocol.js";
 import { assertPersonalArchivePhotoBody, assertPersonalArchivePhotoHashes, personalArchivePhotoReceipt } from "../../src/sync/personal-archive-photo-protocol.js";
 import { assertPersonalArchiveImportBody, assertPersonalArchiveImportHashes, personalArchiveImportReceipt } from "../../src/sync/personal-archive-import-protocol.js";
 import { personalPhotoHistoryPlan } from "../../src/sync/personal-photo-history-plan.js";
@@ -23,7 +26,8 @@ const origin = "https://experiment.vniipo-help.ru";
 const bundleRoot = path.resolve("test-results/personal-ui-build");
 const photoRecoveryBundleRoot = path.resolve("test-results/personal-photo-cancel-ui-build");
 test.beforeAll(async () => {
-  for (const mode of ["production", "photo-recovery", "photo-form", "photo-edit"]) {
+  for (const mode of process.env.BIKE_PERSONAL_UI_MODES?.split(",") || ["production", "photo-recovery", "photo-form", "photo-edit"]) {
+  expect(["production", "photo-recovery", "photo-form", "photo-edit"]).toContain(mode);
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../node_modules/vite/bin/vite.js", import.meta.url)),
     "build", "--config", "tests/e2e/personal-ui.vite.config.js", "--mode", mode], { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
@@ -31,6 +35,12 @@ test.beforeAll(async () => {
 });
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) {
+    if (info.title.includes("guest sign-in")) {
+      const guest = await page.evaluate(() => ({ validation: globalThis.__personalGuestHandoffValidation,
+        handoff: localStorage.getItem("bike-packing-guest-login-handoff-v2"), source: localStorage.getItem("bike-packing-prototype-state-v1") }));
+      console.log("GUEST UI FAILURE", JSON.stringify(guest));
+      await info.attach("guest-import-failure", { body: JSON.stringify(guest), contentType: "application/json" });
+    }
     const startup = await page.evaluate(() => globalThis.__personalStartupPhase).catch(() => null);
     if (startup) console.log("PERSONAL STARTUP", JSON.stringify(startup));
     const formError = await page.evaluate(() => globalThis.__personalTestPhotoFormError).catch(() => null);
@@ -90,7 +100,133 @@ function initialPayload() {
     activeLayoutId: "layout-a", packedItems: {} };
 }
 
-async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true } = {}) {
+function guestImportPayload(withPhoto) {
+  const source = replacementPayload(), layout = source.layouts["layout-a"];
+  layout.name = "Гостевая поездка"; layout.createdAt = "2026-09-08T00:00:00.000Z";
+  layout.arrangement.packedItems.source = true;
+  source.layouts["guest-second"] = { ...structuredClone(layout), id: "guest-second", name: "Гостевая запасная" };
+  source.items.source.notes = "Сохранить гостевую заметку";
+  source.items.source.photos = withPhoto ? [{ id: "guest-native", status: "synced", url: `${origin}/guest-photo/original.png`,
+    thumbUrl: `${origin}/guest-photo/thumb.png`, fileName: "guest-original.png" }] : [];
+  return source;
+}
+
+for (const withPhoto of [false, true]) test(`actual guest sign-in ${withPhoto ? "photo" : "fileless"} import survives lost owner ACK and remembers completion after reload`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const guestSource = guestImportPayload(withPhoto);
+  const f = await setup(page, context, { photoEdit: true, guestSource, configure: value => { value.loseFormOwner = true; } });
+  await expect.poll(() => f.injectedFailure, { timeout: 30000 }).toBe(true);
+  expect(f.posts.filter(value => value.kind === "list.import")).toHaveLength(1);
+  const action = structuredClone(f.posts.find(value => value.kind === "list.import")), stages = [...f.stagePosts];
+  expect(action.body.guestImport.sourcePayload).toEqual(f.guestChosenSource); expect(action.body.guestImport.files).toHaveLength(withPhoto ? 1 : 0);
+  expect(action.body.guestImport.layoutTargets).toHaveLength(2);
+  if (withPhoto) await page.evaluate(() => {
+    const newer = JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")); newer.items.source.notes = "Более новая гостевая работа";
+    localStorage.setItem("bike-packing-prototype-state-v1", JSON.stringify(newer));
+  });
+  await reloadApp(page, { recovery: true });
+  const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
+  await expect(resume).toBeVisible(); f.loseFormOwner = false; f.hiddenFormOwner = null;
+  await resume.click(); await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+  expect(f.stagePosts).toEqual(stages); expect(f.posts.filter(value => value.kind === "list.import")).toHaveLength(1);
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  const ownerTarget = action.body.guestImport.ownerTargets.find(value => value.entityType === "item" && value.sourceId === "source");
+  expect(f.payload.items[ownerTarget.targetId].notes).toBe("Сохранить гостевую заметку");
+  for (const layout of action.body.guestImport.layoutTargets) {
+    expect(f.payload.layouts[layout.targetId].arrangement.itemQuantities[ownerTarget.targetId]).toBe(3);
+    expect(f.payload.layouts[layout.targetId].arrangement.packedItems[ownerTarget.targetId]).toBe(true);
+  }
+  await createRootContainer(page, "После гостевого переноса");
+  await synchronizePhotoHistory(page, () => Object.values(f.payload.containers).some(value => value.name === "После гостевого переноса"));
+  await reloadApp(page); expect(f.posts.filter(value => value.kind === "list.import")).toHaveLength(1);
+  const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")));
+  expect(retained.items.source.notes).toBe(withPhoto ? "Более новая гостевая работа" : "Сохранить гостевую заметку"); expect(f.errors).toEqual([]);
+});
+
+for (const cancelImport of [false, true]) test(`actual guest sign-in partial files ${cancelImport ? "cancel through lost ACK" : "resume"} preserves the whole selected source`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  const guestSource = guestImportPayload(true); guestSource.items.inside.photos = [{ ...guestSource.items.source.photos[0], id: "guest-second-photo" }];
+  const f = await setup(page, context, { photoEdit: true, guestSource, configure: value => { value.loseStageAt = 1; } });
+  await expect.poll(() => f.hiddenStage, { timeout: 30000 }).toBeTruthy();
+  const saved = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
+    .map(([, value]) => JSON.parse(value)).find(value => value.action?.body?.guestImport));
+  expect(saved.action.body.guestImport.files).toHaveLength(2); expect(f.posts.filter(value => value.kind === "list.import")).toEqual([]);
+  const before = structuredClone(f.payload);
+  if (cancelImport) {
+    f.cancelPhotoAction = saved.action;
+    f.cancellationReceipts = new Map(saved.action.body.guestImport.files.map(file => [file.assetId, { ok: true,
+      operation: { id: file.assetId, actorId: "actor-a", environment: "bike-packing-experiment", listId: f.listId,
+        entityType: file.entityType, entityId: file.entityId, photoId: file.photoId, state: "cancelled", payloadDigest: "c".repeat(64) },
+      cancellation: { version: 1, stageOperationId: file.assetId, fileHash: file.file.hash, thumbHash: file.thumb?.hash || file.file.hash, noAssetPublished: true, stageCannotPublish: true } }]));
+  }
+  await reloadApp(page, { recovery: true }); f.hiddenStage = null; f.loseStageAt = 0;
+  const recovery = page.locator("#personalSaveRecoveryDialog");
+  if (cancelImport) {
+    const cancel = recovery.locator("[data-cancel-photo-upload]"); await expect(cancel).toBeVisible();
+    f.loseCancellation = true; f.hideCancellationReceipt = true; await cancel.click(); await expect(cancel).toBeEnabled();
+    await reloadApp(page, { recovery: true }); f.loseCancellation = false; f.hiddenFormOwner = null;
+    await cancel.click(); await expect(page.locator("#confirmDialog")).toContainText("Гостевая работа");
+    await page.locator("#confirmCancelBtn").click(); expect(f.payload).toEqual(before);
+    await cancel.click(); await page.locator("#confirmOkBtn").click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    expect(f.payload).toEqual(before); expect(f.stagePosts).toHaveLength(1);
+    expect(f.posts.at(-1).body.guestImport).toBeUndefined();
+  } else {
+    await recovery.locator("[data-resume-photo-upload]").click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    const imported = f.posts.find(value => value.kind === "list.import"); expect(imported.operationId).toBe(saved.action.operationId); expect(imported.body).toEqual(saved.action.body);
+    expect(f.stagePosts).toHaveLength(2); expect(new Set(f.stagePosts).size).toBe(2);
+  }
+  await reloadApp(page); await expect(recovery).not.toBeVisible();
+  expect(f.posts.filter(value => value.kind === "list.import")).toHaveLength(1);
+  expect(await page.evaluate(() => Boolean(localStorage.getItem("bike-packing-prototype-state-v1")))).toBe(true); expect(f.errors).toEqual([]);
+});
+
+for (const phase of ["native files", "queue link"]) test(`actual guest sign-in ${phase} quota keeps every original and exports the durable selection after reload`, async ({ page, context }) => {
+  test.setTimeout(150000);
+  await context.addInitScript(phase => {
+    if (phase === "native files") {
+      const original = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function (row, ...rest) {
+        if (row?.intentJson && JSON.parse(row.intentJson).action?.body?.guestImport) throw new DOMException("Guest native quota", "QuotaExceededError");
+        return original.call(this, row, ...rest);
+      };
+    } else {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (!globalThis.__guestQuotaReleased && String(key).startsWith("bike-packing-personal-save-v1:") && JSON.parse(value)?.action?.body?.guestImport) throw new DOMException("Guest link quota", "QuotaExceededError");
+        return original.call(this, key, value);
+      };
+    }
+  }, phase);
+  const f = await setup(page, context, { photoEdit: true, guestSource: guestImportPayload(true) });
+  const recovery = page.locator("#personalSaveRecoveryDialog"); await expect(recovery).toBeVisible({ timeout: 30000 });
+  const download = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+  const entries = await readZipEntries(new Blob([await readFile(await (await download).path())]));
+  const form = JSON.parse(zipText(entries.get("opened-form/form.json")));
+  expect(form.request.selection.candidate.sourceState).toEqual(f.guestChosenSource);
+  expect(entries.get("opened-form/0/original.bin").byteLength).toBeGreaterThan(0);
+  const rows = JSON.parse(zipText(entries.get("guest-import-selections.json"))); expect(rows).toHaveLength(1);
+  expect(rows[0].completion).toBeUndefined(); expect(rows[0].intent.files).toHaveLength(1);
+  expect(f.posts.filter(value => value.kind === "list.import")).toEqual([]); expect(f.stagePosts).toEqual([]);
+  if (phase === "queue link") {
+    await reloadApp(page, { recovery: true });
+    const again = page.waitForEvent("download"); await recovery.locator("[data-download-photo-recovery]").click();
+    const recovered = await readZipEntries(new Blob([await readFile(await (await again).path())]));
+    expect(JSON.parse(zipText(recovered.get("guest-import-selections.json")))).toEqual(rows);
+    expect([...recovered.keys()].some(key => key.startsWith("photos/") && key.endsWith("original.bin"))).toBe(true);
+    f.guestPhotoUnavailable = true; await page.evaluate(() => { globalThis.__guestQuotaReleased = true; });
+    const resume = recovery.locator("[data-resume-photo-upload]"); await expect(resume).toBeVisible(); await resume.click();
+    await expect(recovery).toContainText("Подтверждения и актуальная версия сохранены");
+    expect(f.posts.find(value => value.kind === "list.import").operationId).toBe(rows[0].operationId);
+    await reloadApp(page); await expect(recovery).not.toBeVisible();
+    expect(f.posts.filter(value => value.kind === "list.import")).toHaveLength(1);
+  }
+  expect(f.errors).toEqual([]);
+});
+
+async function setup(page, context, { fresh = false, lose = false, payload = initialPayload(), photoRecovery = false, photoForm = false, photoEdit = false, migration = false, migrationComplete = true,
+  guestSource = null, configure = () => {} } = {}) {
   photoForm ||= photoEdit;
   if (migration && migrationComplete) {
     // A previously saved complete legacy list, not an intentionally incomplete
@@ -109,6 +245,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   const activeBundleRoot = photoEdit ? path.resolve("test-results/personal-photo-edit-ui-build") : photoForm ? path.resolve("test-results/personal-photo-form-ui-build") : photoRecovery ? photoRecoveryBundleRoot : bundleRoot;
   state.photoRevisions = new Map();
   state.stagePosts = [];
+  configure(state);
   page.personalFixture = state;
   const record = () => ({ id: state.listId, title: "Личный тест", ownerId: "actor-a", role: "owner", canEdit: true,
     stateRevision: state.revision, updatedAt: `2026-09-06T10:00:${String(state.revision).padStart(2, "0")}.000Z`,
@@ -122,6 +259,13 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
     state.errors.push(error.message);
   });
   await context.addInitScript(() => { localStorage.setItem("bike-packing-language-v1", "ru"); });
+  if (guestSource) {
+    await context.addInitScript(guestSource => {
+      if (sessionStorage.getItem("guest-seeded")) return;
+      localStorage.setItem("bike-packing-prototype-state-v1", JSON.stringify(guestSource));
+      sessionStorage.setItem("guest-seeded", "true");
+    }, guestSource);
+  }
   if (photoForm) await context.addInitScript(() => {
     globalThis.formSentFiles = {};
     const original = globalThis.fetch;
@@ -142,10 +286,23 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       const path = url.pathname.split("/letters-vniipo/api")[1];
       if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
       let data, status = 200;
-      if (path === "/auth/me" || path === "/auth/experiment-share-session") data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
+      if (path === "/auth/me" || path === "/auth/experiment-share-session") {
+        if (guestSource && !state.guestChosenSource) {
+          // A real sign-in starts from an already loaded guest editor. Bind
+          // the handoff to that actual persisted source before returning auth.
+          state.guestChosenSource = await page.evaluate(() => JSON.parse(localStorage.getItem("bike-packing-prototype-state-v1")));
+          const candidate = guestLocalLayoutCandidateFromState(state.guestChosenSource, { fallbackName: "Гостевая укладка" });
+          const handoff = createGuestLoginHandoff({ candidate, eligibleLayoutIds: candidate.layouts.map(entry => entry.layoutId), email: "personal@example.test", guestSessionId: "guest-sign-in-ui" });
+          await page.evaluate(handoff => {
+            localStorage.setItem("bike-packing-guest-login-handoff-v2", JSON.stringify(handoff));
+            localStorage.setItem("bike-packing-guest-workspace-manifest-v2", JSON.stringify({ version: 2, sessionId: handoff.guestSessionId, layoutIds: handoff.layoutIds, updatedAt: handoff.createdAt }));
+          }, handoff);
+        }
+        data = { ok: true, user: { id: "actor-a", email: "personal@example.test" } };
+      }
       else if (path === "/bike-packing/authorization") data = { ok: true, authorization: { version: 1, role: "user", capabilities: [] } };
       else if (path === "/bike-packing/capabilities") data = { ok: true, apiCompatibilityVersion: REQUIRED_ADMIN_API_VERSION,
-        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
+        capabilities: [...REQUIRED_ADMIN_API_CAPABILITIES, "personalListCausalOperationsV1", "personalCausalArchiveImportV1", ...(photoForm ? ["personalCausalPhotoFormV1"] : []), ...(photoEdit ? ["personalCausalGuestImportV1", "personalCausalArchiveDescendantsV1", "personalCausalArchivePhotoImportV1", "personalCausalPhotoCopyFormV1", "personalCausalPhotoCopyDeletionV1", "personalCausalPhotoCopyBatchV1", "personalCausalPhotoCopyBatchDeletionV1", "personalCausalPhotoTreeCopyV1", "personalCausalPhotoCopyPlacementV1", "personalCausalPhotoHistoryRestoreV1"] : []), ...(migration ? ["personalListInitialMigrationV1"] : []), ...(photoRecovery || photoForm ?
           ["personalCausalPhotoPublicationV1", "personalStagedPhotoAssetsV1", "personalStagedPhotoCancellationV1", "personalListOperationCancellationV1"] : [])] };
       else if (path === "/bike-packing/lists") data = { ok: true, lists: state.listId ? [record()] : [] };
       else if (path === `/bike-packing/lists/${state.listId}/migration`) {
@@ -197,7 +354,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
         expect(sent.size).toBeGreaterThan(0); expect(form.get("expectedActorId")).toBe("actor-a");
         data = { ok: true, operation: { id, state: "committed", environment: "bike-packing-experiment", actorId: "actor-a", listId: state.listId,
           entityType: form.get("entityType"), entityId: form.get("entityId"), photoId: form.get("photoId"), payloadDigest: "a".repeat(64) },
-          asset: { id, state: "ready", publication: "not-published", fileHash: sent.fileHash, thumbHash: sent.thumbHash,
+          asset: { id, state: "ready", publication: "not-published", fileHash: sent.fileHash, thumbHash: sent.thumbHash || sent.fileHash,
             storedFileHash: sent.fileHash, storedThumbHash: sent.thumbHash || sent.fileHash } };
         state.stagePosts.push(id); state.stageReceipts.set(id, data);
         if (state.beforeStageAck) await state.beforeStageAck(id);
@@ -339,12 +496,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             expect(body.body).toEqual({ ...state.migrationPreviews.at(-1).migration, causal: { dependsOn: [], reads: [] } });
             state.migration = false;
           }
-          const archivePhotos = [];
+          const archivePhotos = [], guestImport = body.kind === "list.import" && body.body.guestImport?.version === 1;
           if (body.kind === "list.import") {
-            if (body.body.archiveImport.version === 2) {
+            if (guestImport || body.body.archiveImport.version === 2) {
               expect(photoEdit).toBe(true);
-              assertPersonalArchivePhotoBody(body.body, { base: state.payload, listId: body.listId, causal: true }); await assertPersonalArchivePhotoHashes(body.body);
-              for (const file of body.body.archiveImport.files) {
+              if (guestImport) {
+                assertPersonalGuestImportBody(body.body, { base: personalBusinessPayload(state.payload), listId: body.listId, operationId: body.operationId, causal: true }); await assertPersonalGuestImportHashes(body.body);
+              } else { assertPersonalArchivePhotoBody(body.body, { base: state.payload, listId: body.listId, causal: true }); await assertPersonalArchivePhotoHashes(body.body); }
+              for (const file of (guestImport ? body.body.guestImport : body.body.archiveImport).files) {
                 const stage = state.stageReceipts.get(file.assetId); expect(stage?.asset.state).toBe("ready");
                 expect(stage.operation.entityId).toBe(file.entityId); expect(stage.operation.photoId).toBe(file.photoId);
                 expect(stage.asset.fileHash).toBe(file.file.hash); expect(stage.asset.thumbHash).toBe(file.thumb?.hash || file.file.hash);
@@ -360,7 +519,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
             }
           }
           state.listId = body.listId; state.payload = body.body.photoResults ? structuredClone(body.body.payload) : body.body.payload;
-          if (body.kind === "list.import" && body.body.archiveImport.version === 2) {
+          if (body.kind === "list.import" && (guestImport || body.body.archiveImport.version === 2)) {
             state.payload = structuredClone(state.payload);
             for (const file of archivePhotos) {
               const owner = state.payload[file.entityType === "item" ? "items" : "containers"][file.entityId];
@@ -392,14 +551,14 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
           state.revision++;
           data = { ok: true, operation: { id: body.operationId, ...binding, payloadDigest: digest, state: "committed" },
             result: { status: 200, payload: { ok: true, list: structuredClone(record()), ...(body.kind === "list.migrate" ? { migration: body.body.migration } : {}),
-              ...(body.kind === "list.import" ? { stateRevision: state.revision,
+              ...(guestImport ? { stateRevision: state.revision, guestImport: personalGuestImportReceipt(body.body.guestImport), guestPhotos: archivePhotos } : body.kind === "list.import" ? { stateRevision: state.revision,
                 archiveImport: (body.body.archiveImport.version === 2 ? personalArchivePhotoReceipt : personalArchiveImportReceipt)(body.body.archiveImport),
                 ...(body.body.archiveImport.version === 2 ? { archivePhotos } : {}) } : {}),
               ...(body.kind === "list.restore" && body.body.historyRestore.version === 2 ? { restoreHistoryId: body.body.historyRestore.historyId,
                 restoredLayoutIds: body.body.historyRestore.layoutIds, stateRevision: state.revision, photoHistoryRestore: body.body.historyRestore.photoRestore } : {}) } } };
         }
         state.receipts.set(body.operationId, data);
-        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && body.body.archiveImport.version === 2)) {
+        if (state.loseFormOwner && (body.kind === "photos.mutate" && ["form", "copy-batch"].includes(body.body.action) || body.kind === "list.import" && (body.body.guestImport?.version === 1 || body.body.archiveImport?.version === 2))) {
           state.hiddenFormOwner = body.operationId; state.injectedFailure = true;
           return route.abort("failed");
         }
@@ -412,6 +571,8 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
       return route.fulfill({ status, headers, json: data || { ok: false } });
     }
     if (url.origin !== origin) return route.abort();
+    if (url.pathname.startsWith("/guest-photo/")) return state.guestPhotoUnavailable ? route.fulfill({ status: 404, body: "Original source is no longer available" }) : route.fulfill({ contentType: "image/png",
+      body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
     const target = path.resolve(activeBundleRoot, `.${url.pathname === "/" ? "/index.html" : url.pathname}`);
     if (!target.startsWith(activeBundleRoot + path.sep)) throw Error("Fixture path escaped its build directory");
     const mime = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json",
@@ -422,7 +583,7 @@ async function setup(page, context, { fresh = false, lose = false, payload = ini
   await page.goto(origin);
   if (migration && migrationComplete) await expect(page.locator("#confirmDialog")).toBeVisible({ timeout: 30000 });
   else await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
-  if (!fresh && !migration) {
+  if (!fresh && !migration && !guestSource) {
     await expect(page.locator("#layoutSelect option").filter({ hasText: "Личный тест" })).toBeAttached({ timeout: 20000 });
     await page.locator("#layoutSelect").selectOption("layout-a");
   }

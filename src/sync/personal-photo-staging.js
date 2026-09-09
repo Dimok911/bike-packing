@@ -1,4 +1,5 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED, PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_GUEST_IMPORT_ENABLED, PERSONAL_GUEST_IMPORT_CAPABILITY } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PHOTO_FORM_ENABLED, PERSONAL_PHOTO_FORM_CAPABILITY } from "./personal-photo-form-protocol.js";
 
 export const PERSONAL_PHOTO_STAGING_ENABLED = false;
@@ -44,7 +45,8 @@ const stageForm = (record, expected) => {
 export function createPersonalPhotoStaging({ store, transport, getContext,
   locks = globalThis.navigator?.locks, fetchImpl = (...args) => globalThis.fetch(...args),
   timeoutMs = 10000, enabled = PERSONAL_PHOTO_STAGING_ENABLED, cancellationEnabled = PERSONAL_PHOTO_CANCELLATION_ENABLED,
-  batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } = {}) {
+  batchEnabled = PERSONAL_PHOTO_BATCH_STAGING_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED } = {}) {
   const request = async (path, form, json = false) => {
     const controller = new AbortController(); let timer;
     try {
@@ -79,7 +81,9 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       assertCurrent();
       if (!record?.stage || Object.keys(binding).some(key => record.binding?.[key] !== binding[key])) throw paused(null, "Не найден полный локальный файл и его действие.");
       const ownerForm = record.action?.body?.action === "form", archive = record.action?.kind === "list.import";
-      if (archive && !inspectOnly && !archiveEnabled) throw paused(null, "Архивы с фотографиями ещё не включены.");
+      const guest = archive && Object.hasOwn(record.action.body || {}, "guestImport");
+      if (guest && !inspectOnly && !guestEnabled) throw paused(null, "Гостевой перенос с фотографиями ещё не включён.");
+      if (archive && !guest && !inspectOnly && !archiveEnabled) throw paused(null, "Архивы с фотографиями ещё не включены.");
       if (ownerForm && !inspectOnly && !formEnabled) throw paused(null, "Работа с файлами формы ещё не включена.");
       const expected = scope(record), stageId = expected.operationId;
       const path = `/bike-packing/lists/${encodeURIComponent(binding.listId)}/photo-assets`;
@@ -110,7 +114,8 @@ export function createPersonalPhotoStaging({ store, transport, getContext,
       if (inspectOnly) return acknowledge(await read(statusPath));
       const capabilities = await read("/bike-packing/capabilities"); assertCurrent();
       if (!capabilities?.capabilities?.includes(STAGED_PHOTO_ASSET_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает отдельное подтверждение файла. Фото не отправлено.");
-      if (archive && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает архивы с фотографиями.");
+      if (guest && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_GUEST_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает гостевой перенос с фотографиями.");
+      if (archive && !guest && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_ARCHIVE_PHOTO_IMPORT_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает архивы с фотографиями.");
       if (ownerForm && !cancelOnly && !capabilities.capabilities.includes(PERSONAL_PHOTO_FORM_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает всю карточку с фото. Файлы не отправлены.");
       if (cancelOnly) {
         if (!capabilities.capabilities.includes(STAGED_PHOTO_CANCELLATION_CAPABILITY)) throw paused(stageId, "Сервер ещё не поддерживает подтверждённую отмену начала загрузки.");

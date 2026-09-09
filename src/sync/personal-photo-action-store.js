@@ -1,4 +1,6 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
+import { encodePersonalGuestImportRecord, decodePersonalGuestImportRecord } from "./personal-guest-import-record.js";
 import { encodePersonalArchivePhotoRecord, decodePersonalArchivePhotoRecord } from "./personal-archive-photo-record.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 import { encodePersonalPhotoBatchRecord, decodePersonalPhotoBatchRecord } from "./personal-photo-batch-record.js";
@@ -24,7 +26,8 @@ const sameBytes = (a, b) => {
 // expiry API: an unfinished user action owns both its immutable intent and bytes.
 export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, environmentId = environment,
   indexedDB = globalThis.indexedDB, getContext, enabled = PERSONAL_PHOTO_ACTIONS_ENABLED,
-  batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } = {}) {
+  batchEnabled = PERSONAL_PHOTO_BATCH_STORAGE_ENABLED, formEnabled = PERSONAL_PHOTO_FORM_ENABLED, archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED } = {}) {
   if (!id(actorId) || actorId.length > 36 || !id(listId) || scopeKey !== `id:${actorId}` || environmentId !== environment) throw blocked("scope");
   const binding = Object.freeze({ environment, actorId, listId, scopeKey }), bindingKey = JSON.stringify(binding);
   const key = operationId => JSON.stringify([bindingKey, operationId]);
@@ -74,7 +77,8 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
         // hash-bound intent and every byte before returning an action.
         if (typeof record.intentJson !== "string" || new TextEncoder().encode(record.intentJson).byteLength > 6 * 1024 * 1024) throw blocked("corrupt-intent");
         const action = JSON.parse(record.intentJson)?.action, form = action?.body?.action === "form", archive = action?.kind === "list.import";
-        return await (archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
+        const guest = archive && Object.hasOwn(action.body || {}, "guestImport");
+        return await (guest ? decodePersonalGuestImportRecord : archive ? decodePersonalArchivePhotoRecord : form ? decodePersonalPhotoFormRecord : decodePersonalPhotoBatchRecord)(record, binding, operationId);
       }
       catch (cause) { throw blocked("corrupt-batch", cause); }
     }
@@ -92,8 +96,12 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
   };
   return {
     binding,
+    async captureGuest(input) {
+      if (input?.action?.kind !== "list.import" || input.action.body?.guestImport?.version !== 1) throw blocked("invalid-guest");
+      return this.captureBatch(input);
+    },
     async captureArchive(input) {
-      if (input?.action?.kind !== "list.import") throw blocked("invalid-archive");
+      if (input?.action?.kind !== "list.import" || input.action.body?.archiveImport?.version !== 2) throw blocked("invalid-archive");
       return this.captureBatch(input);
     },
     async captureForm(input) {
@@ -113,10 +121,12 @@ export function createPersonalPhotoActionStore({ actorId, listId, scopeKey, envi
       try {
         if (!enabled || !batchEnabled) throw blocked("batch-disabled");
         const form = frozen.action?.body?.action === "form", archive = frozen.action?.kind === "list.import";
-        if (archive && !archiveEnabled) throw blocked("archive-disabled");
+        const guest = archive && Object.hasOwn(frozen.action.body || {}, "guestImport");
+        if (guest && !guestEnabled) throw blocked("guest-disabled");
+        if (archive && !guest && !archiveEnabled) throw blocked("archive-disabled");
         if (form && !formEnabled) throw blocked("form-disabled");
         assertContext(initial);
-        const record = await (archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
+        const record = await (guest ? encodePersonalGuestImportRecord : archive ? encodePersonalArchivePhotoRecord : form ? encodePersonalPhotoFormRecord : encodePersonalPhotoBatchRecord)(frozen); assertContext(initial);
         await transaction("readwrite", (store, finish, abort) => {
           assertContext(initial);
           const lookup = store.get(record.key);

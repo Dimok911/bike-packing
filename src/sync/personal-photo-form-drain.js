@@ -1,4 +1,5 @@
 import { PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED } from "./personal-archive-photo-protocol.js";
+import { PERSONAL_GUEST_IMPORT_ENABLED } from "./personal-guest-import-protocol.js";
 import { PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED, personalPendingArchiveUpdateSource } from "./personal-pending-archive-update.js";
 import { PERSONAL_PHOTO_FORM_ENABLED } from "./personal-photo-form-protocol.js";
 import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
@@ -14,15 +15,17 @@ const blocked = () => Object.assign(new Error("Сохранение формы �
 // bytes or install a historical receipt's payload. All once-only staging and
 // route barriers remain owned by the established staging client and queue.
 export async function drainPersonalPhotoForm({ outbox, store, staging, queue, getContext,
-  readRemote, makeSnapshot, makeBaselineMeta, onAdopted, enabled = PERSONAL_PHOTO_FORM_ENABLED,
+  readRemote, makeSnapshot, makeBaselineMeta, onAdopted, beforeAdopted = async () => {}, enabled = PERSONAL_PHOTO_FORM_ENABLED,
   archiveEnabled = PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED,
+  guestEnabled = PERSONAL_GUEST_IMPORT_ENABLED,
   pendingArchiveUpdateEnabled = PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED,
   pendingOwnerDeletionEnabled = PERSONAL_PENDING_PHOTO_OWNER_DELETION_ENABLED,
   pendingCopyDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_DELETION_ENABLED,
   pendingCopyBatchDeletionEnabled = PERSONAL_PENDING_PHOTO_COPY_BATCH_DELETION_ENABLED }) {
   if (!enabled || !outbox || !store || !staging || !queue || typeof onAdopted !== "function") throw blocked();
   const head = outbox.recover(), initial = { ...getContext?.() }, binding = outbox.binding;
-  const form = archiveEnabled && head?.action.kind === "list.import" && head.action.body.archiveImport?.version === 2 ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
+  const form = head?.action.kind === "list.import" && (guestEnabled && head.action.body.guestImport?.version === 1
+    || archiveEnabled && head.action.body.archiveImport?.version === 2) ? head : head?.action.kind === "photos.mutate" && ["form", "copy-batch"].includes(head.action.body.action) ? head
     : archiveEnabled && pendingArchiveUpdateEnabled && personalPendingArchiveUpdateSource({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingOwnerDeletionEnabled && personalPendingPhotoOwnerDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId })
       || pendingCopyDeletionEnabled && personalPendingPhotoCopyDeletionForm({ records: outbox.list(), operationId: head?.action.operationId, listId: binding.listId });
@@ -63,6 +66,7 @@ export async function drainPersonalPhotoForm({ outbox, store, staging, queue, ge
     if (record?.adoptedBaseline !== true) throw blocked();
     const final = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); assertCurrent();
     if (final.entries.some(entry => entry.state !== "settled-retained")) throw blocked();
+    await beforeAdopted(record); assertCurrent();
     const result = onAdopted(record);
     if (result?.then) throw blocked();
     return { adopted: true, fileRetained: true, operationId: head.action.operationId };

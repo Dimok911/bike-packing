@@ -13,10 +13,30 @@ async function fixture(page, context) {
     if (url.origin === origin && url.pathname === "/__guest-storage") return route.fulfill({ contentType: "text/html", body: `<script type="module">
       import {createPersonalGuestImportSelectionStore} from '/src/sync/personal-guest-import-selection-store.js';
       import {preparePersonalGuestImportSelection} from '/src/sync/personal-guest-import-selection.js';
+      import {preparePersonalGuestImport} from '/src/sync/personal-guest-import.js';
+      import {createPersonalSaveOutbox} from '/src/sync/personal-save-outbox.js';
+      import {createPersonalPhotoActionStore} from '/src/sync/personal-photo-action-store.js';
+      import {personalArchiveHash} from '/src/sync/personal-archive-import-protocol.js';
+      import {personalGuestSelectionBody} from '/src/sync/personal-guest-import-completion.js';
+      import {inspectPersonalPhotoRecovery} from '/src/sync/personal-photo-recovery-inventory.js';
       window.guestInput=()=>(${JSON.stringify(guestSelectionFixture())});
       window.guestContext={...guestInput().binding,scope:'personal',generation:'guest-test'};
       window.guestSelection=()=>preparePersonalGuestImportSelection(guestInput(),{enabled:true});
       window.guestStore=(options={})=>createPersonalGuestImportSelectionStore({binding:guestInput().binding,getContext:()=>guestContext,enabled:true,...options});
+      window.guestOutbox=(enabled=true)=>createPersonalSaveOutbox({...guestInput().binding,storage:localStorage,photoEnabled:enabled,photoBatchEnabled:enabled,guestImportEnabled:enabled});
+      window.guestFiles=(enabled=true)=>createPersonalPhotoActionStore({...guestInput().binding,getContext:()=>guestContext,enabled,batchEnabled:enabled,guestEnabled:enabled});
+      window.guestCommit=async()=>{
+        const selection=guestSelection(), outbox=guestOutbox(), source=guestInput().basePayload;
+        outbox.adoptRemoteBaseline({snapshot:source,payload:source,stateRevision:7});
+        return (await preparePersonalGuestImport({enabled:true,selection,selectionStore:guestStore(),outbox,store:guestFiles(),getContext:()=>guestContext,
+          getHandoff:()=>guestInput().handoff,getState:()=>source,getRevision:()=>7,makeSnapshot:value=>value,onCaptured:()=>{},
+          loadFile:async()=>({file:new Blob(['guest original'],{type:'image/png'}),thumb:null,fileName:'guest.png'})}))();
+      };
+      window.guestProof=async(action)=>({historicalOnly:true,operation:{id:action.operationId,environment:guestContext.environment,actorId:guestContext.actorId,
+        listId:guestContext.listId,kind:'list.import',state:'committed',payloadDigest:await personalArchiveHash({environment:guestContext.environment,
+          actorId:guestContext.actorId,kind:'list.import',listId:guestContext.listId,body:action.body})},resultStatus:200,stateRevision:8});
+      window.guestBody=personalGuestSelectionBody;
+      window.guestInspect=()=>inspectPersonalPhotoRecovery({outbox:guestOutbox(false),store:guestFiles(false),getContext:()=>guestContext});
       window.guestReady=true;
     </script>` });
     return route.abort();
@@ -108,4 +128,47 @@ test("guest selection transaction failure leaves no half-record and a corrupt wi
     return { quota, afterQuota, read, capture, operationId: original.selection.operationId };
   });
   expect(result).toMatchObject({ quota: true, afterQuota: [], read: "guest-selection-corrupt", capture: "guest-selection-corrupt" });
+});
+
+test("native guest action survives reload and durable completion can be reconstructed with all writers disabled", async ({ page, context }) => {
+  await fixture(page, context);
+  const captured = await page.evaluate(async () => {
+    const saved = await guestCommit(), entries = await guestStore().entries();
+    return { saved, entries, inventory: await guestInspect() };
+  });
+  expect(captured.inventory.entries[0].state).toBe("linked"); expect(captured.entries[0].intent.files).toHaveLength(1);
+  await page.reload(); await page.waitForFunction(() => window.guestReady);
+  const confirmed = await page.evaluate(async () => {
+    const action = guestOutbox(false).recover().action, store = guestStore({ enabled: false }), entry = (await store.entries())[0];
+    const completion = await store.confirm({ selection: entry.selection, action, proof: await guestProof(action) });
+    return { completion, action, body: await guestBody(entry.selection, completion), original: await (await guestFiles(false).read(action.operationId)).files[0].file.text() };
+  });
+  expect(confirmed.action).toEqual(captured.saved.action); expect(confirmed.body).toEqual(captured.saved.action.body); expect(confirmed.original).toBe("guest original");
+  await page.reload(); await page.waitForFunction(() => window.guestReady);
+  const retained = await page.evaluate(async () => (await guestStore({ enabled: false }).entries())[0]);
+  expect(retained.completion).toEqual(confirmed.completion); expect(retained.selection).toEqual(captured.entries[0].selection);
+});
+
+test("guest completion quota and corrupted intent retain native source without a false completed marker", async ({ page, context }) => {
+  await fixture(page, context);
+  const result = await page.evaluate(async () => {
+    const saved = await guestCommit(), store = guestStore(), entry = (await store.entries())[0], proof = await guestProof(saved.action);
+    const native = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (row) { if (row.completion) throw new DOMException('completion quota','QuotaExceededError'); return native.call(this,row); };
+    let quota = false;
+    try { await store.confirm({ selection: entry.selection, action: saved.action, proof }); } catch { quota = true; }
+    finally { IDBObjectStore.prototype.put = native; }
+    const pending = (await store.entries())[0];
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open('bike-packing-personal-guest-selections-v1',1);
+      request.onsuccess = () => {
+        const db=request.result,tx=db.transaction('selections','readwrite'), rows=tx.objectStore('selections').getAll();
+        rows.onsuccess = () => { const row=rows.result[0];row.intent.files[0].file.hash='b'.repeat(64);tx.objectStore('selections').put(row); };
+        tx.oncomplete = () => { db.close();resolve(); }; tx.onabort = () => {db.close();reject(tx.error);};
+      }; request.onerror = () => reject(request.error);
+    });
+    let corrupt = false; try { await store.entries(); } catch { corrupt = true; }
+    return { quota, completion: pending.completion, corrupt, original: await (await guestFiles(false).read(saved.action.operationId)).files[0].file.text() };
+  });
+  expect(result).toEqual({ quota: true, completion: null, corrupt: true, original: "guest original" });
 });

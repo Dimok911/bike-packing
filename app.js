@@ -740,6 +740,14 @@ import { isKnownEmptyPersonalSave } from "./src/sync/personal-empty-save.js";
 import { createPersonalSaveRecovery } from "./src/sync/personal-save-recovery.js";
 import { createPersonalSaveRecoveryDialog } from "./src/ui/personal-save-recovery-dialog.js";
 import { createPersonalPhotoActionStore } from "./src/sync/personal-photo-action-store.js";
+import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-protocol.js";
+import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
+import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
+import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
+import { personalGuestSelectionBody } from "./src/sync/personal-guest-import-completion.js";
+import { loadPersonalGuestImportPhoto } from "./src/sync/personal-guest-import-photo-loader.js";
+import { personalGuestBaseNeedsPreparation } from "./src/sync/personal-guest-import-base.js";
+import { recoverPersonalGuestImportLink } from "./src/sync/personal-guest-import-link-recovery.js";
 import { inspectPersonalPhotoRecovery } from "./src/sync/personal-photo-recovery-inventory.js";
 import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-recovery-archive.js";
 import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-recovery-check.js";
@@ -1239,6 +1247,7 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   canResumePhotos: () => canResumeRetainedPersonalPhotoForm(),
   resumePhotoUpload: () => drainLivePersonalPhotoForm({ recovery: true }),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
+    guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
     getContext: personalPhotoRecoveryReadContext, getRecoveryCopy: () => personalSaveRecovery.recoveryCopy(localStorage) })
 }) : null;
 let applyingLayoutArrangement = false;
@@ -8716,10 +8725,16 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
       source.outbox = outbox; // Preserve the observed head while the dialog is open.
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+      const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
+      if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
+        const entries = await personalGuestSelectionStore(binding).entries();
+        source.guestPreparation = entries.find(entry => entry.intent && !entry.completion && entry.selection.operationId === unlinkedGuest[0].operationId) || null;
+      }
       personalSaveRecovery.assertRunning();
       // Only an exact retained terminal receipt, bound to the immutable action,
       // clears this startup fence. It never permits byte cleanup or re-upload.
       if (source.inventory.entries.some(entry => entry.state !== "settled-retained")) throw Error("Retained photo actions need explicit recovery");
+      await completePersonalGuestImportSelections(source);
       if (personalPhotoRecoveryCheck === pending) {
         personalPhotoRecoverySource = null;
         personalSaveRecoveryDialog?.finishChecking();
@@ -8770,7 +8785,9 @@ function personalPhotoRecoveryOptions() {
 }
 
 async function checkRetainedPersonalPhotoResult() {
-  return checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
+  const result = await checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
+  await completePersonalGuestImportSelections(personalPhotoRecoverySource);
+  return result;
 }
 
 function canCancelRetainedPersonalPhoto() {
@@ -8786,13 +8803,16 @@ async function cancelRetainedPersonalPhoto() {
   if (!canCancelRetainedPersonalPhoto()) throw Error("Явная отмена этого фотодействия недоступна. Файл сохранён.");
   return cancelPersonalPhotoRecovery({ ...personalPhotoRecoveryOptions(), chooseCurrent: async ({ discardedOperationCount, photoOperationId }) => {
     const original = personalPhotoRecoverySource.outbox.list().find(record => record.action.operationId === photoOperationId);
-    const archive = original?.action?.kind === "list.import";
-    const fileless = (archive || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
-    const photoCount = archive ? original.action.body.archiveImport.files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
+    const imported = original?.action?.kind === "list.import", guest = imported && original.action.body.guestImport?.version === 1;
+    const archive = imported && !guest;
+    const fileless = (imported || ["form", "copy-batch"].includes(original?.action?.body?.action)) && original.photoState?.fileIntentHash === null;
+    const photoCount = imported ? (guest ? original.action.body.guestImport : original.action.body.archiveImport).files.length : original?.photoState?.fileInventoryVersion === 2 ? original.action.body.changes.length : 1;
     const confirmed = await askConfirmDialog({
-      title: archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
+      title: guest ? localText("Guest work was not imported", "Гостевая работа не перенесена") : archive ? localText("Archive was not restored", "Архив не восстановлен") : fileless ? localText("Photo changes were not applied", "Изменения фото не применены")
         : photoCount > 1 ? localText("Photos were not added", "Фото не добавлены") : localText("Photo was not added", "Фото не добавлено"),
-      text: archive ? localText(
+      text: guest ? localText(
+        "The server did not apply this guest import. Keep its current version? The original guest work and all files remain available for recovery.",
+        "Сервер не применил гостевой перенос. Оставить актуальную серверную версию? Исходная гостевая работа и все фотографии останутся для восстановления.") : archive ? localText(
         `The server did not apply this archive. Keep its current version? Rejected actions: ${discardedOperationCount}. The complete source, files and receipts remain available for recovery.`,
         `Сервер не применил этот архив. Оставить актуальную серверную версию? Отклонённых действий: ${discardedOperationCount}. Полный источник, файлы и подтверждения останутся для восстановления.`) : fileless ? localText(
         `The server did not apply the fields and photo changes from this form. Keep the current server version? ${discardedOperationCount} rejected local actions will not be replayed. The original form and receipts remain available for recovery.`,
@@ -8842,9 +8862,13 @@ async function recoverStalePersonalDraft() {
 function canResumeRetainedPersonalPhotoForm() {
   if (!personalPhotoFormUiEnabled() || isForcedOffline()) return false;
   try {
+    if (PERSONAL_GUEST_IMPORT_ENABLED && personalPhotoRecoverySource?.guestPreparation
+      && personalPhotoRecoverySource.store.binding.scopeKey === localStorageScopeKey
+      && personalPhotoRecoverySource.store.binding.listId === currentPackingListId) return true;
     const outbox = personalPhotoRecoverySource?.outbox;
     return Boolean(outbox && outbox.binding.scopeKey === localStorageScopeKey && outbox.binding.listId === currentPackingListId
-      && outbox.hasPending() && (PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
+      && outbox.hasPending() && (PERSONAL_GUEST_IMPORT_ENABLED && outbox.recover()?.action.body.guestImport?.version === 1
+        || PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && outbox.recover()?.action.body.archiveImport?.version === 2
         || PERSONAL_PENDING_ARCHIVE_UPDATE_ENABLED && PERSONAL_ARCHIVE_PHOTO_IMPORT_ENABLED && personalPendingArchiveUpdateSource({
           records: outbox.list(), operationId: outbox.recover()?.action.operationId, listId: outbox.binding.listId })
         || outbox.recover()?.action.body.action === "form"
@@ -8863,13 +8887,19 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
     throw Error("Продолжение этой формы недоступно. Поля, файлы и прежние номера сохранены.");
   }
   const getContext = personalSaveContext;
+  if (recovery && source.guestPreparation) {
+    await recoverPersonalGuestImportLink({ entry: source.guestPreparation, outbox: source.outbox, store: source.store, getContext });
+    source.guestPreparation = null;
+  }
   const queue = createListOperationQueue({ transport: experimentTransport, getContext });
   const staging = createPersonalPhotoStaging({ store: source.store, transport: experimentTransport, getContext });
   const archive = source.outbox.recover()?.action.kind === "list.import" || Boolean(personalPendingArchiveUpdateSource({
     records: source.outbox.list(), operationId: source.outbox.recover()?.action.operationId, listId: source.outbox.binding.listId }));
-  updateSyncUi(archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
+  const guest = source.outbox.recover()?.action.body.guestImport?.version === 1;
+  updateSyncUi(guest ? "Переношу сохранённую гостевую работу и проверяю фотографии…" : archive ? "Восстанавливаю сохранённый архив и проверяю фотографии…" : "Отправляю сохранённую форму и проверяю подтверждения фото…");
   const result = await drainPersonalPhotoForm({ ...personalPhotoRecoveryOptions(), ...source,
     queue, staging, getContext,
+    beforeAdopted: () => completePersonalGuestImportSelections(source),
     onAdopted(record) {
       if (recovery) return; // Journal is complete; the blocked editor reloads explicitly.
       personalSaveRecovery.assertRunning();
@@ -8890,7 +8920,7 @@ async function drainLivePersonalPhotoForm({ notify = false, recovery = false } =
       personalPhotoFormLiveSource = null;
       personalPhotoRecoverySource = null;
       renderPreservingPackingScroll(); updateSyncUi();
-      if (notify) showToast(archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
+      if (notify) showToast(guest ? "Гостевая работа и фотографии сохранены в аккаунте." : archive ? "Архив и фотографии подтверждены сервером." : "Карточка и фотографии подтверждены сервером.", "success");
     }
   });
   return recovery ? { ...result, verified: true, reloadRequired: true } : result;
@@ -9176,7 +9206,103 @@ async function saveGuestImportToRemote(importedLayoutIds = []) {
   return false;
 }
 
+function personalGuestSelectionStore(binding) {
+  return createPersonalGuestImportSelectionStore({ binding, getContext: personalPhotoRecoveryReadContext });
+}
+
+async function completePersonalGuestImportSelections(source) {
+  if (!source?.outbox || source.outbox.hasPending()) return;
+  const outbox = source.outbox, references = outbox.photoRecoveryReferences(), boundary = outbox.confirmedBoundary();
+  if (!boundary) return;
+  const store = personalGuestSelectionStore(outbox.binding), entries = await store.entries();
+  for (const entry of entries) {
+    if (entry.completion || !entry.intent) continue;
+    const proof = references.photoReceipts.find(proof => proof.operation.id === entry.selection.operationId && proof.operation.state === "committed");
+    if (!proof || boundary.stateRevision < proof.stateRevision) continue;
+    const body = await personalGuestSelectionBody(entry.selection, entry.intent);
+    await store.confirm({ selection: entry.selection, proof,
+      action: { ...outbox.binding, kind: "list.import", operationId: entry.selection.operationId, body } });
+  }
+}
+
+function currentGuestLoginHandoff() {
+  const text = localStorage.getItem(GUEST_LOGIN_HANDOFF_KEY);
+  if (text === null) return null;
+  try { return JSON.parse(text); } catch { throw Error("Сохранённый гостевой вход повреждён. Исходная работа сохранена."); }
+}
+
+async function storedPersonalGuestImportEntry() {
+  if (!experimentTransport.experiment || !currentUser || !currentPackingListId || localStorageScopeKey !== `id:${currentUser.id}`
+    || isReadOnlyBikePackingContext() || isAdminPublicEditScope(modeState)) return null;
+  const binding = { environment: "bike-packing-experiment", actorId: String(currentUser.id), listId: currentPackingListId, scopeKey: localStorageScopeKey };
+  const handoff = currentGuestLoginHandoff(); if (!handoff) return null;
+  // Run this reader even after a writer rollback. A completed selection must
+  // never reach the legacy import merely because its release gate is now off.
+  try { return (await personalGuestSelectionStore(binding).entries()).find(entry => sameJson(entry.selection.handoff, handoff)) || null; }
+  catch (error) {
+    personalPhotoRecoverySource ||= { outbox: null, store: createPersonalPhotoActionStore({ ...binding, getContext: personalPhotoRecoveryReadContext }), inventory: null };
+    reportPersonalPhotoFormError(error, { recovery: { request: { binding }, files: [], automaticImportAllowed: false } });
+    throw error;
+  }
+}
+
+async function runCausalGuestLoginImport(candidate, selected = null) {
+  if (!PERSONAL_GUEST_IMPORT_ENABLED || !personalPhotoFormUiEnabled()) throw Error("Гостевой перенос через очередь ещё не включён. Исходная работа сохранена.");
+  personalSaveRecovery.assertRunning();
+  const outbox = personalSaveOutboxForScope();
+  if (!outbox || outbox.hasPending() || syncMeta.dirty) throw Error("Сначала нужно подтвердить личный список. Гостевая работа сохранена.");
+  candidate = clone(candidate);
+  const handoff = clone(currentGuestLoginHandoff()), initialBinding = outbox.binding;
+  const baseline = outbox.confirmedBase();
+  if (!baseline) throw Error("Не подтверждена исходная личная версия. Гостевая работа сохранена.");
+  if (!selected && personalGuestBaseNeedsPreparation(baseline.payload, personalBusinessPayload(state))) {
+    capturePersonalSaveIntent(state); syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+    await queuedPersonalSave();
+    if (outbox.hasPending() || Object.keys(initialBinding).some(key => personalSaveContext()[key] !== initialBinding[key])
+      || !sameJson(handoff, currentGuestLoginHandoff())) throw Error("Подготовка личного списка ещё не подтверждена. Гостевой перенос сохранён.");
+  }
+  const getContext = personalSaveContext, selectionStore = personalGuestSelectionStore(outbox.binding);
+  const names = Object.values(state.layouts).map(layout => layout.name);
+  const layoutNames = candidate.layouts.map(entry => {
+    const name = uniqueName(readableGuestDemoLayoutName(candidate.sourceState.layouts[entry.layoutId]?.name || entry.layoutName,
+      entry.fallbackName || GUEST_LAYOUT_FALLBACK_NAME), names, { fallback: GUEST_LAYOUT_FALLBACK_NAME });
+    names.push(name); return name;
+  });
+  const selection = selected || preparePersonalGuestImportSelection({ binding: outbox.binding, user: currentUser, handoff,
+    candidate, basePayload: personalBusinessPayload(state), baseStateRevision: Number(syncMeta.stateRevision), layoutNames, editMeta: currentCreateMeta() });
+  const source = { outbox, store: createPersonalPhotoActionStore({ ...outbox.binding, getContext }), inventory: null };
+  personalPhotoFormPreparing++; personalPhotoRecoverySource = source;
+  let commit;
+  try {
+    commit = await preparePersonalGuestImport({ selection, selectionStore, outbox, store: source.store, getContext,
+      getHandoff: currentGuestLoginHandoff, getState: () => state, getRevision: () => Number(syncMeta.stateRevision),
+      loadFile: input => loadPersonalGuestImportPhoto(input, { getCachedPhoto, fetchPhoto: transportPhotoFetch, guestScope: GUEST_STORAGE_SCOPE }),
+      makeSnapshot(payload, previous, activeLayoutId, preferences) {
+        const snapshot = normalizeRemoteState({ ...payload, activeLayoutId }, { repairCatalog: false });
+        if (!snapshot) throw Error("Не удалось прочитать подготовленную гостевую работу.");
+        applyLayoutArrangement(activeLayoutId, snapshot);
+        const result = personalSnapshotWithUiPreferences(snapshot, JSON.stringify(previous));
+        applyGuestLocalDisplayPreferences(result, preferences); return result;
+      },
+      onCaptured(saved) {
+        personalSaveRecovery.assertRunning();
+        replaceState(saved.snapshot, { personalOperationId: saved.action.operationId });
+        personalPhotoFormLiveSource = source; personalPhotoRecoverySource = source;
+        rememberActiveLayoutChoice(saved.snapshot.activeLayoutId);
+        syncMeta.dirty = true; syncMeta.localUpdatedAt = nowIso(); saveSyncMeta();
+        renderPreservingPackingScroll(); updateSyncUi("Гостевая работа сохранена на устройстве и ждёт подтверждения сервера.");
+      }
+    });
+    await commit();
+  } catch (error) {
+    reportPersonalPhotoFormError(error, { recovery: error.guestImportRecovery || commit?.recoveryCopy() }); throw error;
+  } finally { personalPhotoFormPreparing--; }
+  scheduleRemoteSave();
+  return { handled: true, status: "pending-save", importedLayoutIds: selection.layoutTargets.map(target => target.targetId) };
+}
+
 async function runGuestLoginHandoffCandidate(candidate) {
+  if (personalSavePilotEnabled()) return runCausalGuestLoginImport(candidate);
   updateSyncUi(localText(
     "Personal layouts loaded · importing the guest work from this sign-in...",
     "Личные укладки загружены · переношу гостевую работу из этого входа..."
@@ -9227,6 +9353,17 @@ async function runGuestLoginHandoffCandidate(candidate) {
 }
 
 async function offerPendingGuestLoginHandoffAfterRemoteLoad() {
+  const stored = await storedPersonalGuestImportEntry();
+  if (stored) {
+    if (stored.completion) return true;
+    const outbox = personalSaveOutboxForScope();
+    const proof = outbox?.photoRecoveryReferences().photoReceipts.find(proof => proof.operation.id === stored.selection.operationId);
+    if (proof?.operation.state === "rejected") {
+      updateSyncUi("Гостевой перенос не применён. Исходная работа и подтверждение отмены сохранены."); return true;
+    }
+    if (outbox?.hasPending()) return true;
+    await runCausalGuestLoginImport(stored.selection.candidate, stored.selection); return true;
+  }
   const handoffResult = await guestLoginHandoffCoordinator.offer();
   if (handoffResult.handled) {
     return Boolean(handoffResult.importedLayoutIds?.length);

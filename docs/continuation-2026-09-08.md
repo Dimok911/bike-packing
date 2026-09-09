@@ -4,11 +4,42 @@
 
 Эта секция имеет приоритет над историческим состоянием остального документа.
 
+Текущее продолжение 2026-09-09: гостевой перенос подключён к реальному
+входу app.js и общим store/outbox/queue/staging/drain/cancellation/recovery.
+198/198 API/MySQL (guest-wiring-mysql-1.log, 218,65 с); 24/24 Chromium/mobile
+WebKit (guest-import-ui-7.log, 2,2 мин); 557 transport, 895 critical, 67 API
+operations, 74 source/service и FE check. Все эти процессы завершились exit 0.
+Регрессия архивов также завершена: 48/48 Chromium/mobile WebKit,
+guest-archive-regression-1.log, 11,4 мин. Этот проверенный срез принимается
+локально отдельно от следующей незавершённой работы.
+
+Selection journal сохраняет compact intent до native capture и completion
+только по exact committed proof после текущего checkpoint. Это позволяет
+восстановить исходный body после compaction и не импортировать handoff снова.
+Raw guest workspace/handoff/cache СОХРАНЯЮТСЯ: несколько removeItem не атомарны
+с новой гостевой вкладкой. Новая работа не удаляется. Общая политика очистки
+остаётся отдельным пунктом 12. Shared Auth не менялся.
+
+Native files → outbox link gap восстанавливается явно из прежнего selection,
+intent, base, action, snapshot и байтов; исходный URL больше не нужен. ZIP
+после reload включает raw selection journal и все оригиналы. Проверены
+частичный stage, lost owner/cancel ACK, native/link quota и более новый guest
+workspace. Только известный отсутствующий quantity migration marker=3
+сохраняется отдельным DB действием перед выбором guest; остальные diff
+по-прежнему блокируются. Полные проверки payload и source не ослаблены.
+
+Следующее: собственные guest descendants
+(photoResults.version=4/отдельный gate, без подмены archive resolver),
+оставшиеся составные формы/фото, публичные/административные действия и весь
+список. Не завершать работу после одного среза. Все release gates false,
+публикаций/push/live-миграций нет. Подробности: personal-guest-import.md.
+
+Историческая подготовка (ниже не описывает актуальную подключённость):
 Новейшее продолжение — гостевой перенос, 2026-09-09. Подготовка и серверная
 часть проверены: 194/194 API/MySQL за 221,90с (guest-import-mysql-1.log),
 8/8 IndexedDB Chromium/mobile WebKit за 20,6с (guest-selection-browser-2.log),
 543/543 transport, 67/67 API operations-2, 74/74 service/source-2 и FE check.
-Серверный срез зафиксирован локально в fd95168; FE commit записать после фиксации.
+Проверенная подготовка зафиксирована локально: BE fd95168, FE 633c75f.
 Все процессы завершены. Подробности: docs/personal-guest-import.md в обоих
 репозиториях. Гостевой UI/общая очередь/очистка ещё НЕ подключены, 09 открыт.
 Ничего не публиковать и не push; последний запрос — продолжать весь список
