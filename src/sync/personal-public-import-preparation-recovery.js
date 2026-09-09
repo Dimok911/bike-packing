@@ -3,6 +3,8 @@ import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./personal-public-import-protoco
 import { personalArchiveJson } from "./personal-archive-import-protocol.js";
 import { preparePersonalPublicImport } from "./personal-public-import.js";
 import { recoverPersonalPublicImportLink } from "./personal-public-import-link-recovery.js";
+import { PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } from "./personal-public-import-selection-store.js";
+import { inspectPersonalPhotoRecovery } from "./personal-photo-recovery-inventory.js";
 
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
 const fail = () => { throw Object.assign(Error("Подготовленная копия требует проверки. Исходный выбор, фотографии и номера копий сохранены."),
@@ -12,9 +14,30 @@ const fail = () => { throw Object.assign(Error("Подготовленная к�
 // file inventory must not let another save silently overtake its frozen target.
 export function personalPublicPendingPreparations(entries, outbox) {
   const records = outbox.list(), receipts = outbox.photoRecoveryReferences().photoReceipts;
-  return entries.filter(entry => !entry.completion
+  return entries.filter(entry => !entry.completion && !entry.retainedAlternative
     && !records.some(record => record.action.operationId === entry.selection.operationId)
     && !receipts.some(proof => proof.operation.id === entry.selection.operationId));
+}
+
+// The explicit choice is local and does not dispatch. Native or prepared
+// actions require exact server outcome recovery, which this choice cannot do.
+export async function choosePersonalPublicPreparation({ entries, operationId, selectionStore, outbox, store, getContext,
+  enabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED }) {
+  if (!enabled || !entries?.length || !store || !selectionStore || !outbox) fail();
+  entries = structuredClone(entries);
+  const initial = structuredClone(getContext()), binding = outbox.binding;
+  const chosen = entries.find(entry => entry.selection.operationId === operationId);
+  const assertCurrent = () => {
+    if (!chosen || initial.scope !== "personal" || !initial.generation || !same(initial, getContext()) || outbox.hasPending()
+      || !same(binding, store.binding) || !same(binding, selectionStore.binding) || entries.some(entry => !same(binding, entry.selection.binding))
+      || Object.keys(binding).some(key => initial[key] !== binding[key])) fail();
+    const base = outbox.confirmedBase();
+    if (base && (base.stateRevision !== chosen.selection.baseStateRevision || !same(base.payload, chosen.selection.basePayload))) fail();
+  };
+  assertCurrent();
+  const inventory = await inspectPersonalPhotoRecovery({ outbox, store, getContext }); assertCurrent();
+  if (inventory.entries.some(entry => entry.state !== "settled-retained")) fail();
+  return selectionStore.choosePreparation({ entries, operationId, assertCurrent });
 }
 
 // Explicit continuation only. Read the immutable journal, use retained native

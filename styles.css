@@ -5970,6 +5970,31 @@ dialog::backdrop {
   margin-top: 8px;
 }
 
+.personal-save-recovery-dialog [data-public-preparation-choices] {
+  min-width: 0;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+}
+
+.personal-save-recovery-dialog [data-public-preparation-choices] label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.personal-save-recovery-dialog [data-public-preparation-choices] input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+}
+
 .personal-save-recovery-dialog [role="status"]:not(:empty) {
   padding: 12px;
   border-left: 4px solid #137965;

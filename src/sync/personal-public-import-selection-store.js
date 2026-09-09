@@ -4,6 +4,8 @@ import { PERSONAL_PUBLIC_IMPORT_ENABLED, personalPublicImportSource, assertPerso
 import { personalArchiveJson, personalArchiveHash } from "./personal-archive-import-protocol.js";
 import { assertListOperationPayload } from "./list-operation-payload.js";
 
+export const PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED = false;
+
 const clone = value => JSON.parse(JSON.stringify(value));
 const same = (a, b) => personalArchiveJson(a) === personalArchiveJson(b);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
@@ -14,7 +16,8 @@ const fail = cause => { throw Object.assign(Error("Подготовленная 
 // write is atomic; no retry deletes/replaces either original. Locks are scoped
 // to this actor/list, so an unrelated list does not wait for this preparation.
 export function createPersonalPublicImportSelectionStore({ binding, getContext, storage = globalThis.localStorage,
-  locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED } = {}) {
+  locks = globalThis.navigator?.locks, enabled = PERSONAL_PUBLIC_IMPORT_ENABLED, publicEntityEnabled = PERSONAL_PUBLIC_ENTITY_COPY_ENABLED,
+  choiceEnabled = PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } = {}) {
   if (binding?.environment !== "bike-packing-experiment" || !binding.actorId || binding.actorId.length > 36
     || !binding.listId || binding.scopeKey !== `id:${binding.actorId}` || Object.keys(binding).length !== 4) fail();
   binding = Object.freeze(clone(binding));
@@ -102,13 +105,54 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
     }
     return { selection, action, completion };
   };
+  // A choice retains every original row. It can retire only selection-only
+  // alternatives: remembering an action and choosing share this same lock.
+  // No receipt, server cancellation, or permission to remove files is implied.
+  const readEntries = async () => {
+    const entries = [], choices = [];
+    for (let index = 0; index < storage.length; index++) {
+      const name = storage.key(index);
+      if (!name?.startsWith(prefix)) continue;
+      if (name.endsWith(":selection")) {
+        const entry = await readEntry(name.slice(prefix.length, -10)); if (!entry) fail(); entries.push(entry);
+      } else if (name.startsWith(`${prefix}choice:`)) choices.push({ name, text: storage.getItem(name) });
+    }
+    const byId = new Map(entries.map(entry => [entry.selection.operationId, entry])), retained = new Map();
+    for (const stored of choices) {
+      try {
+        if (typeof stored.text !== "string" || new TextEncoder().encode(stored.text).byteLength > 4 * 1024 * 1024) fail();
+        const row = JSON.parse(stored.text), choice = row.choice;
+        if (row.version !== 1 || Object.keys(row).length !== 3 || choice?.version !== 1 || Object.keys(choice).length !== 4
+          || !same(choice.binding, binding) || !uuid(choice.selectedOperationId) || !Array.isArray(choice.candidates) || choice.candidates.length < 2
+          || new Set(choice.candidates.map(value => value.operationId)).size !== choice.candidates.length
+          || !choice.candidates.some(value => value.operationId === choice.selectedOperationId)
+          || row.hash !== await personalArchiveHash(choice) || stored.name !== `${prefix}choice:${row.hash}`) fail();
+        for (const candidate of choice.candidates) {
+          const entry = byId.get(candidate.operationId);
+          if (!entry || Object.keys(candidate).length !== 2 || candidate.selectionHash !== await personalArchiveHash(entry.selection)) fail();
+          if (candidate.operationId === choice.selectedOperationId) continue;
+          if (entry.action || entry.completion || retained.has(candidate.operationId)) fail();
+          retained.set(candidate.operationId, choice.selectedOperationId);
+        }
+      } catch (cause) { fail(cause); }
+    }
+    for (const [id, selectedOperationId] of retained) {
+      const seen = new Set([id]); let next = selectedOperationId;
+      while (next) { if (seen.has(next)) fail(); seen.add(next); next = retained.get(next); }
+      byId.get(id).retainedAlternative = { version: 1, selectedOperationId };
+    }
+    return entries;
+  };
   return {
     binding,
     async capture(input) {
       if (!enabled || input?.version === 2 && !publicEntityEnabled) fail();
       const initial = context(); validate(input); const selection = clone(input);
       const row = { version: 1, selection, hash: await personalArchiveHash(selection) }; assertCurrent(initial);
-      return lock(initial, () => ({ selection, reused: writeOnce(key(selection.operationId), JSON.stringify(row)) }));
+      return lock(initial, async () => {
+        if ((await readEntries()).some(entry => entry.selection.operationId === selection.operationId && entry.retainedAlternative)) fail();
+        assertCurrent(initial); return { selection, reused: writeOnce(key(selection.operationId), JSON.stringify(row)) };
+      });
     },
     async rememberAction({ selection, action }) {
       if (!enabled || selection?.version === 2 && !publicEntityEnabled) fail();
@@ -116,8 +160,8 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       assertListOperationPayload(action); action = clone(action); await validateAction(selection, action);
       const row = { version: 1, action, hash: await personalArchiveHash(action) }; assertCurrent(initial);
       return lock(initial, async () => {
-        const saved = await readEntry(selection.operationId); assertCurrent(initial);
-        if (!saved || !same(saved.selection, selection)) fail();
+        const saved = (await readEntries()).find(entry => entry.selection.operationId === selection.operationId); assertCurrent(initial);
+        if (!saved || saved.retainedAlternative || !same(saved.selection, selection)) fail();
         if (saved.action) {
           if (!same(saved.action, action)) fail();
           return clone(saved.action); // Keep the original bytes; JSON key order is not a different action.
@@ -137,6 +181,22 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
       });
     },
     async read(operationId) { const initial = context(); return lock(initial, async () => (await readEntry(operationId))?.selection || null); },
+    async choosePreparation({ entries, operationId, assertCurrent: assertEditor }) {
+      if (!choiceEnabled || !enabled || !Array.isArray(entries) || entries.length < 2 || typeof assertEditor !== "function") fail();
+      const initial = context(), expected = clone(entries);
+      return lock(initial, async () => {
+        const current = (await readEntries()).filter(entry => !entry.completion && !entry.retainedAlternative);
+        if (current.length !== expected.length || current.some(entry => entry.action || entry.selection.version === 2 && !publicEntityEnabled
+          || !expected.some(value => same(value, entry))) || !current.some(entry => entry.selection.operationId === operationId)) fail();
+        const choice = { version: 1, binding, selectedOperationId: operationId, candidates: [] };
+        for (const entry of current) choice.candidates.push({ operationId: entry.selection.operationId, selectionHash: await personalArchiveHash(entry.selection) });
+        // Stable serialization of a set is not an inferred execution order.
+        choice.candidates.sort((a, b) => a.operationId.localeCompare(b.operationId));
+        const row = { version: 1, choice, hash: await personalArchiveHash(choice) };
+        assertCurrent(initial); assertEditor(); writeOnce(`${prefix}choice:${row.hash}`, JSON.stringify(row));
+        return clone(current.find(entry => entry.selection.operationId === operationId));
+      });
+    },
     async recoveryRecords() {
       const initial = context();
       return lock(initial, () => {
@@ -152,16 +212,7 @@ export function createPersonalPublicImportSelectionStore({ binding, getContext, 
     },
     async entries() {
       const initial = context();
-      return lock(initial, async () => {
-        const ids = [];
-        for (let index = 0; index < storage.length; index++) {
-          const name = storage.key(index);
-          if (name?.startsWith(prefix) && name.endsWith(":selection")) ids.push(name.slice(prefix.length, -10));
-        }
-        const entries = [];
-        for (const operationId of ids) { const entry = await readEntry(operationId); if (!entry) fail(); entries.push(entry); }
-        return entries;
-      });
+      return lock(initial, readEntries);
     },
   };
 }

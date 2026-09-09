@@ -4,8 +4,9 @@
 export function createPersonalSaveRecoveryDialog({ documentRef = document, windowRef = window,
   getLanguage = () => "ru", getRecoveryCopy, ownsError, canRecoverDraft = () => false, recoverDraft,
   getPhotoRecoveryArchive, canExportPhotos = () => false, checkPhotoResult, canCheckPhotos = () => false,
-  cancelPhotoUpload, canCancelPhotos = () => false, resumePhotoUpload, canResumePhotos = () => false } = {}) {
-  let dialog, checking = false;
+  cancelPhotoUpload, canCancelPhotos = () => false, resumePhotoUpload, canResumePhotos = () => false,
+  getPreparationChoices = () => [], choosePreparation } = {}) {
+  let dialog, checking = false, renderPreparationChoices = () => {};
   const text = (ru, en) => getLanguage() === "en" ? en : ru;
   windowRef.addEventListener("beforeunload", event => {
     if (!dialog?.open) return;
@@ -31,6 +32,7 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
     dialog.querySelector("[data-check-photo-result]").hidden = active || !canCheckPhotos();
     dialog.querySelector("[data-cancel-photo-upload]").hidden = active || !canCancelPhotos();
     dialog.querySelector("[data-resume-photo-upload]").hidden = active || !canResumePhotos();
+    renderPreparationChoices(active);
   };
   return {
     show() {
@@ -79,7 +81,47 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
       resumeUpload.type = "button"; resumeUpload.dataset.resumePhotoUpload = "";
       resumeUpload.textContent = text("Продолжить сохранённую форму", "Continue retained form");
       resumeUpload.hidden = !canResumePhotos();
+      const preparations = documentRef.createElement("fieldset");
+      preparations.dataset.publicPreparationChoices = "";
+      const legend = documentRef.createElement("legend");
+      legend.textContent = text("Какую копию продолжить?", "Which copy should continue?");
+      const explanation = documentRef.createElement("p");
+      explanation.textContent = text("Выберите один вариант. Остальные исходные варианты останутся в архиве восстановления и не будут отправляться. Сам выбор ничего не отправляет.",
+        "Choose one copy. The other original selections stay in the recovery archive and will not be sent. Choosing does not send anything.");
+      const choices = documentRef.createElement("div");
+      const choose = documentRef.createElement("button"); choose.type = "button"; choose.dataset.choosePublicPreparation = "";
+      choose.textContent = text("Сохранить выбор", "Save choice");
+      preparations.append(legend, explanation, choices, choose);
+      renderPreparationChoices = active => {
+        const candidates = getPreparationChoices(); preparations.hidden = active || candidates.length < 2;
+        if (preparations.hidden) return;
+        const selected = choices.querySelector("input:checked")?.value;
+        choices.replaceChildren();
+        for (const candidate of candidates) {
+          const label = documentRef.createElement("label"), input = documentRef.createElement("input");
+          input.type = "radio"; input.name = "public-preparation-choice"; input.value = candidate.operationId;
+          input.checked = selected === candidate.operationId;
+          input.addEventListener("change", () => { choose.disabled = !choices.querySelector("input:checked"); });
+          label.append(input, documentRef.createTextNode(candidate.label)); choices.append(label);
+        }
+        choose.disabled = !choices.querySelector("input:checked");
+      };
       let checkingResult = false;
+      choose.addEventListener("click", async () => {
+        const operationId = choices.querySelector("input:checked")?.value;
+        if (!operationId || checkingResult) return;
+        checkingResult = true; preparations.disabled = true; checkResult.disabled = true; resumeUpload.disabled = true; cancelUpload.disabled = true;
+        try {
+          const result = await choosePreparation(operationId);
+          if (result?.selected !== true || result.alternativesRetained !== true) throw Error(text("Выбор не подтверждён. Данные сохранены.", "Choice not confirmed. Data is retained."));
+          status.textContent = text("Выбор сохранён. Остальные варианты доступны в архиве восстановления. Нажмите «Продолжить сохранённую форму», чтобы отправить выбранную копию.",
+            "Choice saved. The other selections remain in the recovery archive. Use Continue retained form to send the chosen copy.");
+        } catch (error) { status.textContent = error.message; }
+        finally {
+          checkingResult = false; preparations.disabled = false; checkResult.disabled = false; resumeUpload.disabled = false; cancelUpload.disabled = false;
+          resumeUpload.hidden = !canResumePhotos(); renderPreparationChoices(false);
+        }
+      });
       const resolvePhotoResult = async (action, startingMessage) => {
         if (checkingResult) return;
         let verified = false;
@@ -157,7 +199,8 @@ export function createPersonalSaveRecoveryDialog({ documentRef = document, windo
             "Could not prepare the file. Keep this tab open: no copy has been downloaded.");
         }
       });
-      dialog.append(title, description, status, reason, guidance, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
+      dialog.append(title, description, status, reason, guidance, preparations, checkResult, resumeUpload, cancelUpload, download, photoDownload, recover);
+      renderPreparationChoices(false);
       documentRef.body.append(dialog);
       dialog.showModal();
     },

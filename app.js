@@ -756,10 +756,10 @@ import { PERSONAL_GUEST_IMPORT_ENABLED } from "./src/sync/personal-guest-import-
 import { PERSONAL_PUBLIC_ENTITY_COPY_ENABLED, personalPublicMissingPreview } from "./src/sync/personal-public-entity-plan.js";
 import { PERSONAL_PUBLIC_IMPORT_ENABLED } from "./src/sync/personal-public-import-protocol.js";
 import { preparePersonalPublicImportSelection, preparePersonalPublicEntitySelection } from "./src/sync/personal-public-import-selection.js";
-import { createPersonalPublicImportSelectionStore } from "./src/sync/personal-public-import-selection-store.js";
+import { createPersonalPublicImportSelectionStore, PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED } from "./src/sync/personal-public-import-selection-store.js";
 import { preparePersonalPublicImport } from "./src/sync/personal-public-import.js";
 import { personalPublicImportSnapshot } from "./src/sync/personal-public-import-snapshot.js";
-import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
+import { personalPublicPendingPreparations, recoverPersonalPublicImportPreparation, choosePersonalPublicPreparation } from "./src/sync/personal-public-import-preparation-recovery.js";
 import { preparePersonalGuestImportSelection } from "./src/sync/personal-guest-import-selection.js";
 import { createPersonalGuestImportSelectionStore } from "./src/sync/personal-guest-import-selection-store.js";
 import { preparePersonalGuestImport } from "./src/sync/personal-guest-import.js";
@@ -1265,6 +1265,8 @@ const personalSaveRecoveryDialog = personalSavePilotEnabled() ? createPersonalSa
   cancelPhotoUpload: () => cancelRetainedPersonalPhoto(),
   canResumePhotos: () => canResumeRetainedPersonalPhotoForm(),
   resumePhotoUpload: () => drainLivePersonalPhotoForm({ recovery: true }),
+  getPreparationChoices: () => retainedPersonalPublicPreparationChoices(),
+  choosePreparation: operationId => chooseRetainedPersonalPublicPreparation(operationId),
   getPhotoRecoveryArchive: () => createPersonalPhotoRecoveryArchive({ ...personalPhotoRecoverySource,
     guestSelectionStore: personalPhotoRecoverySource?.store && personalGuestSelectionStore(personalPhotoRecoverySource.store.binding),
     publicSelectionStore: personalPhotoRecoverySource?.store && personalPublicSelectionStore(personalPhotoRecoverySource.store.binding),
@@ -8791,6 +8793,7 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
       const publicEntries = await personalPublicSelectionStore(binding).entries();
       const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
+      source.publicPreparations = publicPending;
       if (!outbox.hasPending() && publicPending.length === 1) source.publicPreparation = publicPending[0];
       if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
       const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
@@ -8856,6 +8859,9 @@ function personalPhotoRecoveryOptions() {
 }
 
 async function checkRetainedPersonalPhotoResult() {
+  const source = personalPhotoRecoverySource;
+  if (source?.outbox && personalPublicPendingPreparations(await personalPublicSelectionStore(source.outbox.binding).entries(), source.outbox).length)
+    throw Error("Сначала выберите или продолжите сохранённую копию шаблона. Её отправка ещё не подтверждена.");
   const result = await checkPersonalPhotoRecoveryResult(personalPhotoRecoveryOptions());
   await completePersonalGuestImportSelections(personalPhotoRecoverySource);
   await completePersonalPublicImportSelections(personalPhotoRecoverySource);
@@ -8932,6 +8938,32 @@ async function recoverStalePersonalDraft() {
   renderPreservingPackingScroll();
   updateSyncUi("Черновик согласован с другой вкладкой и сохранён. Ожидает подтверждения сервера.");
   scheduleRemoteSave();
+}
+
+function retainedPersonalPublicPreparationChoices() {
+  try {
+    const source = personalPhotoRecoverySource;
+    if (!PERSONAL_PUBLIC_PREPARATION_CHOICE_ENABLED || !PERSONAL_PUBLIC_IMPORT_ENABLED || !personalPhotoFormUiEnabled()
+      || !source?.outbox || source.outbox.hasPending() || source.store.binding.scopeKey !== localStorageScopeKey
+      || source.store.binding.listId !== currentPackingListId || source.publicPreparations?.length < 2
+      || !source.publicPreparations || source.publicPreparations.some(entry => entry.action || entry.completion || entry.retainedAlternative
+        || entry.selection.version === 2 && !PERSONAL_PUBLIC_ENTITY_COPY_ENABLED)
+      || source.inventory?.entries.some(entry => entry.state !== "settled-retained")) return [];
+    return source.publicPreparations.map(({ selection }, index) => ({ operationId: selection.operationId,
+      label: `${index + 1}. ${selection.layoutTargets?.map(value => value.name).filter(Boolean).join(", ")
+        || selection.copy?.entries?.map(value => selection.sourcePayload[value.entityType === "item" ? "items" : "containers"]?.[value.sourceId]?.name).filter(Boolean).join(", ")
+        || localText("Template copy", "Копия шаблона")} · ${selection.photoTargets.length} ${localText("photos", "фото")}` }));
+  } catch { return []; }
+}
+
+async function chooseRetainedPersonalPublicPreparation(operationId) {
+  if (!retainedPersonalPublicPreparationChoices().some(value => value.operationId === operationId)) throw Error("Выбор изменился. Данные сохранены; перезагрузите страницу для проверки.");
+  const source = personalPhotoRecoverySource;
+  const entry = await choosePersonalPublicPreparation({ entries: source.publicPreparations, operationId,
+    selectionStore: personalPublicSelectionStore(source.outbox.binding), outbox: source.outbox, store: source.store, getContext: personalSaveContext });
+  if (source !== personalPhotoRecoverySource) throw Error("Редактор изменился. Сохранённый выбор будет проверен после перезагрузки.");
+  source.publicPreparation = entry; source.publicPreparations = [entry];
+  return { selected: true, alternativesRetained: true };
 }
 
 function canResumeRetainedPersonalPhotoForm() {
@@ -9315,6 +9347,7 @@ async function retainPersonalPublicPreparationForRecovery(source) {
     // fresh reader, as the recovery dialog does, without releasing that fence.
     const outbox = createPersonalSaveOutbox({ ...source.store.binding, storage: localStorage });
     const pending = personalPublicPendingPreparations(await personalPublicSelectionStore(outbox.binding).entries(), outbox);
+    source.publicPreparations = pending;
     source.publicPreparation = !outbox.hasPending() && pending.length === 1 ? pending[0] : null;
   } catch { /* Preserve the original storage error and its in-memory recovery archive. */ }
 }
