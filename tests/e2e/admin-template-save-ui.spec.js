@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { trackBrowserLifecycle } from "../fixtures/browser-lifecycle.js";
 import { adminTemplateIntent, canonicalTemplateJson } from "../../src/sync/admin-template-protocol.js";
 import { projectAdminTemplateCopy, adminTemplateCopyPayloadDigest } from "../../src/sync/admin-template-copy-projection.js";
 import { REQUIRED_ADMIN_API_VERSION, REQUIRED_ADMIN_API_CAPABILITIES } from "../../src/config/api-contract.js";
@@ -22,11 +23,14 @@ test.beforeAll(() => {
     { windowsHide: true, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
   expect(result.status, result.stderr).toBe(0);
 });
+test.beforeEach(async ({ page }) => { page.adminBrowserDiagnostics = trackBrowserLifecycle(page); });
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) {
     const diagnostics = await page.evaluate(() => ({ helper: Boolean(window.__adminUiTest), user: window.__adminUiTest?.user()?.id,
-      scope: window.__adminUiTest?.scope(), layouts: window.__adminUiTest?.state()?.layouts }));
+      scope: window.__adminUiTest?.scope(), layouts: window.__adminUiTest?.state()?.layouts }))
+      .catch(error => ({ unavailable: error.message }));
     await info.attach("admin-ui-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
+    await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
 async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null } = {}) {

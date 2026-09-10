@@ -63,7 +63,15 @@ jobs:
       - name: Browser smoke
         env:
           DEBUG: "pw:browser"
-        run: npm run test:e2e -- --project=${{ matrix.browser }}
+        run: |
+          echo "BIKE_BROWSER_SMOKE_STARTED=$(date --iso-8601=seconds)" >> "$GITHUB_ENV"
+          npm run test:e2e -- --project=${{ matrix.browser }}
+
+      - name: Collect Linux browser crash diagnostics
+        if: always()
+        run: |
+          mkdir -p browser-diagnostics
+          bash scripts/collect-linux-browser-diagnostics.sh > browser-diagnostics/linux-browser.txt 2>&1
 
       # Preserve failed first attempts even when a retry passes. The next
       # Playwright invocation replaces these reports and output directories.
@@ -73,6 +81,7 @@ jobs:
         with:
           name: playwright-smoke-${{ matrix.browser }}
           path: |
+            browser-diagnostics/
             playwright-report/
             test-results/**/error-context.md
             test-results/**/trace.zip
