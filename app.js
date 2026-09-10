@@ -200,7 +200,9 @@ import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-pla
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
 import { createAdminTemplateLegacyChoice } from "./src/public/admin-template-legacy-choice.js";
-import { createAdminTemplateSaveFlow, adminTemplateEditorSource } from "./src/public/admin-template-causal-save-flow.js";
+import { createAdminTemplateRecovery } from "./src/public/admin-template-recovery.js";
+import { createAdminTemplateRecoveryDialog } from "./src/ui/admin-template-recovery-dialog.js";
+import { createAdminTemplateSaveFlow, adminTemplateEditorSource, stripAdminTemplateEditorMetadata } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
   isManagedTemplateUnpublished,
@@ -7783,6 +7785,11 @@ async function syncNow(options = {}) {
 }
 
 async function runSyncNow(options = {}) {
+  const adminLayoutId = getPublishedEditLayoutId();
+  if (options.force && adminTemplateUiEnabled() && isAdminPublicEditScope(modeState)
+    && (state.layouts?.[adminLayoutId]?.adminCausalSource?.planId || administrativeSaveCoordinator?.hasPendingCapture(adminLayoutId))) {
+    return showAdminTemplateRecovery(adminLayoutId);
+  }
   if (personalSavePilotEnabled() && currentUser && !isReadOnlyBikePackingContext()
     && !isAdminPublicEditScope(modeState)) return saveRemoteState({ notify: Boolean(options.force) });
   return runSyncNowFlow({
@@ -10600,6 +10607,54 @@ function adminTemplateEditorSnapshot(layoutId) {
       description: String(layout.note || "").trim(), language } };
   });
 }
+function adminTemplatePlansFor(binding, layoutId) {
+  return createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client: adminTemplateClient(binding, layoutId),
+    getContext: () => adminTemplateOperationContext(binding, layoutId),
+    shouldCancel: id => adminTemplateRecoveryFor(binding, layoutId).requiresCancellation(id) });
+}
+function adminTemplateRecoveryFor(binding, layoutId) {
+  return createAdminTemplateRecovery({ binding, enabled: adminTemplateUiEnabled(), plans: adminTemplatePlansFor(binding, layoutId),
+    client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) });
+}
+let administrativeRecoveryDialog = null;
+function showAdminTemplateRecovery(layoutId) {
+  if (!administrativeRecoveryDialog) administrativeRecoveryDialog = createAdminTemplateRecoveryDialog({
+    getLanguage: () => uiLanguage, openModalDialog, prepare: prepareAdminTemplateRecovery,
+    confirmStop: () => askConfirmDialog({ title: "Остановить отправку шаблона?", tone: "warning",
+      text: "Остановим ещё не принятые действия. Часть отправки могла уже завершиться на сервере. Местный черновик останется на устройстве для сверки.",
+      okText: "Остановить отправку", cancelText: "Продолжать сохранение", hideClose: true }),
+  });
+  return administrativeRecoveryDialog.show(layoutId);
+}
+async function prepareAdminTemplateRecovery(layoutId) {
+  const layout = state.layouts?.[layoutId], binding = layout?.adminCausalSource?.binding;
+  if (!binding || !adminTemplateUiEnabled()) throw Error("Откройте административный черновик для проверки сохранения.");
+  const initial = canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId));
+  const assertEditor = () => {
+    if (state.layouts?.[layoutId] !== layout || !adminTemplateOperationContext(binding, layoutId).admin
+      || canonicalTemplateJson(adminTemplateOperationContext(binding, layoutId)) !== initial) throw Error("Контекст редактирования изменился. Откройте сохранение шаблона заново.");
+  };
+  assertEditor(); const coordinator = adminTemplateSaveCoordinator(); await coordinator.prepareRecovery(layoutId); assertEditor();
+  const recovery = adminTemplateRecoveryFor(binding, layoutId);
+  let shownSource, shownSnapshot;
+  const snapshot = () => { const value = adminTemplateEditorSnapshot(layoutId); return { ...value, payload: stripAdminTemplateEditorMetadata(value.payload) }; };
+  const assertShown = () => {
+    assertEditor();
+    if (canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(shownSource)
+      || canonicalTemplateJson(snapshot()) !== canonicalTemplateJson(shownSnapshot)) throw Error("Черновик изменился. Сначала проверьте сохранённые действия заново.");
+  };
+  const inspect = async refresh => {
+    assertEditor(); shownSource = clone(layout.adminCausalSource); shownSnapshot = clone(snapshot());
+    const result = shownSource.planId ? await recovery.inspect(shownSource.planId, { refresh }) : { operations: [], stopped: false, stopRequested: false };
+    assertShown(); return result;
+  };
+  const resume = async () => { assertShown(); await coordinator.flush(layoutId); assertEditor(); return inspect(false); };
+  return { inspect, resume, stop: async () => {
+    assertShown(); if (!shownSource.planId) return inspect(false);
+    await recovery.captureStop(shownSource.planId, shownSnapshot); assertShown();
+    await recovery.resumeStop(shownSource.planId); assertEditor(); return inspect(false);
+  } };
+}
 function adminTemplateSaveCoordinator() {
   if (!administrativeSaveCoordinator) administrativeSaveCoordinator = createAdminTemplateSaveFlow({
     enabled: adminTemplateUiEnabled(), getLayout: id => state.layouts?.[id],
@@ -10609,8 +10664,7 @@ function adminTemplateSaveCoordinator() {
       return adminTemplateOperationContext(binding, layout?.id || "");
     },
     snapshot: adminTemplateEditorSnapshot,
-    plansFor: (binding, layoutId) => createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(),
-      client: adminTemplateClient(binding, layoutId), getContext: () => adminTemplateOperationContext(binding, layoutId) }),
+    plansFor: adminTemplatePlansFor, recoveryFor: adminTemplateRecoveryFor,
     persist: () => persistStateSnapshot(state),
     notify: status => updateSyncUi(status === "committed" ? "Изменения шаблона подтверждены сервером."
       : status === "pending" ? "Изменения шаблона сохранены локально и ожидают отправки." : "Изменения шаблона ожидают сверки."),

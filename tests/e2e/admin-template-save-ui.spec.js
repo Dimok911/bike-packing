@@ -29,7 +29,7 @@ test.afterEach(async ({ page }, info) => {
   }
 });
 async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null } = {}) {
-  const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], errors: [], lose: false, hidden: false, hold: null };
+  const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
     state.payload.containers.bag = { id: "bag", name: "Сумка шаблона", weight: 300, location: "Велосипед", categories: [], parentId: "", itemIds: [], childIds: ["pocket"] };
@@ -65,8 +65,14 @@ async function fixture(page, context, { published = false, shared = false, hydra
         sourceType: "public-template", exists: true, deleted: false, stateRevision: state.revision, visibility: state.visibility, metadata, payload: state.payload, indexes: [] };
       else if (suffix === "/bike-packing/admin/template-operations" || suffix.endsWith("/cancel")) {
         const input = request.postDataJSON(), intent = adminTemplateIntent({ actorId: input.expectedActorId, ...input }), { id, ...binding } = intent;
-        state.posts.push(input);
+        const cancel = suffix.endsWith("/cancel"); (cancel ? state.cancels : state.posts).push(input);
+        if (!cancel && state.blockBusiness) return route.abort("failed");
         if (!state.receipts.has(id)) {
+          if (cancel) {
+            const { body, ...identity } = binding;
+            state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
+              result: { status: 409, payload: { ok: false, code: "operation_cancelled", cancellation: { version: 1, operationId: id, noBusinessEffects: true, operationCannotApply: true } } } });
+          } else {
           const base = intent.body.base.stateRevision ?? state.receipts.get(intent.body.base.operationId)?.result.payload.stateRevision;
           if (base !== state.revision) {
             const { body, ...identity } = binding;
@@ -82,9 +88,10 @@ async function fixture(page, context, { published = false, shared = false, hydra
           const { body, ...identity } = binding;
           state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "committed" },
             result: { status: 200, payload: { ok: true, listId, itemKey, stateRevision: state.revision, visibility: state.visibility, indexes: [] } } });
+          }
         }
         if (state.hold) await state.hold;
-        if (state.lose) { state.hidden = true; return route.abort("failed"); }
+        if (state.lose || cancel && state.cancelLose) { state.hidden = true; return route.abort("failed"); }
         data = { ok: true, ...state.receipts.get(id) };
       } else if (suffix.startsWith("/bike-packing/admin/template-operations/")) {
         if (state.hidden) return route.abort("failed");
@@ -321,6 +328,87 @@ for (const shared of [false, true]) test(`legacy ${shared ? "shared" : "demo"} d
   await expect(page.locator("body")).toContainText("Найдено несколько местных черновиков");
   expect(await page.evaluate(() => __adminUiTest.state().layouts)).toEqual(before);
   expect(state.posts).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) for (const mode of ["queued", "accepted", "lost-stop", "quota"]) {
+  test(`real admin ${shared ? "shared" : "demo"} recovery dialog stops its retained chain (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared });
+    if (mode === "accepted") state.lose = true; else state.blockBusiness = true;
+    await editItem(page, "Местная правка перед остановкой");
+    await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+    await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+    await expect(dialog).toBeVisible(); await expect(dialog.locator("[data-admin-stop]")).toBeEnabled();
+    const before = state.posts.length;
+    state.lose = false; state.hidden = false;
+    if (mode === "lost-stop") state.cancelLose = true;
+    if (mode === "quota") await page.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith("bike-packing-admin-stop-v1:")) throw new DOMException("Stop quota", "QuotaExceededError"); return set.call(this, key, value);
+    }; });
+    await dialog.locator("[data-admin-stop]").click(); await expect(page.locator("#confirmDialog")).toBeVisible();
+    await page.locator("#confirmOkBtn").click(); await expect(dialog.locator("[data-admin-recovery-close]")).toBeEnabled();
+    if (mode === "quota") {
+      await expect(dialog).toContainText("Stop quota"); expect(state.cancels).toEqual([]);
+      expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("bike-packing-admin-stop-v1:")))).toBe(false);
+    } else {
+      if (mode === "lost-stop") {
+        expect(state.cancels).toHaveLength(1); state.cancelLose = false; state.hidden = false;
+        await page.reload(); await openEditorForTarget(page, shared);
+        await page.locator("#syncBtn").click(); await expect(dialog).toBeVisible();
+      }
+      await expect(dialog).toContainText("Отправка остановлена");
+      expect(state.cancels).toHaveLength(mode === "accepted" ? 0 : 1);
+      await dialog.locator("[data-admin-recovery-close]").click();
+      await page.reload(); await openEditorForTarget(page, shared);
+      await page.locator("#syncBtn").click(); await expect(dialog).toContainText("Отправка остановлена");
+      await expect(dialog.locator("[data-admin-resume]")).toBeDisabled();
+    }
+    expect(state.posts).toHaveLength(before); expect(state.visibility).toBe("private");
+    expect(await page.evaluate(() => Object.values(__adminUiTest.state().items).some(row => row.name === "Местная правка перед остановкой"))).toBe(true);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) test(`admin ${shared ? "shared" : "demo"} recovery checks and resumes a lost receipt without a new write`, async ({ page, context }) => {
+  const state = await fixture(page, context, { shared }); state.lose = true;
+  await editItem(page, "Правка для проверки результата"); await expect.poll(() => state.hidden).toBe(true);
+  await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+  await expect(dialog.locator("[data-admin-check-result]")).toBeEnabled();
+  state.lose = false; state.hidden = false;
+  await dialog.locator("[data-admin-check-result]").click(); await expect(dialog).toContainText("Сервер подтвердил все записанные действия");
+  expect(state.posts).toHaveLength(1); expect(state.cancels).toEqual([]);
+  await dialog.locator("[data-admin-resume]").click(); await confirmedRevision(page, 8);
+  await expect(dialog).toContainText("Нет действий, ожидающих отправки");
+  expect(state.posts).toHaveLength(1); expect(state.errors).toEqual([]);
+});
+
+for (const shared of [false, true]) test(`admin ${shared ? "shared" : "demo"} recovery stops publication after the data save was accepted`, async ({ page, context }) => {
+  const state = await fixture(page, context, { shared }); state.lose = true;
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await page.locator("#publishEditedTemplateBtn").click(); await expect.poll(() => state.hidden).toBe(true);
+  await expect(page.locator("#publishEditedTemplateBtn")).toBeEnabled();
+  await page.locator("#layoutEditDialog").getByRole("button", { name: "Закрыть", exact: true }).click();
+  await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+  await expect(dialog.locator("[data-admin-stop]")).toBeEnabled(); state.lose = false; state.hidden = false;
+  await dialog.locator("[data-admin-stop]").click(); await page.locator("#confirmOkBtn").click();
+  await expect(dialog).toContainText("Отправка остановлена");
+  expect(state.posts).toHaveLength(1); expect(state.posts[0].kind).toBe("template.save");
+  expect(state.cancels).toHaveLength(1); expect(state.cancels[0].kind).toBe("template.publication");
+  expect(state.cancels[0].body.base).toEqual({ operationId: state.posts[0].operationId });
+  expect(state.visibility).toBe("private"); expect(state.revision).toBe(8);
+  await dialog.locator("[data-admin-recovery-close]").click(); await page.reload(); await openEditorForTarget(page, shared);
+  expect(state.posts).toHaveLength(1); expect(state.cancels).toHaveLength(1); expect(state.visibility).toBe("private");
+  expect(state.errors).toEqual([]);
+});
+
+test("admin recovery cancellation prompt can be declined without changing the pending action", async ({ page, context }) => {
+  const state = await fixture(page, context); state.blockBusiness = true;
+  await editItem(page, "Оставить действие ожидающим"); await expect.poll(() => state.posts.length).toBeGreaterThan(0);
+  await page.locator("#syncBtn").click(); const dialog = page.locator("#adminTemplateRecoveryDialog");
+  await expect(dialog.locator("[data-admin-stop]")).toBeEnabled();
+  await dialog.locator("[data-admin-stop]").click(); await page.locator("#confirmCancelBtn").click();
+  await expect(dialog.locator("[data-admin-stop]")).toBeEnabled(); expect(state.cancels).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("bike-packing-admin-stop-v1:")))).toBe(false);
+  expect(state.errors).toEqual([]);
 });
 
 async function orderFixture(page, context, shared) {

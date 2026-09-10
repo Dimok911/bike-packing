@@ -1,4 +1,5 @@
 import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "../sync/admin-template-protocol.js";
+import { adminTemplatePlanChain } from "./admin-template-recovery.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const equal = (a, b) => canonicalTemplateJson(a) === canonicalTemplateJson(b);
@@ -53,7 +54,7 @@ export function adminTemplateEditorSource(binding, prepared) {
     base: prepared.exists ? { stateRevision: prepared.stateRevision } : null, indexes: clone(prepared.indexes), planId: null };
 }
 
-export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, persist, notify = () => {},
+export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, plansFor, recoveryFor = null, persist, notify = () => {},
   uuid = () => crypto.randomUUID(), enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   const captures = new Map();
   const source = layout => {
@@ -86,6 +87,8 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     job.promise = (sameEditor ? previous.promise : Promise.resolve()).then(async () => {
       guard(layoutId, layout, initial, base.binding);
       const plans = plansFor(base.binding, layoutId);
+      await recoveryFor?.(base.binding, layoutId).assertCanAppend(base.planId);
+      guard(layoutId, layout, initial, base.binding);
       if (savedSuccessor(base, await plans.list())) throw recoveryRequired();
       guard(layoutId, layout, initial, base.binding);
       await plans.capture(input);
@@ -136,6 +139,8 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     job.promise = (sameEditor ? previous.promise : Promise.resolve()).then(async () => {
       guard(layoutId, layout, initial, base.binding);
       const plans = plansFor(base.binding, layoutId);
+      await recoveryFor?.(base.binding, layoutId).assertCanAppend(base.planId);
+      guard(layoutId, layout, initial, base.binding);
       if (savedSuccessor(base, await plans.list())) throw recoveryRequired();
       guard(layoutId, layout, initial, base.binding);
       await plans.captureCommand({ operationId, kind, body, editorSnapshot: candidate });
@@ -168,31 +173,27 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
   const flush = async layoutId => {
     if (enabled !== true) throw blocked();
     const layout = getLayout(layoutId), pending = captures.get(layoutId);
-    if (pending?.layout === layout) await pending.promise;
+    let captureError = null;
+    if (pending?.layout === layout) await pending.promise.catch(error => { captureError = error; });
     const observed = source(layout), initial = clone(getContext(observed.binding));
-    if (!observed.planId) return { state: "idle" };
+    if (!observed.planId) { if (captureError) throw captureError; return { state: "idle" }; }
+    const stopped = await recoveryFor?.(observed.binding, layoutId).resumeStop(observed.planId);
+    guard(layoutId, layout, initial, observed.binding);
+    if (stopped) { notify(stopped.state, layoutId); return stopped; }
+    if (captureError) throw captureError;
     const plans = plansFor(observed.binding, layoutId), saved = await plans.list(); guard(layoutId, layout, initial, observed.binding);
-    const byId = new Map(saved.map(value => [value.plan.id, value.plan])), owner = new Map();
-    for (const { plan } of saved) for (const operation of plan.operations) owner.set(operation.id, plan.id);
-    const ordered = [], visiting = new Set(), visited = new Set();
-    const visit = id => {
-      if (visited.has(id)) return;
-      if (visiting.has(id) || !byId.has(id)) throw blocked(); visiting.add(id);
-      for (const operation of byId.get(id).operations) {
-        const predecessors = [operation.body.base?.operationId, ...(operation.body.indexes || []).map(index => index.base.operationId)];
-        for (const predecessor of predecessors) { const parent = owner.get(predecessor); if (parent && parent !== id) visit(parent); }
-      }
-      visiting.delete(id); visited.add(id); ordered.push(id);
-    };
-    visit(observed.planId);
+    const ordered = adminTemplatePlanChain(observed.planId, saved);
     let result;
-    for (const id of ordered) {
-      guard(layoutId, layout, initial, observed.binding); result = await plans.run(id); guard(layoutId, layout, initial, observed.binding);
+    for (const { plan } of ordered) {
+      const stopping = await recoveryFor?.(observed.binding, layoutId).resumeStop(observed.planId);
+      guard(layoutId, layout, initial, observed.binding);
+      if (stopping) { notify(stopping.state, layoutId); return stopping; }
+      guard(layoutId, layout, initial, observed.binding); result = await plans.run(plan.id); guard(layoutId, layout, initial, observed.binding);
       if (result.state !== "committed") { notify(result.state, layoutId); return result; }
     }
     // Confirm only the currently displayed candidate. A response for an older
     // queued save cannot clear a newer draft or replace its source dependency.
-    const plan = byId.get(observed.planId);
+    const plan = ordered.at(-1).plan;
     const current = clone(snapshot(layoutId)); current.payload = stripAdminTemplateEditorMetadata(current.payload);
     if (layout.adminCausalSource?.planId !== observed.planId || captures.get(layoutId)?.id && captures.get(layoutId).id !== observed.planId
       || !equal(current, planSnapshot(plan))) return { ...result, applied: false };
@@ -206,5 +207,13 @@ export function createAdminTemplateSaveFlow({ getLayout, getContext, snapshot, p
     captures.delete(layoutId); persist(); notify("committed", layoutId);
     return { ...result, applied: true };
   };
-  return Object.freeze({ capture, captureCommand, recover, flush, hasPendingCapture: layoutId => captures.has(layoutId) });
+  const prepareRecovery = async layoutId => {
+    const layout = getLayout(layoutId), pending = captures.get(layoutId);
+    let captureError = null;
+    if (pending?.layout === layout) await pending.promise.catch(error => { captureError = error; });
+    if (getLayout(layoutId) !== layout) throw blocked();
+    await recover(layoutId);
+    if (captureError && !layout.adminCausalSource.planId) throw captureError;
+  };
+  return Object.freeze({ capture, captureCommand, recover, flush, prepareRecovery, hasPendingCapture: layoutId => captures.has(layoutId) });
 }

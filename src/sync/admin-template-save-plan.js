@@ -64,7 +64,7 @@ function validatePlan(plan) {
   return plan;
 }
 
-export function createAdminTemplateSavePlans({ binding, client, getContext, storage = globalThis.localStorage,
+export function createAdminTemplateSavePlans({ binding, client, getContext, shouldCancel = null, storage = globalThis.localStorage,
   locks = globalThis.navigator?.locks, enabled = ADMIN_TEMPLATE_OPERATIONS_ENABLED }) {
   binding = clone(binding);
   const prefix = "bike-packing-admin-save-plans-v1:" + encodeURIComponent(canonicalTemplateJson(binding)) + ":";
@@ -92,9 +92,17 @@ export function createAdminTemplateSavePlans({ binding, client, getContext, stor
     if (enabled !== true) throw paused(); const initial = context();
     return lock(id, async () => {
       let saved = await read(id); guard(initial); if (!saved) throw paused();
-      if (cancel && !saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, initial);
-      const ordered = saved.cancelRequested ? [...saved.plan.operations].reverse() : saved.plan.operations, receipts = [];
-      for (const intent of ordered) {
+      if ((cancel || await shouldCancel?.(id)) && !saved.cancelRequested) saved = persist({ ...saved, cancelRequested: true }, initial);
+      let ordered = saved.cancelRequested ? [...saved.plan.operations].reverse() : saved.plan.operations;
+      const receipts = [];
+      for (let index = 0; index < ordered.length; index++) {
+        // A chain-wide stop can arrive while an earlier request is in flight.
+        // Revisit the original IDs in reverse order before starting another effect.
+        if (!saved.cancelRequested && await shouldCancel?.(id)) {
+          saved = persist({ ...saved, cancelRequested: true }, initial);
+          ordered = [...saved.plan.operations].reverse(); receipts.length = 0; index = 0;
+        }
+        const intent = ordered[index];
         guard(initial); await client.capture({ operationId: intent.id, kind: intent.kind, body: intent.body }); guard(initial);
         const receipt = await client[saved.cancelRequested ? "cancel" : "run"](intent.id); guard(initial); receipts.push(receipt);
         if (!saved.cancelRequested && receipt.operation.state !== "committed") return { state: receipt.operation.state, receipts };
