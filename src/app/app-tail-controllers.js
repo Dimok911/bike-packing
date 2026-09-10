@@ -22,7 +22,7 @@ import {
   setLayoutNotesCollapsed
 } from "../ui/layout-notes-collapse.js";
 import { profileDisplayNameRequest, renderProfileSettingsHtml } from "../ui/profile-settings.js";
-import { captureSettingsDictionaryDrafts, restoreSettingsDictionaryDrafts } from "../ui/settings-dictionary-drafts.js";
+import { captureSettingsDictionaryDrafts, renderSettingsWithDictionaryDrafts, restoreSettingsDictionaryDrafts } from "../ui/settings-dictionary-drafts.js";
 import { moveOrderedPhoto, photoOrderIdentity, renderPhotoOrderRows } from "../ui/photo-order-dialog.js";
 import {
   photoPasteEventImageFiles,
@@ -4939,7 +4939,7 @@ function renderSettings() {
   const draftScope = JSON.stringify([runtime.currentUser?.id || "guest", runtime.currentPackingListId,
     dictionaryOwner === state ? "personal" : dictionaryOwner?.id || null]);
   const dictionaryDrafts = captureSettingsDictionaryDrafts(refs.settingsView, draftScope);
-  refs.settingsView.innerHTML = `
+  const settingsHtml = `
     ${renderProfileSettingsHtml(runtime.currentUser, { language: uiLanguage })}
     ${renderOfflineLayoutSettingsHtml()}
     ${renderExperimentTransportSettings({ language: uiLanguage })}
@@ -4948,6 +4948,7 @@ function renderSettings() {
       ${renderDictionary(t("labels.categories"), "category", dictionaryOptionsForOwner("category", dictionaryOwner))}
     </div>
   `;
+  renderSettingsWithDictionaryDrafts(refs.settingsView, settingsHtml, dictionaryDrafts);
   bindDictionary("location", dictionaryOwner);
   bindDictionary("category", dictionaryOwner);
   bindProfileSettingsControls();

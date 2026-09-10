@@ -8,6 +8,8 @@ function localText(en, ru) {
   return currentDocumentLanguage() === "en" ? en : ru;
 }
 
+const renameKeyHandlers = new WeakMap();
+
 export function bindDictionaryControls(type, {
   activeDictionaryOwner,
   addCustomDictionaryValue,
@@ -87,9 +89,13 @@ export function bindDictionaryControls(type, {
     });
   });
   document.querySelectorAll(`[data-dictionary-edit-input="${type}"]`).forEach((editInput) => {
-    editInput.focus({ preventScroll: true });
-    editInput.select();
-    editInput.addEventListener("keydown", (event) => {
+    const previous = renameKeyHandlers.get(editInput);
+    if (!previous) {
+      editInput.focus({ preventScroll: true });
+      editInput.select();
+    }
+    if (previous) editInput.removeEventListener("keydown", previous);
+    const onKeyDown = (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
         renameDictionaryEntry(type, editingDictionaryEntry?.value || "", editInput.value, {
@@ -115,7 +121,9 @@ export function bindDictionaryControls(type, {
         setEditingDictionaryEntry(null);
         render();
       }
-    });
+    };
+    renameKeyHandlers.set(editInput, onKeyDown);
+    editInput.addEventListener("keydown", onKeyDown);
   });
   document.querySelectorAll(`[data-remove-${type}]`).forEach((button) => {
     button.addEventListener("click", () => {

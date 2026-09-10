@@ -27,6 +27,16 @@ test("settings rerender retains unsubmitted dictionary input and caret without r
   f.root.inputs[1].value = ""; f.render(); assert.equal(f.root.inputs[1].value, ""); // Accepted add clears it.
 });
 
+test("restoring a retained field cannot rewind a newer native input or selection", () => {
+  const f = fixture(); f.render();
+  const original = f.root.inputs[1], drafts = captureSettingsDictionaryDrafts(f.root, "actor:list:personal");
+  original.value = "Native input after render";
+  original.selectionStart = 1; original.selectionEnd = 7;
+  restoreSettingsDictionaryDrafts(f.root, "actor:list:personal", drafts);
+  assert.equal(f.root.inputs[1], original); assert.equal(f.root.inputs[1].value, "Native input after render");
+  assert.deepEqual([original.selectionStart, original.selectionEnd], [1, 7]);
+});
+
 test("drafts cannot cross accounts lists private/template owners or the read-only boundary", () => {
   for (const other of ["another:list:personal", "actor:another:personal", "actor:list:template", null]) {
     const f = fixture(); f.render(); f.root.inputs[0].value = "Private unsent text"; f.render(other);

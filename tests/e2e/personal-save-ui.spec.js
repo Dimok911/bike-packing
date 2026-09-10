@@ -1577,6 +1577,9 @@ async function synchronize(page, condition) {
     const keys = Object.keys(localStorage).filter(key => key.startsWith("bike-packing-personal-save-v1:"));
     return keys.length === 3 && keys.some(key => key.includes(":checkpoint:"));
   }), { timeout: 20000 }).toBe(true);
+  // An empty outbox may already trigger the read-only retained-file check.
+  // Native modal focus still blocks typing until that check has closed.
+  await expect(page.locator("#personalSaveRecoveryDialog")).not.toBeVisible();
 }
 
 async function prepareOrdinaryPhotoForm(page, context, { type = "container", created = false, photoEdit = false, photoCount = 2, secondBag = false, placeNew = false, withContents = false, copyTarget = false, copySourcePhotos = false } = {}) {
@@ -4691,6 +4694,42 @@ test("dictionary UI keeps unsent inputs through rerender and clears only an expl
   expect(f.errors).toEqual([]);
 });
 
+for (const type of ["location", "category"]) for (const action of ["add", "rename"]) {
+  test(`dictionary ${type} ${action} retains the input across a render during focus`, async ({ page, context }) => {
+    const f = await setup(page, context);
+    await createRootContainer(page, "Сумка перед одновременным вводом");
+    await synchronize(page, () => Object.keys(f.payload.containers).length === 1);
+    await page.locator('[data-view="settings"]').click();
+    const previous = type === "location" ? "Велосипед" : "Ремонт", value = "Сохранённый ввод";
+    const selector = action === "add" ? `#${type}Input` : `[data-dictionary-edit-input="${type}"]`;
+    if (action === "rename") await page.locator(`[data-edit-${type}="${previous}"]`).click();
+    await page.locator(selector).blur();
+    await page.evaluate(({ selector, type }) => {
+      const input = document.querySelector(selector); window.dictionaryInputBeforeRender = input;
+      const ancestors = new Set(); for (let node = input; node; node = node.parentNode) ancestors.add(node);
+      window.dictionaryInputDetachments = 0;
+      window.dictionaryInputObserver = new MutationObserver(records => {
+        for (const record of records) for (const node of record.removedNodes) if (ancestors.has(node)) window.dictionaryInputDetachments++;
+      });
+      window.dictionaryInputObserver.observe(document.querySelector("#settingsView"), { childList: true, subtree: true });
+      // Reproduce a render between native focus and text insertion, the boundary
+      // recorded in CI. The sort control uses the same real settings renderer.
+      input.addEventListener("focus", () => document.querySelector(`[data-dictionary-sort="${type}"]`).click(), { once: true });
+    }, { selector, type });
+    const before = f.posts.length;
+    await page.locator(selector).fill(value); await expect(page.locator(selector)).toHaveValue(value);
+    expect(await page.evaluate(selector => document.querySelector(selector) === window.dictionaryInputBeforeRender, selector)).toBe(true);
+    for (let i = 0; i < 2; i++) await page.locator(`[data-dictionary-sort="${type}"]`).click();
+    await expect(page.locator(selector)).toHaveValue(value); expect(f.posts).toHaveLength(before);
+    expect(await page.evaluate(() => { window.dictionaryInputObserver.disconnect(); return window.dictionaryInputDetachments; })).toBe(0);
+    if (action === "rename") await page.locator(selector).press("Enter");
+    else await submitForm(page, `#${type}Add`, selector);
+    await synchronize(page, () => f.payload[type === "location" ? "locations" : "categories"].includes(value));
+    expect(f.posts.slice(before)).toHaveLength(1); expect(f.posts.at(-1).body.userDictionary.action).toBe(action);
+    expect(f.errors).toEqual([]);
+  });
+}
+
 test("dictionary UI freezes add rename delete and every linked owner through lost ACK and reload", async ({ page, context }) => {
   test.setTimeout(150000);
   const f = await setup(page, context), bag = await createRootContainer(page, "Сумка справочника");
@@ -4715,7 +4754,9 @@ test("dictionary UI freezes add rename delete and every linked owner through los
   await expect(page.locator("#confirmDialog")).toContainText("Лагерь");
   await page.locator("#confirmOkBtn").click(); await synchronize(page, () => !f.payload.locations.includes("Байк"));
   expect(f.payload.items[itemId].location).toBe("Лагерь"); expect(f.payload.containers[bagId].location).toBe("Лагерь");
-  await page.locator("#categoryInput").fill("Питание"); await submitForm(page, "#categoryAdd", "#categoryInput");
+  await page.locator("#categoryInput").fill("Питание");
+  await expect(page.locator("#categoryInput")).toHaveValue("Питание");
+  await submitForm(page, "#categoryAdd", "#categoryInput");
   await synchronize(page, () => f.payload.categories.includes("Питание"));
   await renameDictionaryInUi(page, "category", "Питание", "Еда"); await synchronize(page, () => f.payload.categories.includes("Еда"));
   await page.locator('[data-remove-category="Еда"]').click(); await page.locator("#confirmOkBtn").click();
