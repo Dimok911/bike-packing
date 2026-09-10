@@ -19,7 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, mobile-webkit]
-    timeout-minutes: 75
+    # A measured WebKit run spent 23 minutes installing system dependencies
+    # and reached test 743/760 at the old 75-minute job limit. Keep individual
+    # test timeouts unchanged and allow the full suite to report its result.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -53,7 +56,7 @@ jobs:
         run: npm run check:live-api-contract
 
       - name: Install browsers
-        run: npx playwright install --with-deps chromium webkit
+        run: npx playwright install --with-deps ${{ matrix.browser == 'mobile-webkit' && 'webkit' || 'chromium' }}
 
       - name: Browser smoke
         env:
@@ -72,10 +75,12 @@ jobs:
             test-results/**/error-context.md
             test-results/**/trace.zip
             test-results/**/test-failed-*.png
+            test-results/**/attachments/browser-*.json
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Disabled owner forms with their parent imports enabled
+        id: disabled_owner
         env:
           BIKE_PERSONAL_UI_MODES: "photo-edit"
           BIKE_PERSONAL_PUBLIC_IMPORT: "1"
@@ -84,7 +89,7 @@ jobs:
         run: npm run test:e2e -- tests/e2e/personal-save-ui.spec.js --project=${{ matrix.browser }} --grep '(public|server) (atomic owner photo gate off|pending owner creation gate off)'
 
       - name: Preserve disabled owner form diagnostics
-        if: always()
+        if: always() && steps.disabled_owner.outcome != 'skipped' && steps.disabled_owner.outcome != ''
         uses: actions/upload-artifact@v4
         with:
           name: playwright-disabled-owner-${{ matrix.browser }}

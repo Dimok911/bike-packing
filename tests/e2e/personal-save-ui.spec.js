@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { freemem, totalmem } from "node:os";
 import { canonicalListOperationJson } from "../../src/sync/list-operation-queue.js";
 import { personalPhotoFormOwner } from "../../src/sync/personal-photo-form-protocol.js";
 import { personalPublicPhotoFormSummary, personalPublicPendingPhotoInventory } from "../../src/sync/personal-public-photo-form-result.js";
@@ -43,7 +44,18 @@ test.beforeAll(async () => {
   expect(result.status, result.stderr).toBe(0);
   }
 });
+test.beforeEach(async ({ page }) => {
+  const sample = event => ({ event, at: new Date().toISOString(), browserConnected: page.context().browser()?.isConnected(),
+    pageClosed: page.isClosed(), freeMemory: freemem(), totalMemory: totalmem() });
+  page.personalBrowserDiagnostics = [sample("test-start")];
+  page.on("crash", () => page.personalBrowserDiagnostics.push(sample("page-crash")));
+  page.on("close", () => page.personalBrowserDiagnostics.push(sample("page-close")));
+});
+
 test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) await info.attach("browser-lifecycle", {
+    body: JSON.stringify(page.personalBrowserDiagnostics), contentType: "application/json"
+  });
   if (info.status !== info.expectedStatus) {
     if (info.title.includes("guest sign-in")) {
       const guest = await page.evaluate(() => ({ validation: globalThis.__personalGuestHandoffValidation,
