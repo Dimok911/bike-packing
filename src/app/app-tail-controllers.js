@@ -2563,11 +2563,13 @@ async function copyContainerTreeToLayout(containerId, targetLayoutId = state.act
   if (adminTemplateUiEnabled() && targetIsPublic) {
     const commit = await prepareCausalAdminTreeCopy({ rootId: containerId, includeContents, sourceLayoutId, targetLayoutId, targetParentId, targetIndex });
     if (!commit) return;
-    if (!await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
+    const choice = await askConfirmDialog({ title: localText("Copy bag?", "Скопировать сумку?"),
       text: includeContents ? localText("Create an independent copy with all contents at the selected position?", "Создать отдельную копию со всем содержимым в выбранном месте?")
         : localText("Create an empty copy at the selected position?", "Создать пустую копию в выбранном месте?"),
-      okText: localText("Copy", "Копировать"), tone: "safe" })) return;
-    const rootId = await commit(); if (!rootId) return;
+      okText: localText("Copy", "Копировать"),
+      alternateText: commit.canLink ? localText("Add existing", "Добавить существующую") : "", tone: "safe" });
+    if (!choice) return;
+    const rootId = await commit(choice === "alternate" ? "link" : "copy"); if (!rootId) return;
     markRecentlyAddedContainer(rootId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
     refs.containerPickerDialog.close(); closeSourceEditorAfterCopy("container", containerId);
     render(); requestAnimationFrame(() => focusRecentlyAddedContainer(rootId)); return;

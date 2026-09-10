@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareAdminTemplateTreeCopy } from "../../src/sync/admin-template-tree-copy.js";
-import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
+import { createEmptyLayoutArrangement, createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 
 const options = { operationId: "8ad83878-2144-455e-b0ce-8b8cce033fdc", changedAt: "2026-09-11T01:00:00Z" };
 function fixture() {
@@ -53,4 +53,34 @@ test("admin tree rejects foreign owners, photos, dangling and duplicate links, t
     const f = fixture(); mutate(f); const before = structuredClone(f.state);
     await assert.rejects(prepareAdminTemplateTreeCopy(f.state, f.request, options)); assert.deepEqual(f.state, before);
   }
+});
+
+for (const nested of [false, true]) test(`admin link places an existing catalog tree at ${nested ? "nested" : "root"} position without changing catalog records`, async () => {
+  const f = fixture(), layout = f.state.layouts.layout;
+  layout.rootContainerIds = []; layout.arrangement = createEmptyLayoutArrangement();
+  f.state.items.item.quantity = 3;
+  if (nested) {
+    f.state.containers.target = { id: "target", name: "Target", publicCatalogLayoutId: "layout", parentId: null, childIds: [], itemIds: [], order: [] };
+    layout.arrangement = createLayoutArrangementFromCurrentState(f.state, ["target"]); layout.rootContainerIds = ["target"];
+  }
+  const original = structuredClone(f.state);
+  const linked = await prepareAdminTemplateTreeCopy(f.state, { ...f.request, mode: "link", targetParentId: nested ? "target" : "" }, options);
+  assert.deepEqual(f.state, original); assert.deepEqual(linked.snapshot.items, original.items);
+  assert.deepEqual(linked.snapshot.containers, original.containers); assert.deepEqual(linked.entries, []);
+  assert.equal(linked.rootId, "root"); assert.equal(linked.snapshot.layouts.layout.arrangement.itemQuantities.item, 3);
+  assert.equal(linked.snapshot.layouts.layout.arrangement.packedItems.item, undefined);
+  assert.equal(linked.snapshot.layouts.layout.arrangement.containers.root.parentId, nested ? "target" : "");
+});
+
+test("admin link rejects any overlap and never uses shell placement to erase catalog children", async () => {
+  const f = fixture();
+  await assert.rejects(prepareAdminTemplateTreeCopy(f.state, { ...f.request, mode: "link" }, options));
+  f.state.layouts.layout.arrangement = createEmptyLayoutArrangement(); f.state.layouts.layout.rootContainerIds = [];
+  await assert.rejects(prepareAdminTemplateTreeCopy(f.state, { ...f.request, mode: "link", includeContents: false }, options));
+  f.state.layouts.layout.arrangement.items.item = "child";
+  await assert.rejects(prepareAdminTemplateTreeCopy(f.state, { ...f.request, mode: "link" }, options));
+  delete f.state.layouts.layout.arrangement.items.item;
+  f.state.containers.empty = { id: "empty", name: "Empty", publicCatalogLayoutId: "layout", parentId: null, childIds: [], itemIds: [], order: [] };
+  const result = await prepareAdminTemplateTreeCopy(f.state, { ...f.request, rootId: "empty", mode: "link", includeContents: false }, options);
+  assert.deepEqual(result.snapshot.layouts.layout.arrangement.rootContainerIds, ["empty"]);
 });

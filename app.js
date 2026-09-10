@@ -10651,7 +10651,7 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
 }
 async function prepareCausalAdminTreeCopy(request) {
   request = clone(request);
-  let layout, original, snapshot, initial, prepared, operationId, changedAt;
+  let layout, original, snapshot, initial, prepared, copyPrepared, linked, operationId, changedAt;
   const coordinator = adminTemplateSaveCoordinator();
   const guard = () => {
     if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
@@ -10675,13 +10675,18 @@ async function prepareCausalAdminTreeCopy(request) {
     prepared = await prepareAdminTemplateTreeCopy(state, request, { operationId, changedAt, currentEditMeta, markEdited,
       normalizeContainerColor, hasPhotos: row => normalizeItemPhotos(row).length > 0,
       copyContainerName: name => makeContainerCopyNameForLayout(name, layout, state.containers, uiLanguage === "en" ? "copy" : "копия") });
-    guard(); if (!capacity()) return false;
+    copyPrepared = prepared;
+    try { linked = await prepareAdminTemplateTreeCopy(state, { ...request, mode: "link" }, { operationId, changedAt, markEdited,
+      hasPhotos: row => normalizeItemPhotos(row).length > 0 }); } catch { linked = null; }
+    guard(); if (!linked && !capacity()) return false;
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
   let used = false;
-  return async () => {
+  return Object.assign(async (mode = "copy") => {
     const priorLayout = { ...layout }, parentId = request.targetParentId || "", priorParent = state.containers[parentId];
     try {
-      if (used) return false; guard(); if (!capacity()) return false;
+      if (used) return false; guard();
+      prepared = mode === "copy" ? copyPrepared : mode === "link" ? linked : null;
+      if (!prepared || !capacity()) return false;
       if (prepared.entries.some(({ targetId }) => state.items[targetId] || state.containers[targetId] || state.layouts[targetId])) throw Error("Идентификатор копии уже занят.");
       used = true;
       for (const { type, targetId } of prepared.entries) state[type][targetId] = clone(prepared.snapshot[type][targetId]);
@@ -10703,7 +10708,7 @@ async function prepareCausalAdminTreeCopy(request) {
       catch (error) { reportAdminTemplateSaveError(error); }
       return prepared.rootId;
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
-  };
+  }, { canLink: Boolean(linked) });
 }
 async function createCausalAdminTemplateCopy(sourceLayout, requestedName, { sourceKind = "" } = {}) {
   const observed = clone(sourceLayout?.adminCausalSource || null), coordinator = adminTemplateSaveCoordinator();

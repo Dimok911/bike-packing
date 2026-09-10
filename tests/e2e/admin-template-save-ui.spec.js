@@ -34,7 +34,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false, detachedTree = "" } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
@@ -50,6 +50,15 @@ async function fixture(page, context, { published = false, shared = false, hydra
   if (catalogPair) {
     state.payload.items.second = { ...structuredClone(state.payload.items.pump), id: "second", name: "Вторая вещь шаблона", containerId: "", quantity: 3, weight: 234, notes: "Отдельная заметка источника" };
     state.payload.containers.secondBag = { id: "secondBag", name: "Вторая сумка шаблона", weight: 400, parentId: "", childIds: [], itemIds: [], order: [] };
+  }
+  if (detachedTree) {
+    const full = detachedTree === "tree";
+    state.payload.containers.spare = { id: "spare", name: "Запасная сумка", weight: 90, parentId: "", childIds: full ? ["spare-pocket"] : [], itemIds: [],
+      order: full ? [{ type: "container", id: "spare-pocket" }] : [] };
+    if (full) {
+      state.payload.containers["spare-pocket"] = { id: "spare-pocket", name: "Запасной карман", parentId: "spare", childIds: [], itemIds: ["spare-item"], order: [{ type: "item", id: "spare-item" }] };
+      state.payload.items["spare-item"] = { id: "spare-item", name: "Запасная вещь", weight: 30, containerId: "spare-pocket", quantity: 3, categories: [] };
+    }
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
@@ -259,19 +268,21 @@ for (const kind of ["demo", "shared"]) test(`new admin ${kind} draft keeps its t
   expect(state.errors).toEqual([]);
 });
 
-for (const shared of [false, true]) for (const shape of ["tree", "shell", "nested"])
+for (const shared of [false, true]) for (const shape of ["tree", "shell", "nested", "link-tree", "link-shell"])
   for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"]) {
   test(`admin tree copy ${shared ? "shared" : "demo"} ${shape} retains its full saved result (${mode})`, async ({ page, context }) => {
-    const state = await fixture(page, context, { shared, withContainers: true, hydrate: ["plan-quota", "pointer-quota"].includes(mode) });
+    const linking = shape.startsWith("link-"), shell = shape.endsWith("shell"), nestedTarget = shape === "nested";
+    const state = await fixture(page, context, { shared, withContainers: true, detachedTree: linking ? shape.slice(5) : "", hydrate: ["plan-quota", "pointer-quota"].includes(mode) });
     const before = await page.evaluate(() => {
       const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
-      const bag = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && !row.parentId);
-      const child = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.parentId);
+      const bag = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Сумка шаблона");
+      const child = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Карман шаблона");
+      const spare = Object.values(current.containers).find(row => row.publicCatalogLayoutId === layout.id && row.name === "Запасная сумка");
       return { layoutId: layout.id, binding: layout.adminCausalSource.binding, bagId: bag.id, childId: child.id,
-        snapshot: __adminUiTest.snapshot(layout.id), localIds: Object.keys(current.containers) };
+        spareId: spare?.id, snapshot: __adminUiTest.snapshot(layout.id), localIds: Object.keys(current.containers) };
     });
-    const sourceId = shape === "nested" ? before.childId : before.bagId;
-    if (shape === "shell") {
+    const sourceId = linking ? before.spareId : shape === "nested" ? before.childId : before.bagId;
+    if (shell) {
       await page.locator('[data-view="bags"]').click();
       await page.locator(`#bagsView [data-root-card="${sourceId}"] [data-root-title]`).click();
     } else {
@@ -281,9 +292,11 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell", "neste
     await expect(page.locator("#rootContainerDialog")).toBeVisible();
     await page.locator("#rootContainerCopyToContainerBtn").click(); await expect(page.locator("#containerPickerDialog")).toBeVisible();
     await expect(page.locator("#containerPickerLayoutSelect")).toHaveValue(before.layoutId);
-    if (shape === "nested") await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.bagId}"][data-pick-container-index="0"]`).click();
+    if (nestedTarget) await page.locator(`#containerPickerBoard [data-pick-container-parent="${before.bagId}"][data-pick-container-index="0"]`).click();
     else await page.locator('#containerPickerBoard [data-pick-root-index="0"]').click();
-    await expect(page.locator("#confirmDialog")).toContainText(shape === "shell" ? "пустую копию" : "со всем содержимым");
+    await expect(page.locator("#confirmDialog")).toContainText(shell ? "пустую копию" : "со всем содержимым");
+    if (linking) await expect(page.locator("#confirmAlternateBtn")).toHaveText("Добавить существующую");
+    else await expect(page.locator("#confirmAlternateBtn")).toBeHidden();
     if (mode === "changed-choice") await page.evaluate(id => { __adminUiTest.state().containers[id].name = "Источник изменился"; }, sourceId);
     if (mode === "changed-target") await page.evaluate(id => { __adminUiTest.state().layouts[id].arrangement.itemQuantities[Object.keys(__adminUiTest.state().layouts[id].arrangement.items)[0]] = 5; }, before.layoutId);
     if (mode === "changed-account") await page.evaluate(() => { __adminUiTest.user().id = "admin-b"; });
@@ -298,7 +311,7 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell", "neste
       };
     }, mode);
     state.lose = mode === "lost"; if (mode === "conflict") state.revision = 8;
-    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : linking ? "#confirmAlternateBtn" : "#confirmOkBtn").click();
     if (["mirror-quota", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"].includes(mode)) {
       if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Tree copy quota" : "Шаблон изменился");
       expect(state.posts).toEqual([]); expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers))).toEqual(before.localIds);
@@ -309,7 +322,8 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell", "neste
       const value = await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId);
       value.payload = stripAdminTemplateEditorMetadata(value.payload); return value;
     };
-    await expect.poll(async () => Object.keys((await candidate()).payload.containers).length).toBe(Object.keys(before.snapshot.payload.containers).length + (shape === "tree" ? 2 : 1));
+    if (linking) await expect.poll(async () => JSON.stringify((await candidate()).payload)).not.toBe(JSON.stringify(stripAdminTemplateEditorMetadata(before.snapshot.payload)));
+    else await expect.poll(async () => Object.keys((await candidate()).payload.containers).length).toBe(Object.keys(before.snapshot.payload.containers).length + (shape === "tree" ? 2 : 1));
     const chosen = await candidate(); let planId;
     if (["plan-quota", "pointer-quota"].includes(mode)) {
       planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId); expect(state.posts).toEqual([]);
@@ -331,16 +345,29 @@ for (const shared of [false, true]) for (const shape of ["tree", "shell", "neste
     await confirmedRevision(page, 8); expect(state.payload).toEqual(chosen.payload);
     const addedContainers = Object.keys(state.payload.containers).filter(id => !before.snapshot.payload.containers[id]);
     const addedItems = Object.keys(state.payload.items).filter(id => !before.snapshot.payload.items[id]);
-    expect(addedItems).toHaveLength(shape === "shell" ? 0 : 1);
+    expect(addedItems).toHaveLength(linking || shell ? 0 : 1);
     const arrangement = Object.values(state.payload.layouts)[0].arrangement, oldArrangement = Object.values(before.snapshot.payload.layouts)[0].arrangement;
-    for (const [id, row] of Object.entries(before.snapshot.payload.items)) expect(state.payload.items[id]).toEqual(row);
+    for (const [id, row] of Object.entries(before.snapshot.payload.items)) {
+      // Placed quantities live in the arrangement; the catalog stays normalized.
+      expect(state.payload.items[id]).toEqual(linking && row.name === "Запасная вещь" ? { ...row, quantity: 1 } : row);
+    }
     for (const id of Object.keys(oldArrangement.items)) {
       expect(arrangement.items[id]).toBe(oldArrangement.items[id]); expect(arrangement.itemQuantities[id]).toBe(oldArrangement.itemQuantities[id]);
       expect(arrangement.packedItems[id]).toBe(oldArrangement.packedItems[id]);
     }
-    const root = addedContainers.find(id => !addedContainers.includes(state.payload.containers[id].parentId));
+    const root = linking ? Object.values(state.payload.containers).find(row => row.name === "Запасная сумка").id
+      : addedContainers.find(id => !addedContainers.includes(state.payload.containers[id].parentId));
     expect(root).toBeTruthy();
-    if (shape === "nested") {
+    if (linking) {
+      expect(addedContainers).toEqual([]); expect(Object.keys(state.payload.items).sort()).toEqual(Object.keys(before.snapshot.payload.items).sort());
+      expect(Object.keys(state.payload.containers).sort()).toEqual(Object.keys(before.snapshot.payload.containers).sort());
+      expect(await page.evaluate(() => Object.keys(__adminUiTest.state().containers))).toEqual(before.localIds);
+      if (!shell) {
+        const linkedItem = Object.values(state.payload.items).find(row => row.name === "Запасная вещь").id;
+        expect(arrangement.itemQuantities[linkedItem]).toBe(3); expect(arrangement.packedItems[linkedItem]).toBeUndefined();
+      }
+    }
+    if (nestedTarget) {
       const parentId = Object.values(state.payload.containers).find(row => row.name === "Сумка шаблона").id;
       expect(arrangement.containers[root].parentId).toBe(parentId); expect(arrangement.containers[parentId].order[0]).toEqual({ type: "container", id: root });
     } else expect(arrangement.rootContainerIds[0]).toBe(root);
