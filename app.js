@@ -198,6 +198,7 @@ import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "./src/
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-plan.js";
 import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
+import { initializeNewAdminTemplateDraft } from "./src/public/admin-template-new-draft.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -1778,6 +1779,7 @@ const appTailControllerDeps = {
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
+  newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
   API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
@@ -10505,6 +10507,19 @@ function adminTemplateClient(binding, layoutId = "", preparing = false) {
 function reportAdminTemplateSaveError(error) {
   updateSyncUi(`Сохранение шаблона приостановлено: ${error.message}`);
 }
+function newCausalAdminTemplateDraft(layout, kind) {
+  if (!adminTemplateUiEnabled() || !canOpenAdminPublishedEdit()) throw Error("Создание шаблонов доступно администратору.");
+  return initializeNewAdminTemplateDraft(layout, { actorId: String(currentUser?.id || ""), kind });
+}
+function persistNewCausalAdminTemplateDraft(layout) {
+  if (!adminTemplateUiEnabled() || !canOpenAdminPublishedEdit() || state.layouts?.[layout.id] !== layout
+    || layout.adminCausalSource?.binding?.actorId !== String(currentUser?.id || "")) throw Error("Контекст создания шаблона изменился.");
+  // This mirror is mandatory for discovering the new target after reload, even
+  // before its save-plan capture. Do not evict another journal to make room.
+  const key = scopedLocalStorageKey(STORAGE_KEY), encoded = JSON.stringify(state);
+  localStorage.setItem(key, encoded);
+  if (localStorage.getItem(key) !== encoded) throw Error("Не удалось сохранить новый черновик на устройстве.");
+}
 async function openCausalAdminTemplateOrder(sections) {
   const actorId = String(currentUser?.id || "");
   const batch = createAdminTemplateOrderBatch({ actorId, enabled: adminTemplateUiEnabled(),
@@ -10637,6 +10652,9 @@ async function openCausalAdminTemplate(target, { remember = true } = {}) {
         || existing.adminCausalSource.binding.listId !== binding.listId) throw Error("Этот локальный черновик нужно сверить с серверной версией перед продолжением.");
       activateAdminPublishedLayout(existing.id, { remember });
       await adminTemplateSaveCoordinator().recover(existing.id);
+      if (!existing.adminCausalSource.exists && !existing.adminCausalSource.planId) {
+        await adminTemplateSaveCoordinator().capture(existing.id, { published: false });
+      }
       if (existing.adminCausalSource.planId) await adminTemplateSaveCoordinator().flush(existing.id);
       return existing;
     }

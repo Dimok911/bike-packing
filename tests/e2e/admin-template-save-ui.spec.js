@@ -124,6 +124,103 @@ async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
 
+async function newDraftFixture(page, context) {
+  const state = await fixture(page, context), created = new Map(); state.created = created;
+  state.createLose = false; state.createHidden = new Set();
+  await context.route("**/bike-packing/admin/template-operations**", async route => {
+    const request = route.request(), url = new URL(request.url()), headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true" };
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+    if (url.pathname.endsWith("/prepare")) return route.fallback();
+    if (request.method() === "GET") {
+      const id = url.pathname.split("/").at(-1);
+      if (state.createHidden.has(id)) return route.abort("failed");
+      return route.fulfill({ headers, json: { ok: true, ...(state.receipts.get(id) || { operation: { id, state: "unknown" } }) } });
+    }
+    const input = request.postDataJSON(), intent = adminTemplateIntent({ ...input, actorId: input.expectedActorId }), { id, ...binding } = intent;
+    state.posts.push(input);
+    if (!state.receipts.has(id)) {
+      if (input.kind === "template.create") {
+        expect(created.has(input.listId)).toBe(false); expect(input.body.base).toBeNull();
+        created.set(input.listId, { revision: 0, payload: structuredClone(input.body.payload), metadata: input.body.metadata });
+      }
+      const row = created.get(input.listId); expect(row).toBeTruthy();
+      if (input.kind !== "template.create") expect(input.body.base).toEqual({ stateRevision: row.revision });
+      if (input.kind === "template.metadata") row.metadata = structuredClone(input.body.metadata);
+      row.revision++;
+      const { body, ...identity } = binding;
+      state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "committed" },
+        result: { status: 200, payload: { ok: true, listId: input.listId, itemKey: input.itemKey, stateRevision: row.revision, visibility: "private", indexes: [] } } });
+    }
+    if (state.createLose) { state.createHidden.add(id); return route.abort("failed"); }
+    return route.fulfill({ headers, json: { ok: true, ...state.receipts.get(id) } });
+  });
+  return state;
+}
+
+async function submitNewAdminDraft(page, kind, name) {
+  await page.getByRole("button", { name: "Создать новую укладку", exact: true }).click();
+  await page.locator("#layoutCreateMode").selectOption(kind + "-template");
+  await page.locator("#layoutName").fill(name); await page.locator("#layoutName").blur();
+  if (test.info().project.name === "mobile-webkit") await page.locator("#saveLayoutBtn").tap();
+  else await page.locator("#saveLayoutBtn").click();
+}
+
+for (const kind of ["demo", "shared"]) for (const lost of [false, true]) test(`new admin ${kind} draft creates privately with stable identity${lost ? " after lost ACK and reload" : ""}`, async ({ page, context }) => {
+  const state = await newDraftFixture(page, context); state.createLose = lost;
+  await submitNewAdminDraft(page, kind, "Новый причинный шаблон");
+  await expect(page.locator("#layoutDialog")).not.toBeVisible();
+  await expect.poll(() => state.posts.length).toBe(1);
+  const original = structuredClone(state.posts[0]); expect(original.kind).toBe("template.create");
+  expect(Object.values(original.body.payload.items)).toHaveLength(0);
+  expect(Object.values(original.body.payload.containers)).toHaveLength(0);
+  if (lost) {
+    await expect.poll(() => state.createHidden.size).toBe(1); state.createLose = false; state.createHidden.clear();
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(({ kind, listId }) => __adminUiTest.openPrepared(kind === "demo" ? { type: "demo", demoListId: listId }
+      : { type: "shared", sharedId: listId.slice("public-shared-layout-".length) }), { kind, listId: original.listId });
+  }
+  await confirmedRevision(page, 1); expect(state.posts).toEqual([original]); expect(state.created.size).toBe(1);
+  await renameTemplate(page, "Название после создания"); await confirmedRevision(page, 2);
+  expect(state.posts).toHaveLength(2); expect(state.posts[1].kind).toBe("template.metadata");
+  expect(state.posts[1].listId).toBe(original.listId); expect(state.posts[1].body.base).toEqual({ stateRevision: 1 });
+  expect(state.errors).toEqual([]);
+});
+
+test("new admin draft mirror quota leaves the creation form and sends nothing", async ({ page, context }) => {
+  const state = await newDraftFixture(page, context);
+  const before = await page.evaluate(() => structuredClone(__adminUiTest.state().layouts));
+  await page.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+    if (key.startsWith("bike-packing-prototype-state-v1") && value.includes("Новый причинный шаблон")) throw new DOMException("Quota", "QuotaExceededError");
+    return set.call(this, key, value);
+  }; });
+  await submitNewAdminDraft(page, "demo", "Новый причинный шаблон");
+  await expect(page.locator("#layoutDialog")).toBeVisible(); await expect(page.locator("#layoutName")).toHaveValue("Новый причинный шаблон");
+  await expect(page.getByText("Не удалось создать черновик:", { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => structuredClone(__adminUiTest.state().layouts))).toEqual(before);
+  expect(state.posts).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+for (const kind of ["demo", "shared"]) test(`new admin ${kind} draft keeps its target when plan capture fails before reload`, async ({ page, context }) => {
+  const state = await newDraftFixture(page, context);
+  await page.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+    if (key.startsWith("bike-packing-admin-save-plans-v1:")) throw new DOMException("Quota", "QuotaExceededError");
+    return set.call(this, key, value);
+  }; });
+  await submitNewAdminDraft(page, kind, "Новый причинный шаблон");
+  await expect(page.locator("#layoutDialog")).not.toBeVisible();
+  await expect(page.locator("body")).toContainText("Сохранение шаблона приостановлено");
+  const source = await page.evaluate(() => Object.values(__adminUiTest.state().layouts).find(layout => layout.name === "Новый причинный шаблон").adminCausalSource);
+  expect(source.exists).toBe(false); expect(source.planId).toBeNull(); expect(state.posts).toEqual([]);
+  await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+  await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+  await page.evaluate(({ kind, listId }) => __adminUiTest.openPrepared(kind === "demo" ? { type: "demo", demoListId: listId }
+    : { type: "shared", sharedId: listId.slice("public-shared-layout-".length) }), { kind, listId: source.binding.listId });
+  await confirmedRevision(page, 1); expect(state.posts).toHaveLength(1);
+  expect(state.posts[0].listId).toBe(source.binding.listId); expect(state.posts[0].kind).toBe("template.create");
+  expect(state.errors).toEqual([]);
+});
+
 async function orderFixture(page, context, shared) {
   const state = await fixture(page, context, { published: true, shared, layoutOrder: 1 });
   const rows = ["ui", "second"].map((id, index) => {

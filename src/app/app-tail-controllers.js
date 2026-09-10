@@ -141,7 +141,8 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
-    openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder } = ctx;
+    openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
+    newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft } = ctx;
   const runtime = ctx.runtime;
   let itemDialogPhotoPreviewRenderToken = 0;
   let rootContainerDialogPhotoPreviewRenderToken = 0;
@@ -6908,7 +6909,7 @@ function createNewPublicTemplateLayout(requestedName, kind, language) {
   }
   const normalizedLanguage = normalizeUiLanguage(language || uiLanguage);
   const id = `layout-admin-${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const layout = createNewPublicTemplateDraftRecordValue({
+  let layout = createNewPublicTemplateDraftRecordValue({
     id,
     requestedName,
     kind,
@@ -6925,6 +6926,17 @@ function createNewPublicTemplateLayout(requestedName, kind, language) {
     serverConfirmedDemoTemplates: runtime.serverConfirmedDemoTemplates
   });
   if (!layout) return "";
+  if (adminTemplateUiEnabled()) {
+    try {
+      layout = newCausalAdminTemplateDraft(layout, kind);
+      state.layouts[id] = layout;
+      persistNewCausalAdminTemplateDraft(layout);
+    } catch (error) {
+      if (state.layouts[id] === layout) delete state.layouts[id];
+      showToast(localText(`Could not create the draft: ${error.message}`, `Не удалось создать черновик: ${error.message}`), "error");
+      return "";
+    }
+  }
   state.layouts[id] = layout;
   activateAdminPublishedLayout(id);
   saveLayoutMutation(id);
