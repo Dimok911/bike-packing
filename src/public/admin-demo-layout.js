@@ -93,6 +93,7 @@ export function importDemoStateAsEditableLayout(targetState, demoState, {
   targetState.layouts[layoutId] = {
     id: layoutId,
     name: demoTemplate?.name || normalizeDemoLayoutName(sourceLayout.name, normalizedLanguage),
+    ...(Number.isSafeInteger(sourceLayout.layoutOrder) && sourceLayout.layoutOrder > 0 ? { layoutOrder: sourceLayout.layoutOrder } : {}),
     rootContainerIds,
     // Placement-specific quantities/order belong to the viewed template, not
     // the catalog's default item quantity or its display relationship mirrors.

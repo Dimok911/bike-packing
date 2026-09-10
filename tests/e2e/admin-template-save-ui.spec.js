@@ -28,8 +28,9 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("admin-ui-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], errors: [], lose: false, hidden: false, hold: null };
+  if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
     state.payload.containers.bag = { id: "bag", name: "Сумка шаблона", weight: 300, location: "Велосипед", categories: [], parentId: "", itemIds: [], childIds: ["pocket"] };
     state.payload.containers.pocket = { id: "pocket", name: "Карман шаблона", weight: 20, location: "Велосипед", categories: [], parentId: "bag", itemIds: ["pump"], childIds: [] };
@@ -122,6 +123,123 @@ async function submitItem(page) {
 async function confirmedRevision(page, revision) {
   await page.waitForFunction(value => Object.values(__adminUiTest.state().layouts).some(layout => layout.adminCausalSource?.base?.stateRevision === value), revision);
 }
+
+async function orderFixture(page, context, shared) {
+  const state = await fixture(page, context, { published: true, shared, layoutOrder: 1 });
+  const rows = ["ui", "second"].map((id, index) => {
+    const payload = template(); payload.layouts["layout-a"].layoutOrder = index + 1;
+    return { id, listId: shared ? "public-shared-layout-" + id : "public-demo-state-" + id,
+      itemKey: (shared ? "shared-layout:" : "demo-state:") + id, revision: 7, payload,
+      metadata: { title: index ? "Второй шаблон" : "Проверяемый шаблон", description: "", language: "ru" } };
+  });
+  state.orderRows = rows; state.orderFail = false; state.orderHidden = new Set();
+  await context.route("**/bike-packing/admin/template-operations**", async route => {
+    const request = route.request(), url = new URL(request.url()), headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true" };
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+    let data;
+    if (url.pathname.endsWith("/prepare")) {
+      const row = rows.find(row => row.itemKey === request.postDataJSON().itemKey); expect(row).toBeTruthy();
+      data = { ok: true, actorId: "admin-a", environment: "bike-packing-experiment", listId: row.listId, itemKey: row.itemKey,
+        sourceType: "public-template", exists: true, deleted: false, stateRevision: row.revision, visibility: "public", indexes: [], metadata: row.metadata, payload: row.payload };
+    } else if (request.method() === "POST") {
+      const input = request.postDataJSON(), row = rows.find(row => row.listId === input.listId);
+      const intent = adminTemplateIntent({ ...input, actorId: input.expectedActorId }), { id, ...binding } = intent;
+      state.posts.push(input);
+      if (!state.receipts.has(id)) {
+        const revision = input.body.base.stateRevision ?? state.receipts.get(input.body.base.operationId)?.result.payload.stateRevision;
+        if (revision !== row.revision) {
+          const { body, ...identity } = binding;
+          const receipt = { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "rejected" },
+            result: { status: 409, payload: { ok: false, code: "template_revision_conflict" } } };
+          state.receipts.set(id, receipt); return route.fulfill({ headers, json: { ok: true, ...receipt } });
+        }
+        row.revision++;
+        if (input.kind === "template.metadata") row.payload.layouts["layout-a"].layoutOrder = input.body.metadata.layoutOrder;
+        else if (input.kind === "template.save") row.payload = structuredClone(input.body.payload);
+        else if (input.kind === "template.publication") expect(input.body.published).toBe(true);
+        else throw Error("Unexpected order fixture operation: " + input.kind);
+        const { body, ...identity } = binding;
+        state.receipts.set(id, { operation: { id, ...identity, payloadDigest: createHash("sha256").update(canonicalTemplateJson(binding)).digest("hex"), state: "committed" },
+          result: { status: 200, payload: { ok: true, listId: row.listId, itemKey: row.itemKey, stateRevision: row.revision, visibility: "public", indexes: [] } } });
+      }
+      if (state.orderFail && row.id === "second") { state.orderHidden.add(id); return route.abort("failed"); }
+      data = { ok: true, ...state.receipts.get(id) };
+    } else {
+      const id = url.pathname.split("/").at(-1);
+      if (state.orderHidden.has(id)) return route.abort("failed");
+      data = { ok: true, ...(state.receipts.get(id) || { operation: { id, state: "unknown" } }) };
+    }
+    return route.fulfill({ headers, json: data });
+  });
+  state.seedOrder = async () => {
+    await page.evaluate(({ rows, shared }) => {
+      const entries = rows.map(row => ({ id: shared ? row.id : row.listId, listId: row.listId, name: row.metadata.title,
+        title: row.metadata.title, language: "ru", layoutOrder: row.payload.layouts["layout-a"].layoutOrder }));
+      // Catalog fixture only; order changes themselves use the actual dialog.
+      __adminUiTest.setOrderCatalog({ demo: shared ? [] : entries, shared: shared ? entries : [] });
+    }, { rows, shared });
+  };
+  await state.seedOrder(); return state;
+}
+
+for (const shared of [false, true]) for (const outcome of ["confirmed", "retry", "reload"]) {
+  test(`real admin ${shared ? "shared" : "demo"} order dialog retains its complete batch (${outcome})`, async ({ page, context }) => {
+    const state = await orderFixture(page, context, shared); state.orderFail = outcome !== "confirmed";
+    await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+    await page.locator("#layoutOrderToggleBtn").click(); await expect(page.locator("#layoutOrderDialog")).toBeVisible();
+    const section = page.locator(`#layoutOrderList section[data-layout-order-section="${shared ? "shared" : "demo"}"]`);
+    await expect(section.locator(".layout-order-row")).toHaveCount(2);
+    await section.locator('[data-layout-order-action="down"]').first().click();
+    await page.locator("#saveLayoutOrderBtn").click(); await expect.poll(() => state.posts.length).toBe(2);
+    const originals = structuredClone(state.posts);
+    expect(originals.every(row => row.kind === "template.metadata")).toBe(true);
+    expect(originals.map(row => row.body.base)).toEqual([{ stateRevision: 7 }, { stateRevision: 7 }]);
+    if (outcome !== "confirmed") {
+      await expect(page.locator("#saveLayoutOrderBtn")).toBeEnabled();
+      expect(await page.locator("#layoutOrderList").getAttribute("inert")).not.toBeNull();
+      state.orderFail = false; state.orderHidden.clear();
+      if (outcome === "reload") {
+        await page.reload(); await openEditorForTarget(page, shared); await state.seedOrder();
+        await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+        await page.locator("#layoutOrderToggleBtn").click(); await expect(page.locator("#layoutOrderDialog")).toBeVisible();
+      }
+      await page.locator("#saveLayoutOrderBtn").click();
+    }
+    await expect(page.locator("#layoutOrderDialog")).not.toBeVisible();
+    expect(state.posts).toEqual(originals); expect(state.orderRows.map(row => row.payload.layouts["layout-a"].layoutOrder)).toEqual([2, 1]);
+    await page.locator('#layoutEditDialog button[value="cancel"]').click();
+    await editItem(page, "Правка после изменения порядка"); await confirmedRevision(page, 10);
+    expect(state.posts).toHaveLength(4);
+    expect(state.posts[2].body.base).toEqual({ stateRevision: 8 }); expect(state.posts[2].kind).toBe("template.save");
+    expect(state.posts[3].body.base).toEqual({ operationId: state.posts[2].operationId });
+    expect(state.posts[2].body.payload.layouts[state.posts[2].body.payload.activeLayoutId].layoutOrder).toBe(2);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const fault of ["quota", "conflict"]) test(`admin order ${fault} preserves the chosen batch and pauses safely`, async ({ page, context }) => {
+  const state = await orderFixture(page, context, false);
+  await page.getByRole("button", { name: "Редактировать текущую укладку", exact: true }).click();
+  await page.locator("#layoutOrderToggleBtn").click(); await expect(page.locator("#layoutOrderDialog")).toBeVisible();
+  const section = page.locator('#layoutOrderList section[data-layout-order-section="demo"]');
+  await section.locator('[data-layout-order-action="down"]').first().click();
+  const chosen = await section.locator(".layout-order-title strong").allTextContents();
+  if (fault === "quota") await page.evaluate(() => {
+    const original = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith("bike-packing-admin-order-v1:")) throw new DOMException("Quota", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  else state.orderRows[0].revision++;
+  await page.locator("#saveLayoutOrderBtn").click();
+  await expect(page.getByText("Не удалось сохранить порядок укладок:", { exact: false })).toBeVisible();
+  await expect(page.locator("#layoutOrderDialog")).toBeVisible();
+  expect(await section.locator(".layout-order-title strong").allTextContents()).toEqual(chosen);
+  expect(state.orderRows.map(row => row.payload.layouts["layout-a"].layoutOrder)).toEqual([1, 2]);
+  const posts = structuredClone(state.posts); expect(posts).toHaveLength(fault === "quota" ? 0 : 1);
+  await page.locator("#saveLayoutOrderBtn").click(); await expect(page.locator("#saveLayoutOrderBtn")).toBeEnabled();
+  expect(state.posts).toEqual(posts); expect(state.errors).toEqual([]);
+});
 test("real admin item form captures the viewed revision and autosaves through the separate journal", async ({ page, context }) => {
   const state = await fixture(page, context);
   const itemId = await page.evaluate(() => Object.values(__adminUiTest.state().items).find(item => item.name === "Насос шаблона")?.id);

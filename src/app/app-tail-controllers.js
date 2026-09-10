@@ -140,7 +140,8 @@ import {
 import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
-  const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand } = ctx;
+  const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
+    openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder } = ctx;
   const runtime = ctx.runtime;
   let itemDialogPhotoPreviewRenderToken = 0;
   let rootContainerDialogPhotoPreviewRenderToken = 0;
@@ -157,6 +158,8 @@ export function createAppTailControllers(ctx) {
   let layoutOrderDragId = "";
   let layoutEditInitialSnapshot = null;
   let layoutOrderDraftSections = null;
+  let causalLayoutOrderWork = null;
+  let layoutOrderOpening = false;
   let layoutOrderInitialSignature = "";
   let layoutOrderSavePromise = null;
   let photoOrderContext = null;
@@ -7104,7 +7107,7 @@ function updateLayoutEditPublishButton(layout) {
 function editableLayoutOrderSections() {
   const showPublicTemplates = canViewAdminPublishedCatalog();
   const editPublishedCatalog = canEditPublishedTemplatesNow();
-  return layoutOrderSectionsFromSources({
+  const sections = layoutOrderSectionsFromSources({
     layouts: state.layouts,
     demoTemplates: editPublishedCatalog
       ? runtime.serverConfirmedDemoTemplates
@@ -7117,6 +7120,12 @@ function editableLayoutOrderSections() {
     includeLayout: (layout) => Boolean(layout?.id && canManageLayout(layout.id)),
     locale: uiLanguage || "ru"
   });
+  if (!adminTemplateUiEnabled() || !editPublishedCatalog) return sections;
+  const administrative = isAdminEditablePublishedLayout();
+  // An administrative batch cannot borrow the private owner's save authority.
+  // The current editor determines which order the dialog changes.
+  return sections.map(section => ({ ...section,
+    layouts: (section.id === "personal") === !administrative ? section.layouts : [] }));
 }
 
 function cloneLayoutOrderSections(sections = []) {
@@ -7147,7 +7156,7 @@ function setLayoutOrderDraftSections(sections) {
 function updateLayoutOrderSaveState() {
   if (!refs.saveLayoutOrderBtn) return;
   const saving = Boolean(layoutOrderSavePromise);
-  refs.layoutOrderList?.toggleAttribute("inert", saving);
+  refs.layoutOrderList?.toggleAttribute("inert", saving || Boolean(causalLayoutOrderWork?.pending));
   refs.layoutOrderList?.setAttribute("aria-busy", String(saving));
   refs.saveLayoutOrderBtn.classList.toggle("button-loading", saving);
   if (saving) refs.saveLayoutOrderBtn.setAttribute("aria-busy", "true");
@@ -7160,7 +7169,8 @@ function updateLayoutOrderSaveState() {
     refs.saveLayoutOrderBtn.setAttribute("aria-label", t("layoutOrder.saving"));
     return;
   }
-  const changed = refs.layoutOrderDialog?.open && layoutOrderSectionsSignature(currentLayoutOrderSections()) !== layoutOrderInitialSignature;
+  const changed = refs.layoutOrderDialog?.open && (Boolean(causalLayoutOrderWork?.pending)
+    || layoutOrderSectionsSignature(currentLayoutOrderSections()) !== layoutOrderInitialSignature);
   updateModalSaveButton(refs.saveLayoutOrderBtn, { hasName: true, changed });
 }
 
@@ -7294,6 +7304,7 @@ function renderLayoutOrderRow(layout, section, index) {
 }
 
 async function applyLayoutOrderSections(sections) {
+  if (causalLayoutOrderWork) await saveCausalAdminTemplateOrder(causalLayoutOrderWork, sections);
   const orderedIds = layoutOrderIdsFromSections(sections);
   const previousLayouts = clone(state.layouts);
   const previousDemoTemplates = runtime.serverConfirmedDemoTemplates;
@@ -7304,7 +7315,10 @@ async function applyLayoutOrderSections(sections) {
     changedAt: nowIso(),
     markEdited
   });
-  if (!result.changed) return false;
+  if (!result.changed) {
+    if (causalLayoutOrderWork) await finishCausalAdminTemplateOrder(causalLayoutOrderWork);
+    return false;
+  }
   const publicOrderUpdates = publicTemplateOrderUpdates({
     beforeDemoTemplates: previousDemoTemplates,
     afterDemoTemplates: result.demoTemplates,
@@ -7321,7 +7335,7 @@ async function applyLayoutOrderSections(sections) {
     )
   });
   try {
-    if (publicOrderUpdates.length) {
+    if (publicOrderUpdates.length && !causalLayoutOrderWork) {
       await assertAdminApiCompatibility({ force: true });
       updateSyncUi(localText("Saving template order...", "Сохраняю порядок шаблонов..."));
       await persistPublicTemplateOrderUpdates(publicOrderUpdates, {
@@ -7341,7 +7355,9 @@ async function applyLayoutOrderSections(sections) {
   if (result.demoTemplatesChanged) runtime.serverConfirmedDemoTemplates = result.demoTemplates;
   if (result.sharedTemplatesChanged) runtime.serverConfirmedSharedLayouts = result.sharedTemplates;
   if (result.stateChanged) {
-    saveState();
+    // The administrative metadata batch already owns these changes. A normal
+    // autosave here would append a redundant full-template write after it.
+    if (!causalLayoutOrderWork) saveState();
     if (personalOrderLayoutIds.length && runtime.currentUser && canUsePrivateState()) {
       updateSyncUi(localText("Saving personal layout order...", "Сохраняю порядок личных укладок..."));
       await saveRemoteState({
@@ -7356,18 +7372,40 @@ async function applyLayoutOrderSections(sections) {
   renderFilters();
   renderLayoutOrderPanel();
   updateSyncUi();
+  if (causalLayoutOrderWork) await finishCausalAdminTemplateOrder(causalLayoutOrderWork);
   return true;
 }
 
-function toggleLayoutOrderPanel() {
-  if (!refs.layoutOrderDialog) return;
+async function toggleLayoutOrderPanel() {
+  if (!refs.layoutOrderDialog || layoutOrderOpening) return;
   if (refs.layoutOrderDialog.open) {
     requestCloseLayoutOrderDialog();
     return;
   }
-  startLayoutOrderDraft();
-  openModalDialog(refs.layoutOrderDialog);
-  renderLayoutOrderPanel();
+  layoutOrderOpening = true;
+  try {
+    causalLayoutOrderWork = null;
+    const sections = editableLayoutOrderSections();
+    if (adminTemplateUiEnabled() && canEditPublishedTemplatesNow() && isAdminEditablePublishedLayout()) {
+      updateSyncUi("Проверяю исходный порядок шаблонов...");
+      causalLayoutOrderWork = await openCausalAdminTemplateOrder(sections);
+    }
+    startLayoutOrderDraft();
+    if (causalLayoutOrderWork?.pending) {
+      const layouts = new Map(sections.flatMap(section => section.layouts.map(layout => [layout.id, layout])));
+      const chosen = causalLayoutOrderWork.pending.selection;
+      if (chosen.flatMap(section => section.layouts).some(id => !layouts.has(id))) {
+        throw Error("В сохранённом порядке есть недоступный шаблон. Исходное действие сохранено для сверки.");
+      }
+      layoutOrderDraftSections = chosen.map(section => ({ id: section.id, layouts: section.layouts.map(id => layouts.get(id)) }));
+      updateSyncUi("Сохранённый порядок ожидает продолжения. Нажмите «Сохранить».");
+    }
+    openModalDialog(refs.layoutOrderDialog);
+    renderLayoutOrderPanel();
+  } catch (error) {
+    causalLayoutOrderWork = null;
+    showToast(apiErrorMessage(error), "error");
+  } finally { layoutOrderOpening = false; }
 }
 
 function handleLayoutOrderFormSubmit(event) {
@@ -7510,6 +7548,7 @@ function handleLayoutOrderDragEnd() {
 function handleLayoutOrderDialogClose() {
   handleLayoutOrderDragEnd();
   layoutOrderDraftSections = null;
+  causalLayoutOrderWork = null;
   layoutOrderInitialSignature = "";
   renderLayoutOrderPanel();
 }

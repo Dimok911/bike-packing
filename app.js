@@ -194,9 +194,10 @@ import {
   savePublicTemplateOfflineCache
 } from "./src/public/public-template-offline-cache.js";
 import { savePublishedLayoutRecordFlow } from "./src/public/published-layout-save-flow.js";
-import { ADMIN_TEMPLATE_OPERATIONS_ENABLED } from "./src/sync/admin-template-protocol.js";
+import { ADMIN_TEMPLATE_OPERATIONS_ENABLED, canonicalTemplateJson } from "./src/sync/admin-template-protocol.js";
 import { createAdminTemplateClient } from "./src/sync/admin-template-client.js";
 import { createAdminTemplateSavePlans } from "./src/sync/admin-template-save-plan.js";
+import { createAdminTemplateOrderBatch } from "./src/public/admin-template-order-batch.js";
 import { createAdminTemplateSaveFlow, adminTemplateEditorSource } from "./src/public/admin-template-causal-save-flow.js";
 import {
   markManagedTemplateDraftSyncPending,
@@ -1776,6 +1777,7 @@ const appTailControllerDeps = {
   runtime: appTailRuntime,
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
+  openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
   API_TIMEOUT_MS, APP_VERSION, AUTH_SIGNED_OUT_KEY, BASE_STATE_KEY,
   DATA_ITEM_KEY, DATA_SCOPE_KEY, DEFAULT_LANGUAGE, DEMO_LAYOUT_SELECT_VALUE, DEMO_SHARED_LAYOUT_ID,
@@ -10502,6 +10504,71 @@ function adminTemplateClient(binding, layoutId = "", preparing = false) {
 }
 function reportAdminTemplateSaveError(error) {
   updateSyncUi(`Сохранение шаблона приостановлено: ${error.message}`);
+}
+async function openCausalAdminTemplateOrder(sections) {
+  const actorId = String(currentUser?.id || "");
+  const batch = createAdminTemplateOrderBatch({ actorId, enabled: adminTemplateUiEnabled(),
+    getContext: () => ({ ...adminTemplateOperationContext({}, "", true), environment: "bike-packing-experiment", scope: "admin-template-order" }),
+    clientFor: binding => adminTemplateClient(binding, "", true),
+    assertNoPending: async binding => {
+      const layout = Object.values(state.layouts || {}).find(row => row.adminCausalSource?.binding?.listId === binding.listId);
+      if (layout && (layout.adminCausalSource.planId || layout.templateDraftSyncPending || administrativeSaveCoordinator?.hasPendingCapture(layout.id))) {
+        throw Error("Сначала завершите сохранение изменённого шаблона.");
+      }
+      const client = adminTemplateClient(binding, "", true);
+      const plans = createAdminTemplateSavePlans({ binding, enabled: adminTemplateUiEnabled(), client,
+        getContext: () => adminTemplateOperationContext(binding, "", true) });
+      for (const { plan } of await plans.list()) for (const intent of plan.operations) {
+        const saved = await client.read(intent.id);
+        if (saved?.receipt?.operation?.state !== "committed") throw Error("Сначала завершите сохранённое действие шаблона.");
+      }
+    },
+  });
+  const targets = sections.filter(section => section.id !== "personal").flatMap(section => section.layouts.map(layout => ({
+    layoutId: layout.id, layoutOrder: layout.layoutOrder == null ? null : Number(layout.layoutOrder),
+    binding: adminTemplateBinding(section.id === "demo"
+      ? { type: "demo", demoListId: layout.adminDemoListId || layout.demoListId, language: layout.adminDemoLanguage || layout.language || uiLanguage }
+      : { type: "shared", sharedId: layout.adminSharedSourceId }),
+  })));
+  const opened = await batch.open(targets);
+  return { batch, ...opened };
+}
+async function saveCausalAdminTemplateOrder(work, sections) {
+  const chosen = sections.map(section => ({ id: section.id, layouts: section.layouts.map(layout => layout.id) }));
+  if (!work.pending) work.pending = await work.batch.capture(work.session, chosen);
+  if (!work.pending) return;
+  if (canonicalTemplateJson(work.pending.selection) !== canonicalTemplateJson(chosen)) throw Error("Продолжите ранее сохранённый порядок.");
+  const result = await work.batch.run(work.pending.id);
+  if (result.state !== "committed") throw Error("Часть порядка ожидает сверки. Исходный выбор сохранён; подтверждённая часть не отправляется заново.");
+  // Advance only unchanged editor sources; a concurrently captured edit retains
+  // its own dependency and must resolve the server revision conflict explicitly.
+  for (const entry of work.pending.entries) {
+    const receipt = result.receipts.find(value => value.operation.id === entry.intent.id);
+    for (const layout of Object.values(state.layouts || {})) {
+      const source = layout.adminCausalSource;
+      if (source?.binding?.listId === entry.intent.listId && source.binding.actorId === entry.intent.actorId
+        && !source.planId && !administrativeSaveCoordinator?.hasPendingCapture(layout.id)
+        && source.base?.stateRevision === entry.intent.body.base.stateRevision) {
+        layout.adminCausalSource = { ...source, base: { stateRevision: receipt.result.payload.stateRevision },
+          lastConfirmedOperation: { id: receipt.operation.id, kind: receipt.operation.kind } };
+        layout.layoutOrder = entry.intent.body.metadata.layoutOrder;
+      }
+    }
+  }
+}
+async function finishCausalAdminTemplateOrder(work) {
+  if (work.pending) {
+    // Generic local ordering also numbers editor-only rows. Restore the order
+    // confirmed for the public source before persisting that editor's mirror.
+    for (const { intent } of work.pending.entries) for (const layout of Object.values(state.layouts || {})) {
+      const source = layout.adminCausalSource;
+      if (source?.binding?.actorId === String(currentUser?.id || "") && source.binding.listId === intent.listId
+        && source.lastConfirmedOperation?.id === intent.id && !source.planId
+        && !administrativeSaveCoordinator?.hasPendingCapture(layout.id)) layout.layoutOrder = intent.body.metadata.layoutOrder;
+    }
+    if (!persistStateSnapshot(state)) throw Error("Не удалось сохранить результат порядка на устройстве. Исходное действие сохранено для продолжения.");
+    await work.batch.acknowledge(work.pending.id);
+  }
 }
 function adminTemplateSaveCoordinator() {
   if (!administrativeSaveCoordinator) administrativeSaveCoordinator = createAdminTemplateSaveFlow({

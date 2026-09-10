@@ -6,7 +6,7 @@ import { exportLayoutAsPublishedState } from "../../src/public/published-state-e
 import { createLayoutArrangementFromCurrentState } from "../../src/state/layout-arrangement.js";
 
 const clone = structuredClone;
-const source = () => ({ layouts: { main: { id: "main", name: "Template", rootContainerIds: ["root"] } }, activeLayoutId: "main",
+const source = () => ({ layouts: { main: { id: "main", name: "Template", layoutOrder: 17, rootContainerIds: ["root"] } }, activeLayoutId: "main",
   containers: {
     root: { id: "root", parentId: null, childIds: [], itemIds: ["placed"], order: [{ type: "item", id: "placed" }] },
     detached: { id: "detached", parentId: null, childIds: ["nested"], itemIds: [], order: [{ type: "container", id: "nested" }] },
@@ -32,6 +32,7 @@ test("opening and exporting an admin demo retains detached trees, orphan items, 
     normalizeDemoLayoutName: value => value, nowIso: () => "2026-09-10T00:00:00Z", currentCreateMeta: () => ({}),
     createLayoutArrangementFromCurrentState, normalizeDictionaryValues: values => values, saveState: () => {} });
   assert.equal(Object.keys(state.containers).length, 3); assert.equal(Object.keys(state.items).length, 4);
+  assert.equal(layout.layoutOrder, 17);
   const detached = Object.values(state.containers).find(value => value.id.endsWith("-detached"));
   const nested = Object.values(state.containers).find(value => value.id.endsWith("-nested"));
   assert.equal(nested.parentId, detached.id); assert.deepEqual(detached.childIds, [nested.id]);
@@ -40,6 +41,7 @@ test("opening and exporting an admin demo retains detached trees, orphan items, 
   const exported = exportLayoutAsPublishedState(state, layout.id, { clone, createLayoutArrangementFromCurrentState,
     ensureLayoutDictionaries: value => value, normalizePublishedStatePayload: clone, stripPublishedPublicOriginMarkers: () => {} });
   assert.equal(Object.keys(exported.containers).length, 3); assert.equal(Object.keys(exported.items).length, 3);
+  assert.equal(exported.layouts[exported.activeLayoutId].layoutOrder, 17);
   assert.equal(exported.containers["container-nested"].parentId, "container-detached");
   assert.deepEqual(exported.containers["container-detached"].order, [{ type: "container", id: "container-nested" }]);
   assert.equal(exported.items["item-orphan"].containerId, "");
