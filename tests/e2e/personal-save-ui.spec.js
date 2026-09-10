@@ -53,6 +53,8 @@ test.afterEach(async ({ page }, info) => {
     }
     const startup = await page.evaluate(() => globalThis.__personalStartupPhase).catch(() => null);
     if (startup) console.log("PERSONAL STARTUP", JSON.stringify(startup));
+    const recoveryFailure = await page.evaluate(() => globalThis.__personalRecoveryFailure).catch(() => null);
+    if (recoveryFailure) { console.log("RECOVERY FAILURE", JSON.stringify(recoveryFailure)); await info.attach("personal-recovery-failure", { body: JSON.stringify(recoveryFailure), contentType: "application/json" }); }
     const formError = await page.evaluate(() => globalThis.__personalTestPhotoFormError).catch(() => null);
     if (formError) { console.log("PHOTO FORM FAILURE", JSON.stringify(formError)); await info.attach("photo-form-failure", { body: JSON.stringify(formError), contentType: "application/json" }); }
     const photoQueue = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("bike-packing-personal-save-v1:"))
@@ -2424,7 +2426,7 @@ for (const scenario of ["lost-owner", "lost-last-file", "deleted-after-owner"]) 
   if (scenario === "lost-last-file") expect(f.posts).toHaveLength(before);
   else await expect.poll(() => f.injectedFailure).toBe(true);
   const stageIds = [...f.stagePosts], original = f.posts.slice(before).map(post => structuredClone(post));
-  await page.reload();
+  await reloadApp(page, { recovery: true });
   const recovery = page.locator("#personalSaveRecoveryDialog"), resume = recovery.locator("[data-resume-photo-upload]");
   await expect(recovery).toBeVisible(); await expect(resume).toBeVisible();
   // A still-unknown claim is not authorization to upload the same bytes again.

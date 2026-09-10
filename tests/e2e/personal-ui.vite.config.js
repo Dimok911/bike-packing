@@ -64,6 +64,8 @@ export default defineConfig(({ mode }) => ({
       '  if (!enabled) fail();', '  globalThis.__personalTestTreeCopyInput = clone(input); if (!enabled) fail();');
     if (source.split("?")[0].endsWith("/app.js")) return code.replace('function reportPersonalPhotoFormError(error, { recovery } = {}) {',
       'function reportPersonalPhotoFormError(error, { recovery } = {}) { globalThis.__personalTestPhotoFormError = { message: error.message, code: error.code, stack: error.stack };')
+      .replace('// A concurrent storage failure owns its existing dialog and draft.',
+        'globalThis.__personalRecoveryFailure = { message: cause.message, code: cause.code, stack: cause.stack, initial, current: personalPhotoRecoveryReadContext() }; // A concurrent storage failure owns its existing dialog and draft.')
       .replace(/\} catch \(error\) \{ showToast\(error.message, "error"\); return false; \}\r?\n  return mode => \{/,
       '} catch (error) { globalThis.__personalTestPhotoFormError = { message: error.message, code: error.code, stack: error.stack }; showToast(error.message, "error"); return false; }\n  return mode => {')
       .replace('throw new Error("Изменение самих фотографий требует отдельного действия с файлами. Поля и исходная очередь сохранены.");',

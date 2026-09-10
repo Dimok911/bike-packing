@@ -789,6 +789,7 @@ import { loadPersonalGuestImportPhoto } from "./src/sync/personal-guest-import-p
 import { personalGuestBaseNeedsPreparation } from "./src/sync/personal-guest-import-base.js";
 import { recoverPersonalGuestImportLink } from "./src/sync/personal-guest-import-link-recovery.js";
 import { inspectPersonalPhotoRecovery } from "./src/sync/personal-photo-recovery-inventory.js";
+import { readPersonalPhotoRecoveryInCurrentContext } from "./src/sync/personal-photo-recovery-read.js";
 import { createPersonalPhotoRecoveryArchive } from "./src/sync/personal-photo-recovery-archive.js";
 import { checkPersonalPhotoRecoveryResult } from "./src/sync/personal-photo-recovery-check.js";
 import { cancelPersonalPhotoRecovery, personalPhotoRecoveryCancellationEnabled,
@@ -8943,21 +8944,24 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
   pending.promise = (async () => {
     try {
       // Reader works with every photo writer gate off, including rollback.
-      const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
-      source.outbox = outbox; // Preserve the observed head while the dialog is open.
-      source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
-      const publicEntries = await personalPublicSelectionStore(binding).entries();
-      const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
-      assignPersonalPublicPreparations(source, publicEntries);
-      const serverEntries = await personalServerSelectionStore(binding).entries();
-      assignPersonalServerPreparations(source, serverEntries);
-      if (source.serverPreparations.length) throw Error("Prepared server copy needs explicit recovery");
-      if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
-      const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
-      if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
-        const entries = await personalGuestSelectionStore(binding).entries();
-        source.guestPreparation = entries.find(entry => entry.intent && !entry.completion && entry.selection.operationId === unlinkedGuest[0].operationId) || null;
-      }
+      await readPersonalPhotoRecoveryInCurrentContext({ binding, getContext: personalPhotoRecoveryReadContext, read: async () => {
+        source.guestPreparation = null;
+        const outbox = createPersonalSaveOutbox({ ...binding, storage: localStorage, photoEnabled: PERSONAL_PHOTO_OUTBOX_ENABLED });
+        source.outbox = outbox; // Preserve the observed head while the dialog is open.
+        source.inventory = await inspectPersonalPhotoRecovery({ outbox, store: source.store, getContext: personalPhotoRecoveryReadContext });
+        const publicEntries = await personalPublicSelectionStore(binding).entries();
+        const publicPending = personalPublicPendingPreparations(publicEntries, outbox);
+        assignPersonalPublicPreparations(source, publicEntries);
+        const serverEntries = await personalServerSelectionStore(binding).entries();
+        assignPersonalServerPreparations(source, serverEntries);
+        if (source.serverPreparations.length) throw Error("Prepared server copy needs explicit recovery");
+        if (publicPending.length) throw Error("Prepared public copy needs explicit recovery");
+        const unlinkedGuest = source.inventory.entries.filter(entry => entry.state === "unlinked");
+        if (!outbox.hasPending() && unlinkedGuest.length === 1 && source.inventory.entries.every(entry => ["unlinked", "settled-retained"].includes(entry.state))) {
+          const entries = await personalGuestSelectionStore(binding).entries();
+          source.guestPreparation = entries.find(entry => entry.intent && !entry.completion && entry.selection.operationId === unlinkedGuest[0].operationId) || null;
+        }
+      } });
       personalSaveRecovery.assertRunning();
       // Only an exact retained terminal receipt, bound to the immutable action,
       // clears this startup fence. It never permits byte cleanup or re-upload.
@@ -8972,7 +8976,8 @@ async function checkPersonalPhotoRecoveryBeforeLoad() {
       // A concurrent storage failure owns its existing dialog and draft.
       if (personalSaveRecovery.owns(cause)) throw cause;
       const current = personalPhotoRecoveryReadContext();
-      if (Object.keys(binding).some(name => current[name] !== binding[name]) || current.scope !== "personal") {
+      if (cause.code === "photo-recovery-superseded"
+        || Object.keys(binding).some(name => current[name] !== binding[name]) || current.scope !== "personal") {
         if (personalPhotoRecoveryCheck === pending) {
           personalPhotoRecoverySource = null;
           personalSaveRecoveryDialog?.finishChecking();
@@ -9446,7 +9451,7 @@ async function savePersonalStateFromOutbox({ notify = false, forceOverwrite = fa
   } catch (error) {
     if (String(currentUser?.id || "") !== owner.actorId || localStorageScopeKey !== owner.scopeKey
       || currentPackingListId !== owner.listId) return;
-    if (error.code === "photo-form-superseded") {
+    if (["photo-form-superseded", "photo-recovery-superseded"].includes(error.code)) {
       scheduleRemoteSave();
       return;
     }

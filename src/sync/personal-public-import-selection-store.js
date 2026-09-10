@@ -36,7 +36,10 @@ export function createPersonalRemoteImportSelectionStore({ binding, getContext, 
     if (!value?.generation || value.scope !== "personal" || Object.keys(binding).some(key => value[key] !== binding[key])) fail();
     return clone(value);
   };
-  const assertCurrent = initial => { if (!same(context(), initial)) fail(); };
+  const assertCurrent = initial => {
+    if (!same(context(), initial)) throw Object.assign(Error("Редактор изменился во время чтения или подготовки копии."),
+      { code: adapter.code, isPersonalSaveBlocked: true, isPersonalSelectionContextChanged: true });
+  };
   const validate = selection => {
     assertListOperationPayload({ ...binding, kind: "list.import", body: selection });
     if (![1, 2].includes(selection?.version) || !same(selection.binding, binding) || !uuid(selection.operationId)
