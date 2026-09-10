@@ -272,8 +272,10 @@ async function submitAdminTemplateCopy(page, name) {
 }
 
 for (const shared of [false, true]) for (const type of ["item", "container"])
-  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice"]) {
-  test(`admin catalog copy ${shared ? "shared" : "demo"} ${type} keeps one frozen batch (${mode})`, async ({ page, context }) => {
+  for (const placement of type === "item" ? ["", "root", "nested"] : [""])
+  for (const mode of placement ? ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"]
+    : ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice"]) {
+  test(`admin ${placement ? "placement " + placement : "catalog"} copy ${shared ? "shared" : "demo"} ${type} keeps one frozen batch (${mode})`, async ({ page, context }) => {
     const state = await fixture(page, context, { shared, withContainers: true, hydrate: ["plan-quota", "pointer-quota"].includes(mode) });
     const collection = type === "item" ? "items" : "containers";
     const before = await page.evaluate(collection => {
@@ -283,10 +285,26 @@ for (const shared of [false, true]) for (const type of ["item", "container"])
         localIds: Object.values(current[collection]).filter(row => row.publicCatalogLayoutId === layout.id).map(row => row.id),
         snapshot: __adminUiTest.snapshot(layout.id) };
     }, collection);
-    await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
-    await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${before.id}"]`).filter({ visible: true }).first().click();
+    let targetId;
+    if (placement) {
+      targetId = await page.evaluate(({ layoutId, nested }) => Object.values(__adminUiTest.state().containers)
+        .find(row => row.publicCatalogLayoutId === layoutId && Boolean(row.parentId) === nested).id, { layoutId: before.layoutId, nested: placement === "nested" });
+      await page.evaluate(id => __adminUiTest.openItem(id), before.id);
+      await page.locator("#itemCopyToContainerBtn").click(); await expect(page.locator("#containerPickerDialog")).toBeVisible();
+      await expect(page.locator("#containerPickerLayoutSelect")).toHaveValue(before.layoutId);
+      await page.locator(`#containerPickerBoard [data-pick-container="${targetId}"]`).click();
+    } else {
+      await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+      await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${before.id}"]`).filter({ visible: true }).first().click();
+    }
     await expect(page.locator("#confirmDialog")).toBeVisible();
     if (mode === "changed-choice") await page.evaluate(({ collection, id }) => { __adminUiTest.state()[collection][id].name = "Источник изменился до выбора"; }, { collection, id: before.id });
+    if (mode === "changed-account") await page.evaluate(() => { __adminUiTest.user().id = "admin-b"; });
+    if (mode === "pending-source") await page.evaluate(id => { __adminUiTest.state().layouts[id].templateDraftSyncPending = true; }, before.layoutId);
+    if (mode === "changed-target") await page.evaluate(({ layoutId, targetId }) => {
+      __adminUiTest.state().layouts[layoutId].arrangement.containers[targetId].order.reverse();
+      __adminUiTest.state().containers[targetId].name = "Сумка назначения изменилась";
+    }, { layoutId: before.layoutId, targetId });
     if (mode.endsWith("quota")) await page.evaluate(mode => {
       const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
         const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
@@ -299,18 +317,19 @@ for (const shared of [false, true]) for (const type of ["item", "container"])
     }, mode);
     if (mode === "conflict") state.revision = 8;
     state.lose = mode === "lost";
-    await page.locator("#confirmOkBtn").click();
+    await page.locator(mode === "cancel" ? "#confirmCancelBtn" : "#confirmOkBtn").click();
     const local = () => page.evaluate(({ collection, layoutId }) => Object.values(__adminUiTest.state()[collection]).filter(row => row.publicCatalogLayoutId === layoutId), { collection, layoutId: before.layoutId });
-    if (["mirror-quota", "changed-choice"].includes(mode)) {
-      await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Catalog copy quota" : "Шаблон изменился");
+    if (["mirror-quota", "changed-choice", "changed-target", "changed-account", "pending-source", "cancel"].includes(mode)) {
+      if (mode !== "cancel") await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Catalog copy quota" : "Шаблон изменился");
       expect((await local()).map(row => row.id).sort()).toEqual(before.localIds.sort());
+      if (placement && ["mirror-quota", "cancel"].includes(mode)) expect(await page.evaluate(id => __adminUiTest.snapshot(id), before.layoutId)).toEqual(before.snapshot);
       expect(state.posts).toEqual([]); expect(state.errors).toEqual([]); return;
     }
     await expect.poll(async () => (await local()).length).toBe(Object.keys(before.snapshot.payload[collection]).length + 1);
     const copied = (await local()).find(row => !before.localIds.includes(row.id));
     expect(copied.id).not.toBe(before.id); expect(copied.publicCatalogLayoutId).toBe(before.layoutId);
     expect(copied.weight).toBe(before.row.weight);
-    if (type === "item") expect(copied.containerId).toBe("");
+    if (type === "item") expect(copied.containerId).toBe(targetId || "");
     else { expect(copied.childIds).toEqual([]); expect(copied.itemIds).toEqual([]); expect(copied.order).toEqual([]); }
     let planId;
     if (["plan-quota", "pointer-quota"].includes(mode)) {
@@ -338,7 +357,18 @@ for (const shared of [false, true]) for (const type of ["item", "container"])
     await confirmedRevision(page, 8);
     expect(state.payload[collection][copied.id]).toBeTruthy();
     for (const [id, row] of Object.entries(before.snapshot.payload[collection])) expect(state.payload[collection][id]).toEqual(row);
-    expect(Object.values(state.payload.layouts)[0].arrangement).toEqual(Object.values(before.snapshot.payload.layouts)[0].arrangement);
+    const arrangement = structuredClone(Object.values(state.payload.layouts)[0].arrangement);
+    if (placement) {
+      const destination = Object.values(state.payload.containers).find(row => row.name === (placement === "nested" ? "Карман шаблона" : "Сумка шаблона")).id;
+      expect(arrangement.items[copied.id]).toBe(destination); expect(arrangement.itemQuantities[copied.id]).toBe(1);
+      expect(arrangement.packedItems[copied.id]).toBeUndefined();
+      expect(arrangement.containers[destination].order.at(-1)).toEqual({ type: "item", id: copied.id });
+      delete arrangement.items[copied.id]; delete arrangement.itemQuantities[copied.id];
+      arrangement.containers[destination].itemIds = arrangement.containers[destination].itemIds.filter(id => id !== copied.id);
+      arrangement.containers[destination].order = arrangement.containers[destination].order.filter(row => row.id !== copied.id);
+      await expect(page.locator(`#packingView [data-item-id="${copied.id}"]`)).toBeVisible();
+    }
+    expect(arrangement).toEqual(Object.values(before.snapshot.payload.layouts)[0].arrangement);
     await editItem(page, "Правка после копии", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
     expect(state.posts).toHaveLength(2); expect(state.posts[1].body.base).toEqual({ stateRevision: 8 });
     expect(state.payload[collection][copied.id]).toBeTruthy(); expect(state.errors).toEqual([]);

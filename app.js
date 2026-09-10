@@ -1785,6 +1785,7 @@ const appTailControllerDeps = {
   runtime: appTailRuntime,
   adminTemplateUiEnabled,
   runCausalAdminTemplateCommand,
+  prepareCausalAdminCatalogCopy,
   openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
   newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate,
   ACTIVE_LAYOUT_CHOICE_KEY, ACTIVE_LAYOUT_CHOICE_SOURCE_KEY, ACTIVE_LIST_ID_KEY, ACTIVE_PRIVATE_LAYOUT_CHOICE_KEY,
@@ -10567,12 +10568,13 @@ async function resumeCausalAdminTemplateCopy(layout) {
     throw Error("Копия сохранена и ожидает восстановления редактора.");
   }
 }
-function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false, addToLayoutId = "" } = {}) {
-  let layout, original, snapshot, initial, prepared, operationId;
+function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false, addToLayoutId = "", targetContainerId = "" } = {}) {
+  let layout, original, snapshot, initial, prepared, operationId, changedAt;
   const collection = type === "item" ? "items" : "containers", coordinator = adminTemplateSaveCoordinator();
   const fail = message => { throw Error(message); };
   const guard = () => {
     if (!canOpenAdminPublishedEdit() || state.layouts[layout.id] !== layout || coordinator.hasPendingCapture(layout.id)
+      || layout.adminCausalCopyPlan || layout.templateDraftSyncPending
       || canonicalTemplateJson(layout.adminCausalSource) !== canonicalTemplateJson(original)
       || canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id)) !== initial
       || canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)) !== snapshot) fail("Шаблон изменился. Выберите записи для копирования заново.");
@@ -10581,13 +10583,16 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
     layout = state.layouts[getPublishedEditLayoutId()]; original = clone(layout?.adminCausalSource || null);
     if (!layout || !original?.exists || original.planId || !original.base?.stateRevision || layout.adminCausalCopyPlan
       || layout.templateDraftSyncPending || coordinator.hasPendingCapture(layout.id)) fail("Сначала дождитесь подтверждения исходного шаблона.");
-    if (keepPlacement || addToLayoutId) fail("Копирование с размещением в шаблон ещё требует отдельной подготовки. Исходные записи сохранены.");
+    if (keepPlacement || addToLayoutId && !targetContainerId) fail("Этот способ размещения копии ещё требует отдельной подготовки. Исходные записи сохранены.");
+    if (targetContainerId && (type !== "item" || addToLayoutId !== layout.id || layout.locked
+      || state.containers[targetContainerId]?.publicCatalogLayoutId !== layout.id
+      || !layout.arrangement?.containers?.[targetContainerId])) fail("Выберите сумку в открытом шаблоне. Между разными шаблонами копирование ещё не подготовлено.");
     if (!["item", "container"].includes(type) || !sourceIds.length
       || sourceIds.some(id => state[collection]?.[id]?.publicCatalogLayoutId !== layout.id)) fail("Источник копии не принадлежит открытому шаблону.");
     if (!requireUsageCapacity(collection, sourceIds.length)) return false;
     initial = canonicalTemplateJson(adminTemplateOperationContext(original.binding, layout.id));
     snapshot = canonicalTemplateJson(adminTemplateEditorSnapshot(layout.id)); guard();
-    operationId = crypto.randomUUID();
+    operationId = crypto.randomUUID(); changedAt = nowIso();
     // A placed item's quantity belongs to the arrangement. Its catalog record
     // is normalized to one; detached catalog quantities remain independent.
     const copySource = { ...state, items: { ...state.items } };
@@ -10595,12 +10600,19 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
       quantity: Object.hasOwn(layout.arrangement?.items || {}, id) ? 1 : normalizeItemQuantity(state.items[id].quantity) };
     prepared = preparePersonalCopyBatch(copySource, { type: "copy", version: 1, keepPlacement: false, layoutId: "",
       entries: sourceIds.map(sourceId => ({ type, sourceId, targetId: `${type}-${crypto.randomUUID()}` })) },
-      { changedAt: nowIso(), currentEditMeta, normalizeContainerColor, markEdited,
+      { changedAt, currentEditMeta, normalizeContainerColor, markEdited,
         hasPhotos: row => normalizeItemPhotos(row).length > 0 });
+    if (targetContainerId) for (const entry of prepared.intent.entries) {
+      if (!addItemToLayoutArrangementForState(prepared.snapshot, prepared.snapshot.layouts[layout.id], entry.targetId, targetContainerId)) {
+        fail("Не удалось подготовить место копии.");
+      }
+      prepared.snapshot.items[entry.targetId].containerId = targetContainerId;
+    }
   } catch (error) { reportAdminTemplateSaveError(error); return false; }
   let used = false;
   return async () => {
     const added = prepared.intent.entries.map(entry => entry.targetId), wasPending = layout.templateDraftSyncPending;
+    const priorLayout = { ...layout }, priorContainer = targetContainerId ? { ...state.containers[targetContainerId] } : null;
     try {
       if (used) return false; guard();
       if (!requireUsageCapacity(collection, sourceIds.length)) return false;
@@ -10609,6 +10621,12 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
       for (const id of added) state[collection][id] = { ...cloneIsolatedPublicEntity(prepared.snapshot[collection][id]),
         publicCatalogLayoutId: layout.id, adminDemo: Boolean(layout.adminDemo) };
       try {
+        if (targetContainerId) {
+          layout.arrangement = clone(prepared.snapshot.layouts[layout.id].arrangement);
+          const placement = layout.arrangement.containers[targetContainerId];
+          Object.assign(state.containers[targetContainerId], { itemIds: [...placement.itemIds], order: clone(placement.order) });
+          markEdited(layout, changedAt);
+        }
         const candidate = adminTemplateEditorSnapshot(layout.id);
         layout.adminCausalCopyPlan = adminTemplateSavePlan({ binding: original.binding, operationId, exists: true,
           visibility: original.visibility, base: original.base, payload: stripAdminTemplateEditorMetadata(candidate.payload), metadata: candidate.metadata });
@@ -10616,12 +10634,16 @@ function prepareCausalAdminCatalogCopy(type, sourceIds, { keepPlacement = false,
         persistNewCausalAdminTemplateDraft(layout);
       } catch (error) {
         for (const id of added) delete state[collection][id]; delete layout.adminCausalCopyPlan;
+        if (targetContainerId) {
+          for (const key of Object.keys(layout)) if (!Object.hasOwn(priorLayout, key)) delete layout[key];
+          Object.assign(layout, priorLayout); Object.assign(state.containers[targetContainerId], priorContainer);
+        }
         if (wasPending === undefined) delete layout.templateDraftSyncPending; else layout.templateDraftSyncPending = wasPending;
         throw error;
       }
       try { await resumeCausalAdminTemplateCopy(layout); await coordinator.flush(layout.id); }
       catch (error) { reportAdminTemplateSaveError(error); }
-      return true;
+      return targetContainerId ? added[0] : true;
     } catch (error) { reportAdminTemplateSaveError(error); return false; }
   };
 }

@@ -141,6 +141,7 @@ import { createNoteSearchNavigator } from "../ui/note-search-navigation.js";
 
 export function createAppTailControllers(ctx) {
   const { adminTemplateUiEnabled = () => false, runCausalAdminTemplateCommand,
+    prepareCausalAdminCatalogCopy,
     openCausalAdminTemplateOrder, saveCausalAdminTemplateOrder, finishCausalAdminTemplateOrder,
     newCausalAdminTemplateDraft, persistNewCausalAdminTemplateDraft, createCausalAdminTemplateCopy, openCausalAdminTemplate } = ctx;
   const runtime = ctx.runtime;
@@ -1731,11 +1732,14 @@ function getSharedTemplateCopyExcludedLayoutIds() {
 }
 
 function getContainerCopyExcludedLayoutIds() {
-  return containerCopyExcludedLayoutIds({
+  const excluded = containerCopyExcludedLayoutIds({
     mode: runtime.containerPickerMode,
     readonlyLayoutId: activeReadOnlyLayoutId(),
     sourceLayoutId: runtime.containerPickerSourceLayoutId
   });
+  if (adminTemplateUiEnabled() && canOpenAdminPublishedEdit() && runtime.containerPickerMode === "item-copy"
+    && state.layouts[runtime.containerPickerSourceLayoutId]?.adminCausalSource) excluded.delete(runtime.containerPickerSourceLayoutId);
+  return excluded;
 }
 
 function openItemContainerPickerDialog(event) {
@@ -1972,6 +1976,10 @@ function getContainerPickerLayoutOptions() {
     choiceForLayout: publicLayoutChoiceForLayout,
     visibleChoices: adminPublicLayoutOptions().map(([value]) => value)
   }).filter((layout) => isPublishedLayoutEditable(layout) && !excludedLayoutIds.has(layout.id)));
+  // The open prepared editor remains selectable even while the independent
+  // catalog index has not loaded it. The copy adapter validates its revision.
+  if (adminTemplateUiEnabled() && runtime.containerPickerMode === "item-copy" && currentLayout?.adminCausalSource
+    && currentLayout.id === runtime.containerPickerSourceLayoutId && !publicDrafts.some(row => row.id === currentLayout.id)) publicDrafts.unshift(currentLayout);
   return [...publicDrafts, ...personalLayouts];
 }
 
@@ -2332,6 +2340,20 @@ async function copyItemToContainerInLayout(itemId, targetContainerId, targetLayo
   if (!source || !targetLayout) return;
   if (warnLockedLayoutMutation(targetLayoutId) || warnUnavailableItemPlacement(itemId)) return;
   const targetIsPublic = isAdminEditablePublishedLayout(targetLayoutId);
+  if (adminTemplateUiEnabled() && targetIsPublic) {
+    const commit = prepareCausalAdminCatalogCopy("item", [itemId], { addToLayoutId: targetLayoutId, targetContainerId });
+    if (!commit) return;
+    if (!await askConfirmDialog({ title: localText("Copy item?", "Скопировать вещь?"),
+      text: localText(`Create a separate copy of “${source.name}” in “${state.containers[targetContainerId]?.name}”?`,
+        `Создать отдельную копию «${source.name}» в «${state.containers[targetContainerId]?.name}»?`),
+      okText: localText("Copy", "Копировать"), tone: "safe" })) return;
+    const copyId = await commit(); if (!copyId) return;
+    markRecentlyAddedItem(copyId, targetLayoutId); openCopiedTargetLayout(targetLayoutId);
+    const focused = closeDialogsThenFocus({ closeDialog: closeDialogWithoutRestoringFocus,
+      dialogs: [refs.containerPickerDialog, runtime.editingItemId === itemId ? refs.dialog : null],
+      focus: onSettled => focusRecentlyAddedItem(copyId, { onSettled }) });
+    render(); await focused; return;
+  }
   const sourceRecordHasPublicOrigin = itemRecordIsPublicNamespaceSource(source, {
     hasPrivateSyncBlockedPublicOrigin
   });
