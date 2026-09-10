@@ -2675,7 +2675,7 @@ test("CRITICAL offline-photos: lightbox close and side navigation use the shared
   assert.match(sharedRuntime, /\.vpg-fullscreen-control,\.vpg-fullscreen-close,\.vpg-fullscreen-nav\{[^}]*color:#fff/);
   assert.match(sharedRuntime, /\.vpg-fullscreen-control:focus-visible/);
   assert.match(sharedSource, /api\?\.capabilities\?\.fullscreenEdgeRubberBand >= 2[\s\S]*fallbackRuntime\?\.createFullscreenSwitcher/);
-  assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(baseIndex \+ \(dx < 0 \? 1 : -1\)\);/);
+  assert.match(source, /const bindNavSwipe = \(button\) => \{[\s\S]*track\.scrollLeft = navStartScrollLeft - dx;[\s\S]*navigatePhoto\(navStartPhotoIndex \+ \(dx < 0 \? 1 : -1\)\);/);
 });
 
 test("CRITICAL offline-photos: phone lightbox gives the full screen to swipe and tap-to-close", () => {
