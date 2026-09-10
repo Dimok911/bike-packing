@@ -33,7 +33,7 @@ test.afterEach(async ({ page }, info) => {
     await info.attach("browser-lifecycle", { body: JSON.stringify(page.adminBrowserDiagnostics), contentType: "application/json" });
   }
 });
-async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null } = {}) {
+async function fixture(page, context, { published = false, shared = false, hydrate = false, withContainers = false, layoutOrder = null, catalogPair = false } = {}) {
   const state = { payload: template(), revision: 7, visibility: "private", receipts: new Map(), posts: [], cancels: [], errors: [], lose: false, hidden: false, hold: null };
   if (layoutOrder !== null) state.payload.layouts["layout-a"].layoutOrder = layoutOrder;
   if (withContainers) {
@@ -45,6 +45,10 @@ async function fixture(page, context, { published = false, shared = false, hydra
       containers: { bag: { parentId: "", itemIds: [], childIds: ["pocket"], order: [{ type: "container", id: "pocket" }] },
         pocket: { parentId: "bag", itemIds: ["pump"], childIds: [], order: [{ type: "item", id: "pump" }] } },
       items: { pump: "pocket" }, itemQuantities: { pump: 2 }, packedItems: {}, itemQuantityMigrationVersion: 3 };
+  }
+  if (catalogPair) {
+    state.payload.items.second = { ...structuredClone(state.payload.items.pump), id: "second", name: "Вторая вещь шаблона", containerId: "", quantity: 3, weight: 234, notes: "Отдельная заметка источника" };
+    state.payload.containers.secondBag = { id: "secondBag", name: "Вторая сумка шаблона", weight: 400, parentId: "", childIds: [], itemIds: [], order: [] };
   }
   const listId = shared ? "public-shared-layout-ui" : "public-demo-state-ui", itemKey = shared ? "shared-layout:ui" : "demo-state:ui";
   const metadata = { title: "Проверяемый шаблон", description: "", language: "ru" }; state.hydrate = hydrate;
@@ -265,6 +269,136 @@ async function submitAdminTemplateCopy(page, name) {
   await page.locator("#layoutName").fill(name); await page.locator("#layoutName").blur();
   if (test.info().project.name === "mobile-webkit") await page.locator("#saveLayoutBtn").tap();
   else await page.locator("#saveLayoutBtn").click();
+}
+
+for (const shared of [false, true]) for (const type of ["item", "container"])
+  for (const mode of ["confirmed", "lost", "plan-quota", "pointer-quota", "mirror-quota", "conflict", "changed-choice"]) {
+  test(`admin catalog copy ${shared ? "shared" : "demo"} ${type} keeps one frozen batch (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true, hydrate: ["plan-quota", "pointer-quota"].includes(mode) });
+    const collection = type === "item" ? "items" : "containers";
+    const before = await page.evaluate(collection => {
+      const current = __adminUiTest.state(), layout = Object.values(current.layouts).find(row => row.adminCausalSource);
+      const row = Object.values(current[collection]).find(row => row.publicCatalogLayoutId === layout.id && (collection === "items" || !row.parentId));
+      return { id: row.id, row: structuredClone(row), layoutId: layout.id, binding: layout.adminCausalSource.binding,
+        localIds: Object.values(current[collection]).filter(row => row.publicCatalogLayoutId === layout.id).map(row => row.id),
+        snapshot: __adminUiTest.snapshot(layout.id) };
+    }, collection);
+    await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+    await page.locator(`[data-copy-${type === "item" ? "item" : "root"}="${before.id}"]`).filter({ visible: true }).first().click();
+    await expect(page.locator("#confirmDialog")).toBeVisible();
+    if (mode === "changed-choice") await page.evaluate(({ collection, id }) => { __adminUiTest.state()[collection][id].name = "Источник изменился до выбора"; }, { collection, id: before.id });
+    if (mode.endsWith("quota")) await page.evaluate(mode => {
+      const set = Storage.prototype.setItem; let mirrored = false; Storage.prototype.setItem = function(key, value) {
+        const mirror = key.startsWith("bike-packing-prototype-state-v1"), marker = value.includes('"adminCausalCopyPlan"');
+        if (mirror && marker) mirrored = true;
+        if (mode === "plan-quota" && key.startsWith("bike-packing-admin-save-plans-v1:")
+          || mode === "mirror-quota" && mirror && marker
+          || mode === "pointer-quota" && mirror && mirrored && !marker) throw new DOMException("Catalog copy quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    }, mode);
+    if (mode === "conflict") state.revision = 8;
+    state.lose = mode === "lost";
+    await page.locator("#confirmOkBtn").click();
+    const local = () => page.evaluate(({ collection, layoutId }) => Object.values(__adminUiTest.state()[collection]).filter(row => row.publicCatalogLayoutId === layoutId), { collection, layoutId: before.layoutId });
+    if (["mirror-quota", "changed-choice"].includes(mode)) {
+      await expect(page.locator("body")).toContainText(mode === "mirror-quota" ? "Catalog copy quota" : "Шаблон изменился");
+      expect((await local()).map(row => row.id).sort()).toEqual(before.localIds.sort());
+      expect(state.posts).toEqual([]); expect(state.errors).toEqual([]); return;
+    }
+    await expect.poll(async () => (await local()).length).toBe(Object.keys(before.snapshot.payload[collection]).length + 1);
+    const copied = (await local()).find(row => !before.localIds.includes(row.id));
+    expect(copied.id).not.toBe(before.id); expect(copied.publicCatalogLayoutId).toBe(before.layoutId);
+    expect(copied.weight).toBe(before.row.weight);
+    if (type === "item") expect(copied.containerId).toBe("");
+    else { expect(copied.childIds).toEqual([]); expect(copied.itemIds).toEqual([]); expect(copied.order).toEqual([]); }
+    let planId;
+    if (["plan-quota", "pointer-quota"].includes(mode)) {
+      await expect.poll(() => page.evaluate(id => Boolean(__adminUiTest.state().layouts[id].adminCausalCopyPlan), before.layoutId)).toBe(true); expect(state.posts).toEqual([]);
+      planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId);
+      if (mode === "pointer-quota") await expect.poll(() => page.evaluate(id => Object.entries(localStorage)
+        .some(([key, value]) => key.startsWith("bike-packing-admin-save-plans-v1:") && JSON.parse(value).plan?.id === id), planId)).toBe(true);
+      expect(await page.evaluate(id => __adminUiTest.state().layouts[id].templateDraftSyncPending, before.layoutId)).toBe(true);
+      await page.evaluate(() => __adminUiTest.refreshDrafts());
+      expect((await local()).some(row => row.id === copied.id)).toBe(true);
+    } else {
+      await expect.poll(() => state.posts.length).toBe(1); planId = state.posts[0].operationId;
+      if (mode === "lost") await expect.poll(() => state.hidden).toBe(true);
+    }
+    state.lose = false; state.hidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+      ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), before.binding);
+    expect(state.posts).toHaveLength(1); expect(state.posts[0].operationId).toBe(planId);
+    expect(state.posts[0].kind).toBe("template.save"); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(JSON.stringify(state.posts[0].body.payload)).not.toContain("adminCausalCopyPlan");
+    expect((await local()).some(row => row.id === copied.id)).toBe(true);
+    if (mode === "conflict") { expect(state.receipts.get(planId).operation.state).toBe("rejected"); return; }
+    await confirmedRevision(page, 8);
+    expect(state.payload[collection][copied.id]).toBeTruthy();
+    for (const [id, row] of Object.entries(before.snapshot.payload[collection])) expect(state.payload[collection][id]).toEqual(row);
+    expect(Object.values(state.payload.layouts)[0].arrangement).toEqual(Object.values(before.snapshot.payload.layouts)[0].arrangement);
+    await editItem(page, "Правка после копии", "Насос шаблона", before.layoutId); await confirmedRevision(page, 9);
+    expect(state.posts).toHaveLength(2); expect(state.posts[1].body.base).toEqual({ stateRevision: 8 });
+    expect(state.payload[collection][copied.id]).toBeTruthy(); expect(state.errors).toEqual([]);
+  });
+}
+
+for (const shared of [false, true]) for (const type of ["item", "container"]) for (const mode of ["confirmed", "lost", "plan-quota"]) {
+  test(`admin catalog bulk copy ${shared ? "shared" : "demo"} ${type} remains atomic (${mode})`, async ({ page, context }) => {
+    const state = await fixture(page, context, { shared, withContainers: true, catalogPair: true, published: mode === "confirmed" });
+    const collection = type === "item" ? "items" : "containers";
+    const before = await page.evaluate(collection => {
+      const value = __adminUiTest.state(), layout = Object.values(value.layouts).find(row => row.adminCausalSource);
+      return { layoutId: layout.id, binding: layout.adminCausalSource.binding, snapshot: __adminUiTest.snapshot(layout.id),
+        ids: Object.values(value[collection]).filter(row => row.publicCatalogLayoutId === layout.id && (collection === "items" || !row.parentId)).map(row => row.id) };
+    }, collection);
+    expect(before.ids).toHaveLength(2);
+    if (type === "item") {
+      expect(Object.values(before.snapshot.payload.items).find(row => row.name === "Вторая вещь шаблона").quantity).toBe(3);
+      expect(Object.values(before.snapshot.payload.layouts)[0].arrangement.itemQuantities["item-pump"]).toBe(2);
+    }
+    await page.locator(`[data-view="${type === "item" ? "items" : "bags"}"]`).click();
+    const selector = type === "item" ? "#itemsView [data-list-item-id]" : "#bagsView [data-root-card]";
+    const card = id => page.locator(`${selector}[${type === "item" ? "data-list-item-id" : "data-root-card"}="${id}"]`);
+    for (const id of before.ids) await card(id).click({ modifiers: ["Control"], position: { x: 8, y: 8 } });
+    await card(before.ids[0]).locator(`[data-copy-${type === "item" ? "item" : "root"}]`).click();
+    await expect(page.locator("#confirmDialog")).toContainText(type === "item" ? "выбранные вещи" : "выбранные сумки");
+    if (mode === "plan-quota") await page.evaluate(() => {
+      const set = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith("bike-packing-admin-save-plans-v1:")) throw new DOMException("Batch plan quota", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+    });
+    state.lose = mode === "lost"; await page.locator("#confirmOkBtn").click();
+    const retained = () => page.evaluate(({ collection, layoutId }) => __adminUiTest.snapshot(layoutId).payload[collection], { collection, layoutId: before.layoutId });
+    await expect.poll(async () => Object.keys(await retained()).length).toBe(Object.keys(before.snapshot.payload[collection]).length + 2);
+    const candidate = await retained(), copiedIds = Object.keys(candidate).filter(id => !Object.hasOwn(before.snapshot.payload[collection], id));
+    expect(copiedIds).toHaveLength(2); let planId;
+    if (mode === "plan-quota") {
+      planId = await page.evaluate(id => __adminUiTest.state().layouts[id].adminCausalCopyPlan.id, before.layoutId); expect(state.posts).toEqual([]);
+    } else { await expect.poll(() => state.posts.length).toBe(1); planId = state.posts[0].operationId; }
+    if (mode === "lost") await expect.poll(() => state.hidden).toBe(true);
+    state.lose = false; state.hidden = false;
+    await page.reload(); await expect(page.locator("body")).toHaveClass(/app-ready/, { timeout: 30000 });
+    await page.waitForFunction(() => __adminUiTest.user()?.id === "admin-a");
+    await page.evaluate(binding => __adminUiTest.openPrepared(binding.itemKey.startsWith("demo-state")
+      ? { type: "demo", demoListId: binding.listId } : { type: "shared", sharedId: binding.itemKey.slice(14) }), before.binding);
+    await confirmedRevision(page, 8); expect(state.posts).toHaveLength(1); expect(state.posts[0].operationId).toBe(planId);
+    expect(state.posts[0].kind).toBe("template.save"); expect(state.posts[0].body.base).toEqual({ stateRevision: 7 });
+    expect(state.visibility).toBe(mode === "confirmed" ? "public" : "private");
+    expect(state.payload[collection]).toEqual(candidate);
+    for (const [id, value] of Object.entries(before.snapshot.payload[collection])) expect(candidate[id]).toEqual(value);
+    for (const id of copiedIds) expect(candidate[id].sharedSourceId).toBeUndefined();
+    for (const id of copiedIds) {
+      const originals = Object.values(before.snapshot.payload[collection]).filter(row => candidate[id].name.startsWith(row.name));
+      expect(originals).toHaveLength(1);
+      for (const key of ["weight", "quantity", "notes", "location", "categories"]) expect(candidate[id][key]).toEqual(originals[0][key]);
+    }
+    expect(Object.values(state.payload.layouts)[0].arrangement).toEqual(Object.values(before.snapshot.payload.layouts)[0].arrangement);
+    expect(state.errors).toEqual([]);
+  });
 }
 
 for (const shared of [false, true]) for (const mode of ["confirmed", "lost", "plan-quota", "mirror-quota", "conflict"]) {
